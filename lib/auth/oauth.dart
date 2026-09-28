@@ -113,6 +113,7 @@ class OAuthClient {
   OAuthClient({
     required this.mcpEndpoint,
     required this.clientName,
+    this.viaResourceServer = false,
     http.Client? httpClient,
     DateTime Function()? clock,
     Random? random,
@@ -122,6 +123,13 @@ class OAuthClient {
 
   final Uri mcpEndpoint;
   final String clientName;
+
+  /// Sends registration and token requests to the MCP server's own
+  /// `/oauth/register` and `/oauth/token`, which forward them to the
+  /// authorization server. For the web: AuthKit answers those endpoints
+  /// without CORS headers, so a browser can't read its responses directly.
+  final bool viaResourceServer;
+
   final http.Client _http;
   final DateTime Function() _clock;
   final Random _random;
@@ -169,9 +177,13 @@ class OAuthClient {
       authorizationEndpoint: Uri.parse(
         serverMetadata['authorization_endpoint'] as String,
       ),
-      tokenEndpoint: Uri.parse(serverMetadata['token_endpoint'] as String),
+      tokenEndpoint: viaResourceServer
+          ? origin.replace(path: '/oauth/token')
+          : Uri.parse(serverMetadata['token_endpoint'] as String),
       registrationEndpoint: registration == null
           ? null
+          : viaResourceServer
+          ? origin.replace(path: '/oauth/register')
           : Uri.parse(registration),
       // offline_access is what gets us a refresh token, so signing in
       // isn't needed every time the (short-lived) access token expires.

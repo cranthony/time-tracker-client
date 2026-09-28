@@ -21,8 +21,18 @@ class _FakeAuthKit {
   bool failRegistration = false;
   int _issued = 0;
 
+  final proxied = <String>[];
+
   late final client = MockClient((request) async {
-    final url = request.url.toString();
+    var url = request.url.toString();
+    // The MCP server's forwarding routes (OAuthClient.viaResourceServer).
+    if (url.startsWith('https://tt.example.com/oauth/')) {
+      proxied.add(request.url.path);
+      url = url.replaceFirst(
+        'https://tt.example.com/oauth/',
+        '$_authkit/oauth2/',
+      );
+    }
     if (url ==
         'https://tt.example.com/.well-known/oauth-protected-resource/mcp') {
       return _json({
@@ -98,10 +108,11 @@ void main() {
   late InMemoryTokenStore store;
   late DateTime now;
 
-  AuthSession session() => AuthSession(
+  AuthSession session({bool viaResourceServer = false}) => AuthSession(
     oauth: OAuthClient(
       mcpEndpoint: Uri.parse(_mcp),
       clientName: 'Time Tracker (test)',
+      viaResourceServer: viaResourceServer,
       httpClient: authKit.client,
       clock: () => now,
     ),
@@ -172,6 +183,19 @@ void main() {
     authKit = _FakeAuthKit()..failRegistration = true;
     await expectLater(session().signIn(), throwsA(isA<OAuthException>()));
     expect(receiver.calls, ['prepare', 'cancel']);
+  });
+
+  test('can register and get tokens through the MCP server', () async {
+    final auth = session(viaResourceServer: true);
+    await auth.signIn();
+
+    expect(authKit.proxied, ['/oauth/register', '/oauth/token']);
+    // Authorization itself still happens at AuthKit, in the browser.
+    expect(
+      receiver.lastAuthorizationUrl.toString(),
+      startsWith('$_authkit/oauth2/authorize'),
+    );
+    expect(await auth.accessToken(), 'access_1');
   });
 
   test('reuses the client registration on later sign-ins', () async {

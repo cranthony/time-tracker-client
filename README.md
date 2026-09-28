@@ -79,6 +79,23 @@ Serve it from `localhost` (any port). The server allows cross-origin calls
 from `localhost`; for anywhere else, add that origin to the server's
 `MCP_CORS_ALLOWED_ORIGINS`.
 
+In the browser, registering the app and fetching tokens go through the
+MCP server's `/oauth/register` and `/oauth/token`, which forward them to
+AuthKit: AuthKit's own endpoints don't allow browser calls (no CORS
+headers). Nothing needs configuring in WorkOS for this.
+
+### Hosted on GitHub Pages
+
+Every push to `main` builds the web app and publishes it to
+<https://cranthony.github.io/time-tracker-client/>
+([.github/workflows/pages.yml](.github/workflows/pages.yml)). It needs:
+
+- **Pages** set to deploy from GitHub Actions (Settings → Pages → Source).
+- The repository variable **`MCP_URL`** (Settings → Secrets and variables
+  → Actions → Variables), the same value as in `config.json`.
+- The server's **`MCP_CORS_ALLOWED_ORIGINS`** set to
+  `https://cranthony.github.io` (on Render: the service's Environment tab).
+
 ## Run on Android
 
 Prerequisites (once):

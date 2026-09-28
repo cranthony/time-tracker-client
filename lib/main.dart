@@ -25,6 +25,7 @@ void main() {
     oauth: OAuthClient(
       mcpEndpoint: endpoint,
       clientName: 'Time Tracker ($platformName)',
+      viaResourceServer: oauthViaResourceServer,
     ),
     store: const SecureTokenStore(),
     receiver: platformRedirectReceiver(),

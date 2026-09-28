@@ -8,3 +8,6 @@ String get platformName => Platform.operatingSystem;
 
 RedirectReceiver platformRedirectReceiver() =>
     Platform.isAndroid ? AndroidRedirectReceiver() : LoopbackRedirectReceiver();
+
+/// See OAuthClient.viaResourceServer.
+const oauthViaResourceServer = false;
