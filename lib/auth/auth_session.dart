@@ -56,8 +56,17 @@ class AuthSession implements McpAuth {
   /// Runs the browser sign-in flow, registering this app with the
   /// authorization server first if it hasn't been already.
   Future<void> signIn() async {
-    final client = await _clientRegistration();
-    final pending = await _oauth.startAuthorization(client);
+    // Before the first await: see RedirectReceiver.prepare.
+    _receiver.prepare();
+    final ClientRegistration client;
+    final PendingAuthorization pending;
+    try {
+      client = await _clientRegistration();
+      pending = await _oauth.startAuthorization(client);
+    } catch (_) {
+      _receiver.cancel();
+      rethrow;
+    }
     final redirect = await _receiver.authorize(pending.url);
     await _save(await _oauth.finishAuthorization(client, pending, redirect));
   }

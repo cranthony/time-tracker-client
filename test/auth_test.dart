@@ -18,6 +18,7 @@ const _authkit = 'https://tenant.authkit.app';
 class _FakeAuthKit {
   final registrations = <Map<String, dynamic>>[];
   final tokenRequests = <Map<String, String>>[];
+  bool failRegistration = false;
   int _issued = 0;
 
   late final client = MockClient((request) async {
@@ -39,6 +40,7 @@ class _FakeAuthKit {
       });
     }
     if (url == '$_authkit/oauth2/register') {
+      if (failRegistration) return _json({'error': 'invalid_request'}, 400);
       registrations.add(jsonDecode(request.body) as Map<String, dynamic>);
       return _json({'client_id': 'client_123'}, 201);
     }
@@ -66,14 +68,22 @@ class _FakeAuthKit {
 }
 
 /// Plays the browser + user: approves and redirects straight back.
-class _FakeReceiver implements RedirectReceiver {
+class _FakeReceiver extends RedirectReceiver {
   Uri? lastAuthorizationUrl;
+  final calls = <String>[];
+
+  @override
+  void prepare() => calls.add('prepare');
+
+  @override
+  void cancel() => calls.add('cancel');
 
   @override
   Uri get redirectUri => Uri.parse('http://localhost:47291/callback');
 
   @override
   Future<Uri> authorize(Uri authorizationUrl) async {
+    calls.add('authorize');
     lastAuthorizationUrl = authorizationUrl;
     final state = authorizationUrl.queryParameters['state'];
     return redirectUri.replace(
@@ -146,6 +156,22 @@ void main() {
     expect(await auth.accessToken(), 'access_1');
     // Persisted: a fresh session (e.g. after restarting the app) reuses it.
     expect(await session().accessToken(), 'access_1');
+  });
+
+  test('prepares the receiver before any network request', () async {
+    final auth = session();
+    final signingIn = auth.signIn();
+    // Synchronously, before discovery or registration have had a chance.
+    expect(receiver.calls, ['prepare']);
+    expect(authKit.registrations, isEmpty);
+    await signingIn;
+    expect(receiver.calls, ['prepare', 'authorize']);
+  });
+
+  test('cancels the receiver if sign-in fails before authorizing', () async {
+    authKit = _FakeAuthKit()..failRegistration = true;
+    await expectLater(session().signIn(), throwsA(isA<OAuthException>()));
+    expect(receiver.calls, ['prepare', 'cancel']);
   });
 
   test('reuses the client registration on later sign-ins', () async {

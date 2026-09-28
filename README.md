@@ -4,8 +4,8 @@ A Flutter app for the [Time Tracker MCP server](https://github.com/cranthony/tim
 For now it shows today's **uncompacted notes** and has a **+** button to
 record a new one. Later it will show the summaries the server generates.
 
-It is built for Android and also runs on Windows, which is the quickest way
-to try changes.
+It is built for Android and also runs on Windows and in Chrome. Chrome
+needs no extra tooling, so it's the quickest way to try changes.
 
 ## One-time setup (both platforms)
 
@@ -56,6 +56,29 @@ flutter build windows --dart-define-from-file=config.json
 # → build\windows\x64\runner\Release\time_tracker_client.exe
 ```
 
+## Run in Chrome
+
+No prerequisites beyond Flutter and Chrome.
+
+```powershell
+flutter run -d chrome --web-port 8765 --dart-define-from-file=config.json
+```
+
+Or build it once and serve the static files:
+
+```powershell
+flutter build web --dart-define-from-file=config.json
+python -m http.server 8765 --directory build/web
+```
+
+Then open <http://localhost:8765>. Click **Sign in**: a popup window shows
+the WorkOS sign-in page, then closes itself, and the app loads your notes.
+If Chrome blocks the popup, allow popups for the site and click again.
+
+Serve it from `localhost` (any port). The server allows cross-origin calls
+from `localhost`; for anywhere else, add that origin to the server's
+`MCP_CORS_ALLOWED_ORIGINS`.
+
 ## Run on Android
 
 Prerequisites (once):
@@ -101,9 +124,9 @@ Specifically:
 3. It runs the authorization-code flow with PKCE in your browser. It asks
    for a token for the server's URL (the `resource` parameter), which is
    the audience the server checks.
-4. It stores the tokens in secure storage (Android Keystore, or Windows
-   DPAPI) and refreshes them automatically. Use **⋮ → Sign out** to forget
-   them.
+4. It stores the tokens in secure storage (Android Keystore, Windows
+   DPAPI, or encrypted browser storage on the web) and refreshes them
+   automatically. Use **⋮ → Sign out** to forget them.
 
 Redirect URIs it registers:
 
@@ -111,6 +134,7 @@ Redirect URIs it registers:
 | -------- | ------------ |
 | Windows  | `http://localhost:47291/callback` |
 | Android  | `com.cranthony.timetracker://oauth/callback` |
+| Web      | `callback.html` next to the app, e.g. `http://localhost:8765/callback.html` |
 
 ### Troubleshooting sign-in
 
@@ -120,6 +144,9 @@ Redirect URIs it registers:
 - **The browser says it can't reach localhost:47291 (Windows)**: the app
   wasn't waiting for the redirect. Click Sign in again. Also check nothing
   else is using port 47291.
+- **Chrome: "Failed to fetch" / `ClientException` loading notes**: the
+  server refused the cross-origin call. Serve the app from `localhost`, or
+  add its origin to the server's `MCP_CORS_ALLOWED_ORIGINS`.
 - **Signed in, but loading notes fails with HTTP 401**: the token's
   audience doesn't match. `MCP_URL` must be exactly the server's public URL
   plus `/mcp`, with no trailing slash.
@@ -145,6 +172,8 @@ lib/
   auth/oauth.dart                discovery, DCR, PKCE, token exchange/refresh
   auth/auth_session.dart         keeps tokens fresh, runs sign-in
   auth/redirect_receiver.dart    localhost listener (Windows) / deep link (Android)
+  auth/web_redirect_receiver.dart  popup + web/callback.html (web)
+  auth/platform_receiver*.dart   picks the receiver for the platform
   auth/token_store.dart          secure token storage
   screens/today_screen.dart      today's notes, sign-in, "+"
   widgets/add_note_dialog.dart   description + time picker

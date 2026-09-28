@@ -1,0 +1,20 @@
+<!doctype html>
+<!--
+  The OAuth redirect URI for the web build (see WebRedirectReceiver). It
+  hands its own URL, with the code and state, back to the app's tab.
+-->
+<title>Time Tracker</title>
+<body style="font-family:sans-serif;text-align:center;padding-top:4em">
+<h2 id="heading">Signed in</h2>
+<p>You can close this window and return to Time Tracker.</p>
+<script>
+  if (new URLSearchParams(location.search).has('error')) {
+    document.getElementById('heading').textContent = 'Sign-in failed';
+  }
+  // Must match WebRedirectReceiver.channelName.
+  const channel = new BroadcastChannel('time_tracker_oauth');
+  channel.postMessage(location.href);
+  channel.close();
+  window.close();
+</script>
+</body>
