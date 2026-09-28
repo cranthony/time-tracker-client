@@ -9,18 +9,34 @@ class McpException implements Exception {
   String toString() => 'McpException: $message';
 }
 
+/// Thrown when the server needs the user to (re-)sign in.
+class SignInRequiredException implements Exception {
+  @override
+  String toString() => 'Sign-in required';
+}
+
+/// Supplies bearer tokens for MCP requests.
+abstract class McpAuth {
+  /// A currently valid access token. Throws [SignInRequiredException] if
+  /// there is none and one can't be obtained without the user.
+  Future<String> accessToken();
+
+  /// Called when the server rejected [accessToken] with a 401.
+  Future<void> rejected(String accessToken);
+}
+
 /// A minimal client for an MCP server over the Streamable HTTP transport.
 ///
 /// It supports just enough of the protocol to call tools: the `initialize`
-/// handshake, session ids, and JSON or SSE-framed responses.
+/// handshake, session ids, JSON or SSE-framed responses, and bearer auth.
 class McpClient {
-  McpClient({required this.endpoint, this.bearerToken, http.Client? httpClient})
+  McpClient({required this.endpoint, this.auth, http.Client? httpClient})
     : _http = httpClient ?? http.Client();
 
   static const _protocolVersion = '2025-06-18';
 
   final Uri endpoint;
-  final String? bearerToken;
+  final McpAuth? auth;
   final http.Client _http;
 
   String? _sessionId;
@@ -104,7 +120,11 @@ class McpClient {
     return (message['result'] as Map).cast<String, dynamic>();
   }
 
-  Future<http.Response> _post(Map<String, Object?> body) async {
+  Future<http.Response> _post(
+    Map<String, Object?> body, {
+    bool retryUnauthorized = true,
+  }) async {
+    final token = await auth?.accessToken();
     final response = await _http.post(
       endpoint,
       headers: {
@@ -112,11 +132,17 @@ class McpClient {
         'Accept': 'application/json, text/event-stream',
         'MCP-Protocol-Version': _protocolVersion,
         'Mcp-Session-Id': ?_sessionId,
-        if (bearerToken != null && bearerToken!.isNotEmpty)
-          'Authorization': 'Bearer $bearerToken',
+        if (token != null) 'Authorization': 'Bearer $token',
       },
       body: jsonEncode(body),
     );
+    if (response.statusCode == 401) {
+      if (auth == null) throw SignInRequiredException();
+      await auth!.rejected(token!);
+      // Once with a refreshed token; after that, only signing in will help.
+      if (!retryUnauthorized) throw SignInRequiredException();
+      return _post(body, retryUnauthorized: false);
+    }
     _sessionId = response.headers['mcp-session-id'] ?? _sessionId;
     return response;
   }

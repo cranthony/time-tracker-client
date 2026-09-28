@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/note.dart';
+import '../services/mcp_client.dart';
 import '../services/notes_repository.dart';
 import '../widgets/add_note_dialog.dart';
 
@@ -9,10 +10,16 @@ class TodayScreen extends StatefulWidget {
   const TodayScreen({
     super.key,
     required this.repository,
+    this.onSignIn,
+    this.onSignOut,
     DateTime Function()? clock,
   }) : clock = clock ?? DateTime.now;
 
   final NotesRepository repository;
+
+  /// Runs the interactive sign-in; null when the backend needs none.
+  final Future<void> Function()? onSignIn;
+  final Future<void> Function()? onSignOut;
   final DateTime Function() clock;
 
   @override
@@ -22,6 +29,8 @@ class TodayScreen extends StatefulWidget {
 class _TodayScreenState extends State<TodayScreen> {
   List<Note>? _notes;
   Object? _error;
+  bool _needsSignIn = false;
+  bool _signingIn = false;
 
   @override
   void initState() {
@@ -42,6 +51,13 @@ class _TodayScreenState extends State<TodayScreen> {
       setState(() {
         _notes = notes.where(_isToday).toList();
         _error = null;
+        _needsSignIn = false;
+      });
+    } on SignInRequiredException {
+      if (!mounted) return;
+      setState(() {
+        _notes = null;
+        _needsSignIn = true;
       });
     } catch (e) {
       if (!mounted) return;
@@ -56,11 +72,31 @@ class _TodayScreenState extends State<TodayScreen> {
     try {
       await widget.repository.addNote(note);
       await _load();
+    } on SignInRequiredException {
+      await _load();
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Could not save note: $e')),
       );
     }
+  }
+
+  Future<void> _signIn() async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _signingIn = true);
+    try {
+      await widget.onSignIn!();
+      await _load();
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Sign-in failed: $e')));
+    } finally {
+      if (mounted) setState(() => _signingIn = false);
+    }
+  }
+
+  Future<void> _signOut() async {
+    await widget.onSignOut!();
+    await _load();
   }
 
   @override
@@ -78,19 +114,39 @@ class _TodayScreenState extends State<TodayScreen> {
               ),
             ),
           ),
+          if (widget.onSignOut != null && !_needsSignIn)
+            PopupMenuButton<void>(
+              itemBuilder: (_) => [
+                PopupMenuItem(onTap: _signOut, child: const Text('Sign out')),
+              ],
+            ),
         ],
       ),
       body: RefreshIndicator(onRefresh: _load, child: _buildBody(context)),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _addNote,
-        tooltip: 'Add note',
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: _needsSignIn
+          ? null
+          : FloatingActionButton(
+              onPressed: _addNote,
+              tooltip: 'Add note',
+              child: const Icon(Icons.add),
+            ),
     );
   }
 
   Widget _buildBody(BuildContext context) {
     final notes = _notes;
+    if (_needsSignIn) {
+      return _Message(
+        icon: Icons.lock_outline,
+        text: 'Sign in to see your notes.',
+        action: widget.onSignIn == null
+            ? null
+            : FilledButton(
+                onPressed: _signingIn ? null : _signIn,
+                child: Text(_signingIn ? 'Waiting for browser…' : 'Sign in'),
+              ),
+      );
+    }
     if (_error != null && notes == null) {
       return _Message(
         icon: Icons.cloud_off,
@@ -133,10 +189,11 @@ class _TodayScreenState extends State<TodayScreen> {
 
 /// A centred icon and message that still supports pull-to-refresh.
 class _Message extends StatelessWidget {
-  const _Message({required this.icon, required this.text});
+  const _Message({required this.icon, required this.text, this.action});
 
   final IconData icon;
   final String text;
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -154,6 +211,7 @@ class _Message extends StatelessWidget {
                   Icon(icon, size: 48, color: Theme.of(context).hintColor),
                   const SizedBox(height: 16),
                   Text(text, textAlign: TextAlign.center),
+                  if (action != null) ...[const SizedBox(height: 24), action!],
                 ],
               ),
             ),

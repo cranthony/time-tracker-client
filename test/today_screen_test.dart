@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/screens/today_screen.dart';
+import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 
 void main() {
@@ -53,4 +54,38 @@ void main() {
       'Writing Flutter app',
     );
   });
+
+  testWidgets('asks to sign in, then shows notes', (tester) async {
+    final repo = _SignInRepository([
+      Note(timestamp: DateTime(2026, 9, 28, 9, 30), description: 'Standup'),
+    ]);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TodayScreen(
+          repository: repo,
+          clock: () => now,
+          onSignIn: () async => repo.signedIn = true,
+          onSignOut: () async => repo.signedIn = false,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Sign in to see your notes.'), findsOneWidget);
+    expect(find.byIcon(Icons.add), findsNothing);
+
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+    expect(find.text('Standup'), findsOneWidget);
+  });
+}
+
+class _SignInRepository extends InMemoryNotesRepository {
+  _SignInRepository(super.notes);
+  bool signedIn = false;
+
+  @override
+  Future<List<Note>> uncompactedNotes() async {
+    if (!signedIn) throw SignInRequiredException();
+    return super.uncompactedNotes();
+  }
 }

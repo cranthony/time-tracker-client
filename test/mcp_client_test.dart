@@ -63,7 +63,7 @@ void main() {
     final repo = McpNotesRepository(
       McpClient(
         endpoint: Uri.parse('https://example.com/mcp'),
-        bearerToken: 'secret',
+        auth: _FixedAuth('secret'),
         httpClient: mock,
       ),
     );
@@ -73,6 +73,26 @@ void main() {
     expect(notes.map((n) => n.description), ['a', 'b']);
   });
 
+  test('refreshes once on 401, then asks for sign-in', () async {
+    final auth = _FixedAuth('old');
+    final seen = <String?>[];
+    final mock = MockClient((request) async {
+      seen.add(request.headers['Authorization']);
+      return http.Response('', 401);
+    });
+    final client = McpClient(
+      endpoint: Uri.parse('https://example.com/mcp'),
+      auth: auth,
+      httpClient: mock,
+    );
+
+    await expectLater(
+      client.callTool('get_notes'),
+      throwsA(isA<SignInRequiredException>()),
+    );
+    expect(seen, ['Bearer old', 'Bearer old-refreshed']);
+  });
+
   test('note serialises timestamps as UTC', () {
     final json = Note(
       timestamp: DateTime.utc(2026, 9, 28, 9),
@@ -80,4 +100,16 @@ void main() {
     ).toJson();
     expect(json, {'timestamp': '2026-09-28T09:00:00.000Z', 'description': 'x'});
   });
+}
+
+class _FixedAuth implements McpAuth {
+  _FixedAuth(this.token);
+  String token;
+
+  @override
+  Future<String> accessToken() async => token;
+
+  @override
+  Future<void> rejected(String accessToken) async =>
+      token = '$accessToken-refreshed';
 }
