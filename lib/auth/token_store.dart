@@ -7,7 +7,8 @@ abstract class TokenStore {
   Future<void> delete(String key);
 }
 
-/// Android Keystore on Android; DPAPI-encrypted storage on Windows.
+/// Android Keystore on Android; DPAPI-encrypted storage on Windows;
+/// WebCrypto-encrypted localStorage on the web.
 class SecureTokenStore implements TokenStore {
   const SecureTokenStore([this._storage = const FlutterSecureStorage()]);
 

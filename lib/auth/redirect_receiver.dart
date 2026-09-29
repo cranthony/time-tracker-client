@@ -9,6 +9,14 @@ import 'package:url_launcher/url_launcher.dart';
 abstract class RedirectReceiver {
   Uri get redirectUri;
 
+  /// Called synchronously at the very start of sign-in, while the browser
+  /// still counts the user's click as the reason for what happens next.
+  /// On the web, that's the only time a popup window can be opened.
+  void prepare() {}
+
+  /// Undoes [prepare] when sign-in fails before [authorize] gets to run.
+  void cancel() {}
+
   /// Returns the full redirect URI, including the `code` and `state`.
   Future<Uri> authorize(Uri authorizationUrl);
 }
@@ -22,7 +30,7 @@ Future<void> _openBrowser(Uri url) async {
 /// For desktop (Windows): a one-shot HTTP server on localhost catches the
 /// redirect, per RFC 8252's loopback redirect. The port is fixed because
 /// the redirect URI is registered with the authorization server exactly.
-class LoopbackRedirectReceiver implements RedirectReceiver {
+class LoopbackRedirectReceiver extends RedirectReceiver {
   LoopbackRedirectReceiver({
     this.port = 47291,
     this.timeout = const Duration(minutes: 5),
@@ -91,7 +99,7 @@ class LoopbackRedirectReceiver implements RedirectReceiver {
 /// For Android: the browser redirects to a custom-scheme URI, which Android
 /// routes to MainActivity (see the intent filter in AndroidManifest.xml);
 /// MainActivity forwards it here over a method channel.
-class AndroidRedirectReceiver implements RedirectReceiver {
+class AndroidRedirectReceiver extends RedirectReceiver {
   AndroidRedirectReceiver() {
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'redirect' &&

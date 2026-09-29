@@ -1,10 +1,9 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import 'auth/auth_session.dart';
 import 'auth/oauth.dart';
-import 'auth/redirect_receiver.dart';
+import 'auth/platform_receiver.dart'
+    if (dart.library.js_interop) 'auth/platform_receiver_web.dart';
 import 'auth/token_store.dart';
 import 'screens/today_screen.dart';
 import 'services/mcp_client.dart';
@@ -25,12 +24,11 @@ void main() {
   final auth = AuthSession(
     oauth: OAuthClient(
       mcpEndpoint: endpoint,
-      clientName: 'Time Tracker (${Platform.operatingSystem})',
+      clientName: 'Time Tracker ($platformName)',
+      viaResourceServer: oauthViaResourceServer,
     ),
     store: const SecureTokenStore(),
-    receiver: Platform.isAndroid
-        ? AndroidRedirectReceiver()
-        : LoopbackRedirectReceiver(),
+    receiver: platformRedirectReceiver(),
   );
   runApp(
     TimeTrackerApp(
