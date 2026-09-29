@@ -98,18 +98,53 @@ Every push to `main` builds the web app and publishes it to
 
 ## Run on Android
 
+### Install from Google Play (internal testing)
+
+Every push to `main` builds a signed app bundle
+([.github/workflows/android.yml](.github/workflows/android.yml)) and
+uploads it to Google Play's **internal testing** track, as
+`com.cranthony.timetracker`. Internal testing needs no review and no
+waiting period, and only testers you list can install it. Open the
+track's opt-in link on the phone (Play Console → Testing → Internal
+testing → Testers), and the app appears in the Play Store. If your work
+profile's Play Store only offers approved apps, install it from the
+personal profile.
+
+One-time setup:
+
+1. **Create the app** in the Play Console: Time Tracker, app, free.
+2. **Upload the first bundle by hand.** Google's API can't create an
+   app's first release. Download `time-tracker.aab` from the latest
+   [GitHub Release](https://github.com/cranthony/time-tracker-client/releases/latest)
+   and upload it under Testing → Internal testing. Keep **Play App
+   Signing** on: Play signs what gets installed, and our key (below)
+   becomes the *upload key* that proves builds come from you. Add
+   yourself as a tester.
+3. **Let GitHub publish.** In Google Cloud, create a project, enable the
+   **Google Play Android Developer API**, and create a service account
+   with a JSON key. In the Play Console (Users and permissions), invite
+   the service account's email with release permissions for this app.
+   Then store the key as a repository secret and delete the file:
+   ```sh
+   gh secret set PLAY_SERVICE_ACCOUNT_JSON < key.json
+   ```
+   Until this secret exists, the workflow skips the Play upload.
+
+The Play Console may also ask for app-content details (privacy policy,
+data safety, content rating) before it will release to testers; its
+setup checklist lists what's missing.
+
 ### Install the published build (no tools needed)
 
-Every push to `main` builds a signed APK
-([.github/workflows/android.yml](.github/workflows/android.yml)) and
-publishes it as a GitHub Release. On the phone, open
+Every push to `main` also builds a signed APK and publishes it, with the
+app bundle, as a GitHub Release. On the phone, open
 <https://github.com/cranthony/time-tracker-client/releases/latest/download/time-tracker.apk>
 in the browser, then open the downloaded file. The first time, Android
 asks you to allow installs from your browser. To update, do the same
 again: it installs over the old version and keeps you signed in.
 
 Every build is signed with the same key, which is what lets updates
-install over each other. It's kept in the `ANDROID_KEYSTORE_BASE64` and
+install over each other (and what Play checks as the upload key). It's kept in the `ANDROID_KEYSTORE_BASE64` and
 `ANDROID_KEYSTORE_PASSWORD` repository secrets (a PKCS#12 keystore, key
 alias `upload`), with a backup outside the repo. Losing it means
 uninstalling the app to install a build signed with a new key. APKs you
