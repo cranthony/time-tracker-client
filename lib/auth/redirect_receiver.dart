@@ -100,16 +100,6 @@ class LoopbackRedirectReceiver extends RedirectReceiver {
 /// routes to MainActivity (see the intent filter in AndroidManifest.xml);
 /// MainActivity forwards it here over a method channel.
 class AndroidRedirectReceiver extends RedirectReceiver {
-  AndroidRedirectReceiver() {
-    _channel.setMethodCallHandler((call) async {
-      if (call.method == 'redirect' &&
-          _pending != null &&
-          !_pending!.isCompleted) {
-        _pending!.complete(Uri.parse(call.arguments as String));
-      }
-    });
-  }
-
   static const scheme = 'com.cranthony.timetracker';
   static const _channel = MethodChannel('time_tracker/oauth');
 
@@ -120,6 +110,16 @@ class AndroidRedirectReceiver extends RedirectReceiver {
 
   @override
   Future<Uri> authorize(Uri authorizationUrl) async {
+    // Registered here rather than in the constructor: main() builds this
+    // before runApp, when the channel can't be used yet, and throwing then
+    // left the app stuck on its launch screen.
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'redirect' &&
+          _pending != null &&
+          !_pending!.isCompleted) {
+        _pending!.complete(Uri.parse(call.arguments as String));
+      }
+    });
     final pending = _pending = Completer<Uri>();
     await _openBrowser(authorizationUrl);
     return pending.future.timeout(const Duration(minutes: 10));
