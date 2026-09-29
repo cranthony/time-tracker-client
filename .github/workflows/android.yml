@@ -1,0 +1,78 @@
+# Builds a signed release APK on every push to main and publishes it as a
+# GitHub Release. The newest one is always at
+#   https://github.com/<owner>/<repo>/releases/latest/download/time-tracker.apk
+#
+# Needs the repository variable MCP_URL (as for pages.yml) and the secrets
+# ANDROID_KEYSTORE_BASE64 (a PKCS#12 keystore whose key alias is "upload")
+# and ANDROID_KEYSTORE_PASSWORD. Every build must use that same key, or
+# Android won't install it over the previous one.
+name: Build Android app
+
+on:
+  push:
+    branches: [main]
+  # Builds (to check it still does) but doesn't publish.
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Check configuration
+        env:
+          MCP_URL: ${{ vars.MCP_URL }}
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          # Without MCP_URL the app would be the offline demo; without the
+          # key it would be signed with a throwaway debug key.
+          test -n "$MCP_URL" || { echo "::error::Set the MCP_URL repository variable"; exit 1; }
+          test -n "$KEYSTORE_BASE64" && test -n "$KEYSTORE_PASSWORD" ||
+            { echo "::error::Set the ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD secrets"; exit 1; }
+      - run: flutter pub get
+      - run: flutter test
+      - name: Set up signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.p12"
+          # Read by android/app/build.gradle.kts. PKCS#12 keystores have a
+          # single password, for the store and the key alike.
+          cat > android/key.properties <<EOF
+          storeFile=$RUNNER_TEMP/upload.p12
+          storeType=pkcs12
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=upload
+          keyPassword=$KEYSTORE_PASSWORD
+          EOF
+      - name: Build
+        # The run number is the versionCode, so each build counts as an
+        # update of the last.
+        run: >
+          flutter build apk --release
+          --build-number=${{ github.run_number }}
+          --dart-define=MCP_URL=${{ vars.MCP_URL }}
+      - name: Publish release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk time-tracker.apk
+          gh release create "android-${{ github.run_number }}" time-tracker.apk \
+            --title "Android build ${{ github.run_number }}" \
+            --notes "Built from ${{ github.sha }}." \
+            --latest
