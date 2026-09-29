@@ -1,4 +1,4 @@
-package com.cranthony.time_tracker_client
+package com.cranthony.timetracker
 
 import android.content.Intent
 import io.flutter.embedding.android.FlutterActivity
