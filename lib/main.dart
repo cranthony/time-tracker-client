@@ -27,7 +27,9 @@ void main() {
       clientName: 'Time Tracker ($platformName)',
       viaResourceServer: oauthViaResourceServer,
     ),
-    store: const SecureTokenStore(),
+    // On the web, tokens last only as long as the tab; see SecureTokenStore.
+    store: const SecureTokenStore.forSession(),
+    registrationStore: const SecureTokenStore.persistent(),
     receiver: platformRedirectReceiver(),
   );
   runApp(

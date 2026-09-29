@@ -7,10 +7,25 @@ abstract class TokenStore {
   Future<void> delete(String key);
 }
 
-/// Android Keystore on Android; DPAPI-encrypted storage on Windows;
-/// WebCrypto-encrypted localStorage on the web.
+/// flutter_secure_storage: the Android Keystore on Android, and
+/// DPAPI-encrypted storage on Windows.
+///
+/// On the web there is no equivalent. The package encrypts each value with
+/// AES-GCM, but keeps the key unprotected beside it in the same browser
+/// storage, so that protects nothing: anything that can read the storage
+/// can decrypt it. What storage is used is what matters there, so pick it
+/// with [SecureTokenStore.forSession] or [SecureTokenStore.persistent].
 class SecureTokenStore implements TokenStore {
-  const SecureTokenStore([this._storage = const FlutterSecureStorage()]);
+  /// On the web, sessionStorage: gone when the tab closes, and never
+  /// shared with other tabs. Elsewhere the platform's secure storage.
+  const SecureTokenStore.forSession()
+    : _storage = const FlutterSecureStorage(
+        webOptions: WebOptions(useSessionStorage: true),
+      );
+
+  /// On the web, localStorage: kept until cleared. Elsewhere the
+  /// platform's secure storage.
+  const SecureTokenStore.persistent() : _storage = const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
 

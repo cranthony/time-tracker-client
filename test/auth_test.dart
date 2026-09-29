@@ -198,6 +198,32 @@ void main() {
     expect(await auth.accessToken(), 'access_1');
   });
 
+  test('can keep the registration apart from the tokens', () async {
+    final registrations = InMemoryTokenStore();
+    AuthSession split() => AuthSession(
+      oauth: OAuthClient(
+        mcpEndpoint: Uri.parse(_mcp),
+        clientName: 'Time Tracker (test)',
+        httpClient: authKit.client,
+        clock: () => now,
+      ),
+      store: store,
+      receiver: receiver,
+      registrationStore: registrations,
+      clock: () => now,
+    );
+
+    await split().signIn();
+    expect(store.values.keys, ['oauth_tokens:$_mcp']);
+    expect(registrations.values.keys, ['oauth_client:$_mcp']);
+
+    // Tokens gone (a new browser session): signing in again reuses the
+    // registration rather than registering another client.
+    store.values.clear();
+    await split().signIn();
+    expect(authKit.registrations, hasLength(1));
+  });
+
   test('reuses the client registration on later sign-ins', () async {
     await session().signIn();
     await session().signIn();
