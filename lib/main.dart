@@ -15,6 +15,8 @@ import 'services/notes_repository.dart';
 const _mcpUrl = String.fromEnvironment('MCP_URL');
 
 void main() {
+  // Before anything below that might use a platform channel.
+  WidgetsFlutterBinding.ensureInitialized();
   if (_mcpUrl.isEmpty) {
     runApp(TimeTrackerApp(repository: InMemoryNotesRepository()));
     return;
