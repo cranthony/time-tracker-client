@@ -12,11 +12,21 @@ class AuthSession implements McpAuth {
     required this._oauth,
     required this._store,
     required this._receiver,
+    TokenStore? registrationStore,
     DateTime Function()? clock,
-  }) : _clock = clock ?? DateTime.now;
+  }) : _registrationStore = registrationStore ?? _store,
+       _clock = clock ?? DateTime.now;
 
   final OAuthClient _oauth;
+
+  /// Holds the tokens.
   final TokenStore _store;
+
+  /// Holds the client registration, which isn't secret (a public client:
+  /// no client secret, PKCE instead). Separate so it can outlive tokens
+  /// kept only for a browser session, rather than registering a new
+  /// client with the authorization server every session.
+  final TokenStore _registrationStore;
   final RedirectReceiver _receiver;
   final DateTime Function() _clock;
 
@@ -105,12 +115,12 @@ class AuthSession implements McpAuth {
       return stored;
     }
     final client = await _oauth.register(_receiver.redirectUri);
-    await _store.write(_clientKey, jsonEncode(client.toJson()));
+    await _registrationStore.write(_clientKey, jsonEncode(client.toJson()));
     return client;
   }
 
   Future<ClientRegistration?> _storedClient() async {
-    final json = await _store.read(_clientKey);
+    final json = await _registrationStore.read(_clientKey);
     return json == null
         ? null
         : ClientRegistration.fromJson(jsonDecode(json) as Map<String, dynamic>);

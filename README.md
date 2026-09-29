@@ -141,9 +141,17 @@ Specifically:
 3. It runs the authorization-code flow with PKCE in your browser. It asks
    for a token for the server's URL (the `resource` parameter), which is
    the audience the server checks.
-4. It stores the tokens in secure storage (Android Keystore, Windows
-   DPAPI, or encrypted browser storage on the web) and refreshes them
-   automatically. Use **⋮ → Sign out** to forget them.
+4. It stores the tokens in secure storage (Android Keystore or Windows
+   DPAPI) and refreshes them automatically. Use **⋮ → Sign out** to
+   forget them.
+
+   Browsers have no such storage, so on the web the tokens go in the
+   tab's `sessionStorage`. They're gone when you close the tab, so you
+   sign in again each session. They aren't really protected while the
+   tab is open: flutter_secure_storage does encrypt them, but keeps the
+   key right beside them, so any script running on the page could read
+   them. The client registration (not a secret) stays in `localStorage`,
+   so a new session reuses it instead of registering another client.
 
 Redirect URIs it registers:
 
