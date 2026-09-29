@@ -98,6 +98,27 @@ Every push to `main` builds the web app and publishes it to
 
 ## Run on Android
 
+### Install the published build (no tools needed)
+
+Every push to `main` builds a signed APK
+([.github/workflows/android.yml](.github/workflows/android.yml)) and
+publishes it as a GitHub Release. On the phone, open
+<https://github.com/cranthony/time-tracker-client/releases/latest/download/time-tracker.apk>
+in the browser, then open the downloaded file. The first time, Android
+asks you to allow installs from your browser. To update, do the same
+again: it installs over the old version and keeps you signed in.
+
+Every build is signed with the same key, which is what lets updates
+install over each other. It's kept in the `ANDROID_KEYSTORE_BASE64` and
+`ANDROID_KEYSTORE_PASSWORD` repository secrets (a PKCS#12 keystore, key
+alias `upload`), with a backup outside the repo. Losing it means
+uninstalling the app to install a build signed with a new key. APKs you
+build yourself are signed with your debug key instead, so Android won't
+install one over a published build, or the other way round, without
+uninstalling first.
+
+### Build it yourself
+
 Prerequisites (once):
 
 - **Android Studio**, which installs the Android SDK. Open it once and let
