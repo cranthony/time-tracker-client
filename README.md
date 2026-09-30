@@ -184,11 +184,18 @@ Tap **Sign in**, sign in in the browser, and Android returns you to the app.
 
 ### Add-note button on the home screen
 
-There's a one-cell **Add note** widget: a round **+** button labelled "Add note". To place it,
-long-press an empty spot on the home screen, choose **Widgets**, find
-**Time Tracker**, and drag **Add note** to where you want it.
+There are two ways to get a one-tap **+** on the home screen:
 
-Tapping it opens the app straight into the **New note** dialog, timed at
+- **Shortcut (labelled like your other icons):** long-press the Time
+  Tracker icon, then drag **Add note** from its menu onto the home screen.
+  The launcher draws the icon and its "Add note" label, so they match the
+  rest of your home screen, including its icon shape and themed icons. You
+  can also tap **Add note** in that menu without pinning it.
+- **Widget (no label):** long-press an empty spot on the home screen,
+  choose **Widgets**, find **Time Tracker**, and drag **Add note** to where
+  you want it. It's a round **+** button.
+
+Either one opens the app straight into the **New note** dialog, timed at
 the moment you tapped, even if it takes a few seconds to type the
 description. After you tap **Add**, it's saved like any other note,
 including when you're offline.
@@ -309,4 +316,5 @@ lib/
 android/app/src/main/kotlin/.../MainActivity.kt   forwards the sign-in deep link
                                                   and home screen "+" taps
 android/app/src/main/kotlin/.../AddNoteWidget.kt  the home screen "+" widget
+android/app/src/main/res/xml/shortcuts.xml         the "Add note" app shortcut
 ```

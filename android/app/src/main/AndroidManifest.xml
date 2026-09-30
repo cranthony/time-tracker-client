@@ -26,6 +26,10 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- The "Add note" app shortcut; see res/xml/shortcuts.xml. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
             <!-- The sign-in redirect from WorkOS AuthKit; see MainActivity. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
