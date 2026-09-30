@@ -76,16 +76,39 @@ jobs:
               --dart-define=MCP_URL=${{ vars.MCP_URL }}
           done
       - name: Publish release
+        # GitHub's upload API sometimes fails with a 5xx (build 15 lost its
+        # release to an HTTP 502), so this retries with backoff. Each
+        # attempt picks up where the last one left off: if the release
+        # already exists (as a draft, or from an earlier run attempt), it
+        # re-uploads the files over it and publishes it, rather than trying
+        # to create it again. That also makes re-running a failed run safe.
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: android-${{ github.run_number }}
+          TITLE: Android build ${{ github.run_number }}
+          NOTES: Built from ${{ github.sha }}.
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk time-tracker.apk
           cp build/app/outputs/bundle/release/app-release.aab time-tracker.aab
-          gh release create "android-${{ github.run_number }}" time-tracker.apk time-tracker.aab \
-            --title "Android build ${{ github.run_number }}" \
-            --notes "Built from ${{ github.sha }}." \
-            --latest
+          files=(time-tracker.apk time-tracker.aab)
+          for attempt in 1 2 3 4 5; do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" "${files[@]}" --clobber &&
+                gh release edit "$TAG" --draft=false --latest &&
+                exit 0
+            else
+              gh release create "$TAG" "${files[@]}" \
+                --title "$TITLE" --notes "$NOTES" --latest &&
+                exit 0
+            fi
+            if [ "$attempt" -lt 5 ]; then
+              echo "::warning::Publishing $TAG failed (attempt $attempt of 5); retrying in $((attempt * 20))s."
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "::error::Couldn't publish $TAG after 5 attempts."
+          exit 1
       - name: Upload to Google Play (internal testing)
         # Google's API can't create an app's first release, so the first
         # bundle is uploaded by hand in the Play Console. Until then, and
