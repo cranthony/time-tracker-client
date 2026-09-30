@@ -18,10 +18,33 @@ class Note {
   );
 
   Map<String, dynamic> toJson() => {
-    // Always send UTC with an explicit offset so the server never has to
-    // guess the phone's time zone.
-    'timestamp': timestamp.toUtc().toIso8601String(),
+    // In the device's time zone, with its UTC offset: the server keeps the
+    // offset, so the note reads as local time wherever it's shown.
+    'timestamp': localIsoTimestamp(timestamp),
     if (description != null) 'description': description,
     if (compactionId != null) 'compaction_id': compactionId,
   };
+}
+
+/// [time] as ISO 8601 in the device's time zone, with its UTC offset at
+/// that moment (so daylight saving is right), e.g. 2026-09-30T08:15:00-07:00.
+/// Dart's own toIso8601String() leaves the offset off local times.
+String localIsoTimestamp(DateTime time) {
+  final local = time.toLocal();
+  return isoTimestampWithOffset(local, local.timeZoneOffset);
+}
+
+/// [wallClock]'s date and time as written, followed by [offset].
+String isoTimestampWithOffset(DateTime wallClock, Duration offset) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  final t = wallClock;
+  final fraction = t.millisecond == 0 && t.microsecond == 0
+      ? ''
+      : '.${t.millisecond.toString().padLeft(3, '0')}'
+            '${t.microsecond == 0 ? '' : t.microsecond.toString().padLeft(3, '0')}';
+  final sign = offset.isNegative ? '-' : '+';
+  final minutes = offset.inMinutes.abs();
+  return '${t.year.toString().padLeft(4, '0')}-${two(t.month)}-${two(t.day)}'
+      'T${two(t.hour)}:${two(t.minute)}:${two(t.second)}$fraction'
+      '$sign${two(minutes ~/ 60)}:${two(minutes % 60)}';
 }
