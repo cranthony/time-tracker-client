@@ -184,7 +184,7 @@ Tap **Sign in**, sign in in the browser, and Android returns you to the app.
 
 ### Add-note button on the home screen
 
-There's a one-cell **Add note** widget: a round **+** button. To place it,
+There's a one-cell **Add note** widget: a round **+** button labelled "Add note". To place it,
 long-press an empty spot on the home screen, choose **Widgets**, find
 **Time Tracker**, and drag **Add note** to where you want it.
 
