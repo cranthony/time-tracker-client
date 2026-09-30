@@ -182,6 +182,17 @@ phone and open it. You'll have to allow installing from that source.
 
 Tap **Sign in**, sign in in the browser, and Android returns you to the app.
 
+### Add-note button on the home screen
+
+There's a one-cell **Add note** widget: a round **+** button. To place it,
+long-press an empty spot on the home screen, choose **Widgets**, find
+**Time Tracker**, and drag **Add note** to where you want it.
+
+Tapping it opens the app straight into the **New note** dialog, timed at
+the moment you tapped, even if it takes a few seconds to type the
+description. After you tap **Add**, it's saved like any other note,
+including when you're offline.
+
 ## Signing in (WorkOS AuthKit)
 
 The MCP server is an OAuth *resource server*, and WorkOS AuthKit issues its
@@ -292,7 +303,10 @@ lib/
   outbox/note_outbox.dart        unsaved notes: retry, backoff, cancel
   outbox/outbox_store.dart       keeps them across restarts
   outbox/background_sync.dart    Android WorkManager task that sends them
+  platform/add_note_shortcut.dart  taps on the home screen "+" (Android)
   screens/today_screen.dart      today's notes (saved and not), sign-in, "+"
   widgets/add_note_dialog.dart   description + time picker
 android/app/src/main/kotlin/.../MainActivity.kt   forwards the sign-in deep link
+                                                  and home screen "+" taps
+android/app/src/main/kotlin/.../AddNoteWidget.kt  the home screen "+" widget
 ```

@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../models/note.dart';
 
-/// Asks for a new note's description and time (defaulting to now). Returns
-/// the note, or null if cancelled.
-Future<Note?> showAddNoteDialog(BuildContext context) =>
-    showDialog<Note>(context: context, builder: (_) => const _AddNoteDialog());
+/// Asks for a new note's description and time (defaulting to [time], or
+/// now). Returns the note, or null if cancelled.
+Future<Note?> showAddNoteDialog(BuildContext context, {DateTime? time}) =>
+    showDialog<Note>(
+      context: context,
+      builder: (_) => _AddNoteDialog(time: time),
+    );
 
 class _AddNoteDialog extends StatefulWidget {
-  const _AddNoteDialog();
+  const _AddNoteDialog({this.time});
+
+  final DateTime? time;
 
   @override
   State<_AddNoteDialog> createState() => _AddNoteDialogState();
@@ -16,7 +21,7 @@ class _AddNoteDialog extends StatefulWidget {
 
 class _AddNoteDialogState extends State<_AddNoteDialog> {
   final _description = TextEditingController();
-  DateTime _time = DateTime.now();
+  late DateTime _time = widget.time ?? DateTime.now();
 
   @override
   void dispose() {

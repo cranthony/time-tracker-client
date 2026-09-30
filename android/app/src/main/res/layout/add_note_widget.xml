@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The whole cell is the tap target; the round button sits in its middle. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/add_note_button"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:contentDescription="@string/add_note_widget_label">
+
+    <ImageView
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center"
+        android:background="@drawable/add_note_widget_background"
+        android:importantForAccessibility="no"
+        android:padding="14dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_add_note" />
+</FrameLayout>

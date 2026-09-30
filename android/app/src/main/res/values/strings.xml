@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="add_note_widget_label">Add note</string>
+    <string name="add_note_widget_description">Opens Time Tracker ready to add a new note</string>
+</resources>

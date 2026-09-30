@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/note.dart';
@@ -34,6 +36,7 @@ void main() {
     NotesRepository repo, {
     Future<void> Function()? onSignIn,
     Future<void> Function()? onSignOut,
+    Stream<DateTime>? addNoteRequests,
   }) {
     outboxNow = now;
     outbox = NoteOutbox(
@@ -48,6 +51,7 @@ void main() {
         clock: () => now,
         onSignIn: onSignIn,
         onSignOut: onSignOut,
+        addNoteRequests: addNoteRequests,
       ),
     );
   }
@@ -168,6 +172,32 @@ void main() {
     expect(find.text('Offline thought'), findsOneWidget);
     expect(find.textContaining('Not saved'), findsNothing);
     expect(await repo.uncompactedNotes(), hasLength(2));
+  });
+
+  screenTest('the home screen "+" opens the dialog at the time it was tapped', (
+    tester,
+  ) async {
+    final repo = InMemoryNotesRepository();
+    final taps = StreamController<DateTime>();
+    await tester.pumpWidget(app(repo, addNoteRequests: taps.stream));
+    await tester.pumpAndSettle();
+
+    final tappedAt = today(7, 5);
+    taps.add(tappedAt);
+    // A second tap while the dialog is open doesn't stack another one.
+    taps.add(today(7, 6));
+    await tester.pumpAndSettle();
+
+    expect(find.text('New note'), findsOneWidget);
+    expect(find.text('7:05 AM'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'Woke up');
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+
+    final saved = (await repo.uncompactedNotes()).single;
+    expect(saved.description, 'Woke up');
+    expect(saved.timestamp, tappedAt);
+    await taps.close();
   });
 }
 

@@ -18,6 +18,7 @@ class TodayScreen extends StatefulWidget {
     required this.outbox,
     this.onSignIn,
     this.onSignOut,
+    this.addNoteRequests,
     DateTime Function()? clock,
   }) : clock = clock ?? DateTime.now;
 
@@ -29,6 +30,10 @@ class TodayScreen extends StatefulWidget {
   /// Runs the interactive sign-in; null when the backend needs none.
   final Future<void> Function()? onSignIn;
   final Future<void> Function()? onSignOut;
+
+  /// Each event opens the New note dialog, timed at the event's time: taps
+  /// on the home screen "+" widget.
+  final Stream<DateTime>? addNoteRequests;
   final DateTime Function() clock;
 
   @override
@@ -40,17 +45,21 @@ class _TodayScreenState extends State<TodayScreen> {
   Object? _error;
   bool _needsSignIn = false;
   bool _signingIn = false;
+  bool _addingNote = false;
+  StreamSubscription<DateTime>? _addNoteRequests;
 
   @override
   void initState() {
     super.initState();
     widget.outbox.onSaved = _load;
+    _addNoteRequests = widget.addNoteRequests?.listen((at) => _addNote(at: at));
     _load();
   }
 
   @override
   void dispose() {
     widget.outbox.onSaved = null;
+    _addNoteRequests?.cancel();
     super.dispose();
   }
 
@@ -86,8 +95,16 @@ class _TodayScreenState extends State<TodayScreen> {
     await _load();
   }
 
-  Future<void> _addNote() async {
-    final note = await showAddNoteDialog(context);
+  Future<void> _addNote({DateTime? at}) async {
+    // One dialog at a time, e.g. if the home screen "+" is tapped twice.
+    if (_addingNote) return;
+    _addingNote = true;
+    final Note? note;
+    try {
+      note = await showAddNoteDialog(context, time: at);
+    } finally {
+      _addingNote = false;
+    }
     if (note == null || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -174,7 +191,7 @@ class _TodayScreenState extends State<TodayScreen> {
           // Always available: notes wait in the outbox until they can be
           // saved, even while signed out or offline.
           floatingActionButton: FloatingActionButton(
-            onPressed: _addNote,
+            onPressed: () => _addNote(),
             tooltip: 'Add note',
             child: const Icon(Icons.add),
           ),

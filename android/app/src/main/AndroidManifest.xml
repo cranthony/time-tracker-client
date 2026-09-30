@@ -34,6 +34,18 @@
                 <data android:scheme="com.cranthony.timetracker" android:host="oauth"/>
             </intent-filter>
         </activity>
+        <!-- The home screen "+" button; see AddNoteWidget. -->
+        <receiver
+            android:name=".AddNoteWidget"
+            android:exported="false"
+            android:label="@string/add_note_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/add_note_widget_info" />
+        </receiver>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
