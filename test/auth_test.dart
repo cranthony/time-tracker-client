@@ -21,6 +21,9 @@ class _FakeAuthKit {
   bool failRegistration = false;
   int _issued = 0;
 
+  /// Refresh tokens rotate: each one works once, like AuthKit's.
+  final _usedRefreshTokens = <String>{};
+
   final proxied = <String>[];
 
   late final client = MockClient((request) async {
@@ -57,7 +60,9 @@ class _FakeAuthKit {
     if (url == '$_authkit/oauth2/token') {
       final form = Uri.splitQueryString(request.body);
       tokenRequests.add(form);
-      if (form['refresh_token'] == 'revoked') {
+      final refreshToken = form['refresh_token'];
+      if (refreshToken == 'revoked' ||
+          (refreshToken != null && !_usedRefreshTokens.add(refreshToken))) {
         return _json({'error': 'invalid_grant'}, 400);
       }
       _issued++;
@@ -245,6 +250,40 @@ void main() {
     await auth.signIn();
     await auth.rejected('access_1');
     expect(await auth.accessToken(), 'access_2');
+  });
+
+  test('adopts tokens another session refreshed first', () async {
+    // E.g. the Android background task refreshed while the app was paused,
+    // using up the refresh token the app still has in memory.
+    final app = session();
+    await app.signIn();
+    now = now.add(const Duration(minutes: 10));
+    final background = AuthSession(
+      oauth: OAuthClient(
+        mcpEndpoint: Uri.parse(_mcp),
+        clientName: 'Time Tracker (test)',
+        httpClient: authKit.client,
+        clock: () => now,
+      ),
+      store: store,
+      clock: () => now,
+    );
+    expect(await background.accessToken(), 'access_2');
+
+    expect(await app.accessToken(), 'access_2');
+    expect(await app.isSignedIn, isTrue);
+  });
+
+  test('a session without a receiver cannot sign in', () async {
+    final background = AuthSession(
+      oauth: OAuthClient(
+        mcpEndpoint: Uri.parse(_mcp),
+        clientName: 'x',
+        httpClient: authKit.client,
+      ),
+      store: store,
+    );
+    await expectLater(background.signIn(), throwsStateError);
   });
 
   test('a failed refresh means signing in again', () async {

@@ -5,6 +5,9 @@ import 'auth/oauth.dart';
 import 'auth/platform_receiver.dart'
     if (dart.library.js_interop) 'auth/platform_receiver_web.dart';
 import 'auth/token_store.dart';
+import 'outbox/background_sync.dart';
+import 'outbox/note_outbox.dart';
+import 'outbox/outbox_store.dart';
 import 'screens/today_screen.dart';
 import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
@@ -14,39 +17,108 @@ import 'services/notes_repository.dart';
 /// Without it the app runs against an in-memory demo store.
 const _mcpUrl = String.fromEnvironment('MCP_URL');
 
-void main() {
+Future<void> main() async {
   // Before anything below that might use a platform channel.
   WidgetsFlutterBinding.ensureInitialized();
   if (_mcpUrl.isEmpty) {
-    runApp(TimeTrackerApp(repository: InMemoryNotesRepository()));
+    final repository = InMemoryNotesRepository();
+    runApp(
+      TimeTrackerApp(
+        repository: repository,
+        outbox: NoteOutbox(
+          store: InMemoryOutboxStore(),
+          repository: repository,
+        ),
+      ),
+    );
     return;
   }
 
-  final endpoint = Uri.parse(_mcpUrl);
-  final auth = AuthSession(
-    oauth: OAuthClient(
-      mcpEndpoint: endpoint,
-      clientName: 'Time Tracker ($platformName)',
-      viaResourceServer: oauthViaResourceServer,
-    ),
-    // On the web, tokens last only as long as the tab; see SecureTokenStore.
-    store: const SecureTokenStore.forSession(),
-    registrationStore: const SecureTokenStore.persistent(),
-    receiver: platformRedirectReceiver(),
-  );
+  await BackgroundSync.initialize(backgroundDispatcher);
+  final auth = _authSession(interactive: true);
+  final repository = _repository(auth);
   runApp(
     TimeTrackerApp(
-      repository: McpNotesRepository(McpClient(endpoint: endpoint, auth: auth)),
+      repository: repository,
+      outbox: NoteOutbox(store: PrefsOutboxStore(), repository: repository),
       auth: auth,
     ),
   );
 }
 
-class TimeTrackerApp extends StatelessWidget {
-  const TimeTrackerApp({super.key, required this.repository, this.auth});
+/// Runs WorkManager's background task (Android) that saves pending notes.
+@pragma('vm:entry-point')
+void backgroundDispatcher() => BackgroundSync.run(() {
+  final repository = _repository(_authSession(interactive: false));
+  return NoteOutbox(store: PrefsOutboxStore(), repository: repository);
+});
+
+AuthSession _authSession({required bool interactive}) => AuthSession(
+  oauth: OAuthClient(
+    mcpEndpoint: Uri.parse(_mcpUrl),
+    clientName: 'Time Tracker ($platformName)',
+    viaResourceServer: oauthViaResourceServer,
+  ),
+  // On the web, tokens last only as long as the tab; see SecureTokenStore.
+  store: const SecureTokenStore.forSession(),
+  registrationStore: const SecureTokenStore.persistent(),
+  // The background task can't sign in, and mustn't take over the app's
+  // sign-in redirect handling if WorkManager runs it in the app's process.
+  receiver: interactive ? platformRedirectReceiver() : null,
+);
+
+NotesRepository _repository(AuthSession auth) =>
+    McpNotesRepository(McpClient(endpoint: Uri.parse(_mcpUrl), auth: auth));
+
+class TimeTrackerApp extends StatefulWidget {
+  const TimeTrackerApp({
+    super.key,
+    required this.repository,
+    required this.outbox,
+    this.auth,
+  });
 
   final NotesRepository repository;
+  final NoteOutbox outbox;
   final AuthSession? auth;
+
+  @override
+  State<TimeTrackerApp> createState() => _TimeTrackerAppState();
+}
+
+class _TimeTrackerAppState extends State<TimeTrackerApp> {
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    BackgroundSync.cancel();
+    widget.outbox.start();
+    _lifecycle = AppLifecycleListener(
+      onResume: _onForeground,
+      onPause: _onBackground,
+    );
+  }
+
+  Future<void> _onForeground() async {
+    await BackgroundSync.cancel();
+    // The background task may have refreshed tokens and saved notes.
+    widget.auth?.reload();
+    widget.outbox.start();
+  }
+
+  Future<void> _onBackground() async {
+    widget.outbox.stop();
+    await widget.outbox.refresh();
+    if (widget.outbox.pending.isNotEmpty) await BackgroundSync.schedule();
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    widget.outbox.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,9 +130,10 @@ class TimeTrackerApp extends StatelessWidget {
         brightness: Brightness.dark,
       ),
       home: TodayScreen(
-        repository: repository,
-        onSignIn: auth?.signIn,
-        onSignOut: auth?.signOut,
+        repository: widget.repository,
+        outbox: widget.outbox,
+        onSignIn: widget.auth?.signIn,
+        onSignOut: widget.auth?.signOut,
       ),
     );
   }

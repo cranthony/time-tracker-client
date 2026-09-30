@@ -11,7 +11,7 @@ class AuthSession implements McpAuth {
   AuthSession({
     required this._oauth,
     required this._store,
-    required this._receiver,
+    this._receiver,
     TokenStore? registrationStore,
     DateTime Function()? clock,
   }) : _registrationStore = registrationStore ?? _store,
@@ -27,7 +27,10 @@ class AuthSession implements McpAuth {
   /// kept only for a browser session, rather than registering a new
   /// client with the authorization server every session.
   final TokenStore _registrationStore;
-  final RedirectReceiver _receiver;
+
+  /// Null for a session that can't sign in interactively (the Android
+  /// background task); it can still use and refresh existing tokens.
+  final RedirectReceiver? _receiver;
   final DateTime Function() _clock;
 
   late final String _clientKey = 'oauth_client:${_oauth.mcpEndpoint}';
@@ -66,19 +69,29 @@ class AuthSession implements McpAuth {
   /// Runs the browser sign-in flow, registering this app with the
   /// authorization server first if it hasn't been already.
   Future<void> signIn() async {
+    final receiver = _receiver;
+    if (receiver == null) throw StateError('This session cannot sign in');
     // Before the first await: see RedirectReceiver.prepare.
-    _receiver.prepare();
+    receiver.prepare();
     final ClientRegistration client;
     final PendingAuthorization pending;
     try {
-      client = await _clientRegistration();
+      client = await _clientRegistration(receiver);
       pending = await _oauth.startAuthorization(client);
     } catch (_) {
-      _receiver.cancel();
+      receiver.cancel();
       rethrow;
     }
-    final redirect = await _receiver.authorize(pending.url);
+    final redirect = await receiver.authorize(pending.url);
     await _save(await _oauth.finishAuthorization(client, pending, redirect));
+  }
+
+  /// Forgets the cached tokens, so the next use reads them from the store
+  /// again: the Android background task may have refreshed them.
+  void reload() {
+    if (_refreshing != null) return;
+    _loaded = false;
+    _tokens = null;
   }
 
   Future<void> signOut() async {
@@ -99,6 +112,24 @@ class AuthSession implements McpAuth {
         await _save(tokens);
         return tokens;
       } on OAuthException {
+        // Another copy of this session (the Android background task) may
+        // have refreshed first, using up the refresh token we have. If so,
+        // take the tokens it stored.
+        final stored = await _read();
+        if (stored != null && stored.refreshToken != refreshToken) {
+          _tokens = stored;
+          if (!stored.isExpired(_clock())) return stored;
+          final storedRefreshToken = stored.refreshToken;
+          if (storedRefreshToken != null) {
+            try {
+              final tokens = await _oauth.refresh(client, storedRefreshToken);
+              await _save(tokens);
+              return tokens;
+            } on OAuthException {
+              // Fall through.
+            }
+          }
+        }
         // Refresh token revoked or expired: only a new sign-in will do.
         await signOut();
         throw SignInRequiredException();
@@ -108,13 +139,15 @@ class AuthSession implements McpAuth {
     }
   }();
 
-  Future<ClientRegistration> _clientRegistration() async {
+  Future<ClientRegistration> _clientRegistration(
+    RedirectReceiver receiver,
+  ) async {
     final stored = await _storedClient();
     if (stored != null &&
-        stored.redirectUri == _receiver.redirectUri.toString()) {
+        stored.redirectUri == receiver.redirectUri.toString()) {
       return stored;
     }
-    final client = await _oauth.register(_receiver.redirectUri);
+    final client = await _oauth.register(receiver.redirectUri);
     await _registrationStore.write(_clientKey, jsonEncode(client.toJson()));
     return client;
   }
@@ -128,11 +161,15 @@ class AuthSession implements McpAuth {
 
   Future<void> _load() async {
     if (_loaded) return;
-    final json = await _store.read(_tokensKey);
-    if (json != null) {
-      _tokens = TokenSet.fromJson(jsonDecode(json) as Map<String, dynamic>);
-    }
+    _tokens = await _read();
     _loaded = true;
+  }
+
+  Future<TokenSet?> _read() async {
+    final json = await _store.read(_tokensKey);
+    return json == null
+        ? null
+        : TokenSet.fromJson(jsonDecode(json) as Map<String, dynamic>);
   }
 
   Future<void> _save(TokenSet tokens) async {

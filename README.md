@@ -232,6 +232,38 @@ Redirect URIs it registers:
   audience doesn't match. `MCP_URL` must be exactly the server's public URL
   plus `/mcp`, with no trailing slash.
 
+## Notes that haven't been saved yet
+
+A new note is kept on the device first, and then sent to the server. If
+you're offline, the server is down, or you're signed out, the note stays in
+the list, tinted and in italics, with its status underneath:
+
+- **Waiting to save / Saving…**: on its way.
+- **Not saved · *reason* · retrying**: the last attempt failed. The app
+  tries again after 5s, 10s, 20s and 40s, then every minute, until it
+  works. Tap the note to retry right away, or pull down to refresh.
+- **Not saved · sign in to save**: sign in and it's sent.
+
+The **×** cancels a note that hasn't been saved (with Undo). A note that's
+being sent can't be cancelled, since the server may already have it.
+
+Unsaved notes survive closing the app. They're kept in SharedPreferences
+on Android, a file in AppData on Windows, and localStorage in the browser.
+Once a send has failed, the next attempt first checks whether the server
+got the note after all, so a lost response doesn't create a duplicate.
+
+**In the background:**
+
+- **Android:** when the app leaves the screen with notes still unsaved, it
+  hands them to Android's WorkManager. That runs once there's a network
+  connection, even if the app has been closed, and keeps retrying with
+  backoff. Android decides exactly when, usually within minutes, and later
+  when battery saver is on. It can't sign you in, so if the sign-in has
+  expired the notes wait until you open the app.
+- **Windows:** a minimised app keeps running, so it keeps retrying.
+- **Chrome:** it retries while the tab is open. A closed tab keeps the notes
+  and sends them the next time you open the app.
+
 ## Development
 
 ```sh
@@ -240,7 +272,8 @@ flutter test
 ```
 
 Tests cover the MCP client, the whole OAuth flow (against a fake AuthKit),
-and the notes screen, so none of them need a server.
+the outbox of unsaved notes, and the notes screen, so none of them need a
+server.
 
 ### Layout
 
@@ -256,7 +289,10 @@ lib/
   auth/web_redirect_receiver.dart  popup + web/callback.html (web)
   auth/platform_receiver*.dart   picks the receiver for the platform
   auth/token_store.dart          secure token storage
-  screens/today_screen.dart      today's notes, sign-in, "+"
+  outbox/note_outbox.dart        unsaved notes: retry, backoff, cancel
+  outbox/outbox_store.dart       keeps them across restarts
+  outbox/background_sync.dart    Android WorkManager task that sends them
+  screens/today_screen.dart      today's notes (saved and not), sign-in, "+"
   widgets/add_note_dialog.dart   description + time picker
 android/app/src/main/kotlin/.../MainActivity.kt   forwards the sign-in deep link
 ```
