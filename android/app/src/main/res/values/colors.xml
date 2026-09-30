@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Teal, like the app's colour scheme; the widget and shortcut share it. -->
-    <color name="add_note_teal">#FF00695C</color>
+    <!-- Teal, like the app's colour scheme: the app icon, widget and shortcut. -->
+    <color name="app_teal">#FF00695C</color>
 </resources>

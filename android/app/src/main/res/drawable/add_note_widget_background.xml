@@ -2,5 +2,5 @@
 <!-- Teal, like the app's colour scheme. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
-    <solid android:color="@color/add_note_teal" />
+    <solid android:color="@color/app_teal" />
 </shape>
