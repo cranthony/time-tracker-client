@@ -93,12 +93,49 @@ void main() {
     expect(seen, ['Bearer old', 'Bearer old-refreshed']);
   });
 
-  test('note serialises timestamps as UTC', () {
-    final json = Note(
-      timestamp: DateTime.utc(2026, 9, 28, 9),
-      description: 'x',
-    ).toJson();
-    expect(json, {'timestamp': '2026-09-28T09:00:00.000Z', 'description': 'x'});
+  test('note sends its timestamp in the device time zone, with offset', () {
+    final instant = DateTime.utc(2026, 9, 28, 9);
+    final local = instant.toLocal();
+    final json = Note(timestamp: instant, description: 'x').toJson();
+
+    final sent = json['timestamp'] as String;
+    expect(
+      sent,
+      startsWith(isoTimestampWithOffset(local, Duration.zero).substring(0, 19)),
+      reason: 'local wall-clock time',
+    );
+    expect(sent, matches(RegExp(r'[+-]\d\d:\d\d$')), reason: 'an offset');
+    expect(DateTime.parse(sent).isAtSameMomentAs(instant), isTrue);
+    expect(json['description'], 'x');
+  });
+
+  test('formats offsets on either side of UTC', () {
+    final wallClock = DateTime(2026, 9, 30, 8, 15, 4);
+    expect(
+      isoTimestampWithOffset(wallClock, const Duration(hours: -7)),
+      '2026-09-30T08:15:04-07:00',
+    );
+    expect(
+      isoTimestampWithOffset(wallClock, const Duration(hours: 5, minutes: 30)),
+      '2026-09-30T08:15:04+05:30',
+    );
+    expect(
+      isoTimestampWithOffset(wallClock, Duration.zero),
+      '2026-09-30T08:15:04+00:00',
+    );
+    expect(
+      isoTimestampWithOffset(
+        DateTime(2026, 1, 2, 3, 4, 5, 60, 7),
+        const Duration(hours: -3, minutes: -30),
+      ),
+      '2026-01-02T03:04:05.060007-03:30',
+    );
+  });
+
+  test('round-trips through JSON as the same moment', () {
+    final note = Note(timestamp: DateTime(2026, 9, 30, 8, 15, 4, 250));
+    final parsed = Note.fromJson(note.toJson()).timestamp;
+    expect(parsed.isAtSameMomentAs(note.timestamp), isTrue);
   });
 }
 
