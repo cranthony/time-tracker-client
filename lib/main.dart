@@ -8,6 +8,7 @@ import 'auth/token_store.dart';
 import 'outbox/background_sync.dart';
 import 'outbox/note_outbox.dart';
 import 'outbox/outbox_store.dart';
+import 'platform/add_note_shortcut.dart';
 import 'screens/today_screen.dart';
 import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
@@ -88,6 +89,7 @@ class TimeTrackerApp extends StatefulWidget {
 
 class _TimeTrackerAppState extends State<TimeTrackerApp> {
   late final AppLifecycleListener _lifecycle;
+  final _addNoteShortcut = AddNoteShortcut();
 
   @override
   void initState() {
@@ -98,6 +100,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       onResume: _onForeground,
       onPause: _onBackground,
     );
+    _addNoteShortcut.start();
   }
 
   Future<void> _onForeground() async {
@@ -116,6 +119,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
   @override
   void dispose() {
     _lifecycle.dispose();
+    _addNoteShortcut.dispose();
     widget.outbox.dispose();
     super.dispose();
   }
@@ -134,6 +138,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         outbox: widget.outbox,
         onSignIn: widget.auth?.signIn,
         onSignOut: widget.auth?.signOut,
+        addNoteRequests: _addNoteShortcut.taps,
       ),
     );
   }
