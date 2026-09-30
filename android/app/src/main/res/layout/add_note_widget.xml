@@ -1,34 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The whole cell is the tap target: the round button with "Add note"
-     under it, styled like the app labels on the home screen. -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- The whole cell is the tap target; the round button sits in its middle. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/add_note_button"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:contentDescription="@string/add_note_widget_label"
-    android:gravity="center"
-    android:orientation="vertical">
+    android:contentDescription="@string/add_note_widget_label">
 
     <ImageView
-        android:layout_width="44dp"
-        android:layout_height="44dp"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center"
         android:background="@drawable/add_note_widget_background"
         android:importantForAccessibility="no"
-        android:padding="11dp"
+        android:padding="14dp"
         android:scaleType="fitCenter"
         android:src="@drawable/ic_add_note" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:ellipsize="end"
-        android:importantForAccessibility="no"
-        android:maxLines="1"
-        android:shadowColor="#99000000"
-        android:shadowDy="1"
-        android:shadowRadius="3"
-        android:text="@string/add_note_widget_label"
-        android:textColor="#FFFFFFFF"
-        android:textSize="12sp" />
-</LinearLayout>
+</FrameLayout>

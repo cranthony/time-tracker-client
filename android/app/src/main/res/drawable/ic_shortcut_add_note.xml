@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 7.1 (no adaptive icons): a teal circle with the plus, like the
+     widget. Newer versions use drawable-anydpi-v26/v33. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/add_note_widget_background" />
+    <item
+        android:bottom="12dp"
+        android:drawable="@drawable/ic_add_note"
+        android:left="12dp"
+        android:right="12dp"
+        android:top="12dp" />
+</layer-list>
