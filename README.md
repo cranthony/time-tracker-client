@@ -293,6 +293,18 @@ Tests cover the MCP client, the whole OAuth flow (against a fake AuthKit),
 the outbox of unsaved notes, and the notes screen, so none of them need a
 server.
 
+### App icon
+
+The icon (a calendar page whose body is a clock, on teal) is drawn once in
+`tool/icon/generate.py`, which writes every size and format: Android's
+adaptive and themed icons and their PNG fallbacks, the web favicon and PWA
+icons, and the Windows `.ico`. To change it, edit the drawing there and run:
+
+```sh
+pip install pillow playwright && playwright install chromium
+python3 tool/icon/generate.py
+```
+
 ### Layout
 
 ```
