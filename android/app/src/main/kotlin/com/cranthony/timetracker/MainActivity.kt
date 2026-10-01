@@ -1,8 +1,13 @@
 package com.cranthony.timetracker
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowInsets
+import android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+import android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
+import android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED
 import android.view.inputmethod.InputMethodManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -18,15 +23,15 @@ class MainActivity : FlutterActivity() {
      */
     private var launchAddNoteAt: Long? = null
 
-    /** Set by the home screen "+" until the window has focus; see onWindowFocusChanged. */
-    private var showKeyboardOnFocus = false
+    /** Whether to show the keyboard when the window gains focus; see showKeyboardOnFocus. */
+    private var keyboardWanted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Not when re-created: that's the same launch, already handled.
         if (savedInstanceState == null && isAddNote(intent)) {
             Log.d(TAG, "onCreate: add note")
             launchAddNoteAt = System.currentTimeMillis()
-            showKeyboardOnFocus = true
+            showKeyboardOnFocus()
         }
         super.onCreate(savedInstanceState)
     }
@@ -53,7 +58,7 @@ class MainActivity : FlutterActivity() {
         if (isAddNote(intent)) {
             Log.d(TAG, "onNewIntent: add note")
             // In front already, the dialog's field can show it by itself.
-            showKeyboardOnFocus = !hasWindowFocus()
+            if (!hasWindowFocus()) showKeyboardOnFocus()
             addNoteChannel?.invokeMethod("addNote", System.currentTimeMillis())
             return
         }
@@ -74,8 +79,8 @@ class MainActivity : FlutterActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         Log.d(TAG, "onWindowFocusChanged: $hasFocus")
-        if (hasFocus && showKeyboardOnFocus) {
-            showKeyboardOnFocus = false
+        if (hasFocus && keyboardWanted) {
+            keyboardWanted = false
             // The New note dialog focuses its text field as it opens, but
             // when the "+" launches or brings back the app, that's before
             // the window has focus, and Android ignores keyboard requests
@@ -86,9 +91,28 @@ class MainActivity : FlutterActivity() {
             window.decorView.post {
                 val view = currentFocus ?: return@post
                 Log.d(TAG, "showing the keyboard")
-                getSystemService(InputMethodManager::class.java).showSoftInput(view, 0)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    view.windowInsetsController?.show(WindowInsets.Type.ime())
+                } else {
+                    getSystemService(InputMethodManager::class.java).showSoftInput(view, 0)
+                }
             }
+            // Back to the manifest's mode once Android has acted on it.
+            window.decorView.postDelayed({
+                window.setSoftInputMode(SOFT_INPUT_STATE_UNSPECIFIED or SOFT_INPUT_ADJUST_RESIZE)
+            }, 1000)
         }
+    }
+
+    /**
+     * Shows the keyboard when the window next gains focus. In the
+     * manifest's "unspecified" mode, Android hides the keyboard as a window
+     * gains focus, and on Android 16 that wins over the request made then
+     * (see onWindowFocusChanged); "always visible" has it show it instead.
+     */
+    private fun showKeyboardOnFocus() {
+        keyboardWanted = true
+        window.setSoftInputMode(SOFT_INPUT_STATE_ALWAYS_VISIBLE or SOFT_INPUT_ADJUST_RESIZE)
     }
 
     /** Ignores relaunching from Recents, which replays the original intent. */
