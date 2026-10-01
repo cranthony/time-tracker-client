@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 1.5.0
+
+- An Events page, from the bar at the bottom of the screen, shows a
+  day's events: each one's summary, start and end. Step a day back or
+  forward with the arrows, or tap the date to pick one. Notes is still
+  the page the app opens on.
+
 ## 1.4.1
 
 - The server's name moved from the top of the notes screen into About.
