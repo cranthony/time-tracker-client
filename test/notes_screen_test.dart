@@ -274,11 +274,13 @@ void main() {
     expect(find.text('Standup'), findsOneWidget);
   });
 
-  screenTest('About shows the app\'s version', (tester) async {
+  screenTest('About shows the app\'s version and server', (tester) async {
     await tester.pumpWidget(
       app(InMemoryNotesRepository(), version: '1.1.0 (25)'),
     );
     await tester.pumpAndSettle();
+    // Only in About, not taking up room on the notes screen.
+    expect(find.textContaining('offline demo'), findsNothing);
 
     await tester.tap(find.byTooltip('Show menu'));
     await tester.pumpAndSettle();
@@ -288,6 +290,7 @@ void main() {
 
     expect(find.text('Time Tracker'), findsOneWidget);
     expect(find.text('1.1.0 (25)'), findsOneWidget);
+    expect(find.text('Server: offline demo'), findsOneWidget);
   });
 
   screenTest('the home screen "+" opens the dialog at the time it was tapped', (
