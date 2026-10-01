@@ -1,0 +1,45 @@
+# Runs the app on an Android emulator and checks that the home screen "+"
+# opens the New note dialog with the keyboard up; see
+# tool/emulator/keyboard_test.sh. The device log and screenshots are kept
+# as the run's "emulator" artifact.
+name: Emulator tests
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  keyboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      # A release build, for real start-up timing. Without MCP_URL it's the
+      # offline demo, which is all this needs.
+      - run: flutter build apk --release --target-platform android-x64
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: tool/emulator/keyboard_test.sh build/app/outputs/flutter-apk/app-release.apk
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator
+          path: build/emulator

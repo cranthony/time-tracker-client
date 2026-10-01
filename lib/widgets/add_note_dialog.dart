@@ -32,10 +32,21 @@ class _AddNoteDialogState extends State<_AddNoteDialog> {
     // Opened from the home screen widget, the dialog can be up before the
     // app's window has input focus, and Android won't show the keyboard
     // for a window without it. So show it again once the window has focus.
-    _lifecycle = AppLifecycleListener(onResume: _showKeyboard);
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (state) => debugPrint('TimeTracker: dialog sees $state'),
+      onResume: _showKeyboard,
+    );
+    _focus.addListener(
+      () => debugPrint('TimeTracker: field focused: ${_focus.hasFocus}'),
+    );
+    debugPrint(
+      'TimeTracker: dialog opened, app is '
+      '${WidgetsBinding.instance.lifecycleState}',
+    );
   }
 
   void _showKeyboard() {
+    debugPrint('TimeTracker: showing the keyboard');
     if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
     if (!_focus.hasFocus) {
       _focus.requestFocus();

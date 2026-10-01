@@ -2,6 +2,7 @@ package com.cranthony.timetracker
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -19,6 +20,7 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // Not when re-created: that's the same launch, already handled.
         if (savedInstanceState == null && isAddNote(intent)) {
+            Log.d(TAG, "onCreate: add note")
             launchAddNoteAt = System.currentTimeMillis()
         }
         super.onCreate(savedInstanceState)
@@ -44,6 +46,7 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         // The home screen "+" tapped while the app was already running.
         if (isAddNote(intent)) {
+            Log.d(TAG, "onNewIntent: add note")
             addNoteChannel?.invokeMethod("addNote", System.currentTimeMillis())
             return
         }
@@ -56,8 +59,23 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        Log.d(TAG, "onResume")
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        Log.d(TAG, "onWindowFocusChanged: $hasFocus")
+    }
+
     /** Ignores relaunching from Recents, which replays the original intent. */
     private fun isAddNote(intent: Intent?): Boolean =
         intent?.action == AddNoteWidget.ACTION_ADD_NOTE &&
             (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+
+    private companion object {
+        // adb logcat -s TimeTracker flutter
+        const val TAG = "TimeTracker"
+    }
 }
