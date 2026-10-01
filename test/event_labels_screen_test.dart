@@ -203,6 +203,36 @@ void main() {
       ]);
     });
 
+    testWidgets('clears the color and the priority', (tester) async {
+      final repo = _RecordingRepository(sample());
+      await openColor(tester, repo);
+      await tester.tap(find.bySemanticsLabel('No color'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextField, '#7bd148'), findsNothing);
+      await tester.ensureVisible(find.byTooltip('Keep edit'));
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+
+      final priority = inDialog(find.text('2'));
+      await tester.ensureVisible(priority);
+      await tester.tap(priority);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '');
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      // The old values, struck through.
+      expect(inDialog(find.text('#7bd148')), findsOneWidget);
+      expect(inDialog(find.text('2')), findsOneWidget);
+
+      await tester.tap(find.text('Save 2 changes'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {'background_color': null, 'priority': null},
+      ]);
+      expect(find.text('No priority · Flexible time'), findsOneWidget);
+      expect(find.byIcon(Icons.label_outline), findsOneWidget);
+    });
+
     testWidgets('renames, and won\'t empty a name', (tester) async {
       final repo = _RecordingRepository(sample());
       await tester.pumpWidget(app(repo));

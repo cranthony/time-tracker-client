@@ -13,7 +13,9 @@ on. Add the new version's section here at the same time; CI checks both.
   shows its old value struck through until you save. If saving fails,
   the dialog stays open with your edits and shows the server's error.
 - Colors are picked from Google Calendar's 24 calendar colors, from a
-  square and hue bar under "More colors", or typed as a hex code.
+  square and hue bar under "More colors", or typed as a hex code. "No
+  color" clears it, and emptying the priority clears that; if the server
+  won't, the dialog shows its error.
 - A label's color shows next to its hex code, and next to each label's
   name when picking an event's label.
 

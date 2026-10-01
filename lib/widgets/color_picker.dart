@@ -65,12 +65,13 @@ class ColorDot extends StatelessWidget {
 
 /// Picks a color: one of [calendarColors], or any other from a
 /// saturation-and-brightness square and a hue bar, or typed as hex.
-/// Calls [onChanged] with every change.
+/// "No color" clears it. Calls [onChanged] with every change, null for no
+/// color.
 class ColorPicker extends StatefulWidget {
   const ColorPicker({super.key, required this.color, required this.onChanged});
 
   final Color? color;
-  final ValueChanged<Color> onChanged;
+  final ValueChanged<Color?> onChanged;
 
   @override
   State<ColorPicker> createState() => _ColorPickerState();
@@ -82,6 +83,9 @@ class _ColorPickerState extends State<ColorPicker> {
     text: widget.color == null ? '' : colorToHex(widget.color!),
   );
   String? _hexError;
+
+  /// "No color" is picked.
+  late bool _none = widget.color == null;
 
   /// Shows the square and hue bar; starts open for a color off the palette.
   late bool _custom =
@@ -99,6 +103,7 @@ class _ColorPickerState extends State<ColorPicker> {
   void _set(HSVColor hsv, {bool fromHex = false}) {
     setState(() {
       _hsv = hsv;
+      _none = false;
       if (!fromHex) {
         _hex.text = colorToHex(_color);
         _hexError = null;
@@ -107,11 +112,21 @@ class _ColorPickerState extends State<ColorPicker> {
     widget.onChanged(_color);
   }
 
+  void _clear() {
+    setState(() {
+      _none = true;
+      _hex.text = '';
+      _hexError = null;
+    });
+    widget.onChanged(null);
+  }
+
   void _typed(String text) {
     final t = text.trim();
+    if (t.isEmpty) return _clear();
     final color = parseColor(t.startsWith('#') ? t : '#$t');
     if (color == null) {
-      setState(() => _hexError = t.isEmpty ? null : 'Use #rrggbb');
+      setState(() => _hexError = 'Use #rrggbb');
       return;
     }
     setState(() => _hexError = null);
@@ -121,7 +136,7 @@ class _ColorPickerState extends State<ColorPicker> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final selected = _color.withAlpha(255);
+    final Color? selected = _none ? null : _color.withAlpha(255);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -137,6 +152,12 @@ class _ColorPickerState extends State<ColorPicker> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: theme.colorScheme.outlineVariant),
               ),
+              child: selected == null
+                  ? Icon(
+                      Icons.format_color_reset_outlined,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    )
+                  : null,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -146,6 +167,7 @@ class _ColorPickerState extends State<ColorPicker> {
                   isDense: true,
                   border: const OutlineInputBorder(),
                   labelText: 'Hex',
+                  hintText: 'No color',
                   errorText: _hexError,
                 ),
                 style: const TextStyle(fontFamily: 'monospace'),
@@ -159,10 +181,13 @@ class _ColorPickerState extends State<ColorPicker> {
           spacing: 6,
           runSpacing: 6,
           children: [
+            _Swatch(color: null, selected: _none, onTap: _clear),
             for (final color in calendarColors)
               _Swatch(
                 color: color,
-                selected: colorToHex(color) == colorToHex(selected),
+                selected:
+                    selected != null &&
+                    colorToHex(color) == colorToHex(selected),
                 onTap: () => _set(HSVColor.fromColor(color)),
               ),
           ],
@@ -194,7 +219,8 @@ class _Swatch extends StatelessWidget {
     required this.onTap,
   });
 
-  final Color color;
+  /// Null for "No color".
+  final Color? color;
   final bool selected;
   final VoidCallback onTap;
 
@@ -204,7 +230,10 @@ class _Swatch extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: colorToHex(color),
+      label: switch (color) {
+        final c? => colorToHex(c),
+        null => 'No color',
+      },
       child: InkResponse(
         onTap: onTap,
         radius: 20,
@@ -213,7 +242,7 @@ class _Swatch extends StatelessWidget {
           width: 30,
           height: 30,
           decoration: BoxDecoration(
-            color: color,
+            color: color ?? theme.colorScheme.surface,
             shape: BoxShape.circle,
             border: Border.all(
               color: selected
@@ -222,9 +251,19 @@ class _Swatch extends StatelessWidget {
               width: selected ? 2 : 1,
             ),
           ),
-          child: selected
-              ? Icon(Icons.check, size: 18, color: contrastingColor(color))
-              : null,
+          child: switch (color) {
+            null => Icon(
+              selected ? Icons.check : Icons.format_color_reset_outlined,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            final c when selected => Icon(
+              Icons.check,
+              size: 18,
+              color: contrastingColor(c),
+            ),
+            _ => null,
+          },
         ),
       ),
     );

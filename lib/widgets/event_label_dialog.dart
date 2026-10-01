@@ -32,14 +32,14 @@ Future<List<EventLabel>?> showEventLabelDialog(
     'fixed_time': label.fixedTime,
     ...label.properties,
   },
-  // What update_event_label changes. It keeps a value that's left out, so
-  // none can be emptied.
+  // What update_event_label changes. A label needs a name; if the server
+  // won't clear the others, the dialog shows its error.
   kinds: const {
     'name': PropertyKind.text,
     'background_color': PropertyKind.color,
     'priority': PropertyKind.integer,
   },
-  required: const {'name', 'background_color', 'priority'},
+  required: const {'name'},
   save: save == null || label.id == null
       ? null
       : (changes) => save(label, changes),
