@@ -4,11 +4,13 @@ import '../models/event_label.dart';
 import '../services/event_labels_repository.dart';
 import '../services/mcp_client.dart';
 import '../widgets/app_menu.dart';
+import '../widgets/color_picker.dart';
 import '../widgets/event_label_dialog.dart';
 import '../widgets/status_message.dart';
 
 /// Every event label: its color, name, priority and whether it's fixed
-/// time. Tapping a label shows all its properties.
+/// time. Tapping a label shows all its properties, and lets one change its
+/// name, color and priority.
 class EventLabelsScreen extends StatefulWidget {
   const EventLabelsScreen({
     super.key,
@@ -66,6 +68,18 @@ class _EventLabelsScreenState extends State<EventLabelsScreen> {
       if (!mounted) return;
       setState(() => _error = e);
     }
+  }
+
+  Future<void> _open(EventLabel label) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final labels = await showEventLabelDialog(
+      context,
+      label,
+      save: widget.repository.updateLabel,
+    );
+    if (labels == null || !mounted) return;
+    setState(() => _labels = labels);
+    messenger.showSnackBar(const SnackBar(content: Text('Saved.')));
   }
 
   Future<void> _signIn() async {
@@ -139,15 +153,17 @@ class _EventLabelsScreenState extends State<EventLabelsScreen> {
       physics: const AlwaysScrollableScrollPhysics(),
       itemCount: labels.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (context, i) => _LabelTile(label: labels[i]),
+      itemBuilder: (context, i) =>
+          _LabelTile(label: labels[i], onTap: () => _open(labels[i])),
     );
   }
 }
 
 class _LabelTile extends StatelessWidget {
-  const _LabelTile({required this.label});
+  const _LabelTile({required this.label, required this.onTap});
 
   final EventLabel label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -176,15 +192,7 @@ class _LabelTile extends StatelessWidget {
           },
         ].nonNulls.join(' · '),
       ),
-      onTap: () => showEventLabelDialog(context, label),
+      onTap: onTap,
     );
   }
-}
-
-/// A color from "#rrggbb", or null if [hex] isn't one.
-Color? parseColor(String? hex) {
-  if (hex == null) return null;
-  final match = RegExp(r'^#([0-9a-fA-F]{6})$').firstMatch(hex.trim());
-  if (match == null) return null;
-  return Color(0xFF000000 | int.parse(match[1]!, radix: 16));
 }

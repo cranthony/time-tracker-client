@@ -6,6 +6,19 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 1.9.0
+
+- Edit an event label from its dialog on the Labels page: tap its name,
+  color or priority to change it there, then Save. Each changed value
+  shows its old value struck through until you save. If saving fails,
+  the dialog stays open with your edits and shows the server's error.
+- Colors are picked from Google Calendar's 24 calendar colors, from a
+  square and hue bar under "More colors", or typed as a hex code. "No
+  color" clears it, and emptying the priority clears that; if the server
+  won't, the dialog shows its error.
+- A label's color shows next to its hex code, and next to each label's
+  name when picking an event's label.
+
 ## 1.8.0
 
 - Edit an event from its dialog on the Events page: tap a value to

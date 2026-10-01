@@ -13,7 +13,7 @@ import 'package:time_tracker_client/services/event_labels_repository.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
-import 'package:time_tracker_client/widgets/event_dialog.dart';
+import 'package:time_tracker_client/widgets/durations.dart';
 
 void main() {
   final now = DateTime(2026, 9, 30, 12);

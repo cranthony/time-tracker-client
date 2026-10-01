@@ -6,6 +6,13 @@ import 'mcp_client.dart';
 abstract class EventLabelsRepository {
   /// Every event label, by priority (labels without one last), then name.
   Future<List<EventLabel>> labels();
+
+  /// Saves [changes], keyed as `update_event_label` takes them, to
+  /// [label]. Returns every label, as [labels] does.
+  Future<List<EventLabel>> updateLabel(
+    EventLabel label,
+    Map<String, Object?> changes,
+  );
 }
 
 /// Reads event labels via the Time Tracker MCP server.
@@ -28,6 +35,22 @@ class McpEventLabelsRepository implements EventLabelsRepository {
           .toList(),
     );
   }
+
+  @override
+  Future<List<EventLabel>> updateLabel(
+    EventLabel label,
+    Map<String, Object?> changes,
+  ) async {
+    // The server keeps whatever is left out.
+    final result = await _client.callTool('update_event_label', {
+      'label': {'id': label.id, ...changes},
+    });
+    return sortLabels(
+      (result as List)
+          .map((e) => EventLabel.fromJson((e as Map).cast<String, dynamic>()))
+          .toList(),
+    );
+  }
 }
 
 /// Keeps event labels in memory. Used when no server is configured, and in
@@ -40,6 +63,26 @@ class InMemoryEventLabelsRepository implements EventLabelsRepository {
 
   @override
   Future<List<EventLabel>> labels() async => sortLabels([..._labels]);
+
+  @override
+  Future<List<EventLabel>> updateLabel(
+    EventLabel label,
+    Map<String, Object?> changes,
+  ) async {
+    final i = _labels.indexWhere((l) => l.id == label.id);
+    if (i < 0) throw StateError('No label ${label.id}');
+    final old = _labels[i];
+    _labels[i] = EventLabel.fromJson({
+      ...old.properties,
+      'id': old.id,
+      'name': old.name,
+      'background_color': old.backgroundColor,
+      'priority': old.priority,
+      'fixed_time': old.fixedTime,
+      ...changes,
+    });
+    return labels();
+  }
 }
 
 /// Sorts [labels] in place, as [EventLabelsRepository.labels] returns

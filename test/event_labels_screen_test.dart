@@ -4,6 +4,7 @@ import 'package:time_tracker_client/models/event_label.dart';
 import 'package:time_tracker_client/screens/event_labels_screen.dart';
 import 'package:time_tracker_client/services/event_labels_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
+import 'package:time_tracker_client/widgets/color_picker.dart';
 
 void main() {
   Widget app(EventLabelsRepository repo, {Future<void> Function()? onSignIn}) =>
@@ -109,6 +110,171 @@ void main() {
     expect(dialog, findsNothing);
   });
 
+  group('editing a label', () {
+    List<EventLabel> sample() => [
+      const EventLabel(
+        id: '1',
+        name: 'Exercise',
+        backgroundColor: '#7bd148',
+        priority: 2,
+        fixedTime: false,
+      ),
+    ];
+
+    Finder inDialog(Finder f) =>
+        find.descendant(of: find.byType(AlertDialog), matching: f);
+
+    Future<void> openColor(
+      WidgetTester tester,
+      EventLabelsRepository repo,
+    ) async {
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Exercise'));
+      await tester.pumpAndSettle();
+      final value = inDialog(find.text('#7bd148'));
+      await tester.ensureVisible(value);
+      await tester.tap(value);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> keepAndSave(WidgetTester tester) async {
+      await tester.ensureVisible(find.byTooltip('Keep edit'));
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save 1 change'));
+      await tester.pumpAndSettle();
+    }
+
+    Color? tileColor(WidgetTester tester) =>
+        tester.widget<Icon>(find.byIcon(Icons.label)).color;
+
+    testWidgets('picks a color from the palette', (tester) async {
+      final repo = _RecordingRepository(sample());
+      await openColor(tester, repo);
+      // The current color is ticked.
+      expect(
+        tester.getSemantics(find.bySemanticsLabel('#7bd148')),
+        isSemantics(isSelected: true),
+      );
+
+      await tester.tap(find.bySemanticsLabel('#4986e7'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextField, '#4986e7'), findsOneWidget);
+      await keepAndSave(tester);
+
+      expect(repo.saved, [
+        {'background_color': '#4986e7'},
+      ]);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text('Saved.'), findsOneWidget);
+      expect(tileColor(tester), const Color(0xFF4986E7));
+    });
+
+    testWidgets('takes a typed hex color', (tester) async {
+      final repo = _RecordingRepository(sample());
+      await openColor(tester, repo);
+      await tester.enterText(find.widgetWithText(TextField, '#7bd148'), 'zz');
+      await tester.pump();
+      expect(find.text('Use #rrggbb'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), '123ABC');
+      await tester.pump();
+      expect(find.text('Use #rrggbb'), findsNothing);
+      await keepAndSave(tester);
+      expect(repo.saved, [
+        {'background_color': '#123abc'},
+      ]);
+    });
+
+    testWidgets('picks any color from the square and hue bar', (tester) async {
+      final repo = _RecordingRepository(sample());
+      await openColor(tester, repo);
+      await tester.tap(find.text('More colors'));
+      await tester.pumpAndSettle();
+      // The square's bottom-left corner is black, whatever the hue.
+      final pad = find.byKey(const Key('saturation-value'));
+      await tester.ensureVisible(pad);
+      await tester.tapAt(tester.getBottomLeft(pad) + const Offset(2, -2));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextField, '#000000'), findsOneWidget);
+      await keepAndSave(tester);
+      expect(repo.saved, [
+        {'background_color': '#000000'},
+      ]);
+    });
+
+    testWidgets('clears the color and the priority', (tester) async {
+      final repo = _RecordingRepository(sample());
+      await openColor(tester, repo);
+      await tester.tap(find.bySemanticsLabel('No color'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextField, '#7bd148'), findsNothing);
+      await tester.ensureVisible(find.byTooltip('Keep edit'));
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+
+      final priority = inDialog(find.text('2'));
+      await tester.ensureVisible(priority);
+      await tester.tap(priority);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '');
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      // The old values, struck through.
+      expect(inDialog(find.text('#7bd148')), findsOneWidget);
+      expect(inDialog(find.text('2')), findsOneWidget);
+
+      await tester.tap(find.text('Save 2 changes'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {'background_color': null, 'priority': null},
+      ]);
+      expect(find.text('No priority · Flexible time'), findsOneWidget);
+      expect(find.byIcon(Icons.label_outline), findsOneWidget);
+    });
+
+    testWidgets('renames, and won\'t empty a name', (tester) async {
+      final repo = _RecordingRepository(sample());
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Exercise'));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Exercise')).last);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '');
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      expect(find.text("This can't be empty."), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'Running');
+      await keepAndSave(tester);
+      expect(repo.saved, [
+        {'name': 'Running'},
+      ]);
+      expect(find.text('Running'), findsOneWidget);
+    });
+
+    testWidgets('shows the server\'s error and keeps the edit', (tester) async {
+      final repo = _RecordingRepository(sample())
+        ..error = McpException(
+          'Tool update_event_label failed: Not a calendar color',
+        );
+      await openColor(tester, repo);
+      await tester.tap(find.bySemanticsLabel('#4986e7'));
+      await tester.pumpAndSettle();
+      await keepAndSave(tester);
+      expect(
+        find.text(
+          "Couldn't save. Tool update_event_label failed: "
+          'Not a calendar color',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Save 1 change'), findsOneWidget);
+      expect(repo.saved, isEmpty);
+    });
+  });
+
   testWidgets('says when there are none', (tester) async {
     await tester.pumpWidget(app(InMemoryEventLabelsRepository()));
     await tester.pumpAndSettle();
@@ -140,5 +306,23 @@ class _SignInRepository extends InMemoryEventLabelsRepository {
   Future<List<EventLabel>> labels() {
     if (!signedIn()) throw SignInRequiredException();
     return super.labels();
+  }
+}
+
+/// Records what's saved, and fails with [error] while it's set.
+class _RecordingRepository extends InMemoryEventLabelsRepository {
+  _RecordingRepository(super.labels);
+
+  final saved = <Map<String, Object?>>[];
+  Object? error;
+
+  @override
+  Future<List<EventLabel>> updateLabel(
+    EventLabel label,
+    Map<String, Object?> changes,
+  ) async {
+    if (error case final error?) throw error;
+    saved.add(changes);
+    return super.updateLabel(label, changes);
   }
 }

@@ -37,3 +37,9 @@ class EventLabel {
     properties: Map.unmodifiable(json),
   );
 }
+
+/// [label]'s name, or "(no name)".
+String labelName(EventLabel label) {
+  final name = label.name;
+  return name == null || name.isEmpty ? '(no name)' : name;
+}
