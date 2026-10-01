@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/note.dart';
 
@@ -21,10 +22,32 @@ class _AddNoteDialog extends StatefulWidget {
 
 class _AddNoteDialogState extends State<_AddNoteDialog> {
   final _description = TextEditingController();
+  final _focus = FocusNode();
   late DateTime _time = widget.time ?? DateTime.now();
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    // Opened from the home screen widget, the dialog can be up before the
+    // app's window has input focus, and Android won't show the keyboard
+    // for a window without it. So show it again once the window has focus.
+    _lifecycle = AppLifecycleListener(onResume: _showKeyboard);
+  }
+
+  void _showKeyboard() {
+    if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
+    if (!_focus.hasFocus) {
+      _focus.requestFocus();
+      return;
+    }
+    SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+  }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
+    _focus.dispose();
     _description.dispose();
     super.dispose();
   }
@@ -64,6 +87,7 @@ class _AddNoteDialogState extends State<_AddNoteDialog> {
         children: [
           TextField(
             controller: _description,
+            focusNode: _focus,
             autofocus: true,
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(
