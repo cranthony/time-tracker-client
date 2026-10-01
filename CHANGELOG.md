@@ -6,6 +6,10 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 1.4.1
+
+- The server's name moved from the top of the notes screen into About.
+
 ## 1.4.0
 
 - New and edited notes open in a sheet at the bottom of the screen, just
