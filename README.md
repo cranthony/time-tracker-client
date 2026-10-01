@@ -196,7 +196,7 @@ There are two ways to get a one-tap **+** on the home screen:
   choose **Widgets**, find **Time Tracker**, and drag **Add note** to where
   you want it. It's a round **+** button.
 
-Either one opens the app straight into the **New note** dialog, timed at
+Either one opens the app straight into the **New note** sheet, timed at
 the moment you tapped, even if it takes a few seconds to type the
 description. After you tap **Add**, it's saved like any other note,
 including when you're offline.
@@ -340,7 +340,7 @@ lib/
   outbox/background_sync.dart    Android WorkManager task that sends them
   platform/add_note_shortcut.dart  taps on the home screen "+" (Android)
   screens/notes_screen.dart      uncompacted notes by day (saved and not), sign-in, "+"
-  widgets/note_dialog.dart       new/edit note: description, time, delete
+  widgets/note_dialog.dart       new/edit note sheet: description, time, delete
 android/app/src/main/kotlin/.../MainActivity.kt   forwards the sign-in deep link
                                                   and home screen "+" taps
 android/app/src/main/kotlin/.../AddNoteWidget.kt  the home screen "+" widget

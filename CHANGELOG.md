@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 1.4.0
+
+- New and edited notes open in a sheet at the bottom of the screen, just
+  above the keyboard, with a box four to eight lines tall. Delete is the
+  bin at the top of the edit sheet. Swipe the sheet down (or tap above
+  it) to cancel.
+
 ## 1.3.0
 
 - Shows all uncompacted notes, not just today's, under day headings
