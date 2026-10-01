@@ -8,7 +8,8 @@ abstract class EventLabelsRepository {
   Future<List<EventLabel>> labels();
 
   /// Saves [changes], keyed as `update_event_label` takes them, to
-  /// [label]. Returns every label, as [labels] does.
+  /// [label]; a null clears that property. Returns every label, as
+  /// [labels] does.
   Future<List<EventLabel>> updateLabel(
     EventLabel label,
     Map<String, Object?> changes,
@@ -41,9 +42,18 @@ class McpEventLabelsRepository implements EventLabelsRepository {
     EventLabel label,
     Map<String, Object?> changes,
   ) async {
-    // The server keeps whatever is left out.
+    // The server keeps whatever is left out or null, and clears what
+    // clear_fields names.
+    final clear = [
+      for (final MapEntry(:key, :value) in changes.entries)
+        if (value == null) key,
+    ];
     final result = await _client.callTool('update_event_label', {
-      'label': {'id': label.id, ...changes},
+      'label': {
+        'id': label.id,
+        for (final MapEntry(:key, :value) in changes.entries) key: ?value,
+      },
+      if (clear.isNotEmpty) 'clear_fields': clear,
     });
     return sortLabels(
       (result as List)
@@ -79,6 +89,7 @@ class InMemoryEventLabelsRepository implements EventLabelsRepository {
       'background_color': old.backgroundColor,
       'priority': old.priority,
       'fixed_time': old.fixedTime,
+      'note': old.note,
       ...changes,
     });
     return labels();

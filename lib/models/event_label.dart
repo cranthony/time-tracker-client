@@ -10,6 +10,7 @@ class EventLabel {
     this.backgroundColor,
     this.priority,
     this.fixedTime,
+    this.note,
     this.properties = const {},
   });
 
@@ -25,6 +26,9 @@ class EventLabel {
   /// Whether the label's events stay at their set time; null if unknown.
   final bool? fixedTime;
 
+  /// What the label is for, from the event label sheet.
+  final String? note;
+
   /// The label as the server sent it.
   final Map<String, dynamic> properties;
 
@@ -34,6 +38,7 @@ class EventLabel {
     backgroundColor: json['background_color'] as String?,
     priority: json['priority'] as int?,
     fixedTime: json['fixed_time'] as bool?,
+    note: json['note'] as String?,
     properties: Map.unmodifiable(json),
   );
 }
