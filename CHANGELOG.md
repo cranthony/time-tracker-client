@@ -6,6 +6,10 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 1.1.1
+
+- The home screen "+" brings the keyboard up on Android 16 too.
+
 ## 1.1.0
 
 - The app's version and build number, under About in the menu.
