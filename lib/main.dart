@@ -10,7 +10,8 @@ import 'outbox/background_sync.dart';
 import 'outbox/note_outbox.dart';
 import 'outbox/outbox_store.dart';
 import 'platform/add_note_shortcut.dart';
-import 'screens/notes_screen.dart';
+import 'screens/home_screen.dart';
+import 'services/events_repository.dart';
 import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
 
@@ -27,6 +28,7 @@ Future<void> main() async {
     runApp(
       TimeTrackerApp(
         repository: repository,
+        eventsRepository: InMemoryEventsRepository(),
         outbox: NoteOutbox(
           store: InMemoryOutboxStore(),
           repository: repository,
@@ -38,10 +40,12 @@ Future<void> main() async {
 
   await BackgroundSync.initialize(backgroundDispatcher);
   final auth = _authSession(interactive: true);
-  final repository = _repository(auth);
+  final client = _client(auth);
+  final repository = McpNotesRepository(client);
   runApp(
     TimeTrackerApp(
       repository: repository,
+      eventsRepository: McpEventsRepository(client),
       outbox: NoteOutbox(store: PrefsOutboxStore(), repository: repository),
       auth: auth,
     ),
@@ -51,7 +55,9 @@ Future<void> main() async {
 /// Runs WorkManager's background task (Android) that saves pending notes.
 @pragma('vm:entry-point')
 void backgroundDispatcher() => BackgroundSync.run(() {
-  final repository = _repository(_authSession(interactive: false));
+  final repository = McpNotesRepository(
+    _client(_authSession(interactive: false)),
+  );
   return NoteOutbox(store: PrefsOutboxStore(), repository: repository);
 });
 
@@ -69,18 +75,20 @@ AuthSession _authSession({required bool interactive}) => AuthSession(
   receiver: interactive ? platformRedirectReceiver() : null,
 );
 
-NotesRepository _repository(AuthSession auth) =>
-    McpNotesRepository(McpClient(endpoint: Uri.parse(_mcpUrl), auth: auth));
+McpClient _client(AuthSession auth) =>
+    McpClient(endpoint: Uri.parse(_mcpUrl), auth: auth);
 
 class TimeTrackerApp extends StatefulWidget {
   const TimeTrackerApp({
     super.key,
     required this.repository,
+    required this.eventsRepository,
     required this.outbox,
     this.auth,
   });
 
   final NotesRepository repository;
+  final EventsRepository eventsRepository;
   final NoteOutbox outbox;
   final AuthSession? auth;
 
@@ -147,8 +155,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         colorSchemeSeed: Colors.teal,
         brightness: Brightness.dark,
       ),
-      home: NotesScreen(
-        repository: widget.repository,
+      home: HomeScreen(
+        notesRepository: widget.repository,
+        eventsRepository: widget.eventsRepository,
         outbox: widget.outbox,
         onSignIn: widget.auth?.signIn,
         onSignOut: widget.auth?.signOut,

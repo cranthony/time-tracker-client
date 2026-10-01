@@ -5,6 +5,7 @@
 #
 #   foreground  the app is in front (a check that detection works)
 #   warm        the app is in the background
+#   warm_events the app is in the background, on the Events page
 #   cold        the app isn't running
 #
 #     tool/emulator/keyboard_test.sh build/app/outputs/flutter-apk/app-release.apk
@@ -30,6 +31,21 @@ launch() { adb shell am start -W -n "$PKG/.MainActivity" -a android.intent.actio
 add_note() { adb shell am start -n "$PKG/.MainActivity" -a "$PKG.ADD_NOTE" -f 0x10000000 >/dev/null; }
 home() { adb shell input keyevent KEYCODE_HOME; }
 keyboard_shown() { adb shell dumpsys input_method | grep -q 'mInputShown=true'; }
+
+# The on-screen views (Flutter's semantics included), one per line.
+ui_nodes() {
+  adb shell uiautomator dump /sdcard/ui.xml >/dev/null &&
+    adb shell cat /sdcard/ui.xml | tr '>' '\n' | grep '<node'
+}
+# Taps the middle of the first view whose text or description starts with $1.
+tap_view() {
+  local b
+  b=$(ui_nodes | grep -E "(text|content-desc)=\"$1" | head -1 |
+    sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p')
+  [ -n "$b" ] || { echo "No view \"$1\" on screen"; return 1; }
+  set -- $b
+  adb shell input tap $((($1 + $3) / 2)) $((($2 + $4) / 2))
+}
 
 failed=()
 run_case() {
@@ -74,6 +90,18 @@ run_case foreground 5
 
 launch; sleep 3; home; sleep 2
 run_case warm 5
+
+# The "+" has to bring Notes back from another page.
+launch; sleep 3
+if tap_view Events && sleep 2 && ui_nodes | grep -q 'Previous day'; then
+  home; sleep 2
+  run_case warm_events 5
+else
+  adb exec-out screencap -p > "$OUT/warm_events.png"
+  echo "::error::FAIL warm_events: couldn't open the Events page"
+  failed+=(warm_events)
+  home; sleep 1
+fi
 
 adb shell am force-stop "$PKG"; home; sleep 2
 run_case cold 10

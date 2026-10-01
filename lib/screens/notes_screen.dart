@@ -7,7 +7,10 @@ import '../outbox/note_outbox.dart';
 import '../outbox/pending_note.dart';
 import '../services/mcp_client.dart';
 import '../services/notes_repository.dart';
+import '../widgets/app_menu.dart';
+import '../widgets/day_header.dart';
 import '../widgets/note_dialog.dart';
+import '../widgets/status_message.dart';
 
 /// All the uncompacted notes, plus any not saved yet, by day, with a "+"
 /// to add another. Tapping a saved note edits or deletes it.
@@ -216,14 +219,6 @@ class _NotesScreenState extends State<NotesScreen> {
     await _load();
   }
 
-  void _showAbout() => showAboutDialog(
-    context: context,
-    applicationName: 'Time Tracker',
-    applicationVersion: widget.version,
-    // Which server this build talks to, or that it's the offline demo.
-    children: [Text('Server: ${widget.repository.label}')],
-  );
-
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -234,22 +229,12 @@ class _NotesScreenState extends State<NotesScreen> {
           appBar: AppBar(
             title: const Text('Notes'),
             actions: [
-              PopupMenuButton<_MenuItem>(
-                onSelected: (item) => switch (item) {
-                  _MenuItem.about => _showAbout(),
-                  _MenuItem.signOut => _signOut(),
-                },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(
-                    value: _MenuItem.about,
-                    child: Text('About'),
-                  ),
-                  if (widget.onSignOut != null && !needsSignIn)
-                    const PopupMenuItem(
-                      value: _MenuItem.signOut,
-                      child: Text('Sign out'),
-                    ),
-                ],
+              AppMenu(
+                serverLabel: widget.repository.label,
+                version: widget.version,
+                onSignOut: widget.onSignOut == null || needsSignIn
+                    ? null
+                    : _signOut,
               ),
             ],
           ),
@@ -298,7 +283,7 @@ class _NotesScreenState extends State<NotesScreen> {
 
     final Widget? banner;
     if (needsSignIn) {
-      banner = _Message(
+      banner = StatusMessage(
         icon: Icons.lock_outline,
         text: pending.isEmpty
             ? 'Sign in to see your notes.'
@@ -311,14 +296,14 @@ class _NotesScreenState extends State<NotesScreen> {
               ),
       );
     } else if (_error != null) {
-      banner = _Message(
+      banner = StatusMessage(
         icon: Icons.cloud_off,
         text: 'Could not load notes.\n$_error',
       );
     } else if (notes == null && rows.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     } else if (rows.isEmpty) {
-      banner = const _Message(
+      banner = const StatusMessage(
         icon: Icons.edit_note,
         text: 'No uncompacted notes.\nTap + to add one.',
       );
@@ -326,15 +311,15 @@ class _NotesScreenState extends State<NotesScreen> {
       banner = null;
     }
 
-    if (rows.isEmpty) return _FillViewport(child: banner!);
+    if (rows.isEmpty) return FillViewport(child: banner!);
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 88), // clear the FAB
       children: [
         ?banner,
         for (final (i, row) in rows.indexed) ...[
-          if (i == 0 || !_sameDay(rows[i - 1].at, row.at))
-            _DayHeader(day: row.at, today: widget.clock())
+          if (i == 0 || !sameDay(rows[i - 1].at, row.at))
+            DayHeader(day: row.at, today: widget.clock())
           else
             const Divider(height: 1),
           row.tile,
@@ -343,8 +328,6 @@ class _NotesScreenState extends State<NotesScreen> {
     );
   }
 }
-
-enum _MenuItem { about, signOut }
 
 class _NoteTile extends StatelessWidget {
   const _NoteTile({required this.note, required this.changing, this.onTap});
@@ -464,85 +447,6 @@ String _describe(Object e) => switch (e) {
   _ => '$e',
 };
 
-bool _sameDay(DateTime a, DateTime b) {
-  final x = a.toLocal(), y = b.toLocal();
-  return x.year == y.year && x.month == y.month && x.day == y.day;
-}
-
-/// "Today", "Yesterday", or the date, above that day's notes.
-class _DayHeader extends StatelessWidget {
-  const _DayHeader({required this.day, required this.today});
-
-  final DateTime day;
-  final DateTime today;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final local = day.toLocal();
-    final yesterday = DateTime(today.year, today.month, today.day - 1);
-    final label = _sameDay(local, today)
-        ? 'Today'
-        : _sameDay(local, yesterday)
-        ? 'Yesterday'
-        : MaterialLocalizations.of(context).formatMediumDate(local);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        label,
-        style: theme.textTheme.labelLarge?.copyWith(
-          color: theme.colorScheme.primary,
-        ),
-      ),
-    );
-  }
-}
-
 String _time(BuildContext context, Note note) =>
     MaterialLocalizations.of(context)
         .formatTimeOfDay(TimeOfDay.fromDateTime(note.timestamp.toLocal()));
-
-/// Lets a lone message fill the screen and still support pull-to-refresh.
-class _FillViewport extends StatelessWidget {
-  const _FillViewport({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: SizedBox(
-          height: constraints.maxHeight,
-          child: Center(child: child),
-        ),
-      ),
-    );
-  }
-}
-
-/// An icon, a message, and optionally a button.
-class _Message extends StatelessWidget {
-  const _Message({required this.icon, required this.text, this.action});
-
-  final IconData icon;
-  final String text;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 48, color: Theme.of(context).hintColor),
-          const SizedBox(height: 16),
-          Text(text, textAlign: TextAlign.center),
-          if (action != null) ...[const SizedBox(height: 24), action!],
-        ],
-      ),
-    );
-  }
-}
