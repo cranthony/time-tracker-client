@@ -73,6 +73,108 @@ void main() {
     expect(notes.map((n) => n.description), ['a', 'b']);
   });
 
+  test('keeps note ids, and edits and deletes notes by id', () async {
+    final calls = <Map<String, dynamic>>[];
+    final mock = MockClient((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      if (body['method'] != 'tools/call') {
+        return http.Response(
+          jsonEncode({'jsonrpc': '2.0', 'id': body['id'], 'result': {}}),
+          body['id'] == null ? 202 : 200,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+      final params = body['params'] as Map<String, dynamic>;
+      calls.add(params);
+      final Object structured = switch (params['name']) {
+        'get_notes' => {
+          'result': [
+            {
+              'id': '2026-09-28T14:00:00+00:00#7',
+              'timestamp': '2026-09-28T14:00:00+00:00',
+              'description': 'a',
+            },
+          ],
+        },
+        'edit_note' => {
+          'id': '2026-09-28T15:00:00+00:00#7',
+          'timestamp': '2026-09-28T15:00:00+00:00',
+          'description': 'b',
+        },
+        _ => {'timestamp': '2026-09-28T15:00:00+00:00'},
+      };
+      return http.Response(
+        jsonEncode({
+          'jsonrpc': '2.0',
+          'id': body['id'],
+          'result': {'content': [], 'structuredContent': structured},
+        }),
+        200,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    final repo = McpNotesRepository(
+      McpClient(
+        endpoint: Uri.parse('https://example.com/mcp'),
+        auth: _FixedAuth('secret'),
+        httpClient: mock,
+      ),
+    );
+
+    final note = (await repo.uncompactedNotes()).single;
+    expect(note.id, '2026-09-28T14:00:00+00:00#7');
+
+    final edited = await repo.editNote(
+      note.id!,
+      timestamp: DateTime.utc(2026, 9, 28, 15),
+      description: 'b',
+    );
+    expect(edited.id, '2026-09-28T15:00:00+00:00#7');
+    final editArgs = calls[1]['arguments'] as Map<String, dynamic>;
+    expect(calls[1]['name'], 'edit_note');
+    expect(editArgs['note_id'], '2026-09-28T14:00:00+00:00#7');
+    expect(
+      DateTime.parse(editArgs['timestamp'] as String)
+          .isAtSameMomentAs(DateTime.utc(2026, 9, 28, 15)),
+      isTrue,
+    );
+    expect(editArgs['description'], 'b');
+
+    // Only what changed is sent.
+    await repo.editNote(edited.id!, description: '');
+    expect(calls[2]['arguments'], {
+      'note_id': '2026-09-28T15:00:00+00:00#7',
+      'description': '',
+    });
+
+    await repo.deleteNote(edited.id!);
+    expect(calls[3]['name'], 'delete_note');
+    expect(calls[3]['arguments'], {'note_id': '2026-09-28T15:00:00+00:00#7'});
+  });
+
+  test('the in-memory store edits and deletes like the server', () async {
+    final repo = InMemoryNotesRepository();
+    final note = await repo.addNote(
+      Note(timestamp: DateTime(2026, 9, 28, 14), description: 'a'),
+    );
+    expect(note.id, endsWith('#1'));
+
+    final described = await repo.editNote(note.id!, description: 'b');
+    expect(described.id, note.id); // same time, same id
+    final retimed = await repo.editNote(
+      note.id!,
+      timestamp: DateTime(2026, 9, 28, 15),
+    );
+    expect(retimed.id, isNot(note.id));
+    expect(retimed.description, 'b');
+    await expectLater(repo.editNote(note.id!), throwsA(isA<McpException>()));
+
+    await repo.editNote(retimed.id!, description: '');
+    expect((await repo.uncompactedNotes()).single.description, isNull);
+    await repo.deleteNote(retimed.id!);
+    expect(await repo.uncompactedNotes(), isEmpty);
+  });
+
   test('refreshes once on 401, then asks for sign-in', () async {
     final auth = _FixedAuth('old');
     final seen = <String?>[];

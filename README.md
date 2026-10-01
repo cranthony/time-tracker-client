@@ -2,7 +2,8 @@
 
 A Flutter app for the [Time Tracker MCP server](https://github.com/cranthony/time-tracking-google-calendar-mcp).
 For now it shows today's **uncompacted notes** and has a **+** button to
-record a new one. Later it will show the summaries the server generates.
+record a new one; tap a note to change its description or time, or to
+delete it. Later it will show the summaries the server generates.
 
 It is built for Android and also runs on Windows and in Chrome. Chrome
 needs no extra tooling, so it's the quickest way to try changes.
@@ -339,7 +340,7 @@ lib/
   outbox/background_sync.dart    Android WorkManager task that sends them
   platform/add_note_shortcut.dart  taps on the home screen "+" (Android)
   screens/today_screen.dart      today's notes (saved and not), sign-in, "+"
-  widgets/add_note_dialog.dart   description + time picker
+  widgets/note_dialog.dart       new/edit note: description, time, delete
 android/app/src/main/kotlin/.../MainActivity.kt   forwards the sign-in deep link
                                                   and home screen "+" taps
 android/app/src/main/kotlin/.../AddNoteWidget.kt  the home screen "+" widget
