@@ -8,6 +8,7 @@ import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/home_screen.dart';
+import 'package:time_tracker_client/services/event_labels_repository.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
@@ -158,13 +159,16 @@ void main() {
         home: HomeScreen(
           notesRepository: notes,
           eventsRepository: InMemoryEventsRepository(),
+          eventLabelsRepository: InMemoryEventLabelsRepository(),
           outbox: outbox,
           addNoteRequests: addNoteRequests,
         ),
       );
     }
 
-    testWidgets('opens on Notes, and switches to Events', (tester) async {
+    testWidgets('opens on Notes, and switches to Events and Labels', (
+      tester,
+    ) async {
       await tester.pumpWidget(home());
       await tester.pumpAndSettle();
       expect(
@@ -175,6 +179,10 @@ void main() {
       await tester.tap(find.text('Events'));
       await tester.pumpAndSettle();
       expect(find.text('No events.'), findsOneWidget);
+
+      await tester.tap(find.text('Labels'));
+      await tester.pumpAndSettle();
+      expect(find.text('No event labels.'), findsOneWidget);
       outbox.stop();
     });
 
