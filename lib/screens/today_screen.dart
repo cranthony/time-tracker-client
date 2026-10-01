@@ -19,6 +19,7 @@ class TodayScreen extends StatefulWidget {
     this.onSignIn,
     this.onSignOut,
     this.addNoteRequests,
+    this.version,
     DateTime Function()? clock,
   }) : clock = clock ?? DateTime.now;
 
@@ -34,6 +35,9 @@ class TodayScreen extends StatefulWidget {
   /// Each event opens the New note dialog, timed at the event's time: taps
   /// on the home screen "+" widget.
   final Stream<DateTime>? addNoteRequests;
+
+  /// The app's version, for the About dialog; null until it's known.
+  final String? version;
   final DateTime Function() clock;
 
   @override
@@ -154,6 +158,12 @@ class _TodayScreenState extends State<TodayScreen> {
     await _load();
   }
 
+  void _showAbout() => showAboutDialog(
+    context: context,
+    applicationName: 'Time Tracker',
+    applicationVersion: widget.version,
+  );
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -173,15 +183,23 @@ class _TodayScreenState extends State<TodayScreen> {
                   ),
                 ),
               ),
-              if (widget.onSignOut != null && !needsSignIn)
-                PopupMenuButton<void>(
-                  itemBuilder: (_) => [
-                    PopupMenuItem(
-                      onTap: _signOut,
-                      child: const Text('Sign out'),
+              PopupMenuButton<_MenuItem>(
+                onSelected: (item) => switch (item) {
+                  _MenuItem.about => _showAbout(),
+                  _MenuItem.signOut => _signOut(),
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: _MenuItem.about,
+                    child: Text('About'),
+                  ),
+                  if (widget.onSignOut != null && !needsSignIn)
+                    const PopupMenuItem(
+                      value: _MenuItem.signOut,
+                      child: Text('Sign out'),
                     ),
-                  ],
-                ),
+                ],
+              ),
             ],
           ),
           body: RefreshIndicator(
@@ -263,6 +281,8 @@ class _TodayScreenState extends State<TodayScreen> {
     );
   }
 }
+
+enum _MenuItem { about, signOut }
 
 class _NoteTile extends StatelessWidget {
   const _NoteTile({required this.note});

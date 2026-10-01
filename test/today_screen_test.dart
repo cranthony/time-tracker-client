@@ -37,6 +37,7 @@ void main() {
     Future<void> Function()? onSignIn,
     Future<void> Function()? onSignOut,
     Stream<DateTime>? addNoteRequests,
+    String? version,
   }) {
     outboxNow = now;
     outbox = NoteOutbox(
@@ -52,6 +53,7 @@ void main() {
         onSignIn: onSignIn,
         onSignOut: onSignOut,
         addNoteRequests: addNoteRequests,
+        version: version,
       ),
     );
   }
@@ -172,6 +174,22 @@ void main() {
     expect(find.text('Offline thought'), findsOneWidget);
     expect(find.textContaining('Not saved'), findsNothing);
     expect(await repo.uncompactedNotes(), hasLength(2));
+  });
+
+  screenTest('About shows the app\'s version', (tester) async {
+    await tester.pumpWidget(
+      app(InMemoryNotesRepository(), version: '1.1.0 (25)'),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Show menu'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sign out'), findsNothing); // no sign-in here
+    await tester.tap(find.text('About'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Time Tracker'), findsOneWidget);
+    expect(find.text('1.1.0 (25)'), findsOneWidget);
   });
 
   screenTest('the home screen "+" opens the dialog at the time it was tapped', (

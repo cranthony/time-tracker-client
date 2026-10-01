@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'auth/auth_session.dart';
 import 'auth/oauth.dart';
@@ -90,6 +91,7 @@ class TimeTrackerApp extends StatefulWidget {
 class _TimeTrackerAppState extends State<TimeTrackerApp> {
   late final AppLifecycleListener _lifecycle;
   final _addNoteShortcut = AddNoteShortcut();
+  String? _version;
 
   @override
   void initState() {
@@ -101,6 +103,18 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       onPause: _onBackground,
     );
     _addNoteShortcut.start();
+    _loadVersion();
+  }
+
+  /// The version from pubspec.yaml, and CI's build number, e.g. "1.1.0 (25)".
+  Future<void> _loadVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    if (!mounted) return;
+    setState(() {
+      _version = info.buildNumber.isEmpty
+          ? info.version
+          : '${info.version} (${info.buildNumber})';
+    });
   }
 
   Future<void> _onForeground() async {
@@ -139,6 +153,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         onSignIn: widget.auth?.signIn,
         onSignOut: widget.auth?.signOut,
         addNoteRequests: _addNoteShortcut.taps,
+        version: _version,
       ),
     );
   }

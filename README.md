@@ -293,6 +293,21 @@ Tests cover the MCP client, the whole OAuth flow (against a fake AuthKit),
 the outbox of unsaved notes, and the notes screen, so none of them need a
 server.
 
+`.github/workflows/emulator.yml` also runs the Android app on an emulator
+and checks that the home screen "+" brings the keyboard up
+(`tool/emulator/keyboard_test.sh`).
+
+### Versions
+
+The version is in `pubspec.yaml` (e.g. `1.1.0+1`), and the app shows it
+under **About** in its menu. Only the part before the `+` is maintained by
+hand: CI builds with its run number as the build number, so Android sees
+each build as an update. Every pull request that changes the app bumps the
+version, following [semantic versioning](https://semver.org) (patch for
+fixes, minor for features), and adds a section for it to `CHANGELOG.md`;
+the Android workflow fails the PR otherwise. Releases are titled with the
+version, e.g. *Time Tracker 1.1.0 (build 25)*.
+
 ### App icon
 
 The icon (a calendar page whose body is a clock, on teal) is drawn once in

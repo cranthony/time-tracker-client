@@ -48,6 +48,11 @@ jobs:
           test -n "$MCP_URL" || { echo "::error::Set the MCP_URL repository variable"; exit 1; }
           test -n "$KEYSTORE_BASE64" && test -n "$KEYSTORE_PASSWORD" ||
             { echo "::error::Set the ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD secrets"; exit 1; }
+      - name: Check the version was bumped
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --depth=1 origin "${{ github.base_ref }}"
+          tool/check_version.sh FETCH_HEAD
       - run: flutter pub get
       - run: flutter test
       - name: Set up signing
@@ -86,9 +91,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: android-${{ github.run_number }}
-          TITLE: Android build ${{ github.run_number }}
-          NOTES: Built from ${{ github.sha }}.
+          NOTES: Built from ${{ github.sha }}. See CHANGELOG.md for what's new.
         run: |
+          version=$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' pubspec.yaml)
+          TITLE="Time Tracker $version (build ${{ github.run_number }})"
           cp build/app/outputs/flutter-apk/app-release.apk time-tracker.apk
           cp build/app/outputs/bundle/release/app-release.aab time-tracker.aab
           files=(time-tracker.apk time-tracker.aab)
