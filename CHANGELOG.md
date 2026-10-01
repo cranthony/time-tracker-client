@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 1.10.0
+
+- Clearing a label's color or priority now works: the app names them in
+  `update_event_label`'s new `clear_fields`, which the server needs to
+  blank a value. Before, the server kept the old one.
+- A label's name, fixed time and note can be edited and cleared too.
+  Fixed time is Yes, No or Not set.
+- A label with no color takes its priority's color, and the color editor
+  says so.
+
 ## 1.9.0
 
 - Edit an event label from its dialog on the Labels page: tap its name,

@@ -19,6 +19,9 @@ enum PropertyKind {
   integer,
   flag,
 
+  /// True, false, or not set.
+  optionalFlag,
+
   /// An ISO 8601 duration, typed as "1h 30m".
   duration,
 
@@ -67,6 +70,7 @@ Future<R?> showPropertiesDialog<R>(
   Future<R> Function(Map<String, Object?> changes)? save,
   String? Function(Map<String, Object?> values)? validate,
   Set<String> required = const {},
+  Map<String, String> hints = const {},
   Future<List<EventLabel>> Function()? labels,
   OneWayAction? oneWayAction,
   String signInHint = 'Sign in again, then try again.',
@@ -79,6 +83,7 @@ Future<R?> showPropertiesDialog<R>(
     save: save,
     validate: validate,
     required: required,
+    hints: hints,
     labels: labels,
     oneWayAction: oneWayAction,
     signInHint: signInHint,
@@ -93,6 +98,7 @@ class _PropertiesDialog<R> extends StatefulWidget {
     required this.save,
     required this.validate,
     required this.required,
+    required this.hints,
     required this.labels,
     required this.oneWayAction,
     required this.signInHint,
@@ -104,6 +110,9 @@ class _PropertiesDialog<R> extends StatefulWidget {
   final Future<R> Function(Map<String, Object?> changes)? save;
   final String? Function(Map<String, Object?> values)? validate;
   final Set<String> required;
+
+  /// Said under a property's editor.
+  final Map<String, String> hints;
   final Future<List<EventLabel>> Function()? labels;
   final OneWayAction? oneWayAction;
 
@@ -195,7 +204,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         value = text.isEmpty ? null : text;
       case PropertyKind.time:
         value = localIsoTimestamp(_draft as DateTime);
-      case PropertyKind.flag || PropertyKind.label:
+      case PropertyKind.flag || PropertyKind.optionalFlag || PropertyKind.label:
         value = _draft;
       case PropertyKind.color:
         value = switch (_draft) {
@@ -546,6 +555,28 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
           onChanged: (on) => setState(() => _draft = on),
         ),
       ),
+      PropertyKind.optionalFlag => SegmentedButton<int>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment(value: 1, label: Text('Yes')),
+          ButtonSegment(value: 0, label: Text('No')),
+          ButtonSegment(value: -1, label: Text('Not set')),
+        ],
+        selected: {
+          switch (_draft) {
+            true => 1,
+            false => 0,
+            _ => -1,
+          },
+        },
+        onSelectionChanged: (picked) => setState(
+          () => _draft = switch (picked.single) {
+            1 => true,
+            0 => false,
+            _ => null,
+          },
+        ),
+      ),
       PropertyKind.label => _labelPicker(context),
       PropertyKind.color => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -575,22 +606,41 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         onPressed: _confirmEdit,
       ),
     ];
-    // The color picker needs the dialog's whole width.
-    if (kind == PropertyKind.color) {
+    final hint = switch (widget.hints[key]) {
+      final hint? => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          hint,
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ),
+      ),
+      null => null,
+    };
+    // The color picker and the three-way choice need the dialog's whole
+    // width.
+    if (kind == PropertyKind.color || kind == PropertyKind.optionalFlag) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
           control,
+          ?hint,
           Row(mainAxisAlignment: MainAxisAlignment.end, children: buttons),
         ],
       );
     }
-    return Row(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: control),
-        ...buttons,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: control),
+            ...buttons,
+          ],
+        ),
+        ?hint,
       ],
     );
   }

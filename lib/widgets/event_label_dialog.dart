@@ -5,7 +5,7 @@ import 'properties_dialog.dart';
 
 /// Shows every property of [label], as the server sent it, under its name.
 ///
-/// Tapping its name, color or priority opens it for editing, in place;
+/// Tapping any of its values but its id opens it for editing, in place;
 /// "Save" sends every change with [save]. Returns what [save] returned
 /// (every label, as the server has them now), or null if nothing was
 /// saved. Without [save], or for a label with no id, nothing can be edited.
@@ -30,16 +30,20 @@ Future<List<EventLabel>?> showEventLabelDialog(
     'background_color': label.backgroundColor,
     'priority': label.priority,
     'fixed_time': label.fixedTime,
+    'note': label.note,
     ...label.properties,
   },
-  // What update_event_label changes. A label needs a name; if the server
-  // won't clear the others, the dialog shows its error.
+  // Everything update_event_label changes; each can be cleared.
   kinds: const {
     'name': PropertyKind.text,
     'background_color': PropertyKind.color,
     'priority': PropertyKind.integer,
+    'fixed_time': PropertyKind.optionalFlag,
+    'note': PropertyKind.multiline,
   },
-  required: const {'name'},
+  hints: const {
+    'background_color': "With no color, the label takes its priority's color.",
+  },
   save: save == null || label.id == null
       ? null
       : (changes) => save(label, changes),

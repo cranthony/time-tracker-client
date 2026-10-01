@@ -33,6 +33,31 @@ void main() {
     expect(label.properties['new_thing'], 'x');
   });
 
+  test(
+    'updateLabel sends changes, and names cleared ones in clear_fields',
+    () async {
+      final client = _FakeClient([
+        {'id': '1', 'name': 'Exercise', 'background_color': '#4986e7'},
+      ]);
+      final labels = await McpEventLabelsRepository(client).updateLabel(
+        const EventLabel(id: '1', name: 'Exercise'),
+        {'background_color': null, 'priority': null, 'name': 'Running'},
+      );
+      expect(client.calls.single.$1, 'update_event_label');
+      expect(client.calls.single.$2, {
+        'label': {'id': '1', 'name': 'Running'},
+        'clear_fields': ['background_color', 'priority'],
+      });
+      expect(labels.single.backgroundColor, '#4986e7');
+
+      await McpEventLabelsRepository(client)
+          .updateLabel(const EventLabel(id: '1'), {'note': 'Runs'});
+      expect(client.calls.last.$2, {
+        'label': {'id': '1', 'note': 'Runs'},
+      });
+    },
+  );
+
   test('parseColor reads #rrggbb and nothing else', () {
     expect(parseColor('#7bd148'), const Color(0xFF7BD148));
     expect(parseColor('7bd148'), isNull);
@@ -152,6 +177,10 @@ void main() {
     testWidgets('picks a color from the palette', (tester) async {
       final repo = _RecordingRepository(sample());
       await openColor(tester, repo);
+      expect(
+        find.text("With no color, the label takes its priority's color."),
+        findsOneWidget,
+      );
       // The current color is ticked.
       expect(
         tester.getSemantics(find.bySemanticsLabel('#7bd148')),
@@ -233,7 +262,7 @@ void main() {
       expect(find.byIcon(Icons.label_outline), findsOneWidget);
     });
 
-    testWidgets('renames, and won\'t empty a name', (tester) async {
+    testWidgets('renames', (tester) async {
       final repo = _RecordingRepository(sample());
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
@@ -241,17 +270,53 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(inDialog(find.text('Exercise')).last);
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), '');
-      await tester.tap(find.byTooltip('Keep edit'));
-      await tester.pumpAndSettle();
-      expect(find.text("This can't be empty."), findsOneWidget);
-
       await tester.enterText(find.byType(TextField), 'Running');
       await keepAndSave(tester);
       expect(repo.saved, [
         {'name': 'Running'},
       ]);
       expect(find.text('Running'), findsOneWidget);
+    });
+
+    testWidgets('sets fixed time and a note, and clears the name', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository(sample());
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Exercise'));
+      await tester.pumpAndSettle();
+      Future<void> edit(Finder value) async {
+        await tester.ensureVisible(value);
+        await tester.tap(value);
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> keep() async {
+        await tester.ensureVisible(find.byTooltip('Keep edit'));
+        await tester.tap(find.byTooltip('Keep edit'));
+        await tester.pumpAndSettle();
+      }
+
+      await edit(inDialog(find.text('Exercise')).last);
+      await tester.enterText(find.byType(TextField), '');
+      await keep();
+
+      await edit(inDialog(find.text('false')));
+      await tester.tap(find.text('Not set'));
+      await tester.pumpAndSettle();
+      await keep();
+
+      await edit(inDialog(find.text('(none)')).last);
+      await tester.enterText(find.byType(TextField), 'Runs and swims');
+      await keep();
+
+      await tester.tap(find.text('Save 3 changes'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {'name': null, 'fixed_time': null, 'note': 'Runs and swims'},
+      ]);
+      expect(find.text('(no name)'), findsOneWidget);
     });
 
     testWidgets('shows the server\'s error and keeps the edit', (tester) async {
@@ -324,5 +389,22 @@ class _RecordingRepository extends InMemoryEventLabelsRepository {
     if (error case final error?) throw error;
     saved.add(changes);
     return super.updateLabel(label, changes);
+  }
+}
+
+/// Answers every tool call with [result], and records the calls.
+class _FakeClient extends McpClient {
+  _FakeClient(this.result) : super(endpoint: Uri.parse('http://test'));
+
+  final Object? result;
+  final calls = <(String, Map<String, Object?>)>[];
+
+  @override
+  Future<Object?> callTool(
+    String name, [
+    Map<String, Object?> arguments = const {},
+  ]) async {
+    calls.add((name, arguments));
+    return result;
   }
 }
