@@ -6,6 +6,11 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 1.3.0
+
+- Shows all uncompacted notes, not just today's, under day headings
+  ("Today", "Yesterday", or the date).
+
 ## 1.2.0
 
 - Tap a note to edit its description or time, or to delete it (with

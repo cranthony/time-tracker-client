@@ -9,10 +9,10 @@ import '../services/mcp_client.dart';
 import '../services/notes_repository.dart';
 import '../widgets/note_dialog.dart';
 
-/// Today's uncompacted notes, plus any not saved yet, with a "+" to add
-/// another. Tapping a saved note edits or deletes it.
-class TodayScreen extends StatefulWidget {
-  const TodayScreen({
+/// All the uncompacted notes, plus any not saved yet, by day, with a "+"
+/// to add another. Tapping a saved note edits or deletes it.
+class NotesScreen extends StatefulWidget {
+  const NotesScreen({
     super.key,
     required this.repository,
     required this.outbox,
@@ -38,13 +38,15 @@ class TodayScreen extends StatefulWidget {
 
   /// The app's version, for the About dialog; null until it's known.
   final String? version;
+
+  /// Now, for the "Today" and "Yesterday" headings.
   final DateTime Function() clock;
 
   @override
-  State<TodayScreen> createState() => _TodayScreenState();
+  State<NotesScreen> createState() => _NotesScreenState();
 }
 
-class _TodayScreenState extends State<TodayScreen> {
+class _NotesScreenState extends State<NotesScreen> {
   List<Note>? _notes;
   Object? _error;
   bool _needsSignIn = false;
@@ -72,18 +74,12 @@ class _TodayScreenState extends State<TodayScreen> {
     super.dispose();
   }
 
-  bool _isToday(Note note) {
-    final t = note.timestamp.toLocal();
-    final now = widget.clock();
-    return t.year == now.year && t.month == now.month && t.day == now.day;
-  }
-
   Future<void> _load() async {
     try {
       final notes = await widget.repository.uncompactedNotes();
       if (!mounted) return;
       setState(() {
-        _notes = notes.where(_isToday).toList();
+        _notes = notes;
         _error = null;
         _needsSignIn = false;
       });
@@ -234,7 +230,7 @@ class _TodayScreenState extends State<TodayScreen> {
         final needsSignIn = _needsSignIn || widget.outbox.needsSignIn;
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Today'),
+            title: const Text('Notes'),
             actions: [
               Padding(
                 padding: const EdgeInsets.only(right: 16),
@@ -331,7 +327,7 @@ class _TodayScreenState extends State<TodayScreen> {
     } else if (rows.isEmpty) {
       banner = const _Message(
         icon: Icons.edit_note,
-        text: 'No notes yet today.\nTap + to add one.',
+        text: 'No uncompacted notes.\nTap + to add one.',
       );
     } else {
       banner = null;
@@ -344,7 +340,10 @@ class _TodayScreenState extends State<TodayScreen> {
       children: [
         ?banner,
         for (final (i, row) in rows.indexed) ...[
-          if (i > 0) const Divider(height: 1),
+          if (i == 0 || !_sameDay(rows[i - 1].at, row.at))
+            _DayHeader(day: row.at, today: widget.clock())
+          else
+            const Divider(height: 1),
           row.tile,
         ],
       ],
@@ -471,6 +470,40 @@ String _describe(Object e) => switch (e) {
   ),
   _ => '$e',
 };
+
+bool _sameDay(DateTime a, DateTime b) {
+  final x = a.toLocal(), y = b.toLocal();
+  return x.year == y.year && x.month == y.month && x.day == y.day;
+}
+
+/// "Today", "Yesterday", or the date, above that day's notes.
+class _DayHeader extends StatelessWidget {
+  const _DayHeader({required this.day, required this.today});
+
+  final DateTime day;
+  final DateTime today;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final local = day.toLocal();
+    final yesterday = DateTime(today.year, today.month, today.day - 1);
+    final label = _sameDay(local, today)
+        ? 'Today'
+        : _sameDay(local, yesterday)
+        ? 'Yesterday'
+        : MaterialLocalizations.of(context).formatMediumDate(local);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Text(
+        label,
+        style: theme.textTheme.labelLarge?.copyWith(
+          color: theme.colorScheme.primary,
+        ),
+      ),
+    );
+  }
+}
 
 String _time(BuildContext context, Note note) =>
     MaterialLocalizations.of(context)

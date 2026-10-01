@@ -10,7 +10,7 @@ import 'outbox/background_sync.dart';
 import 'outbox/note_outbox.dart';
 import 'outbox/outbox_store.dart';
 import 'platform/add_note_shortcut.dart';
-import 'screens/today_screen.dart';
+import 'screens/notes_screen.dart';
 import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
 
@@ -147,7 +147,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         colorSchemeSeed: Colors.teal,
         brightness: Brightness.dark,
       ),
-      home: TodayScreen(
+      home: NotesScreen(
         repository: widget.repository,
         outbox: widget.outbox,
         onSignIn: widget.auth?.signIn,
