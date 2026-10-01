@@ -199,6 +199,32 @@ void main() {
     expect(saved.timestamp, tappedAt);
     await taps.close();
   });
+
+  screenTest('the dialog shows the keyboard once the app has focus', (
+    tester,
+  ) async {
+    final repo = InMemoryNotesRepository();
+    final taps = StreamController<DateTime>();
+    await tester.pumpWidget(app(repo, addNoteRequests: taps.stream));
+    await tester.pumpAndSettle();
+
+    // From the home screen widget: the dialog opens while the app is still
+    // coming to the front, without window focus.
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    taps.add(today(7, 5));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.focusNode!.hasFocus, isTrue);
+
+    tester.testTextInput.log.clear();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(
+      tester.testTextInput.log.map((call) => call.method),
+      contains('TextInput.show'),
+    );
+    await taps.close();
+  });
 }
 
 class _SignInRepository extends InMemoryNotesRepository {
