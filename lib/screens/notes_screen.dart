@@ -220,6 +220,8 @@ class _NotesScreenState extends State<NotesScreen> {
     context: context,
     applicationName: 'Time Tracker',
     applicationVersion: widget.version,
+    // Which server this build talks to, or that it's the offline demo.
+    children: [Text('Server: ${widget.repository.label}')],
   );
 
   @override
@@ -232,15 +234,6 @@ class _NotesScreenState extends State<NotesScreen> {
           appBar: AppBar(
             title: const Text('Notes'),
             actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Center(
-                  child: Text(
-                    widget.repository.label,
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-                ),
-              ),
               PopupMenuButton<_MenuItem>(
                 onSelected: (item) => switch (item) {
                   _MenuItem.about => _showAbout(),
