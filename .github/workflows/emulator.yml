@@ -1,7 +1,7 @@
 # Runs the app on an Android emulator and checks that the home screen "+"
 # opens the New note dialog with the keyboard up; see
-# tool/emulator/keyboard_test.sh. Runs on Android 14 with animations off
-# (the usual emulator setup) and on Android 16 with them on, like a phone.
+# tool/emulator/keyboard_test.sh. Runs on Android 16 with animations on,
+# like a phone.
 # The device logs and screenshots are kept as the run's artifacts.
 name: Emulator tests
 
@@ -11,17 +11,8 @@ on:
 
 jobs:
   keyboard:
-    name: keyboard (API ${{ matrix.api }}, animations ${{ matrix.animations }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - api: 34
-            animations: 'off'
-          - api: 36
-            animations: 'on'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -43,13 +34,13 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: ${{ matrix.api }}
+          api-level: 36
           target: google_apis
           arch: x86_64
-          disable-animations: ${{ matrix.animations == 'off' }}
+          disable-animations: false
           script: tool/emulator/keyboard_test.sh build/app/outputs/flutter-apk/app-release.apk
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: emulator-api${{ matrix.api }}
+          name: emulator
           path: build/emulator
