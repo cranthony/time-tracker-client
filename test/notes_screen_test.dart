@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
-import 'package:time_tracker_client/screens/today_screen.dart';
+import 'package:time_tracker_client/screens/notes_screen.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 
@@ -46,7 +46,7 @@ void main() {
       clock: () => outboxNow,
     )..start();
     return MaterialApp(
-      home: TodayScreen(
+      home: NotesScreen(
         repository: repo,
         outbox: outbox,
         clock: () => now,
@@ -58,12 +58,16 @@ void main() {
     );
   }
 
-  screenTest('shows only today\'s uncompacted notes', (tester) async {
+  screenTest('shows all uncompacted notes, by day', (tester) async {
     final repo = InMemoryNotesRepository([
       Note(timestamp: today(9, 30), description: 'Standup'),
       Note(
         timestamp: today(18, 0).subtract(const Duration(days: 1)),
-        description: 'Yesterday',
+        description: 'Yesterday evening',
+      ),
+      Note(
+        timestamp: today(8, 0).subtract(const Duration(days: 3)),
+        description: 'Days ago',
       ),
       Note(
         timestamp: today(11, 0),
@@ -75,16 +79,28 @@ void main() {
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
-    expect(find.text('Standup'), findsOneWidget);
-    expect(find.text('(no description)'), findsOneWidget);
-    expect(find.text('Yesterday'), findsNothing);
     expect(find.text('Compacted'), findsNothing);
+    final threeDaysAgo = MaterialLocalizations.of(
+      tester.element(find.text('Standup')),
+    ).formatMediumDate(today(8, 0).subtract(const Duration(days: 3)));
+    // Oldest first, each day under its heading.
+    final order = [
+      threeDaysAgo,
+      'Days ago',
+      'Yesterday',
+      'Yesterday evening',
+      'Today',
+      'Standup',
+      '(no description)',
+    ];
+    final ys = [for (final t in order) tester.getTopLeft(find.text(t)).dy];
+    expect(ys, [...ys]..sort());
   });
 
   screenTest('shows an empty state', (tester) async {
     await tester.pumpWidget(app(InMemoryNotesRepository()));
     await tester.pumpAndSettle();
-    expect(find.textContaining('No notes yet today'), findsOneWidget);
+    expect(find.textContaining('No uncompacted notes'), findsOneWidget);
   });
 
   Future<void> addNote(WidgetTester tester, String text) async {
