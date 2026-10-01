@@ -82,6 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _Tab.events => EventsScreen(
           repository: widget.eventsRepository,
           serverLabel: widget.notesRepository.label,
+          labelsRepository: widget.eventLabelsRepository,
           onSignIn: widget.onSignIn,
           onSignOut: widget.onSignOut,
           version: widget.version,

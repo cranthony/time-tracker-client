@@ -6,6 +6,21 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 1.8.0
+
+- Edit an event from its dialog on the Events page: tap a value to
+  change it there, then Save. You can change the summary, start, end,
+  description, location, label, priority, minimum duration, and whether
+  its time and duration are fixed. Each changed value shows its old value
+  struck through until you save. If the server moves other events to
+  make room, a message says how many. If saving fails, the dialog stays
+  open with your edits and shows the server's error.
+- Cancel an event from its dialog. The server can't undo this, so the app
+  asks first.
+- Minimum durations show as "1h 30m" rather than "PT1H30M".
+- Picking a label lists the labels by name. As on the Labels page, that
+  syncs them from the event label sheet.
+
 ## 1.7.0
 
 - A Labels page, from the bar at the bottom of the screen, lists your
