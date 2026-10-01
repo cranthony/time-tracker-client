@@ -7,10 +7,10 @@ import '../outbox/note_outbox.dart';
 import '../outbox/pending_note.dart';
 import '../services/mcp_client.dart';
 import '../services/notes_repository.dart';
-import '../widgets/add_note_dialog.dart';
+import '../widgets/note_dialog.dart';
 
 /// Today's uncompacted notes, plus any not saved yet, with a "+" to add
-/// another.
+/// another. Tapping a saved note edits or deletes it.
 class TodayScreen extends StatefulWidget {
   const TodayScreen({
     super.key,
@@ -49,7 +49,12 @@ class _TodayScreenState extends State<TodayScreen> {
   Object? _error;
   bool _needsSignIn = false;
   bool _signingIn = false;
-  bool _addingNote = false;
+
+  /// One dialog at a time, e.g. if the home screen "+" is tapped twice.
+  bool _dialogOpen = false;
+
+  /// Notes being edited or deleted on the server, by id.
+  final _changing = <String>{};
   StreamSubscription<DateTime>? _addNoteRequests;
 
   @override
@@ -100,14 +105,13 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Future<void> _addNote({DateTime? at}) async {
-    // One dialog at a time, e.g. if the home screen "+" is tapped twice.
-    if (_addingNote) return;
-    _addingNote = true;
+    if (_dialogOpen) return;
+    _dialogOpen = true;
     final Note? note;
     try {
       note = await showAddNoteDialog(context, time: at);
     } finally {
-      _addingNote = false;
+      _dialogOpen = false;
     }
     if (note == null || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
@@ -117,6 +121,64 @@ class _TodayScreenState extends State<TodayScreen> {
       messenger.showSnackBar(
         SnackBar(content: Text('Could not keep the note: $e')),
       );
+    }
+  }
+
+  Future<void> _editNote(Note note) async {
+    final id = note.id;
+    if (id == null || _dialogOpen || _changing.contains(id)) return;
+    _dialogOpen = true;
+    final NoteDialogResult? result;
+    try {
+      result = await showEditNoteDialog(context, note);
+    } finally {
+      _dialogOpen = false;
+    }
+    if (result == null || !mounted) return;
+    final edited = result is SaveNote ? result.note : null;
+    final retimed =
+        edited != null && !edited.timestamp.isAtSameMomentAs(note.timestamp);
+    final described = edited != null && edited.description != note.description;
+    if (edited != null && !retimed && !described) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _changing.add(id));
+    try {
+      switch (result) {
+        case SaveNote():
+          await widget.repository.editNote(
+            id,
+            timestamp: retimed ? edited.timestamp : null,
+            // An empty description clears it.
+            description: described ? edited.description ?? '' : null,
+          );
+        case DeleteNote():
+          await widget.repository.deleteNote(id);
+          messenger.showSnackBar(
+            SnackBar(
+              content: const Text('Note deleted'),
+              action: SnackBarAction(
+                label: 'Undo',
+                // Saved again as a new note, through the outbox, so it
+                // isn't lost if this fails too.
+                onPressed: () => widget.outbox.add(
+                  Note(
+                    timestamp: note.timestamp,
+                    description: note.description,
+                  ),
+                ),
+              ),
+            ),
+          );
+      }
+    } catch (e) {
+      final action = result is DeleteNote ? 'delete' : 'change';
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not $action the note: ${_describe(e)}')),
+      );
+    } finally {
+      if (mounted) setState(() => _changing.remove(id));
+      await _load();
     }
   }
 
@@ -223,7 +285,15 @@ class _TodayScreenState extends State<TodayScreen> {
     final pending = widget.outbox.pending;
     final rows = <({DateTime at, Widget tile})>[
       for (final note in notes ?? const <Note>[])
-        (at: note.timestamp, tile: _NoteTile(note: note)),
+        (
+          at: note.timestamp,
+          tile: _NoteTile(
+            note: note,
+            changing: _changing.contains(note.id),
+            // Without an id (from an older server) it can't be changed.
+            onTap: note.id == null ? null : () => _editNote(note),
+          ),
+        ),
       for (final note in pending)
         (
           at: note.note.timestamp,
@@ -285,9 +355,13 @@ class _TodayScreenState extends State<TodayScreen> {
 enum _MenuItem { about, signOut }
 
 class _NoteTile extends StatelessWidget {
-  const _NoteTile({required this.note});
+  const _NoteTile({required this.note, required this.changing, this.onTap});
 
   final Note note;
+
+  /// Being edited or deleted on the server.
+  final bool changing;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -297,6 +371,13 @@ class _NoteTile extends StatelessWidget {
       title: note.description == null
           ? Text('(no description)', style: TextStyle(color: theme.hintColor))
           : Text(note.description!),
+      trailing: changing
+          ? const SizedBox.square(
+              dimension: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : null,
+      onTap: changing ? null : onTap,
     );
   }
 }
@@ -380,6 +461,16 @@ class _PendingNoteTile extends StatelessWidget {
     );
   }
 }
+
+/// [e] for a person: a tool's own error message, without the wrapping.
+String _describe(Object e) => switch (e) {
+  SignInRequiredException() => 'sign in first',
+  McpException(:final message) => message.replaceFirst(
+    RegExp(r'^Tool \w+ failed: '),
+    '',
+  ),
+  _ => '$e',
+};
 
 String _time(BuildContext context, Note note) =>
     MaterialLocalizations.of(context)

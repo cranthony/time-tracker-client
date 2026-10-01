@@ -1,7 +1,12 @@
 /// A single time note, mirroring the Time Tracker MCP server's `NotedTime`:
 /// a moment worth recording, with an optional description of what it marks.
 class Note {
-  const Note({required this.timestamp, this.description, this.compactionId});
+  const Note({
+    required this.timestamp,
+    this.description,
+    this.compactionId,
+    this.id,
+  });
 
   final DateTime timestamp;
   final String? description;
@@ -9,14 +14,20 @@ class Note {
   /// Set once the note has been folded into an event by compaction.
   final String? compactionId;
 
+  /// The server's id for the note, which edit_note and delete_note take;
+  /// null until it's saved. It changes when the note's timestamp does.
+  final String? id;
+
   bool get isCompacted => compactionId != null;
 
   factory Note.fromJson(Map<String, dynamic> json) => Note(
     timestamp: DateTime.parse(json['timestamp'] as String),
     description: json['description'] as String?,
     compactionId: json['compaction_id'] as String?,
+    id: json['id'] as String?,
   );
 
+  /// As the note tool's NotedTime, which has no id.
   Map<String, dynamic> toJson() => {
     // In the device's time zone, with its UTC offset: the server keeps the
     // offset, so the note reads as local time wherever it's shown.

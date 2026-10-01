@@ -176,6 +176,88 @@ void main() {
     expect(await repo.uncompactedNotes(), hasLength(2));
   });
 
+  screenTest('tapping a note edits it', (tester) async {
+    final repo = InMemoryNotesRepository([
+      Note(timestamp: today(9, 30), description: 'Standup'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Standup'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit note'), findsOneWidget);
+    expect(find.text('9:30 AM'), findsWidgets);
+    await tester.enterText(find.byType(TextField), 'Standup, ran long');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    final saved = (await repo.uncompactedNotes()).single;
+    expect(saved.description, 'Standup, ran long');
+    expect(saved.timestamp, today(9, 30));
+    expect(find.text('Standup, ran long'), findsOneWidget);
+  });
+
+  screenTest('clearing a note\'s description removes it', (tester) async {
+    final repo = InMemoryNotesRepository([
+      Note(timestamp: today(9, 30), description: 'Standup'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Standup'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '  ');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect((await repo.uncompactedNotes()).single.description, isNull);
+    expect(find.text('(no description)'), findsOneWidget);
+  });
+
+  screenTest('deleting a note removes it, with undo', (tester) async {
+    final repo = InMemoryNotesRepository([
+      Note(timestamp: today(9, 30), description: 'Standup'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Standup'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+
+    expect(await repo.uncompactedNotes(), isEmpty);
+    expect(find.text('Standup'), findsNothing);
+    expect(find.text('Note deleted'), findsOneWidget);
+
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    final restored = (await repo.uncompactedNotes()).single;
+    expect(restored.description, 'Standup');
+    expect(restored.timestamp, today(9, 30));
+    expect(find.text('Standup'), findsOneWidget);
+  });
+
+  screenTest('a failed edit says why and keeps the note', (tester) async {
+    final repo = _FailingEditsRepository([
+      Note(timestamp: today(9, 30), description: 'Standup'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Standup'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Changed');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Could not change the note: That note was compacted'),
+      findsOneWidget,
+    );
+    expect(find.text('Standup'), findsOneWidget);
+  });
+
   screenTest('About shows the app\'s version', (tester) async {
     await tester.pumpWidget(
       app(InMemoryNotesRepository(), version: '1.1.0 (25)'),
@@ -244,4 +326,16 @@ class _FlakyRepository extends InMemoryNotesRepository {
     if (offline) throw McpException('offline');
     return super.addNote(note);
   }
+}
+
+class _FailingEditsRepository extends InMemoryNotesRepository {
+  _FailingEditsRepository(super.notes);
+
+  @override
+  Future<Note> editNote(
+    String id, {
+    DateTime? timestamp,
+    String? description,
+  }) async =>
+      throw McpException('Tool edit_note failed: That note was compacted');
 }
