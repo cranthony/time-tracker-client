@@ -6,6 +6,11 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 1.6.0
+
+- Tap an event on the Events page to see all its properties, as the
+  server has them, in a dialog. Start and end are in local time.
+
 ## 1.5.0
 
 - An Events page, from the bar at the bottom of the screen, shows a

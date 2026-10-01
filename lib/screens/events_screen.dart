@@ -5,10 +5,12 @@ import '../services/events_repository.dart';
 import '../services/mcp_client.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
+import '../widgets/event_dialog.dart';
 import '../widgets/status_message.dart';
 
 /// One day's events, with buttons to step to the day before or after.
-/// Tapping the date picks another.
+/// Tapping the date picks another; tapping an event shows all its
+/// properties.
 class EventsScreen extends StatefulWidget {
   const EventsScreen({
     super.key,
@@ -228,6 +230,7 @@ class _EventTile extends StatelessWidget {
         '${_when(context, event.start)} – ${_when(context, event.end)}'
         '${cancelled ? ' · cancelled' : ''}',
       ),
+      onTap: () => showEventDialog(context, event),
     );
   }
 
