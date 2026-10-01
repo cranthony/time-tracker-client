@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
@@ -75,6 +76,61 @@ void main() {
     await tester.tap(find.byTooltip('Next day'));
     await tester.pumpAndSettle();
     expect(find.text('No events.'), findsOneWidget);
+  });
+
+  testWidgets('tapping an event shows all its properties', (tester) async {
+    final repo = InMemoryEventsRepository([
+      Event.fromJson({
+        'id': 'e1',
+        'summary': 'Work',
+        'start': localIsoTimestamp(at(30, 9)),
+        'end': localIsoTimestamp(at(30, 10, 30)),
+        'description': 'Deep work\nNo email',
+        'location': null,
+        'min_duration': 'PT1H',
+        'priority': 1,
+        'is_cancelled': false,
+        'is_end_of_day_sleep': true,
+      }),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Work'));
+    await tester.pumpAndSettle();
+    final dialog = find.byType(AlertDialog);
+    expect(dialog, findsOneWidget);
+    String? valueOf(String key) {
+      final label = find.descendant(of: dialog, matching: find.text(key));
+      final column = find.ancestor(of: label, matching: find.byType(Column));
+      final value = find.descendant(
+        of: column.first,
+        matching: find.byWidgetPredicate(
+          (w) => w is SelectableText || (w is Text && w.data != key),
+        ),
+      );
+      return switch (tester.widget(value.first)) {
+        SelectableText(:final data) => data,
+        Text(:final data) => data,
+        _ => null,
+      };
+    }
+
+    expect(valueOf('id'), 'e1');
+    expect(valueOf('summary'), 'Work');
+    expect(valueOf('start'), 'Wednesday, September 30, 2026, 9:00 AM');
+    expect(valueOf('end'), 'Wednesday, September 30, 2026, 10:30 AM');
+    expect(valueOf('description'), 'Deep work\nNo email');
+    expect(valueOf('location'), '(none)');
+    expect(valueOf('min_duration'), 'PT1H');
+    expect(valueOf('priority'), '1');
+    expect(valueOf('is_cancelled'), 'false');
+    // Ones the app doesn't know about yet too.
+    expect(valueOf('is_end_of_day_sleep'), 'true');
+
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(dialog, findsNothing);
   });
 
   testWidgets('asks to sign in when the server needs it', (tester) async {
