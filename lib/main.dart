@@ -11,6 +11,7 @@ import 'outbox/note_outbox.dart';
 import 'outbox/outbox_store.dart';
 import 'platform/add_note_shortcut.dart';
 import 'screens/home_screen.dart';
+import 'services/event_labels_repository.dart';
 import 'services/events_repository.dart';
 import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
@@ -29,6 +30,7 @@ Future<void> main() async {
       TimeTrackerApp(
         repository: repository,
         eventsRepository: InMemoryEventsRepository(),
+        eventLabelsRepository: InMemoryEventLabelsRepository(),
         outbox: NoteOutbox(
           store: InMemoryOutboxStore(),
           repository: repository,
@@ -46,6 +48,7 @@ Future<void> main() async {
     TimeTrackerApp(
       repository: repository,
       eventsRepository: McpEventsRepository(client),
+      eventLabelsRepository: McpEventLabelsRepository(client),
       outbox: NoteOutbox(store: PrefsOutboxStore(), repository: repository),
       auth: auth,
     ),
@@ -83,12 +86,14 @@ class TimeTrackerApp extends StatefulWidget {
     super.key,
     required this.repository,
     required this.eventsRepository,
+    required this.eventLabelsRepository,
     required this.outbox,
     this.auth,
   });
 
   final NotesRepository repository;
   final EventsRepository eventsRepository;
+  final EventLabelsRepository eventLabelsRepository;
   final NoteOutbox outbox;
   final AuthSession? auth;
 
@@ -158,6 +163,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       home: HomeScreen(
         notesRepository: widget.repository,
         eventsRepository: widget.eventsRepository,
+        eventLabelsRepository: widget.eventLabelsRepository,
         outbox: widget.outbox,
         onSignIn: widget.auth?.signIn,
         onSignOut: widget.auth?.signOut,
