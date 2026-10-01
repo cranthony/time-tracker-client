@@ -1,3 +1,5 @@
+import 'note.dart';
+
 /// A calendar event, mirroring the Time Tracker MCP server's `PublicEvent`.
 ///
 /// Only the fields the app uses so far are typed; everything the server
@@ -29,4 +31,15 @@ class Event {
     isCancelled: json['is_cancelled'] == true,
     properties: Map.unmodifiable(json),
   );
+
+  /// The event as `update_event` takes it: as the server sent it, with the
+  /// typed fields (times in local time) over the top.
+  Map<String, Object?> toJson() => {
+    ...properties,
+    'id': id,
+    'summary': summary,
+    'start': localIsoTimestamp(start),
+    'end': localIsoTimestamp(end),
+    'is_cancelled': isCancelled,
+  };
 }

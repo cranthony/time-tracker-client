@@ -35,25 +35,13 @@ class _PropertiesDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             for (final MapEntry(:key, :value) in properties.entries)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      key,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                    if (value == null)
-                      Text('(none)', style: TextStyle(color: theme.hintColor))
-                    else
-                      SelectableText(
+              PropertyRow(
+                name: key,
+                child: value == null
+                    ? Text('(none)', style: TextStyle(color: theme.hintColor))
+                    : SelectableText(
                         format?.call(context, key, value) ?? '$value',
                       ),
-                  ],
-                ),
               ),
           ],
         ),
@@ -64,6 +52,49 @@ class _PropertiesDialog extends StatelessWidget {
           child: const Text('Close'),
         ),
       ],
+    );
+  }
+}
+
+/// One property in a properties dialog: its [name] in small primary-colored
+/// type, any [marker] after it, then [child], its value.
+class PropertyRow extends StatelessWidget {
+  const PropertyRow({
+    super.key,
+    required this.name,
+    required this.child,
+    this.marker,
+  });
+
+  final String name;
+  final Widget child;
+  final Widget? marker;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                name,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              if (marker case final marker?) ...[
+                const SizedBox(width: 6),
+                marker,
+              ],
+            ],
+          ),
+          child,
+        ],
+      ),
     );
   }
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/event_label.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
@@ -12,21 +13,26 @@ import 'package:time_tracker_client/services/event_labels_repository.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
+import 'package:time_tracker_client/widgets/event_dialog.dart';
 
 void main() {
   final now = DateTime(2026, 9, 30, 12);
   DateTime at(int day, int hour, [int minute = 0]) =>
       DateTime(2026, 9, day, hour, minute);
 
-  Widget app(EventsRepository repo, {Future<void> Function()? onSignIn}) =>
-      MaterialApp(
-        home: EventsScreen(
-          repository: repo,
-          serverLabel: 'offline demo',
-          onSignIn: onSignIn,
-          clock: () => now,
-        ),
-      );
+  Widget app(
+    EventsRepository repo, {
+    Future<void> Function()? onSignIn,
+    EventLabelsRepository? labels,
+  }) => MaterialApp(
+    home: EventsScreen(
+      repository: repo,
+      serverLabel: 'offline demo',
+      labelsRepository: labels,
+      onSignIn: onSignIn,
+      clock: () => now,
+    ),
+  );
 
   test('Event.fromJson keeps every property the server sent', () {
     final event = Event.fromJson({
@@ -123,7 +129,7 @@ void main() {
     expect(valueOf('end'), 'Wednesday, September 30, 2026, 10:30 AM');
     expect(valueOf('description'), 'Deep work\nNo email');
     expect(valueOf('location'), '(none)');
-    expect(valueOf('min_duration'), 'PT1H');
+    expect(valueOf('min_duration'), '1h');
     expect(valueOf('priority'), '1');
     expect(valueOf('is_cancelled'), 'false');
     // Ones the app doesn't know about yet too.
@@ -132,6 +138,228 @@ void main() {
     await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
     expect(dialog, findsNothing);
+  });
+
+  group('editing in the event dialog', () {
+    Event work() => Event.fromJson({
+      'id': 'e1',
+      'summary': 'Work',
+      'start': localIsoTimestamp(at(30, 9)),
+      'end': localIsoTimestamp(at(30, 10, 30)),
+      'description': 'Deep work',
+      'location': null,
+      'event_label_id': 'l1',
+      'min_duration': 'PT1H',
+      'priority': 2,
+      'is_fixed_time': false,
+      'is_cancelled': false,
+    });
+
+    Future<void> openWork(WidgetTester tester, EventsRepository repo) async {
+      await tester.pumpWidget(
+        app(
+          repo,
+          labels: InMemoryEventLabelsRepository([
+            const EventLabel(id: 'l1', name: 'Work', priority: 1),
+            const EventLabel(id: 'l2', name: 'Exercise', priority: 2),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Work').first);
+      await tester.pumpAndSettle();
+    }
+
+    Finder inDialog(Finder f) =>
+        find.descendant(of: find.byType(AlertDialog), matching: f);
+
+    /// Taps [value], scrolling the dialog to it first.
+    Future<void> edit(WidgetTester tester, Finder value) async {
+      await tester.ensureVisible(value);
+      await tester.pumpAndSettle();
+      await tester.tap(value);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('tapping a value edits it; Save sends the changes', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([work()]);
+      await openWork(tester, repo);
+
+      await edit(tester, inDialog(find.text('Deep work')));
+      await tester.enterText(find.byType(TextField), 'Invoice export');
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      // The new value, the old one struck through, and a count.
+      expect(inDialog(find.text('Invoice export')), findsOneWidget);
+      expect(inDialog(find.text('Deep work')), findsOneWidget);
+      expect(find.text('Save 1 change'), findsOneWidget);
+
+      // The summary's row, not the title.
+      await edit(tester, inDialog(find.text('Work')).last);
+      await tester.enterText(find.byType(TextField), 'Admin');
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      expect(find.text('Save 2 changes'), findsOneWidget);
+
+      await tester.tap(find.text('Save 2 changes'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {'description': 'Invoice export', 'summary': 'Admin'},
+      ]);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text('Saved.'), findsOneWidget);
+      expect(find.text('Admin'), findsOneWidget);
+    });
+
+    testWidgets('shows the server\'s error and keeps the edits', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([work()])
+        ..error = McpException(
+          'Tool update_event failed: Overlaps a fixed-time event',
+        );
+      await openWork(tester, repo);
+
+      await edit(tester, inDialog(find.text('2')));
+      await tester.enterText(find.byType(TextField), '1');
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save 1 change'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          "Couldn't save. Tool update_event failed: "
+          'Overlaps a fixed-time event',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.text('Save 1 change'), findsOneWidget);
+
+      // Fixed on the server: trying again works.
+      repo.error = null;
+      await tester.tap(find.text('Save 1 change'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {'priority': 1},
+      ]);
+      expect(find.byType(AlertDialog), findsNothing);
+    });
+
+    testWidgets('says when signing in again is needed', (tester) async {
+      final repo = _RecordingRepository([work()])
+        ..error = SignInRequiredException();
+      await openWork(tester, repo);
+      await edit(tester, inDialog(find.text('Deep work')));
+      await tester.enterText(find.byType(TextField), 'x');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Sign in again'), findsOneWidget);
+    });
+
+    testWidgets('says how many other events moved', (tester) async {
+      final repo = _RecordingRepository([work()])
+        ..alsoMoved = [
+          Event(id: 'e2', start: at(30, 11), end: at(30, 12)),
+          Event(id: 'e3', start: at(30, 12), end: at(30, 13)),
+        ];
+      await openWork(tester, repo);
+      await edit(tester, inDialog(find.text('1h')));
+      await tester.enterText(find.byType(TextField), 'soon');
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      expect(find.text('Enter a duration, like 1h 30m.'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), '1h 30m');
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save 1 change'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {'min_duration': 'PT1H30M'},
+      ]);
+      expect(
+        find.text('Saved. 2 other events moved to make room.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('picks a label by name', (tester) async {
+      final repo = _RecordingRepository([work()]);
+      await openWork(tester, repo);
+      await edit(tester, inDialog(find.text('l1')));
+      await tester.tap(find.byType(DropdownButton<String?>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Exercise').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      // Names, now that they're loaded.
+      expect(inDialog(find.text('Exercise')), findsOneWidget);
+      await tester.tap(find.text('Save 1 change'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {'event_label_id': 'l2'},
+      ]);
+    });
+
+    testWidgets('asks before throwing edits away; Revert drops them', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([work()]);
+      await openWork(tester, repo);
+      await edit(tester, inDialog(find.text('Deep work')));
+      await tester.enterText(find.byType(TextField), 'Other');
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(find.text('Discard changes?'), findsOneWidget);
+      await tester.tap(find.text('Keep editing'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Revert'));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('Deep work')), findsOneWidget);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(repo.saved, isEmpty);
+    });
+
+    testWidgets('cancels an event after asking', (tester) async {
+      final repo = _RecordingRepository([work()]);
+      await openWork(tester, repo);
+      await tester.tap(find.text('Cancel event'));
+      await tester.pumpAndSettle();
+      expect(find.text('Cancel this event?'), findsOneWidget);
+      await tester.tap(find.text('Cancel event').last);
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {'is_cancelled': true},
+      ]);
+      expect(find.text('9:00 AM – 10:30 AM · cancelled'), findsOneWidget);
+    });
+
+    test('durations read as typed and as the server sends them', () {
+      expect(parseDuration('1h 30m'), const Duration(minutes: 90));
+      expect(parseDuration('90m'), const Duration(minutes: 90));
+      expect(parseDuration('90'), const Duration(minutes: 90));
+      expect(parseDuration('1:30'), const Duration(minutes: 90));
+      expect(parseDuration('2h'), const Duration(hours: 2));
+      expect(parseDuration('PT45M'), const Duration(minutes: 45));
+      expect(parseDuration('soon'), isNull);
+      expect(parseIsoDuration('PT1H30M'), const Duration(minutes: 90));
+      expect(parseIsoDuration('P1DT2H'), const Duration(hours: 26));
+      expect(parseIsoDuration('PT'), isNull);
+      expect(isoDuration(const Duration(minutes: 90)), 'PT1H30M');
+      expect(isoDuration(Duration.zero), 'PT0S');
+      expect(formatDuration(const Duration(minutes: 45)), '45m');
+    });
   });
 
   testWidgets('asks to sign in when the server needs it', (tester) async {
@@ -214,5 +442,26 @@ class _SignInRepository extends InMemoryEventsRepository {
   Future<List<Event>> events(DateTime from, DateTime to) {
     if (!signedIn()) throw SignInRequiredException();
     return super.events(from, to);
+  }
+}
+
+/// Records what's saved, and fails with [error] while it's set.
+class _RecordingRepository extends InMemoryEventsRepository {
+  _RecordingRepository(super.events);
+
+  final saved = <Map<String, Object?>>[];
+  Object? error;
+
+  /// Returned as moved by every save.
+  List<Event> alsoMoved = const [];
+
+  @override
+  Future<List<Event>> updateEvent(
+    Event event,
+    Map<String, Object?> changes,
+  ) async {
+    if (error case final error?) throw error;
+    saved.add(changes);
+    return [...await super.updateEvent(event, changes), ...alsoMoved];
   }
 }

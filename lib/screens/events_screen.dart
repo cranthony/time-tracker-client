@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
+import '../services/event_labels_repository.dart';
 import '../services/events_repository.dart';
 import '../services/mcp_client.dart';
 import '../widgets/app_menu.dart';
@@ -10,12 +11,13 @@ import '../widgets/status_message.dart';
 
 /// One day's events, with buttons to step to the day before or after.
 /// Tapping the date picks another; tapping an event shows all its
-/// properties.
+/// properties, and lets one change them.
 class EventsScreen extends StatefulWidget {
   const EventsScreen({
     super.key,
     required this.repository,
     required this.serverLabel,
+    this.labelsRepository,
     this.onSignIn,
     this.onSignOut,
     this.version,
@@ -23,6 +25,9 @@ class EventsScreen extends StatefulWidget {
   }) : clock = clock ?? DateTime.now;
 
   final EventsRepository repository;
+
+  /// Where to list labels from, to pick an event's; null to type its id.
+  final EventLabelsRepository? labelsRepository;
 
   /// Which server this build talks to, for the About dialog.
   final String serverLabel;
@@ -95,6 +100,29 @@ class _EventsScreenState extends State<EventsScreen> {
       _error = null;
     });
     _load();
+  }
+
+  Future<void> _openEvent(Event event) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final updated = await showEventDialog(
+      context,
+      event,
+      save: widget.repository.updateEvent,
+      labels: widget.labelsRepository?.labels,
+    );
+    if (updated == null) return;
+    final moved = updated.where((e) => e.id != event.id).length;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          moved == 0
+              ? 'Saved.'
+              : 'Saved. $moved other event${moved == 1 ? '' : 's'} '
+                    'moved to make room.',
+        ),
+      ),
+    );
+    await _load();
   }
 
   void _step(int days) =>
@@ -199,15 +227,24 @@ class _EventsScreenState extends State<EventsScreen> {
       physics: const AlwaysScrollableScrollPhysics(),
       itemCount: events.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (context, i) => _EventTile(event: events[i], day: _day),
+      itemBuilder: (context, i) => _EventTile(
+        event: events[i],
+        day: _day,
+        onTap: () => _openEvent(events[i]),
+      ),
     );
   }
 }
 
 class _EventTile extends StatelessWidget {
-  const _EventTile({required this.event, required this.day});
+  const _EventTile({
+    required this.event,
+    required this.day,
+    required this.onTap,
+  });
 
   final Event event;
+  final VoidCallback onTap;
 
   /// The day being shown: a start or end on another day shows its date.
   final DateTime day;
@@ -230,7 +267,7 @@ class _EventTile extends StatelessWidget {
         '${_when(context, event.start)} – ${_when(context, event.end)}'
         '${cancelled ? ' · cancelled' : ''}',
       ),
-      onTap: () => showEventDialog(context, event),
+      onTap: onTap,
     );
   }
 
