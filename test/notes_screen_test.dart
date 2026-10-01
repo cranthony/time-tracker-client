@@ -239,7 +239,7 @@ void main() {
 
     await tester.tap(find.text('Standup'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Delete'));
+    await tester.tap(find.byTooltip('Delete note'));
     await tester.pumpAndSettle();
 
     expect(await repo.uncompactedNotes(), isEmpty);
