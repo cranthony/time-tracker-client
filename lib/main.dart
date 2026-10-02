@@ -6,6 +6,7 @@ import 'auth/oauth.dart';
 import 'auth/platform_receiver.dart'
     if (dart.library.js_interop) 'auth/platform_receiver_web.dart';
 import 'auth/token_store.dart';
+import 'demo/sample_data.dart';
 import 'outbox/background_sync.dart';
 import 'outbox/note_outbox.dart';
 import 'outbox/outbox_store.dart';
@@ -16,22 +17,30 @@ import 'services/events_repository.dart';
 import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
 import 'services/response_cache.dart';
+import 'theme.dart';
 
 /// The Time Tracker MCP server's endpoint, passed at build time, e.g.
 ///   flutter run --dart-define=MCP_URL=https://your-service.onrender.com/mcp
 /// Without it the app runs against an in-memory demo store.
 const _mcpUrl = String.fromEnvironment('MCP_URL');
 
+/// With no server, start from a realistic sample of notes, events and goals
+/// (lib/demo/sample_data.dart) instead of an empty store:
+///   flutter run --dart-define=SAMPLE_DATA=true
+const _sampleData = bool.fromEnvironment('SAMPLE_DATA');
+
 Future<void> main() async {
   // Before anything below that might use a platform channel.
   WidgetsFlutterBinding.ensureInitialized();
   if (_mcpUrl.isEmpty) {
-    final repository = InMemoryNotesRepository();
+    final sample = _sampleData ? SampleData(DateTime.now()) : null;
+    final repository = sample?.notesRepository() ?? InMemoryNotesRepository();
     runApp(
       TimeTrackerApp(
         repository: repository,
-        eventsRepository: InMemoryEventsRepository(),
-        goalsRepository: InMemoryGoalsRepository(),
+        eventsRepository:
+            sample?.eventsRepository() ?? InMemoryEventsRepository(),
+        goalsRepository: sample?.goalsRepository() ?? InMemoryGoalsRepository(),
         outbox: NoteOutbox(
           store: InMemoryOutboxStore(),
           repository: repository,
@@ -169,11 +178,8 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Time Tracker',
-      theme: ThemeData(colorSchemeSeed: Colors.teal),
-      darkTheme: ThemeData(
-        colorSchemeSeed: Colors.teal,
-        brightness: Brightness.dark,
-      ),
+      theme: appTheme(Brightness.light),
+      darkTheme: appTheme(Brightness.dark),
       home: HomeScreen(
         notesRepository: widget.repository,
         eventsRepository: widget.eventsRepository,

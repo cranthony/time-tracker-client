@@ -1,0 +1,66 @@
+# Screenshots the app's main screens with the sample data (test/visual; see
+# "Visual tests" in README.md) and uploads them as the "screenshots"
+# artifact.
+#
+# On a pull request it also screenshots the base branch, and uploads what
+# changed as the "visual-changes" artifact: before, after and their
+# difference for each screen, with an index.html. The job summary lists
+# the changed screens. Nothing is compared with images kept in the repo,
+# so the repo doesn't grow with every UI change, and the job never fails
+# because a screen changed.
+name: Visual tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  visual:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The base branch's commit, to screenshot it too.
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: pip install pillow
+      - run: flutter pub get
+      - name: Screenshot this branch
+        run: >-
+          flutter test test/visual
+          --dart-define=SCREENSHOTS_DIR=$GITHUB_WORKSPACE/build/visual/after
+      - name: Upload the screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: build/visual/after/
+      - name: Screenshot the base branch
+        if: github.event_name == 'pull_request'
+        # A base that can't be screenshotted just means nothing to compare.
+        continue-on-error: true
+        run: |
+          git worktree add ../base "${{ github.event.pull_request.base.sha }}"
+          cd ../base
+          if [ ! -d test/visual ]; then
+            echo "The base branch has no visual tests."
+            exit 0
+          fi
+          flutter pub get
+          flutter test test/visual \
+            --dart-define=SCREENSHOTS_DIR=$GITHUB_WORKSPACE/build/visual/before
+      - name: Show what changed
+        if: github.event_name == 'pull_request'
+        run: >-
+          python3 tool/visual_diff.py build/visual/before build/visual/after
+          build/visual/changes >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload what changed
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-changes
+          path: build/visual/changes/
