@@ -1,3 +1,4 @@
+import '../models/assessment.dart';
 import '../models/goal.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
@@ -19,6 +20,10 @@ abstract class GoalsRepository {
   /// Saves [changes], keyed as `update_goal` takes them, to [goal]; a null
   /// clears that property. Returns every goal, as [goals] does.
   Future<GoalList> updateGoal(Goal goal, Map<String, Object?> changes);
+
+  /// [goal]'s recent assessments (its last 12 periods), proposed and
+  /// confirmed, oldest first.
+  Future<List<Assessment>> history(Goal goal);
 }
 
 /// Reads and writes goals via the Time Tracker MCP server.
@@ -79,13 +84,34 @@ class McpGoalsRepository implements GoalsRepository {
     return goals();
   }
 
+  @override
+  Future<List<Assessment>> history(Goal goal) async {
+    final result = await _client.callTool('get_goal_history', {
+      'goal_ids': [goal.id],
+    });
+    return [
+      for (final item in result as List)
+        Assessment.fromJson((item as Map).cast<String, dynamic>()),
+    ];
+  }
+
   static GoalList _decode(Object? result) =>
       GoalList.fromJson((result as Map).cast<String, dynamic>());
 }
 
 /// Keeps goals in memory. Used when no server is configured, and in tests.
 class InMemoryGoalsRepository implements GoalsRepository {
-  InMemoryGoalsRepository([List<Goal> goals = const []]) : _goals = [...goals];
+  InMemoryGoalsRepository([
+    List<Goal> goals = const [],
+    this.assessments = const {},
+  ]) : _goals = [...goals];
+
+  /// Each goal's history, by goal id.
+  final Map<String, List<Assessment>> assessments;
+
+  @override
+  Future<List<Assessment>> history(Goal goal) async =>
+      assessments[goal.id] ?? const [];
 
   final List<Goal> _goals;
   int _nextId = 1;
@@ -143,5 +169,9 @@ class InMemoryGoalsRepository implements GoalsRepository {
     'fixed_time': goal.fixedTime,
     'cadence': goal.cadence,
     'effective_color': goal.effectiveColor,
+    'health': goal.health,
+    'health_period': goal.healthPeriod,
+    'health_trend': goal.healthTrend.map((r) => r?.toString() ?? '-').join(','),
+    'stale_periods': goal.stalePeriods,
   };
 }

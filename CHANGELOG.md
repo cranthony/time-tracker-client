@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 2.2.0
+
+- Each active goal with a cadence shows its health on the Goals page: a
+  dot in its band's color (green from 70, yellow from 40, red below)
+  beside its latest confirmed rating, and a small chart of its last 8
+  ratings. A goal with periods gone unassessed says how many, e.g.
+  "2 weeks unassessed".
+- A goal's menu opens its history: its recent ratings as a bar chart,
+  the band edges marked, proposed ratings (not yet confirmed in a
+  reflection) hollow, and each assessment listed below with how it was
+  reached. Tapping a bar picks it out in the list.
+
 ## 2.1.2
 
 - An active goal with no color of its own shows a grey flag outline,

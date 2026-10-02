@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/models/assessment.dart';
 import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/screens/goal_history_screen.dart';
 import 'package:time_tracker_client/screens/goals_screen.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
+import 'package:time_tracker_client/widgets/health.dart';
 import 'package:time_tracker_client/widgets/properties_dialog.dart';
 
 void main() {
@@ -389,6 +392,130 @@ void main() {
     },
   );
 
+  test('Goal.fromJson reads its health, trend and stale periods', () {
+    final goal = Goal.fromJson({
+      'id': 'g',
+      'health': 85,
+      'health_period': 'week-2026-09-20',
+      'health_trend': '-,40,85',
+      'stale_periods': 2,
+    });
+    expect(goal.health, 85);
+    expect(goal.healthTrend, [null, 40, 85]);
+    expect(goal.stalePeriods, 2);
+    expect(Goal.fromJson({'id': 'g'}).healthTrend, isEmpty);
+  });
+
+  test("McpGoalsRepository reads a goal's history", () async {
+    final client = _HistoryClient();
+    final history = await McpGoalsRepository(client)
+        .history(const Goal(id: 'g1'));
+    expect(client.arguments, {
+      'goal_ids': ['g1'],
+    });
+    expect(history.map((a) => (a.period, a.rating, a.confirmed)), [
+      ('week-2026-09-13', 60, true),
+      ('week-2026-09-20', null, false),
+    ]);
+  });
+
+  testWidgets("an assessed goal shows its health, trend and what's overdue", (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      app(
+        InMemoryGoalsRepository([
+          const Goal(
+            id: 'cook',
+            name: 'Cooking',
+            cadence: 'weekly',
+            health: 85,
+            healthTrend: [null, 40, 85],
+            stalePeriods: 2,
+          ),
+          const Goal(id: 'idea', name: 'Idea', status: 'proposed'),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(HealthDot), findsOneWidget); // not for the proposed one
+    expect(find.text('85'), findsOneWidget);
+    expect(find.byType(TrendSparkline), findsOneWidget);
+    expect(find.text('Weekly · 2 weeks unassessed'), findsOneWidget);
+  });
+
+  testWidgets("a goal's history lists its assessments under a chart", (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      app(
+        InMemoryGoalsRepository(
+          [
+            const Goal(
+              id: 'cook',
+              name: 'Cooking',
+              cadence: 'weekly',
+              health: 60,
+            ),
+          ],
+          {
+            'cook': [
+              const Assessment(
+                goalId: 'cook',
+                period: 'week-2026-09-13',
+                rating: 60,
+                explanation: '3h of 5h target → 60',
+              ),
+              const Assessment(
+                goalId: 'cook',
+                period: 'week-2026-09-20',
+                rating: 90,
+                status: 'proposed',
+                method: 'metric',
+              ),
+            ],
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('More for Cooking'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('History'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(HealthHistoryChart), findsOneWidget);
+    final periods = tester
+        .widgetList<ListTile>(find.byType(ListTile))
+        .map((t) => (t.title as Text).data)
+        .toList();
+    expect(periods, ['week-2026-09-20 · proposed · metric', 'week-2026-09-13']);
+    expect(find.text('3h of 5h target → 60'), findsOneWidget);
+  });
+
+  testWidgets('a goal with no assessments says how it gets some', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GoalHistoryScreen(
+          goal: const Goal(id: 'g', name: 'G', cadence: 'daily'),
+          repository: InMemoryGoalsRepository(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'No assessments yet.\nRatings are confirmed in a daily reflection.',
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('says when there are no goals yet', (tester) async {
     await tester.pumpWidget(app(InMemoryGoalsRepository()));
     await tester.pumpAndSettle();
@@ -415,5 +542,38 @@ class _FakeClient extends McpClient {
       'label_slots_used': 12,
       'label_slots_total': 200,
     };
+  }
+}
+
+/// Answers get_goal_history with two assessments.
+class _HistoryClient extends McpClient {
+  _HistoryClient() : super(endpoint: Uri.parse('http://test'));
+
+  Map<String, Object?>? arguments;
+
+  @override
+  Future<Object?> callTool(
+    String name, [
+    Map<String, Object?> arguments = const {},
+  ]) async {
+    this.arguments = arguments;
+    return [
+      {
+        'goal_id': 'g1',
+        'cadence': 'weekly',
+        'period': 'week-2026-09-13',
+        'rating': 60,
+        'method': 'subjective',
+        'status': 'confirmed',
+      },
+      {
+        'goal_id': 'g1',
+        'cadence': 'weekly',
+        'period': 'week-2026-09-20',
+        'rating': 'skip',
+        'method': 'subjective',
+        'status': 'proposed',
+      },
+    ];
   }
 }

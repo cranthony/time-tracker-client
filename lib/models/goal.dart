@@ -15,6 +15,10 @@ class Goal {
     this.fixedTime,
     this.cadence,
     this.effectiveColor,
+    this.health,
+    this.healthPeriod,
+    this.healthTrend = const [],
+    this.stalePeriods,
     this.path,
     this.properties = const {},
   });
@@ -48,6 +52,20 @@ class Goal {
   /// to say.
   final String? effectiveColor;
 
+  /// Its latest confirmed rating (0-100), if it's had one.
+  final int? health;
+
+  /// The latest period it was assessed for, e.g. "week-2026-09-27".
+  final String? healthPeriod;
+
+  /// Its last few ratings at its cadence, oldest first; null for a period
+  /// with none.
+  final List<int?> healthTrend;
+
+  /// How many of its periods have ended unassessed; null unless it's
+  /// active and has a cadence.
+  final int? stalePeriods;
+
   /// Its names from the top of the tree down, e.g. "Cooking › Tofu".
   final String? path;
 
@@ -70,6 +88,16 @@ class Goal {
     fixedTime: json['fixed_time'] as bool?,
     cadence: json['cadence'] as String?,
     effectiveColor: json['effective_color'] as String?,
+    health: json['health'] as int?,
+    healthPeriod: json['health_period'] as String?,
+    healthTrend: [
+      for (final cell
+          in ((json['health_trend'] as String?) ?? '')
+              .split(',')
+              .where((c) => c.isNotEmpty))
+        int.tryParse(cell),
+    ],
+    stalePeriods: json['stale_periods'] as int?,
     path: json['path'] as String?,
     properties: Map.unmodifiable(json),
   );
@@ -118,6 +146,14 @@ const goalStatuses = {
 /// The statuses the Goals page shows until told otherwise: the goals still
 /// in play.
 const defaultGoalStatuses = {'proposed', 'active', 'inactive'};
+
+/// What one period of each cadence is called, for "2 weeks unassessed".
+const cadencePeriodNames = {
+  'daily': ('day', 'days'),
+  'weekly': ('week', 'weeks'),
+  'monthly': ('month', 'months'),
+  'every_2_months': ('2-month period', '2-month periods'),
+};
 
 /// The cadences a goal can have, as the server names them, and as the app
 /// shows them.
