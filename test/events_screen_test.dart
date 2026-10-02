@@ -301,6 +301,8 @@ void main() {
       expect(inDialog(find.text('Primary goal')), findsOneWidget);
       await tester.tap(inDialog(find.text('Exercise')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Keep edit'));
       await tester.pumpAndSettle();
       // Names, now that they're loaded.
@@ -313,6 +315,61 @@ void main() {
         },
       ]);
     });
+
+    testWidgets('goals inferred from its label are marked, and kept to '
+        'confirm them', (tester) async {
+      final inferred = Event.fromJson({
+        ...work().toJson(),
+        'goals_from_label': true,
+      });
+      final repo = _RecordingRepository([inferred]);
+      await openWork(tester, repo);
+
+      expect(
+        inDialog(find.text('Deep focus (from its label)', findRichText: true)),
+        findsOneWidget,
+      );
+      // Kept as it is: confirmed, which is a change to save.
+      await edit(tester, inDialog(find.textContaining('Deep focus')));
+      await tester.ensureVisible(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      expect(
+        inDialog(find.text('Deep focus (from its label)', findRichText: true)),
+        findsNothing,
+      );
+      await tester.tap(find.text('Save 1 change'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {
+          'goal_ids': ['g1'],
+        },
+      ]);
+    });
+
+    test(
+      'McpEventsRepository says goals it sends are set, not inferred',
+      () async {
+        final client = _RecurrenceClient();
+        final event = Event.fromJson({
+          ...work().toJson(),
+          'goals_from_label': true,
+        });
+
+        await McpEventsRepository(client)
+            .updateEvent(event, {'summary': 'Focus'});
+        expect((client.arguments!['event'] as Map)['goals_from_label'], isTrue);
+
+        await McpEventsRepository(client).updateEvent(event, {
+          'goal_ids': ['g1'],
+        });
+        expect(
+          (client.arguments!['event'] as Map)['goals_from_label'],
+          isFalse,
+        );
+      },
+    );
 
     testWidgets('asks before throwing edits away; Revert drops them', (
       tester,
