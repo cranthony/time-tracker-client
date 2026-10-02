@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # Makes sure the Flutter SDK has its Material fonts (Roboto and Material
 # Icons), which the visual tests draw text with; see "Visual tests" in
-# README.md. The SDK downloads them only for a build or `flutter precache`,
-# and a cached SDK in CI can have the stamp that says they're downloaded
-# without the fonts themselves, so `precache` alone skips them.
+# README.md. The SDK downloads them only for a build or `flutter precache`.
 #
 #     tool/fetch_material_fonts.sh
 set -eu
@@ -11,16 +9,12 @@ set -eu
 root=${FLUTTER_ROOT:-$(dirname "$(dirname "$(command -v flutter)")")}
 fonts="$root/bin/cache/artifacts/material_fonts"
 
-if [ ! -f "$fonts/roboto-regular.ttf" ]; then
-  rm -f "$root/bin/cache/material_fonts.stamp"
+if [ ! -f "$fonts/Roboto-Regular.ttf" ]; then
   flutter precache --universal
 fi
-if [ ! -f "$fonts/roboto-regular.ttf" ]; then
+if [ ! -f "$fonts/Roboto-Regular.ttf" ]; then
   echo "::error::No Material fonts in $fonts after flutter precache" >&2
-  echo "In $fonts:" >&2
   ls -la "$fonts" >&2 || true
-  echo "Fonts anywhere in the SDK's cache:" >&2
-  find "$root/bin/cache" -iname '*roboto*' -o -iname '*materialicons*' >&2 || true
   exit 1
 fi
 echo "Material fonts are in $fonts"

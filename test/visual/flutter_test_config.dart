@@ -52,7 +52,7 @@ class _ScreenshotWriter extends GoldenFileComparator {
 /// them every screenshot's text would be blocks, so that fails instead.
 Future<void> _loadRealFonts() async {
   final fonts = '${_flutterRoot()}/bin/cache/artifacts/material_fonts';
-  if (!File('$fonts/roboto-regular.ttf').existsSync()) {
+  if (!File('$fonts/Roboto-Regular.ttf').existsSync()) {
     throw StateError(
       'No Material fonts in $fonts, so screenshots would draw text as '
       'blocks. Run tool/fetch_material_fonts.sh to download them.',
@@ -61,13 +61,13 @@ Future<void> _loadRealFonts() async {
   Future<ByteData> font(String name) async =>
       ByteData.sublistView(await File('$fonts/$name').readAsBytes());
   final roboto = FontLoader('Roboto');
-  for (final weight in ['regular', 'medium', 'bold']) {
-    roboto.addFont(font('roboto-$weight.ttf'));
+  for (final weight in ['Regular', 'Medium', 'Bold']) {
+    roboto.addFont(font('Roboto-$weight.ttf'));
   }
   await roboto.load();
   await (FontLoader(
     'MaterialIcons',
-  )..addFont(font('materialicons-regular.otf'))).load();
+  )..addFont(font('MaterialIcons-Regular.otf'))).load();
 }
 
 /// The Flutter SDK's root: FLUTTER_ROOT, which `flutter test` sets, or
