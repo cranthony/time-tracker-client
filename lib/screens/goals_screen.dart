@@ -9,15 +9,13 @@ import '../widgets/goal_dialog.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
-/// Which goals the Goals page lists.
-enum GoalFilter { active, inactive, all }
-
-/// Every goal, as a tree: each one's color, name, priority and cadence,
-/// with its sub-goals indented under it. Active goals are shown first; the
-/// filter at the top shows inactive ones, which keep their history but no
-/// longer take up a calendar label. Tapping a goal shows all its
-/// properties and lets one change them; its menu adds a sub-goal or
-/// (de)activates it; "+" adds a top-level goal.
+/// Every goal, as a tree: each one's color, name, status, priority and
+/// cadence, with its sub-goals indented under it. The filter at the top
+/// picks which statuses are shown: proposed, active and inactive goals to
+/// start with. Only active goals take up a calendar label; the others keep
+/// their history. Tapping a goal shows all its properties and lets one
+/// change them; its menu adds a sub-goal or moves it to another status;
+/// "+" adds a top-level goal.
 class GoalsScreen extends StatefulWidget {
   const GoalsScreen({
     super.key,
@@ -53,7 +51,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
   Object? _error;
   bool _needsSignIn = false;
   bool _signingIn = false;
-  var _filter = GoalFilter.active;
+
+  /// The statuses shown.
+  final _shown = {...defaultGoalStatuses};
 
   @override
   void initState() {
@@ -132,25 +132,39 @@ class _GoalsScreenState extends State<GoalsScreen> {
     'Added.',
   );
 
-  Future<void> _setActive(Goal goal, bool active) async {
-    if (!active) {
+  Future<void> _setStatus(Goal goal, String status) async {
+    final name = goalName(goal);
+    // Freeing a label, or deleting, is worth a second look.
+    final (String, String, String)? check = switch (status) {
+      'deleted' => (
+        'Delete $name?',
+        "Its history is kept, and events that have it keep it, but no event "
+            "can be given it again. It's hidden unless you show deleted goals.",
+        'Delete',
+      ),
+      _ when goal.active => (
+        'Move $name to ${goalStatuses[status]?.toLowerCase()}?',
+        "It stops taking up one of the calendar's event labels, and its "
+            "events lose its color until it's active again. Its history is "
+            'kept.',
+        goalStatuses[status] ?? status,
+      ),
+      _ => null,
+    };
+    if (check case (final question, final explanation, final confirm)) {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text('Deactivate ${goalName(goal)}?'),
-          content: const Text(
-            "It stops taking up one of the calendar's event labels, and its "
-            "events lose its color until it's active again. Its history is "
-            'kept.',
-          ),
+          title: Text(question),
+          content: Text(explanation),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Keep active'),
+              child: const Text('Keep it'),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Deactivate'),
+              child: Text(confirm),
             ),
           ],
         ),
@@ -161,8 +175,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       _saved(
-        await widget.repository.updateGoal(goal, {'active': active}),
-        active ? 'Activated.' : 'Deactivated.',
+        await widget.repository.updateGoal(goal, {'status': status}),
+        'Now ${goalStatuses[status]?.toLowerCase() ?? status}.',
       );
     } catch (e) {
       messenger.showSnackBar(
@@ -261,12 +275,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
     }
     final shown = [
       for (final goal in goals.goals)
-        if (switch (_filter) {
-          GoalFilter.active => goal.active,
-          GoalFilter.inactive => !goal.active,
-          GoalFilter.all => true,
-        })
-          goal,
+        if (_shown.contains(goal.status)) goal,
     ];
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -280,34 +289,32 @@ class _GoalsScreenState extends State<GoalsScreen> {
           ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Wrap(
-            spacing: 16,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SegmentedButton<GoalFilter>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(
-                    value: GoalFilter.active,
-                    label: Text('Active'),
-                  ),
-                  ButtonSegment(
-                    value: GoalFilter.inactive,
-                    label: Text('Inactive'),
-                  ),
-                  ButtonSegment(value: GoalFilter.all, label: Text('All')),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final MapEntry(key: status, value: label)
+                      in goalStatuses.entries)
+                    FilterChip(
+                      label: Text(label),
+                      selected: _shown.contains(status),
+                      onSelected: (on) => setState(
+                        () => on ? _shown.add(status) : _shown.remove(status),
+                      ),
+                    ),
                 ],
-                selected: {_filter},
-                onSelectionChanged: (picked) =>
-                    setState(() => _filter = picked.single),
               ),
+              const SizedBox(height: 4),
               Tooltip(
                 message:
                     'Each active goal takes one of the calendar\'s event '
                     'labels, as do its own default colors.',
                 child: Text(
-                  '${goals.labelSlotsUsed} of ${goals.labelSlotsTotal} labels',
+                  '${goals.labelSlotsUsed} of ${goals.labelSlotsTotal} labels '
+                  'in use',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -315,12 +322,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
           ),
         ),
         if (shown.isEmpty)
-          StatusMessage(
+          const StatusMessage(
             icon: Icons.flag_outlined,
-            text: switch (_filter) {
-              GoalFilter.inactive => 'No inactive goals.',
-              _ => 'No active goals.',
-            },
+            text: 'No goals with these statuses.',
           ),
         for (final (i, goal) in shown.indexed) ...[
           if (i > 0) const Divider(height: 1),
@@ -328,7 +332,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
             goal: goal,
             onTap: () => _open(goal),
             onAddSubGoal: () => _add(parentId: goal.id),
-            onSetActive: (active) => _setActive(goal, active),
+            onSetStatus: (status) => _setStatus(goal, status),
           ),
         ],
       ],
@@ -336,18 +340,38 @@ class _GoalsScreenState extends State<GoalsScreen> {
   }
 }
 
+/// What moving a goal to each status is called in its menu.
+const _moveTo = {
+  'proposed': 'Mark proposed',
+  'active': 'Make active',
+  'inactive': 'Make inactive',
+  'completed': 'Mark completed',
+  'archived': 'Archive',
+  'deleted': 'Delete',
+};
+
+/// Each status's icon.
+const _statusIcons = {
+  'proposed': Icons.lightbulb_outline,
+  'active': Icons.flag,
+  'inactive': Icons.pause_circle_outline,
+  'completed': Icons.check_circle_outline,
+  'archived': Icons.inventory_2_outlined,
+  'deleted': Icons.delete_outline,
+};
+
 class _GoalTile extends StatelessWidget {
   const _GoalTile({
     required this.goal,
     required this.onTap,
     required this.onAddSubGoal,
-    required this.onSetActive,
+    required this.onSetStatus,
   });
 
   final Goal goal;
   final VoidCallback onTap;
   final VoidCallback onAddSubGoal;
-  final ValueChanged<bool> onSetActive;
+  final ValueChanged<String> onSetStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -356,7 +380,7 @@ class _GoalTile extends StatelessWidget {
     final priority = goal.priority;
     final faded = goal.active ? null : TextStyle(color: theme.hintColor);
     final details = [
-      if (!goal.active) 'Inactive',
+      if (!goal.active) goalStatuses[goal.status] ?? goal.status,
       if (priority != null) 'Priority $priority',
       switch (goal.fixedTime) {
         true => 'Fixed time',
@@ -370,25 +394,25 @@ class _GoalTile extends StatelessWidget {
         start: 16.0 + 24.0 * goal.depth,
         end: 4,
       ),
-      leading: Icon(
-        goal.active ? Icons.flag : Icons.outlined_flag,
-        color: goal.active ? (color ?? theme.hintColor) : theme.hintColor,
+      leading: Tooltip(
+        message: goalStatuses[goal.status] ?? goal.status,
+        child: Icon(
+          _statusIcons[goal.status] ?? Icons.outlined_flag,
+          color: goal.active ? (color ?? theme.hintColor) : theme.hintColor,
+        ),
       ),
       title: Text(goalName(goal), style: faded),
       subtitle: details.isEmpty ? null : Text(details, style: faded),
       trailing: PopupMenuButton<String>(
         tooltip: 'More for ${goalName(goal)}',
-        onSelected: (choice) => switch (choice) {
-          'sub' => onAddSubGoal(),
-          'activate' => onSetActive(true),
-          _ => onSetActive(false),
-        },
+        onSelected: (choice) =>
+            choice == 'sub' ? onAddSubGoal() : onSetStatus(choice),
         itemBuilder: (context) => [
           const PopupMenuItem(value: 'sub', child: Text('Add sub-goal')),
-          if (goal.active)
-            const PopupMenuItem(value: 'deactivate', child: Text('Deactivate'))
-          else
-            const PopupMenuItem(value: 'activate', child: Text('Activate')),
+          const PopupMenuDivider(),
+          for (final MapEntry(key: status, value: label) in _moveTo.entries)
+            if (status != goal.status)
+              PopupMenuItem(value: status, child: Text(label)),
         ],
       ),
       onTap: onTap,

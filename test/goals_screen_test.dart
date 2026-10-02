@@ -15,20 +15,33 @@ void main() {
     const Goal(id: 'cook', name: 'Cooking', priority: 1, cadence: 'weekly'),
     const Goal(id: 'tofu', name: 'Tofu tikka', parentId: 'cook'),
     const Goal(id: 'host', name: 'Hosting', fixedTime: true),
-    const Goal(id: 'old', name: 'Old habit', active: false),
+    const Goal(id: 'idea', name: 'Idea', status: 'proposed'),
+    const Goal(id: 'old', name: 'Old habit', status: 'inactive'),
+    const Goal(id: 'done', name: 'Done thing', status: 'completed'),
+    const Goal(id: 'shelf', name: 'Shelved', status: 'archived'),
+    const Goal(id: 'oops', name: 'Oops', status: 'deleted'),
   ]);
+
+  /// The status filter's chip for [status].
+  Finder chip(String status) => find.widgetWithText(FilterChip, status);
 
   List<String?> shownNames(WidgetTester tester) => tester
       .widgetList<ListTile>(find.byType(ListTile))
       .map((t) => (t.title as Text).data)
       .toList();
 
+  test('Goal.fromJson reads a server from before statuses', () {
+    expect(Goal.fromJson({'id': 'g', 'active': false}).status, 'inactive');
+    expect(Goal.fromJson({'id': 'g', 'active': true}).status, 'active');
+    expect(Goal.fromJson({'id': 'g', 'status': 'archived'}).active, isFalse);
+  });
+
   test('Goal.fromJson keeps every property the server sent', () {
     final goal = Goal.fromJson({
       'id': 'g1',
       'parent_id': 'g0',
       'name': 'Tofu tikka',
-      'active': false,
+      'status': 'completed',
       'background_color': '#7bd148',
       'priority': 2,
       'fixed_time': true,
@@ -44,11 +57,20 @@ void main() {
   });
 
   group('McpGoalsRepository', () {
-    test('lists every goal, inactive ones too', () async {
+    test('lists goals of every status', () async {
       final client = _FakeClient();
       final goals = await McpGoalsRepository(client).goals();
       expect(client.calls.single.$1, 'get_goals');
-      expect(client.calls.single.$2, {'include_inactive': true});
+      expect(client.calls.single.$2, {
+        'statuses': [
+          'proposed',
+          'active',
+          'inactive',
+          'completed',
+          'archived',
+          'deleted',
+        ],
+      });
       expect(goals.goals.single.name, 'Cooking');
       expect(goals.labelSlotsUsed, 12);
     });
@@ -78,39 +100,56 @@ void main() {
     });
   });
 
-  testWidgets('lists active goals as a tree, with the label count', (
-    tester,
-  ) async {
+  testWidgets(
+    'lists proposed, active and inactive goals as a tree, with the label count',
+    (tester) async {
+      await tester.pumpWidget(app(tree()));
+      await tester.pumpAndSettle();
+
+      expect(shownNames(tester), [
+        'Cooking',
+        'Tofu tikka',
+        'Hosting',
+        'Idea',
+        'Old habit',
+      ]);
+      expect(find.text('Priority 1 · Weekly'), findsOneWidget);
+      expect(find.text('Fixed time'), findsOneWidget);
+      expect(find.text('Proposed'), findsWidgets);
+      expect(find.text('3 of 200 labels in use'), findsOneWidget);
+      // The sub-goal is indented under its parent.
+      final indent = tester
+          .widgetList<ListTile>(find.byType(ListTile))
+          .map((t) => (t.contentPadding as EdgeInsetsDirectional).start)
+          .toList();
+      expect(indent[1], greaterThan(indent[0]));
+    },
+  );
+
+  testWidgets('the filter picks which statuses are shown', (tester) async {
     await tester.pumpWidget(app(tree()));
     await tester.pumpAndSettle();
+    for (final status in ['Proposed', 'Active', 'Inactive']) {
+      expect(tester.widget<FilterChip>(chip(status)).selected, isTrue);
+    }
+    expect(tester.widget<FilterChip>(chip('Deleted')).selected, isFalse);
 
-    expect(shownNames(tester), ['Cooking', 'Tofu tikka', 'Hosting']);
-    expect(find.text('Priority 1 · Weekly'), findsOneWidget);
-    expect(find.text('Fixed time'), findsOneWidget);
-    expect(find.text('3 of 200 labels'), findsOneWidget);
-    // The sub-goal is indented under its parent.
-    final indent = tester
-        .widgetList<ListTile>(find.byType(ListTile))
-        .map((t) => (t.contentPadding as EdgeInsetsDirectional).start)
-        .toList();
-    expect(indent[1], greaterThan(indent[0]));
+    await tester.tap(chip('Inactive'));
+    await tester.tap(chip('Completed'));
+    await tester.tap(chip('Deleted'));
+    await tester.pumpAndSettle();
+    expect(shownNames(tester), contains('Done thing'));
+    expect(shownNames(tester), contains('Oops'));
+    expect(shownNames(tester), isNot(contains('Old habit')));
+
+    for (final status in ['Proposed', 'Active', 'Completed', 'Deleted']) {
+      await tester.tap(chip(status));
+    }
+    await tester.pumpAndSettle();
+    expect(find.text('No goals with these statuses.'), findsOneWidget);
   });
 
-  testWidgets('the filter shows inactive goals', (tester) async {
-    await tester.pumpWidget(app(tree()));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Inactive'));
-    await tester.pumpAndSettle();
-    expect(shownNames(tester), ['Old habit']);
-    expect(find.text('Inactive').last, findsOneWidget);
-
-    await tester.tap(find.text('All'));
-    await tester.pumpAndSettle();
-    expect(shownNames(tester), hasLength(4));
-  });
-
-  testWidgets('deactivating asks first, then moves the goal to Inactive', (
+  testWidgets('moving an active goal to another status asks first', (
     tester,
   ) async {
     final repo = tree();
@@ -119,24 +158,67 @@ void main() {
 
     await tester.tap(find.byTooltip('More for Hosting'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Deactivate'));
+    await tester.tap(find.text('Mark completed'));
     await tester.pumpAndSettle();
-    expect(find.text('Deactivate Hosting?'), findsOneWidget);
-    await tester.tap(find.text('Keep active'));
+    expect(find.text('Move Hosting to completed?'), findsOneWidget);
+    await tester.tap(find.text('Keep it'));
     await tester.pumpAndSettle();
-    expect(shownNames(tester), contains('Hosting'));
+    expect(
+      (await repo.goals()).goals.firstWhere((g) => g.id == 'host').status,
+      'active',
+    );
 
     await tester.tap(find.byTooltip('More for Hosting'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Deactivate'));
+    await tester.tap(find.text('Mark completed'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Deactivate').last);
+    await tester.tap(find.widgetWithText(TextButton, 'Completed'));
     await tester.pumpAndSettle();
+    expect(find.text('Now completed.'), findsOneWidget);
+    // Completed goals aren't shown until asked for.
     expect(shownNames(tester), isNot(contains('Hosting')));
-    expect(find.text('Deactivated.'), findsOneWidget);
     expect(
-      (await repo.goals()).goals.firstWhere((g) => g.id == 'host').active,
-      isFalse,
+      (await repo.goals()).goals.firstWhere((g) => g.id == 'host').status,
+      'completed',
+    );
+  });
+
+  testWidgets('a proposed goal is made active without a check', (tester) async {
+    final repo = tree();
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('More for Idea'));
+    await tester.pumpAndSettle();
+    // Its own status isn't offered.
+    expect(find.text('Mark proposed'), findsNothing);
+    await tester.tap(find.text('Make active'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Now active.'), findsOneWidget);
+    expect(
+      (await repo.goals()).goals.firstWhere((g) => g.id == 'idea').status,
+      'active',
+    );
+  });
+
+  testWidgets('deleting asks first, then hides the goal', (tester) async {
+    final repo = tree();
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('More for Old habit'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete Old habit?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, 'Delete'));
+    await tester.pumpAndSettle();
+
+    expect(shownNames(tester), isNot(contains('Old habit')));
+    expect(
+      (await repo.goals()).goals.firstWhere((g) => g.id == 'old').status,
+      'deleted',
     );
   });
 
@@ -180,6 +262,8 @@ void main() {
       'Tofu tikka',
       'Hosting',
       'Weekly dinners',
+      'Idea',
+      'Old habit',
     ]);
   });
 

@@ -5,7 +5,7 @@ import 'response_cache.dart';
 /// Where goals come from. The app talks to this rather than to MCP directly
 /// so screens can be exercised without a server.
 abstract class GoalsRepository {
-  /// Every goal, active or not, parents before their children.
+  /// Every goal, whatever its status, parents before their children.
   Future<GoalList> goals();
 
   /// What [goals] last returned, kept from an earlier run of the app; null
@@ -33,7 +33,7 @@ class McpGoalsRepository implements GoalsRepository {
   @override
   Future<GoalList> goals() async {
     final result = await _client.callTool('get_goals', {
-      'include_inactive': true,
+      'statuses': goalStatuses.keys.toList(),
     });
     await _cache?.write(_cacheKey, result);
     return _decode(result);
@@ -56,7 +56,7 @@ class McpGoalsRepository implements GoalsRepository {
         for (final MapEntry(:key, :value) in fields.entries) key: ?value,
       },
     });
-    // create_goal answers with the active goals only.
+    // create_goal answers with only some of them.
     return goals();
   }
 
@@ -75,7 +75,7 @@ class McpGoalsRepository implements GoalsRepository {
       },
       if (clear.isNotEmpty) 'clear_fields': clear,
     });
-    // update_goal answers with the active goals only.
+    // update_goal answers with only some of them.
     return goals();
   }
 
@@ -119,7 +119,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
   @override
   Future<GoalList> createGoal(Map<String, Object?> fields) async {
     _goals.add(
-      Goal.fromJson({'active': true, ...fields, 'id': 'g${_nextId++}'}),
+      Goal.fromJson({'status': 'active', ...fields, 'id': 'g${_nextId++}'}),
     );
     return goals();
   }
@@ -137,7 +137,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
     'id': goal.id,
     'parent_id': goal.parentId,
     'name': goal.name,
-    'active': goal.active,
+    'status': goal.status,
     'background_color': goal.backgroundColor,
     'priority': goal.priority,
     'fixed_time': goal.fixedTime,
