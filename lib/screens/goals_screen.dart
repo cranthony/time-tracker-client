@@ -11,8 +11,8 @@ import '../widgets/status_message.dart';
 
 /// Every goal, as a tree: each one's color, name, status, priority and
 /// cadence, with its sub-goals indented under it. The filter at the top
-/// picks which statuses are shown: proposed, active and inactive goals to
-/// start with. Only active goals take up a calendar label; the others keep
+/// right picks which statuses are shown: proposed, active and inactive
+/// goals to start with. Only active goals take up a calendar label; the others keep
 /// their history. Tapping a goal shows all its properties and lets one
 /// change them; its menu adds a sub-goal or moves it to another status;
 /// "+" adds a top-level goal.
@@ -217,6 +217,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
       appBar: AppBar(
         title: const Text('Goals'),
         actions: [
+          if (ready)
+            _StatusFilter(
+              shown: _shown,
+              onChanged: (status, on) => setState(
+                () => on ? _shown.add(status) : _shown.remove(status),
+              ),
+            ),
           AppMenu(
             serverLabel: widget.serverLabel,
             version: widget.version,
@@ -289,25 +296,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
           ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  for (final MapEntry(key: status, value: label)
-                      in goalStatuses.entries)
-                    FilterChip(
-                      label: Text(label),
-                      selected: _shown.contains(status),
-                      onSelected: (on) => setState(
-                        () => on ? _shown.add(status) : _shown.remove(status),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 4),
               Tooltip(
                 message:
                     'Each active goal takes one of the calendar\'s event '
@@ -336,6 +326,43 @@ class _GoalsScreenState extends State<GoalsScreen> {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// The app bar's filter: a drop-down of every status, each with a check
+/// box, which stays open while they're ticked. A dot on its icon says
+/// it's showing something other than [defaultGoalStatuses].
+class _StatusFilter extends StatelessWidget {
+  const _StatusFilter({required this.shown, required this.onChanged});
+
+  final Set<String> shown;
+  final void Function(String status, bool on) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final changed =
+        shown.length != defaultGoalStatuses.length ||
+        !shown.containsAll(defaultGoalStatuses);
+    return MenuAnchor(
+      menuChildren: [
+        for (final MapEntry(key: status, value: label) in goalStatuses.entries)
+          CheckboxMenuButton(
+            value: shown.contains(status),
+            closeOnActivate: false,
+            onChanged: (on) => onChanged(status, on ?? false),
+            child: Text(label),
+          ),
+      ],
+      builder: (context, controller, _) => IconButton(
+        tooltip: 'Show goals that are…',
+        icon: Badge(
+          isLabelVisible: changed,
+          child: const Icon(Icons.filter_list),
+        ),
+        onPressed: () =>
+            controller.isOpen ? controller.close() : controller.open(),
+      ),
     );
   }
 }

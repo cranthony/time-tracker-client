@@ -10,7 +10,7 @@ it, add a sub-goal from its menu, or move it to another status:
 proposed, active, inactive, completed, archived or deleted. Only active
 goals take up one of the calendar's event labels; the rest keep their
 history. Proposed, active and inactive goals are shown to start with,
-and chips at the top pick others. Later it will show the summaries the server
+and the filter at the top right picks others. Later it will show the summaries the server
 generates.
 
 It is built for Android and also runs on Windows and in Chrome. Chrome

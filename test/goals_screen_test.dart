@@ -22,8 +22,12 @@ void main() {
     const Goal(id: 'oops', name: 'Oops', status: 'deleted'),
   ]);
 
-  /// The status filter's chip for [status].
-  Finder chip(String status) => find.widgetWithText(FilterChip, status);
+  /// The status filter's check box for [status], in its drop-down.
+  Finder option(String status) =>
+      find.widgetWithText(CheckboxMenuButton, status);
+
+  bool ticked(WidgetTester tester, String status) =>
+      tester.widget<CheckboxMenuButton>(option(status)).value == true;
 
   List<String?> shownNames(WidgetTester tester) => tester
       .widgetList<ListTile>(find.byType(ListTile))
@@ -126,26 +130,44 @@ void main() {
     },
   );
 
-  testWidgets('the filter picks which statuses are shown', (tester) async {
+  testWidgets('the filter at the top right picks which statuses are shown', (
+    tester,
+  ) async {
     await tester.pumpWidget(app(tree()));
     await tester.pumpAndSettle();
-    for (final status in ['Proposed', 'Active', 'Inactive']) {
-      expect(tester.widget<FilterChip>(chip(status)).selected, isTrue);
-    }
-    expect(tester.widget<FilterChip>(chip('Deleted')).selected, isFalse);
+    Badge badge() => tester.widget<Badge>(
+      find.descendant(
+        of: find.byTooltip('Show goals that are…'),
+        matching: find.byType(Badge),
+      ),
+    );
+    expect(badge().isLabelVisible, isFalse);
 
-    await tester.tap(chip('Inactive'));
-    await tester.tap(chip('Completed'));
-    await tester.tap(chip('Deleted'));
+    await tester.tap(find.byTooltip('Show goals that are…'));
     await tester.pumpAndSettle();
+    for (final status in ['Proposed', 'Active', 'Inactive']) {
+      expect(ticked(tester, status), isTrue);
+    }
+    expect(ticked(tester, 'Deleted'), isFalse);
+
+    // It stays open while several are ticked.
+    await tester.tap(option('Inactive'));
+    await tester.pumpAndSettle();
+    await tester.tap(option('Completed'));
+    await tester.pumpAndSettle();
+    await tester.tap(option('Deleted'));
+    await tester.pumpAndSettle();
+    expect(ticked(tester, 'Inactive'), isFalse);
+    expect(ticked(tester, 'Deleted'), isTrue);
     expect(shownNames(tester), contains('Done thing'));
     expect(shownNames(tester), contains('Oops'));
     expect(shownNames(tester), isNot(contains('Old habit')));
+    expect(badge().isLabelVisible, isTrue);
 
     for (final status in ['Proposed', 'Active', 'Completed', 'Deleted']) {
-      await tester.tap(chip(status));
+      await tester.tap(option(status));
+      await tester.pumpAndSettle();
     }
-    await tester.pumpAndSettle();
     expect(find.text('No goals with these statuses.'), findsOneWidget);
   });
 
