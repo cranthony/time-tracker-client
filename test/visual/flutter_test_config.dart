@@ -55,7 +55,7 @@ Future<void> _loadRealFonts() async {
   if (!File('$fonts/Roboto-Regular.ttf').existsSync()) {
     throw StateError(
       'No Material fonts in $fonts, so screenshots would draw text as '
-      'blocks. Run tool/fetch_material_fonts.sh to download them.',
+      'blocks. Run `flutter precache` to download them.',
     );
   }
   Future<ByteData> font(String name) async =>

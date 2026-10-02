@@ -333,7 +333,7 @@ flutter test test/visual
 
 The fonts come with the SDK but are downloaded only for a build or
 `flutter precache`. Without them the tests fail rather than draw text as
-blocks; `tool/fetch_material_fonts.sh` downloads them, as CI does.
+blocks; `flutter precache` downloads them.
 
 Nothing is compared with images kept in the repo, so the repo doesn't grow
 with every UI change. Instead, to see what a change did, screenshot before

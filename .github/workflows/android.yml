@@ -54,8 +54,6 @@ jobs:
           git fetch --depth=1 origin "${{ github.base_ref }}"
           tool/check_version.sh FETCH_HEAD
       - run: flutter pub get
-      # The visual tests draw text with the Material fonts.
-      - run: tool/fetch_material_fonts.sh
       - run: flutter test
       - name: Set up signing
         env:

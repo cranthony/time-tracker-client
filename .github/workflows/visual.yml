@@ -29,8 +29,9 @@ jobs:
           channel: stable
           cache: true
       - run: pip install pillow
-      # The screenshots draw text with the Material fonts.
-      - run: tool/fetch_material_fonts.sh
+      # The screenshots draw text with the Material fonts, which the SDK
+      # downloads only for a build or this.
+      - run: flutter precache
       - run: flutter pub get
       - name: Screenshot this branch
         run: >-
