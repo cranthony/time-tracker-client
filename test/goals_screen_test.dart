@@ -113,6 +113,17 @@ void main() {
       await tester.pumpWidget(app(tree()));
       await tester.pumpAndSettle();
 
+      // Sub-goals start collapsed: their parent says how many it has.
+      expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
+      expect(find.text('Priority 1 · Weekly · 1 sub-goal'), findsOneWidget);
+      expect(find.text('Fixed time'), findsOneWidget);
+      expect(find.text('Proposed'), findsWidgets);
+      expect(find.text('3 of 200 labels in use'), findsOneWidget);
+      // Only a goal with sub-goals can be expanded.
+      expect(find.byTooltip('Expand Hosting'), findsNothing);
+
+      await tester.tap(find.byTooltip('Expand Cooking'));
+      await tester.pumpAndSettle();
       expect(shownNames(tester), [
         'Cooking',
         'Tofu tikka',
@@ -121,15 +132,16 @@ void main() {
         'Old habit',
       ]);
       expect(find.text('Priority 1 · Weekly'), findsOneWidget);
-      expect(find.text('Fixed time'), findsOneWidget);
-      expect(find.text('Proposed'), findsWidgets);
-      expect(find.text('3 of 200 labels in use'), findsOneWidget);
       // The sub-goal is indented under its parent.
       final indent = tester
           .widgetList<ListTile>(find.byType(ListTile))
           .map((t) => (t.contentPadding as EdgeInsetsDirectional).start)
           .toList();
       expect(indent[1], greaterThan(indent[0]));
+
+      await tester.tap(find.byTooltip('Collapse Cooking'));
+      await tester.pumpAndSettle();
+      expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
     },
   );
 
@@ -282,9 +294,9 @@ void main() {
       (g) => g.name == 'Weekly dinners',
     );
     expect(added.parentId, 'host');
+    // Its parent is expanded, so it's in sight; Cooking stays collapsed.
     expect(shownNames(tester), [
       'Cooking',
-      'Tofu tikka',
       'Hosting',
       'Weekly dinners',
       'Idea',
@@ -390,7 +402,7 @@ void main() {
     );
     expect(cooking.measure, {'kind': 'duration', 'target_min': 600});
     // The Goals page says what it's measured by, in place of its cadence.
-    expect(find.text('Priority 1 · 10h per week'), findsOneWidget);
+    expect(find.text('Priority 1 · 10h per week · 1 sub-goal'), findsOneWidget);
   });
 
   testWidgets("a measure missing what its kind needs isn't kept", (
@@ -430,6 +442,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Expand Own'));
+      await tester.pumpAndSettle();
 
       List<Icon> iconsOf(String name) => tester
           .widgetList<Icon>(
@@ -450,10 +464,9 @@ void main() {
       expect(own.map((i) => (i.icon, i.color)), [
         (Icons.flag, const Color(0xFF123456)),
       ]);
-      final kid = iconsOf('Kid');
-      expect(kid.map((i) => i.icon), [Icons.flag, Icons.outlined_flag]);
-      expect(kid.first.color, const Color(0xFF123456));
-      expect(kid.last.color, isNot(const Color(0xFF123456)));
+      expect(iconsOf('Kid').map((i) => (i.icon, i.color)), [
+        (Icons.outlined_flag, const Color(0xFF123456)),
+      ]);
     },
   );
 
