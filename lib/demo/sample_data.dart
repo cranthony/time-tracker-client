@@ -2,6 +2,7 @@ import '../models/assessment.dart';
 import '../models/event.dart';
 import '../models/goal.dart';
 import '../models/note.dart';
+import '../models/recurrence.dart';
 import '../services/events_repository.dart';
 import '../services/goals_repository.dart';
 import '../services/notes_repository.dart';
@@ -24,7 +25,8 @@ class SampleData {
       _today.add(Duration(days: dayOffset, hours: hour, minutes: minute));
 
   NotesRepository notesRepository() => InMemoryNotesRepository(notes);
-  EventsRepository eventsRepository() => InMemoryEventsRepository(events);
+  EventsRepository eventsRepository() =>
+      InMemoryEventsRepository(events, recurrences);
   GoalsRepository goalsRepository() =>
       InMemoryGoalsRepository(goals, assessments);
 
@@ -36,7 +38,14 @@ class SampleData {
 
   List<Event> get events => [
     _event('sleep', 'Sleep', _at(23, 0, -1), _at(7, 0), sleep: true),
-    _event('morning', 'Morning routine', _at(7, 0), _at(8, 0), goals: ['wake']),
+    _event(
+      'morning_today',
+      'Morning routine',
+      _at(7, 0),
+      _at(8, 0),
+      goals: ['wake'],
+      series: 'morning',
+    ),
     _event(
       'work',
       'Time Tracker: goals page',
@@ -63,6 +72,7 @@ class SampleData {
     DateTime end, {
     List<String> goals = const [],
     bool sleep = false,
+    String? series,
   }) => Event.fromJson({
     'id': id,
     'summary': summary,
@@ -72,7 +82,25 @@ class SampleData {
     'goal_ids': goals,
     'goal_names': [for (final g in goals) _names[g]],
     if (sleep) 'is_end_of_day_sleep': true,
+    'recurring_event_id': ?series,
   });
+
+  /// The series "Morning routine" is part of: every weekday since a month
+  /// ago.
+  List<Recurrence> get recurrences => [
+    Recurrence.fromJson({
+      'id': 'morning',
+      'summary': 'Morning routine',
+      'start': localIsoTimestamp(_at(7, 0, -28)),
+      'end': localIsoTimestamp(_at(8, 0, -28)),
+      'time_zone': 'America/New_York',
+      'rules': ['RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'],
+      'schedule': 'Every week on Mon, Tue, Wed, Thu, Fri',
+      'goal_ids': ['wake'],
+      'goal_names': [_names['wake']],
+      'is_fixed_time': true,
+    }),
+  ];
 
   static const _names = {
     'tracker': 'Make a Time Tracker app',

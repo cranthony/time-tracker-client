@@ -44,6 +44,21 @@ enum PropertyKind {
   /// A goal's measure (see models/measure.dart), worded for the dialog's
   /// "cadence" property.
   measure,
+
+  /// A list of text lines, edited one per line.
+  lines,
+}
+
+/// A property's value shown as a link that [open]s something else, such as
+/// another dialog, rather than being edited in place.
+class PropertyLink {
+  const PropertyLink({required this.label, required this.open});
+
+  /// What the link says, in place of the value.
+  final String label;
+
+  /// Opens it; true if that changed something, which closes the dialog.
+  final Future<bool> Function() open;
 }
 
 /// A change offered as a button of its own, after the user confirms it,
@@ -79,18 +94,22 @@ class OneWayAction {
 /// [required] can't be emptied. Returns what [save] returned, or null if
 /// nothing was saved. [goals] lists the goals a [PropertyKind.goal] or
 /// [PropertyKind.goals] can be; [choices] gives each [PropertyKind.choice]
-/// property's values, and how each is shown.
+/// property's values, and how each is shown; [links] shows those keys'
+/// values as links instead. [confirmSave] is asked before each save, with
+/// the changes; false calls the save off, keeping the dialog open.
 Future<R?> showPropertiesDialog<R>(
   BuildContext context, {
   required String Function(Map<String, Object?> values) title,
   required Map<String, Object?> properties,
   Map<String, PropertyKind> kinds = const {},
   Future<R> Function(Map<String, Object?> changes)? save,
+  Future<bool> Function(Map<String, Object?> changes)? confirmSave,
   String? Function(Map<String, Object?> values)? validate,
   Set<String> required = const {},
   Map<String, String> hints = const {},
   Future<List<Goal>> Function()? goals,
   Map<String, Map<String, String>> choices = const {},
+  Map<String, PropertyLink> links = const {},
   OneWayAction? oneWayAction,
   String signInHint = 'Sign in again, then try again.',
 }) => showDialog<R>(
@@ -100,11 +119,13 @@ Future<R?> showPropertiesDialog<R>(
     properties: properties,
     kinds: kinds,
     save: save,
+    confirmSave: confirmSave,
     validate: validate,
     required: required,
     hints: hints,
     goals: goals,
     choices: choices,
+    links: links,
     oneWayAction: oneWayAction,
     signInHint: signInHint,
   ),
@@ -116,11 +137,13 @@ class _PropertiesDialog<R> extends StatefulWidget {
     required this.properties,
     required this.kinds,
     required this.save,
+    required this.confirmSave,
     required this.validate,
     required this.required,
     required this.hints,
     required this.goals,
     required this.choices,
+    required this.links,
     required this.oneWayAction,
     required this.signInHint,
   });
@@ -129,6 +152,7 @@ class _PropertiesDialog<R> extends StatefulWidget {
   final Map<String, Object?> properties;
   final Map<String, PropertyKind> kinds;
   final Future<R> Function(Map<String, Object?> changes)? save;
+  final Future<bool> Function(Map<String, Object?> changes)? confirmSave;
   final String? Function(Map<String, Object?> values)? validate;
   final Set<String> required;
 
@@ -136,6 +160,7 @@ class _PropertiesDialog<R> extends StatefulWidget {
   final Map<String, String> hints;
   final Future<List<Goal>> Function()? goals;
   final Map<String, Map<String, String>> choices;
+  final Map<String, PropertyLink> links;
   final OneWayAction? oneWayAction;
 
   /// What to do when saving needs sign-in.
@@ -206,6 +231,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
           _ => '',
         },
         PropertyKind.goals => (value as List? ?? const []).join(', '),
+        PropertyKind.lines => (value as List? ?? const []).join('\n'),
         _ => value == null ? '' : '$value',
       };
     });
@@ -242,6 +268,12 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     switch (widget.kinds[key]!) {
       case PropertyKind.text || PropertyKind.multiline:
         value = text.isEmpty ? null : text;
+      case PropertyKind.lines:
+        final lines = [
+          for (final line in text.split('\n'))
+            if (line.trim().isNotEmpty) line.trim(),
+        ];
+        value = lines.isEmpty ? null : lines;
       case PropertyKind.time:
         value = localIsoTimestamp(_draft as DateTime);
       case PropertyKind.flag ||
@@ -313,6 +345,10 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       a.cast<String, Object?>(),
       b.cast<String, Object?>(),
     ),
+    PropertyKind.lines => listEquals(
+      (a as List? ?? const []).cast<String>(),
+      (b as List? ?? const []).cast<String>(),
+    ),
     PropertyKind.goals => listEquals(
       (a as List? ?? const []).cast<String>(),
       (b as List? ?? const []).cast<String>(),
@@ -326,6 +362,9 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     if (widget.validate?.call({..._original, ...changes}) case final error?) {
       setState(() => _error = error);
       return;
+    }
+    if (widget.confirmSave case final confirm?) {
+      if (!await confirm(changes) || !mounted) return;
     }
     final navigator = Navigator.of(context);
     setState(() {
@@ -495,6 +534,43 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     if (_editing == key) {
       return PropertyRow(name: key, child: _editor(context, key));
     }
+    if (widget.links[key] case final link? when value != null) {
+      return PropertyRow(
+        name: key,
+        child: InkWell(
+          onTap: _saving
+              ? null
+              : () async {
+                  final navigator = Navigator.of(context);
+                  if (await link.open() && mounted) navigator.pop();
+                },
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    link.label,
+                    style: TextStyle(
+                      color: theme.colorScheme.primary,
+                      decoration: TextDecoration.underline,
+                      decorationColor: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: theme.colorScheme.primary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     final shown = value == null
         ? Text('(none)', style: TextStyle(color: theme.hintColor))
         : _shown(context, key, value, selectable: !editable);
@@ -572,15 +648,21 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     final Widget control = switch (kind) {
       PropertyKind.text ||
       PropertyKind.multiline ||
+      PropertyKind.lines ||
       PropertyKind.integer ||
       PropertyKind.duration => TextField(
         controller: _text,
         autofocus: true,
-        minLines: kind == PropertyKind.multiline ? 2 : 1,
-        maxLines: kind == PropertyKind.multiline ? 6 : 1,
+        minLines: kind == PropertyKind.multiline || kind == PropertyKind.lines
+            ? 2
+            : 1,
+        maxLines: kind == PropertyKind.multiline || kind == PropertyKind.lines
+            ? 6
+            : 1,
         keyboardType: switch (kind) {
           PropertyKind.integer => TextInputType.number,
-          PropertyKind.multiline => TextInputType.multiline,
+          PropertyKind.multiline ||
+          PropertyKind.lines => TextInputType.multiline,
           _ => TextInputType.text,
         },
         textCapitalization:
@@ -593,7 +675,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
           hintText: kind == PropertyKind.duration ? 'e.g. 1h 30m' : null,
           errorText: _draftError,
         ),
-        onSubmitted: kind == PropertyKind.multiline
+        onSubmitted:
+            kind == PropertyKind.multiline || kind == PropertyKind.lines
             ? null
             : (_) => _confirmEdit(),
       ),
@@ -952,6 +1035,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       case PropertyKind.goal:
         // Its name, once the goals are loaded.
         return _goalNames[value] ?? '$value';
+      case PropertyKind.lines when value is List:
+        return value.join('\n');
       case PropertyKind.goals when value is List:
         if (value.isEmpty) return '(none)';
         return [for (final id in value) _goalNames[id] ?? '$id'].join(', ');
