@@ -10,6 +10,7 @@ import '../services/notes_repository.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
 import '../widgets/note_dialog.dart';
+import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
 /// All the uncompacted notes, plus any not saved yet, by day, with a "+"
@@ -51,6 +52,10 @@ class NotesScreen extends StatefulWidget {
 
 class _NotesScreenState extends State<NotesScreen> {
   List<Note>? _notes;
+
+  /// [_notes] are the ones kept from last time; the server hasn't
+  /// answered since.
+  bool _stale = false;
   Object? _error;
   bool _needsSignIn = false;
   bool _signingIn = false;
@@ -67,7 +72,20 @@ class _NotesScreenState extends State<NotesScreen> {
     super.initState();
     widget.outbox.onSaved = _load;
     _addNoteRequests = widget.addNoteRequests?.listen((at) => _addNote(at: at));
+    _showCached();
     _load();
+  }
+
+  /// Shows the notes kept from last time, unless the server answered
+  /// first.
+  Future<void> _showCached() async {
+    final notes = await widget.repository.cachedUncompactedNotes();
+    if (!mounted || notes == null) return;
+    if (_notes != null || _needsSignIn || _error != null) return;
+    setState(() {
+      _notes = notes;
+      _stale = true;
+    });
   }
 
   @override
@@ -83,6 +101,7 @@ class _NotesScreenState extends State<NotesScreen> {
       if (!mounted) return;
       setState(() {
         _notes = notes;
+        _stale = false;
         _error = null;
         _needsSignIn = false;
       });
@@ -90,6 +109,7 @@ class _NotesScreenState extends State<NotesScreen> {
       if (!mounted) return;
       setState(() {
         _notes = null;
+        _stale = false;
         _needsSignIn = true;
       });
     } catch (e) {
@@ -238,9 +258,12 @@ class _NotesScreenState extends State<NotesScreen> {
               ),
             ],
           ),
-          body: RefreshIndicator(
-            onRefresh: _refresh,
-            child: _buildBody(context, needsSignIn),
+          body: RefreshingBar(
+            refreshing: _stale && _error == null && !needsSignIn,
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: _buildBody(context, needsSignIn),
+            ),
           ),
           // Always available: notes wait in the outbox until they can be
           // saved, even while signed out or offline.
@@ -298,7 +321,9 @@ class _NotesScreenState extends State<NotesScreen> {
     } else if (_error != null) {
       banner = StatusMessage(
         icon: Icons.cloud_off,
-        text: 'Could not load notes.\n$_error',
+        text: notes == null
+            ? 'Could not load notes.\n$_error'
+            : 'Could not load notes. These may be out of date.\n$_error',
       );
     } else if (notes == null && rows.isEmpty) {
       return const Center(child: CircularProgressIndicator());

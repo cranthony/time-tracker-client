@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 1.12.0
+
+- Each page shows what it showed last time straight away, instead of a
+  blank page while it waits for the server. A thin bar across the top
+  says it's being refreshed; when the server answers, the page updates
+  and the bar goes. If the server can't be reached, the page keeps
+  what it has and says it may be out of date.
+- On the Events page that's today, the day it opens on; other days
+  still load when you step to them.
+- The app keeps the server's last answers on the device, where it keeps
+  unsaved notes, and forgets them when you sign out.
+
 ## 1.11.0
 
 - The Labels page hides labels with no name. They hold the calendar's

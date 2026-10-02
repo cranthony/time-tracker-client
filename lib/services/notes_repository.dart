@@ -1,11 +1,16 @@
 import '../models/note.dart';
 import 'mcp_client.dart';
+import 'response_cache.dart';
 
 /// Where notes come from. The app talks to this rather than to MCP directly
 /// so screens can be exercised without a server.
 abstract class NotesRepository {
   /// Notes that haven't been compacted yet, oldest first.
   Future<List<Note>> uncompactedNotes();
+
+  /// What [uncompactedNotes] last returned, kept from an earlier run of
+  /// the app; null if there's nothing kept.
+  Future<List<Note>?> cachedUncompactedNotes();
 
   /// Records [note] and returns it as stored, with its id.
   Future<Note> addNote(Note note);
@@ -25,9 +30,12 @@ abstract class NotesRepository {
 /// Reads and writes notes via the Time Tracker MCP server's `get_notes`,
 /// `note`, `edit_note` and `delete_note` tools.
 class McpNotesRepository implements NotesRepository {
-  McpNotesRepository(this._client);
+  McpNotesRepository(this._client, {this._cache});
 
   final McpClient _client;
+  final ResponseCache? _cache;
+
+  static const _cacheKey = 'get_notes';
 
   @override
   String get label => _client.endpoint.host;
@@ -37,13 +45,26 @@ class McpNotesRepository implements NotesRepository {
     final result = await _client.callTool('get_notes', {
       'include_compacted': false,
     });
-    final notes =
-        (result as List)
-            .map((n) => Note.fromJson((n as Map).cast<String, dynamic>()))
-            .toList()
-          ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    final notes = _notes(result);
+    await _cache?.write(_cacheKey, result);
     return notes;
   }
+
+  @override
+  Future<List<Note>?> cachedUncompactedNotes() async {
+    try {
+      final result = await _cache?.read(_cacheKey);
+      return result == null ? null : _notes(result);
+    } catch (_) {
+      return null; // From an older version of the app, perhaps.
+    }
+  }
+
+  static List<Note> _notes(Object? result) =>
+      (result as List)
+          .map((n) => Note.fromJson((n as Map).cast<String, dynamic>()))
+          .toList()
+        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
   @override
   Future<Note> addNote(Note note) async {
@@ -88,6 +109,9 @@ class InMemoryNotesRepository implements NotesRepository {
   Future<List<Note>> uncompactedNotes() async =>
       _notes.where((n) => !n.isCompacted).toList()
         ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+  @override
+  Future<List<Note>?> cachedUncompactedNotes() async => null;
 
   @override
   Future<Note> addNote(Note note) async => _store(note);

@@ -6,6 +6,7 @@ import '../services/mcp_client.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/event_label_dialog.dart';
+import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
 /// Every named event label: its color, name, priority and whether it's
@@ -42,6 +43,10 @@ class EventLabelsScreen extends StatefulWidget {
 
 class _EventLabelsScreenState extends State<EventLabelsScreen> {
   List<EventLabel>? _labels;
+
+  /// [_labels] are the ones kept from last time; the server hasn't
+  /// answered since.
+  bool _stale = false;
   Object? _error;
   bool _needsSignIn = false;
   bool _signingIn = false;
@@ -49,7 +54,20 @@ class _EventLabelsScreenState extends State<EventLabelsScreen> {
   @override
   void initState() {
     super.initState();
+    _showCached();
     _load();
+  }
+
+  /// Shows the labels kept from last time, unless the server answered
+  /// first.
+  Future<void> _showCached() async {
+    final labels = await widget.repository.cachedLabels();
+    if (!mounted || labels == null) return;
+    if (_labels != null || _needsSignIn || _error != null) return;
+    setState(() {
+      _labels = _named(labels);
+      _stale = true;
+    });
   }
 
   Future<void> _load() async {
@@ -58,6 +76,7 @@ class _EventLabelsScreenState extends State<EventLabelsScreen> {
       if (!mounted) return;
       setState(() {
         _labels = _named(labels);
+        _stale = false;
         _error = null;
         _needsSignIn = false;
       });
@@ -65,6 +84,7 @@ class _EventLabelsScreenState extends State<EventLabelsScreen> {
       if (!mounted) return;
       setState(() {
         _labels = null;
+        _stale = false;
         _needsSignIn = true;
       });
     } catch (e) {
@@ -89,7 +109,11 @@ class _EventLabelsScreenState extends State<EventLabelsScreen> {
       save: widget.repository.updateLabel,
     );
     if (labels == null || !mounted) return;
-    setState(() => _labels = _named(labels));
+    setState(() {
+      _labels = _named(labels);
+      _stale = false;
+      _error = null;
+    });
     messenger.showSnackBar(const SnackBar(content: Text('Saved.')));
   }
 
@@ -126,7 +150,10 @@ class _EventLabelsScreenState extends State<EventLabelsScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(onRefresh: _load, child: _buildBody(context)),
+      body: RefreshingBar(
+        refreshing: _stale && _error == null && !_needsSignIn,
+        child: RefreshIndicator(onRefresh: _load, child: _buildBody(context)),
+      ),
     );
   }
 
@@ -146,7 +173,7 @@ class _EventLabelsScreenState extends State<EventLabelsScreen> {
         ),
       );
     }
-    if (_error != null) {
+    if (_error != null && (labels == null || labels.isEmpty)) {
       return FillViewport(
         child: StatusMessage(
           icon: Icons.cloud_off,
@@ -160,12 +187,22 @@ class _EventLabelsScreenState extends State<EventLabelsScreen> {
         child: StatusMessage(icon: Icons.label_off, text: 'No event labels.'),
       );
     }
-    return ListView.separated(
+    return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      itemCount: labels.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (context, i) =>
-          _LabelTile(label: labels[i], onTap: () => _open(labels[i])),
+      children: [
+        // The last labels loaded, or kept from last time, are still shown.
+        if (_error != null)
+          StatusMessage(
+            icon: Icons.cloud_off,
+            text:
+                'Could not load event labels. These may be out of date.\n'
+                '$_error',
+          ),
+        for (final (i, label) in labels.indexed) ...[
+          if (i > 0) const Divider(height: 1),
+          _LabelTile(label: label, onTap: () => _open(label)),
+        ],
+      ],
     );
   }
 }
