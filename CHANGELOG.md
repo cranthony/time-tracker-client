@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 2.3.0
+
+- Sample data: run with `--dart-define=SAMPLE_DATA=true` (and no
+  `MCP_URL`) to try the app with a realistic day of notes, events and
+  goals, including every goal status and health ratings.
+- Visual tests screenshot the main screens in light and dark. On each pull
+  request, CI shows which screens changed, with before, after and
+  difference images. See "Visual tests" in the README.
+
 ## 2.2.0
 
 - Each active goal with a cadence shows its health on the Goals page: a

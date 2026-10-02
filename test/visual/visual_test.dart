@@ -1,0 +1,126 @@
+// Renders the app's main screens with the sample data (lib/demo), in light
+// and dark, at a phone's size, and writes them to build/screenshots/. See
+// flutter_test_config.dart, and "Visual tests" in README.md.
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/demo/sample_data.dart';
+import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/outbox/note_outbox.dart';
+import 'package:time_tracker_client/outbox/outbox_store.dart';
+import 'package:time_tracker_client/screens/events_screen.dart';
+import 'package:time_tracker_client/screens/goal_history_screen.dart';
+import 'package:time_tracker_client/screens/goals_screen.dart';
+import 'package:time_tracker_client/screens/notes_screen.dart';
+import 'package:time_tracker_client/theme.dart';
+
+/// A fixed moment, so every run renders the same thing.
+final _now = DateTime(2026, 10, 2, 13, 30);
+
+/// A typical phone's screen, in logical pixels.
+const _phone = Size(390, 844);
+
+void main() {
+  final sample = SampleData(_now);
+
+  for (final brightness in Brightness.values) {
+    final mode = brightness.name;
+
+    Future<void> render(
+      WidgetTester tester,
+      String name,
+      Widget screen, {
+      Future<void> Function()? then,
+    }) async {
+      tester.view.physicalSize = _phone * 2;
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      // flutter_test draws shadows as solid outlines; draw them for real.
+      // It must be put back before the test ends.
+      debugDisableShadows = false;
+      try {
+        await tester.pumpWidget(
+          MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: appTheme(brightness),
+            home: screen,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await then?.call();
+        await expectLater(
+          find.byType(MaterialApp),
+          matchesGoldenFile('${name}_$mode.png'),
+        );
+      } finally {
+        debugDisableShadows = true;
+      }
+    }
+
+    testWidgets('goals ($mode)', (tester) async {
+      await render(
+        tester,
+        'goals',
+        GoalsScreen(
+          repository: sample.goalsRepository(),
+          serverLabel: 'sample',
+        ),
+      );
+    });
+
+    testWidgets('goals with every status ($mode)', (tester) async {
+      await render(
+        tester,
+        'goals_every_status',
+        GoalsScreen(
+          repository: sample.goalsRepository(),
+          serverLabel: 'sample',
+        ),
+        then: () async {
+          await tester.tap(find.byTooltip('Show goals that are…'));
+          await tester.pumpAndSettle();
+          for (final status in ['Completed', 'Archived', 'Deleted']) {
+            await tester.tap(find.widgetWithText(CheckboxMenuButton, status));
+            await tester.pumpAndSettle();
+          }
+        },
+      );
+    });
+
+    testWidgets('goal history ($mode)', (tester) async {
+      final goals = sample.goalsRepository();
+      final tracker = (await tester.runAsync(goals.goals))!.goals
+          .firstWhere((Goal g) => g.id == 'tracker');
+      await render(
+        tester,
+        'goal_history',
+        GoalHistoryScreen(goal: tracker, repository: goals),
+      );
+    });
+
+    testWidgets('events ($mode)', (tester) async {
+      await render(
+        tester,
+        'events',
+        EventsScreen(
+          repository: sample.eventsRepository(),
+          goalsRepository: sample.goalsRepository(),
+          serverLabel: 'sample',
+          clock: () => _now,
+        ),
+      );
+    });
+
+    testWidgets('notes ($mode)', (tester) async {
+      final notes = sample.notesRepository();
+      final outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: notes)
+        ..start();
+      addTearDown(outbox.stop);
+      await render(
+        tester,
+        'notes',
+        NotesScreen(repository: notes, outbox: outbox, clock: () => _now),
+      );
+    });
+  }
+}

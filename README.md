@@ -302,6 +302,65 @@ Tests cover the MCP client, the whole OAuth flow (against a fake AuthKit),
 the outbox of unsaved notes, and the notes screen, so none of them need a
 server.
 
+### Sample data
+
+`lib/demo/sample_data.dart` is a realistic day of notes, events and goals
+for trying the app without a server. Its goals have every status,
+sub-goals, their own and inherited colors, and health ratings, including
+skipped periods, periods not yet assessed, and a proposed rating. It's
+dated relative to today, so it never goes stale. Run the app with it:
+
+```sh
+flutter run -d chrome --dart-define=SAMPLE_DATA=true
+```
+
+It is used only when there's no `MCP_URL`, so leave out
+`--dart-define-from-file=config.json`. Changes you make (new notes,
+edited goals) last until the app restarts.
+
+### Visual tests
+
+`test/visual` renders the main screens with the sample data, at a phone's
+size, in light and dark: Goals (with the status filter closed and open), a
+goal's history, Events and Notes. It writes them, at 2x and with the real
+fonts (Roboto and Material Icons, from the Flutter SDK), to
+`build/screenshots/`. This is the quick way to see a UI change without
+running the app:
+
+```sh
+flutter test test/visual
+```
+
+The fonts come with the SDK but are downloaded only for a build or
+`flutter precache`. Without them the tests fail rather than draw text as
+blocks; `flutter precache` downloads them.
+
+Some characters show as a box with an X in it, such as the `→` in a goal
+history's "8h of 10h target → 82". The sample data uses the arrow because
+the server writes it in every measured rating's explanation, so the app
+must show it. The SDK's Roboto doesn't have it, and tests have no other
+font to fall back on. The app itself shows it, since a phone or browser
+finds it in another font.
+
+Nothing is compared with images kept in the repo, so the repo doesn't grow
+with every UI change. Instead, to see what a change did, screenshot before
+and after it, then diff them (this needs `pip install pillow`):
+
+```sh
+flutter test test/visual --dart-define=SCREENSHOTS_DIR=build/before   # on main
+flutter test test/visual --dart-define=SCREENSHOTS_DIR=build/after    # on your branch
+python3 tool/visual_diff.py build/before build/after build/changes
+```
+
+`build/changes/index.html` shows each changed screen's before, after, and
+their difference (changed pixels in red).
+
+`.github/workflows/visual.yml` does this for every PR, against the PR's
+base branch, on Linux. The job summary lists the changed screens. The
+`visual-changes` artifact has the images, and the `screenshots` artifact
+has every screen as the PR draws it. It reports changes; it doesn't fail
+because a screen changed.
+
 `.github/workflows/emulator.yml` also runs the Android app on an emulator
 and checks that the home screen "+" brings the keyboard up
 (`tool/emulator/keyboard_test.sh`).
