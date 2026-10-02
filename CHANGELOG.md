@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 2.8.0
+
+- An event that was never given goals, whose goals are inferred from its
+  label, shows them "(from its label)" in its details. Opening them and
+  keeping them, changed or not, sets them for real. Saving anything else
+  leaves them inferred. Needs a server that sends `goals_from_label`.
+
 ## 2.7.0
 
 - Press and hold a goal on the Goals page to reorder goals: drag one by

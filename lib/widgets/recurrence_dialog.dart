@@ -49,6 +49,10 @@ Future<List<Recurrence>?> showRecurrenceDialog(
       ...typed,
     },
     kinds: _kinds,
+    inferred: {
+      if (recurrence.properties['goals_from_label'] == true)
+        'goal_ids': 'from its label',
+    },
     hints: const {
       'rules':
           'One rule per line, like RRULE:FREQ=WEEKLY;BYDAY=MO,WE. The '

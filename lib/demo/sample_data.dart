@@ -54,7 +54,15 @@ class SampleData {
       goals: ['tracker'],
     ),
     _event('lunch', 'Lunch', _at(12, 0), _at(13, 0)),
-    _event('class', 'Cooking class', _at(14, 0), _at(16, 0), goals: ['tofu']),
+    // Never given goals: Tofu's is inferred from its label.
+    _event(
+      'class',
+      'Cooking class',
+      _at(14, 0),
+      _at(16, 0),
+      goals: ['tofu'],
+      fromLabel: true,
+    ),
     _event(
       'dinner',
       'Dinner with Sam & Priya',
@@ -73,6 +81,7 @@ class SampleData {
     List<String> goals = const [],
     bool sleep = false,
     String? series,
+    bool fromLabel = false,
   }) => Event.fromJson({
     'id': id,
     'summary': summary,
@@ -83,6 +92,7 @@ class SampleData {
     'goal_names': [for (final g in goals) _names[g]],
     if (sleep) 'is_end_of_day_sleep': true,
     'recurring_event_id': ?series,
+    if (fromLabel) 'goals_from_label': true,
   });
 
   /// The series "Morning routine" is part of: every weekday since a month

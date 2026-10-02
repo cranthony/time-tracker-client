@@ -99,6 +99,8 @@ class McpEventsRepository implements EventsRepository {
       'recurrence': {
         'id': recurrence.id,
         for (final MapEntry(:key, :value) in changes.entries) key: ?value,
+        // Goals sent are set, not inferred from a label.
+        if (changes.containsKey('goal_ids')) 'goals_from_label': false,
       },
       'starting_at_event_id': ?startingAt,
     });
@@ -114,7 +116,13 @@ class McpEventsRepository implements EventsRepository {
     Map<String, Object?> changes,
   ) async {
     final result = await _client.callTool('update_event', {
-      'event': {...event.toJson(), ...changes},
+      'event': {
+        ...event.toJson(),
+        ...changes,
+        // Goals sent are set, not inferred from a label; left alone, the
+        // server keeps inferred ones inferred.
+        if (changes.containsKey('goal_ids')) 'goals_from_label': false,
+      },
     });
     return (result as List)
         .map((e) => Event.fromJson((e as Map).cast<String, dynamic>()))
@@ -189,7 +197,11 @@ class InMemoryEventsRepository implements EventsRepository {
   ) async {
     final i = _events.indexWhere((e) => e.id == event.id);
     if (i < 0) throw StateError('No event ${event.id}');
-    final updated = Event.fromJson({..._events[i].toJson(), ...changes});
+    final updated = Event.fromJson({
+      ..._events[i].toJson(),
+      ...changes,
+      if (changes.containsKey('goal_ids')) 'goals_from_label': false,
+    });
     _events[i] = updated;
     return [updated];
   }

@@ -38,6 +38,15 @@ Future<List<Event>?> showEventDialog(
       ...typed,
     },
     kinds: _kinds,
+    inferred: {
+      if (event.properties['goals_from_label'] == true)
+        'goal_ids': 'from its label',
+    },
+    hints: const {
+      'goal_ids':
+          'Goals shown "from its label" were never set: they come from the '
+          "event's label. Keep or change them to set them.",
+    },
     links: {
       if ((openSeries, event.properties['recurring_event_id']) case (
         final open?,
