@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 2.5.0
+
+- On the Goals page, a goal's sub-goals start collapsed, and the goal says
+  how many it has. Its arrow expands it to show them, and adding a
+  sub-goal expands its parent.
+- A goal without its own color shows its flag as an outline in the color
+  it inherits, rather than a grey outline filled with that color.
+
 ## 2.4.0
 
 - A goal's measure, how each period's health is rated, can be edited in

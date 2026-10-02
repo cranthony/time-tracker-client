@@ -13,7 +13,9 @@ import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
 /// Every goal, as a tree: each one's color, name, status, priority and
-/// cadence, with its sub-goals indented under it. The filter at the top
+/// cadence, with its sub-goals indented under it. A goal with sub-goals
+/// starts collapsed, saying how many it has; its arrow expands it. The
+/// filter at the top
 /// right picks which statuses are shown: proposed, active and inactive
 /// goals to start with. Only active goals take up a calendar label; the others keep
 /// their history. Tapping a goal shows all its properties and lets one
@@ -57,6 +59,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
 
   /// The statuses shown.
   final _shown = {...defaultGoalStatuses};
+
+  /// The goals whose sub-goals are shown; every other goal is collapsed.
+  final _expanded = <String>{};
 
   @override
   void initState() {
@@ -125,7 +130,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
     'Saved.',
   );
 
-  Future<void> _add({String? parentId}) async => _saved(
+  Future<void> _add({String? parentId}) async {
+    // So the new sub-goal can be seen.
+    if (parentId != null) setState(() => _expanded.add(parentId));
+    await _addGoal(parentId: parentId);
+  }
+
+  Future<void> _addGoal({String? parentId}) async => _saved(
     await showNewGoalDialog(
       context,
       create: widget.repository.createGoal,
@@ -283,9 +294,34 @@ class _GoalsScreenState extends State<GoalsScreen> {
         ),
       );
     }
-    final shown = [
+    final byId = {for (final goal in goals.goals) goal.id: goal};
+    final withStatus = [
       for (final goal in goals.goals)
         if (_shown.contains(goal.status)) goal,
+    ];
+    // How many sub-goals each goal has, of those with the statuses shown.
+    final subGoals = <String?, int>{};
+    for (final goal in withStatus) {
+      subGoals.update(goal.parentId, (n) => n + 1, ifAbsent: () => 1);
+    }
+    // A goal is hidden under any collapsed ancestor that's shown. One whose
+    // parent's status is filtered out still shows, where it always has.
+    bool underCollapsed(Goal goal) {
+      for (
+        var parent = byId[goal.parentId];
+        parent != null;
+        parent = byId[parent.parentId]
+      ) {
+        if (_shown.contains(parent.status) && !_expanded.contains(parent.id)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    final shown = [
+      for (final goal in withStatus)
+        if (!underCollapsed(goal)) goal,
     ];
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -323,6 +359,11 @@ class _GoalsScreenState extends State<GoalsScreen> {
           if (i > 0) const Divider(height: 1),
           _GoalTile(
             goal: goal,
+            subGoals: subGoals[goal.id] ?? 0,
+            expanded: _expanded.contains(goal.id),
+            onToggle: () => setState(() {
+              if (!_expanded.remove(goal.id)) _expanded.add(goal.id!);
+            }),
             onTap: () => _open(goal),
             onAddSubGoal: () => _add(parentId: goal.id),
             onSetStatus: (status) => _setStatus(goal, status),
@@ -379,8 +420,7 @@ class _StatusFilter extends StatelessWidget {
 }
 
 /// An active goal's flag: solid in its own color if it has one; otherwise
-/// a grey outline filled with the color it inherits, from its priority or
-/// its parent.
+/// an outline in the color it inherits, from its parent or its priority.
 class GoalFlag extends StatelessWidget {
   const GoalFlag({super.key, required this.goal});
 
@@ -388,16 +428,12 @@ class GoalFlag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hint = Theme.of(context).hintColor;
     if (parseColor(goal.backgroundColor) case final own?) {
       return Icon(Icons.flag, color: own);
     }
-    return Stack(
-      children: [
-        if (parseColor(goal.effectiveColor) case final inherited?)
-          Icon(Icons.flag, color: inherited),
-        Icon(Icons.outlined_flag, color: hint),
-      ],
+    return Icon(
+      Icons.outlined_flag,
+      color: parseColor(goal.effectiveColor) ?? Theme.of(context).hintColor,
     );
   }
 }
@@ -422,9 +458,15 @@ const _statusIcons = {
   'deleted': Icons.delete_outline,
 };
 
+/// The width of the expand arrow before a goal's flag.
+const _arrowWidth = 32.0;
+
 class _GoalTile extends StatelessWidget {
   const _GoalTile({
     required this.goal,
+    required this.subGoals,
+    required this.expanded,
+    required this.onToggle,
     required this.onTap,
     required this.onAddSubGoal,
     required this.onSetStatus,
@@ -432,6 +474,13 @@ class _GoalTile extends StatelessWidget {
   });
 
   final Goal goal;
+
+  /// How many sub-goals it has (of those shown); none, and it has no arrow.
+  final int subGoals;
+
+  /// Whether its sub-goals are shown.
+  final bool expanded;
+  final VoidCallback onToggle;
   final VoidCallback onTap;
   final VoidCallback onAddSubGoal;
   final ValueChanged<String> onSetStatus;
@@ -459,21 +508,46 @@ class _GoalTile extends StatelessWidget {
           (final one, final many) => stale == 1 ? one : many,
           null => stale == 1 ? 'period' : 'periods',
         }} unassessed',
+      if (subGoals > 0 && !expanded)
+        '$subGoals sub-goal${subGoals == 1 ? '' : 's'}',
     ].nonNulls.join(' · ');
     final assessed = goal.active && goal.cadence != null;
     return ListTile(
       contentPadding: EdgeInsetsDirectional.only(
-        start: 16.0 + 24.0 * goal.depth,
+        start: 4.0 + 24.0 * goal.depth,
         end: 4,
       ),
-      leading: Tooltip(
-        message: goalStatuses[goal.status] ?? goal.status,
-        child: goal.active
-            ? GoalFlag(goal: goal)
-            : Icon(
-                _statusIcons[goal.status] ?? Icons.outlined_flag,
-                color: theme.hintColor,
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (subGoals > 0)
+            IconButton(
+              icon: Icon(expanded ? Icons.expand_more : Icons.chevron_right),
+              tooltip: '${expanded ? 'Collapse' : 'Expand'} ${goalName(goal)}',
+              padding: EdgeInsets.zero,
+              // Not widened to 48 like a lone button, so titles line up.
+              style: IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
+              constraints: const BoxConstraints.tightFor(
+                width: _arrowWidth,
+                height: 40,
+              ),
+              onPressed: onToggle,
+            )
+          else
+            // Lines up with the arrows' flags.
+            const SizedBox(width: _arrowWidth),
+          Tooltip(
+            message: goalStatuses[goal.status] ?? goal.status,
+            child: goal.active
+                ? GoalFlag(goal: goal)
+                : Icon(
+                    _statusIcons[goal.status] ?? Icons.outlined_flag,
+                    color: theme.hintColor,
+                  ),
+          ),
+        ],
       ),
       title: Text(goalName(goal), style: faded),
       subtitle: details.isEmpty ? null : Text(details, style: faded),

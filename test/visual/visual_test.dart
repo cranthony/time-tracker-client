@@ -77,6 +77,9 @@ void main() {
           serverLabel: 'sample',
         ),
         then: () async {
+          // Its sub-goal shows the flag of a goal that inherits its color.
+          await tester.tap(find.byTooltip('Expand Learn vegetarian cooking'));
+          await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('Show goals that are…'));
           await tester.pumpAndSettle();
           for (final status in ['Completed', 'Archived', 'Deleted']) {
