@@ -3,14 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
-import 'package:time_tracker_client/models/event_label.dart';
+import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/home_screen.dart';
-import 'package:time_tracker_client/services/event_labels_repository.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/widgets/durations.dart';
@@ -23,12 +23,12 @@ void main() {
   Widget app(
     EventsRepository repo, {
     Future<void> Function()? onSignIn,
-    EventLabelsRepository? labels,
+    GoalsRepository? goals,
   }) => MaterialApp(
     home: EventsScreen(
       repository: repo,
       serverLabel: 'offline demo',
-      labelsRepository: labels,
+      goalsRepository: goals,
       onSignIn: onSignIn,
       clock: () => now,
     ),
@@ -148,7 +148,7 @@ void main() {
       'end': localIsoTimestamp(at(30, 10, 30)),
       'description': 'Deep work',
       'location': null,
-      'event_label_id': 'l1',
+      'goal_ids': ['g1'],
       'min_duration': 'PT1H',
       'priority': 2,
       'is_fixed_time': false,
@@ -159,9 +159,10 @@ void main() {
       await tester.pumpWidget(
         app(
           repo,
-          labels: InMemoryEventLabelsRepository([
-            const EventLabel(id: 'l1', name: 'Work', priority: 1),
-            const EventLabel(id: 'l2', name: 'Exercise', priority: 2),
+          goals: InMemoryGoalsRepository([
+            const Goal(id: 'g1', name: 'Deep focus', priority: 1),
+            const Goal(id: 'g2', name: 'Exercise', priority: 2),
+            const Goal(id: 'g3', name: 'Old', active: false),
           ]),
         ),
       );
@@ -287,22 +288,28 @@ void main() {
       );
     });
 
-    testWidgets('picks a label by name', (tester) async {
+    testWidgets('picks goals by name, the first kept as primary', (
+      tester,
+    ) async {
       final repo = _RecordingRepository([work()]);
       await openWork(tester, repo);
-      await edit(tester, inDialog(find.text('l1')));
-      await tester.tap(find.byType(DropdownButton<String?>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Exercise').last);
+      // Shown by name straight away.
+      await edit(tester, inDialog(find.text('Deep focus')));
+      // Active goals only; the first picked is the primary goal.
+      expect(inDialog(find.text('Old')), findsNothing);
+      expect(inDialog(find.text('Primary goal')), findsOneWidget);
+      await tester.tap(inDialog(find.text('Exercise')));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Keep edit'));
       await tester.pumpAndSettle();
       // Names, now that they're loaded.
-      expect(inDialog(find.text('Exercise')), findsOneWidget);
+      expect(inDialog(find.text('Deep focus, Exercise')), findsOneWidget);
       await tester.tap(find.text('Save 1 change'));
       await tester.pumpAndSettle();
       expect(repo.saved, [
-        {'event_label_id': 'l2'},
+        {
+          'goal_ids': ['g1', 'g2'],
+        },
       ]);
     });
 
@@ -389,14 +396,14 @@ void main() {
         home: HomeScreen(
           notesRepository: notes,
           eventsRepository: InMemoryEventsRepository(),
-          eventLabelsRepository: InMemoryEventLabelsRepository(),
+          goalsRepository: InMemoryGoalsRepository(),
           outbox: outbox,
           addNoteRequests: addNoteRequests,
         ),
       );
     }
 
-    testWidgets('opens on Notes, and switches to Events and Labels', (
+    testWidgets('opens on Notes, and switches to Events and Goals', (
       tester,
     ) async {
       await tester.pumpWidget(home());
@@ -410,9 +417,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('No events.'), findsOneWidget);
 
-      await tester.tap(find.text('Labels'));
+      await tester.tap(find.text('Goals'));
       await tester.pumpAndSettle();
-      expect(find.text('No event labels.'), findsOneWidget);
+      expect(find.text('No goals yet.\nTap + to add one.'), findsOneWidget);
       outbox.stop();
     });
 
