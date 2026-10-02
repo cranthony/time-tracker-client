@@ -14,6 +14,7 @@ class Goal {
     this.priority,
     this.fixedTime,
     this.cadence,
+    this.effectiveColor,
     this.path,
     this.properties = const {},
   });
@@ -42,6 +43,11 @@ class Goal {
   /// every_2_months; null if it never is.
   final String? cadence;
 
+  /// The color its label is shown in: [backgroundColor], or the one it
+  /// inherits from its priority or its parent. Null from a server too old
+  /// to say.
+  final String? effectiveColor;
+
   /// Its names from the top of the tree down, e.g. "Cooking › Tofu".
   final String? path;
 
@@ -63,6 +69,7 @@ class Goal {
     priority: json['priority'] as int?,
     fixedTime: json['fixed_time'] as bool?,
     cadence: json['cadence'] as String?,
+    effectiveColor: json['effective_color'] as String?,
     path: json['path'] as String?,
     properties: Map.unmodifiable(json),
   );

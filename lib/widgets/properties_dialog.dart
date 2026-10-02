@@ -751,7 +751,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
   Widget _goalLabel(Goal goal) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      if (parseColor(goal.backgroundColor) case final c?) ...[
+      if (parseColor(goal.backgroundColor ?? goal.effectiveColor)
+          case final c?) ...[
         ColorDot(color: c, size: 12),
         const SizedBox(width: 8),
       ],
