@@ -146,10 +146,13 @@ class _EventsScreenState extends State<EventsScreen> {
     );
     if (updated == null) return;
     final moved = updated.where((e) => e.id != event.id).length;
+    final cancelled = updated.any((e) => e.id == event.id && e.isCancelled);
     messenger.showSnackBar(
       SnackBar(
         content: Text(
-          moved == 0
+          cancelled
+              ? 'Event cancelled.'
+              : moved == 0
               ? 'Saved.'
               : 'Saved. $moved other event${moved == 1 ? '' : 's'} '
                     'moved to make room.',

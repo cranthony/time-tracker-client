@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 1.12.1
+
+- Cancelling an event no longer says it stays in the list, struck
+  through: the server doesn't list cancelled events, so it leaves the
+  list. A message says it was cancelled.
+
 ## 1.12.0
 
 - Each page shows what it showed last time straight away, instead of a
