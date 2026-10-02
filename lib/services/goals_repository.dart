@@ -168,6 +168,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
     'priority': goal.priority,
     'fixed_time': goal.fixedTime,
     'cadence': goal.cadence,
+    'measure': goal.measure,
     'effective_color': goal.effectiveColor,
     'health': goal.health,
     'health_period': goal.healthPeriod,

@@ -87,6 +87,26 @@ void main() {
       );
     });
 
+    testWidgets('goal measure ($mode)', (tester) async {
+      await render(
+        tester,
+        'goal_measure',
+        GoalsScreen(
+          repository: sample.goalsRepository(),
+          serverLabel: 'sample',
+        ),
+        then: () async {
+          await tester.tap(find.text('Wake up at 7am'));
+          await tester.pumpAndSettle();
+          final measure = find.text('Up by 07:00 (10 min grace), daily');
+          await tester.ensureVisible(measure);
+          await tester.pumpAndSettle();
+          await tester.tap(measure);
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
     testWidgets('goal history ($mode)', (tester) async {
       final goals = sample.goalsRepository();
       final tracker = (await tester.runAsync(goals.goals))!.goals
