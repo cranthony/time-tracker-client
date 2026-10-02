@@ -316,7 +316,9 @@ void main() {
       expect(repo.saved, [
         {'name': null, 'fixed_time': null, 'note': 'Runs and swims'},
       ]);
-      expect(find.text('(no name)'), findsOneWidget);
+      // A label with no name is hidden.
+      expect(find.text('(no name)'), findsNothing);
+      expect(find.byType(ListTile), findsNothing);
     });
 
     testWidgets('shows the server\'s error and keeps the edit', (tester) async {
@@ -338,6 +340,22 @@ void main() {
       expect(find.text('Save 1 change'), findsOneWidget);
       expect(repo.saved, isEmpty);
     });
+  });
+
+  testWidgets('hides labels with no name', (tester) async {
+    final repo = InMemoryEventLabelsRepository([
+      const EventLabel(id: '1', name: 'Sleep'),
+      const EventLabel(id: '2', backgroundColor: '#a4bdfc'),
+      const EventLabel(id: '3', name: '', backgroundColor: '#7ae7bf'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+    final names = tester
+        .widgetList<ListTile>(find.byType(ListTile))
+        .map((t) => (t.title as Text).data)
+        .toList();
+    expect(names, ['Sleep']);
+    expect(find.text('(no name)'), findsNothing);
   });
 
   testWidgets('says when there are none', (tester) async {
