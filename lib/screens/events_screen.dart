@@ -7,11 +7,15 @@ import '../services/mcp_client.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
 import '../widgets/event_dialog.dart';
+import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
 /// One day's events, with buttons to step to the day before or after.
 /// Tapping the date picks another; tapping an event shows all its
 /// properties, and lets one change them.
+///
+/// The day it opens on, today, is kept for next time, so it shows at once
+/// while it refreshes. Other days load afresh.
 class EventsScreen extends StatefulWidget {
   const EventsScreen({
     super.key,
@@ -49,7 +53,14 @@ class EventsScreen extends StatefulWidget {
 class _EventsScreenState extends State<EventsScreen> {
   /// Midnight, local time, at the start of the day shown.
   late DateTime _day;
+
+  /// The day shown first; its events are kept for next time.
+  late final DateTime _firstDay;
   List<Event>? _events;
+
+  /// [_events] are the ones kept from last time; the server hasn't
+  /// answered since.
+  bool _stale = false;
   Object? _error;
   bool _needsSignIn = false;
   bool _signingIn = false;
@@ -57,7 +68,8 @@ class _EventsScreenState extends State<EventsScreen> {
   @override
   void initState() {
     super.initState();
-    _day = _midnight(widget.clock());
+    _day = _firstDay = _midnight(widget.clock());
+    _showCached();
     _load();
   }
 
@@ -66,17 +78,36 @@ class _EventsScreenState extends State<EventsScreen> {
     return DateTime(local.year, local.month, local.day);
   }
 
+  static DateTime _dayAfter(DateTime day) =>
+      DateTime(day.year, day.month, day.day + 1);
+
+  /// Shows the day's events kept from last time, unless the server
+  /// answered first. Only [_firstDay]'s are kept.
+  Future<void> _showCached() async {
+    final day = _day;
+    if (day != _firstDay) return;
+    final events = await widget.repository.cachedEvents(day, _dayAfter(day));
+    if (!mounted || day != _day || events == null) return;
+    if (_events != null || _needsSignIn || _error != null) return;
+    setState(() {
+      _events = events;
+      _stale = true;
+    });
+  }
+
   Future<void> _load() async {
     final day = _day;
     try {
       final events = await widget.repository.events(
         day,
-        DateTime(day.year, day.month, day.day + 1),
+        _dayAfter(day),
+        keep: day == _firstDay,
       );
       // Another day was picked while this one loaded.
       if (!mounted || day != _day) return;
       setState(() {
         _events = events;
+        _stale = false;
         _error = null;
         _needsSignIn = false;
       });
@@ -84,6 +115,7 @@ class _EventsScreenState extends State<EventsScreen> {
       if (!mounted || day != _day) return;
       setState(() {
         _events = null;
+        _stale = false;
         _needsSignIn = true;
       });
     } catch (e) {
@@ -97,8 +129,10 @@ class _EventsScreenState extends State<EventsScreen> {
     setState(() {
       _day = day;
       _events = null;
+      _stale = false;
       _error = null;
     });
+    _showCached();
     _load();
   }
 
@@ -189,7 +223,10 @@ class _EventsScreenState extends State<EventsScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(onRefresh: _load, child: _buildBody(context)),
+      body: RefreshingBar(
+        refreshing: _stale && _error == null && !_needsSignIn,
+        child: RefreshIndicator(onRefresh: _load, child: _buildBody(context)),
+      ),
     );
   }
 
@@ -209,7 +246,7 @@ class _EventsScreenState extends State<EventsScreen> {
         ),
       );
     }
-    if (_error != null) {
+    if (_error != null && (events == null || events.isEmpty)) {
       return FillViewport(
         child: StatusMessage(
           icon: Icons.cloud_off,
@@ -223,15 +260,20 @@ class _EventsScreenState extends State<EventsScreen> {
         child: StatusMessage(icon: Icons.event_busy, text: 'No events.'),
       );
     }
-    return ListView.separated(
+    return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      itemCount: events.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (context, i) => _EventTile(
-        event: events[i],
-        day: _day,
-        onTap: () => _openEvent(events[i]),
-      ),
+      children: [
+        // The last events loaded, or kept from last time, are still shown.
+        if (_error != null)
+          StatusMessage(
+            icon: Icons.cloud_off,
+            text: 'Could not load events. These may be out of date.\n$_error',
+          ),
+        for (final (i, event) in events.indexed) ...[
+          if (i > 0) const Divider(height: 1),
+          _EventTile(event: event, day: _day, onTap: () => _openEvent(event)),
+        ],
+      ],
     );
   }
 }

@@ -439,7 +439,7 @@ class _SignInRepository extends InMemoryEventsRepository {
   final bool Function() signedIn;
 
   @override
-  Future<List<Event>> events(DateTime from, DateTime to) {
+  Future<List<Event>> events(DateTime from, DateTime to, {bool keep = false}) {
     if (!signedIn()) throw SignInRequiredException();
     return super.events(from, to);
   }

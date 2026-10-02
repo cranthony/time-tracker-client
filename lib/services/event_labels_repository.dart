@@ -1,11 +1,16 @@
 import '../models/event_label.dart';
 import 'mcp_client.dart';
+import 'response_cache.dart';
 
 /// Where event labels come from. The app talks to this rather than to MCP
 /// directly so screens can be exercised without a server.
 abstract class EventLabelsRepository {
   /// Every event label, by priority (labels without one last), then name.
   Future<List<EventLabel>> labels();
+
+  /// What [labels] last returned, kept from an earlier run of the app;
+  /// null if there's nothing kept.
+  Future<List<EventLabel>?> cachedLabels();
 
   /// Saves [changes], keyed as `update_event_label` takes them, to
   /// [label]; a null clears that property. Returns every label, as
@@ -23,18 +28,25 @@ abstract class EventLabelsRepository {
 /// pending that changes nothing; otherwise it applies them, including
 /// deleting any label the sheet no longer has.
 class McpEventLabelsRepository implements EventLabelsRepository {
-  McpEventLabelsRepository(this._client);
+  McpEventLabelsRepository(this._client, {this._cache});
 
   final McpClient _client;
+  final ResponseCache? _cache;
+
+  static const _cacheKey = 'event_labels';
 
   @override
-  Future<List<EventLabel>> labels() async {
-    final result = await _client.callTool('sync_event_labels_from_sheet');
-    return sortLabels(
-      (result as List)
-          .map((e) => EventLabel.fromJson((e as Map).cast<String, dynamic>()))
-          .toList(),
-    );
+  Future<List<EventLabel>> labels() async =>
+      _keep(await _client.callTool('sync_event_labels_from_sheet'));
+
+  @override
+  Future<List<EventLabel>?> cachedLabels() async {
+    try {
+      final result = await _cache?.read(_cacheKey);
+      return result == null ? null : _sorted(result);
+    } catch (_) {
+      return null; // From an older version of the app, perhaps.
+    }
   }
 
   @override
@@ -55,12 +67,21 @@ class McpEventLabelsRepository implements EventLabelsRepository {
       },
       if (clear.isNotEmpty) 'clear_fields': clear,
     });
-    return sortLabels(
-      (result as List)
-          .map((e) => EventLabel.fromJson((e as Map).cast<String, dynamic>()))
-          .toList(),
-    );
+    return _keep(result);
   }
+
+  /// Every label, from [result], which is also cached.
+  Future<List<EventLabel>> _keep(Object? result) async {
+    final labels = _sorted(result);
+    await _cache?.write(_cacheKey, result);
+    return labels;
+  }
+
+  static List<EventLabel> _sorted(Object? result) => sortLabels(
+    (result as List)
+        .map((e) => EventLabel.fromJson((e as Map).cast<String, dynamic>()))
+        .toList(),
+  );
 }
 
 /// Keeps event labels in memory. Used when no server is configured, and in
@@ -73,6 +94,9 @@ class InMemoryEventLabelsRepository implements EventLabelsRepository {
 
   @override
   Future<List<EventLabel>> labels() async => sortLabels([..._labels]);
+
+  @override
+  Future<List<EventLabel>?> cachedLabels() async => null;
 
   @override
   Future<List<EventLabel>> updateLabel(

@@ -15,6 +15,7 @@ import 'services/event_labels_repository.dart';
 import 'services/events_repository.dart';
 import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
+import 'services/response_cache.dart';
 
 /// The Time Tracker MCP server's endpoint, passed at build time, e.g.
 ///   flutter run --dart-define=MCP_URL=https://your-service.onrender.com/mcp
@@ -43,14 +44,16 @@ Future<void> main() async {
   await BackgroundSync.initialize(backgroundDispatcher);
   final auth = _authSession(interactive: true);
   final client = _client(auth);
-  final repository = McpNotesRepository(client);
+  final cache = PrefsResponseCache();
+  final repository = McpNotesRepository(client, cache: cache);
   runApp(
     TimeTrackerApp(
       repository: repository,
-      eventsRepository: McpEventsRepository(client),
-      eventLabelsRepository: McpEventLabelsRepository(client),
+      eventsRepository: McpEventsRepository(client, cache: cache),
+      eventLabelsRepository: McpEventLabelsRepository(client, cache: cache),
       outbox: NoteOutbox(store: PrefsOutboxStore(), repository: repository),
       auth: auth,
+      cache: cache,
     ),
   );
 }
@@ -89,6 +92,7 @@ class TimeTrackerApp extends StatefulWidget {
     required this.eventLabelsRepository,
     required this.outbox,
     this.auth,
+    this.cache,
   });
 
   final NotesRepository repository;
@@ -96,6 +100,10 @@ class TimeTrackerApp extends StatefulWidget {
   final EventLabelsRepository eventLabelsRepository;
   final NoteOutbox outbox;
   final AuthSession? auth;
+
+  /// The server's last answers, which the repositories keep; emptied on
+  /// signing out.
+  final ResponseCache? cache;
 
   @override
   State<TimeTrackerApp> createState() => _TimeTrackerAppState();
@@ -143,6 +151,12 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     if (widget.outbox.pending.isNotEmpty) await BackgroundSync.schedule();
   }
 
+  /// Signs out, and forgets what the server said while signed in.
+  Future<void> _signOut() async {
+    await widget.auth!.signOut();
+    await widget.cache?.clear();
+  }
+
   @override
   void dispose() {
     _lifecycle.dispose();
@@ -166,7 +180,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         eventLabelsRepository: widget.eventLabelsRepository,
         outbox: widget.outbox,
         onSignIn: widget.auth?.signIn,
-        onSignOut: widget.auth?.signOut,
+        onSignOut: widget.auth == null ? null : _signOut,
         addNoteRequests: _addNoteShortcut.taps,
         version: _version,
       ),
