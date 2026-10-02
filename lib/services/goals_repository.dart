@@ -142,5 +142,6 @@ class InMemoryGoalsRepository implements GoalsRepository {
     'priority': goal.priority,
     'fixed_time': goal.fixedTime,
     'cadence': goal.cadence,
+    'effective_color': goal.effectiveColor,
   };
 }

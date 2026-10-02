@@ -367,6 +367,30 @@ class _StatusFilter extends StatelessWidget {
   }
 }
 
+/// An active goal's flag: solid in its own color if it has one; otherwise
+/// a grey outline filled with the color it inherits, from its priority or
+/// its parent.
+class GoalFlag extends StatelessWidget {
+  const GoalFlag({super.key, required this.goal});
+
+  final Goal goal;
+
+  @override
+  Widget build(BuildContext context) {
+    final hint = Theme.of(context).hintColor;
+    if (parseColor(goal.backgroundColor) case final own?) {
+      return Icon(Icons.flag, color: own);
+    }
+    return Stack(
+      children: [
+        if (parseColor(goal.effectiveColor) case final inherited?)
+          Icon(Icons.flag, color: inherited),
+        Icon(Icons.outlined_flag, color: hint),
+      ],
+    );
+  }
+}
+
 /// What moving a goal to each status is called in its menu.
 const _moveTo = {
   'proposed': 'Mark proposed',
@@ -403,7 +427,6 @@ class _GoalTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color = parseColor(goal.backgroundColor);
     final priority = goal.priority;
     final faded = goal.active ? null : TextStyle(color: theme.hintColor);
     final details = [
@@ -423,10 +446,12 @@ class _GoalTile extends StatelessWidget {
       ),
       leading: Tooltip(
         message: goalStatuses[goal.status] ?? goal.status,
-        child: Icon(
-          _statusIcons[goal.status] ?? Icons.outlined_flag,
-          color: goal.active ? (color ?? theme.hintColor) : theme.hintColor,
-        ),
+        child: goal.active
+            ? GoalFlag(goal: goal)
+            : Icon(
+                _statusIcons[goal.status] ?? Icons.outlined_flag,
+                color: theme.hintColor,
+              ),
       ),
       title: Text(goalName(goal), style: faded),
       subtitle: details.isEmpty ? null : Text(details, style: faded),

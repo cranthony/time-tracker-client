@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 2.1.2
+
+- An active goal with no color of its own shows a grey flag outline,
+  filled with the color it inherits: its parent's, or as a last resort
+  its priority's. A goal with its own color still shows a solid flag in
+  it. Goal pickers show inherited colors too.
+
 ## 2.1.1
 
 - The Goals page's status filter is a drop-down at the top right, with a

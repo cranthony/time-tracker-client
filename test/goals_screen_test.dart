@@ -340,6 +340,55 @@ void main() {
     );
   });
 
+  testWidgets(
+    'an active goal shows its own color, or outlines the one it inherits',
+    (tester) async {
+      await tester.pumpWidget(
+        app(
+          InMemoryGoalsRepository([
+            Goal.fromJson({
+              'id': 'own',
+              'name': 'Own',
+              'background_color': '#123456',
+              'effective_color': '#123456',
+            }),
+            Goal.fromJson({
+              'id': 'kid',
+              'name': 'Kid',
+              'parent_id': 'own',
+              'effective_color': '#123456',
+            }),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      List<Icon> iconsOf(String name) => tester
+          .widgetList<Icon>(
+            find.descendant(
+              of: find.ancestor(
+                of: find.text(name),
+                matching: find.byType(ListTile),
+              ),
+              matching: find.descendant(
+                of: find.byType(GoalFlag),
+                matching: find.byType(Icon),
+              ),
+            ),
+          )
+          .toList();
+
+      final own = iconsOf('Own');
+      expect(own.map((i) => (i.icon, i.color)), [
+        (Icons.flag, const Color(0xFF123456)),
+      ]);
+      final kid = iconsOf('Kid');
+      expect(kid.map((i) => i.icon), [Icons.flag, Icons.outlined_flag]);
+      expect(kid.first.color, const Color(0xFF123456));
+      expect(kid.last.color, isNot(const Color(0xFF123456)));
+    },
+  );
+
   testWidgets('says when there are no goals yet', (tester) async {
     await tester.pumpWidget(app(InMemoryGoalsRepository()));
     await tester.pumpAndSettle();
