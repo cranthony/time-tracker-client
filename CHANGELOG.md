@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 1.10.1
+
+- A note waiting to be saved no longer gets stuck showing "Saving…".
+  If storing a note's progress on the device fails, or the device storage
+  stops answering (after 10 seconds now), the app lets go of the note
+  and tries again later, instead of waiting for a restart.
+- A note the background task was saving when Android stopped it is
+  checked against the server before the app sends it again, so it isn't
+  saved twice.
+
 ## 1.10.0
 
 - Clearing a label's color or priority now works: the app names them in

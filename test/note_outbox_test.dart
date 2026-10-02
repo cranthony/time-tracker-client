@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
@@ -169,6 +171,59 @@ void main() {
     expect(box.pending, isEmpty);
   });
 
+  test('takes over an abandoned note without saving it twice', () async {
+    // The background task saved it, then was stopped before it could say
+    // so: no failed attempts, just its stale claim.
+    await server.addNote(note);
+    store.notes = [
+      PendingNote(
+        id: 'a',
+        note: note,
+        sendingSince: now.subtract(NoteOutbox.inFlightTimeout),
+      ),
+    ];
+    final box = outbox();
+    await box.flush();
+    expect(box.pending, isEmpty);
+    expect(server.addCalls, 1); // Only the background task's.
+    expect(await server.uncompactedNotes(), hasLength(1));
+  });
+
+  test('a store that fails while claiming a note doesn\'t leave it '
+      'saving', () async {
+    final failing = _FailingStore()..notes = [PendingNote(id: 'a', note: note)];
+    store = failing;
+    final box = outbox();
+    failing.failSaves = true;
+    final result = await box.flush();
+    expect(result.remaining, 1);
+    expect(box.isSending(box.pending.single), isFalse);
+    expect(server.addCalls, 0);
+
+    failing.failSaves = false;
+    await box.flush();
+    expect(box.pending, isEmpty);
+    expect(server.addCalls, 1);
+  });
+
+  testWidgets('a store that never answers doesn\'t hold up later changes', (
+    tester,
+  ) async {
+    final hanging = _FailingStore()..notes = [PendingNote(id: 'a', note: note)];
+    store = hanging;
+    final box = outbox();
+    hanging.hang = true;
+    FlushResult? result;
+    box.flush().then((r) => result = r);
+    await tester.pump(NoteOutbox.storeTimeout);
+    expect(result, isNotNull);
+
+    hanging.hang = false;
+    await tester.runAsync(() => box.flush());
+    expect(box.pending, isEmpty);
+    expect(server.addCalls, 1);
+  });
+
   test('cancel drops a note; restore brings it back', () async {
     server.offline = true;
     final box = outbox();
@@ -201,4 +256,21 @@ void main() {
     await prefs.save([]);
     expect(await prefs.load(), isEmpty);
   });
+}
+
+/// Can fail to save, or stop answering altogether.
+class _FailingStore extends InMemoryOutboxStore {
+  bool failSaves = false;
+  bool hang = false;
+
+  @override
+  Future<List<PendingNote>> load() =>
+      hang ? Completer<List<PendingNote>>().future : super.load();
+
+  @override
+  Future<void> save(List<PendingNote> notes) {
+    if (hang) return Completer<void>().future;
+    if (failSaves) throw StateError('disk full');
+    return super.save(notes);
+  }
 }
