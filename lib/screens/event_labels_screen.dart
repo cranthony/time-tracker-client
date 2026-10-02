@@ -12,8 +12,8 @@ import '../widgets/status_message.dart';
 /// fixed time. Tapping a label shows all its properties, and lets one change
 /// its name, color and priority.
 ///
-/// Labels with no name are hidden: they hold the calendar's default
-/// colors, and aren't meant to be edited.
+/// Labels with no name are hidden: they represent Google Calendar's
+/// default event colors, and aren't meant to be edited.
 class EventLabelsScreen extends StatefulWidget {
   const EventLabelsScreen({
     super.key,
@@ -73,6 +73,9 @@ class _EventLabelsScreenState extends State<EventLabelsScreen> {
     }
   }
 
+  /// [labels] without the unnamed ones. An unnamed label represents one of
+  /// Google Calendar's default event colors, not a label anyone made, so
+  /// it isn't listed or edited here.
   static List<EventLabel> _named(List<EventLabel> labels) => [
     for (final label in labels)
       if (label.name?.isNotEmpty ?? false) label,

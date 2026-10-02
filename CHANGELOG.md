@@ -10,6 +10,8 @@ on. Add the new version's section here at the same time; CI checks both.
 
 - The Labels page hides labels with no name. They hold the calendar's
   default colors, and aren't meant to be edited.
+- A label's name can't be emptied: the dialog says "This can't be empty."
+  and keeps it open until you type a name or cancel the edit.
 
 ## 1.10.1
 
