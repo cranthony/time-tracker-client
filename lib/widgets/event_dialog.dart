@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
-import '../models/event_label.dart';
+import '../models/goal.dart';
 import 'properties_dialog.dart';
 
 /// Shows every property of [event], as the server sent it, under its
@@ -15,7 +15,7 @@ Future<List<Event>?> showEventDialog(
   BuildContext context,
   Event event, {
   Future<List<Event>> Function(Event event, Map<String, Object?> changes)? save,
-  Future<List<EventLabel>> Function()? labels,
+  Future<List<Goal>> Function()? goals,
 }) {
   final typed = event.toJson();
   return showPropertiesDialog<List<Event>>(
@@ -40,7 +40,7 @@ Future<List<Event>?> showEventDialog(
       final end = DateTime.parse(values['end'] as String);
       return end.isAfter(start) ? null : 'The end has to be after the start.';
     },
-    labels: labels,
+    goals: goals,
     oneWayAction: event.isCancelled
         ? null
         : const OneWayAction(
@@ -62,7 +62,8 @@ const _kinds = {
   'end': PropertyKind.time,
   'description': PropertyKind.multiline,
   'location': PropertyKind.text,
-  'event_label_id': PropertyKind.label,
+  // Its label follows its goals, so it isn't edited itself.
+  'goal_ids': PropertyKind.goals,
   'priority': PropertyKind.integer,
   'is_fixed_time': PropertyKind.flag,
   'is_fixed_duration': PropertyKind.flag,

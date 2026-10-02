@@ -5,15 +5,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:time_tracker_client/models/event.dart';
-import 'package:time_tracker_client/models/event_label.dart';
+import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
-import 'package:time_tracker_client/screens/event_labels_screen.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
+import 'package:time_tracker_client/screens/goals_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
-import 'package:time_tracker_client/services/event_labels_repository.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/response_cache.dart';
@@ -86,16 +86,19 @@ void main() {
       expect(await repo.cachedEvents(day, next), isNotNull);
     });
 
-    test('keep the labels a save returns', () async {
+    test('keep the goals a save returns', () async {
       final cache = InMemoryResponseCache();
-      final repo = McpEventLabelsRepository(
-        _FakeClient([
-          {'id': '1', 'name': 'Sleep'},
-        ]),
+      final repo = McpGoalsRepository(
+        _FakeClient({
+          'goals': [
+            {'id': '1', 'name': 'Sleep', 'active': true, 'path': 'Sleep'},
+          ],
+          'label_slots_used': 1,
+        }),
         cache: cache,
       );
-      await repo.updateLabel(const EventLabel(id: '1'), {'name': 'Sleep'});
-      expect((await repo.cachedLabels())!.single.name, 'Sleep');
+      await repo.updateGoal(const Goal(id: '1'), {'name': 'Sleep'});
+      expect((await repo.cachedGoals())!.goals.single.name, 'Sleep');
     });
 
     test('ignore a cached value they can\'t read', () async {
@@ -226,15 +229,17 @@ void main() {
       expect(repo.kept, [day]);
     });
 
-    testWidgets('Labels asks to sign in, rather than show kept labels', (
+    testWidgets('Goals asks to sign in, rather than show kept goals', (
       tester,
     ) async {
-      final repo = _GatedLabelsRepository(
-        cached: [const EventLabel(id: '1', name: 'Old')],
+      final repo = _GatedGoalsRepository(
+        cached: const GoalList(
+          goals: [Goal(id: '1', name: 'Old', path: 'Old')],
+        ),
       );
       await tester.pumpWidget(
         MaterialApp(
-          home: EventLabelsScreen(repository: repo, serverLabel: 'test'),
+          home: GoalsScreen(repository: repo, serverLabel: 'test'),
         ),
       );
       await tester.pump();
@@ -244,7 +249,7 @@ void main() {
       repo.gate.completeError(SignInRequiredException());
       await tester.pumpAndSettle();
       expect(find.text('Old'), findsNothing);
-      expect(find.text('Sign in to see your event labels.'), findsOneWidget);
+      expect(find.text('Sign in to see your goals.'), findsOneWidget);
       expect(refreshing(), findsNothing);
     });
   });
@@ -307,19 +312,19 @@ class _GatedEventsRepository extends InMemoryEventsRepository {
   }
 }
 
-/// Has [cached] labels kept, and answers once [gate] opens.
-class _GatedLabelsRepository extends InMemoryEventLabelsRepository {
-  _GatedLabelsRepository({required this.cached});
+/// Has [cached] goals kept, and answers once [gate] opens.
+class _GatedGoalsRepository extends InMemoryGoalsRepository {
+  _GatedGoalsRepository({required this.cached});
 
-  final List<EventLabel> cached;
+  final GoalList cached;
   final gate = Completer<void>();
 
   @override
-  Future<List<EventLabel>?> cachedLabels() async => cached;
+  Future<GoalList?> cachedGoals() async => cached;
 
   @override
-  Future<List<EventLabel>> labels() async {
+  Future<GoalList> goals() async {
     await gate.future;
-    return super.labels();
+    return super.goals();
   }
 }

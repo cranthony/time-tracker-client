@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../models/event_label.dart';
+import 'package:flutter/foundation.dart';
+
+import '../models/goal.dart';
 import '../models/note.dart';
 import '../services/mcp_client.dart';
 import 'color_picker.dart';
@@ -14,8 +16,17 @@ enum PropertyKind {
   /// An ISO 8601 timestamp, shown and picked in local time.
   time,
 
-  /// An event label's id, picked by name.
-  label,
+  /// A goal's id, picked by name.
+  goal,
+
+  /// A list of goals' ids, picked by name; the first is the primary goal.
+  goals,
+
+  /// One of a fixed set of values, given by the dialog's `choices`.
+  choice,
+
+  /// An ISO 8601 date, e.g. "2026-12-31".
+  date,
   integer,
   flag,
 
@@ -60,8 +71,9 @@ class OneWayAction {
 /// in place; "Save" sends every change, as [kinds] encode them, to [save].
 /// [validate] can refuse the values first, giving the reason; keys in
 /// [required] can't be emptied. Returns what [save] returned, or null if
-/// nothing was saved. [labels] lists the labels a [PropertyKind.label]
-/// can be.
+/// nothing was saved. [goals] lists the goals a [PropertyKind.goal] or
+/// [PropertyKind.goals] can be; [choices] gives each [PropertyKind.choice]
+/// property's values, and how each is shown.
 Future<R?> showPropertiesDialog<R>(
   BuildContext context, {
   required String Function(Map<String, Object?> values) title,
@@ -71,7 +83,8 @@ Future<R?> showPropertiesDialog<R>(
   String? Function(Map<String, Object?> values)? validate,
   Set<String> required = const {},
   Map<String, String> hints = const {},
-  Future<List<EventLabel>> Function()? labels,
+  Future<List<Goal>> Function()? goals,
+  Map<String, Map<String, String>> choices = const {},
   OneWayAction? oneWayAction,
   String signInHint = 'Sign in again, then try again.',
 }) => showDialog<R>(
@@ -84,7 +97,8 @@ Future<R?> showPropertiesDialog<R>(
     validate: validate,
     required: required,
     hints: hints,
-    labels: labels,
+    goals: goals,
+    choices: choices,
     oneWayAction: oneWayAction,
     signInHint: signInHint,
   ),
@@ -99,7 +113,8 @@ class _PropertiesDialog<R> extends StatefulWidget {
     required this.validate,
     required this.required,
     required this.hints,
-    required this.labels,
+    required this.goals,
+    required this.choices,
     required this.oneWayAction,
     required this.signInHint,
   });
@@ -113,7 +128,8 @@ class _PropertiesDialog<R> extends StatefulWidget {
 
   /// Said under a property's editor.
   final Map<String, String> hints;
-  final Future<List<EventLabel>> Function()? labels;
+  final Future<List<Goal>> Function()? goals;
+  final Map<String, Map<String, String>> choices;
   final OneWayAction? oneWayAction;
 
   /// What to do when saving needs sign-in.
@@ -135,10 +151,10 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
   String? _draftError;
   final _text = TextEditingController();
 
-  Future<List<EventLabel>>? _labels;
+  Future<List<Goal>>? _goals;
 
-  /// Label names by id, once [_labels] has them.
-  Map<String?, String> _labelNames = const {};
+  /// Goal names by id, once [_goals] has them.
+  Map<String?, String> _goalNames = const {};
   bool _saving = false;
 
   /// Why the last save failed.
@@ -167,6 +183,11 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         PropertyKind.time => DateTime.parse(value as String).toLocal(),
         PropertyKind.flag => value == true,
         PropertyKind.color => parseColor(value as String?),
+        PropertyKind.goals => [...(value as List? ?? const []).cast<String>()],
+        PropertyKind.date => switch (value) {
+          final String iso => DateTime.tryParse(iso),
+          _ => null,
+        },
         _ => value,
       };
       _text.text = switch (kind) {
@@ -174,15 +195,24 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
           final String iso => formatDuration(parseIsoDuration(iso)) ?? iso,
           _ => '',
         },
+        PropertyKind.goals => (value as List? ?? const []).join(', '),
         _ => value == null ? '' : '$value',
       };
     });
-    if (kind == PropertyKind.label && _labels == null) {
-      _labels = widget.labels?.call()
-        ?..then((labels) {
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Goals are shown by name, so they're needed before anything opens.
+    if (widget.kinds.values.any(
+      (kind) => kind == PropertyKind.goal || kind == PropertyKind.goals,
+    )) {
+      _goals = widget.goals?.call()
+        ?..then((goals) {
           if (!mounted) return;
           setState(() {
-            _labelNames = {for (final l in labels) l.id: labelName(l)};
+            _goalNames = {for (final g in goals) g.id: goalName(g)};
           });
         }, onError: (_) {});
     }
@@ -204,8 +234,21 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         value = text.isEmpty ? null : text;
       case PropertyKind.time:
         value = localIsoTimestamp(_draft as DateTime);
-      case PropertyKind.flag || PropertyKind.optionalFlag || PropertyKind.label:
+      case PropertyKind.flag ||
+          PropertyKind.optionalFlag ||
+          PropertyKind.goal ||
+          PropertyKind.choice:
         value = _draft;
+      case PropertyKind.goals:
+        value = [...(_draft as List<String>)];
+      case PropertyKind.date:
+        value = switch (_draft) {
+          final DateTime day =>
+            '${day.year.toString().padLeft(4, '0')}-'
+                '${day.month.toString().padLeft(2, '0')}-'
+                '${day.day.toString().padLeft(2, '0')}',
+          _ => null,
+        };
       case PropertyKind.color:
         value = switch (_draft) {
           final Color color => colorToHex(color),
@@ -249,6 +292,10 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       parseIsoDuration(a) != null && parseIsoDuration(a) == parseIsoDuration(b),
     PropertyKind.color when a is String && b is String =>
       a.toLowerCase() == b.toLowerCase(),
+    PropertyKind.goals => listEquals(
+      (a as List? ?? const []).cast<String>(),
+      (b as List? ?? const []).cast<String>(),
+    ),
     _ => a == b,
   };
 
@@ -577,7 +624,38 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
           },
         ),
       ),
-      PropertyKind.label => _labelPicker(context),
+      PropertyKind.goal => _goalPicker(context),
+      PropertyKind.goals => _goalsPicker(context),
+      PropertyKind.choice => DropdownButton<String?>(
+        isExpanded: true,
+        value: _draft as String?,
+        items: [
+          const DropdownMenuItem(value: null, child: Text('(none)')),
+          for (final MapEntry(:key, :value)
+              in (widget.choices[key] ?? const {}).entries)
+            DropdownMenuItem(value: key, child: Text(value)),
+        ],
+        onChanged: (picked) => setState(() => _draft = picked),
+      ),
+      PropertyKind.date => Wrap(
+        spacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          ActionChip(
+            avatar: const Icon(Icons.calendar_today),
+            label: Text(switch (_draft) {
+              final DateTime day => strings.formatMediumDate(day),
+              _ => 'Pick a date',
+            }),
+            onPressed: _pickDay,
+          ),
+          if (_draft != null)
+            TextButton(
+              onPressed: () => setState(() => _draft = null),
+              child: const Text('Clear'),
+            ),
+        ],
+      ),
       PropertyKind.color => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -617,9 +695,11 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       ),
       null => null,
     };
-    // The color picker and the three-way choice need the dialog's whole
-    // width.
-    if (kind == PropertyKind.color || kind == PropertyKind.optionalFlag) {
+    // The color picker, the three-way choice and the goals list need the
+    // dialog's whole width.
+    if (kind == PropertyKind.color ||
+        kind == PropertyKind.optionalFlag ||
+        kind == PropertyKind.goals) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -645,10 +725,51 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     );
   }
 
-  Widget _labelPicker(BuildContext context) {
-    final labels = _labels;
-    if (labels == null) {
-      // Nowhere to list labels from: take an id.
+  /// [build]s with the goals, once [_goals] has them; a message if they
+  /// couldn't be loaded, and a progress bar until then.
+  Widget _withGoals(
+    BuildContext context,
+    Widget Function(List<Goal> goals) build,
+  ) => FutureBuilder(
+    future: _goals,
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return Text(
+          "Couldn't load goals. ${switch (snapshot.error) {
+            McpException(:final message) => message,
+            final e => '$e',
+          }}",
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        );
+      }
+      final list = snapshot.data;
+      if (list == null) return const LinearProgressIndicator();
+      return build(list);
+    },
+  );
+
+  Widget _goalLabel(Goal goal) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      if (parseColor(goal.backgroundColor) case final c?) ...[
+        ColorDot(color: c, size: 12),
+        const SizedBox(width: 8),
+      ],
+      Flexible(
+        child: Text(
+          goal.path ?? goalName(goal),
+          overflow: TextOverflow.ellipsis,
+          style: goal.active
+              ? null
+              : TextStyle(color: Theme.of(context).hintColor),
+        ),
+      ),
+    ],
+  );
+
+  Widget _goalPicker(BuildContext context) {
+    if (_goals == null) {
+      // Nowhere to list goals from: take an id.
       return TextField(
         controller: _text,
         autofocus: true,
@@ -659,45 +780,85 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         onChanged: (text) => _draft = text.trim().isEmpty ? null : text.trim(),
       );
     }
-    return FutureBuilder(
-      future: labels,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Text(
-            "Couldn't load labels. ${switch (snapshot.error) {
-              McpException(:final message) => message,
-              final e => '$e',
-            }}",
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          );
-        }
-        final list = snapshot.data;
-        if (list == null) return const LinearProgressIndicator();
-        final ids = {for (final label in list) label.id};
-        return DropdownButton<String?>(
-          isExpanded: true,
-          value: ids.contains(_draft) ? _draft as String? : null,
-          items: [
-            const DropdownMenuItem(value: null, child: Text('(none)')),
-            for (final label in list)
-              if (label.id != null)
-                DropdownMenuItem(
-                  value: label.id,
-                  child: Row(
-                    children: [
-                      if (parseColor(label.backgroundColor) case final c?) ...[
-                        ColorDot(color: c, size: 12),
-                        const SizedBox(width: 8),
-                      ],
-                      Flexible(child: Text(labelName(label))),
-                    ],
-                  ),
-                ),
-          ],
-          onChanged: (id) => setState(() => _draft = id),
-        );
-      },
+    return _withGoals(context, (goals) {
+      final ids = {for (final goal in goals) goal.id};
+      return DropdownButton<String?>(
+        isExpanded: true,
+        value: ids.contains(_draft) ? _draft as String? : null,
+        items: [
+          const DropdownMenuItem(value: null, child: Text('(none)')),
+          for (final goal in goals)
+            if (goal.id != null)
+              DropdownMenuItem(value: goal.id, child: _goalLabel(goal)),
+        ],
+        onChanged: (id) => setState(() => _draft = id),
+      );
+    });
+  }
+
+  /// Ticks for every active goal (and any inactive one already picked), in
+  /// tree order; the goals are kept in the order they were ticked, so the
+  /// first stays the primary goal.
+  Widget _goalsPicker(BuildContext context) {
+    final picked = _draft as List<String>;
+    if (_goals == null) {
+      // Nowhere to list goals from: take ids, separated by commas.
+      return TextField(
+        controller: _text,
+        autofocus: true,
+        decoration: const InputDecoration(
+          isDense: true,
+          border: OutlineInputBorder(),
+          hintText: 'Goal ids, separated by commas',
+        ),
+        onChanged: (text) => _draft = [
+          for (final id in text.split(','))
+            if (id.trim().isNotEmpty) id.trim(),
+        ],
+      );
+    }
+    return _withGoals(context, (goals) {
+      final shown = [
+        for (final goal in goals)
+          if (goal.id != null && (goal.active || picked.contains(goal.id)))
+            goal,
+      ];
+      if (shown.isEmpty) return const Text('No active goals.');
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final goal in shown)
+            CheckboxListTile(
+              dense: true,
+              contentPadding: EdgeInsetsDirectional.only(
+                start: 16.0 * goal.depth,
+              ),
+              controlAffinity: ListTileControlAffinity.leading,
+              value: picked.contains(goal.id),
+              title: _goalLabel(goal),
+              subtitle: picked.isNotEmpty && picked.first == goal.id
+                  ? const Text('Primary goal')
+                  : null,
+              onChanged: (on) => setState(() {
+                picked.remove(goal.id);
+                if (on == true) picked.add(goal.id!);
+              }),
+            ),
+        ],
+      );
+    });
+  }
+
+  Future<void> _pickDay() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _draft as DateTime? ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
     );
+    if (picked == null) return;
+    setState(() => _draft = picked);
   }
 
   Future<void> _pickDate() async {
@@ -747,9 +908,19 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
             '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
       case PropertyKind.duration when value is String:
         return formatDuration(parseIsoDuration(value)) ?? value;
-      case PropertyKind.label:
-        // Its name, once the labels are loaded.
-        return _labelNames[value] ?? '$value';
+      case PropertyKind.goal:
+        // Its name, once the goals are loaded.
+        return _goalNames[value] ?? '$value';
+      case PropertyKind.goals when value is List:
+        if (value.isEmpty) return '(none)';
+        return [for (final id in value) _goalNames[id] ?? '$id'].join(', ');
+      case PropertyKind.choice:
+        return widget.choices[key]?[value] ?? '$value';
+      case PropertyKind.date when value is String:
+        return switch (DateTime.tryParse(value)) {
+          final day? => MaterialLocalizations.of(context).formatMediumDate(day),
+          null => value,
+        };
       default:
         return '$value';
     }

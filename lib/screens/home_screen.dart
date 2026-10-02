@@ -3,14 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../outbox/note_outbox.dart';
-import '../services/event_labels_repository.dart';
+import '../services/goals_repository.dart';
 import '../services/events_repository.dart';
 import '../services/notes_repository.dart';
-import 'event_labels_screen.dart';
+import 'goals_screen.dart';
 import 'events_screen.dart';
 import 'notes_screen.dart';
 
-/// Notes, Events and Labels, with a bar at the bottom to switch between
+/// Notes, Events and Goals, with a bar at the bottom to switch between
 /// them. Notes comes first. Each loads afresh when it's switched to, so one sees
 /// a sign-in or sign-out done on the other.
 class HomeScreen extends StatefulWidget {
@@ -18,7 +18,7 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.notesRepository,
     required this.eventsRepository,
-    required this.eventLabelsRepository,
+    required this.goalsRepository,
     required this.outbox,
     this.onSignIn,
     this.onSignOut,
@@ -28,7 +28,7 @@ class HomeScreen extends StatefulWidget {
 
   final NotesRepository notesRepository;
   final EventsRepository eventsRepository;
-  final EventLabelsRepository eventLabelsRepository;
+  final GoalsRepository goalsRepository;
   final NoteOutbox outbox;
   final Future<void> Function()? onSignIn;
   final Future<void> Function()? onSignOut;
@@ -82,13 +82,13 @@ class _HomeScreenState extends State<HomeScreen> {
         _Tab.events => EventsScreen(
           repository: widget.eventsRepository,
           serverLabel: widget.notesRepository.label,
-          labelsRepository: widget.eventLabelsRepository,
+          goalsRepository: widget.goalsRepository,
           onSignIn: widget.onSignIn,
           onSignOut: widget.onSignOut,
           version: widget.version,
         ),
-        _Tab.labels => EventLabelsScreen(
-          repository: widget.eventLabelsRepository,
+        _Tab.goals => GoalsScreen(
+          repository: widget.goalsRepository,
           serverLabel: widget.notesRepository.label,
           onSignIn: widget.onSignIn,
           onSignOut: widget.onSignOut,
@@ -110,9 +110,9 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Events',
           ),
           NavigationDestination(
-            icon: Icon(Icons.label_outline),
-            selectedIcon: Icon(Icons.label),
-            label: 'Labels',
+            icon: Icon(Icons.flag_outlined),
+            selectedIcon: Icon(Icons.flag),
+            label: 'Goals',
           ),
         ],
       ),
@@ -120,4 +120,4 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-enum _Tab { notes, events, labels }
+enum _Tab { notes, events, goals }

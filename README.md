@@ -4,9 +4,11 @@ A Flutter app for the [Time Tracker MCP server](https://github.com/cranthony/tim
 For now it shows your **uncompacted notes**, by day, and has a **+** button to
 record a new one; tap a note to change its description or time, or to
 delete it. An **Events** page, from the bar at the bottom, shows a day's
-events from your calendar; tap one to see or edit it. A **Labels** page
-lists your event labels; tap one to change its name, color, priority,
-fixed time or note. Later it will show the summaries the server
+events from your calendar; tap one to see or edit it, including the goals
+it serves. A **Goals** page lists your goals as a tree: tap one to change
+it, add a sub-goal from its menu, or deactivate a goal you're no longer
+working on (its history is kept, and it stops taking up one of the
+calendar's event labels). Later it will show the summaries the server
 generates.
 
 It is built for Android and also runs on Windows and in Chrome. Chrome

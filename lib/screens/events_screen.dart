@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
-import '../services/event_labels_repository.dart';
+import '../services/goals_repository.dart';
 import '../services/events_repository.dart';
 import '../services/mcp_client.dart';
 import '../widgets/app_menu.dart';
@@ -21,7 +21,7 @@ class EventsScreen extends StatefulWidget {
     super.key,
     required this.repository,
     required this.serverLabel,
-    this.labelsRepository,
+    this.goalsRepository,
     this.onSignIn,
     this.onSignOut,
     this.version,
@@ -30,8 +30,8 @@ class EventsScreen extends StatefulWidget {
 
   final EventsRepository repository;
 
-  /// Where to list labels from, to pick an event's; null to type its id.
-  final EventLabelsRepository? labelsRepository;
+  /// Where to list goals from, to pick an event's; null to type their ids.
+  final GoalsRepository? goalsRepository;
 
   /// Which server this build talks to, for the About dialog.
   final String serverLabel;
@@ -142,7 +142,10 @@ class _EventsScreenState extends State<EventsScreen> {
       context,
       event,
       save: widget.repository.updateEvent,
-      labels: widget.labelsRepository?.labels,
+      goals: switch (widget.goalsRepository) {
+        final goals? => () async => (await goals.goals()).goals,
+        null => null,
+      },
     );
     if (updated == null) return;
     final moved = updated.where((e) => e.id != event.id).length;

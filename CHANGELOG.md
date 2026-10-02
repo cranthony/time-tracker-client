@@ -6,6 +6,23 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 2.0.0
+
+- Goals replace event labels: the **Goals** page replaces the Labels
+  page, and needs a server with goals (one without them can't list
+  anything there). Goals are listed as a tree, sub-goals indented under
+  the goal they're part of, with how many of the calendar's 200 event
+  labels are in use.
+- Show active, inactive or all goals. Deactivate a goal from its menu
+  (after a check) to free its label while keeping its history, or
+  activate it again.
+- Add a goal with **+**, or a sub-goal from a goal's menu. Tap a goal to
+  change its name, parent, color, priority, fixed time, cadence (daily,
+  weekly, monthly or every 2 months), target, deadline or note.
+- An event's goals are picked by name from the active goals, the first
+  one picked being its primary goal; its label now follows its goals,
+  so it isn't edited directly any more.
+
 ## 1.12.1
 
 - Cancelling an event no longer says it stays in the list, struck
