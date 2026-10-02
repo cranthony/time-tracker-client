@@ -186,6 +186,9 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
 
   /// Goal names by id, once [_goals] has them.
   Map<String?, String> _goalNames = const {};
+
+  /// Goal paths from the top ("Cooking › Tofu") by id, likewise.
+  Map<String?, String> _goalPaths = const {};
   bool _saving = false;
 
   /// Why the last save failed.
@@ -242,13 +245,17 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     super.initState();
     // Goals are shown by name, so they're needed before anything opens.
     if (widget.kinds.values.any(
-      (kind) => kind == PropertyKind.goal || kind == PropertyKind.goals,
+      (kind) =>
+          kind == PropertyKind.goal ||
+          kind == PropertyKind.goals ||
+          kind == PropertyKind.measure,
     )) {
       _goals = widget.goals?.call()
         ?..then((goals) {
           if (!mounted) return;
           setState(() {
             _goalNames = {for (final g in goals) g.id: goalName(g)};
+            _goalPaths = {for (final g in goals) g.id: g.path ?? goalName(g)};
           });
         }, onError: (_) {});
     }
@@ -766,6 +773,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
           MeasureEditor(
             measure: _draft as Measure?,
             cadence: _values['cadence'] as String?,
+            goals: _goals,
             onChanged: (measure) => _draft = measure,
           ),
           if (_draftError case final error?)
@@ -871,25 +879,34 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     },
   );
 
-  Widget _goalLabel(Goal goal) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      if (parseColor(goal.backgroundColor ?? goal.effectiveColor)
-          case final c?) ...[
-        ColorDot(color: c, size: 12),
-        const SizedBox(width: 8),
-      ],
-      Flexible(
-        child: Text(
-          goal.path ?? goalName(goal),
-          overflow: TextOverflow.ellipsis,
-          style: goal.active
-              ? null
-              : TextStyle(color: Theme.of(context).hintColor),
+  /// [goal] by name, after its color, indented under its parent -- or,
+  /// with [path], by its whole path from the top, wrapping as it needs to,
+  /// for a goal shown out of its tree. Without [indent], for a list that
+  /// indents it already.
+  Widget _goalLabel(Goal goal, {bool path = false, bool indent = true}) =>
+      Padding(
+        padding: EdgeInsetsDirectional.only(
+          start: path || !indent ? 0 : 16.0 * goal.depth,
         ),
-      ),
-    ],
-  );
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (parseColor(goal.backgroundColor ?? goal.effectiveColor)
+                case final c?) ...[
+              ColorDot(color: c, size: 12),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+              child: Text(
+                path ? goal.path ?? goalName(goal) : goalName(goal),
+                style: goal.active
+                    ? null
+                    : TextStyle(color: Theme.of(context).hintColor),
+              ),
+            ),
+          ],
+        ),
+      );
 
   Widget _goalPicker(BuildContext context) {
     if (_goals == null) {
@@ -906,14 +923,32 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     }
     return _withGoals(context, (goals) {
       final ids = {for (final goal in goals) goal.id};
+      final picked = [
+        null,
+        for (final goal in goals)
+          if (goal.id != null) goal,
+      ];
       return DropdownButton<String?>(
         isExpanded: true,
+        // Tall enough for a long path, which wraps.
+        itemHeight: null,
         value: ids.contains(_draft) ? _draft as String? : null,
+        // The list shows the tree, by name; the pick, its whole path.
         items: [
-          const DropdownMenuItem(value: null, child: Text('(none)')),
-          for (final goal in goals)
-            if (goal.id != null)
-              DropdownMenuItem(value: goal.id, child: _goalLabel(goal)),
+          for (final goal in picked)
+            DropdownMenuItem(
+              value: goal?.id,
+              child: goal == null ? const Text('(none)') : _goalLabel(goal),
+            ),
+        ],
+        selectedItemBuilder: (context) => [
+          for (final goal in picked)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: goal == null
+                  ? const Text('(none)')
+                  : _goalLabel(goal, path: true),
+            ),
         ],
         onChanged: (id) => setState(() => _draft = id),
       );
@@ -960,7 +995,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
               ),
               controlAffinity: ListTileControlAffinity.leading,
               value: picked.contains(goal.id),
-              title: _goalLabel(goal),
+              title: _goalLabel(goal, indent: false),
               subtitle: picked.isNotEmpty && picked.first == goal.id
                   ? const Text('Primary goal')
                   : null,
@@ -1034,7 +1069,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         return formatDuration(parseIsoDuration(value)) ?? value;
       case PropertyKind.goal:
         // Its name, once the goals are loaded.
-        return _goalNames[value] ?? '$value';
+        return _goalPaths[value] ?? '$value';
       case PropertyKind.lines when value is List:
         return value.join('\n');
       case PropertyKind.goals when value is List:
@@ -1047,6 +1082,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
           value.cast(),
           _values['cadence'] as String?,
           full: true,
+          goalNames: _goalNames,
         );
       case PropertyKind.date when value is String:
         return switch (DateTime.tryParse(value)) {

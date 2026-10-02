@@ -8,6 +8,8 @@ import 'goal.dart';
 /// | ------------ | ------------------------------------------------------ |
 /// | `duration`   | `target_min`: minutes per period                       |
 /// | `count`      | `target`: events per period; optional `noun`           |
+/// | (both)       | optional `goal_ids`, whose events count in place of    |
+/// |              | its goal's, and `include_sub_goals` (default true)     |
 /// | `wake_time`  | `target` "HH:MM"; optional `grace_min`, `zero_at_min`  |
 /// | `subjective` | optional `prompt`, asked in a reflection               |
 /// | `llm`        | `rubric` Claude rates the period against               |
@@ -74,27 +76,41 @@ String formatMinutes(num minutes) {
 /// A line saying what [measure] rates, at [cadence]: "10h per week",
 /// "1 dinner per week", "Up by 07:00, daily". With [full], a wake-up
 /// time's grace is said too, and a subjective measure's prompt and an llm
-/// one's rubric follow on lines of their own.
-String describeMeasure(Measure measure, String? cadence, {bool full = false}) {
+/// one's rubric follow on lines of their own. A measure of other goals'
+/// events names them, from [goalNames] if it has them: "10h per week, of
+/// Cooking, Hosting".
+String describeMeasure(
+  Measure measure,
+  String? cadence, {
+  bool full = false,
+  Map<String?, String> goalNames = const {},
+}) {
   final kind = measure['kind'];
+  final of = switch ((measure['goal_ids'], measure['include_sub_goals'])) {
+    (final List ids, final sub) =>
+      ', of ${ids.length > 3 || ids.any((id) => !goalNames.containsKey(id)) ? '${ids.length} goal${ids.length == 1 ? '' : 's'}' : ids.map((id) => goalNames[id]).join(', ')}'
+          '${sub == false ? ' (not sub-goals)' : ''}',
+    (_, false) => ', not sub-goals',
+    _ => '',
+  };
   switch (kind) {
     case 'duration':
       final target = _number(measure['target_min']);
       return target == null
-          ? 'Time spent${_rated(cadence)}'
-          : '${formatMinutes(target)} ${perPeriod(cadence)}';
+          ? 'Time spent${_rated(cadence)}$of'
+          : '${formatMinutes(target)} ${perPeriod(cadence)}$of';
     case 'count':
       final target = _number(measure['target']);
       final noun = switch (measure['noun']) {
         final String noun when noun.trim().isNotEmpty => noun.trim(),
         _ => 'events',
       };
-      if (target == null) return 'Number of $noun${_rated(cadence)}';
+      if (target == null) return 'Number of $noun${_rated(cadence)}$of';
       // "1 dinner", not "1 dinners".
       final shown = target == 1 && noun.endsWith('s') && noun.length > 1
           ? noun.substring(0, noun.length - 1)
           : noun;
-      return '$target $shown ${perPeriod(cadence)}';
+      return '$target $shown ${perPeriod(cadence)}$of';
     case 'wake_time':
       final grace = _number(measure['grace_min']) ?? 0;
       return 'Up by ${measure['target'] ?? '?'}'
@@ -121,6 +137,9 @@ String describeMeasure(Measure measure, String? cadence, {bool full = false}) {
 String? measureProblem(Measure measure) {
   bool positive(Object? n) => n is num && n > 0;
   bool text(Object? s) => s is String && s.trim().isNotEmpty;
+  if (measure['goal_ids'] case final List ids when ids.isEmpty) {
+    return 'Choose at least one goal whose events count.';
+  }
   switch (measure['kind']) {
     case 'duration':
       if (!positive(measure['target_min'])) {

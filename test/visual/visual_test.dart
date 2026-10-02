@@ -110,6 +110,44 @@ void main() {
       );
     });
 
+    testWidgets('goals reorder ($mode)', (tester) async {
+      await render(
+        tester,
+        'goals_reorder',
+        GoalsScreen(
+          repository: sample.goalsRepository(),
+          serverLabel: 'sample',
+        ),
+        then: () async {
+          await tester.tap(find.byTooltip('Expand Learn vegetarian cooking'));
+          await tester.pumpAndSettle();
+          await tester.longPress(find.text('Host friends weekly'));
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
+    testWidgets('goal parent ($mode)', (tester) async {
+      await render(
+        tester,
+        'goal_parent',
+        GoalsScreen(
+          repository: sample.goalsRepository(),
+          serverLabel: 'sample',
+        ),
+        then: () async {
+          await tester.tap(find.byTooltip('Expand Learn vegetarian cooking'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Tofu tikka masala'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Learn vegetarian cooking').last);
+          await tester.pumpAndSettle();
+          await tester.tap(find.byType(DropdownButton<String?>));
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
     testWidgets('goal history ($mode)', (tester) async {
       final goals = sample.goalsRepository();
       final tracker = (await tester.runAsync(goals.goals))!.goals

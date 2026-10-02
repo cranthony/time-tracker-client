@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 2.7.0
+
+- Press and hold a goal on the Goals page to reorder goals: drag one by
+  its handle among the goals it sits with (its sub-goals go with it), then
+  tap Done. The order is saved on the server.
+- A time-spent or number-of-events measure can count the events of
+  chosen goals (a parent included) rather than its own goal's, with or
+  without their sub-goals'. The Goals page names the goals it counts.
+- Picking a goal's parent lists the goals as a tree, by name, so a
+  sub-goal is easy to tell apart; the pick shows its whole path,
+  wrapping if it's long. Event goals are listed the same way.
+
 ## 2.6.0
 
 - An event in a recurring series links to the series from its details

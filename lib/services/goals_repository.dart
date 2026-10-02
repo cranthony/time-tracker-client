@@ -21,6 +21,10 @@ abstract class GoalsRepository {
   /// clears that property. Returns every goal, as [goals] does.
   Future<GoalList> updateGoal(Goal goal, Map<String, Object?> changes);
 
+  /// Puts sibling goals (sharing a parent), by id, in this order, among
+  /// the places they hold. Returns every goal, as [goals] does.
+  Future<GoalList> reorderGoals(List<String> ids);
+
   /// [goal]'s recent assessments (its last 12 periods), proposed and
   /// confirmed, oldest first.
   Future<List<Assessment>> history(Goal goal);
@@ -85,6 +89,13 @@ class McpGoalsRepository implements GoalsRepository {
   }
 
   @override
+  Future<GoalList> reorderGoals(List<String> ids) async {
+    await _client.callTool('reorder_goals', {'goal_ids': ids});
+    // reorder_goals answers with only some of them.
+    return goals();
+  }
+
+  @override
   Future<List<Assessment>> history(Goal goal) async {
     final result = await _client.callTool('get_goal_history', {
       'goal_ids': [goal.id],
@@ -141,6 +152,19 @@ class InMemoryGoalsRepository implements GoalsRepository {
 
   @override
   Future<GoalList?> cachedGoals() async => null;
+
+  @override
+  Future<GoalList> reorderGoals(List<String> ids) async {
+    final places = [
+      for (final (i, goal) in _goals.indexed)
+        if (ids.contains(goal.id)) i,
+    ];
+    final byId = {for (final goal in _goals) goal.id: goal};
+    for (var i = 0; i < places.length; i++) {
+      _goals[places[i]] = byId[ids[i]]!;
+    }
+    return goals();
+  }
 
   @override
   Future<GoalList> createGoal(Map<String, Object?> fields) async {
