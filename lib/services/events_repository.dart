@@ -89,13 +89,19 @@ class InMemoryEventsRepository implements EventsRepository {
 
   final List<Event> _events;
 
+  /// Like the server, leaves out cancelled events.
   @override
   Future<List<Event>> events(
     DateTime from,
     DateTime to, {
     bool keep = false,
   }) async =>
-      _events.where((e) => e.start.isBefore(to) && e.end.isAfter(from)).toList()
+      _events
+          .where(
+            (e) =>
+                !e.isCancelled && e.start.isBefore(to) && e.end.isAfter(from),
+          )
+          .toList()
         ..sort((a, b) => a.start.compareTo(b.start));
 
   @override

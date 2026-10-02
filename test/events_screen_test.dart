@@ -342,7 +342,9 @@ void main() {
       expect(repo.saved, [
         {'is_cancelled': true},
       ]);
-      expect(find.text('9:00 AM – 10:30 AM · cancelled'), findsOneWidget);
+      // The server doesn't list cancelled events, so it leaves the list.
+      expect(find.text('Event cancelled.'), findsOneWidget);
+      expect(find.text('9:00 AM – 10:30 AM'), findsNothing);
     });
 
     test('durations read as typed and as the server sends them', () {

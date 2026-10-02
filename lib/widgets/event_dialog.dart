@@ -47,8 +47,8 @@ Future<List<Event>?> showEventDialog(
             label: 'Cancel event',
             question: 'Cancel this event?',
             explanation:
-                "This can't be undone. The event stays in the list, struck "
-                'through.',
+                "This can't be undone. The event leaves the list once it's "
+                'cancelled.',
             keepLabel: 'Keep event',
             changes: {'is_cancelled': true},
           ),
