@@ -9,6 +9,7 @@ import 'properties_dialog.dart';
 /// "Save" sends every change with [save]. Returns what [save] returned
 /// (every label, as the server has them now), or null if nothing was
 /// saved. Without [save], or for a label with no id, nothing can be edited.
+/// A name can be changed but not emptied.
 Future<List<EventLabel>?> showEventLabelDialog(
   BuildContext context,
   EventLabel label, {
@@ -41,6 +42,7 @@ Future<List<EventLabel>?> showEventLabelDialog(
     'fixed_time': PropertyKind.optionalFlag,
     'note': PropertyKind.multiline,
   },
+  required: const {'name'},
   hints: const {
     'background_color': "With no color, the label takes its priority's color.",
   },

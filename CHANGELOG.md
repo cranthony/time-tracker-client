@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 1.11.0
+
+- The Labels page hides labels with no name. They hold the calendar's
+  default colors, and aren't meant to be edited.
+- A label's name can't be emptied: the dialog says "This can't be empty."
+  and keeps it open until you type a name or cancel the edit.
+
 ## 1.10.1
 
 - A note waiting to be saved no longer gets stuck showing "Saving…".

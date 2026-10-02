@@ -8,9 +8,12 @@ import '../widgets/color_picker.dart';
 import '../widgets/event_label_dialog.dart';
 import '../widgets/status_message.dart';
 
-/// Every event label: its color, name, priority and whether it's fixed
-/// time. Tapping a label shows all its properties, and lets one change its
-/// name, color and priority.
+/// Every named event label: its color, name, priority and whether it's
+/// fixed time. Tapping a label shows all its properties, and lets one change
+/// its name, color and priority.
+///
+/// Labels with no name are hidden: they represent Google Calendar's
+/// default event colors, and aren't meant to be edited.
 class EventLabelsScreen extends StatefulWidget {
   const EventLabelsScreen({
     super.key,
@@ -54,7 +57,7 @@ class _EventLabelsScreenState extends State<EventLabelsScreen> {
       final labels = await widget.repository.labels();
       if (!mounted) return;
       setState(() {
-        _labels = labels;
+        _labels = _named(labels);
         _error = null;
         _needsSignIn = false;
       });
@@ -70,6 +73,14 @@ class _EventLabelsScreenState extends State<EventLabelsScreen> {
     }
   }
 
+  /// [labels] without the unnamed ones. An unnamed label represents one of
+  /// Google Calendar's default event colors, not a label anyone made, so
+  /// it isn't listed or edited here.
+  static List<EventLabel> _named(List<EventLabel> labels) => [
+    for (final label in labels)
+      if (label.name?.isNotEmpty ?? false) label,
+  ];
+
   Future<void> _open(EventLabel label) async {
     final messenger = ScaffoldMessenger.of(context);
     final labels = await showEventLabelDialog(
@@ -78,7 +89,7 @@ class _EventLabelsScreenState extends State<EventLabelsScreen> {
       save: widget.repository.updateLabel,
     );
     if (labels == null || !mounted) return;
-    setState(() => _labels = labels);
+    setState(() => _labels = _named(labels));
     messenger.showSnackBar(const SnackBar(content: Text('Saved.')));
   }
 

@@ -278,7 +278,7 @@ void main() {
       expect(find.text('Running'), findsOneWidget);
     });
 
-    testWidgets('sets fixed time and a note, and clears the name', (
+    testWidgets('sets fixed time and a note, but not an empty name', (
       tester,
     ) async {
       final repo = _RecordingRepository(sample());
@@ -299,8 +299,16 @@ void main() {
       }
 
       await edit(inDialog(find.text('Exercise')).last);
-      await tester.enterText(find.byType(TextField), '');
+      await tester.enterText(find.byType(TextField), '  ');
       await keep();
+      expect(find.text("This can't be empty."), findsOneWidget);
+      // Saving refuses it too.
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, isEmpty);
+      expect(find.text("This can't be empty."), findsOneWidget);
+      await tester.tap(find.byTooltip('Cancel edit'));
+      await tester.pumpAndSettle();
 
       await edit(inDialog(find.text('false')));
       await tester.tap(find.text('Not set'));
@@ -311,12 +319,12 @@ void main() {
       await tester.enterText(find.byType(TextField), 'Runs and swims');
       await keep();
 
-      await tester.tap(find.text('Save 3 changes'));
+      await tester.tap(find.text('Save 2 changes'));
       await tester.pumpAndSettle();
       expect(repo.saved, [
-        {'name': null, 'fixed_time': null, 'note': 'Runs and swims'},
+        {'fixed_time': null, 'note': 'Runs and swims'},
       ]);
-      expect(find.text('(no name)'), findsOneWidget);
+      expect(find.text('Exercise'), findsOneWidget);
     });
 
     testWidgets('shows the server\'s error and keeps the edit', (tester) async {
@@ -338,6 +346,22 @@ void main() {
       expect(find.text('Save 1 change'), findsOneWidget);
       expect(repo.saved, isEmpty);
     });
+  });
+
+  testWidgets('hides labels with no name', (tester) async {
+    final repo = InMemoryEventLabelsRepository([
+      const EventLabel(id: '1', name: 'Sleep'),
+      const EventLabel(id: '2', backgroundColor: '#a4bdfc'),
+      const EventLabel(id: '3', name: '', backgroundColor: '#7ae7bf'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+    final names = tester
+        .widgetList<ListTile>(find.byType(ListTile))
+        .map((t) => (t.title as Text).data)
+        .toList();
+    expect(names, ['Sleep']);
+    expect(find.text('(no name)'), findsNothing);
   });
 
   testWidgets('says when there are none', (tester) async {
