@@ -17,6 +17,10 @@ if [ ! -f "$fonts/roboto-regular.ttf" ]; then
 fi
 if [ ! -f "$fonts/roboto-regular.ttf" ]; then
   echo "::error::No Material fonts in $fonts after flutter precache" >&2
+  echo "In $fonts:" >&2
+  ls -la "$fonts" >&2 || true
+  echo "Fonts anywhere in the SDK's cache:" >&2
+  find "$root/bin/cache" -iname '*roboto*' -o -iname '*materialicons*' >&2 || true
   exit 1
 fi
 echo "Material fonts are in $fonts"
