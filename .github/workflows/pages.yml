@@ -30,6 +30,8 @@ jobs:
         # Without it the build would silently be the offline demo.
         run: test -n "${{ vars.MCP_URL }}" || { echo "::error::Set the MCP_URL repository variable"; exit 1; }
       - run: flutter pub get
+      # The visual tests draw text with the Material fonts.
+      - run: tool/fetch_material_fonts.sh
       - run: flutter test
       - name: Build
         # Pages serves a project site under /<repo>/, so the app's base

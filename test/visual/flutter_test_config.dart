@@ -48,18 +48,15 @@ class _ScreenshotWriter extends GoldenFileComparator {
 /// Loads Roboto (the Material font on Android, which tests emulate) and the
 /// Material Icons from the Flutter SDK, so screenshots show real text.
 ///
-/// The SDK downloads them only for a build or `flutter precache`; without
-/// them the screenshots keep flutter_test's font, which draws text as
-/// blocks, rather than failing `flutter test`.
+/// The SDK downloads them only for a build or `flutter precache`. Without
+/// them every screenshot's text would be blocks, so that fails instead.
 Future<void> _loadRealFonts() async {
   final fonts = '${_flutterRoot()}/bin/cache/artifacts/material_fonts';
   if (!File('$fonts/roboto-regular.ttf').existsSync()) {
-    // ignore: avoid_print
-    print(
-      'No Material fonts in $fonts, so screenshots draw text as blocks. '
-      'Run `flutter precache` to download them.',
+    throw StateError(
+      'No Material fonts in $fonts, so screenshots would draw text as '
+      'blocks. Run tool/fetch_material_fonts.sh to download them.',
     );
-    return;
   }
   Future<ByteData> font(String name) async =>
       ByteData.sublistView(await File('$fonts/$name').readAsBytes());
