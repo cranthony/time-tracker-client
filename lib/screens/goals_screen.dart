@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../models/goal.dart';
 import '../services/goals_repository.dart';
 import '../services/mcp_client.dart';
+import 'goal_history_screen.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/goal_dialog.dart';
+import '../widgets/health.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
@@ -323,6 +325,14 @@ class _GoalsScreenState extends State<GoalsScreen> {
             onTap: () => _open(goal),
             onAddSubGoal: () => _add(parentId: goal.id),
             onSetStatus: (status) => _setStatus(goal, status),
+            onHistory: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => GoalHistoryScreen(
+                  goal: goal,
+                  repository: widget.repository,
+                ),
+              ),
+            ),
           ),
         ],
       ],
@@ -417,12 +427,14 @@ class _GoalTile extends StatelessWidget {
     required this.onTap,
     required this.onAddSubGoal,
     required this.onSetStatus,
+    required this.onHistory,
   });
 
   final Goal goal;
   final VoidCallback onTap;
   final VoidCallback onAddSubGoal;
   final ValueChanged<String> onSetStatus;
+  final VoidCallback onHistory;
 
   @override
   Widget build(BuildContext context) {
@@ -438,7 +450,13 @@ class _GoalTile extends StatelessWidget {
         null => null,
       },
       if (goal.cadence case final cadence?) cadences[cadence] ?? cadence,
+      if (goal.stalePeriods case final stale? when stale > 0)
+        '$stale ${switch (cadencePeriodNames[goal.cadence]) {
+          (final one, final many) => stale == 1 ? one : many,
+          null => stale == 1 ? 'period' : 'periods',
+        }} unassessed',
     ].nonNulls.join(' · ');
+    final assessed = goal.active && goal.cadence != null;
     return ListTile(
       contentPadding: EdgeInsetsDirectional.only(
         start: 16.0 + 24.0 * goal.depth,
@@ -455,16 +473,32 @@ class _GoalTile extends StatelessWidget {
       ),
       title: Text(goalName(goal), style: faded),
       subtitle: details.isEmpty ? null : Text(details, style: faded),
-      trailing: PopupMenuButton<String>(
-        tooltip: 'More for ${goalName(goal)}',
-        onSelected: (choice) =>
-            choice == 'sub' ? onAddSubGoal() : onSetStatus(choice),
-        itemBuilder: (context) => [
-          const PopupMenuItem(value: 'sub', child: Text('Add sub-goal')),
-          const PopupMenuDivider(),
-          for (final MapEntry(key: status, value: label) in _moveTo.entries)
-            if (status != goal.status)
-              PopupMenuItem(value: status, child: Text(label)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (assessed) ...[
+            if (goal.healthTrend.isNotEmpty) ...[
+              TrendSparkline(trend: goal.healthTrend),
+              const SizedBox(width: 8),
+            ],
+            HealthDot(rating: goal.health),
+          ],
+          PopupMenuButton<String>(
+            tooltip: 'More for ${goalName(goal)}',
+            onSelected: (choice) => switch (choice) {
+              'sub' => onAddSubGoal(),
+              'history' => onHistory(),
+              _ => onSetStatus(choice),
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'sub', child: Text('Add sub-goal')),
+              const PopupMenuItem(value: 'history', child: Text('History')),
+              const PopupMenuDivider(),
+              for (final MapEntry(key: status, value: label) in _moveTo.entries)
+                if (status != goal.status)
+                  PopupMenuItem(value: status, child: Text(label)),
+            ],
+          ),
         ],
       ),
       onTap: onTap,
