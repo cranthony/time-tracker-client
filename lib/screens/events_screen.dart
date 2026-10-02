@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
+import '../models/goal.dart';
+import '../models/recurrence.dart';
 import '../services/goals_repository.dart';
 import '../services/events_repository.dart';
 import '../services/mcp_client.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
 import '../widgets/event_dialog.dart';
+import '../widgets/recurrence_dialog.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
@@ -142,10 +145,8 @@ class _EventsScreenState extends State<EventsScreen> {
       context,
       event,
       save: widget.repository.updateEvent,
-      goals: switch (widget.goalsRepository) {
-        final goals? => () async => (await goals.goals()).goals,
-        null => null,
-      },
+      goals: _goals,
+      openSeries: (seriesId) => _openSeries(seriesId, event),
     );
     if (updated == null) return;
     final moved = updated.where((e) => e.id != event.id).length;
@@ -163,6 +164,63 @@ class _EventsScreenState extends State<EventsScreen> {
       ),
     );
     await _load();
+  }
+
+  /// Every goal, for picking an event's goals; null without goals.
+  Future<List<Goal>> Function()? get _goals => switch (widget.goalsRepository) {
+    final goals? => () async => (await goals.goals()).goals,
+    null => null,
+  };
+
+  /// Opens the recurring series [seriesId], from its [event]. True if a
+  /// change to it was saved, after which the day is loaded again.
+  Future<bool> _openSeries(String seriesId, Event event) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final Recurrence recurrence;
+    try {
+      recurrence = await widget.repository.recurrence(seriesId);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            "Couldn't load the series. ${switch (e) {
+              SignInRequiredException() => 'Sign in again, then try again.',
+              McpException(:final message) => message,
+              _ => '$e',
+            }}",
+          ),
+        ),
+      );
+      return false;
+    }
+    if (!mounted) return false;
+    SeriesScope? savedFor;
+    final saved = await showRecurrenceDialog(
+      context,
+      recurrence,
+      fromEventId: event.id,
+      goals: _goals,
+      save: (changes, scope) {
+        savedFor = scope;
+        return widget.repository.updateRecurrence(
+          recurrence,
+          changes,
+          startingAt: scope == SeriesScope.following ? event.id : null,
+        );
+      },
+    );
+    if (saved == null) return false;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          savedFor == SeriesScope.following
+              ? 'Saved this and following events.'
+              : 'Saved every event in the series.',
+        ),
+      ),
+    );
+    await _load();
+    return true;
   }
 
   void _step(int days) =>

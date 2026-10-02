@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/note.dart';
+import 'package:time_tracker_client/models/recurrence.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
@@ -371,6 +372,113 @@ void main() {
     });
   });
 
+  group('a recurring series', () {
+    InMemoryEventsRepository series() => InMemoryEventsRepository(
+      [
+        Event.fromJson({
+          'id': 'standup_0930',
+          'summary': 'Standup',
+          'start': localIsoTimestamp(at(30, 9)),
+          'end': localIsoTimestamp(at(30, 10)),
+          'recurring_event_id': 'standup',
+        }),
+      ],
+      [
+        Recurrence.fromJson({
+          'id': 'standup',
+          'summary': 'Standup',
+          'start': localIsoTimestamp(at(7, 9)),
+          'end': localIsoTimestamp(at(7, 10)),
+          'rules': ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE'],
+          'schedule': 'Every week on Mon, Wed',
+        }),
+      ],
+    );
+
+    /// Opens the event, then its series, and renames the series.
+    Future<void> renameSeries(WidgetTester tester) async {
+      await tester.tap(find.text('Standup'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Repeats: see or change the series'));
+      await tester.pumpAndSettle();
+      expect(find.text('Every week on Mon, Wed'), findsOneWidget);
+      expect(find.text('RRULE:FREQ=WEEKLY;BYDAY=MO,WE'), findsOneWidget);
+      final dialog = find.byType(AlertDialog).last;
+      await tester.tap(
+        find.descendant(of: dialog, matching: find.text('Standup')).last,
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(of: dialog, matching: find.byType(TextField)),
+        'Team standup',
+      );
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save 1 change'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('an event links to its series, which can be changed from '
+        'it on', (tester) async {
+      final repo = series();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+
+      await renameSeries(tester);
+      expect(find.text('Change which events?'), findsOneWidget);
+      await tester.tap(find.text('This and following events'));
+      await tester.pumpAndSettle();
+
+      expect(repo.splits, ['standup_0930']);
+      expect((await repo.recurrence('standup')).summary, 'Team standup');
+      expect(find.text('Saved this and following events.'), findsOneWidget);
+      // Both dialogs closed.
+      expect(find.byType(AlertDialog), findsNothing);
+    });
+
+    testWidgets('changes every event, or goes back without saving', (
+      tester,
+    ) async {
+      final repo = series();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+
+      await renameSeries(tester);
+      await tester.tap(find.text('Go back'));
+      await tester.pumpAndSettle();
+      expect(repo.splits, isEmpty);
+      expect(find.text('Save 1 change'), findsOneWidget); // Still open.
+
+      await tester.tap(find.text('Save 1 change'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('All events'));
+      await tester.pumpAndSettle();
+      expect(repo.splits, [null]);
+      expect(find.text('Saved every event in the series.'), findsOneWidget);
+    });
+
+    test('McpEventsRepository sends update_recurrence what changed', () async {
+      final client = _RecurrenceClient();
+      final recurrence = Recurrence.fromJson({
+        'id': 'standup',
+        'start': '2026-09-07T09:00:00Z',
+        'end': '2026-09-07T10:00:00Z',
+      });
+
+      final saved = await McpEventsRepository(client).updateRecurrence(
+        recurrence,
+        {'summary': 'Team standup', 'location': null},
+        startingAt: 'standup_0930',
+      );
+
+      expect(client.arguments, {
+        'recurrence': {'id': 'standup', 'summary': 'Team standup'},
+        'starting_at_event_id': 'standup_0930',
+      });
+      expect(saved.single.id, 'standup_new');
+    });
+  });
+
   testWidgets('asks to sign in when the server needs it', (tester) async {
     var signedIn = false;
     final repo = _SignInRepository(() => signedIn, [
@@ -472,5 +580,27 @@ class _RecordingRepository extends InMemoryEventsRepository {
     if (error case final error?) throw error;
     saved.add(changes);
     return [...await super.updateEvent(event, changes), ...alsoMoved];
+  }
+}
+
+/// Answers update_recurrence with one series, keeping what it was sent.
+class _RecurrenceClient extends McpClient {
+  _RecurrenceClient() : super(endpoint: Uri.parse('http://test'));
+
+  Map<String, Object?>? arguments;
+
+  @override
+  Future<Object?> callTool(
+    String name, [
+    Map<String, Object?> arguments = const {},
+  ]) async {
+    this.arguments = arguments;
+    return [
+      {
+        'id': 'standup_new',
+        'start': '2026-09-30T09:00:00Z',
+        'end': '2026-09-30T10:00:00Z',
+      },
+    ];
   }
 }

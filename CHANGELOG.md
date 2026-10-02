@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 2.6.0
+
+- An event in a recurring series links to the series from its details
+  ("Repeats: see or change the series"). The series shows its schedule in
+  words, its rules, and the properties its events share, and any of them
+  can be changed: for all its events, or for that event and the ones
+  after it, which starts a new series from there. Needs a server with
+  `get_recurrence` and `update_recurrence`.
+
 ## 2.5.0
 
 - On the Goals page, a goal's sub-goals start collapsed, and the goal says

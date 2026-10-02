@@ -1,5 +1,6 @@
 import '../models/event.dart';
 import '../models/note.dart';
+import '../models/recurrence.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
@@ -19,6 +20,19 @@ abstract class EventsRepository {
   /// [event]. Returns every event the server changed to make room,
   /// [event] included.
   Future<List<Event>> updateEvent(Event event, Map<String, Object?> changes);
+
+  /// The recurring series [id] is, or is one of the events of.
+  Future<Recurrence> recurrence(String id);
+
+  /// Saves [changes], keyed as `update_recurrence` takes them, to
+  /// [recurrence]: to every event in it, or, given [startingAt] (one of its
+  /// events' ids), to that event and the ones after it only. Returns the
+  /// edited series, then the part before [startingAt] if it was split off.
+  Future<List<Recurrence>> updateRecurrence(
+    Recurrence recurrence,
+    Map<String, Object?> changes, {
+    String? startingAt,
+  });
 }
 
 /// Reads events via the Time Tracker MCP server's `list_events` tool.
@@ -69,6 +83,32 @@ class McpEventsRepository implements EventsRepository {
         ..sort((a, b) => a.start.compareTo(b.start));
 
   @override
+  Future<Recurrence> recurrence(String id) async {
+    final result = await _client.callTool('get_recurrence', {'id': id});
+    return Recurrence.fromJson((result as Map).cast<String, dynamic>());
+  }
+
+  @override
+  Future<List<Recurrence>> updateRecurrence(
+    Recurrence recurrence,
+    Map<String, Object?> changes, {
+    String? startingAt,
+  }) async {
+    // The server keeps whatever is left out.
+    final result = await _client.callTool('update_recurrence', {
+      'recurrence': {
+        'id': recurrence.id,
+        for (final MapEntry(:key, :value) in changes.entries) key: ?value,
+      },
+      'starting_at_event_id': ?startingAt,
+    });
+    return [
+      for (final r in result as List)
+        Recurrence.fromJson((r as Map).cast<String, dynamic>()),
+    ];
+  }
+
+  @override
   Future<List<Event>> updateEvent(
     Event event,
     Map<String, Object?> changes,
@@ -84,10 +124,45 @@ class McpEventsRepository implements EventsRepository {
 
 /// Keeps events in memory. Used when no server is configured, and in tests.
 class InMemoryEventsRepository implements EventsRepository {
-  InMemoryEventsRepository([List<Event> events = const []])
-    : _events = [...events];
+  InMemoryEventsRepository([
+    List<Event> events = const [],
+    List<Recurrence> recurrences = const [],
+  ]) : _events = [...events],
+       _recurrences = {for (final r in recurrences) r.id: r};
 
   final List<Event> _events;
+  final Map<String, Recurrence> _recurrences;
+
+  /// [startingAt] of each [updateRecurrence], in order.
+  final splits = <String?>[];
+
+  @override
+  Future<Recurrence> recurrence(String id) async {
+    final seriesId = switch (_events.where((e) => e.id == id)) {
+      final found when found.isNotEmpty =>
+        found.first.properties['recurring_event_id'] as String? ?? id,
+      _ => id,
+    };
+    return _recurrences[seriesId] ??
+        (throw StateError("$id isn't part of a recurring series"));
+  }
+
+  /// Changes the series itself, without splitting it: in memory, its
+  /// events aren't generated from it.
+  @override
+  Future<List<Recurrence>> updateRecurrence(
+    Recurrence recurrence,
+    Map<String, Object?> changes, {
+    String? startingAt,
+  }) async {
+    splits.add(startingAt);
+    final updated = Recurrence.fromJson({
+      ...recurrence.toJson(),
+      for (final MapEntry(:key, :value) in changes.entries) key: ?value,
+    });
+    _recurrences[recurrence.id] = updated;
+    return [updated];
+  }
 
   /// Like the server, leaves out cancelled events.
   @override

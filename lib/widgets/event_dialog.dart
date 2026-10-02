@@ -11,11 +11,17 @@ import 'properties_dialog.dart';
 /// place; "Save" sends every change with [save]. Returns what [save]
 /// returned (the events the server changed), or null if nothing was saved.
 /// Without [save], or for an event with no id, nothing can be edited.
+///
+/// With [openSeries], an event in a recurring series links to it: tapping
+/// its recurring_event_id calls [openSeries] with the series' id, and if
+/// that saved a change to the series (returning true), this closes,
+/// returning null.
 Future<List<Event>?> showEventDialog(
   BuildContext context,
   Event event, {
   Future<List<Event>> Function(Event event, Map<String, Object?> changes)? save,
   Future<List<Goal>> Function()? goals,
+  Future<bool> Function(String seriesId)? openSeries,
 }) {
   final typed = event.toJson();
   return showPropertiesDialog<List<Event>>(
@@ -32,6 +38,16 @@ Future<List<Event>?> showEventDialog(
       ...typed,
     },
     kinds: _kinds,
+    links: {
+      if ((openSeries, event.properties['recurring_event_id']) case (
+        final open?,
+        final String seriesId,
+      ))
+        'recurring_event_id': PropertyLink(
+          label: 'Repeats: see or change the series',
+          open: () => open(seriesId),
+        ),
+    },
     save: save == null || event.id == null
         ? null
         : (changes) => save(event, changes),

@@ -134,6 +134,28 @@ void main() {
       );
     });
 
+    testWidgets('event series ($mode)', (tester) async {
+      await render(
+        tester,
+        'event_series',
+        EventsScreen(
+          repository: sample.eventsRepository(),
+          goalsRepository: sample.goalsRepository(),
+          serverLabel: 'sample',
+          clock: () => _now,
+        ),
+        then: () async {
+          await tester.tap(find.text('Morning routine'));
+          await tester.pumpAndSettle();
+          final link = find.text('Repeats: see or change the series');
+          await tester.ensureVisible(link);
+          await tester.pumpAndSettle();
+          await tester.tap(link);
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
     testWidgets('notes ($mode)', (tester) async {
       final notes = sample.notesRepository();
       final outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: notes)
