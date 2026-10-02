@@ -34,12 +34,17 @@ class NoteOutbox extends ChangeNotifier {
 
   /// How long another sender's in-flight request is trusted to finish
   /// before its note is treated as unsent again (e.g. the app was killed
-  /// mid-request).
+  /// mid-request). Every step of a send has a timeout, so a live sender
+  /// is done well within this.
   static const inFlightTimeout = Duration(minutes: 2);
 
   /// Gives up on a single request after this long. It may still reach the
   /// server, which the next attempt checks for.
   static const requestTimeout = Duration(seconds: 30);
+
+  /// Gives up on reading or writing the [OutboxStore] after this long, so
+  /// a store that never answers can't hold up every later change.
+  static const storeTimeout = Duration(seconds: 10);
 
   List<PendingNote> _pending = [];
   String? _sendingId;
@@ -121,11 +126,22 @@ class NoteOutbox extends ChangeNotifier {
 
   /// Sends due notes one at a time, oldest first, until one fails or none
   /// are left.
+  ///
+  /// A failure to read or write the store ends the round; whatever is
+  /// left is tried again on the next.
   Future<FlushResult> flush({bool ignoreBackoff = false}) =>
-      _flushing ??= _flush(ignoreBackoff).whenComplete(() {
-        _flushing = null;
-        _schedule();
-      });
+      _flushing ??= _flush(ignoreBackoff)
+          .catchError((Object e, StackTrace stack) {
+            debugPrint('Saving notes stopped: $e\n$stack');
+            return FlushResult(
+              remaining: _pending.length,
+              needsSignIn: _needsSignIn,
+            );
+          })
+          .whenComplete(() {
+            _flushing = null;
+            _schedule();
+          });
 
   Future<FlushResult> _flush(bool ignoreBackoff) async {
     List<Note>? onServer;
@@ -138,22 +154,24 @@ class NoteOutbox extends ChangeNotifier {
       if (next == null) break;
 
       // Claimed before the first await, so cancel() refuses it from here
-      // on; and if it was cancelled just before, it's gone: skip it.
+      // on. Whatever happens next, even the store failing, the claim is
+      // let go of below, or the note would look in flight until the app
+      // restarts.
       _sendingId = next.id;
-      var stillPending = false;
-      await _update((notes) {
-        stillPending = notes.any((n) => n.id == next.id);
-        return [
-          for (final n in notes)
-            n.id == next.id ? n.copyWith(sendingSince: () => now) : n,
-        ];
-      });
-      if (!stillPending) {
-        _sendingId = null;
-        continue;
-      }
       try {
-        if (next.attempts > 0) {
+        // If it was cancelled just before, it's gone: skip it.
+        var stillPending = false;
+        await _update((notes) {
+          stillPending = notes.any((n) => n.id == next.id);
+          return [
+            for (final n in notes)
+              n.id == next.id ? n.copyWith(sendingSince: () => now) : n,
+          ];
+        });
+        if (!stillPending) continue;
+        // An earlier attempt, or a sender that gave up on it (see
+        // inFlightTimeout), may have saved it even though nobody heard.
+        if (next.attempts > 0 || next.sendingSince != null) {
           onServer ??= await _repository.uncompactedNotes().timeout(
             requestTimeout,
           );
@@ -188,6 +206,8 @@ class NoteOutbox extends ChangeNotifier {
         // Most failures are the connection or the server; the rest would
         // likely fail the same way, so leave them for the next round.
         break;
+      } finally {
+        _sendingId = null;
       }
       if (!_running && !ignoreBackoff) break;
     }
@@ -245,10 +265,12 @@ class NoteOutbox extends ChangeNotifier {
   /// each other.
   Future<void> _update(List<PendingNote> Function(List<PendingNote>) change) {
     final result = _lock.then((_) async {
-      final before = await _store.load();
+      final before = await _store.load().timeout(storeTimeout);
       final after = change(before)
         ..sort((a, b) => a.note.timestamp.compareTo(b.note.timestamp));
-      if (!identical(after, before)) await _store.save(after);
+      if (!identical(after, before)) {
+        await _store.save(after).timeout(storeTimeout);
+      }
       _pending = after;
       notifyListeners();
     });
