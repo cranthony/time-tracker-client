@@ -336,9 +336,11 @@ The fonts come with the SDK but are downloaded only for a build or
 blocks; `flutter precache` downloads them.
 
 Some characters show as a box with an X in it, such as the `→` in a goal
-history's "8h of 10h target → 82". The SDK's Roboto doesn't have them, and
-tests have no other font to fall back on. The app itself shows them, since
-a phone or browser finds them in another font.
+history's "8h of 10h target → 82". The sample data uses the arrow because
+the server writes it in every measured rating's explanation, so the app
+must show it. The SDK's Roboto doesn't have it, and tests have no other
+font to fall back on. The app itself shows it, since a phone or browser
+finds it in another font.
 
 Nothing is compared with images kept in the repo, so the repo doesn't grow
 with every UI change. Instead, to see what a change did, screenshot before
