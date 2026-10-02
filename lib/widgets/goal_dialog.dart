@@ -12,6 +12,7 @@ const _kinds = {
   'priority': PropertyKind.integer,
   'fixed_time': PropertyKind.optionalFlag,
   'cadence': PropertyKind.choice,
+  'measure': PropertyKind.measure,
   'target': PropertyKind.text,
   'deadline': PropertyKind.date,
   'note': PropertyKind.multiline,
@@ -24,6 +25,9 @@ const _hints = {
       'Events and sub-goals with no priority of their own take this one.',
   'fixed_time': 'Events and sub-goals that say nothing take this.',
   'cadence': 'How often its health is assessed.',
+  'measure':
+      "How each period's health is rated, 0-100. Ratings are confirmed in "
+      'a reflection.',
 };
 
 String? _needsName(Map<String, Object?> values) => switch (values['name']) {
@@ -59,6 +63,7 @@ Future<GoalList?> showGoalDialog(
     'priority': goal.priority,
     'fixed_time': goal.fixedTime,
     'cadence': goal.cadence,
+    'measure': goal.measure,
     ...goal.properties,
   },
   kinds: _kinds,
@@ -93,6 +98,7 @@ Future<GoalList?> showNewGoalDialog(
     'parent_id': parentId,
     'priority': null,
     'cadence': null,
+    'measure': null,
     'note': null,
   },
   kinds: _kinds,

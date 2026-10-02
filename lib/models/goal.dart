@@ -14,6 +14,7 @@ class Goal {
     this.priority,
     this.fixedTime,
     this.cadence,
+    this.measure,
     this.effectiveColor,
     this.health,
     this.healthPeriod,
@@ -46,6 +47,10 @@ class Goal {
   /// How often its health is assessed: daily, weekly, monthly or
   /// every_2_months; null if it never is.
   final String? cadence;
+
+  /// How its health is rated each period, e.g. {"kind": "duration",
+  /// "target_min": 600}; null if it isn't measured. See measure.dart.
+  final Map<String, Object?>? measure;
 
   /// The color its label is shown in: [backgroundColor], or the one it
   /// inherits from its priority or its parent. Null from a server too old
@@ -87,6 +92,10 @@ class Goal {
     priority: json['priority'] as int?,
     fixedTime: json['fixed_time'] as bool?,
     cadence: json['cadence'] as String?,
+    measure: switch (json['measure']) {
+      final Map measure => Map.unmodifiable(measure.cast<String, Object?>()),
+      _ => null,
+    },
     effectiveColor: json['effective_color'] as String?,
     health: json['health'] as int?,
     healthPeriod: json['health_period'] as String?,

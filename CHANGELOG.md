@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 2.4.0
+
+- A goal's measure, how each period's health is rated, can be edited in
+  its dialog. Pick its kind (time spent, number of events, wake-up time,
+  your rating, Claude's judgement, or from its sub-goals), then fill in
+  that kind's fields, like "10h" per week or "up by 07:00". It's checked
+  before saving, as the server checks it.
+- The Goals page and a goal's history say what it's measured by, like
+  "10h per week" or "1 dinner per week", in place of just its cadence.
+
 ## 2.3.0
 
 - Sample data: run with `--dart-define=SAMPLE_DATA=true` (and no

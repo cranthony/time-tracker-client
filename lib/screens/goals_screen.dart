@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
+import '../models/measure.dart';
 import '../services/goals_repository.dart';
 import '../services/mcp_client.dart';
 import 'goal_history_screen.dart';
@@ -449,7 +450,10 @@ class _GoalTile extends StatelessWidget {
         false => 'Flexible time',
         null => null,
       },
-      if (goal.cadence case final cadence?) cadences[cadence] ?? cadence,
+      if (goal.measure case final measure?)
+        describeMeasure(measure, goal.cadence)
+      else if (goal.cadence case final cadence?)
+        cadences[cadence] ?? cadence,
       if (goal.stalePeriods case final stale? when stale > 0)
         '$stale ${switch (cadencePeriodNames[goal.cadence]) {
           (final one, final many) => stale == 1 ? one : many,

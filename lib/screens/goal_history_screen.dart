@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/assessment.dart';
 import '../models/goal.dart';
+import '../models/measure.dart';
 import '../services/goals_repository.dart';
 import '../services/mcp_client.dart';
 import '../widgets/health.dart';
@@ -107,7 +108,10 @@ class _GoalHistoryScreenState extends State<GoalHistoryScreen> {
                     'Health ${healthBand(health)}'
                   else
                     'Not rated yet',
-                  if (cadence != null) cadences[cadence] ?? cadence,
+                  if (goal.measure case final measure?)
+                    describeMeasure(measure, cadence)
+                  else if (cadence != null)
+                    cadences[cadence] ?? cadence,
                   if (goal.healthPeriod case final period?)
                     'last rated $period',
                 ].join(' · '),

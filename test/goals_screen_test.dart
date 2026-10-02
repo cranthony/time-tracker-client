@@ -343,6 +343,71 @@ void main() {
     );
   });
 
+  /// Opens [goal]'s dialog, then its measure for editing.
+  Future<Finder> openMeasure(WidgetTester tester, String goal) async {
+    await tester.tap(find.text(goal));
+    await tester.pumpAndSettle();
+    final dialog = find.byType(AlertDialog);
+    final label = find.descendant(of: dialog, matching: find.text('measure'));
+    final row = find.ancestor(of: label, matching: find.byType(PropertyRow));
+    await tester.ensureVisible(row);
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(of: row, matching: find.text('(none)')));
+    await tester.pumpAndSettle();
+    return dialog;
+  }
+
+  /// Picks [kind] in the open measure's drop-down.
+  Future<void> pickKind(WidgetTester tester, String kind) async {
+    await tester.tap(find.byType(DropdownButton<String?>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(kind).last);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets("a goal's measure is edited as its kind's fields", (
+    tester,
+  ) async {
+    final repo = tree();
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    final dialog = await openMeasure(tester, 'Cooking');
+    await pickKind(tester, 'Time spent');
+    await tester.enterText(find.widgetWithText(TextField, 'Target'), '10h');
+    expect(find.text('per week'), findsOneWidget); // Cooking is weekly.
+    await tester.tap(find.byTooltip('Keep edit'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: dialog, matching: find.text('10h per week')),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Save 1 change'));
+    await tester.pumpAndSettle();
+
+    final cooking = (await repo.goals()).goals.firstWhere(
+      (g) => g.id == 'cook',
+    );
+    expect(cooking.measure, {'kind': 'duration', 'target_min': 600});
+    // The Goals page says what it's measured by, in place of its cadence.
+    expect(find.text('Priority 1 · 10h per week'), findsOneWidget);
+  });
+
+  testWidgets("a measure missing what its kind needs isn't kept", (
+    tester,
+  ) async {
+    await tester.pumpWidget(app(tree()));
+    await tester.pumpAndSettle();
+
+    await openMeasure(tester, 'Hosting');
+    await pickKind(tester, 'Number of events');
+    await tester.tap(find.byTooltip('Keep edit'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter a target above 0.'), findsOneWidget);
+    expect(find.text('Save 1 change'), findsNothing);
+  });
+
   testWidgets(
     'an active goal shows its own color, or outlines the one it inherits',
     (tester) async {
