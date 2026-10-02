@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 2.1.0
+
+- Goals have a status: proposed, active, inactive, completed, archived
+  or deleted. Each shows its own icon, and anything but active is named
+  under the goal. Only active goals take up a calendar label.
+- Chips at the top of the Goals page pick which statuses are shown:
+  proposed, active and inactive to start with.
+- A goal's menu moves it to any other status. Moving an active goal away
+  from active, or deleting a goal, asks first.
+
 ## 2.0.0
 
 - Goals replace event labels: the **Goals** page replaces the Labels

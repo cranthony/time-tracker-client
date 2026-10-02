@@ -9,7 +9,7 @@ class Goal {
     this.id,
     this.parentId,
     this.name,
-    this.active = true,
+    this.status = 'active',
     this.backgroundColor,
     this.priority,
     this.fixedTime,
@@ -24,9 +24,12 @@ class Goal {
   final String? parentId;
   final String? name;
 
-  /// Whether the user is still working on it. Only active goals take up a
+  /// Where it stands: one of [goalStatuses]. Only active goals take up a
   /// calendar label.
-  final bool active;
+  final String status;
+
+  /// Whether it's being worked on, and so holds a calendar label.
+  bool get active => status == 'active';
 
   /// Its label's color, e.g. "#a4bdfc"; null to follow its priority.
   final String? backgroundColor;
@@ -52,7 +55,10 @@ class Goal {
     id: json['id'] as String?,
     parentId: json['parent_id'] as String?,
     name: json['name'] as String?,
-    active: json['active'] != false,
+    status:
+        json['status'] as String? ??
+        // A server from before statuses.
+        (json['active'] == false ? 'inactive' : 'active'),
     backgroundColor: json['background_color'] as String?,
     priority: json['priority'] as int?,
     fixedTime: json['fixed_time'] as bool?,
@@ -90,6 +96,21 @@ String goalName(Goal goal) {
   final name = goal.name;
   return name == null || name.isEmpty ? '(no name)' : name;
 }
+
+/// The statuses a goal can have, as the server names them, and as the app
+/// shows them.
+const goalStatuses = {
+  'proposed': 'Proposed',
+  'active': 'Active',
+  'inactive': 'Inactive',
+  'completed': 'Completed',
+  'archived': 'Archived',
+  'deleted': 'Deleted',
+};
+
+/// The statuses the Goals page shows until told otherwise: the goals still
+/// in play.
+const defaultGoalStatuses = {'proposed', 'active', 'inactive'};
 
 /// The cadences a goal can have, as the server names them, and as the app
 /// shows them.

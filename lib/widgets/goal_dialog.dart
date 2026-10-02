@@ -4,7 +4,7 @@ import '../models/goal.dart';
 import 'properties_dialog.dart';
 
 /// What a goal's properties are edited as; everything `update_goal` can
-/// change but whether it's active, which the Goals page does itself.
+/// change but its status, which the Goals page changes itself.
 const _kinds = {
   'name': PropertyKind.text,
   'parent_id': PropertyKind.goal,
@@ -53,7 +53,7 @@ Future<GoalList?> showGoalDialog(
   properties: {
     'name': goal.name,
     'path': goal.path,
-    'active': goal.active,
+    'status': goalStatuses[goal.status] ?? goal.status,
     'parent_id': goal.parentId,
     'background_color': goal.backgroundColor,
     'priority': goal.priority,

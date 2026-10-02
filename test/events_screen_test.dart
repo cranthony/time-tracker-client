@@ -162,7 +162,7 @@ void main() {
           goals: InMemoryGoalsRepository([
             const Goal(id: 'g1', name: 'Deep focus', priority: 1),
             const Goal(id: 'g2', name: 'Exercise', priority: 2),
-            const Goal(id: 'g3', name: 'Old', active: false),
+            const Goal(id: 'g3', name: 'Old', status: 'inactive'),
           ]),
         ),
       );
