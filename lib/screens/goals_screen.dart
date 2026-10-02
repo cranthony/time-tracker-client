@@ -14,7 +14,9 @@ import '../widgets/status_message.dart';
 
 /// Every goal, as a tree: each one's color, name, status, priority and
 /// cadence, with its sub-goals indented under it. A goal with sub-goals
-/// starts collapsed, saying how many it has; its arrow expands it. The
+/// starts collapsed, saying how many it has; its arrow expands it.
+/// Pressing and holding a goal starts reordering: each goal can be dragged
+/// among its siblings, its sub-goals going with it, until "Done". The
 /// filter at the top
 /// right picks which statuses are shown: proposed, active and inactive
 /// goals to start with. Only active goals take up a calendar label; the others keep
@@ -63,6 +65,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
   /// The goals whose sub-goals are shown; every other goal is collapsed.
   final _expanded = <String>{};
 
+  /// Whether goals are being dragged into a new order.
+  bool _reordering = false;
+
   @override
   void initState() {
     super.initState();
@@ -102,6 +107,46 @@ class _GoalsScreenState extends State<GoalsScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e);
+    }
+  }
+
+  /// Moves the goal at [oldIndex] of [shown] to [newIndex] (as
+  /// ReorderableListView.onReorderItem gives it) among its siblings, shows the new
+  /// order at once, and saves it.
+  Future<void> _reorder(List<Goal> shown, int oldIndex, int newIndex) async {
+    final goals = _goals;
+    if (goals == null) return;
+    final moved = shown[oldIndex];
+    final order = [...shown]
+      ..removeAt(oldIndex)
+      ..insert(newIndex, moved);
+    final ids = [
+      for (final goal in order)
+        if (goal.parentId == moved.parentId) goal.id!,
+    ];
+    final before = [
+      for (final goal in shown)
+        if (goal.parentId == moved.parentId) goal.id!,
+    ];
+    if (ids.join(',') == before.join(',')) return;
+    setState(() => _goals = _withSiblingOrder(goals, ids));
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final saved = await widget.repository.reorderGoals(ids);
+      if (mounted) setState(() => _goals = saved);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            "Couldn't save the new order. ${switch (e) {
+              SignInRequiredException() => 'Sign in again, then try again.',
+              McpException(:final message) => message,
+              _ => '$e',
+            }}",
+          ),
+        ),
+      );
+      await _load();
     }
   }
 
@@ -227,36 +272,50 @@ class _GoalsScreenState extends State<GoalsScreen> {
   @override
   Widget build(BuildContext context) {
     final ready = _goals != null && !_needsSignIn;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Goals'),
-        actions: [
-          if (ready)
-            _StatusFilter(
-              shown: _shown,
-              onChanged: (status, on) => setState(
-                () => on ? _shown.add(status) : _shown.remove(status),
-              ),
-            ),
-          AppMenu(
-            serverLabel: widget.serverLabel,
-            version: widget.version,
-            onSignOut: widget.onSignOut == null || _needsSignIn
-                ? null
-                : _signOut,
-          ),
-        ],
-      ),
-      floatingActionButton: ready
-          ? FloatingActionButton(
-              onPressed: _add,
-              tooltip: 'Add goal',
-              child: const Icon(Icons.add),
-            )
-          : null,
-      body: RefreshingBar(
-        refreshing: _stale && _error == null && !_needsSignIn,
-        child: RefreshIndicator(onRefresh: _load, child: _buildBody(context)),
+    final reordering = _reordering && ready;
+    return PopScope(
+      canPop: !reordering,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) setState(() => _reordering = false);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(reordering ? 'Reorder goals' : 'Goals'),
+          actions: reordering
+              ? [
+                  TextButton(
+                    onPressed: () => setState(() => _reordering = false),
+                    child: const Text('Done'),
+                  ),
+                ]
+              : [
+                  if (ready)
+                    _StatusFilter(
+                      shown: _shown,
+                      onChanged: (status, on) => setState(
+                        () => on ? _shown.add(status) : _shown.remove(status),
+                      ),
+                    ),
+                  AppMenu(
+                    serverLabel: widget.serverLabel,
+                    version: widget.version,
+                    onSignOut: widget.onSignOut == null || _needsSignIn
+                        ? null
+                        : _signOut,
+                  ),
+                ],
+        ),
+        floatingActionButton: ready && !reordering
+            ? FloatingActionButton(
+                onPressed: _add,
+                tooltip: 'Add goal',
+                child: const Icon(Icons.add),
+              )
+            : null,
+        body: RefreshingBar(
+          refreshing: _stale && _error == null && !_needsSignIn,
+          child: RefreshIndicator(onRefresh: _load, child: _buildBody(context)),
+        ),
       ),
     );
   }
@@ -295,6 +354,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
       );
     }
     final byId = {for (final goal in goals.goals) goal.id: goal};
+    final names = {for (final goal in goals.goals) goal.id: goalName(goal)};
     final withStatus = [
       for (final goal in goals.goals)
         if (_shown.contains(goal.status)) goal,
@@ -323,6 +383,43 @@ class _GoalsScreenState extends State<GoalsScreen> {
       for (final goal in withStatus)
         if (!underCollapsed(goal)) goal,
     ];
+    if (_reordering) {
+      return ReorderableListView.builder(
+        buildDefaultDragHandles: false,
+        padding: const EdgeInsets.only(bottom: 24),
+        header: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Text(
+            'Drag a goal by its handle to move it among the goals it sits '
+            'with; its sub-goals go with it.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+        itemCount: shown.length,
+        onReorderItem: (from, to) => _reorder(shown, from, to),
+        itemBuilder: (context, i) => Column(
+          key: ValueKey(shown[i].id),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (i > 0) const Divider(height: 1),
+            _GoalTile(
+              goal: shown[i],
+              goalNames: names,
+              subGoals: subGoals[shown[i].id] ?? 0,
+              expanded: _expanded.contains(shown[i].id),
+              dragIndex: i,
+              onToggle: () => setState(() {
+                if (!_expanded.remove(shown[i].id)) _expanded.add(shown[i].id!);
+              }),
+              onTap: null,
+              onAddSubGoal: () {},
+              onSetStatus: (_) {},
+              onHistory: () {},
+            ),
+          ],
+        ),
+      );
+    }
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 88), // Clear of the "+".
@@ -359,12 +456,14 @@ class _GoalsScreenState extends State<GoalsScreen> {
           if (i > 0) const Divider(height: 1),
           _GoalTile(
             goal: goal,
+            goalNames: names,
             subGoals: subGoals[goal.id] ?? 0,
             expanded: _expanded.contains(goal.id),
             onToggle: () => setState(() {
               if (!_expanded.remove(goal.id)) _expanded.add(goal.id!);
             }),
             onTap: () => _open(goal),
+            onLongPress: () => setState(() => _reordering = true),
             onAddSubGoal: () => _add(parentId: goal.id),
             onSetStatus: (status) => _setStatus(goal, status),
             onHistory: () => Navigator.of(context).push(
@@ -464,10 +563,13 @@ const _arrowWidth = 32.0;
 class _GoalTile extends StatelessWidget {
   const _GoalTile({
     required this.goal,
+    this.goalNames = const {},
     required this.subGoals,
     required this.expanded,
     required this.onToggle,
     required this.onTap,
+    this.onLongPress,
+    this.dragIndex,
     required this.onAddSubGoal,
     required this.onSetStatus,
     required this.onHistory,
@@ -475,13 +577,21 @@ class _GoalTile extends StatelessWidget {
 
   final Goal goal;
 
+  /// Every goal's name, by id, to say whose events it's measured by.
+  final Map<String?, String> goalNames;
+
   /// How many sub-goals it has (of those shown); none, and it has no arrow.
   final int subGoals;
 
   /// Whether its sub-goals are shown.
   final bool expanded;
   final VoidCallback onToggle;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  /// While reordering, its index in the list, for its drag handle; null
+  /// otherwise, when it has its menu instead.
+  final int? dragIndex;
   final VoidCallback onAddSubGoal;
   final ValueChanged<String> onSetStatus;
   final VoidCallback onHistory;
@@ -500,7 +610,7 @@ class _GoalTile extends StatelessWidget {
         null => null,
       },
       if (goal.measure case final measure?)
-        describeMeasure(measure, goal.cadence)
+        describeMeasure(measure, goal.cadence, goalNames: goalNames)
       else if (goal.cadence case final cadence?)
         cadences[cadence] ?? cadence,
       if (goal.stalePeriods case final stale? when stale > 0)
@@ -561,25 +671,71 @@ class _GoalTile extends StatelessWidget {
             ],
             HealthDot(rating: goal.health),
           ],
-          PopupMenuButton<String>(
-            tooltip: 'More for ${goalName(goal)}',
-            onSelected: (choice) => switch (choice) {
-              'sub' => onAddSubGoal(),
-              'history' => onHistory(),
-              _ => onSetStatus(choice),
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'sub', child: Text('Add sub-goal')),
-              const PopupMenuItem(value: 'history', child: Text('History')),
-              const PopupMenuDivider(),
-              for (final MapEntry(key: status, value: label) in _moveTo.entries)
-                if (status != goal.status)
-                  PopupMenuItem(value: status, child: Text(label)),
-            ],
-          ),
+          if (dragIndex case final index?)
+            ReorderableDragStartListener(
+              index: index,
+              child: Tooltip(
+                message: 'Drag to move ${goalName(goal)}',
+                child: const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Icon(Icons.drag_handle),
+                ),
+              ),
+            )
+          else
+            PopupMenuButton<String>(
+              tooltip: 'More for ${goalName(goal)}',
+              onSelected: (choice) => switch (choice) {
+                'sub' => onAddSubGoal(),
+                'history' => onHistory(),
+                _ => onSetStatus(choice),
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'sub', child: Text('Add sub-goal')),
+                const PopupMenuItem(value: 'history', child: Text('History')),
+                const PopupMenuDivider(),
+                for (final MapEntry(key: status, value: label)
+                    in _moveTo.entries)
+                  if (status != goal.status)
+                    PopupMenuItem(value: status, child: Text(label)),
+              ],
+            ),
         ],
       ),
       onTap: onTap,
+      onLongPress: onLongPress,
     );
   }
+}
+
+/// [goals] with the siblings [ids] (sharing a parent) put in that order
+/// among the places they hold, and the list rebuilt parents first, each
+/// goal's sub-goals after it, as the server lists them.
+GoalList _withSiblingOrder(GoalList goals, List<String> ids) {
+  final byId = {for (final goal in goals.goals) goal.id: goal};
+  final children = <String?, List<Goal>>{};
+  for (final goal in goals.goals) {
+    final parent = byId.containsKey(goal.parentId) ? goal.parentId : null;
+    children.putIfAbsent(parent, () => []).add(goal);
+  }
+  final siblings = children[byId[ids.first]?.parentId] ?? [];
+  final places = [
+    for (final (i, goal) in siblings.indexed)
+      if (ids.contains(goal.id)) i,
+  ];
+  for (var i = 0; i < places.length && i < ids.length; i++) {
+    siblings[places[i]] = byId[ids[i]]!;
+  }
+  final ordered = <Goal>[];
+  void visit(Goal goal) {
+    ordered.add(goal);
+    children[goal.id]?.forEach(visit);
+  }
+
+  children[null]?.forEach(visit);
+  return GoalList(
+    goals: ordered,
+    labelSlotsUsed: goals.labelSlotsUsed,
+    labelSlotsTotal: goals.labelSlotsTotal,
+  );
 }

@@ -355,6 +355,76 @@ void main() {
     );
   });
 
+  testWidgets('pressing and holding a goal reorders goals by dragging', (
+    tester,
+  ) async {
+    final repo = tree();
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.text('Hosting'));
+    await tester.pumpAndSettle();
+    expect(find.text('Reorder goals'), findsOneWidget);
+    expect(find.byTooltip('Add goal'), findsNothing);
+
+    // Hosting, dragged above Cooking.
+    final handle = find.byTooltip('Drag to move Hosting');
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    await tester.pump();
+    for (var i = 0; i < 10; i++) {
+      await gesture.moveBy(const Offset(0, -15));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(shownNames(tester).take(2), ['Hosting', 'Cooking']);
+    final saved = [for (final goal in (await repo.goals()).goals) goal.id];
+    expect(saved.indexOf('host'), lessThan(saved.indexOf('cook')));
+
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(find.text('Goals'), findsOneWidget);
+    expect(find.byTooltip('More for Hosting'), findsOneWidget);
+  });
+
+  testWidgets(
+    "a goal's parent is picked from the tree, and shown as its path",
+    (tester) async {
+      final repo = tree();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Hosting'));
+      await tester.pumpAndSettle();
+      final dialog = find.byType(AlertDialog);
+      final label = find.descendant(
+        of: dialog,
+        matching: find.text('parent_id'),
+      );
+      final row = find.ancestor(of: label, matching: find.byType(PropertyRow));
+      await tester.tap(find.descendant(of: row, matching: find.text('(none)')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(DropdownButton<String?>));
+      await tester.pumpAndSettle();
+      // Listed by name, not by path.
+      expect(find.text('Cooking › Tofu tikka'), findsNothing);
+      await tester.tap(find.text('Tofu tikka').last);
+      await tester.pumpAndSettle();
+      // Picked: its whole path.
+      expect(find.text('Cooking › Tofu tikka'), findsOneWidget);
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.text('Cooking › Tofu tikka'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
   /// Opens [goal]'s dialog, then its measure for editing.
   Future<Finder> openMeasure(WidgetTester tester, String goal) async {
     await tester.tap(find.text(goal));
@@ -388,6 +458,8 @@ void main() {
     await pickKind(tester, 'Time spent');
     await tester.enterText(find.widgetWithText(TextField, 'Target'), '10h');
     expect(find.text('per week'), findsOneWidget); // Cooking is weekly.
+    await tester.ensureVisible(find.byTooltip('Keep edit'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Keep edit'));
     await tester.pumpAndSettle();
     expect(
@@ -418,6 +490,47 @@ void main() {
 
     expect(find.text('Enter a target above 0.'), findsOneWidget);
     expect(find.text('Save 1 change'), findsNothing);
+  });
+
+  testWidgets("a measure can count chosen goals' events, without sub-goals", (
+    tester,
+  ) async {
+    final repo = tree();
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await openMeasure(tester, 'Cooking');
+    await pickKind(tester, 'Time spent');
+    await tester.enterText(find.widgetWithText(TextField, 'Target'), '10h');
+    await tester.tap(find.text('Chosen goals'));
+    await tester.pumpAndSettle();
+    final hosting = find.widgetWithText(CheckboxListTile, 'Hosting');
+    await tester.ensureVisible(hosting);
+    await tester.tap(hosting);
+    await tester.pumpAndSettle();
+    final subGoals = find.text('Include their sub-goals');
+    await tester.ensureVisible(subGoals);
+    await tester.tap(subGoals);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byTooltip('Keep edit'));
+    await tester.tap(find.byTooltip('Keep edit'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('10h per week, of Hosting (not sub-goals)'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Save 1 change'));
+    await tester.pumpAndSettle();
+
+    final cooking = (await repo.goals()).goals.firstWhere(
+      (g) => g.id == 'cook',
+    );
+    expect(cooking.measure, {
+      'kind': 'duration',
+      'target_min': 600,
+      'goal_ids': ['host'],
+      'include_sub_goals': false,
+    });
   });
 
   testWidgets(
