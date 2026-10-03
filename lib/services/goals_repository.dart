@@ -116,6 +116,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
     List<Goal> goals = const [],
     this.assessments = const {},
     this.asOf,
+    this.minutesByStatuses,
   ]) : _goals = [...goals];
 
   /// Each goal's history, by goal id.
@@ -123,6 +124,9 @@ class InMemoryGoalsRepository implements GoalsRepository {
 
   /// The last compaction, as [GoalList.asOf] gives it.
   final DateTime? asOf;
+
+  /// The time on goals by status, as [GoalList.minutesByStatuses] gives it.
+  final List<StatusMinutes>? minutesByStatuses;
 
   @override
   Future<List<Assessment>> history(Goal goal) async =>
@@ -150,8 +154,9 @@ class InMemoryGoalsRepository implements GoalsRepository {
     }
     return GoalList(
       goals: ordered,
-      labelSlotsUsed: _goals.where((g) => g.active).length,
+      labelSlotsUsed: _goals.where((g) => g.active && !g.isOverall).length,
       asOf: asOf,
+      minutesByStatuses: minutesByStatuses,
     );
   }
 

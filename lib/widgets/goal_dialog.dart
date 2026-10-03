@@ -32,6 +32,21 @@ const _hints = {
       "reflection. With none, it's rated by its sub-goals' average.",
 };
 
+/// What the overall goal's properties are edited as: it's always active
+/// and above the rest, and holds no label to color.
+final _overallKinds = {
+  for (final MapEntry(:key, :value) in _kinds.entries)
+    if (const {'name', 'measure', 'target', 'deadline', 'note'}.contains(key))
+      key: value,
+};
+
+const _overallHints = {
+  'measure':
+      "How everything's health is rated each day, 0-100, confirmed in the "
+      "daily reflection after the rest. With none, it's the average of the "
+      'top-level goals\'.',
+};
+
 String? _needsName(Map<String, Object?> values) => switch (values['name']) {
   final String name when name.trim().isNotEmpty => null,
   _ => 'A goal needs a name.',
@@ -70,10 +85,10 @@ Future<GoalList?> showGoalDialog(
     'measure': goal.measure,
     ...goal.properties,
   },
-  kinds: _kinds,
+  kinds: goal.isOverall ? _overallKinds : _kinds,
   choices: const {'status': goalStatuses},
   required: const {'name', 'status'},
-  hints: _hints,
+  hints: goal.isOverall ? {..._hints, ..._overallHints} : _hints,
   goals: goals,
   validate: _needsName,
   confirmSave: confirmSave,

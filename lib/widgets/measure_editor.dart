@@ -245,7 +245,7 @@ class _MeasureEditorState extends State<MeasureEditor> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 for (final goal in goals)
-                  if (goal.id case final id?)
+                  if (goal.id case final id? when !goal.isOverall)
                     CheckboxListTile(
                       dense: true,
                       contentPadding: EdgeInsetsDirectional.only(
@@ -293,9 +293,16 @@ class _MeasureEditorState extends State<MeasureEditor> {
             ? const Text("Couldn't load the sub-goals.")
             : const LinearProgressIndicator();
       }
+      // The overall goal's sub-goals are the top-level goals.
+      final overall = widget.goalId == overallGoalId;
       final subGoals = [
         for (final goal in goals)
-          if (goal.parentId == widget.goalId && goal.id != null) goal,
+          if (goal.id != null &&
+              !goal.isOverall &&
+              (overall
+                  ? goal.parentId == null
+                  : goal.parentId == widget.goalId))
+            goal,
       ];
       _subGoalIds = {for (final goal in subGoals) goal.id!};
       if (subGoals.isEmpty) return const Text('It has no sub-goals yet.');

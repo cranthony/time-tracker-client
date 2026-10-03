@@ -897,7 +897,11 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       }
       final list = snapshot.data;
       if (list == null) return const LinearProgressIndicator();
-      return build(list);
+      // Not a goal that can be a parent, or be given to an event.
+      return build([
+        for (final goal in list)
+          if (!goal.isOverall) goal,
+      ]);
     },
   );
 
