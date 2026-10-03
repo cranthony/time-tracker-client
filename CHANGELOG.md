@@ -6,6 +6,11 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.1.0
+
+- The note sheet has - and + buttons beside the time, to move it a
+  minute earlier or later, and a Now button to set it to now.
+
 ## 4.0.0
 
 - A time-spent, number-of-events or time-of-day measure can look at

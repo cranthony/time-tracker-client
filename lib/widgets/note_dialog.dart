@@ -80,6 +80,10 @@ class _NoteDialogState extends State<_NoteDialog> {
     });
   }
 
+  static const _dense = VisualDensity(horizontal: -4);
+
+  void _nudge(Duration by) => setState(() => _time = _time.add(by));
+
   void _submit() {
     final text = _description.text.trim();
     Navigator.of(context).pop(
@@ -149,12 +153,36 @@ class _NoteDialogState extends State<_NoteDialog> {
           const SizedBox(height: 12),
           Row(
             children: [
-              ActionChip(
-                avatar: const Icon(Icons.schedule),
-                label: Text(time),
-                onPressed: _pickTime,
+              // Wraps "Now" under the time on a narrow screen.
+              Expanded(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.remove),
+                      tooltip: 'A minute earlier',
+                      visualDensity: _dense,
+                      onPressed: () => _nudge(const Duration(minutes: -1)),
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.schedule),
+                      label: Text(time),
+                      onPressed: _pickTime,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add),
+                      tooltip: 'A minute later',
+                      visualDensity: _dense,
+                      onPressed: () => _nudge(const Duration(minutes: 1)),
+                    ),
+                    TextButton(
+                      style: TextButton.styleFrom(visualDensity: _dense),
+                      onPressed: () => setState(() => _time = DateTime.now()),
+                      child: const Text('Now'),
+                    ),
+                  ],
+                ),
               ),
-              const Spacer(),
               FilledButton(
                 onPressed: _submit,
                 child: Text(_editing ? 'Save' : 'Add'),

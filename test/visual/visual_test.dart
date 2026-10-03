@@ -205,5 +205,21 @@ void main() {
         NotesScreen(repository: notes, outbox: outbox, clock: () => _now),
       );
     });
+
+    testWidgets('editing a note ($mode)', (tester) async {
+      final notes = sample.notesRepository();
+      final outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: notes)
+        ..start();
+      addTearDown(outbox.stop);
+      await render(
+        tester,
+        'note_sheet',
+        NotesScreen(repository: notes, outbox: outbox, clock: () => _now),
+        then: () async {
+          await tester.tap(find.text('Lunch, finally'));
+          await tester.pumpAndSettle();
+        },
+      );
+    });
   }
 }
