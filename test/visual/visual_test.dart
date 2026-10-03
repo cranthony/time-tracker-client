@@ -90,6 +90,33 @@ void main() {
       );
     });
 
+    for (final summary in [null, ...GoalSummary.values.skip(1)]) {
+      // Null: the menu open, picking one.
+      final name = switch (summary) {
+        null => 'goals_summary_menu',
+        _ => 'goals_summary_${summary.name}',
+      };
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          GoalsScreen(
+            repository: sample.goalsRepository(),
+            serverLabel: 'sample',
+          ),
+          then: () async {
+            await tester.tap(find.byTooltip('Show under each goal…'));
+            await tester.pumpAndSettle();
+            if (summary == null) return;
+            await tester.tap(
+              find.widgetWithText(RadioMenuButton<GoalSummary>, summary.label),
+            );
+            await tester.pumpAndSettle();
+          },
+        );
+      });
+    }
+
     testWidgets('goal measure ($mode)', (tester) async {
       await render(
         tester,
