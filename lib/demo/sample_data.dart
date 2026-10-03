@@ -13,8 +13,9 @@ import '../services/notes_repository.dart';
 /// to [now], so the sample never goes stale.
 ///
 /// The goals cover what the Goals page can show: every status, sub-goals,
-/// own and inherited colors, health with a sparkline, periods gone
-/// unassessed, a skipped period, and a proposed rating not yet confirmed.
+/// own and inherited colors, health with a sparkline, days gone unrated,
+/// a skipped day, a proposed rating not yet confirmed, and the time spent
+/// on each up to the last compaction.
 class SampleData {
   SampleData(this.now);
 
@@ -24,11 +25,17 @@ class SampleData {
   DateTime _at(int hour, [int minute = 0, int dayOffset = 0]) =>
       _today.add(Duration(days: dayOffset, hours: hour, minutes: minute));
 
-  NotesRepository notesRepository() => InMemoryNotesRepository(notes);
+  NotesRepository notesRepository() => InMemoryNotesRepository(
+    notes,
+    CompactionStatus(
+      lastCompaction: lastCompaction,
+      latestCompacted: latestCompacted,
+    ),
+  );
   EventsRepository eventsRepository() =>
       InMemoryEventsRepository(events, recurrences);
   GoalsRepository goalsRepository() =>
-      InMemoryGoalsRepository(goals, assessments);
+      InMemoryGoalsRepository(goals, assessments, lastCompaction);
 
   List<Note> get notes => [
     Note(timestamp: _at(7, 5), description: 'Up, a little late'),
@@ -118,7 +125,21 @@ class SampleData {
     'host': 'Host friends weekly',
     'cook': 'Learn vegetarian cooking',
     'tofu': 'Tofu tikka masala',
+    'neighbor': 'Be a good neighbor',
+    'parents': 'Visit parents every 2 months',
+    'cousins': 'Visit cousins every week',
   };
+
+  /// When notes were last compacted, which goals' recent time is counted
+  /// up to.
+  DateTime get lastCompaction => _at(7, 30);
+
+  /// The last compacted note: before [notes], which aren't yet.
+  Note get latestCompacted => Note(
+    timestamp: _at(22, 40, -1),
+    description: 'Lights out',
+    compactionId: 'sample',
+  );
 
   List<Goal> get goals => [
     Goal.fromJson({
@@ -128,9 +149,9 @@ class SampleData {
       'background_color': '#8e24aa',
       'effective_color': '#8e24aa',
       'priority': 1,
-      'cadence': 'weekly',
-      'measure': {'kind': 'duration', 'target_min': 600},
+      'measure': {'kind': 'duration', 'target_min': 600, 'interval_days': 7},
       ..._health('tracker'),
+      ..._time(240, 1500),
     }),
     Goal.fromJson({
       'id': 'wake',
@@ -139,9 +160,9 @@ class SampleData {
       'effective_color': '#039be5',
       'priority': 0,
       'fixed_time': true,
-      'cadence': 'daily',
       'measure': {'kind': 'wake_time', 'target': '07:00', 'grace_min': 10},
       ..._health('wake', stale: 2),
+      ..._time(60, 420),
     }),
     Goal.fromJson({
       'id': 'host',
@@ -149,9 +170,15 @@ class SampleData {
       'status': 'active',
       'background_color': '#f4511e',
       'effective_color': '#f4511e',
-      'cadence': 'weekly',
-      'measure': {'kind': 'count', 'target': 1, 'noun': 'dinners'},
+      'measure': {
+        'kind': 'count',
+        'target': 1,
+        'noun': 'dinners',
+        'interval_days': 7,
+        'zero_at_days': 14,
+      },
       ..._health('host'),
+      ..._time(0, 150),
     }),
     Goal.fromJson({
       'id': 'cook',
@@ -159,9 +186,9 @@ class SampleData {
       'status': 'active',
       'background_color': '#33b679',
       'effective_color': '#33b679',
-      'cadence': 'monthly',
-      'measure': {'kind': 'rollup', 'agg': 'min'},
+      'measure': {'kind': 'rollup', 'agg': 'percentile', 'percentile': 0},
       ..._health('cook'),
+      ..._time(120, 270),
     }),
     Goal.fromJson({
       'id': 'tofu',
@@ -169,9 +196,54 @@ class SampleData {
       'name': _names['tofu'],
       'status': 'active',
       'effective_color': '#33b679',
-      'cadence': 'weekly',
-      'measure': {'kind': 'subjective', 'prompt': 'How did it turn out?'},
+      'measure': {
+        'kind': 'subjective',
+        'prompt': 'How did it turn out?',
+        'interval_days': 7,
+      },
       ..._health('tofu'),
+      ..._time(120, 270),
+    }),
+    Goal.fromJson({
+      'id': 'neighbor',
+      'name': _names['neighbor'],
+      'status': 'active',
+      'background_color': '#f6bf26',
+      'effective_color': '#f6bf26',
+      ..._health('neighbor'),
+      ..._time(0, 180),
+    }),
+    Goal.fromJson({
+      'id': 'parents',
+      'parent_id': 'neighbor',
+      'name': _names['parents'],
+      'status': 'active',
+      'effective_color': '#f6bf26',
+      'measure': {
+        'kind': 'count',
+        'target': 1,
+        'noun': 'visits',
+        'interval_days': 60,
+        'zero_at_days': 90,
+      },
+      ..._health('parents'),
+      ..._time(0, 0),
+    }),
+    Goal.fromJson({
+      'id': 'cousins',
+      'parent_id': 'neighbor',
+      'name': _names['cousins'],
+      'status': 'active',
+      'effective_color': '#f6bf26',
+      'measure': {
+        'kind': 'count',
+        'target': 1,
+        'noun': 'visits',
+        'interval_days': 7,
+        'zero_at_days': 14,
+      },
+      ..._health('cousins'),
+      ..._time(0, 180),
     }),
     Goal.fromJson({
       'id': 'book',
@@ -182,7 +254,6 @@ class SampleData {
       'id': 'guitar',
       'name': 'Learn the guitar',
       'status': 'inactive',
-      'cadence': 'weekly',
     }),
     Goal.fromJson({'id': '10k', 'name': 'Run a 10k', 'status': 'completed'}),
     Goal.fromJson({
@@ -193,54 +264,55 @@ class SampleData {
     Goal.fromJson({'id': 'typo', 'name': 'Typo goal', 'status': 'deleted'}),
   ];
 
-  /// Each assessed goal's ratings over its last 8 periods, oldest first;
-  /// null is a skipped period. The last is proposed, not yet confirmed.
+  /// Each rated goal's ratings over its last 8 days, oldest first; null is
+  /// a skipped day. The last is proposed, not yet confirmed.
   static const _ratings = {
     'tracker': [55, 62, null, 70, 78, 74, 88, 82],
     'wake': [100, 92, 60, 30, 100, 84, 64, 50],
-    'host': [100, 0, 100, 100, 0, 100, 100, 100],
-    'cook': [40, 45, 52, 58, 61, 66, 72, 75],
+    'host': [100, 93, 86, 79, 71, 100, 100, 100],
+    'cook': [20, 35, 45, 45, 60, 60, 65, 80],
     'tofu': [20, 35, 50, 45, 60, 70, 65, 80],
-  };
-
-  static const _cadences = {
-    'tracker': 'weekly',
-    'wake': 'daily',
-    'host': 'weekly',
-    'cook': 'monthly',
-    'tofu': 'weekly',
+    'neighbor': [100, 100, 96, 89, 82, 100, 100, 100],
+    'parents': [100, 100, 100, 100, 100, 100, 100, 100],
+    'cousins': [100, 100, 93, 79, 64, 100, 100, 100],
   };
 
   /// The cache columns the server keeps: the latest confirmed rating, its
-  /// period, and the trend.
+  /// day, and the trend.
   Map<String, Object?> _health(String id, {int stale = 0}) {
     final ratings = _ratings[id]!;
-    final periods = _periods(_cadences[id]!, ratings.length);
+    final days = _days(ratings.length);
     final confirmed = ratings.sublist(0, ratings.length - 1); // last: proposed
     return {
       'health': confirmed.lastWhere((r) => r != null),
-      'health_period': periods[confirmed.length - 1],
+      'health_period': days[confirmed.length - 1],
       'health_trend': [
         ...confirmed.map((r) => r?.toString() ?? '-'),
         '-',
       ].join(','),
-      'stale_periods': stale,
+      'stale_days': stale,
     };
   }
+
+  /// Minutes in the last 24 hours and 7 days, up to [lastCompaction].
+  Map<String, Object?> _time(int day, int week) => {
+    'minutes_24h': day,
+    'minutes_7d': week,
+  };
 
   Map<String, List<Assessment>> get assessments => {
     for (final MapEntry(key: id, value: ratings) in _ratings.entries)
       id: [
-        for (final (i, period) in _periods(
-          _cadences[id]!,
-          ratings.length,
-        ).indexed)
+        for (final (i, day) in _days(ratings.length).indexed)
           Assessment(
             goalId: id,
-            cadence: _cadences[id],
-            period: period,
+            day: day,
             rating: ratings[i],
-            method: id == 'tofu' ? 'subjective' : 'metric',
+            method: switch (id) {
+              'tofu' => 'subjective',
+              'cook' || 'neighbor' => 'rollup',
+              _ => 'metric',
+            },
             status: i == ratings.length - 1 ? 'proposed' : 'confirmed',
             explanation: ratings[i] == null || id == 'tofu'
                 ? null
@@ -251,36 +323,27 @@ class SampleData {
   };
 
   String _explanation(String id, int rating) => switch (id) {
-    'tracker' => '${rating * 6 ~/ 60}h of 10h target → $rating',
+    'tracker' => '${rating * 6 ~/ 60}h of 10h in the last 7 days → $rating',
     'wake' =>
       rating == 100
           ? 'Woke 06:55; target 07:00 with 10 min grace → 100'
           : 'Woke later than 07:10 → $rating',
-    'host' => '${rating ~/ 100} of 1 dinners → $rating',
-    _ => 'Min of its sub-goals → $rating',
+    'host' || 'parents' || 'cousins' =>
+      rating == 100
+          ? '1 of 1 in the last ${id == 'parents' ? 60 : 7} days → 100'
+          : '0 of 1 in the last 7 days; met until a few days ago → $rating',
+    'cook' => 'Lowest of 1 sub-goal → $rating',
+    _ => 'Mean of 2 sub-goals → $rating',
   };
 
-  /// The ids of the [count] periods of [cadence] that ended most recently,
-  /// oldest first.
-  List<String> _periods(String cadence, int count) {
-    String day(DateTime d) =>
-        '${d.year.toString().padLeft(4, '0')}-'
-        '${d.month.toString().padLeft(2, '0')}-'
-        '${d.day.toString().padLeft(2, '0')}';
-    final ids = <String>[];
-    for (var back = count; back >= 1; back--) {
-      ids.add(switch (cadence) {
-        'daily' => day(_today.subtract(Duration(days: back))),
-        'weekly' => 'week-${day(_sunday.subtract(Duration(days: 7 * back)))}',
-        _ => () {
-          final month = DateTime(_today.year, _today.month - back);
-          return '${month.year}-${month.month.toString().padLeft(2, '0')}';
-        }(),
-      });
-    }
-    return ids;
-  }
-
-  /// The Sunday this week started on.
-  DateTime get _sunday => _today.subtract(Duration(days: _today.weekday % 7));
+  /// The [count] days that ended most recently, oldest first.
+  List<String> _days(int count) => [
+    for (var back = count; back >= 1; back--)
+      () {
+        final d = _today.subtract(Duration(days: back));
+        return '${d.year.toString().padLeft(4, '0')}-'
+            '${d.month.toString().padLeft(2, '0')}-'
+            '${d.day.toString().padLeft(2, '0')}';
+      }(),
+  ];
 }

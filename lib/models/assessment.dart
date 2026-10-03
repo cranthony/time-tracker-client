@@ -1,10 +1,9 @@
-/// One health rating of one goal for one period of its cadence, mirroring
-/// the Time Tracker MCP server's `Assessment`.
+/// One health rating of one goal for one day, mirroring the Time Tracker
+/// MCP server's `Assessment`.
 class Assessment {
   const Assessment({
     required this.goalId,
-    required this.period,
-    this.cadence,
+    required this.day,
     this.rating,
     this.method,
     this.status = 'confirmed',
@@ -14,11 +13,10 @@ class Assessment {
 
   final String goalId;
 
-  /// e.g. "2026-09-30", "week-2026-09-27", "2026-09", "2026-09..10".
-  final String period;
-  final String? cadence;
+  /// The day rated, e.g. "2026-09-30".
+  final String day;
 
-  /// 0-100; null for a period deliberately skipped.
+  /// 0-100; null for a day deliberately skipped.
   final int? rating;
 
   /// metric, subjective, llm or rollup.
@@ -38,8 +36,8 @@ class Assessment {
 
   factory Assessment.fromJson(Map<String, dynamic> json) => Assessment(
     goalId: json['goal_id'] as String,
-    period: json['period'] as String,
-    cadence: json['cadence'] as String?,
+    // "period" from a server from before goals were only rated daily.
+    day: (json['day'] ?? json['period']) as String,
     rating: json['rating'] is int ? json['rating'] as int : null,
     method: json['method'] as String?,
     status: json['status'] as String? ?? 'proposed',

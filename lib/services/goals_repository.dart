@@ -25,8 +25,8 @@ abstract class GoalsRepository {
   /// the places they hold. Returns every goal, as [goals] does.
   Future<GoalList> reorderGoals(List<String> ids);
 
-  /// [goal]'s recent assessments (its last 12 periods), proposed and
-  /// confirmed, oldest first.
+  /// [goal]'s recent assessments (its last 12 days and today), proposed
+  /// and confirmed, oldest first.
   Future<List<Assessment>> history(Goal goal);
 }
 
@@ -115,10 +115,14 @@ class InMemoryGoalsRepository implements GoalsRepository {
   InMemoryGoalsRepository([
     List<Goal> goals = const [],
     this.assessments = const {},
+    this.asOf,
   ]) : _goals = [...goals];
 
   /// Each goal's history, by goal id.
   final Map<String, List<Assessment>> assessments;
+
+  /// The last compaction, as [GoalList.asOf] gives it.
+  final DateTime? asOf;
 
   @override
   Future<List<Assessment>> history(Goal goal) async =>
@@ -147,6 +151,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
     return GoalList(
       goals: ordered,
       labelSlotsUsed: _goals.where((g) => g.active).length,
+      asOf: asOf,
     );
   }
 
@@ -191,12 +196,13 @@ class InMemoryGoalsRepository implements GoalsRepository {
     'background_color': goal.backgroundColor,
     'priority': goal.priority,
     'fixed_time': goal.fixedTime,
-    'cadence': goal.cadence,
     'measure': goal.measure,
     'effective_color': goal.effectiveColor,
     'health': goal.health,
     'health_period': goal.healthPeriod,
     'health_trend': goal.healthTrend.map((r) => r?.toString() ?? '-').join(','),
-    'stale_periods': goal.stalePeriods,
+    'stale_days': goal.staleDays,
+    'minutes_24h': goal.minutes24h,
+    'minutes_7d': goal.minutes7d,
   };
 }

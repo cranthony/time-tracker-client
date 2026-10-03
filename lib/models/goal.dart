@@ -13,13 +13,14 @@ class Goal {
     this.backgroundColor,
     this.priority,
     this.fixedTime,
-    this.cadence,
     this.measure,
     this.effectiveColor,
     this.health,
     this.healthPeriod,
     this.healthTrend = const [],
-    this.stalePeriods,
+    this.staleDays,
+    this.minutes24h,
+    this.minutes7d,
     this.path,
     this.properties = const {},
   });
@@ -44,12 +45,9 @@ class Goal {
   /// Whether its events stay at their set time; null if it doesn't say.
   final bool? fixedTime;
 
-  /// How often its health is assessed: daily, weekly, monthly or
-  /// every_2_months; null if it never is.
-  final String? cadence;
-
-  /// How its health is rated each period, e.g. {"kind": "duration",
-  /// "target_min": 600}; null if it isn't measured. See measure.dart.
+  /// How its health is rated in each day's reflection, e.g. {"kind":
+  /// "duration", "target_min": 600}; null if it isn't measured (then it's
+  /// rated by its sub-goals', if any are). See measure.dart.
   final Map<String, Object?>? measure;
 
   /// The color its label is shown in: [backgroundColor], or the one it
@@ -60,16 +58,22 @@ class Goal {
   /// Its latest confirmed rating (0-100), if it's had one.
   final int? health;
 
-  /// The latest period it was assessed for, e.g. "week-2026-09-27".
+  /// The latest day it was rated for, e.g. "2026-09-30".
   final String? healthPeriod;
 
-  /// Its last few ratings at its cadence, oldest first; null for a period
-  /// with none.
+  /// Its last 8 days' ratings, oldest first; null for a day with none.
   final List<int?> healthTrend;
 
-  /// How many of its periods have ended unassessed; null unless it's
-  /// active and has a cadence.
-  final int? stalePeriods;
+  /// How many days have ended unrated since it was last rated; null unless
+  /// it's rated (it's active, with a measure or rated sub-goals).
+  final int? staleDays;
+
+  /// Minutes spent on it and its sub-goals in the 24 hours up to
+  /// [GoalList.asOf]; null without one.
+  final int? minutes24h;
+
+  /// The same, over the 7 days up to [GoalList.asOf].
+  final int? minutes7d;
 
   /// Its names from the top of the tree down, e.g. "Cooking › Tofu".
   final String? path;
@@ -91,7 +95,6 @@ class Goal {
     backgroundColor: json['background_color'] as String?,
     priority: json['priority'] as int?,
     fixedTime: json['fixed_time'] as bool?,
-    cadence: json['cadence'] as String?,
     measure: switch (json['measure']) {
       final Map measure => Map.unmodifiable(measure.cast<String, Object?>()),
       _ => null,
@@ -106,7 +109,9 @@ class Goal {
               .where((c) => c.isNotEmpty))
         int.tryParse(cell),
     ],
-    stalePeriods: json['stale_periods'] as int?,
+    staleDays: json['stale_days'] as int?,
+    minutes24h: json['minutes_24h'] as int?,
+    minutes7d: json['minutes_7d'] as int?,
     path: json['path'] as String?,
     properties: Map.unmodifiable(json),
   );
@@ -118,12 +123,17 @@ class GoalList {
     required this.goals,
     this.labelSlotsUsed = 0,
     this.labelSlotsTotal = 200,
+    this.asOf,
   });
 
   /// Parents before their children.
   final List<Goal> goals;
   final int labelSlotsUsed;
   final int labelSlotsTotal;
+
+  /// When notes were last compacted into the calendar, which each goal's
+  /// recent time is counted up to; null if they never have been.
+  final DateTime? asOf;
 
   factory GoalList.fromJson(Map<String, dynamic> json) => GoalList(
     goals: [
@@ -132,6 +142,10 @@ class GoalList {
     ],
     labelSlotsUsed: json['label_slots_used'] as int? ?? 0,
     labelSlotsTotal: json['label_slots_total'] as int? ?? 200,
+    asOf: switch (json['as_of']) {
+      final String asOf => DateTime.tryParse(asOf),
+      _ => null,
+    },
   );
 }
 
@@ -155,20 +169,3 @@ const goalStatuses = {
 /// The statuses the Goals page shows until told otherwise: the goals still
 /// in play.
 const defaultGoalStatuses = {'proposed', 'active', 'inactive'};
-
-/// What one period of each cadence is called, for "2 weeks unassessed".
-const cadencePeriodNames = {
-  'daily': ('day', 'days'),
-  'weekly': ('week', 'weeks'),
-  'monthly': ('month', 'months'),
-  'every_2_months': ('2-month period', '2-month periods'),
-};
-
-/// The cadences a goal can have, as the server names them, and as the app
-/// shows them.
-const cadences = {
-  'daily': 'Daily',
-  'weekly': 'Weekly',
-  'monthly': 'Monthly',
-  'every_2_months': 'Every 2 months',
-};

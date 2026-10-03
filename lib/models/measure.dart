@@ -1,19 +1,23 @@
-import 'goal.dart';
-
-/// How a goal's health is rated each period of its cadence, mirroring the
+/// How a goal's health is rated in each day's reflection, mirroring the
 /// MCP server's measure specs (its utilities/goal_measures.py): a JSON
-/// object with a "kind" and that kind's fields.
+/// object with a "kind" and that kind's fields. Every active goal is
+/// reflected on daily; one without a measure is rated as the average of
+/// its sub-goals'.
 ///
 /// | kind         | fields                                                 |
 /// | ------------ | ------------------------------------------------------ |
-/// | `duration`   | `target_min`: minutes per period                       |
-/// | `count`      | `target`: events per period; optional `noun`           |
-/// | (both)       | optional `goal_ids`, whose events count in place of    |
-/// |              | its goal's, and `include_sub_goals` (default true)     |
+/// | `duration`   | `target_min`: minutes per interval                     |
+/// | `count`      | `target`: events per interval; optional `noun`         |
+/// | (both)       | optional `interval_days` (default 1), `zero_at_days`   |
+/// |              | (rated by how long ago the target was last met,        |
+/// |              | reaching 0 then), `goal_ids`, whose events count in    |
+/// |              | place of its goal's, and `include_sub_goals`           |
 /// | `wake_time`  | `target` "HH:MM"; optional `grace_min`, `zero_at_min`  |
-/// | `subjective` | optional `prompt`, asked in a reflection               |
-/// | `llm`        | `rubric` Claude rates the period against               |
-/// | `rollup`     | optional `agg`: "min" (default) or "mean"              |
+/// | `subjective` | `prompt`, asked in a reflection every `interval_days`  |
+/// |              | (default 1), carried over from the day before between  |
+/// | `llm`        | `rubric` Claude rates the day against                  |
+/// | `rollup`     | optional `agg`: "mean" (default), "weighted" (with     |
+/// |              | `weights`) or "percentile" (with `percentile`)         |
 typedef Measure = Map<String, Object?>;
 
 /// The kinds of measure, as the server names them, and as the app shows
@@ -30,19 +34,30 @@ const measureKinds = {
 /// What each kind of measure rates, said under its picker.
 const measureKindHints = {
   'duration':
-      "The time spent on its events (and its sub-goals') each "
-      'period, against a target.',
+      "The time spent on its events (and its sub-goals') over the last "
+      'few days, against a target.',
   'count':
-      "How many of its events (and its sub-goals') there are each "
-      'period, against a target.',
+      "How many of its events (and its sub-goals') there were over the last "
+      'few days, against a target.',
   'wake_time':
       'When you got up: full marks within the grace, falling to '
-      'none at "zero at" minutes late. Averaged over the period.',
-  'subjective': 'You rate it yourself in each reflection.',
+      'none at "zero at" minutes late.',
+  'subjective':
+      "You're asked in a reflection every few days; on the days between, "
+      "the day before's rating carries over. Rating it any time starts the "
+      'count again.',
   'llm':
-      'Claude rates the period against your rubric, reading its events '
-      'and notes, for you to confirm in a reflection.',
-  'rollup': 'The lowest, or the average, of its sub-goals\' ratings.',
+      'Claude rates the day against your rubric, reading its events, notes '
+      "and sub-goals' ratings, for you to confirm in a reflection.",
+  'rollup': "Its sub-goals' ratings that day, combined.",
+};
+
+/// How a rollup combines its sub-goals' ratings, as the server names them,
+/// and as the app shows them.
+const rollupAggregates = {
+  'mean': 'Average',
+  'weighted': 'Weighted',
+  'percentile': 'Percentile',
 };
 
 /// Whole numbers as ints, so 600.0 and 600 compare equal.
@@ -50,20 +65,8 @@ num _tidy(num n) => n == n.roundToDouble() ? n.round() : n;
 
 num? _number(Object? value) => value is num ? _tidy(value) : null;
 
-/// Its cadence's period, as in "10h per week".
-String perPeriod(String? cadence) => switch (cadence) {
-  'daily' => 'per day',
-  'weekly' => 'per week',
-  'monthly' => 'per month',
-  'every_2_months' => 'per 2 months',
-  _ => 'per period',
-};
-
-/// ", weekly", or nothing without a cadence.
-String _rated(String? cadence) => switch (cadences[cadence]) {
-  final name? => ', ${name.toLowerCase()}',
-  null => '',
-};
+/// [days] as "day", "7 days".
+String _days(num days) => days == 1 ? 'day' : '$days days';
 
 /// [minutes] as "10h", "45m" or "1h 30m".
 String formatMinutes(num minutes) {
@@ -73,15 +76,27 @@ String formatMinutes(num minutes) {
   return rest == 0 ? '${hours}h' : '${hours}h ${rest}m';
 }
 
-/// A line saying what [measure] rates, at [cadence]: "10h per week",
-/// "1 dinner per week", "Up by 07:00, daily". With [full], a wake-up
-/// time's grace is said too, and a subjective measure's prompt and an llm
-/// one's rubric follow on lines of their own. A measure of other goals'
-/// events names them, from [goalNames] if it has them: "10h per week, of
-/// Cooking, Hosting".
+/// [n] as "1st", "2nd", "50th".
+String _ordinal(num n) {
+  final whole = n.round();
+  if (whole != n) return '${n}th';
+  final teen = whole % 100 >= 11 && whole % 100 <= 13;
+  return '$whole${switch (whole % 10) {
+    1 when !teen => 'st',
+    2 when !teen => 'nd',
+    3 when !teen => 'rd',
+    _ => 'th',
+  }}';
+}
+
+/// A line saying what [measure] rates: "10h per 7 days", "1 visit per 60
+/// days, 0 at 90", "Up by 07:00". With [full], a wake-up time's grace is
+/// said too, and a subjective measure's prompt and an llm one's rubric
+/// follow on lines of their own. A measure of other goals' events names
+/// them, from [goalNames] if it has them: "10h per day, of Cooking,
+/// Hosting".
 String describeMeasure(
-  Measure measure,
-  String? cadence, {
+  Measure measure, {
   bool full = false,
   Map<String?, String> goalNames = const {},
 }) {
@@ -93,40 +108,55 @@ String describeMeasure(
     (_, false) => ', not sub-goals',
     _ => '',
   };
+  final per = 'per ${_days(_number(measure['interval_days']) ?? 1)}';
+  final zeroAt = switch (_number(measure['zero_at_days'])) {
+    final days? => ', 0 at $days days',
+    null => '',
+  };
   switch (kind) {
     case 'duration':
       final target = _number(measure['target_min']);
       return target == null
-          ? 'Time spent${_rated(cadence)}$of'
-          : '${formatMinutes(target)} ${perPeriod(cadence)}$of';
+          ? 'Time spent$of'
+          : '${formatMinutes(target)} $per$zeroAt$of';
     case 'count':
       final target = _number(measure['target']);
       final noun = switch (measure['noun']) {
         final String noun when noun.trim().isNotEmpty => noun.trim(),
         _ => 'events',
       };
-      if (target == null) return 'Number of $noun${_rated(cadence)}$of';
+      if (target == null) return 'Number of $noun$of';
       // "1 dinner", not "1 dinners".
       final shown = target == 1 && noun.endsWith('s') && noun.length > 1
           ? noun.substring(0, noun.length - 1)
           : noun;
-      return '$target $shown ${perPeriod(cadence)}$of';
+      return '$target $shown $per$zeroAt$of';
     case 'wake_time':
       final grace = _number(measure['grace_min']) ?? 0;
       return 'Up by ${measure['target'] ?? '?'}'
-          '${full && grace > 0 ? ' ($grace min grace)' : ''}'
-          '${_rated(cadence)}';
+          '${full && grace > 0 ? ' ($grace min grace)' : ''}';
     case 'subjective':
       final prompt = measure['prompt'];
-      return 'Your rating${_rated(cadence)}'
+      final every = _number(measure['interval_days']) ?? 1;
+      return 'Your rating${every == 1 ? '' : ', asked every ${_days(every)}'}'
           '${full && prompt is String ? '\n“$prompt”' : ''}';
     case 'llm':
       final rubric = measure['rubric'];
-      return "Claude's judgement${_rated(cadence)}"
+      return "Claude's judgement"
           '${full && rubric is String ? '\n$rubric' : ''}';
     case 'rollup':
-      return '${measure['agg'] == 'mean' ? 'Average' : 'Lowest'} sub-goal '
-          'rating${_rated(cadence)}';
+      return switch (measure['agg']) {
+        'weighted' => 'Weighted average of sub-goals',
+        'percentile' => switch (_number(measure['percentile'])) {
+          0 => 'Lowest sub-goal rating',
+          100 => 'Highest sub-goal rating',
+          final p? => '${_ordinal(p)} percentile of sub-goals',
+          null => 'Percentile of sub-goals',
+        },
+        // From before percentiles.
+        'min' => 'Lowest sub-goal rating',
+        _ => 'Average sub-goal rating',
+      };
     default:
       return '$measure';
   }
@@ -141,14 +171,22 @@ String? measureProblem(Measure measure) {
     return 'Choose at least one goal whose events count.';
   }
   switch (measure['kind']) {
-    case 'duration':
-      if (!positive(measure['target_min'])) {
-        return 'Enter a target time, like 10h or 1h 30m.';
+    case 'duration' || 'count':
+      if (measure['kind'] == 'duration') {
+        if (!positive(measure['target_min'])) {
+          return 'Enter a target time, like 10h or 1h 30m.';
+        }
+      } else {
+        if (!positive(measure['target'])) return 'Enter a target above 0.';
+        if (measure.containsKey('noun') && !text(measure['noun'])) {
+          return "Leave what's counted empty, or name it.";
+        }
       }
-    case 'count':
-      if (!positive(measure['target'])) return 'Enter a target above 0.';
-      if (measure.containsKey('noun') && !text(measure['noun'])) {
-        return "Leave what's counted empty, or name it.";
+      final interval = measure['interval_days'] ?? 1;
+      if (!positive(interval)) return 'The days to look back must be above 0.';
+      final zeroAt = measure['zero_at_days'];
+      if (zeroAt != null && (zeroAt is! num || zeroAt <= (interval as num))) {
+        return '"Zero at" must be more days than it looks back.';
       }
     case 'wake_time':
       final target = measure['target'];
@@ -165,18 +203,32 @@ String? measureProblem(Measure measure) {
         return '"Zero at" must be more minutes late than the grace.';
       }
     case 'subjective':
-      if (measure.containsKey('prompt') && !text(measure['prompt'])) {
-        return 'Leave the question empty, or ask one.';
+      if (!text(measure['prompt'])) return 'Ask a question.';
+      if (!positive(measure['interval_days'] ?? 1)) {
+        return 'Ask it every 1 day or more.';
       }
     case 'llm':
       if (!text(measure['rubric'])) {
-        return 'Say what Claude should rate the period against.';
+        return 'Say what Claude should rate the day against.';
       }
     case 'rollup':
-      if (measure.containsKey('agg') &&
-          measure['agg'] != 'min' &&
-          measure['agg'] != 'mean') {
-        return 'Pick lowest or average.';
+      switch (measure['agg'] ?? 'mean') {
+        case 'mean':
+          break;
+        case 'weighted':
+          final weights = measure['weights'];
+          if (weights is! Map ||
+              weights.isEmpty ||
+              weights.values.any((w) => w is! num || w < 0)) {
+            return 'Give at least one sub-goal a weight, 0 or more.';
+          }
+        case 'percentile':
+          final p = measure['percentile'];
+          if (p is! num || p < 0 || p > 100) {
+            return 'The percentile must be from 0 (lowest) to 100 (highest).';
+          }
+        default:
+          return 'Pick average, weighted or percentile.';
       }
     default:
       return 'Pick a kind of measure.';

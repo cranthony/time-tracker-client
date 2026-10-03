@@ -37,6 +37,28 @@ class Note {
   };
 }
 
+/// When notes were last compacted into the calendar, and the latest note
+/// compacted, mirroring the server's `get_compaction_status`.
+class CompactionStatus {
+  const CompactionStatus({this.lastCompaction, this.latestCompacted});
+
+  /// Null if notes have never been compacted.
+  final DateTime? lastCompaction;
+  final Note? latestCompacted;
+
+  factory CompactionStatus.fromJson(Map<String, dynamic> json) =>
+      CompactionStatus(
+        lastCompaction: switch (json['last_compaction']) {
+          final String at => DateTime.tryParse(at),
+          _ => null,
+        },
+        latestCompacted: switch (json['latest_compacted_note']) {
+          final Map note => Note.fromJson(note.cast<String, dynamic>()),
+          _ => null,
+        },
+      );
+}
+
 /// [time] as ISO 8601 in the device's time zone, with its UTC offset at
 /// that moment (so daylight saving is right), e.g. 2026-09-30T08:15:00-07:00.
 /// Dart's own toIso8601String() leaves the offset off local times.

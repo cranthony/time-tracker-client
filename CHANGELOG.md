@@ -6,6 +6,28 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 3.0.0
+
+- Goals are rated once a day, in the daily reflection, and no longer have
+  a cadence. A goal without a measure is rated as the average of its
+  sub-goals'. Each goal's strike line is its last 8 days' ratings, and it
+  says how many days have gone unrated.
+- Measures: time spent and number of events count over the last few days
+  ("1 visit per 60 days"), and can fall to 0 by a "zero at" number of days
+  since the target was last met. Your rating is asked every few days,
+  carried over in between. From sub-goals can be their average, a weighted
+  average, or a percentile (0 for the lowest, 100 for the highest).
+- The Goals page shows the time spent on each goal (and its sub-goals) in
+  the last 24 hours and 7 days, up to when notes were last compacted, which
+  it notes at the top.
+- On the Goals page, tapping a goal's arrow or flag shows or hides its
+  sub-goals, and tapping its ratings shows its history. Its menu adds a
+  sub-goal, or shows its history or details. Its status is changed in its
+  details, by tapping it.
+- The Notes page shows when notes were last compacted, and the latest note
+  compacted.
+- Needs a server whose goals are rated daily (with `get_compaction_status`).
+
 ## 2.8.0
 
 - An event that was never given goals, whose goals are inferred from its

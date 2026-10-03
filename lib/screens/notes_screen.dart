@@ -14,7 +14,9 @@ import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
 /// All the uncompacted notes, plus any not saved yet, by day, with a "+"
-/// to add another. Tapping a saved note edits or deletes it.
+/// to add another, under when notes were last compacted into the calendar
+/// and the latest note compacted. Tapping a saved note edits or deletes
+/// it.
 class NotesScreen extends StatefulWidget {
   const NotesScreen({
     super.key,
@@ -52,6 +54,10 @@ class NotesScreen extends StatefulWidget {
 
 class _NotesScreenState extends State<NotesScreen> {
   List<Note>? _notes;
+
+  /// When notes were last compacted; null until known, or from a server
+  /// too old to say.
+  CompactionStatus? _status;
 
   /// [_notes] are the ones kept from last time; the server hasn't
   /// answered since.
@@ -96,6 +102,7 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 
   Future<void> _load() async {
+    unawaited(_loadStatus());
     try {
       final notes = await widget.repository.uncompactedNotes();
       if (!mounted) return;
@@ -116,6 +123,14 @@ class _NotesScreenState extends State<NotesScreen> {
       if (!mounted) return;
       setState(() => _error = e);
     }
+  }
+
+  /// Loads [_status]; a failure just leaves the last one shown.
+  Future<void> _loadStatus() async {
+    try {
+      final status = await widget.repository.compactionStatus();
+      if (mounted) setState(() => _status = status);
+    } catch (_) {}
   }
 
   Future<void> _refresh() async {
@@ -336,11 +351,23 @@ class _NotesScreenState extends State<NotesScreen> {
       banner = null;
     }
 
-    if (rows.isEmpty) return FillViewport(child: banner!);
+    final status = switch (_status) {
+      final status? when !needsSignIn => _CompactionHeader(status: status),
+      _ => null,
+    };
+    if (rows.isEmpty) {
+      return FillViewport(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [?status, banner!],
+        ),
+      );
+    }
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 88), // clear the FAB
       children: [
+        ?status,
         ?banner,
         for (final (i, row) in rows.indexed) ...[
           if (i == 0 || !sameDay(rows[i - 1].at, row.at))
@@ -350,6 +377,51 @@ class _NotesScreenState extends State<NotesScreen> {
           row.tile,
         ],
       ],
+    );
+  }
+}
+
+/// When notes were last compacted into the calendar, and the latest note
+/// that was: the notes below come after it.
+class _CompactionHeader extends StatelessWidget {
+  const _CompactionHeader({required this.status});
+
+  final CompactionStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final strings = MaterialLocalizations.of(context);
+    String at(DateTime time) {
+      final local = time.toLocal();
+      return '${strings.formatShortDate(local)}, '
+          '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
+    }
+
+    final style = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final latest = status.latestCompacted;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(switch (status.lastCompaction) {
+            final last? => 'Last compacted ${at(last)}',
+            null => 'Notes not compacted yet',
+          }, style: style),
+          if (latest != null)
+            Text(
+              'Latest compacted note: ${at(latest.timestamp)}'
+              '${switch (latest.description) {
+                final String d when d.isNotEmpty => ' · $d',
+                _ => '',
+              }}',
+              style: style,
+            ),
+        ],
+      ),
     );
   }
 }

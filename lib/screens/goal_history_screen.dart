@@ -8,7 +8,7 @@ import '../services/mcp_client.dart';
 import '../widgets/health.dart';
 import '../widgets/status_message.dart';
 
-/// One goal's health over its recent periods: a chart of its ratings (the
+/// One goal's health over its recent days: a chart of its ratings (the
 /// band edges marked, proposed ones hollow), and each assessment below it,
 /// newest first, with how it was reached. Tapping a bar picks it out in
 /// the list.
@@ -79,15 +79,13 @@ class _GoalHistoryScreenState extends State<GoalHistoryScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     final goal = widget.goal;
-    final cadence = goal.cadence;
     if (history.isEmpty) {
-      return FillViewport(
+      return const FillViewport(
         child: StatusMessage(
           icon: Icons.insights_outlined,
-          text: cadence == null
-              ? 'This goal has no cadence, so it isn\'t assessed.'
-              : 'No assessments yet.\nRatings are confirmed in a '
-                    '${cadences[cadence]?.toLowerCase() ?? cadence} reflection.',
+          text:
+              'No ratings yet.\nGoals are rated in the daily reflection: '
+              'those with a measure, and those with sub-goals that are.',
         ),
       );
     }
@@ -109,9 +107,9 @@ class _GoalHistoryScreenState extends State<GoalHistoryScreen> {
                   else
                     'Not rated yet',
                   if (goal.measure case final measure?)
-                    describeMeasure(measure, cadence)
-                  else if (cadence != null)
-                    cadences[cadence] ?? cadence,
+                    describeMeasure(measure)
+                  else
+                    'Average of its sub-goals',
                   if (goal.healthPeriod case final period?)
                     'last rated $period',
                 ].join(' · '),
@@ -166,9 +164,7 @@ class _AssessmentTile extends StatelessWidget {
             ? Text('skipped', style: TextStyle(color: theme.hintColor))
             : HealthDot(rating: rating),
       ),
-      title: Text(
-        [a.period, if (!a.confirmed) 'proposed', ?a.method].join(' · '),
-      ),
+      title: Text([a.day, if (!a.confirmed) 'proposed', ?a.method].join(' · ')),
       subtitle: why.isEmpty ? null : Text(why),
     );
   }

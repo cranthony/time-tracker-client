@@ -7,22 +7,27 @@ import 'durations.dart';
 /// Edits a goal's measure: a kind picked from [measureKinds] (or none),
 /// then that kind's fields. Calls [onChanged] with the measure as it
 /// stands after every edit -- null for none -- whether or not it's valid
-/// yet; see [measureProblem]. [cadence] words the targets ("per week").
+/// yet; see [measureProblem].
 ///
 /// A time-spent or number-of-events measure looks at the events of its own
-/// goal, or of goals chosen from [goals]; with or without their sub-goals.
+/// goal, or of goals chosen from [goals]; with or without their sub-goals,
+/// over the last few days. A weighted rollup weighs each of [goalId]'s
+/// sub-goals, from [goals].
 class MeasureEditor extends StatefulWidget {
   const MeasureEditor({
     super.key,
     required this.measure,
-    required this.cadence,
     required this.onChanged,
+    this.goalId,
     this.goals,
   });
 
   final Measure? measure;
-  final String? cadence;
   final ValueChanged<Measure?> onChanged;
+
+  /// The goal it measures; null for one not created yet, which has no
+  /// sub-goals to weigh.
+  final String? goalId;
 
   /// Every goal, to choose whose events are looked at; without it, only
   /// the measure's own goal can be.
@@ -40,8 +45,18 @@ class _MeasureEditorState extends State<MeasureEditor> {
   final _zeroAt = TextEditingController();
   final _prompt = TextEditingController();
   final _rubric = TextEditingController();
+  final _interval = TextEditingController();
+  final _zeroAtDays = TextEditingController();
+  final _percentile = TextEditingController();
   String _wakeTarget = '07:00';
-  String _agg = 'min';
+  String _agg = 'mean';
+
+  /// A weighted rollup's weight for each sub-goal, by id.
+  final _weights = <String, TextEditingController>{};
+
+  /// The goal's sub-goals, once [MeasureEditor.goals] has them: a weight
+  /// for any other goal, one that's since moved, isn't kept.
+  Set<String>? _subGoalIds;
 
   /// The goals whose events are looked at, in the order chosen; null for
   /// the measure's own goal.
@@ -60,6 +75,8 @@ class _MeasureEditorState extends State<MeasureEditor> {
     };
     if (m['goal_ids'] case final List ids) _goalIds = [...ids.cast<String>()];
     if (m['include_sub_goals'] == false) _subGoals = false;
+    _interval.text = text(m['interval_days']);
+    _zeroAtDays.text = text(m['zero_at_days']);
     switch (_kind) {
       case 'duration':
         if (m['target_min'] case final num minutes) {
@@ -77,13 +94,35 @@ class _MeasureEditorState extends State<MeasureEditor> {
       case 'llm':
         _rubric.text = text(m['rubric']);
       case 'rollup':
-        if (m['agg'] == 'mean') _agg = 'mean';
+        _agg = switch (m['agg']) {
+          'weighted' => 'weighted',
+          'percentile' => 'percentile',
+          'min' => 'percentile', // From before percentiles: the lowest.
+          _ => 'mean',
+        };
+        _percentile.text = m['agg'] == 'min' ? '0' : text(m['percentile']);
+        if (m['weights'] case final Map weights) {
+          for (final MapEntry(:key, :value) in weights.entries) {
+            _weights[key as String] = TextEditingController(text: text(value));
+          }
+        }
     }
   }
 
   @override
   void dispose() {
-    for (final c in [_target, _noun, _grace, _zeroAt, _prompt, _rubric]) {
+    for (final c in [
+      _target,
+      _noun,
+      _grace,
+      _zeroAt,
+      _prompt,
+      _rubric,
+      _interval,
+      _zeroAtDays,
+      _percentile,
+      ..._weights.values,
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -105,6 +144,8 @@ class _MeasureEditorState extends State<MeasureEditor> {
 
     // Which goals' events: left out for the defaults.
     final events = {
+      'interval_days': ?number(_interval),
+      'zero_at_days': ?number(_zeroAtDays),
       'goal_ids': ?_goalIds,
       if (!_subGoals) 'include_sub_goals': false,
     };
@@ -130,9 +171,22 @@ class _MeasureEditorState extends State<MeasureEditor> {
         'grace_min': ?number(_grace),
         'zero_at_min': ?number(_zeroAt),
       },
-      'subjective' => {'kind': 'subjective', 'prompt': ?text(_prompt)},
+      'subjective' => {
+        'kind': 'subjective',
+        'prompt': text(_prompt),
+        'interval_days': ?number(_interval),
+      },
       'llm' => {'kind': 'llm', 'rubric': text(_rubric)},
-      'rollup' => {'kind': 'rollup', 'agg': _agg},
+      'rollup' => {
+        'kind': 'rollup',
+        'agg': _agg,
+        if (_agg == 'weighted')
+          'weights': {
+            for (final MapEntry(:key, :value) in _weights.entries)
+              if (_subGoalIds?.contains(key) ?? true) key: ?number(value),
+          },
+        if (_agg == 'percentile') 'percentile': number(_percentile),
+      },
       final kind => {'kind': kind},
     };
   }
@@ -225,6 +279,50 @@ class _MeasureEditorState extends State<MeasureEditor> {
     ];
   }
 
+  /// A weighted rollup's weight for each of the goal's sub-goals: one it
+  /// isn't given counts for nothing.
+  Widget _weightFields(ThemeData theme) => FutureBuilder(
+    future: widget.goals,
+    builder: (context, snapshot) {
+      final goals = snapshot.data;
+      if (widget.goals == null || widget.goalId == null) {
+        return const Text('No sub-goals to weigh yet.');
+      }
+      if (goals == null) {
+        return snapshot.hasError
+            ? const Text("Couldn't load the sub-goals.")
+            : const LinearProgressIndicator();
+      }
+      final subGoals = [
+        for (final goal in goals)
+          if (goal.parentId == widget.goalId && goal.id != null) goal,
+      ];
+      _subGoalIds = {for (final goal in subGoals) goal.id!};
+      if (subGoals.isEmpty) return const Text('It has no sub-goals yet.');
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final goal in subGoals)
+            _field(
+              _weights.putIfAbsent(goal.id!, TextEditingController.new),
+              goalName(goal),
+              hint: '0',
+              number: true,
+            ),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'A sub-goal with no weight, or one added later, counts for '
+              'nothing.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ],
+      );
+    },
+  );
+
   Widget _field(
     TextEditingController controller,
     String label, {
@@ -262,8 +360,30 @@ class _MeasureEditorState extends State<MeasureEditor> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final per = perPeriod(widget.cadence);
     final kind = _kind;
+    final lookBack = [
+      _field(
+        _interval,
+        'Over the last',
+        hint: '1',
+        suffix: 'days',
+        number: true,
+      ),
+      _field(
+        _zeroAtDays,
+        'Zero at, in days',
+        hint: 'none: rated by how much',
+        number: true,
+      ),
+      Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          'Short of the target, it falls to 0 by "zero at" days since it was '
+          "last met; without one, it's rated by how much was done.",
+          style: theme.textTheme.bodySmall,
+        ),
+      ),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -293,12 +413,14 @@ class _MeasureEditorState extends State<MeasureEditor> {
           ),
         ...switch (kind) {
           'duration' => [
-            _field(_target, 'Target', hint: 'e.g. 10h or 1h 30m', suffix: per),
+            _field(_target, 'Target', hint: 'e.g. 10h or 1h 30m'),
+            ...lookBack,
             ..._whoseEvents(theme),
           ],
           'count' => [
-            _field(_target, 'Target', number: true, suffix: per),
-            _field(_noun, "What's counted", hint: 'e.g. dinners'),
+            _field(_target, 'Target', number: true),
+            _field(_noun, "What's counted", hint: 'e.g. visits'),
+            ...lookBack,
             ..._whoseEvents(theme),
           ],
           'wake_time' => [
@@ -320,6 +442,13 @@ class _MeasureEditorState extends State<MeasureEditor> {
           ],
           'subjective' => [
             _field(_prompt, 'Question', hint: 'e.g. How did it turn out?'),
+            _field(
+              _interval,
+              'Ask every',
+              hint: '1',
+              suffix: 'days',
+              number: true,
+            ),
           ],
           'llm' => [_field(_rubric, 'Rubric', maxLines: 5)],
           'rollup' => [
@@ -327,9 +456,9 @@ class _MeasureEditorState extends State<MeasureEditor> {
               padding: const EdgeInsets.only(top: 12),
               child: SegmentedButton<String>(
                 showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: 'min', label: Text('Lowest')),
-                  ButtonSegment(value: 'mean', label: Text('Average')),
+                segments: [
+                  for (final MapEntry(:key, :value) in rollupAggregates.entries)
+                    ButtonSegment(value: key, label: Text(value)),
                 ],
                 selected: {_agg},
                 onSelectionChanged: (picked) {
@@ -338,6 +467,14 @@ class _MeasureEditorState extends State<MeasureEditor> {
                 },
               ),
             ),
+            if (_agg == 'percentile')
+              _field(
+                _percentile,
+                'Percentile',
+                hint: '0 is the lowest, 50 the median, 100 the highest',
+                number: true,
+              ),
+            if (_agg == 'weighted') _weightFields(theme),
           ],
           _ => const <Widget>[],
         },

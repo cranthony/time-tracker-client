@@ -3,15 +3,15 @@ import 'package:flutter/material.dart';
 import '../models/goal.dart';
 import 'properties_dialog.dart';
 
-/// What a goal's properties are edited as; everything `update_goal` can
-/// change but its status, which the Goals page changes itself.
+/// What a goal's properties are edited as: everything `update_goal` can
+/// change.
 const _kinds = {
   'name': PropertyKind.text,
+  'status': PropertyKind.choice,
   'parent_id': PropertyKind.goal,
   'background_color': PropertyKind.color,
   'priority': PropertyKind.integer,
   'fixed_time': PropertyKind.optionalFlag,
-  'cadence': PropertyKind.choice,
   'measure': PropertyKind.measure,
   'target': PropertyKind.text,
   'deadline': PropertyKind.date,
@@ -23,11 +23,13 @@ const _hints = {
   'background_color': "With no color, the goal takes its priority's color.",
   'priority':
       'Events and sub-goals with no priority of their own take this one.',
+  'status':
+      "Only an active goal holds one of the calendar's event labels and is "
+      'rated; any other status keeps its history.',
   'fixed_time': 'Events and sub-goals that say nothing take this.',
-  'cadence': 'How often its health is assessed.',
   'measure':
-      "How each period's health is rated, 0-100. Ratings are confirmed in "
-      'a reflection.',
+      "How its health is rated each day, 0-100, confirmed in the daily "
+      "reflection. With none, it's rated by its sub-goals' average.",
 };
 
 String? _needsName(Map<String, Object?> values) => switch (values['name']) {
@@ -41,11 +43,14 @@ String? _needsName(Map<String, Object?> values) => switch (values['name']) {
 /// "Save" sends every change with [save]. Returns what [save] returned
 /// (every goal, as the server has them now), or null if nothing was
 /// saved. Without [save], or for a goal with no id, nothing can be edited.
-/// [goals] lists the goals its parent can be.
+/// [goals] lists the goals its parent can be. Tapping its status moves it
+/// to another; [confirmSave] is asked first, with the changes, and can
+/// call the save off.
 Future<GoalList?> showGoalDialog(
   BuildContext context,
   Goal goal, {
   Future<GoalList> Function(Goal goal, Map<String, Object?> changes)? save,
+  Future<bool> Function(Map<String, Object?> changes)? confirmSave,
   Future<List<Goal>> Function()? goals,
 }) => showPropertiesDialog<GoalList>(
   context,
@@ -57,21 +62,21 @@ Future<GoalList?> showGoalDialog(
   properties: {
     'name': goal.name,
     'path': goal.path,
-    'status': goalStatuses[goal.status] ?? goal.status,
+    'status': goal.status,
     'parent_id': goal.parentId,
     'background_color': goal.backgroundColor,
     'priority': goal.priority,
     'fixed_time': goal.fixedTime,
-    'cadence': goal.cadence,
     'measure': goal.measure,
     ...goal.properties,
   },
   kinds: _kinds,
-  choices: const {'cadence': cadences},
-  required: const {'name'},
+  choices: const {'status': goalStatuses},
+  required: const {'name', 'status'},
   hints: _hints,
   goals: goals,
   validate: _needsName,
+  confirmSave: confirmSave,
   save: save == null || goal.id == null
       ? null
       : (changes) => save(goal, changes),
@@ -97,12 +102,10 @@ Future<GoalList?> showNewGoalDialog(
     'name': null,
     'parent_id': parentId,
     'priority': null,
-    'cadence': null,
     'measure': null,
     'note': null,
   },
   kinds: _kinds,
-  choices: const {'cadence': cadences},
   hints: _hints,
   goals: goals,
   validate: _needsName,
