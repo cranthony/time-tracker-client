@@ -56,7 +56,7 @@ class HealthDot extends StatelessWidget {
 }
 
 /// A goal's last few ratings, oldest first, as tiny bars: each as tall as
-/// its rating and in its band's color; a period with none is a short muted
+/// its rating and in its band's color; a day with none is a short muted
 /// tick.
 class TrendSparkline extends StatelessWidget {
   const TrendSparkline({super.key, required this.trend});
@@ -68,8 +68,8 @@ class TrendSparkline extends StatelessWidget {
     final rated = trend.nonNulls.toList();
     return Tooltip(
       message: rated.isEmpty
-          ? 'No ratings in the last ${trend.length} periods'
-          : 'Last ${trend.length} periods: '
+          ? 'No ratings in the last ${trend.length} days'
+          : 'Last ${trend.length} days: '
                 '${trend.map((r) => r?.toString() ?? '–').join(', ')}',
       child: CustomPaint(
         size: Size(trend.length * 6.0, 18),
@@ -116,7 +116,7 @@ class _SparklinePainter extends CustomPainter {
 
 /// A goal's assessments, oldest first, as bars on a 0-100 scale with the
 /// band edges (40, 70) as dashed reference lines. A proposed rating -- not
-/// yet confirmed in a reflection -- is a hollow bar; a skipped period, a
+/// yet confirmed in a reflection -- is a hollow bar; a skipped day, a
 /// short muted tick. Tapping a bar calls [onSelected] with its index.
 class HealthHistoryChart extends StatelessWidget {
   const HealthHistoryChart({
@@ -184,7 +184,7 @@ class _HistoryPainter extends CustomPainter {
 
   static const _axis = 24.0;
 
-  /// Room under the plot for the first and last periods' names.
+  /// Room under the plot for the first and last days.
   static const _labels = 18.0;
 
   /// Which bar an x position falls on, if any.
@@ -223,16 +223,16 @@ class _HistoryPainter extends CustomPainter {
     );
 
     if (assessments.isEmpty) return;
-    // Which periods the chart spans: the first, under its start, and the
+    // Which days the chart spans: the first, under its start, and the
     // last, ending at the right edge.
     final first = TextPainter(
-      text: TextSpan(text: assessments.first.period, style: text),
+      text: TextSpan(text: assessments.first.day, style: text),
       textDirection: TextDirection.ltr,
     )..layout();
     first.paint(canvas, Offset(_axis, plotHeight + 4));
     if (assessments.length > 1) {
       final last = TextPainter(
-        text: TextSpan(text: assessments.last.period, style: text),
+        text: TextSpan(text: assessments.last.day, style: text),
         textDirection: TextDirection.ltr,
       )..layout();
       if (_axis + first.width + 8 < size.width - last.width) {

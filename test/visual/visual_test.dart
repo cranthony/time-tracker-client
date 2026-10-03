@@ -101,7 +101,7 @@ void main() {
         then: () async {
           await tester.tap(find.text('Wake up at 7am'));
           await tester.pumpAndSettle();
-          final measure = find.text('Up by 07:00 (10 min grace), daily');
+          final measure = find.text('Up by 07:00 (10 min grace)');
           await tester.ensureVisible(measure);
           await tester.pumpAndSettle();
           await tester.tap(measure);

@@ -58,6 +58,61 @@ void main() {
     );
   }
 
+  screenTest('shows when notes were last compacted, and the latest note '
+      'compacted', (tester) async {
+    await tester.pumpWidget(
+      app(
+        InMemoryNotesRepository(
+          [Note(timestamp: today(9, 0), description: 'Started')],
+          CompactionStatus(
+            lastCompaction: DateTime(2026, 10, 2, 21, 5),
+            latestCompacted: Note(
+              timestamp: DateTime(2026, 10, 2, 20, 30),
+              description: 'Done with dinner',
+              compactionId: 'c1',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Last compacted Oct 2, 2026, 9:05 PM'), findsOneWidget);
+    expect(
+      find.text(
+        'Latest compacted note: Oct 2, 2026, 8:30 PM · Done with dinner',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  screenTest('says when notes were never compacted, even with none to show', (
+    tester,
+  ) async {
+    await tester.pumpWidget(app(InMemoryNotesRepository()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Notes not compacted yet'), findsOneWidget);
+    expect(
+      find.text('No uncompacted notes.\nTap + to add one.'),
+      findsOneWidget,
+    );
+  });
+
+  test('CompactionStatus.fromJson reads get_compaction_status', () {
+    final status = CompactionStatus.fromJson({
+      'last_compaction': '2026-10-02T21:05:00-04:00',
+      'latest_compacted_note': {
+        'timestamp': '2026-10-02T20:30:00-04:00',
+        'description': 'Done with dinner',
+        'compaction_id': 'c1',
+      },
+    });
+    expect(status.lastCompaction, DateTime.utc(2026, 10, 3, 1, 5));
+    expect(status.latestCompacted?.description, 'Done with dinner');
+    expect(CompactionStatus.fromJson({}).lastCompaction, isNull);
+  });
+
   screenTest('shows all uncompacted notes, by day', (tester) async {
     final repo = InMemoryNotesRepository([
       Note(timestamp: today(9, 30), description: 'Standup'),

@@ -23,6 +23,9 @@ abstract class NotesRepository {
   /// Deletes the uncompacted note with [id].
   Future<void> deleteNote(String id);
 
+  /// When notes were last compacted, and the latest note compacted.
+  Future<CompactionStatus> compactionStatus();
+
   /// A short description of the backend, shown in the UI.
   String get label;
 }
@@ -91,13 +94,28 @@ class McpNotesRepository implements NotesRepository {
   @override
   Future<void> deleteNote(String id) =>
       _client.callTool('delete_note', {'note_id': id});
+
+  @override
+  Future<CompactionStatus> compactionStatus() async {
+    final result = await _client.callTool('get_compaction_status', {});
+    return CompactionStatus.fromJson((result as Map).cast<String, dynamic>());
+  }
 }
 
 /// Keeps notes in memory. Used when no server is configured, and in tests.
 class InMemoryNotesRepository implements NotesRepository {
-  InMemoryNotesRepository([List<Note>? notes]) {
+  InMemoryNotesRepository([
+    List<Note>? notes,
+    this.status = const CompactionStatus(),
+  ]) {
     notes?.forEach(_store);
   }
+
+  /// What [compactionStatus] says.
+  final CompactionStatus status;
+
+  @override
+  Future<CompactionStatus> compactionStatus() async => status;
 
   final _notes = <Note>[];
   var _nextRow = 1;

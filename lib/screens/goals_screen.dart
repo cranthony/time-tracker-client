@@ -13,15 +13,18 @@ import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
 /// Every goal, as a tree: each one's color, name, status, priority and
-/// cadence, with its sub-goals indented under it. A goal with sub-goals
-/// starts collapsed, saying how many it has; its arrow expands it.
-/// Pressing and holding a goal starts reordering: each goal can be dragged
-/// among its siblings, its sub-goals going with it, until "Done". The
-/// filter at the top
-/// right picks which statuses are shown: proposed, active and inactive
-/// goals to start with. Only active goals take up a calendar label; the others keep
-/// their history. Tapping a goal shows all its properties and lets one
-/// change them; its menu adds a sub-goal or moves it to another status;
+/// measure, the time spent on it (and its sub-goals) in the last 24 hours
+/// and 7 days up to the last compaction, which is noted at the top, and
+/// its last 8 days' ratings, with its sub-goals indented under it. A goal
+/// with sub-goals starts collapsed, saying how many it has; tapping its
+/// arrow or its flag expands it. Pressing and holding a goal starts
+/// reordering: each goal can be dragged among its siblings, its sub-goals
+/// going with it, until "Done". The filter at the top right picks which
+/// statuses are shown: proposed, active and inactive goals to start with.
+/// Only active goals take up a calendar label; the others keep their
+/// history. Tapping a goal shows its details, all its properties, and lets
+/// one change them, its status included; tapping its ratings shows its
+/// history; its menu adds a sub-goal, or shows its history or details;
 /// "+" adds a top-level goal.
 class GoalsScreen extends StatefulWidget {
   const GoalsScreen({
@@ -170,9 +173,23 @@ class _GoalsScreenState extends State<GoalsScreen> {
       context,
       goal,
       save: widget.repository.updateGoal,
+      confirmSave: (changes) => switch (changes['status']) {
+        final String status when status != goal.status => _confirmStatus(
+          goal,
+          status,
+        ),
+        _ => Future.value(true),
+      },
       goals: _allGoals,
     ),
     'Saved.',
+  );
+
+  void _history(Goal goal) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) =>
+          GoalHistoryScreen(goal: goal, repository: widget.repository),
+    ),
   );
 
   Future<void> _add({String? parentId}) async {
@@ -191,7 +208,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
     'Added.',
   );
 
-  Future<void> _setStatus(Goal goal, String status) async {
+  /// Whether to move [goal] to [status]: freeing its label, or deleting it,
+  /// is worth a second look.
+  Future<bool> _confirmStatus(Goal goal, String status) async {
     final name = goalName(goal);
     // Freeing a label, or deleting, is worth a second look.
     final (String, String, String)? check = switch (status) {
@@ -228,27 +247,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
           ],
         ),
       );
-      if (confirmed != true) return;
+      return confirmed == true;
     }
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      _saved(
-        await widget.repository.updateGoal(goal, {'status': status}),
-        'Now ${goalStatuses[status]?.toLowerCase() ?? status}.',
-      );
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(switch (e) {
-            SignInRequiredException() =>
-              'You were signed out. Sign in again, then try again.',
-            McpException(:final message) => message,
-            _ => '$e',
-          }),
-        ),
-      );
-    }
+    return true;
   }
 
   Future<void> _signIn() async {
@@ -413,7 +414,6 @@ class _GoalsScreenState extends State<GoalsScreen> {
               }),
               onTap: null,
               onAddSubGoal: () {},
-              onSetStatus: (_) {},
               onHistory: () {},
             ),
           ],
@@ -432,8 +432,20 @@ class _GoalsScreenState extends State<GoalsScreen> {
           ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Row(
+          child: Wrap(
+            spacing: 16,
+            runSpacing: 4,
             children: [
+              Tooltip(
+                message:
+                    'Time spent is counted up to when notes were last '
+                    'compacted into the calendar.',
+                child: Text(switch (goals.asOf) {
+                  final asOf? =>
+                    'Last compacted ${formatTimestamp(context, asOf)}',
+                  null => 'Notes not compacted yet',
+                }, style: Theme.of(context).textTheme.bodySmall),
+              ),
               Tooltip(
                 message:
                     'Each active goal takes one of the calendar\'s event '
@@ -465,15 +477,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
             onTap: () => _open(goal),
             onLongPress: () => setState(() => _reordering = true),
             onAddSubGoal: () => _add(parentId: goal.id),
-            onSetStatus: (status) => _setStatus(goal, status),
-            onHistory: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => GoalHistoryScreen(
-                  goal: goal,
-                  repository: widget.repository,
-                ),
-              ),
-            ),
+            onHistory: () => _history(goal),
           ),
         ],
       ],
@@ -537,16 +541,6 @@ class GoalFlag extends StatelessWidget {
   }
 }
 
-/// What moving a goal to each status is called in its menu.
-const _moveTo = {
-  'proposed': 'Mark proposed',
-  'active': 'Make active',
-  'inactive': 'Make inactive',
-  'completed': 'Mark completed',
-  'archived': 'Archive',
-  'deleted': 'Delete',
-};
-
 /// Each status's icon.
 const _statusIcons = {
   'proposed': Icons.lightbulb_outline,
@@ -571,7 +565,6 @@ class _GoalTile extends StatelessWidget {
     this.onLongPress,
     this.dragIndex,
     required this.onAddSubGoal,
-    required this.onSetStatus,
     required this.onHistory,
   });
 
@@ -585,7 +578,11 @@ class _GoalTile extends StatelessWidget {
 
   /// Whether its sub-goals are shown.
   final bool expanded;
+
+  /// Shows or hides its sub-goals: its arrow and its flag do this.
   final VoidCallback onToggle;
+
+  /// Shows its details: tapping it, or "Details" in its menu.
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
@@ -593,7 +590,8 @@ class _GoalTile extends StatelessWidget {
   /// otherwise, when it has its menu instead.
   final int? dragIndex;
   final VoidCallback onAddSubGoal;
-  final ValueChanged<String> onSetStatus;
+
+  /// Shows its history: tapping its ratings, or "History" in its menu.
   final VoidCallback onHistory;
 
   @override
@@ -610,67 +608,104 @@ class _GoalTile extends StatelessWidget {
         null => null,
       },
       if (goal.measure case final measure?)
-        describeMeasure(measure, goal.cadence, goalNames: goalNames)
-      else if (goal.cadence case final cadence?)
-        cadences[cadence] ?? cadence,
-      if (goal.stalePeriods case final stale? when stale > 0)
-        '$stale ${switch (cadencePeriodNames[goal.cadence]) {
-          (final one, final many) => stale == 1 ? one : many,
-          null => stale == 1 ? 'period' : 'periods',
-        }} unassessed',
+        describeMeasure(measure, goalNames: goalNames),
+      if (goal.staleDays case final stale? when stale > 0)
+        '$stale day${stale == 1 ? '' : 's'} unrated',
       if (subGoals > 0 && !expanded)
         '$subGoals sub-goal${subGoals == 1 ? '' : 's'}',
     ].nonNulls.join(' · ');
-    final assessed = goal.active && goal.cadence != null;
+    final rated =
+        goal.active &&
+        (goal.staleDays != null ||
+            goal.health != null ||
+            goal.healthTrend.isNotEmpty);
+    final time = switch ((goal.minutes24h, goal.minutes7d)) {
+      (final day?, final week?) =>
+        '${formatMinutes(day)} in 24h · ${formatMinutes(week)} in 7d',
+      _ => null,
+    };
+    final flag = Tooltip(
+      message: goalStatuses[goal.status] ?? goal.status,
+      child: goal.active
+          ? GoalFlag(goal: goal)
+          : Icon(
+              _statusIcons[goal.status] ?? Icons.outlined_flag,
+              color: theme.hintColor,
+            ),
+    );
     return ListTile(
       contentPadding: EdgeInsetsDirectional.only(
         start: 4.0 + 24.0 * goal.depth,
         end: 4,
       ),
-      leading: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (subGoals > 0)
-            IconButton(
-              icon: Icon(expanded ? Icons.expand_more : Icons.chevron_right),
-              tooltip: '${expanded ? 'Collapse' : 'Expand'} ${goalName(goal)}',
-              padding: EdgeInsets.zero,
-              // Not widened to 48 like a lone button, so titles line up.
-              style: IconButton.styleFrom(
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              constraints: const BoxConstraints.tightFor(
-                width: _arrowWidth,
-                height: 40,
-              ),
-              onPressed: onToggle,
-            )
-          else
-            // Lines up with the arrows' flags.
-            const SizedBox(width: _arrowWidth),
-          Tooltip(
-            message: goalStatuses[goal.status] ?? goal.status,
-            child: goal.active
-                ? GoalFlag(goal: goal)
-                : Icon(
-                    _statusIcons[goal.status] ?? Icons.outlined_flag,
-                    color: theme.hintColor,
+      leading: subGoals > 0
+          // The arrow and the flag together show or hide its sub-goals.
+          ? Tooltip(
+              message: '${expanded ? 'Collapse' : 'Expand'} ${goalName(goal)}',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: onToggle,
+                child: SizedBox(
+                  height: 40,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: _arrowWidth,
+                        child: Icon(
+                          expanded ? Icons.expand_more : Icons.chevron_right,
+                        ),
+                      ),
+                      flag,
+                      const SizedBox(width: 4),
+                    ],
                   ),
-          ),
-        ],
-      ),
+                ),
+              ),
+            )
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Lines up with the arrows' flags.
+                const SizedBox(width: _arrowWidth),
+                flag,
+                const SizedBox(width: 4),
+              ],
+            ),
       title: Text(goalName(goal), style: faded),
-      subtitle: details.isEmpty ? null : Text(details, style: faded),
+      subtitle: details.isEmpty && time == null
+          ? null
+          : Text(
+              [?time, if (details.isNotEmpty) details].join('\n'),
+              style: faded,
+            ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (assessed) ...[
-            if (goal.healthTrend.isNotEmpty) ...[
-              TrendSparkline(trend: goal.healthTrend),
-              const SizedBox(width: 8),
-            ],
-            HealthDot(rating: goal.health),
-          ],
+          if (rated)
+            Tooltip(
+              message: 'History of ${goalName(goal)}',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: dragIndex == null ? onHistory : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (goal.healthTrend.isNotEmpty) ...[
+                        TrendSparkline(trend: goal.healthTrend),
+                        const SizedBox(width: 8),
+                      ],
+                      HealthDot(rating: goal.health),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           if (dragIndex case final index?)
             ReorderableDragStartListener(
               index: index,
@@ -688,16 +723,12 @@ class _GoalTile extends StatelessWidget {
               onSelected: (choice) => switch (choice) {
                 'sub' => onAddSubGoal(),
                 'history' => onHistory(),
-                _ => onSetStatus(choice),
+                _ => onTap?.call(),
               },
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: 'sub', child: Text('Add sub-goal')),
-                const PopupMenuItem(value: 'history', child: Text('History')),
-                const PopupMenuDivider(),
-                for (final MapEntry(key: status, value: label)
-                    in _moveTo.entries)
-                  if (status != goal.status)
-                    PopupMenuItem(value: status, child: Text(label)),
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'sub', child: Text('Add sub-goal')),
+                PopupMenuItem(value: 'history', child: Text('History')),
+                PopupMenuItem(value: 'details', child: Text('Details')),
               ],
             ),
         ],
@@ -737,5 +768,14 @@ GoalList _withSiblingOrder(GoalList goals, List<String> ids) {
     goals: ordered,
     labelSlotsUsed: goals.labelSlotsUsed,
     labelSlotsTotal: goals.labelSlotsTotal,
+    asOf: goals.asOf,
   );
+}
+
+/// [time], in local time, as "Fri, Oct 2, 9:05 PM".
+String formatTimestamp(BuildContext context, DateTime time) {
+  final strings = MaterialLocalizations.of(context);
+  final local = time.toLocal();
+  return '${strings.formatShortDate(local)}, '
+      '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
 }

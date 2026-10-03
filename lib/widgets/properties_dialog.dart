@@ -41,8 +41,8 @@ enum PropertyKind {
   /// "#rrggbb".
   color,
 
-  /// A goal's measure (see models/measure.dart), worded for the dialog's
-  /// "cadence" property.
+  /// A goal's measure (see models/measure.dart); a weighted rollup weighs
+  /// the sub-goals of the goal with the dialog's "id".
   measure,
 
   /// A list of text lines, edited one per line.
@@ -794,7 +794,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         children: [
           MeasureEditor(
             measure: _draft as Measure?,
-            cadence: _values['cadence'] as String?,
+            goalId: _values['id'] as String?,
             goals: _goals,
             onChanged: (measure) => _draft = measure,
           ),
@@ -1100,12 +1100,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       case PropertyKind.choice:
         return widget.choices[key]?[value] ?? '$value';
       case PropertyKind.measure when value is Map:
-        return describeMeasure(
-          value.cast(),
-          _values['cadence'] as String?,
-          full: true,
-          goalNames: _goalNames,
-        );
+        return describeMeasure(value.cast(), full: true, goalNames: _goalNames);
       case PropertyKind.date when value is String:
         return switch (DateTime.tryParse(value)) {
           final day? => MaterialLocalizations.of(context).formatMediumDate(day),
