@@ -21,6 +21,7 @@ class Goal {
     this.staleDays,
     this.minutes24h,
     this.minutes7d,
+    this.minutesByStatuses,
     this.path,
     this.properties = const {},
   });
@@ -79,6 +80,17 @@ class Goal {
   /// The same, over the 7 days up to [GoalList.asOf].
   final int? minutes7d;
 
+  /// [minutes24h] and [minutes7d], split by the statuses of the goals each
+  /// event was given among this one and its sub-goals; null from a server
+  /// too old to say, or without a [GoalList.asOf].
+  final List<StatusMinutes>? minutesByStatuses;
+
+  /// Its minutes in the last 24 hours and 7 days through goals with any of
+  /// [statuses] (itself or its sub-goals), each event once: its time,
+  /// filtered as the Goals page is. Null if it isn't known.
+  (int, int)? timeFor(Set<String> statuses) =>
+      _timeFor(minutesByStatuses, statuses);
+
   /// Its names from the top of the tree down, e.g. "Cooking › Tofu".
   final String? path;
 
@@ -116,6 +128,7 @@ class Goal {
     staleDays: json['stale_days'] as int?,
     minutes24h: json['minutes_24h'] as int?,
     minutes7d: json['minutes_7d'] as int?,
+    minutesByStatuses: _statusMinutes(json['minutes_by_statuses']),
     path: json['path'] as String?,
     properties: Map.unmodifiable(json),
   );
@@ -144,6 +157,34 @@ class StatusMinutes {
     minutes24h: json['minutes_24h'] as int? ?? 0,
     minutes7d: json['minutes_7d'] as int? ?? 0,
   );
+
+  Map<String, Object?> toJson() => {
+    'statuses': [...statuses],
+    'minutes_24h': minutes24h,
+    'minutes_7d': minutes7d,
+  };
+}
+
+List<StatusMinutes>? _statusMinutes(Object? json) => switch (json) {
+  final List split => [
+    for (final part in split)
+      StatusMinutes.fromJson((part as Map).cast<String, dynamic>()),
+  ],
+  _ => null,
+};
+
+/// The minutes in [split] whose statuses include any of [statuses]; null
+/// without a [split].
+(int, int)? _timeFor(List<StatusMinutes>? split, Set<String> statuses) {
+  if (split == null) return null;
+  var (day, week) = (0, 0);
+  for (final part in split) {
+    if (part.statuses.any(statuses.contains)) {
+      day += part.minutes24h;
+      week += part.minutes7d;
+    }
+  }
+  return (day, week);
 }
 
 /// The goals, and how many of the calendar's event labels they use.
@@ -165,8 +206,9 @@ class GoalList {
   /// recent time is counted up to; null if they never have been.
   final DateTime? asOf;
 
-  /// The time spent on goals up to [asOf], split by the statuses of the
-  /// goals each event serves; null from a server too old to say, or
+  /// The time spent on any goal up to [asOf], split by the statuses of
+  /// the goals each event was given: the overall goal's
+  /// [Goal.minutesByStatuses]. Null from a server too old to say, or
   /// without an [asOf].
   final List<StatusMinutes>? minutesByStatuses;
 
@@ -175,18 +217,8 @@ class GoalList {
 
   /// The minutes spent on goals with any of [statuses] in the last 24
   /// hours and 7 days, each event once; null if it isn't known.
-  (int, int)? timeFor(Set<String> statuses) {
-    final split = minutesByStatuses;
-    if (split == null) return null;
-    var (day, week) = (0, 0);
-    for (final part in split) {
-      if (part.statuses.any(statuses.contains)) {
-        day += part.minutes24h;
-        week += part.minutes7d;
-      }
-    }
-    return (day, week);
-  }
+  (int, int)? timeFor(Set<String> statuses) =>
+      _timeFor(minutesByStatuses, statuses);
 
   factory GoalList.fromJson(Map<String, dynamic> json) => GoalList(
     goals: [
@@ -199,13 +231,7 @@ class GoalList {
       final String asOf => DateTime.tryParse(asOf),
       _ => null,
     },
-    minutesByStatuses: switch (json['minutes_by_statuses']) {
-      final List split => [
-        for (final part in split)
-          StatusMinutes.fromJson((part as Map).cast<String, dynamic>()),
-      ],
-      _ => null,
-    },
+    minutesByStatuses: _statusMinutes(json['minutes_by_statuses']),
   );
 }
 

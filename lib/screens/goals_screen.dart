@@ -470,7 +470,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
         ),
         _OverallCard(
           goal: overall,
-          time: goals.timeFor(_shown),
+          time: overall?.timeFor(_shown) ?? goals.timeFor(_shown),
           goalNames: names,
           onTap: overall == null ? null : () => _open(overall),
           onHistory: overall == null ? null : () => _history(overall),
@@ -485,6 +485,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
           _GoalTile(
             goal: goal,
             goalNames: names,
+            shownStatuses: _shown,
             subGoals: subGoals[goal.id] ?? 0,
             expanded: _expanded.contains(goal.id),
             onToggle: () => setState(() {
@@ -574,6 +575,7 @@ class _GoalTile extends StatelessWidget {
   const _GoalTile({
     required this.goal,
     this.goalNames = const {},
+    this.shownStatuses,
     required this.subGoals,
     required this.expanded,
     required this.onToggle,
@@ -588,6 +590,10 @@ class _GoalTile extends StatelessWidget {
 
   /// Every goal's name, by id, to say whose events it's measured by.
   final Map<String?, String> goalNames;
+
+  /// The statuses the Goals page shows: its time is through goals with
+  /// these. Null for all its time.
+  final Set<String>? shownStatuses;
 
   /// How many sub-goals it has (of those shown); none, and it has no arrow.
   final int subGoals;
@@ -635,8 +641,13 @@ class _GoalTile extends StatelessWidget {
         (goal.staleDays != null ||
             goal.health != null ||
             goal.healthTrend.isNotEmpty);
-    final time = switch ((goal.minutes24h, goal.minutes7d)) {
-      (final day?, final week?) =>
+    // Through the sub-goals shown, if the server says; else all of it.
+    final filtered = switch (shownStatuses) {
+      final shown? => goal.timeFor(shown),
+      null => null,
+    };
+    final time = switch (filtered ?? (goal.minutes24h, goal.minutes7d)) {
+      (final int day, final int week) =>
         '${formatMinutes(day)} in 24h · ${formatMinutes(week)} in 7d',
       _ => null,
     };
