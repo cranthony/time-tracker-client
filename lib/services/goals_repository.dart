@@ -209,5 +209,8 @@ class InMemoryGoalsRepository implements GoalsRepository {
     'stale_days': goal.staleDays,
     'minutes_24h': goal.minutes24h,
     'minutes_7d': goal.minutes7d,
+    'minutes_by_statuses': goal.minutesByStatuses
+        ?.map((m) => m.toJson())
+        .toList(),
   };
 }

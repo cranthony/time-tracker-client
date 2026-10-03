@@ -817,6 +817,49 @@ void main() {
       ],
     );
 
+    testWidgets("each goal's time counts only its sub-goals with the "
+        'statuses shown', (tester) async {
+      await tester.pumpWidget(
+        app(
+          InMemoryGoalsRepository(
+            [
+              const Goal(
+                id: 'work',
+                name: 'Work',
+                minutes24h: 90,
+                minutes7d: 690,
+                minutesByStatuses: [
+                  StatusMinutes(
+                    statuses: {'active'},
+                    minutes24h: 60,
+                    minutes7d: 600,
+                  ),
+                  // Its inactive sub-goal's.
+                  StatusMinutes(
+                    statuses: {'inactive'},
+                    minutes24h: 30,
+                    minutes7d: 90,
+                  ),
+                ],
+              ),
+            ],
+            const {},
+            DateTime(2026, 10, 2, 21),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('1h 30m in 24h · 11h 30m in 7d'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Show goals that are…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(CheckboxMenuButton, 'Inactive'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1h in 24h · 10h in 7d'), findsOneWidget);
+    });
+
     test('GoalList totals the time on goals of any of some statuses', () {
       final goals = GoalList.fromJson({
         'goals': [],

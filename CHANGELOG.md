@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 3.2.0
+
+- Each goal's time on the Goals page, like the Overall card's, counts only
+  the time through goals with the statuses shown: a paused sub-goal's
+  time leaves its active parent's when inactive goals are hidden. Time is
+  counted by the statuses of the goals events were given, not their
+  parents'. Needs a server that splits each goal's time by status.
+
 ## 3.1.0
 
 - The Goals page starts with an Overall card: the overall goal, above all
