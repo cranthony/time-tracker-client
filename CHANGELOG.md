@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 3.3.0
+
+- On the Goals page, a goal's time in the last 24 hours and 7 days, and
+  the Overall card's, is followed by its share of that window when it's
+  more than 1/24 (an hour a day): "9h in 24h (37.5%)".
+- A goal's time leaves out a window it has no time in, and isn't shown if
+  it has none in either. The Overall card's is always shown.
+
 ## 3.2.0
 
 - Each goal's time on the Goals page, like the Overall card's, counts only

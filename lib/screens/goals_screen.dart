@@ -647,8 +647,11 @@ class _GoalTile extends StatelessWidget {
       null => null,
     };
     final time = switch (filtered ?? (goal.minutes24h, goal.minutes7d)) {
-      (final int day, final int week) =>
-        '${formatMinutes(day)} in 24h · ${formatMinutes(week)} in 7d',
+      (final int day, final int week) => describeTime(
+        day,
+        week,
+        skipZero: true,
+      ),
       _ => null,
     };
     final flag = Tooltip(
@@ -828,8 +831,7 @@ class _OverallCard extends StatelessWidget {
     if (goal == null && time == null) return const SizedBox.shrink();
     final details = [
       if (time case (final day, final week))
-        '${formatMinutes(day)} in 24h · ${formatMinutes(week)} in 7d on the '
-            'goals shown',
+        '${describeTime(day, week)!} on the goals shown',
       [
         if (goal?.measure case final measure?)
           describeMeasure(measure, goalNames: goalNames)
@@ -883,4 +885,27 @@ String formatTimestamp(BuildContext context, DateTime time) {
   final local = time.toLocal();
   return '${strings.formatShortDate(local)}, '
       '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
+}
+
+/// [day] and [week] minutes as "9h in 24h (37.5%) · 10h in 7d (6%)", each
+/// with its share of the time in its window when that's more than 1/24 (an
+/// hour a day). With [skipZero], a window with no time is left out, and
+/// null is given if both are.
+String? describeTime(int day, int week, {bool skipZero = false}) {
+  String? part(int minutes, String window, int windowMinutes) {
+    if (skipZero && minutes == 0) return null;
+    final text = '${formatMinutes(minutes)} in $window';
+    if (minutes * 24 <= windowMinutes) return text;
+    final percent = (minutes * 100 / windowMinutes).toStringAsFixed(1);
+    final tidy = percent.endsWith('.0')
+        ? percent.substring(0, percent.length - 2)
+        : percent;
+    return '$text ($tidy%)';
+  }
+
+  final parts = [
+    part(day, '24h', 24 * 60),
+    part(week, '7d', 7 * 24 * 60),
+  ].nonNulls;
+  return parts.isEmpty ? null : parts.join(' · ');
 }
