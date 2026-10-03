@@ -558,9 +558,8 @@ void main() {
     expect(find.text('Save 1 change'), findsNothing);
   });
 
-  testWidgets("a measure can count chosen goals' events, without sub-goals", (
-    tester,
-  ) async {
+  testWidgets("a measure can count another goal's events, without its "
+      'sub-goals', (tester) async {
     final repo = tree();
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
@@ -568,15 +567,26 @@ void main() {
     await openMeasure(tester, 'Cooking');
     await pickKind(tester, 'Time spent');
     await tester.enterText(find.widgetWithText(TextField, 'Target'), '10h');
-    await tester.ensureVisible(find.text('Chosen goals'));
+    await tester.ensureVisible(find.text('Another goal'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Chosen goals'));
+    await tester.tap(find.text('Another goal'));
     await tester.pumpAndSettle();
-    final hosting = find.widgetWithText(CheckboxListTile, 'Hosting');
-    await tester.ensureVisible(hosting);
-    await tester.tap(hosting);
+    final pick = find.text('Pick a goal');
+    await tester.ensureVisible(pick);
     await tester.pumpAndSettle();
-    final subGoals = find.text('Include their sub-goals');
+    await tester.tap(pick);
+    await tester.pumpAndSettle();
+    // Not the goal itself.
+    expect(
+      find.descendant(
+        of: find.byType(DropdownMenuItem<String?>),
+        matching: find.text('Cooking'),
+      ),
+      findsNothing,
+    );
+    await tester.tap(find.text('Hosting').last);
+    await tester.pumpAndSettle();
+    final subGoals = find.text("Include its sub-goals' events");
     await tester.ensureVisible(subGoals);
     await tester.tap(subGoals);
     await tester.pumpAndSettle();
@@ -596,7 +606,7 @@ void main() {
     expect(cooking.measure, {
       'kind': 'duration',
       'target_min': 600,
-      'goal_ids': ['host'],
+      'events_of': 'host',
       'include_sub_goals': false,
     });
   });

@@ -178,7 +178,12 @@ class SampleData {
       'effective_color': '#039be5',
       'priority': 0,
       'fixed_time': true,
-      'measure': {'kind': 'wake_time', 'target': '07:00', 'grace_min': 10},
+      'measure': {
+        'kind': 'time_constraint',
+        'edge': 'start',
+        'target': '07:00',
+        'grace_min': 10,
+      },
       ..._health('wake', stale: 2),
       ..._time(60, 420),
     }),
@@ -345,8 +350,8 @@ class SampleData {
     'tracker' => '${rating * 6 ~/ 60}h of 10h in the last 7 days → $rating',
     'wake' =>
       rating == 100
-          ? 'Woke 06:55; target 07:00 with 10 min grace → 100'
-          : 'Woke later than 07:10 → $rating',
+          ? 'Started 06:55; by 07:00 with 10 min grace → 100'
+          : 'Started later than 07:10 → $rating',
     'host' || 'parents' || 'cousins' =>
       rating == 100
           ? '1 of 1 in the last ${id == 'parents' ? 60 : 7} days → 100'
