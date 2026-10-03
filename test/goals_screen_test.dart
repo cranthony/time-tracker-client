@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:time_tracker_client/models/assessment.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/screens/goal_history_screen.dart';
@@ -411,6 +413,102 @@ void main() {
     expect(describeTime(0, 420, skipZero: true), '7h in 7d');
     expect(describeTime(0, 0, skipZero: true), isNull);
     expect(describeTime(0, 0), '0m in 24h · 0m in 7d');
+    // Or just the shares, however small.
+    expect(describeTime(540, 0, asPercent: true), '37.5% of 24h · 0% of 7d');
+    expect(describeTime(60, 5, asPercent: true), '4.2% of 24h · <0.1% of 7d');
+    expect(describeTime(0, 600, skipZero: true, asPercent: true), '6% of 7d');
+  });
+
+  group('what each goal shows under its name', () {
+    InMemoryGoalsRepository goals() => InMemoryGoalsRepository(
+      [
+        const Goal(
+          id: 'app',
+          name: 'Make an app',
+          measure: {'kind': 'duration', 'target_min': 600, 'interval_days': 7},
+          minutes24h: 540,
+          minutes7d: 1680,
+        ),
+        const Goal(id: 'idea', name: 'Idea', minutes24h: 0, minutes7d: 600),
+      ],
+      const {},
+      DateTime(2026, 10, 2, 21),
+      const [
+        StatusMinutes(statuses: {'active'}, minutes24h: 540, minutes7d: 2280),
+      ],
+    );
+
+    Future<void> pick(WidgetTester tester, String label) async {
+      await tester.tap(find.byTooltip('Show under each goal…'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(RadioMenuButton<GoalSummary>, label),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    setUp(
+      () => SharedPreferencesAsyncPlatform.instance =
+          InMemorySharedPreferencesAsync.empty(),
+    );
+    tearDown(
+      () => SharedPreferencesAsyncPlatform.instance =
+          InMemorySharedPreferencesAsync.empty(),
+    );
+
+    testWidgets('is its time spent to start with', (tester) async {
+      await tester.pumpWidget(app(goals()));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('9h in 24h (37.5%) · 28h in 7d (16.7%)\n10h per 7 days'),
+        findsOneWidget,
+      );
+      expect(find.text('10h in 7d (6%)'), findsOneWidget);
+    });
+
+    testWidgets('can be its measure, or its time as percentages', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(goals()));
+      await tester.pumpAndSettle();
+
+      await pick(tester, 'Measure');
+      // Its measure moves up, and isn't said twice; without one, nothing.
+      expect(find.text('10h per 7 days'), findsOneWidget);
+      expect(find.textContaining('in 24h'), findsOneWidget); // Overall's
+      expect(
+        find.descendant(
+          of: find.widgetWithText(ListTile, 'Idea'),
+          matching: find.textContaining('7d'),
+        ),
+        findsNothing,
+      );
+
+      await pick(tester, 'Time as a percentage');
+      expect(
+        find.text('37.5% of 24h · 16.7% of 7d\n10h per 7 days'),
+        findsOneWidget,
+      );
+      expect(find.text('6% of 7d'), findsOneWidget);
+      // The Overall card's too.
+      expect(
+        find.textContaining('37.5% of 24h · 22.6% of 7d on the goals shown'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('is kept for next time', (tester) async {
+      await tester.pumpWidget(app(goals()));
+      await tester.pumpAndSettle();
+      await pick(tester, 'Time as a percentage');
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(app(goals()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('6% of 7d'), findsOneWidget);
+    });
   });
 
   testWidgets('says when notes were never compacted', (tester) async {

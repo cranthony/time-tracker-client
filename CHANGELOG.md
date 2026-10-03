@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.1.0
+
+- The Goals page's new menu, beside the status filter, picks what each
+  goal shows under its name: the time spent on it and its sub-goals in
+  the last 24 hours and 7 days (as before), its measure ("10h per 7
+  days"), or its time as a share of each window ("37.5% of 24h · 6% of
+  7d"). The Overall card's time follows it too, and is always shown. The
+  choice is kept on the device.
+
 ## 4.0.0
 
 - A time-spent, number-of-events or time-of-day measure can look at
