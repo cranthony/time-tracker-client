@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/goal.dart';
 import '../models/measure.dart';
@@ -24,6 +25,9 @@ import '../widgets/status_message.dart';
 /// reordering: each goal can be dragged among its siblings, its sub-goals
 /// going with it, until "Done". The filter at the top right picks which
 /// statuses are shown: proposed, active and inactive goals to start with.
+/// The menu beside it picks what each goal shows under its name: its
+/// time spent, its measure, its time as a share of each window, or its
+/// events' priority and fixed time ([GoalSummary]), kept on the device.
 /// Only active goals take up a calendar label; the others keep their
 /// history. Tapping a goal shows its details, all its properties, and lets
 /// one change them, its status included; tapping its ratings shows its
@@ -74,11 +78,39 @@ class _GoalsScreenState extends State<GoalsScreen> {
   /// Whether goals are being dragged into a new order.
   bool _reordering = false;
 
+  /// What each goal shows under its name.
+  GoalSummary _summary = GoalSummary.time;
+
   @override
   void initState() {
     super.initState();
     _showCached();
     _load();
+    _loadSummary();
+  }
+
+  /// The [GoalSummary] picked last time, if one was. Best effort, like
+  /// the response cache: without one, it's [GoalSummary.time].
+  Future<void> _loadSummary() async {
+    try {
+      final name = await SharedPreferencesAsync().getString(_summaryKey);
+      final summary = GoalSummary.values.asNameMap()[name];
+      if (!mounted || summary == null) return;
+      setState(() => _summary = summary);
+    } catch (_) {
+      // Nowhere to keep it: the default it is.
+    }
+  }
+
+  void _setSummary(GoalSummary summary) {
+    setState(() => _summary = summary);
+    try {
+      SharedPreferencesAsync()
+          .setString(_summaryKey, summary.name)
+          .catchError((_) {});
+    } catch (_) {
+      // Nowhere to keep it: it lasts until the app closes.
+    }
   }
 
   /// Shows the goals kept from last time, unless the server answered
@@ -300,6 +332,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
                         () => on ? _shown.add(status) : _shown.remove(status),
                       ),
                     ),
+                  if (ready)
+                    _SummaryPicker(summary: _summary, onChanged: _setSummary),
                   AppMenu(
                     serverLabel: widget.serverLabel,
                     version: widget.version,
@@ -471,6 +505,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
         _OverallCard(
           goal: overall,
           time: overall?.timeFor(_shown) ?? goals.timeFor(_shown),
+          summary: _summary,
           goalNames: names,
           onTap: overall == null ? null : () => _open(overall),
           onHistory: overall == null ? null : () => _history(overall),
@@ -486,6 +521,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
             goal: goal,
             goalNames: names,
             shownStatuses: _shown,
+            summary: _summary,
             subGoals: subGoals[goal.id] ?? 0,
             expanded: _expanded.contains(goal.id),
             onToggle: () => setState(() {
@@ -539,6 +575,60 @@ class _StatusFilter extends StatelessWidget {
   }
 }
 
+/// What each goal on the Goals page shows under its name.
+enum GoalSummary {
+  /// The time spent on it and its sub-goals in the last 24 hours and 7
+  /// days: "9h in 24h · 10h in 7d".
+  time('Time spent'),
+
+  /// What its measure rates: "10h per 7 days".
+  measure('Measure'),
+
+  /// Its time as a share of each window: "37.5% of 24h · 6% of 7d".
+  percent('Time as a percentage'),
+
+  /// What it gives its events: "Priority 2 · Fixed time".
+  eventProperties('Event properties');
+
+  const GoalSummary(this.label);
+
+  /// How [_SummaryPicker] offers it.
+  final String label;
+}
+
+/// Where the [GoalSummary] picked is kept.
+const _summaryKey = 'goal_summary';
+
+/// The app bar's pick of what each goal shows under its name: a drop-down
+/// of every [GoalSummary], the one shown ticked.
+class _SummaryPicker extends StatelessWidget {
+  const _SummaryPicker({required this.summary, required this.onChanged});
+
+  final GoalSummary summary;
+  final ValueChanged<GoalSummary> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return MenuAnchor(
+      menuChildren: [
+        for (final option in GoalSummary.values)
+          RadioMenuButton<GoalSummary>(
+            value: option,
+            groupValue: summary,
+            onChanged: (picked) => onChanged(picked ?? option),
+            child: Text(option.label),
+          ),
+      ],
+      builder: (context, controller, _) => IconButton(
+        tooltip: 'Show under each goal…',
+        icon: const Icon(Icons.short_text),
+        onPressed: () =>
+            controller.isOpen ? controller.close() : controller.open(),
+      ),
+    );
+  }
+}
+
 /// An active goal's flag: solid in its own color if it has one; otherwise
 /// an outline in the color it inherits, from its parent or its priority.
 class GoalFlag extends StatelessWidget {
@@ -576,6 +666,7 @@ class _GoalTile extends StatelessWidget {
     required this.goal,
     this.goalNames = const {},
     this.shownStatuses,
+    this.summary = GoalSummary.time,
     required this.subGoals,
     required this.expanded,
     required this.onToggle,
@@ -594,6 +685,9 @@ class _GoalTile extends StatelessWidget {
   /// The statuses the Goals page shows: its time is through goals with
   /// these. Null for all its time.
   final Set<String>? shownStatuses;
+
+  /// What it shows under its name, above its other details.
+  final GoalSummary summary;
 
   /// How many sub-goals it has (of those shown); none, and it has no arrow.
   final int subGoals;
@@ -619,18 +713,9 @@ class _GoalTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final priority = goal.priority;
     final faded = goal.active ? null : TextStyle(color: theme.hintColor);
     final details = [
       if (!goal.active) goalStatuses[goal.status] ?? goal.status,
-      if (priority != null) 'Priority $priority',
-      switch (goal.fixedTime) {
-        true => 'Fixed time',
-        false => 'Flexible time',
-        null => null,
-      },
-      if (goal.measure case final measure?)
-        describeMeasure(measure, goalNames: goalNames),
       if (goal.staleDays case final stale? when stale > 0)
         '$stale day${stale == 1 ? '' : 's'} unrated',
       if (subGoals > 0 && !expanded)
@@ -646,13 +731,22 @@ class _GoalTile extends StatelessWidget {
       final shown? => goal.timeFor(shown),
       null => null,
     };
-    final time = switch (filtered ?? (goal.minutes24h, goal.minutes7d)) {
-      (final int day, final int week) => describeTime(
-        day,
-        week,
-        skipZero: true,
+    final shown = switch ((summary, goal.measure)) {
+      (GoalSummary.measure, final measure?) => describeMeasure(
+        measure,
+        goalNames: goalNames,
       ),
-      _ => null,
+      (GoalSummary.measure, null) => null,
+      (GoalSummary.eventProperties, _) => describeEventProperties(goal),
+      _ => switch (filtered ?? (goal.minutes24h, goal.minutes7d)) {
+        (final int day, final int week) => describeTime(
+          day,
+          week,
+          skipZero: true,
+          asPercent: summary == GoalSummary.percent,
+        ),
+        _ => null,
+      },
     };
     final flag = Tooltip(
       message: goalStatuses[goal.status] ?? goal.status,
@@ -703,10 +797,10 @@ class _GoalTile extends StatelessWidget {
               ],
             ),
       title: Text(goalName(goal), style: faded),
-      subtitle: details.isEmpty && time == null
+      subtitle: details.isEmpty && shown == null
           ? null
           : Text(
-              [?time, if (details.isNotEmpty) details].join('\n'),
+              [?shown, if (details.isNotEmpty) details].join('\n'),
               style: faded,
             ),
       trailing: Row(
@@ -811,6 +905,7 @@ class _OverallCard extends StatelessWidget {
   const _OverallCard({
     required this.goal,
     required this.time,
+    this.summary = GoalSummary.time,
     required this.goalNames,
     required this.onTap,
     required this.onHistory,
@@ -820,6 +915,11 @@ class _OverallCard extends StatelessWidget {
 
   /// Minutes on the goals shown in the last 24 hours and 7 days.
   final (int, int)? time;
+
+  /// What it shows under its name, as every goal does. Unlike theirs, its
+  /// time is shown even when there's none, and its measure, when it has
+  /// none, is the average of the top-level goals'.
+  final GoalSummary summary;
   final Map<String?, String> goalNames;
   final VoidCallback? onTap;
   final VoidCallback? onHistory;
@@ -829,25 +929,32 @@ class _OverallCard extends StatelessWidget {
     final theme = Theme.of(context);
     final goal = this.goal;
     if (goal == null && time == null) return const SizedBox.shrink();
+    final measure = switch (goal?.measure) {
+      final measure? => describeMeasure(measure, goalNames: goalNames),
+      _ when goal != null => "Average of the top-level goals'",
+      _ => null,
+    };
+    final shown = switch ((summary, time)) {
+      (GoalSummary.measure, _) => measure,
+      (GoalSummary.eventProperties, _) =>
+        goal == null ? null : describeEventProperties(goal),
+      (_, (final day, final week)) =>
+        '${describeTime(day, week, asPercent: summary == GoalSummary.percent)!} '
+            'on the goals shown',
+      _ => null,
+    };
     final details = [
-      if (time case (final day, final week))
-        '${describeTime(day, week)!} on the goals shown',
-      [
-        if (goal?.measure case final measure?)
-          describeMeasure(measure, goalNames: goalNames)
-        else if (goal != null)
-          "Average of the top-level goals'",
-        if (goal?.staleDays case final stale? when stale > 0)
-          '$stale day${stale == 1 ? '' : 's'} unrated',
-      ].join(' · '),
-    ].where((line) => line.isNotEmpty).join('\n');
+      shown,
+      if (goal?.staleDays case final stale? when stale > 0)
+        '$stale day${stale == 1 ? '' : 's'} unrated',
+    ].nonNulls.where((line) => line.isNotEmpty).join('\n');
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       color: theme.colorScheme.surfaceContainerHigh,
       child: ListTile(
         leading: Icon(Icons.all_inclusive, color: theme.colorScheme.primary),
         title: Text(goal == null ? 'All goals' : goalName(goal)),
-        subtitle: Text(details),
+        subtitle: details.isEmpty ? null : Text(details),
         onTap: onTap,
         trailing: goal == null
             ? null
@@ -887,20 +994,35 @@ String formatTimestamp(BuildContext context, DateTime time) {
       '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
 }
 
-/// [day] and [week] minutes as "9h in 24h (37.5%) · 10h in 7d (6%)", each
-/// with its share of the time in its window when that's more than 1/24 (an
-/// hour a day). With [skipZero], a window with no time is left out, and
-/// null is given if both are.
-String? describeTime(int day, int week, {bool skipZero = false}) {
+/// The priority and fixed time [goal] gives its events: "Priority 2 ·
+/// Fixed time". Null if it gives neither.
+String? describeEventProperties(Goal goal) {
+  final parts = [
+    if (goal.priority case final priority?) 'Priority $priority',
+    switch (goal.fixedTime) {
+      true => 'Fixed time',
+      false => 'Flexible time',
+      null => null,
+    },
+  ].nonNulls;
+  return parts.isEmpty ? null : parts.join(' · ');
+}
+
+/// [day] and [week] minutes as "9h in 24h · 10h in 7d", or with
+/// [asPercent], as shares of each window: "37.5% of 24h · 6% of 7d". With
+/// [skipZero], a window with no time is left out, and null is given if
+/// both are.
+String? describeTime(
+  int day,
+  int week, {
+  bool skipZero = false,
+  bool asPercent = false,
+}) {
   String? part(int minutes, String window, int windowMinutes) {
     if (skipZero && minutes == 0) return null;
-    final text = '${formatMinutes(minutes)} in $window';
-    if (minutes * 24 <= windowMinutes) return text;
-    final percent = (minutes * 100 / windowMinutes).toStringAsFixed(1);
-    final tidy = percent.endsWith('.0')
-        ? percent.substring(0, percent.length - 2)
-        : percent;
-    return '$text ($tidy%)';
+    return asPercent
+        ? '${_percent(minutes, windowMinutes)} of $window'
+        : '${formatMinutes(minutes)} in $window';
   }
 
   final parts = [
@@ -908,4 +1030,11 @@ String? describeTime(int day, int week, {bool skipZero = false}) {
     part(week, '7d', 7 * 24 * 60),
   ].nonNulls;
   return parts.isEmpty ? null : parts.join(' · ');
+}
+
+/// [minutes] as a share of [of] to a tenth: "37.5%", "6%", "<0.1%".
+String _percent(int minutes, int of) {
+  final percent = (minutes * 100 / of).toStringAsFixed(1);
+  if (minutes > 0 && percent == '0.0') return '<0.1%';
+  return '${percent.endsWith('.0') ? percent.substring(0, percent.length - 2) : percent}%';
 }

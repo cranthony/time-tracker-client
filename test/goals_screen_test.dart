@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:time_tracker_client/models/assessment.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/screens/goal_history_screen.dart';
@@ -113,8 +115,10 @@ void main() {
 
       // Sub-goals start collapsed: their parent says how many it has.
       expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
-      expect(find.text('Priority 1 · 1 sub-goal'), findsOneWidget);
-      expect(find.text('Fixed time'), findsOneWidget);
+      expect(find.text('1 sub-goal'), findsOneWidget);
+      // Priorities and fixed time are only under "Event properties".
+      expect(find.textContaining('Priority'), findsNothing);
+      expect(find.text('Fixed time'), findsNothing);
       expect(find.text('Proposed'), findsWidgets);
       expect(find.text('3 of 200 labels in use'), findsOneWidget);
       // Only a goal with sub-goals can be expanded.
@@ -129,7 +133,7 @@ void main() {
         'Idea',
         'Old habit',
       ]);
-      expect(find.text('Priority 1'), findsOneWidget);
+      expect(find.text('1 sub-goal'), findsNothing);
       // The sub-goal is indented under its parent.
       final indent = tester
           .widgetList<ListTile>(find.byType(ListTile))
@@ -397,20 +401,134 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Last compacted Oct 2, 2026, 9:05 PM'), findsOneWidget);
-    expect(find.text('1h 30m in 24h (6.3%) · 10h in 7d (6%)'), findsOneWidget);
+    expect(find.text('1h 30m in 24h · 10h in 7d'), findsOneWidget);
   });
 
-  test('a time has its share of its window, if over 1/24', () {
-    expect(describeTime(540, 0), '9h in 24h (37.5%) · 0m in 7d');
-    expect(describeTime(0, 1680), '0m in 24h · 28h in 7d (16.7%)');
-    // An hour a day or less isn't given one.
-    expect(describeTime(60, 420), '1h in 24h · 7h in 7d');
-    expect(describeTime(61, 421), '1h 1m in 24h (4.2%) · 7h 1m in 7d (4.2%)');
+  test('a time is said in hours and minutes, or as shares of each window', () {
+    expect(describeTime(540, 0), '9h in 24h · 0m in 7d');
+    expect(describeTime(0, 1680), '0m in 24h · 28h in 7d');
     // A goal's leaves out a window with no time, the Overall card's doesn't.
-    expect(describeTime(540, 0, skipZero: true), '9h in 24h (37.5%)');
+    expect(describeTime(540, 0, skipZero: true), '9h in 24h');
     expect(describeTime(0, 420, skipZero: true), '7h in 7d');
     expect(describeTime(0, 0, skipZero: true), isNull);
     expect(describeTime(0, 0), '0m in 24h · 0m in 7d');
+    // Or just the shares, however small.
+    expect(describeTime(540, 0, asPercent: true), '37.5% of 24h · 0% of 7d');
+    expect(describeTime(60, 5, asPercent: true), '4.2% of 24h · <0.1% of 7d');
+    expect(describeTime(0, 600, skipZero: true, asPercent: true), '6% of 7d');
+  });
+
+  group('what each goal shows under its name', () {
+    InMemoryGoalsRepository goals() => InMemoryGoalsRepository(
+      [
+        const Goal(id: overallGoalId, name: 'Overall'),
+        const Goal(
+          id: 'app',
+          name: 'Make an app',
+          measure: {'kind': 'duration', 'target_min': 600, 'interval_days': 7},
+          minutes24h: 540,
+          minutes7d: 1680,
+        ),
+        const Goal(id: 'idea', name: 'Idea', minutes24h: 0, minutes7d: 600),
+      ],
+      const {},
+      DateTime(2026, 10, 2, 21),
+      const [
+        StatusMinutes(statuses: {'active'}, minutes24h: 540, minutes7d: 2280),
+      ],
+    );
+
+    Future<void> pick(WidgetTester tester, String label) async {
+      await tester.tap(find.byTooltip('Show under each goal…'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(RadioMenuButton<GoalSummary>, label),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    setUp(
+      () => SharedPreferencesAsyncPlatform.instance =
+          InMemorySharedPreferencesAsync.empty(),
+    );
+    tearDown(
+      () => SharedPreferencesAsyncPlatform.instance =
+          InMemorySharedPreferencesAsync.empty(),
+    );
+
+    testWidgets('is its time spent to start with', (tester) async {
+      await tester.pumpWidget(app(goals()));
+      await tester.pumpAndSettle();
+
+      // Its measure is only under "Measure".
+      expect(find.text('9h in 24h · 28h in 7d'), findsOneWidget);
+      expect(find.text('10h in 7d'), findsOneWidget);
+      expect(find.textContaining('per 7 days'), findsNothing);
+    });
+
+    testWidgets('can be its measure, or its time as percentages', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(goals()));
+      await tester.pumpAndSettle();
+
+      await pick(tester, 'Measure');
+      // Its measure moves up, and isn't said twice; without one, nothing.
+      expect(find.text('10h per 7 days'), findsOneWidget);
+      // The Overall card's too: it's rated by the top-level goals'.
+      expect(find.textContaining('in 24h'), findsNothing);
+      expect(find.text("Average of the top-level goals'"), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.widgetWithText(ListTile, 'Idea'),
+          matching: find.textContaining('7d'),
+        ),
+        findsNothing,
+      );
+
+      await pick(tester, 'Time as a percentage');
+      expect(find.text('37.5% of 24h · 16.7% of 7d'), findsOneWidget);
+      expect(find.text('6% of 7d'), findsOneWidget);
+      // The Overall card's too, without its measure.
+      expect(
+        find.text('37.5% of 24h · 22.6% of 7d on the goals shown'),
+        findsOneWidget,
+      );
+      expect(find.text("Average of the top-level goals'"), findsNothing);
+    });
+
+    testWidgets('can be the priority and fixed time it gives its events', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(tree()));
+      await tester.pumpAndSettle();
+
+      await pick(tester, 'Event properties');
+      expect(find.text('Priority 1\n1 sub-goal'), findsOneWidget);
+      expect(find.text('Fixed time'), findsOneWidget);
+      // Neither its time nor its measure.
+      expect(find.textContaining(' in 24h'), findsNothing);
+      // A goal that gives neither shows nothing for them.
+      expect(
+        find.descendant(
+          of: find.widgetWithText(ListTile, 'Idea'),
+          matching: find.text('Proposed'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('is kept for next time', (tester) async {
+      await tester.pumpWidget(app(goals()));
+      await tester.pumpAndSettle();
+      await pick(tester, 'Time as a percentage');
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(app(goals()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('6% of 7d'), findsOneWidget);
+    });
   });
 
   testWidgets('says when notes were never compacted', (tester) async {
@@ -537,8 +655,8 @@ void main() {
       (g) => g.id == 'cook',
     );
     expect(cooking.measure, {'kind': 'duration', 'target_min': 600});
-    // The Goals page says what it's measured by.
-    expect(find.text('Priority 1 · 10h per day · 1 sub-goal'), findsOneWidget);
+    // The Goals page says what it's measured by only under "Measure".
+    expect(find.text('10h per day'), findsNothing);
   });
 
   testWidgets("a measure missing what its kind needs isn't kept", (
@@ -723,7 +841,7 @@ void main() {
     expect(find.byType(HealthDot), findsOneWidget); // not for the proposed one
     expect(find.text('85'), findsOneWidget);
     expect(find.byType(TrendSparkline), findsOneWidget);
-    expect(find.text('Your rating · 2 days unrated'), findsOneWidget);
+    expect(find.text('2 days unrated'), findsOneWidget);
   });
 
   testWidgets("a goal's history lists its assessments under a chart", (
@@ -873,17 +991,14 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(
-        find.text('1h 30m in 24h (6.3%) · 11h 30m in 7d (6.8%)'),
-        findsOneWidget,
-      );
+      expect(find.text('1h 30m in 24h · 11h 30m in 7d'), findsOneWidget);
 
       await tester.tap(find.byTooltip('Show goals that are…'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(CheckboxMenuButton, 'Inactive'));
       await tester.pumpAndSettle();
 
-      expect(find.text('1h in 24h · 10h in 7d (6%)'), findsOneWidget);
+      expect(find.text('1h in 24h · 10h in 7d'), findsOneWidget);
     });
 
     test('GoalList totals the time on goals of any of some statuses', () {
@@ -923,11 +1038,7 @@ void main() {
       expect(shownNames(tester), ['Overall', 'Cooking', 'Old habit']);
       expect(find.byType(Card), findsOneWidget);
       expect(
-        find.text(
-          '1h 30m in 24h (6.3%) · 12h 15m in 7d (7.3%) on the goals '
-          'shown\n'
-          "Average of the top-level goals'",
-        ),
+        find.text('1h 30m in 24h · 12h 15m in 7d on the goals shown'),
         findsOneWidget,
       );
 
@@ -937,9 +1048,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.textContaining(
-          '1h in 24h · 10h 45m in 7d (6.4%) on the goals shown',
-        ),
+        find.textContaining('1h in 24h · 10h 45m in 7d on the goals shown'),
         findsOneWidget,
       );
     });

@@ -10,7 +10,9 @@ it, add a sub-goal from its menu, or move it to another status:
 proposed, active, inactive, completed, archived or deleted. Only active
 goals take up one of the calendar's event labels; the rest keep their
 history. Proposed, active and inactive goals are shown to start with,
-and the filter at the top right picks others. Each active goal shows its health — its latest confirmed rating, a small chart of recent ones, and how many periods have gone unassessed — and its menu opens its history. Later it will show the summaries the server
+and the filter at the top right picks others. The menu beside it picks what
+each goal shows under its name: its time spent, its measure, its time
+as a percentage, or its events' priority and fixed time. Each active goal shows its health — its latest confirmed rating, a small chart of recent ones, and how many periods have gone unassessed — and its menu opens its history. Later it will show the summaries the server
 generates.
 
 It is built for Android and also runs on Windows and in Chrome. Chrome

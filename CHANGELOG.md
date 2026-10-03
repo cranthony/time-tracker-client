@@ -6,10 +6,24 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
-## 4.1.0
+## 4.2.0
 
 - The note sheet has - and + buttons beside the time, to move it a
   minute earlier or later, and a Now button to set it to now.
+
+## 4.1.0
+
+- The Goals page's new menu, beside the status filter, picks what each
+  goal shows under its name: the time spent on it and its sub-goals in
+  the last 24 hours and 7 days, its measure ("10h per 7 days"), its time
+  as a share of each window ("37.5% of 24h · 6% of 7d"), or the priority
+  and fixed time it gives its events ("Priority 1 · Fixed time"). The
+  Overall card follows it too, though its time is shown even when
+  there's none. The choice is kept on the device.
+- A goal's measure, priority and fixed time are shown only when their
+  option is picked, no longer always under its name.
+- The time spent no longer has each window's share after it: pick "Time
+  as a percentage" for that.
 
 ## 4.0.0
 
