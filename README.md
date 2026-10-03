@@ -36,7 +36,48 @@ needs no extra tooling, so it's the quickest way to try changes.
 
    If you skip `--dart-define-from-file=config.json` in the commands below,
    the app runs in an **offline demo mode** with in-memory notes. That's
-   handy for UI work.
+   handy for UI work. To fill it with sample notes, events and goals, see
+   [Try it with sample data](#try-it-with-sample-data).
+
+## Try it with sample data
+
+To try the app on your own machine without a server or signing in, launch
+it with `SAMPLE_DATA=true`. It starts with a realistic day of
+[sample notes, events and goals](#sample-data), dated relative to today.
+You need only Flutter and a clone of this repo (steps 1 and 2 above); skip
+`config.json`.
+
+In Chrome, which needs no other tooling:
+
+```sh
+flutter run -d chrome --dart-define=SAMPLE_DATA=true
+```
+
+On Windows (with the [prerequisites](#run-on-windows) installed), or on a
+plugged-in Android phone or a running emulator:
+
+```sh
+flutter run -d windows --dart-define=SAMPLE_DATA=true
+flutter run --dart-define=SAMPLE_DATA=true      # Android
+```
+
+Or build the web app once and serve it, then open <http://localhost:8765>:
+
+```sh
+flutter build web --dart-define=SAMPLE_DATA=true
+python -m http.server 8765 --directory build/web
+```
+
+A few things to know:
+
+- **Don't add `--dart-define-from-file=config.json`.** Sample data is used
+  only when there's no `MCP_URL`. With one, the app talks to your server
+  and ignores `SAMPLE_DATA`.
+- **Changes aren't saved.** New notes, edited events and goals last until
+  the app restarts. Reloading the page in Chrome, or a hot restart (`R`
+  in the terminal), starts again from the sample data. A hot reload (`r`)
+  keeps them.
+- Without `SAMPLE_DATA=true` the app starts empty.
 
 ## Run on Windows
 
@@ -310,15 +351,8 @@ server.
 for trying the app without a server. Its goals have every status,
 sub-goals, their own and inherited colors, and health ratings, including
 skipped periods, periods not yet assessed, and a proposed rating. It's
-dated relative to today, so it never goes stale. Run the app with it:
-
-```sh
-flutter run -d chrome --dart-define=SAMPLE_DATA=true
-```
-
-It is used only when there's no `MCP_URL`, so leave out
-`--dart-define-from-file=config.json`. Changes you make (new notes,
-edited goals) last until the app restarts.
+dated relative to today, so it never goes stale. To run the app with it,
+see [Try it with sample data](#try-it-with-sample-data).
 
 ### Visual tests
 
