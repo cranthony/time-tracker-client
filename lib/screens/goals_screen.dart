@@ -26,8 +26,8 @@ import '../widgets/status_message.dart';
 /// going with it, until "Done". The filter at the top right picks which
 /// statuses are shown: proposed, active and inactive goals to start with.
 /// The menu beside it picks what each goal shows under its name: its
-/// time spent, its measure, or its time as a share of each window
-/// ([GoalSummary]), kept on the device.
+/// time spent, its measure, its time as a share of each window, or its
+/// events' priority and fixed time ([GoalSummary]), kept on the device.
 /// Only active goals take up a calendar label; the others keep their
 /// history. Tapping a goal shows its details, all its properties, and lets
 /// one change them, its status included; tapping its ratings shows its
@@ -585,7 +585,10 @@ enum GoalSummary {
   measure('Measure'),
 
   /// Its time as a share of each window: "37.5% of 24h · 6% of 7d".
-  percent('Time as a percentage');
+  percent('Time as a percentage'),
+
+  /// What it gives its events: "Priority 2 · Fixed time".
+  eventProperties('Event properties');
 
   const GoalSummary(this.label);
 
@@ -710,18 +713,9 @@ class _GoalTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final priority = goal.priority;
     final faded = goal.active ? null : TextStyle(color: theme.hintColor);
     final details = [
       if (!goal.active) goalStatuses[goal.status] ?? goal.status,
-      if (priority != null) 'Priority $priority',
-      switch (goal.fixedTime) {
-        true => 'Fixed time',
-        false => 'Flexible time',
-        null => null,
-      },
-      if (goal.measure case final measure? when summary != GoalSummary.measure)
-        describeMeasure(measure, goalNames: goalNames),
       if (goal.staleDays case final stale? when stale > 0)
         '$stale day${stale == 1 ? '' : 's'} unrated',
       if (subGoals > 0 && !expanded)
@@ -743,6 +737,7 @@ class _GoalTile extends StatelessWidget {
         goalNames: goalNames,
       ),
       (GoalSummary.measure, null) => null,
+      (GoalSummary.eventProperties, _) => describeEventProperties(goal),
       _ => switch (filtered ?? (goal.minutes24h, goal.minutes7d)) {
         (final int day, final int week) => describeTime(
           day,
@@ -922,7 +917,8 @@ class _OverallCard extends StatelessWidget {
   final (int, int)? time;
 
   /// What it shows under its name, as every goal does. Unlike theirs, its
-  /// time is shown even when there's none.
+  /// time is shown even when there's none, and its measure, when it has
+  /// none, is the average of the top-level goals'.
   final GoalSummary summary;
   final Map<String?, String> goalNames;
   final VoidCallback? onTap;
@@ -940,6 +936,8 @@ class _OverallCard extends StatelessWidget {
     };
     final shown = switch ((summary, time)) {
       (GoalSummary.measure, _) => measure,
+      (GoalSummary.eventProperties, _) =>
+        goal == null ? null : describeEventProperties(goal),
       (_, (final day, final week)) =>
         '${describeTime(day, week, asPercent: summary == GoalSummary.percent)!} '
             'on the goals shown',
@@ -947,11 +945,8 @@ class _OverallCard extends StatelessWidget {
     };
     final details = [
       shown,
-      [
-        if (summary != GoalSummary.measure) ?measure,
-        if (goal?.staleDays case final stale? when stale > 0)
-          '$stale day${stale == 1 ? '' : 's'} unrated',
-      ].join(' · '),
+      if (goal?.staleDays case final stale? when stale > 0)
+        '$stale day${stale == 1 ? '' : 's'} unrated',
     ].nonNulls.where((line) => line.isNotEmpty).join('\n');
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
@@ -959,7 +954,7 @@ class _OverallCard extends StatelessWidget {
       child: ListTile(
         leading: Icon(Icons.all_inclusive, color: theme.colorScheme.primary),
         title: Text(goal == null ? 'All goals' : goalName(goal)),
-        subtitle: Text(details),
+        subtitle: details.isEmpty ? null : Text(details),
         onTap: onTap,
         trailing: goal == null
             ? null
@@ -997,6 +992,20 @@ String formatTimestamp(BuildContext context, DateTime time) {
   final local = time.toLocal();
   return '${strings.formatShortDate(local)}, '
       '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
+}
+
+/// The priority and fixed time [goal] gives its events: "Priority 2 ·
+/// Fixed time". Null if it gives neither.
+String? describeEventProperties(Goal goal) {
+  final parts = [
+    if (goal.priority case final priority?) 'Priority $priority',
+    switch (goal.fixedTime) {
+      true => 'Fixed time',
+      false => 'Flexible time',
+      null => null,
+    },
+  ].nonNulls;
+  return parts.isEmpty ? null : parts.join(' · ');
 }
 
 /// [day] and [week] minutes as "9h in 24h · 10h in 7d", or with

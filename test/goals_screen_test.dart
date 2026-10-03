@@ -115,8 +115,10 @@ void main() {
 
       // Sub-goals start collapsed: their parent says how many it has.
       expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
-      expect(find.text('Priority 1 · 1 sub-goal'), findsOneWidget);
-      expect(find.text('Fixed time'), findsOneWidget);
+      expect(find.text('1 sub-goal'), findsOneWidget);
+      // Priorities and fixed time are only under "Event properties".
+      expect(find.textContaining('Priority'), findsNothing);
+      expect(find.text('Fixed time'), findsNothing);
       expect(find.text('Proposed'), findsWidgets);
       expect(find.text('3 of 200 labels in use'), findsOneWidget);
       // Only a goal with sub-goals can be expanded.
@@ -131,7 +133,7 @@ void main() {
         'Idea',
         'Old habit',
       ]);
-      expect(find.text('Priority 1'), findsOneWidget);
+      expect(find.text('1 sub-goal'), findsNothing);
       // The sub-goal is indented under its parent.
       final indent = tester
           .widgetList<ListTile>(find.byType(ListTile))
@@ -458,11 +460,10 @@ void main() {
       await tester.pumpWidget(app(goals()));
       await tester.pumpAndSettle();
 
-      expect(
-        find.text('9h in 24h · 28h in 7d\n10h per 7 days'),
-        findsOneWidget,
-      );
+      // Its measure is only under "Measure".
+      expect(find.text('9h in 24h · 28h in 7d'), findsOneWidget);
       expect(find.text('10h in 7d'), findsOneWidget);
+      expect(find.textContaining('per 7 days'), findsNothing);
     });
 
     testWidgets('can be its measure, or its time as percentages', (
@@ -486,16 +487,32 @@ void main() {
       );
 
       await pick(tester, 'Time as a percentage');
+      expect(find.text('37.5% of 24h · 16.7% of 7d'), findsOneWidget);
+      expect(find.text('6% of 7d'), findsOneWidget);
+      // The Overall card's too, without its measure.
       expect(
-        find.text('37.5% of 24h · 16.7% of 7d\n10h per 7 days'),
+        find.text('37.5% of 24h · 22.6% of 7d on the goals shown'),
         findsOneWidget,
       );
-      expect(find.text('6% of 7d'), findsOneWidget);
-      // The Overall card's too.
+      expect(find.text("Average of the top-level goals'"), findsNothing);
+    });
+
+    testWidgets('can be the priority and fixed time it gives its events', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(tree()));
+      await tester.pumpAndSettle();
+
+      await pick(tester, 'Event properties');
+      expect(find.text('Priority 1\n1 sub-goal'), findsOneWidget);
+      expect(find.text('Fixed time'), findsOneWidget);
+      // Neither its time nor its measure.
+      expect(find.textContaining(' in 24h'), findsNothing);
+      // A goal that gives neither shows nothing for them.
       expect(
-        find.text(
-          '37.5% of 24h · 22.6% of 7d on the goals shown\n'
-          "Average of the top-level goals'",
+        find.descendant(
+          of: find.widgetWithText(ListTile, 'Idea'),
+          matching: find.text('Proposed'),
         ),
         findsOneWidget,
       );
@@ -638,8 +655,8 @@ void main() {
       (g) => g.id == 'cook',
     );
     expect(cooking.measure, {'kind': 'duration', 'target_min': 600});
-    // The Goals page says what it's measured by.
-    expect(find.text('Priority 1 · 10h per day · 1 sub-goal'), findsOneWidget);
+    // The Goals page says what it's measured by only under "Measure".
+    expect(find.text('10h per day'), findsNothing);
   });
 
   testWidgets("a measure missing what its kind needs isn't kept", (
@@ -824,7 +841,7 @@ void main() {
     expect(find.byType(HealthDot), findsOneWidget); // not for the proposed one
     expect(find.text('85'), findsOneWidget);
     expect(find.byType(TrendSparkline), findsOneWidget);
-    expect(find.text('Your rating · 2 days unrated'), findsOneWidget);
+    expect(find.text('2 days unrated'), findsOneWidget);
   });
 
   testWidgets("a goal's history lists its assessments under a chart", (
@@ -1021,11 +1038,7 @@ void main() {
       expect(shownNames(tester), ['Overall', 'Cooking', 'Old habit']);
       expect(find.byType(Card), findsOneWidget);
       expect(
-        find.text(
-          '1h 30m in 24h · 12h 15m in 7d on the goals '
-          'shown\n'
-          "Average of the top-level goals'",
-        ),
+        find.text('1h 30m in 24h · 12h 15m in 7d on the goals shown'),
         findsOneWidget,
       );
 

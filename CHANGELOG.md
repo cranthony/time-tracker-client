@@ -10,10 +10,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 - The Goals page's new menu, beside the status filter, picks what each
   goal shows under its name: the time spent on it and its sub-goals in
-  the last 24 hours and 7 days, its measure ("10h per 7 days"), or its
-  time as a share of each window ("37.5% of 24h · 6% of 7d"). The
+  the last 24 hours and 7 days, its measure ("10h per 7 days"), its time
+  as a share of each window ("37.5% of 24h · 6% of 7d"), or the priority
+  and fixed time it gives its events ("Priority 1 · Fixed time"). The
   Overall card follows it too, though its time is shown even when
   there's none. The choice is kept on the device.
+- A goal's measure, priority and fixed time are shown only when their
+  option is picked, no longer always under its name.
 - The time spent no longer has each window's share after it: pick "Time
   as a percentage" for that.
 
