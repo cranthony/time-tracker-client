@@ -6,6 +6,20 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.0.0
+
+- A time-spent, number-of-events or time-of-day measure can look at
+  another goal's events as though they were its own goal's: pick
+  "Another goal" under "Events of" (with or without its sub-goals'). A
+  "work 40 hours a week" sub-goal can measure its parent's events without
+  any being tagged with it. This replaces choosing several goals.
+- "Time of day" replaces "Wake-up time": when the day's first event of
+  the goal starts, or its last ends, by (or not before) a time, with a
+  grace and a "zero at". Measure waking from a "get up" goal's events,
+  and work's "in by 9:30" and "out by 5:30" the same way. A goal still
+  measured by wake-up time needs its measure changed.
+- Needs a server with `events_of` and `time_constraint` measures.
+
 ## 3.3.0
 
 - On the Goals page, a goal's time in the last 24 hours and 7 days, and

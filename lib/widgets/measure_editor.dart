@@ -48,7 +48,9 @@ class _MeasureEditorState extends State<MeasureEditor> {
   final _interval = TextEditingController();
   final _zeroAtDays = TextEditingController();
   final _percentile = TextEditingController();
-  String _wakeTarget = '07:00';
+  String _timeTarget = '09:00';
+  String _edge = 'start';
+  String _when = 'by';
   String _agg = 'mean';
 
   /// A weighted rollup's weight for each sub-goal, by id.
@@ -58,9 +60,10 @@ class _MeasureEditorState extends State<MeasureEditor> {
   /// for any other goal, one that's since moved, isn't kept.
   Set<String>? _subGoalIds;
 
-  /// The goals whose events are looked at, in the order chosen; null for
-  /// the measure's own goal.
-  List<String>? _goalIds;
+  /// Whether it looks at another goal's events, as though it were that
+  /// goal; and which, once picked.
+  bool _otherGoal = false;
+  String? _eventsOf;
   bool _subGoals = true;
 
   @override
@@ -73,7 +76,12 @@ class _MeasureEditorState extends State<MeasureEditor> {
       final String s => s,
       _ => '',
     };
-    if (m['goal_ids'] case final List ids) _goalIds = [...ids.cast<String>()];
+    // From before events_of, the first of the goals it counted.
+    _eventsOf = switch ((m['events_of'], m['goal_ids'])) {
+      (final String id, _) || (_, [final String id, ...]) => id,
+      _ => null,
+    };
+    _otherGoal = _eventsOf != null;
     if (m['include_sub_goals'] == false) _subGoals = false;
     _interval.text = text(m['interval_days']);
     _zeroAtDays.text = text(m['zero_at_days']);
@@ -85,8 +93,10 @@ class _MeasureEditorState extends State<MeasureEditor> {
       case 'count':
         _target.text = text(m['target']);
         _noun.text = text(m['noun']);
-      case 'wake_time':
-        if (m['target'] case final String target) _wakeTarget = target;
+      case 'time_constraint':
+        if (m['target'] case final String target) _timeTarget = target;
+        if (m['edge'] == 'end') _edge = 'end';
+        if (m['when'] == 'after') _when = 'after';
         _grace.text = text(m['grace_min']);
         _zeroAt.text = text(m['zero_at_min']);
       case 'subjective':
@@ -142,12 +152,16 @@ class _MeasureEditorState extends State<MeasureEditor> {
       return t.isEmpty ? null : t;
     }
 
-    // Which goals' events: left out for the defaults.
+    // Whose events: left out for the defaults. Another goal not picked
+    // yet is empty, for measureProblem to ask for.
+    final source = {
+      if (_otherGoal) 'events_of': _eventsOf ?? '',
+      if (!_subGoals) 'include_sub_goals': false,
+    };
     final events = {
       'interval_days': ?number(_interval),
       'zero_at_days': ?number(_zeroAtDays),
-      'goal_ids': ?_goalIds,
-      if (!_subGoals) 'include_sub_goals': false,
+      ...source,
     };
     return switch (_kind) {
       null => null,
@@ -165,11 +179,14 @@ class _MeasureEditorState extends State<MeasureEditor> {
         'noun': ?text(_noun),
         ...events,
       },
-      'wake_time' => {
-        'kind': 'wake_time',
-        'target': _wakeTarget,
+      'time_constraint' => {
+        'kind': 'time_constraint',
+        'edge': _edge,
+        'target': _timeTarget,
+        if (_when != 'by') 'when': _when,
         'grace_min': ?number(_grace),
         'zero_at_min': ?number(_zeroAt),
+        ...source,
       },
       'subjective' => {
         'kind': 'subjective',
@@ -193,24 +210,24 @@ class _MeasureEditorState extends State<MeasureEditor> {
 
   void _changed() => widget.onChanged(_measure);
 
-  Future<void> _pickWakeTarget() async {
-    final [hour, minute] = _wakeTarget.split(':').map(int.parse).toList();
+  Future<void> _pickTimeTarget() async {
+    final [hour, minute] = _timeTarget.split(':').map(int.parse).toList();
     final picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay(hour: hour, minute: minute),
     );
     if (picked == null) return;
     setState(() {
-      _wakeTarget =
+      _timeTarget =
           '${picked.hour.toString().padLeft(2, '0')}:'
           '${picked.minute.toString().padLeft(2, '0')}';
     });
     _changed();
   }
 
-  /// Whose events a time-spent or number-of-events measure looks at.
+  /// Whose events a time-spent, number-of-events or time-of-day measure
+  /// looks at: its own goal's, or another's, as though it were that goal.
   List<Widget> _whoseEvents(ThemeData theme) {
-    final chosen = _goalIds;
     return [
       Padding(
         padding: const EdgeInsets.only(top: 12, bottom: 4),
@@ -220,15 +237,15 @@ class _MeasureEditorState extends State<MeasureEditor> {
         showSelectedIcon: false,
         segments: const [
           ButtonSegment(value: false, label: Text('This goal')),
-          ButtonSegment(value: true, label: Text('Chosen goals')),
+          ButtonSegment(value: true, label: Text('Another goal')),
         ],
-        selected: {chosen != null},
+        selected: {_otherGoal},
         onSelectionChanged: (picked) {
-          setState(() => _goalIds = picked.single ? [] : null);
+          setState(() => _otherGoal = picked.single);
           _changed();
         },
       ),
-      if (chosen != null)
+      if (_otherGoal)
         FutureBuilder(
           future: widget.goals,
           builder: (context, snapshot) {
@@ -241,35 +258,40 @@ class _MeasureEditorState extends State<MeasureEditor> {
                   ? const Text("Couldn't load the goals.")
                   : const LinearProgressIndicator();
             }
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final goal in goals)
-                  if (goal.id case final id? when !goal.isOverall)
-                    CheckboxListTile(
-                      dense: true,
-                      contentPadding: EdgeInsetsDirectional.only(
+            final choices = [
+              for (final goal in goals)
+                if (goal.id != null &&
+                    !goal.isOverall &&
+                    goal.id != widget.goalId)
+                  goal,
+            ];
+            return DropdownButton<String?>(
+              isExpanded: true,
+              hint: const Text('Pick a goal'),
+              value: choices.any((g) => g.id == _eventsOf) ? _eventsOf : null,
+              items: [
+                for (final goal in choices)
+                  DropdownMenuItem(
+                    value: goal.id,
+                    child: Padding(
+                      padding: EdgeInsetsDirectional.only(
                         start: 16.0 * goal.depth,
                       ),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      value: chosen.contains(id),
-                      title: Text(goalName(goal)),
-                      onChanged: (on) {
-                        setState(() {
-                          chosen.remove(id);
-                          if (on == true) chosen.add(id);
-                        });
-                        _changed();
-                      },
+                      child: Text(goalName(goal)),
                     ),
+                  ),
               ],
+              onChanged: (picked) {
+                setState(() => _eventsOf = picked);
+                _changed();
+              },
             );
           },
         ),
       SwitchListTile(
         dense: true,
         contentPadding: EdgeInsets.zero,
-        title: const Text('Include their sub-goals'),
+        title: const Text("Include its sub-goals' events"),
         value: _subGoals,
         onChanged: (on) {
           setState(() => _subGoals = on);
@@ -430,22 +452,53 @@ class _MeasureEditorState extends State<MeasureEditor> {
             ...lookBack,
             ..._whoseEvents(theme),
           ],
-          'wake_time' => [
+          'time_constraint' => [
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 'start', label: Text('First starts')),
+                  ButtonSegment(value: 'end', label: Text('Last ends')),
+                ],
+                selected: {_edge},
+                onSelectionChanged: (picked) {
+                  setState(() => _edge = picked.single);
+                  _changed();
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 'by', label: Text('By')),
+                  ButtonSegment(value: 'after', label: Text('Not before')),
+                ],
+                selected: {_when},
+                onSelectionChanged: (picked) {
+                  setState(() => _when = picked.single);
+                  _changed();
+                },
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.only(top: 12),
               child: ActionChip(
-                avatar: const Icon(Icons.alarm),
-                label: Text('Up by $_wakeTarget'),
-                onPressed: _pickWakeTarget,
+                avatar: const Icon(Icons.schedule),
+                label: Text(_timeTarget),
+                onPressed: _pickTimeTarget,
               ),
             ),
             _field(_grace, 'Grace, in minutes', hint: '0', number: true),
             _field(
               _zeroAt,
-              'Zero at, in minutes late',
+              'Zero at, in minutes off',
               hint: '60',
               number: true,
             ),
+            ..._whoseEvents(theme),
           ],
           'subjective' => [
             _field(_prompt, 'Question', hint: 'e.g. How did it turn out?'),

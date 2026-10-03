@@ -10,9 +10,13 @@
 /// | `count`      | `target`: events per interval; optional `noun`         |
 /// | (both)       | optional `interval_days` (default 1), `zero_at_days`   |
 /// |              | (rated by how long ago the target was last met,        |
-/// |              | reaching 0 then), `goal_ids`, whose events count in    |
-/// |              | place of its goal's, and `include_sub_goals`           |
-/// | `wake_time`  | `target` "HH:MM"; optional `grace_min`, `zero_at_min`  |
+/// |              | reaching 0 then)                                       |
+/// | `time_       | `edge` ("start" of the day's first event, or "end" of  |
+/// | constraint`  | its last), `target` "HH:MM"; optional `when` ("by" or  |
+/// |              | "after"), `grace_min`, `zero_at_min`                   |
+/// | (all three)  | optional `events_of`, a goal whose events count as     |
+/// |              | though they were its own goal's, and                   |
+/// |              | `include_sub_goals`                                    |
 /// | `subjective` | `prompt`, asked in a reflection every `interval_days`  |
 /// |              | (default 1), carried over from the day before between  |
 /// | `llm`        | `rubric` Claude rates the day against                  |
@@ -25,7 +29,7 @@ typedef Measure = Map<String, Object?>;
 const measureKinds = {
   'duration': 'Time spent',
   'count': 'Number of events',
-  'wake_time': 'Wake-up time',
+  'time_constraint': 'Time of day',
   'subjective': 'Your rating',
   'llm': "Claude's judgement",
   'rollup': 'From sub-goals',
@@ -39,9 +43,10 @@ const measureKindHints = {
   'count':
       "How many of its events (and its sub-goals') there were over the last "
       'few days, against a target.',
-  'wake_time':
-      'When you got up: full marks within the grace, falling to '
-      'none at "zero at" minutes late.',
+  'time_constraint':
+      "When the day's first event starts, or its last ends: full marks by "
+      'the time (or not before it), within the grace, falling to none at '
+      '"zero at" minutes off. Up by 7, in by 9:30, out by 5:30.',
   'subjective':
       "You're asked in a reflection every few days; on the days between, "
       "the day before's rating carries over. Rating it any time starts the "
@@ -101,11 +106,19 @@ String describeMeasure(
   Map<String?, String> goalNames = const {},
 }) {
   final kind = measure['kind'];
-  final of = switch ((measure['goal_ids'], measure['include_sub_goals'])) {
-    (final List ids, final sub) =>
+  final of = switch ((
+    measure['events_of'],
+    measure['goal_ids'],
+    measure['include_sub_goals'],
+  )) {
+    (final String id, _, final sub) =>
+      ', of ${goalNames[id] ?? 'another goal'}'
+          '${sub == false ? ' (not sub-goals)' : ''}',
+    // From before events_of.
+    (_, final List ids, final sub) =>
       ', of ${ids.length > 3 || ids.any((id) => !goalNames.containsKey(id)) ? '${ids.length} goal${ids.length == 1 ? '' : 's'}' : ids.map((id) => goalNames[id]).join(', ')}'
           '${sub == false ? ' (not sub-goals)' : ''}',
-    (_, false) => ', not sub-goals',
+    (_, _, false) => ', not sub-goals',
     _ => '',
   };
   final per = 'per ${_days(_number(measure['interval_days']) ?? 1)}';
@@ -131,10 +144,12 @@ String describeMeasure(
           ? noun.substring(0, noun.length - 1)
           : noun;
       return '$target $shown $per$zeroAt$of';
-    case 'wake_time':
+    case 'time_constraint':
       final grace = _number(measure['grace_min']) ?? 0;
-      return 'Up by ${measure['target'] ?? '?'}'
-          '${full && grace > 0 ? ' ($grace min grace)' : ''}';
+      return '${measure['edge'] == 'end' ? 'Ends' : 'Starts'} '
+          '${measure['when'] == 'after' ? 'not before' : 'by'} '
+          '${measure['target'] ?? '?'}'
+          '${full && grace > 0 ? ' ($grace min grace)' : ''}$of';
     case 'subjective':
       final prompt = measure['prompt'];
       final every = _number(measure['interval_days']) ?? 1;
@@ -167,8 +182,8 @@ String describeMeasure(
 String? measureProblem(Measure measure) {
   bool positive(Object? n) => n is num && n > 0;
   bool text(Object? s) => s is String && s.trim().isNotEmpty;
-  if (measure['goal_ids'] case final List ids when ids.isEmpty) {
-    return 'Choose at least one goal whose events count.';
+  if (measure.containsKey('events_of') && !text(measure['events_of'])) {
+    return 'Choose the goal whose events count.';
   }
   switch (measure['kind']) {
     case 'duration' || 'count':
@@ -188,7 +203,10 @@ String? measureProblem(Measure measure) {
       if (zeroAt != null && (zeroAt is! num || zeroAt <= (interval as num))) {
         return '"Zero at" must be more days than it looks back.';
       }
-    case 'wake_time':
+    case 'time_constraint':
+      if (measure['edge'] != 'start' && measure['edge'] != 'end') {
+        return "Pick the first event's start or the last one's end.";
+      }
       final target = measure['target'];
       if (target is! String ||
           !RegExp(r'^([01]\d|2[0-3]):[0-5]\d$').hasMatch(target)) {

@@ -32,19 +32,55 @@ void main() {
     );
     expect(
       describeMeasure({
-        'kind': 'wake_time',
+        'kind': 'time_constraint',
+        'edge': 'start',
         'target': '07:00',
         'grace_min': 10,
       }),
-      'Up by 07:00',
+      'Starts by 07:00',
     );
     expect(
       describeMeasure({
-        'kind': 'wake_time',
+        'kind': 'time_constraint',
+        'edge': 'start',
         'target': '07:00',
         'grace_min': 10,
       }, full: true),
-      'Up by 07:00 (10 min grace)',
+      'Starts by 07:00 (10 min grace)',
+    );
+    expect(
+      describeMeasure(
+        {
+          'kind': 'time_constraint',
+          'edge': 'end',
+          'target': '17:30',
+          'events_of': 'work',
+        },
+        goalNames: {'work': 'Work'},
+      ),
+      'Ends by 17:30, of Work',
+    );
+    expect(
+      describeMeasure({
+        'kind': 'time_constraint',
+        'edge': 'start',
+        'target': '08:00',
+        'when': 'after',
+      }),
+      'Starts not before 08:00',
+    );
+    expect(
+      describeMeasure(
+        {
+          'kind': 'duration',
+          'target_min': 2400,
+          'interval_days': 7,
+          'events_of': 'work',
+          'include_sub_goals': false,
+        },
+        goalNames: {'work': 'Work'},
+      ),
+      '40h per 7 days, of Work (not sub-goals)',
     );
     expect(
       describeMeasure({'kind': 'subjective', 'prompt': 'How was it?'}),
@@ -129,17 +165,34 @@ void main() {
       isNull,
     );
     expect(
-      measureProblem({'kind': 'wake_time', 'target': '7am'}),
+      measureProblem({
+        'kind': 'time_constraint',
+        'edge': 'start',
+        'target': '7am',
+      }),
       contains('target time'),
     );
     expect(
+      measureProblem({'kind': 'time_constraint', 'target': '07:00'}),
+      contains("first event's start"),
+    );
+    expect(
       measureProblem({
-        'kind': 'wake_time',
+        'kind': 'time_constraint',
+        'edge': 'end',
         'target': '07:00',
         'grace_min': 10,
         'zero_at_min': 5,
       }),
       contains('Zero at'),
+    );
+    expect(
+      measureProblem({'kind': 'duration', 'target_min': 60, 'events_of': ''}),
+      contains('Choose the goal'),
+    );
+    expect(
+      measureProblem({'kind': 'wake_time', 'target': '07:00'}),
+      contains('kind'),
     );
     expect(measureProblem({'kind': 'llm'}), contains('rate the day'));
     expect(measureProblem({'kind': 'subjective'}), contains('question'));
