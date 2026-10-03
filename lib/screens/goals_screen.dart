@@ -578,7 +578,7 @@ class _StatusFilter extends StatelessWidget {
 /// What each goal on the Goals page shows under its name.
 enum GoalSummary {
   /// The time spent on it and its sub-goals in the last 24 hours and 7
-  /// days: "9h in 24h (37.5%) · 10h in 7d (6%)".
+  /// days: "9h in 24h · 10h in 7d".
   time('Time spent'),
 
   /// What its measure rates: "10h per 7 days".
@@ -921,9 +921,8 @@ class _OverallCard extends StatelessWidget {
   /// Minutes on the goals shown in the last 24 hours and 7 days.
   final (int, int)? time;
 
-  /// Whether its time is shown as a share of each window
-  /// ([GoalSummary.percent]). Its time is always shown, and its measure
-  /// is anyway.
+  /// What it shows under its name, as every goal does. Unlike theirs, its
+  /// time is shown even when there's none.
   final GoalSummary summary;
   final Map<String?, String> goalNames;
   final VoidCallback? onTap;
@@ -934,19 +933,26 @@ class _OverallCard extends StatelessWidget {
     final theme = Theme.of(context);
     final goal = this.goal;
     if (goal == null && time == null) return const SizedBox.shrink();
-    final details = [
-      if (time case (final day, final week))
+    final measure = switch (goal?.measure) {
+      final measure? => describeMeasure(measure, goalNames: goalNames),
+      _ when goal != null => "Average of the top-level goals'",
+      _ => null,
+    };
+    final shown = switch ((summary, time)) {
+      (GoalSummary.measure, _) => measure,
+      (_, (final day, final week)) =>
         '${describeTime(day, week, asPercent: summary == GoalSummary.percent)!} '
             'on the goals shown',
+      _ => null,
+    };
+    final details = [
+      shown,
       [
-        if (goal?.measure case final measure?)
-          describeMeasure(measure, goalNames: goalNames)
-        else if (goal != null)
-          "Average of the top-level goals'",
+        if (summary != GoalSummary.measure) ?measure,
         if (goal?.staleDays case final stale? when stale > 0)
           '$stale day${stale == 1 ? '' : 's'} unrated',
       ].join(' · '),
-    ].where((line) => line.isNotEmpty).join('\n');
+    ].nonNulls.where((line) => line.isNotEmpty).join('\n');
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       color: theme.colorScheme.surfaceContainerHigh,
@@ -993,11 +999,10 @@ String formatTimestamp(BuildContext context, DateTime time) {
       '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
 }
 
-/// [day] and [week] minutes as "9h in 24h (37.5%) · 10h in 7d (6%)", each
-/// with its share of the time in its window when that's more than 1/24 (an
-/// hour a day). With [asPercent], just the shares: "37.5% of 24h · 6% of
-/// 7d". With [skipZero], a window with no time is left out, and null is
-/// given if both are.
+/// [day] and [week] minutes as "9h in 24h · 10h in 7d", or with
+/// [asPercent], as shares of each window: "37.5% of 24h · 6% of 7d". With
+/// [skipZero], a window with no time is left out, and null is given if
+/// both are.
 String? describeTime(
   int day,
   int week, {
@@ -1006,10 +1011,9 @@ String? describeTime(
 }) {
   String? part(int minutes, String window, int windowMinutes) {
     if (skipZero && minutes == 0) return null;
-    final percent = _percent(minutes, windowMinutes);
-    if (asPercent) return '$percent of $window';
-    final text = '${formatMinutes(minutes)} in $window';
-    return minutes * 24 <= windowMinutes ? text : '$text ($percent)';
+    return asPercent
+        ? '${_percent(minutes, windowMinutes)} of $window'
+        : '${formatMinutes(minutes)} in $window';
   }
 
   final parts = [

@@ -10,10 +10,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 - The Goals page's new menu, beside the status filter, picks what each
   goal shows under its name: the time spent on it and its sub-goals in
-  the last 24 hours and 7 days (as before), its measure ("10h per 7
-  days"), or its time as a share of each window ("37.5% of 24h · 6% of
-  7d"). The Overall card's time follows it too, and is always shown. The
-  choice is kept on the device.
+  the last 24 hours and 7 days, its measure ("10h per 7 days"), or its
+  time as a share of each window ("37.5% of 24h · 6% of 7d"). The
+  Overall card follows it too, though its time is shown even when
+  there's none. The choice is kept on the device.
+- The time spent no longer has each window's share after it: pick "Time
+  as a percentage" for that.
 
 ## 4.0.0
 

@@ -399,17 +399,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Last compacted Oct 2, 2026, 9:05 PM'), findsOneWidget);
-    expect(find.text('1h 30m in 24h (6.3%) · 10h in 7d (6%)'), findsOneWidget);
+    expect(find.text('1h 30m in 24h · 10h in 7d'), findsOneWidget);
   });
 
-  test('a time has its share of its window, if over 1/24', () {
-    expect(describeTime(540, 0), '9h in 24h (37.5%) · 0m in 7d');
-    expect(describeTime(0, 1680), '0m in 24h · 28h in 7d (16.7%)');
-    // An hour a day or less isn't given one.
-    expect(describeTime(60, 420), '1h in 24h · 7h in 7d');
-    expect(describeTime(61, 421), '1h 1m in 24h (4.2%) · 7h 1m in 7d (4.2%)');
+  test('a time is said in hours and minutes, or as shares of each window', () {
+    expect(describeTime(540, 0), '9h in 24h · 0m in 7d');
+    expect(describeTime(0, 1680), '0m in 24h · 28h in 7d');
     // A goal's leaves out a window with no time, the Overall card's doesn't.
-    expect(describeTime(540, 0, skipZero: true), '9h in 24h (37.5%)');
+    expect(describeTime(540, 0, skipZero: true), '9h in 24h');
     expect(describeTime(0, 420, skipZero: true), '7h in 7d');
     expect(describeTime(0, 0, skipZero: true), isNull);
     expect(describeTime(0, 0), '0m in 24h · 0m in 7d');
@@ -422,6 +419,7 @@ void main() {
   group('what each goal shows under its name', () {
     InMemoryGoalsRepository goals() => InMemoryGoalsRepository(
       [
+        const Goal(id: overallGoalId, name: 'Overall'),
         const Goal(
           id: 'app',
           name: 'Make an app',
@@ -461,10 +459,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text('9h in 24h (37.5%) · 28h in 7d (16.7%)\n10h per 7 days'),
+        find.text('9h in 24h · 28h in 7d\n10h per 7 days'),
         findsOneWidget,
       );
-      expect(find.text('10h in 7d (6%)'), findsOneWidget);
+      expect(find.text('10h in 7d'), findsOneWidget);
     });
 
     testWidgets('can be its measure, or its time as percentages', (
@@ -476,7 +474,9 @@ void main() {
       await pick(tester, 'Measure');
       // Its measure moves up, and isn't said twice; without one, nothing.
       expect(find.text('10h per 7 days'), findsOneWidget);
-      expect(find.textContaining('in 24h'), findsOneWidget); // Overall's
+      // The Overall card's too: it's rated by the top-level goals'.
+      expect(find.textContaining('in 24h'), findsNothing);
+      expect(find.text("Average of the top-level goals'"), findsOneWidget);
       expect(
         find.descendant(
           of: find.widgetWithText(ListTile, 'Idea'),
@@ -493,7 +493,10 @@ void main() {
       expect(find.text('6% of 7d'), findsOneWidget);
       // The Overall card's too.
       expect(
-        find.textContaining('37.5% of 24h · 22.6% of 7d on the goals shown'),
+        find.text(
+          '37.5% of 24h · 22.6% of 7d on the goals shown\n'
+          "Average of the top-level goals'",
+        ),
         findsOneWidget,
       );
     });
@@ -971,17 +974,14 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(
-        find.text('1h 30m in 24h (6.3%) · 11h 30m in 7d (6.8%)'),
-        findsOneWidget,
-      );
+      expect(find.text('1h 30m in 24h · 11h 30m in 7d'), findsOneWidget);
 
       await tester.tap(find.byTooltip('Show goals that are…'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(CheckboxMenuButton, 'Inactive'));
       await tester.pumpAndSettle();
 
-      expect(find.text('1h in 24h · 10h in 7d (6%)'), findsOneWidget);
+      expect(find.text('1h in 24h · 10h in 7d'), findsOneWidget);
     });
 
     test('GoalList totals the time on goals of any of some statuses', () {
@@ -1022,7 +1022,7 @@ void main() {
       expect(find.byType(Card), findsOneWidget);
       expect(
         find.text(
-          '1h 30m in 24h (6.3%) · 12h 15m in 7d (7.3%) on the goals '
+          '1h 30m in 24h · 12h 15m in 7d on the goals '
           'shown\n'
           "Average of the top-level goals'",
         ),
@@ -1035,9 +1035,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.textContaining(
-          '1h in 24h · 10h 45m in 7d (6.4%) on the goals shown',
-        ),
+        find.textContaining('1h in 24h · 10h 45m in 7d on the goals shown'),
         findsOneWidget,
       );
     });
