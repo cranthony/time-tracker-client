@@ -373,6 +373,40 @@ void main() {
     expect(saved.timestamp, tappedAt);
     await taps.close();
   });
+
+  screenTest('the dialog\'s -, + and Now buttons change the note\'s time', (
+    tester,
+  ) async {
+    final repo = InMemoryNotesRepository();
+    final taps = StreamController<DateTime>();
+    await tester.pumpWidget(app(repo, addNoteRequests: taps.stream));
+    await tester.pumpAndSettle();
+
+    taps.add(today(7, 5));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('A minute later'));
+    await tester.tap(find.byTooltip('A minute later'));
+    await tester.pump();
+    expect(find.text('7:07 AM'), findsOneWidget);
+    await tester.tap(find.byTooltip('A minute earlier'));
+    await tester.pump();
+    expect(find.text('7:06 AM'), findsOneWidget);
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect((await repo.uncompactedNotes()).single.timestamp, today(7, 6));
+
+    taps.add(today(7, 5));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Now'));
+    final before = DateTime.now();
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    final saved = (await repo.uncompactedNotes()).firstWhere(
+      (n) => n.timestamp != today(7, 6),
+    );
+    expect(saved.timestamp.difference(before).inSeconds.abs(), lessThan(5));
+    await taps.close();
+  });
 }
 
 class _SignInRepository extends InMemoryNotesRepository {
