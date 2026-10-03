@@ -34,8 +34,19 @@ class SampleData {
   );
   EventsRepository eventsRepository() =>
       InMemoryEventsRepository(events, recurrences);
-  GoalsRepository goalsRepository() =>
-      InMemoryGoalsRepository(goals, assessments, lastCompaction);
+  GoalsRepository goalsRepository() => InMemoryGoalsRepository(
+    goals,
+    assessments,
+    lastCompaction,
+    minutesByStatuses,
+  );
+
+  /// The time on goals by the statuses of the goals each event served:
+  /// most on active goals, a little on the guitar, which is paused.
+  List<StatusMinutes> get minutesByStatuses => const [
+    StatusMinutes(statuses: {'active'}, minutes24h: 420, minutes7d: 2610),
+    StatusMinutes(statuses: {'inactive'}, minutes24h: 0, minutes7d: 90),
+  ];
 
   List<Note> get notes => [
     Note(timestamp: _at(7, 5), description: 'Up, a little late'),
@@ -142,6 +153,13 @@ class SampleData {
   );
 
   List<Goal> get goals => [
+    Goal.fromJson({
+      'id': overallGoalId,
+      'name': 'Overall',
+      'status': 'active',
+      ..._health('overall'),
+      ..._time(420, 2610),
+    }),
     Goal.fromJson({
       'id': 'tracker',
       'name': _names['tracker'],
@@ -273,6 +291,7 @@ class SampleData {
     'cook': [20, 35, 45, 45, 60, 60, 65, 80],
     'tofu': [20, 35, 50, 45, 60, 70, 65, 80],
     'neighbor': [100, 100, 96, 89, 82, 100, 100, 100],
+    'overall': [70, 75, 66, 62, 70, 82, 80, 82],
     'parents': [100, 100, 100, 100, 100, 100, 100, 100],
     'cousins': [100, 100, 93, 79, 64, 100, 100, 100],
   };
@@ -310,7 +329,7 @@ class SampleData {
             rating: ratings[i],
             method: switch (id) {
               'tofu' => 'subjective',
-              'cook' || 'neighbor' => 'rollup',
+              'cook' || 'neighbor' || 'overall' => 'rollup',
               _ => 'metric',
             },
             status: i == ratings.length - 1 ? 'proposed' : 'confirmed',

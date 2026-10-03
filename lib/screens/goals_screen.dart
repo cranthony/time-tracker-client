@@ -12,7 +12,10 @@ import '../widgets/health.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
-/// Every goal, as a tree: each one's color, name, status, priority and
+/// The overall goal at the top -- its rating, and the time spent on goals
+/// of the statuses shown in the last 24 hours and 7 days, each event once
+/// -- then every other goal, as a tree: each one's color, name, status,
+/// priority and
 /// measure, the time spent on it (and its sub-goals) in the last 24 hours
 /// and 7 days up to the last compaction, which is noted at the top, and
 /// its last 8 days' ratings, with its sub-goals indented under it. A goal
@@ -346,7 +349,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
       );
     }
     if (goals == null) return const Center(child: CircularProgressIndicator());
-    if (goals.goals.isEmpty) {
+    // The overall goal has a card of its own, above the tree.
+    final overall = goals.overall;
+    final all = [
+      for (final goal in goals.goals)
+        if (!goal.isOverall) goal,
+    ];
+    if (all.isEmpty) {
       return const FillViewport(
         child: StatusMessage(
           icon: Icons.flag_outlined,
@@ -354,10 +363,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
         ),
       );
     }
-    final byId = {for (final goal in goals.goals) goal.id: goal};
+    final byId = {for (final goal in all) goal.id: goal};
     final names = {for (final goal in goals.goals) goal.id: goalName(goal)};
     final withStatus = [
-      for (final goal in goals.goals)
+      for (final goal in all)
         if (_shown.contains(goal.status)) goal,
     ];
     // How many sub-goals each goal has, of those with the statuses shown.
@@ -458,6 +467,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
               ),
             ],
           ),
+        ),
+        _OverallCard(
+          goal: overall,
+          time: goals.timeFor(_shown),
+          goalNames: names,
+          onTap: overall == null ? null : () => _open(overall),
+          onHistory: overall == null ? null : () => _history(overall),
         ),
         if (shown.isEmpty)
           const StatusMessage(
@@ -769,7 +785,85 @@ GoalList _withSiblingOrder(GoalList goals, List<String> ids) {
     labelSlotsUsed: goals.labelSlotsUsed,
     labelSlotsTotal: goals.labelSlotsTotal,
     asOf: goals.asOf,
+    minutesByStatuses: goals.minutesByStatuses,
   );
+}
+
+/// The overall goal, above the rest: its rating and last 8 days, and the
+/// time spent on the goals of the statuses shown. Tapping it shows its
+/// details; tapping its ratings, its history. Without [goal] (from an
+/// older server), just the time.
+class _OverallCard extends StatelessWidget {
+  const _OverallCard({
+    required this.goal,
+    required this.time,
+    required this.goalNames,
+    required this.onTap,
+    required this.onHistory,
+  });
+
+  final Goal? goal;
+
+  /// Minutes on the goals shown in the last 24 hours and 7 days.
+  final (int, int)? time;
+  final Map<String?, String> goalNames;
+  final VoidCallback? onTap;
+  final VoidCallback? onHistory;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final goal = this.goal;
+    if (goal == null && time == null) return const SizedBox.shrink();
+    final details = [
+      if (time case (final day, final week))
+        '${formatMinutes(day)} in 24h · ${formatMinutes(week)} in 7d on the '
+            'goals shown',
+      [
+        if (goal?.measure case final measure?)
+          describeMeasure(measure, goalNames: goalNames)
+        else if (goal != null)
+          "Average of the top-level goals'",
+        if (goal?.staleDays case final stale? when stale > 0)
+          '$stale day${stale == 1 ? '' : 's'} unrated',
+      ].join(' · '),
+    ].where((line) => line.isNotEmpty).join('\n');
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      color: theme.colorScheme.surfaceContainerHigh,
+      child: ListTile(
+        leading: Icon(Icons.all_inclusive, color: theme.colorScheme.primary),
+        title: Text(goal == null ? 'All goals' : goalName(goal)),
+        subtitle: Text(details),
+        onTap: onTap,
+        trailing: goal == null
+            ? null
+            : Tooltip(
+                message: 'History of ${goalName(goal)}',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: onHistory,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (goal.healthTrend.isNotEmpty) ...[
+                          TrendSparkline(trend: goal.healthTrend),
+                          const SizedBox(width: 8),
+                        ],
+                        HealthDot(rating: goal.health),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
 }
 
 /// [time], in local time, as "Fri, Oct 2, 9:05 PM".

@@ -38,6 +38,10 @@ class Goal {
   /// Whether it's being worked on, and so holds a calendar label.
   bool get active => status == 'active';
 
+  /// Whether it's the overall goal, above every other: see
+  /// [overallGoalId].
+  bool get isOverall => id == overallGoalId;
+
   /// Its label's color, e.g. "#a4bdfc"; null to follow its priority.
   final String? backgroundColor;
   final int? priority;
@@ -117,6 +121,31 @@ class Goal {
   );
 }
 
+/// The overall goal's id: the goal above every other, whose sub-goals are
+/// implied to be every top-level goal. It's rated like any goal, holds no
+/// label, and can't be given to an event.
+const overallGoalId = 'overall';
+
+/// The time spent on events whose goals have exactly these [statuses]
+/// between them, as the server splits it: see [GoalList.timeFor].
+class StatusMinutes {
+  const StatusMinutes({
+    required this.statuses,
+    required this.minutes24h,
+    required this.minutes7d,
+  });
+
+  final Set<String> statuses;
+  final int minutes24h;
+  final int minutes7d;
+
+  factory StatusMinutes.fromJson(Map<String, dynamic> json) => StatusMinutes(
+    statuses: {...(json['statuses'] as List).cast<String>()},
+    minutes24h: json['minutes_24h'] as int? ?? 0,
+    minutes7d: json['minutes_7d'] as int? ?? 0,
+  );
+}
+
 /// The goals, and how many of the calendar's event labels they use.
 class GoalList {
   const GoalList({
@@ -124,6 +153,7 @@ class GoalList {
     this.labelSlotsUsed = 0,
     this.labelSlotsTotal = 200,
     this.asOf,
+    this.minutesByStatuses,
   });
 
   /// Parents before their children.
@@ -135,6 +165,29 @@ class GoalList {
   /// recent time is counted up to; null if they never have been.
   final DateTime? asOf;
 
+  /// The time spent on goals up to [asOf], split by the statuses of the
+  /// goals each event serves; null from a server too old to say, or
+  /// without an [asOf].
+  final List<StatusMinutes>? minutesByStatuses;
+
+  /// The overall goal, if the server has one.
+  Goal? get overall => goals.where((g) => g.isOverall).firstOrNull;
+
+  /// The minutes spent on goals with any of [statuses] in the last 24
+  /// hours and 7 days, each event once; null if it isn't known.
+  (int, int)? timeFor(Set<String> statuses) {
+    final split = minutesByStatuses;
+    if (split == null) return null;
+    var (day, week) = (0, 0);
+    for (final part in split) {
+      if (part.statuses.any(statuses.contains)) {
+        day += part.minutes24h;
+        week += part.minutes7d;
+      }
+    }
+    return (day, week);
+  }
+
   factory GoalList.fromJson(Map<String, dynamic> json) => GoalList(
     goals: [
       for (final goal in json['goals'] as List)
@@ -144,6 +197,13 @@ class GoalList {
     labelSlotsTotal: json['label_slots_total'] as int? ?? 200,
     asOf: switch (json['as_of']) {
       final String asOf => DateTime.tryParse(asOf),
+      _ => null,
+    },
+    minutesByStatuses: switch (json['minutes_by_statuses']) {
+      final List split => [
+        for (final part in split)
+          StatusMinutes.fromJson((part as Map).cast<String, dynamic>()),
+      ],
       _ => null,
     },
   );

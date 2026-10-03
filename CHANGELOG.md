@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 3.1.0
+
+- The Goals page starts with an Overall card: the overall goal, above all
+  the others, rated like any goal (by default, the average of the
+  top-level goals'), with its last 8 days. It shows the time spent on the
+  goals shown in the last 24 hours and 7 days, each event counted once,
+  and follows the status filter. Tapping it shows its details, where its
+  measure is set; tapping its ratings shows its history. It can't be a
+  parent or be given to an event. Needs a server with the overall goal.
+
 ## 3.0.0
 
 - Goals are rated once a day, in the daily reflection, and no longer have

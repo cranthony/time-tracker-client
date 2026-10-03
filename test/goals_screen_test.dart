@@ -783,6 +783,154 @@ void main() {
     );
   });
 
+  group('the overall goal', () {
+    InMemoryGoalsRepository withOverall() => InMemoryGoalsRepository(
+      [
+        const Goal(
+          id: overallGoalId,
+          name: 'Overall',
+          health: 72,
+          healthTrend: [60, 72],
+          staleDays: 0,
+        ),
+        const Goal(id: 'cook', name: 'Cooking'),
+        const Goal(id: 'old', name: 'Old habit', status: 'inactive'),
+      ],
+      {
+        overallGoalId: [
+          const Assessment(
+            goalId: overallGoalId,
+            day: '2026-09-30',
+            rating: 72,
+          ),
+        ],
+      },
+      DateTime(2026, 10, 2, 21),
+      const [
+        StatusMinutes(statuses: {'active'}, minutes24h: 60, minutes7d: 600),
+        StatusMinutes(statuses: {'inactive'}, minutes24h: 30, minutes7d: 90),
+        StatusMinutes(
+          statuses: {'active', 'inactive'},
+          minutes24h: 0,
+          minutes7d: 45,
+        ),
+      ],
+    );
+
+    test('GoalList totals the time on goals of any of some statuses', () {
+      final goals = GoalList.fromJson({
+        'goals': [],
+        'minutes_by_statuses': [
+          {
+            'statuses': ['active'],
+            'minutes_24h': 60,
+            'minutes_7d': 600,
+          },
+          {
+            'statuses': ['active', 'inactive'],
+            'minutes_24h': 10,
+            'minutes_7d': 45,
+          },
+          {
+            'statuses': ['inactive'],
+            'minutes_24h': 30,
+            'minutes_7d': 90,
+          },
+        ],
+      });
+      expect(goals.timeFor({'active'}), (70, 645));
+      expect(goals.timeFor({'inactive'}), (40, 135));
+      expect(goals.timeFor({'active', 'inactive'}), (100, 735));
+      expect(goals.timeFor({'deleted'}), (0, 0));
+      expect(GoalList.fromJson({'goals': []}).timeFor({'active'}), isNull);
+    });
+
+    testWidgets('sits above the tree with the time on the goals shown, '
+        'which follows the filter', (tester) async {
+      await tester.pumpWidget(app(withOverall()));
+      await tester.pumpAndSettle();
+
+      // Not in the tree itself.
+      expect(shownNames(tester), ['Overall', 'Cooking', 'Old habit']);
+      expect(find.byType(Card), findsOneWidget);
+      expect(
+        find.text(
+          '1h 30m in 24h · 12h 15m in 7d on the goals shown\n'
+          "Average of the top-level goals'",
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byTooltip('Show goals that are…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(CheckboxMenuButton, 'Inactive'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('1h in 24h · 10h 45m in 7d on the goals shown'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('opens its details, without a status or parent, and its '
+        'history from its ratings', (tester) async {
+      await tester.pumpWidget(app(withOverall()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Overall'));
+      await tester.pumpAndSettle();
+      final dialog = find.byType(AlertDialog);
+      expect(
+        find.descendant(of: dialog, matching: find.text('measure')),
+        findsOneWidget,
+      );
+      for (final property in ['status', 'parent_id', 'background_color']) {
+        final row = find.ancestor(
+          of: find.descendant(of: dialog, matching: find.text(property)),
+          matching: find.byType(PropertyRow),
+        );
+        // Shown, but not editable: no tap target.
+        expect(
+          find.descendant(of: row, matching: find.byType(InkWell)),
+          findsNothing,
+          reason: property,
+        );
+      }
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('History of Overall'));
+      await tester.pumpAndSettle();
+      expect(find.byType(HealthHistoryChart), findsOneWidget);
+    });
+
+    testWidgets("isn't offered as a goal's parent", (tester) async {
+      await tester.pumpWidget(app(withOverall()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Cooking'));
+      await tester.pumpAndSettle();
+      final dialog = find.byType(AlertDialog);
+      final row = find.ancestor(
+        of: find.descendant(of: dialog, matching: find.text('parent_id')),
+        matching: find.byType(PropertyRow),
+      );
+      await tester.tap(find.descendant(of: row, matching: find.text('(none)')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(DropdownButton<String?>));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Old habit'), findsWidgets);
+      expect(
+        find.descendant(
+          of: find.byType(DropdownMenuItem<String?>),
+          matching: find.text('Overall'),
+        ),
+        findsNothing,
+      );
+    });
+  });
+
   testWidgets('says when there are no goals yet', (tester) async {
     await tester.pumpWidget(app(InMemoryGoalsRepository()));
     await tester.pumpAndSettle();
