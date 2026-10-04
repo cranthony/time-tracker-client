@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -21,7 +22,9 @@ import '../widgets/status_message.dart';
 /// midnight, with buttons to step to the day before or after and to zoom
 /// in or out. Swiping left or right slides to the day after or before,
 /// which are loaded in the background to be ready, and pinching zooms
-/// around the fingers. Tapping the date picks another; tapping an event
+/// around the fingers. The days slide over a [TimelineAxis] that stays
+/// still, scrolled up and down with them, so every day is at the same
+/// time of day. Tapping the date picks another; tapping an event
 /// shows all its properties, and lets one change them. It opens scrolled
 /// to now, on today, or else to the day's first event. The last
 /// compaction, from the goals, is marked on it.
@@ -122,13 +125,17 @@ class _EventsScreenState extends State<EventsScreen> {
   /// it started. Nothing scrolls or slides by dragging meanwhile.
   ({double distance, double scale})? _pinch;
 
-  /// Each day's timeline's scroll controller. One made for a day sliding
-  /// in starts at the same time of day as the day shown.
-  final _scrolls = <DateTime, ScrollController>{};
+  /// The timeline's scrolling up and down: every day's at once, as they
+  /// slide side by side within it.
+  final _scroll = ScrollController();
 
   /// Whether the timeline is still to be scrolled to the first day's
   /// first event, or now: once its events are shown.
   bool _scrollPending = true;
+
+  /// How tall the timeline is, with the days on it: clear of the zoom
+  /// buttons at the foot, with room for an event drawn past midnight.
+  double get _height => timelineHeight(_day, _scale) + 120;
 
   /// The day shown's events, if they're loaded.
   List<Event>? get _shown => _events[_day];
@@ -149,9 +156,7 @@ class _EventsScreenState extends State<EventsScreen> {
   @override
   void dispose() {
     _pages.dispose();
-    for (final scroll in _scrolls.values) {
-      scroll.dispose();
-    }
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -170,25 +175,6 @@ class _EventsScreenState extends State<EventsScreen> {
             DateTime.utc(_firstDay.year, _firstDay.month, _firstDay.day),
           )
           .inDays;
-
-  ScrollController _scrollFor(DateTime day) => _scrolls.putIfAbsent(day, () {
-    final shown = _scrolls[_day];
-    return ScrollController(
-      initialScrollOffset: shown != null && shown.hasClients ? shown.offset : 0,
-    );
-  });
-
-  ScrollController get _scroll => _scrollFor(_day);
-
-  /// Drops the scroll controllers of days no longer on screen, so the
-  /// next to slide in start where the day shown is.
-  void _dropHiddenScrolls() {
-    _scrolls.removeWhere((day, scroll) {
-      if (day == _day || scroll.hasClients) return false;
-      scroll.dispose();
-      return true;
-    });
-  }
 
   /// Loads the goals, for their colors, and when notes were last
   /// compacted: those kept from last time, then the server's. Best
@@ -219,7 +205,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// once it's laid out.
   void _scrollToStart() {
     final events = _shown;
-    if (!_scrollPending || events == null || events.isEmpty) return;
+    if (!_scrollPending || events == null) return;
     _scrollPending = false;
     final now = widget.clock();
     final starts = [
@@ -628,33 +614,9 @@ class _EventsScreenState extends State<EventsScreen> {
       ),
       body: RefreshingBar(
         refreshing: _stale && _error == null && !_needsSignIn,
-        child: NotificationListener<ScrollEndNotification>(
-          // The days' sliding, not a timeline's scrolling.
-          onNotification: (notification) {
-            if (notification.depth == 0) {
-              _slidingTo = null;
-              _dropHiddenScrolls();
-            }
-            return false;
-          },
-          // Raw pointers, so pinching doesn't contend with scrolling.
-          child: Listener(
-            onPointerDown: _pointerDown,
-            onPointerMove: _pointerMove,
-            onPointerUp: _pointerUp,
-            onPointerCancel: _pointerUp,
-            child: PageView.builder(
-              controller: _pages,
-              physics: _pinch == null
-                  ? null
-                  : const NeverScrollableScrollPhysics(),
-              onPageChanged: (page) => _show(_dayAt(page)),
-              itemBuilder: (context, page) => _buildDay(context, _dayAt(page)),
-            ),
-          ),
-        ),
+        child: _needsSignIn ? _buildSignIn() : _buildTimeline(),
       ),
-      floatingActionButton: (_shown?.isEmpty ?? true) || _needsSignIn
+      floatingActionButton: _needsSignIn
           ? null
           : Column(
               mainAxisSize: MainAxisSize.min,
@@ -683,72 +645,151 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  /// [day]'s page: its timeline, or why it can't be shown.
-  Widget _buildDay(BuildContext context, DateTime day) {
-    final events = _events[day];
-    final shown = day == _day;
-    final Widget page;
-    if (_needsSignIn) {
-      page = FillViewport(
-        child: StatusMessage(
-          icon: Icons.lock_outline,
-          text: 'Sign in to see your events.',
-          action: widget.onSignIn == null
-              ? null
-              : FilledButton(
-                  onPressed: _signingIn ? null : _signIn,
-                  child: Text(_signingIn ? 'Waiting for browser…' : 'Sign in'),
+  Widget _buildSignIn() => FillViewport(
+    child: StatusMessage(
+      icon: Icons.lock_outline,
+      text: 'Sign in to see your events.',
+      action: widget.onSignIn == null
+          ? null
+          : FilledButton(
+              onPressed: _signingIn ? null : _signIn,
+              child: Text(_signingIn ? 'Waiting for browser…' : 'Sign in'),
+            ),
+    ),
+  );
+
+  /// The days side by side over the [TimelineAxis], all scrolled up and
+  /// down at once.
+  Widget _buildTimeline() {
+    final events = _shown;
+    if (events != null) _scrollToStart();
+    final noDrag = _pinch == null ? null : const NeverScrollableScrollPhysics();
+    return Column(
+      children: [
+        // The last events loaded, or kept from last time, are still
+        // shown, under this.
+        if (_error != null && events != null && events.isNotEmpty)
+          StatusMessage(
+            icon: Icons.cloud_off,
+            text: 'Could not load events. These may be out of date.\n$_error',
+          ),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, view) => RefreshIndicator(
+              onRefresh: _refresh,
+              child: NotificationListener<ScrollEndNotification>(
+                // The days' sliding, not the timeline's scrolling.
+                onNotification: (notification) {
+                  if (notification.metrics.axis == Axis.horizontal) {
+                    _slidingTo = null;
+                  }
+                  return false;
+                },
+                // Raw pointers, so pinching doesn't contend with scrolling.
+                child: Listener(
+                  onPointerDown: _pointerDown,
+                  onPointerMove: _pointerMove,
+                  onPointerUp: _pointerUp,
+                  onPointerCancel: _pointerUp,
+                  child: ListView(
+                    controller: _scroll,
+                    physics: noDrag ?? const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      SizedBox(
+                        height: _height,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: TimelineAxis(day: _day, scale: _scale),
+                            ),
+                            Positioned.fill(
+                              child: PageView.builder(
+                                controller: _pages,
+                                physics: noDrag,
+                                onPageChanged: (page) => _show(_dayAt(page)),
+                                itemBuilder: (context, page) => _buildDay(
+                                  context,
+                                  _dayAt(page),
+                                  view.maxHeight,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+              ),
+            ),
+          ),
         ),
-      );
-    } else if (shown && _error != null && (events == null || events.isEmpty)) {
-      page = FillViewport(
-        child: StatusMessage(
+      ],
+    );
+  }
+
+  /// [day]'s page: its events, over the [TimelineAxis], or why they
+  /// can't be shown, in the middle of the [view] tall part of it on
+  /// screen.
+  Widget _buildDay(BuildContext context, DateTime day, double view) {
+    final events = _events[day];
+    if (day == _day && _error != null && (events == null || events.isEmpty)) {
+      return _inView(
+        view,
+        StatusMessage(
           icon: Icons.cloud_off,
           text: 'Could not load events.\n$_error',
         ),
       );
     } else if (events == null) {
-      return const Center(child: CircularProgressIndicator());
-    } else if (events.isEmpty) {
-      page = const FillViewport(
-        child: StatusMessage(icon: Icons.event_busy, text: 'No events.'),
+      return _inView(
+        view,
+        const Padding(
+          padding: EdgeInsets.all(16),
+          child: CircularProgressIndicator(),
+        ),
       );
-    } else {
-      if (shown) _scrollToStart();
-      page = Column(
-        children: [
-          // The last events loaded, or kept from last time, are still
-          // shown, under this.
-          if (shown && _error != null)
-            StatusMessage(
-              icon: Icons.cloud_off,
-              text: 'Could not load events. These may be out of date.\n$_error',
-            ),
-          Expanded(
-            child: ListView(
-              controller: _scrollFor(day),
-              physics: _pinch == null
-                  ? const AlwaysScrollableScrollPhysics()
-                  : const NeverScrollableScrollPhysics(),
-              // Clear of the zoom buttons.
-              padding: const EdgeInsets.only(bottom: 120),
-              children: [
-                DayTimeline(
-                  events: events,
-                  day: day,
-                  goals: _goalsById,
-                  scale: _scale,
-                  now: widget.clock(),
-                  lastCompaction: _lastCompaction,
-                  onTap: _openEvent,
-                ),
-              ],
-            ),
-          ),
-        ],
+    } else if (events.isEmpty) {
+      return _inView(
+        view,
+        const StatusMessage(icon: Icons.event_busy, text: 'No events.'),
       );
     }
-    return RefreshIndicator(onRefresh: _refresh, child: page);
+    // Drawn past the page's foot, if an event's drawn past midnight.
+    return OverflowBox(
+      alignment: Alignment.topCenter,
+      minHeight: 0,
+      maxHeight: double.infinity,
+      child: DayTimeline(
+        events: events,
+        day: day,
+        goals: _goalsById,
+        scale: _scale,
+        now: widget.clock(),
+        lastCompaction: _lastCompaction,
+        onTap: _openEvent,
+        axis: false,
+      ),
+    );
   }
+
+  /// [child] on a card in the middle of the [view] tall part of the
+  /// timeline on screen, over the axis, kept there as it scrolls.
+  Widget _inView(double view, Widget child) => ListenableBuilder(
+    listenable: _scroll,
+    builder: (context, child) {
+      final scrolled = _scroll.hasClients && _scroll.position.hasPixels
+          ? _scroll.position.pixels
+          : 0.0;
+      final end = _height - view;
+      return Padding(
+        padding: EdgeInsets.only(top: scrolled.clamp(0.0, math.max(0.0, end))),
+        child: SizedBox(
+          height: view,
+          child: Center(child: child),
+        ),
+      );
+    },
+    child: Card(child: child),
+  );
 }

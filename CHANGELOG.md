@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.2.1
+
+- Swiping between days on the Events page keeps the time of day shown.
+  It went back to midnight after a day that was still loading or had no
+  events.
+- The hours down the side of the Events page stay still while the days
+  slide past them. Each day's own marks, such as the times its events
+  start and end, "now" and "last compacted", slide with it.
+
 ## 5.2.0
 
 - Clearing an event's or a series' priority, location, description or
