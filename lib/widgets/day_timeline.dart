@@ -108,6 +108,14 @@ double timelineOffset(
   return _pad + minutes.clamp(0, length) * scale;
 }
 
+/// How tall a [DayTimeline] for [day] is at [scale]: midnight to
+/// midnight, with room for their labels; taller only if an event near
+/// midnight is drawn past it.
+double timelineHeight(DateTime day, double scale) {
+  final dayEnd = DateTime(day.year, day.month, day.day + 1);
+  return timelineOffset(dayEnd, day: day, dayEnd: dayEnd, scale: scale) + _pad;
+}
+
 /// Where each of [events] is drawn, by start: at its times, at [scale],
 /// unless it needs more room for its text ([minHeight]) than it lasts,
 /// or the event above it does. Then it's drawn taller, or lower, but
@@ -225,6 +233,10 @@ List<T> placeLabels<T>(
 /// with lines across, under the events; zoomed in past the
 /// [defaultTimelineScale], they're labeled "now" and "last compacted"
 /// in place of the times beside them.
+///
+/// Under it all is its [TimelineAxis], unless not to draw its [axis]:
+/// then it's drawn over one drawn apart, and covers the axis' times its
+/// own labels would overlap.
 class DayTimeline extends StatelessWidget {
   const DayTimeline({
     super.key,
@@ -235,6 +247,7 @@ class DayTimeline extends StatelessWidget {
     this.now,
     this.lastCompaction,
     this.onTap,
+    this.axis = true,
   });
 
   final List<Event> events;
@@ -251,6 +264,9 @@ class DayTimeline extends StatelessWidget {
   /// is as the notes had it.
   final DateTime? lastCompaction;
   final ValueChanged<Event>? onTap;
+
+  /// Whether to draw its [TimelineAxis] under it.
+  final bool axis;
 
   /// Midnight at the end of the day.
   DateTime get dayEnd => DateTime(day.year, day.month, day.day + 1);
@@ -356,55 +372,93 @@ class DayTimeline extends StatelessWidget {
       compactionColor: colors.tertiary,
       markers: markers,
       edgeColor: colors.onSurface,
-      hourColor: colors.onSurfaceVariant,
-      gridColor: colors.outlineVariant.withValues(alpha: 0.5),
+      coverColor: theme.scaffoldBackgroundColor,
       leaderColor: colors.outline,
     );
     return LayoutBuilder(
       builder: (context, constraints) {
         final cardWidth = math.max(0.0, constraints.maxWidth - _cardsLeft - 8);
         return CustomPaint(
-          painter: rail,
-          foregroundPainter: markers.isEmpty
-              ? null
-              : _MarkerLabelsPainter(
-                  markers: markers,
-                  style: markerStyle,
-                  scaler: scaler,
-                ),
-          child: SizedBox(
-            width: constraints.maxWidth,
-            height: height,
-            child: Stack(
-              children: [
-                for (final placement in placements)
-                  Positioned(
-                    left: _cardsLeft,
-                    top: placement.top,
-                    width: cardWidth,
-                    height: placement.bottom - placement.top,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: _cardInset),
-                      child: _EventCard(
-                        placement: placement,
-                        goals: goals,
-                        styles: styles,
-                        onTap: onTap == null
-                            ? null
-                            : () => onTap!(placement.event),
-                        timeLabel: (t) => MaterialLocalizations.of(
-                          context,
-                        ).formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal())),
+          painter: axis ? _axisPainter(context, day, scale) : null,
+          child: CustomPaint(
+            painter: rail,
+            foregroundPainter: markers.isEmpty
+                ? null
+                : _MarkerLabelsPainter(
+                    markers: markers,
+                    style: markerStyle,
+                    scaler: scaler,
+                  ),
+            child: SizedBox(
+              width: constraints.maxWidth,
+              height: height,
+              child: Stack(
+                children: [
+                  for (final placement in placements)
+                    Positioned(
+                      left: _cardsLeft,
+                      top: placement.top,
+                      width: cardWidth,
+                      height: placement.bottom - placement.top,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: _cardInset,
+                        ),
+                        child: _EventCard(
+                          placement: placement,
+                          goals: goals,
+                          styles: styles,
+                          onTap: onTap == null
+                              ? null
+                              : () => onTap!(placement.event),
+                          timeLabel: (t) => MaterialLocalizations.of(context)
+                              .formatTimeOfDay(
+                                TimeOfDay.fromDateTime(t.toLocal()),
+                              ),
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         );
       },
     );
   }
+}
+
+/// What's the same on every [DayTimeline] for [day] at [scale], so it
+/// can be drawn apart, kept still while the days slide over it: a line
+/// across at each hour, and down its left edge the times, midnight at
+/// both ends, then the hours, as many as fit. A day's timeline covers
+/// those its own labels would overlap.
+class TimelineAxis extends StatelessWidget {
+  const TimelineAxis({super.key, required this.day, required this.scale});
+
+  /// Midnight, local time, at the start of the day.
+  final DateTime day;
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) =>
+      CustomPaint(painter: _axisPainter(context, day, scale));
+}
+
+_AxisPainter _axisPainter(BuildContext context, DateTime day, double scale) {
+  final theme = Theme.of(context);
+  return _AxisPainter(
+    day: day,
+    dayEnd: DateTime(day.year, day.month, day.day + 1),
+    scale: scale,
+    timeLabel: (t) =>
+        MaterialLocalizations.of(context)
+            .formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal())),
+    scaler: MediaQuery.textScalerOf(context),
+    baseStyle: theme.textTheme.labelSmall ?? const TextStyle(),
+    hourColor: theme.colorScheme.onSurfaceVariant,
+    gridColor: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+  );
 }
 
 class _CardStyles {
@@ -768,9 +822,123 @@ class _MarkerLabelsPainter extends CustomPainter {
 /// ends there.
 typedef _TimeLabel = ({DateTime time, double y, bool edge});
 
-/// The rail down the left edge, under the events: the hours' lines, the
-/// time labels, the priority band and its labels, and the leaders from
-/// moved events to where they truly are.
+/// How tall a time label is, with room around it.
+double _timeLabelHeight(TextScaler scaler) =>
+    scaler.scale(_labelFontSize) * 1.3 + 2;
+
+/// The hours of the day from [day] to [dayEnd], by how much each
+/// deserves a label: every six hours, then every three, then the rest.
+List<DateTime> _hoursOf(DateTime day, DateTime dayEnd) {
+  final hours = [
+    for (
+      var t = DateTime(day.year, day.month, day.day, 1);
+      t.isBefore(dayEnd);
+      t = DateTime(t.year, t.month, t.day, t.hour + 1)
+    )
+      t,
+  ];
+  int rank(DateTime t) => t.hour % 6 == 0 ? 0 : (t.hour % 3 == 0 ? 1 : 2);
+  return hours..sort((a, b) => rank(a).compareTo(rank(b)));
+}
+
+/// The times a [TimelineAxis] shows: midnight at both ends, then the
+/// hours, as many as fit.
+List<_TimeLabel> _axisLabels({
+  required DateTime day,
+  required DateTime dayEnd,
+  required double scale,
+  required double labelHeight,
+}) {
+  double y(DateTime t) =>
+      timelineOffset(t, day: day, dayEnd: dayEnd, scale: scale);
+  return placeLabels(
+    [
+      for (final t in [day, dayEnd, ..._hoursOf(day, dayEnd)])
+        (time: t, y: y(t), edge: false),
+    ],
+    top: (l) => l.y - labelHeight / 2,
+    height: labelHeight,
+  );
+}
+
+/// The [TimelineAxis]: the hours' lines, and the times, midnight at both
+/// ends, then the hours, as many as fit.
+class _AxisPainter extends CustomPainter {
+  _AxisPainter({
+    required this.day,
+    required this.dayEnd,
+    required this.scale,
+    required this.timeLabel,
+    required this.scaler,
+    required this.baseStyle,
+    required this.hourColor,
+    required this.gridColor,
+  });
+
+  final DateTime day;
+  final DateTime dayEnd;
+  final double scale;
+  final String Function(DateTime) timeLabel;
+  final TextScaler scaler;
+
+  /// The theme's text style the labels are drawn in, for its font.
+  final TextStyle baseStyle;
+  final Color hourColor;
+  final Color gridColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    double y(DateTime t) =>
+        timelineOffset(t, day: day, dayEnd: dayEnd, scale: scale);
+    final grid = Paint()
+      ..color = gridColor
+      ..strokeWidth = 1;
+    for (final hour in [day, ..._hoursOf(day, dayEnd), dayEnd]) {
+      canvas.drawLine(
+        Offset(_timeWidth, y(hour)),
+        Offset(size.width, y(hour)),
+        grid,
+      );
+    }
+    final style = baseStyle.copyWith(
+      fontSize: _labelFontSize,
+      height: 1.3,
+      color: hourColor,
+      fontWeight: FontWeight.w400,
+    );
+    for (final label in _axisLabels(
+      day: day,
+      dayEnd: dayEnd,
+      scale: scale,
+      labelHeight: _timeLabelHeight(scaler),
+    )) {
+      final painter = TextPainter(
+        text: TextSpan(text: timeLabel(label.time), style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      painter.paint(
+        canvas,
+        Offset(_timeWidth - 6 - painter.width, label.y - painter.height / 2),
+      );
+      painter.dispose();
+    }
+  }
+
+  @override
+  bool shouldRepaint(_AxisPainter old) =>
+      old.scale != scale ||
+      old.day != day ||
+      old.hourColor != hourColor ||
+      old.gridColor != gridColor ||
+      old.scaler != scaler;
+}
+
+/// The rail down the left edge, under the events and over the
+/// [TimelineAxis]: the times events start and end, the priority band and
+/// its labels, and the leaders from moved events to where they truly
+/// are. It covers the axis' times its labels would overlap.
 class _RailPainter extends CustomPainter {
   _RailPainter({
     required this.day,
@@ -788,8 +956,7 @@ class _RailPainter extends CustomPainter {
     required this.compactionColor,
     required this.markers,
     required this.edgeColor,
-    required this.hourColor,
-    required this.gridColor,
+    required this.coverColor,
     required this.leaderColor,
   });
 
@@ -818,8 +985,9 @@ class _RailPainter extends CustomPainter {
   /// is.
   final List<_Marker> markers;
   final Color edgeColor;
-  final Color hourColor;
-  final Color gridColor;
+
+  /// The background, to cover the axis' times with.
+  final Color coverColor;
   final Color leaderColor;
 
   double _y(DateTime t) =>
@@ -832,31 +1000,8 @@ class _RailPainter extends CustomPainter {
     maxLines: 1,
   )..layout();
 
-  /// The hours of the day, by how much each deserves a label: every six
-  /// hours, then every three, then the rest.
-  List<DateTime> get _hours {
-    final hours = [
-      for (
-        var t = DateTime(day.year, day.month, day.day, 1);
-        t.isBefore(dayEnd);
-        t = DateTime(t.year, t.month, t.day, t.hour + 1)
-      )
-        t,
-    ];
-    int rank(DateTime t) => t.hour % 6 == 0 ? 0 : (t.hour % 3 == 0 ? 1 : 2);
-    return hours..sort((a, b) => rank(a).compareTo(rank(b)));
-  }
-
   @override
   void paint(Canvas canvas, Size size) {
-    final grid = Paint()
-      ..color = gridColor
-      ..strokeWidth = 1;
-    for (final hour in [day, ..._hours, dayEnd]) {
-      final y = _y(hour);
-      canvas.drawLine(Offset(_timeWidth, y), Offset(size.width, y), grid);
-    }
-
     // The band, under its labels.
     for (final run in runs) {
       canvas.drawRect(
@@ -943,10 +1088,10 @@ class _RailPainter extends CustomPainter {
     }
   }
 
-  /// The times: midnight at both ends, then where events start or end,
-  /// then the hours, as many as fit.
+  /// The times events start or end, as many as fit after the midnights
+  /// at both ends, over the axis' times they'd overlap.
   void _paintTimeLabels(Canvas canvas) {
-    final labelHeight = scaler.scale(_labelFontSize) * 1.3 + 2;
+    final labelHeight = _timeLabelHeight(scaler);
     final edges = <DateTime>{
       for (final event in events)
         if (!event.isCancelled) ...[event.start, event.end],
@@ -955,7 +1100,6 @@ class _RailPainter extends CustomPainter {
       (time: day, y: _y(day), edge: false),
       (time: dayEnd, y: _y(dayEnd), edge: false),
       for (final t in edges) (time: t, y: _y(t), edge: true),
-      for (final t in _hours) (time: t, y: _y(t), edge: false),
     ];
     // The lines' labels come first; any time they'd cover isn't shown.
     bool clearOfMarkers(_TimeLabel label) => markers.every(
@@ -965,7 +1109,29 @@ class _RailPainter extends CustomPainter {
       candidates.where(clearOfMarkers),
       top: (l) => l.y - labelHeight / 2,
       height: labelHeight,
-    );
+    ).where((l) => l.edge).toList();
+    // The axis' times under these, or under the lines' labels.
+    final cover = Paint()..color = coverColor;
+    for (final label in _axisLabels(
+      day: day,
+      dayEnd: dayEnd,
+      scale: scale,
+      labelHeight: labelHeight,
+    )) {
+      if (clearOfMarkers(label) &&
+          placed.every((l) => (l.y - label.y).abs() >= labelHeight)) {
+        continue;
+      }
+      canvas.drawRect(
+        Rect.fromLTRB(
+          0,
+          label.y - labelHeight / 2,
+          _timeWidth - 1,
+          label.y + labelHeight / 2,
+        ),
+        cover,
+      );
+    }
     final tick = Paint()
       ..color = edgeColor
       ..strokeWidth = 1;
@@ -975,8 +1141,8 @@ class _RailPainter extends CustomPainter {
         baseStyle.copyWith(
           fontSize: _labelFontSize,
           height: 1.3,
-          color: label.edge ? edgeColor : hourColor,
-          fontWeight: label.edge ? FontWeight.w500 : FontWeight.w400,
+          color: edgeColor,
+          fontWeight: FontWeight.w500,
         ),
       );
       painter.paint(
@@ -984,13 +1150,11 @@ class _RailPainter extends CustomPainter {
         Offset(_timeWidth - 6 - painter.width, label.y - painter.height / 2),
       );
       painter.dispose();
-      if (label.edge) {
-        canvas.drawLine(
-          Offset(_timeWidth - 4, label.y),
-          Offset(_timeWidth, label.y),
-          tick,
-        );
-      }
+      canvas.drawLine(
+        Offset(_timeWidth - 4, label.y),
+        Offset(_timeWidth, label.y),
+        tick,
+      );
     }
   }
 
@@ -1039,6 +1203,7 @@ class _RailPainter extends CustomPainter {
       old.day != day ||
       old.events != events ||
       old.edgeColor != edgeColor ||
+      old.coverColor != coverColor ||
       old.nowY != nowY ||
       old.compactionY != compactionY ||
       old.scaler != scaler;

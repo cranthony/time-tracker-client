@@ -16,6 +16,7 @@ import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
+import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/durations.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
 
@@ -117,32 +118,67 @@ void main() {
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
+    final axis = tester.getRect(find.byType(TimelineAxis));
+    final todays = find.descendant(
+      of: find.byType(PageView),
+      matching: find.text('Today'),
+    );
+    final today = tester.getRect(todays);
+
     // Part-way through a drag to the right, the day before is already
-    // there beside today, scrolled to the same time of day.
+    // there beside today, scrolled to the same time of day; the times
+    // down the side stay still.
     final drag = await tester.startGesture(
       tester.getCenter(find.byType(ListView)),
     );
     await drag.moveBy(const Offset(30, 0));
     await drag.moveBy(const Offset(200, 0));
     await tester.pump();
+    expect(tester.getRect(find.byType(TimelineAxis)), axis);
+    expect(tester.getRect(todays).left, greaterThan(today.left));
     expect(find.text('Before'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(
-      tester.getTopLeft(find.text('Before')).dy,
-      tester
-          .getTopLeft(
-            find.descendant(
-              of: find.byType(PageView),
-              matching: find.text('Today'),
-            ),
-          )
-          .dy,
-    );
+    expect(tester.getTopLeft(find.text('Before')).dy, today.top);
     await drag.moveBy(const Offset(300, 0));
     await drag.up();
     await tester.pumpAndSettle();
     expect(find.text('Yesterday'), findsOneWidget);
     expect(find.text('Before'), findsOneWidget);
+  });
+
+  testWidgets('swiping keeps the time of day, past days still loading or '
+      'with no events', (tester) async {
+    final repo = _SlowRepository(
+      [
+        Event(start: at(30, 18), end: at(30, 19), summary: 'Tea'),
+        Event(start: at(26, 18), end: at(26, 19), summary: 'Dinner'),
+      ],
+      slow: {DateTime(2026, 9, 28), DateTime(2026, 9, 27)},
+    );
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+    // Opened on now, noon; down to the evening.
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+    final y = tester.getTopLeft(find.text('Tea')).dy;
+
+    // Back a day, with no events; on to one still loading; on to one
+    // with no events, then to one with an event at the same time.
+    for (var i = 0; i < 4; i++) {
+      await tester.fling(find.byType(ListView), const Offset(300, 0), 1000);
+      await tester.pumpAndSettle();
+    }
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+    expect(find.textContaining('Sep 26'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('Dinner')).dy, moreOrLessEquals(y));
+
+    for (var i = 0; i < 4; i++) {
+      await tester.fling(find.byType(ListView), const Offset(-300, 0), 1000);
+      await tester.pumpAndSettle();
+    }
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+    expect(find.text('Today'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('Tea')).dy, moreOrLessEquals(y));
   });
 
   testWidgets('pinching zooms, and doesn\'t step a day', (tester) async {
@@ -1197,6 +1233,23 @@ class _SignInRepository extends InMemoryEventsRepository {
   @override
   Future<List<Event>> events(DateTime from, DateTime to, {bool keep = false}) {
     if (!signedIn()) throw SignInRequiredException();
+    return super.events(from, to);
+  }
+}
+
+/// Takes a second to load the days in [slow].
+class _SlowRepository extends InMemoryEventsRepository {
+  _SlowRepository(super.events, {required this.slow});
+
+  final Set<DateTime> slow;
+
+  @override
+  Future<List<Event>> events(
+    DateTime from,
+    DateTime to, {
+    bool keep = false,
+  }) async {
+    if (slow.contains(from)) await Future.delayed(const Duration(seconds: 1));
     return super.events(from, to);
   }
 }
