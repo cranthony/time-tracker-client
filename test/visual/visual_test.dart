@@ -379,6 +379,40 @@ void main() {
       });
     }
 
+    // An event's goals open for editing: the tree, then a search.
+    for (final (name, search) in [
+      ('event_goals', null),
+      ('event_goals_search', 'neigh vis'),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          EventsScreen(
+            repository: sample.eventsRepository(),
+            goalsRepository: sample.goalsRepository(),
+            serverLabel: 'sample',
+            clock: () => _now,
+          ),
+          then: () async {
+            await tester.ensureVisible(find.text('Morning routine'));
+            await tester.pumpAndSettle();
+            await tester.tap(find.text('Morning routine'));
+            await tester.pumpAndSettle();
+            final goals = find.text('Wake up at 7am').last;
+            await tester.ensureVisible(goals);
+            await tester.pumpAndSettle();
+            await tester.tap(goals);
+            await tester.pumpAndSettle();
+            if (search != null) {
+              await tester.enterText(find.byType(TextField), search);
+              await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
+
     testWidgets('notes ($mode)', (tester) async {
       final notes = sample.notesRepository();
       final outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: notes)

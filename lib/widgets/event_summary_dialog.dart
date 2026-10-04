@@ -10,6 +10,7 @@ import '../models/recurrence.dart';
 import '../models/repeat.dart';
 import '../services/mcp_client.dart';
 import 'color_picker.dart';
+import 'goals_picker.dart';
 import 'recurrence_dialog.dart';
 import 'repeat_editor.dart';
 
@@ -1051,9 +1052,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     );
   }
 
-  /// Ticks for every active goal (and any inactive one already picked), in
-  /// tree order; the goals are kept in the order they were ticked, so the
-  /// first stays the primary goal.
+  /// Its goals, searched for or picked from the tree; see [GoalsPicker].
   Widget _goalsPicker(BuildContext context, List<String> picked) =>
       FutureBuilder(
         future: _goalList,
@@ -1069,46 +1068,20 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           }
           final list = snapshot.data;
           if (list == null) return const LinearProgressIndicator();
-          final shown = [
-            for (final goal in list)
-              if (!goal.isOverall &&
-                  goal.id != null &&
-                  (goal.active || picked.contains(goal.id)))
-                goal,
-          ];
-          if (shown.isEmpty) return const Text('No active goals.');
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final goal in shown)
-                CheckboxListTile(
-                  dense: true,
-                  contentPadding: EdgeInsetsDirectional.only(
-                    start: 12.0 * goal.depth,
+              GoalsPicker(
+                goals: list,
+                picked: picked,
+                onChanged: (ids) => _set('goal_ids', ids),
+                marker: (goal) => GoalDiamond(
+                  color: parseColor(
+                    goal.effectiveColor ?? goal.backgroundColor,
                   ),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  value: picked.contains(goal.id),
-                  title: Row(
-                    children: [
-                      GoalDiamond(
-                        color: parseColor(
-                          goal.effectiveColor ?? goal.backgroundColor,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(child: Text(goalName(goal))),
-                    ],
-                  ),
-                  subtitle: picked.isNotEmpty && picked.first == goal.id
-                      ? const Text('Primary goal')
-                      : null,
-                  onChanged: (on) => _set('goal_ids', [
-                    for (final id in picked)
-                      if (id != goal.id) id,
-                    if (on == true) goal.id!,
-                  ]),
                 ),
+              ),
               Align(
                 alignment: AlignmentDirectional.centerEnd,
                 child: TextButton(
