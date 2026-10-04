@@ -49,6 +49,8 @@ Future<List<Recurrence>?> showRecurrenceDialog(
       ...typed,
     },
     kinds: _kinds,
+    // Every event has one; the rest can be cleared (see clearableFields).
+    required: const {'summary'},
     inferred: {
       if (recurrence.properties['goals_from_label'] == true)
         'goal_ids': 'from its label',

@@ -706,6 +706,51 @@ void main() {
       expect(find.text('Event cancelled.'), findsOneWidget);
     });
 
+    testWidgets('clears its priority and description', (tester) async {
+      final repo = _RecordingRepository([work()]);
+      await open(tester, repo);
+      await tester.tap(inDialog(find.text('P2')));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('From its goals')));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('From goals')), findsOneWidget);
+
+      await tester.tap(inDialog(find.text('Deep work')));
+      await tester.pumpAndSettle();
+      await tester.enterText(inDialog(find.byType(TextField)), '');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {'priority': null, 'description': null},
+      ]);
+    });
+
+    testWidgets("an emptied summary isn't a change", (tester) async {
+      final repo = _RecordingRepository([work()]);
+      await open(tester, repo);
+      await tester.tap(inDialog(find.text('Work')));
+      await tester.pumpAndSettle();
+      await tester.enterText(inDialog(find.byType(TextField)), ' ');
+      await tester.pumpAndSettle();
+      expect(find.text('Save'), findsNothing);
+    });
+
+    test('McpEventsRepository lists the fields cleared to clear', () async {
+      final client = _RecurrenceClient();
+      await McpEventsRepository(client).updateEvent(work(), {
+        'priority': null,
+        'location': null,
+        'summary': 'Admin',
+      });
+      expect(client.name, 'update_event');
+      expect(client.arguments!['clear_fields'], ['priority', 'location']);
+      expect((client.arguments!['event'] as Map)['summary'], 'Admin');
+
+      await McpEventsRepository(client).updateEvent(work(), {'summary': 'x'});
+      expect(client.arguments!.containsKey('clear_fields'), isFalse);
+    });
+
     testWidgets("shows the server's error and keeps the edits", (tester) async {
       final repo = _RecordingRepository([work()])
         ..error = McpException('Overlaps a fixed-time event');
@@ -746,6 +791,7 @@ void main() {
             'weekdays': ['mon', 'wed'],
           },
           'schedule': 'Every week on Mon, Wed',
+          'priority': 1,
         }),
       ],
     );
@@ -1024,11 +1070,43 @@ void main() {
         startingAt: 'standup_0930',
       );
 
+      // A field cleared is listed to clear: as null, it'd be kept.
       expect(client.arguments, {
         'recurrence': {'id': 'standup', 'summary': 'Team standup'},
         'starting_at_event_id': 'standup_0930',
+        'clear_fields': ['location'],
       });
       expect(saved.single.id, 'standup_new');
+    });
+
+    testWidgets("clears the series' priority, to follow its goals'", (
+      tester,
+    ) async {
+      final repo = series();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Standup'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Standup'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Repeats · see series'));
+      await tester.pumpAndSettle();
+      final dialog = find.byType(AlertDialog).last;
+      await tester.tap(find.descendant(of: dialog, matching: find.text('P1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('From its goals'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: dialog, matching: find.text('From goals')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('All events'));
+      await tester.pumpAndSettle();
+      final saved = await repo.recurrence('standup');
+      expect(saved.properties.containsKey('priority'), isTrue);
+      expect(saved.properties['priority'], isNull);
     });
   });
 
