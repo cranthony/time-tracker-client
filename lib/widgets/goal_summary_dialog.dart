@@ -3,34 +3,44 @@ import 'package:flutter/material.dart';
 import '../models/goal.dart';
 import '../services/mcp_client.dart';
 import 'color_picker.dart';
-import 'measure_dialog.dart' show SaveGoal;
+import 'measure_dialog.dart';
+import 'priority_chip.dart';
 
 /// The priorities offered as buttons; "…" takes any other.
 const _priorities = [0, 1, 2, 3];
 
-/// Shows what [goal] gives its events and sub-goals: its priority and its
-/// label's color, each saying
-/// whether it's set on the goal or where it comes from: an ancestor, or
-/// for a color, the priority.
+/// Shows [goal]: its priority, as a chip like the Events page's, over its
+/// name; how it's rated (its measure) and how it's doing by it; and its
+/// label's color. The priority and color each say whether they're set
+/// on the goal or where they come from: an ancestor, or for a color, the
+/// priority. The overall goal has neither.
 ///
-/// Tapping one opens it for editing, in place; one set on the goal can be
-/// cleared, so it's inherited again. "Save" sends every change with
-/// [save]. Without [save], or for a goal with no id, nothing can be
-/// edited. [goals] are the goals listed, to say which ancestor each
-/// inherited value comes from. "Details" closes it, then calls
-/// [onDetails] with the goal.
-Future<void> showEventPropertiesDialog(
+/// Tapping the priority or the color opens it for editing, in place; one
+/// set on the goal can be cleared, so it's inherited again. "Save" sends
+/// every change with [save]. Without [save], or for a goal with no id,
+/// nothing can be edited. "Edit measure" (offered while nothing else is
+/// changed), "History" and "Details" close it, then call
+/// [onEditMeasure], [onHistory] or [onDetails] with the goal. [goals] are
+/// the goals listed, to say which ancestor each inherited value comes
+/// from; [goalNames] names the goals a measure looks at.
+Future<void> showGoalSummaryDialog(
   BuildContext context,
   Goal goal, {
   List<Goal> goals = const [],
+  Map<String?, String> goalNames = const {},
   SaveGoal? save,
+  ValueChanged<Goal>? onEditMeasure,
+  ValueChanged<Goal>? onHistory,
   ValueChanged<Goal>? onDetails,
 }) => showDialog<void>(
   context: context,
-  builder: (_) => _EventPropertiesDialog(
+  builder: (_) => _GoalSummaryDialog(
     goal: goal,
     goals: goals,
+    goalNames: goalNames,
     save: save == null || goal.id == null ? null : save,
+    onEditMeasure: onEditMeasure,
+    onHistory: onHistory,
     onDetails: onDetails,
   ),
 );
@@ -38,24 +48,30 @@ Future<void> showEventPropertiesDialog(
 /// The properties the dialog edits, as `update_goal` names them.
 enum _Property { priority, color }
 
-class _EventPropertiesDialog extends StatefulWidget {
-  const _EventPropertiesDialog({
+class _GoalSummaryDialog extends StatefulWidget {
+  const _GoalSummaryDialog({
     required this.goal,
     required this.goals,
+    required this.goalNames,
     required this.save,
+    required this.onEditMeasure,
+    required this.onHistory,
     required this.onDetails,
   });
 
   final Goal goal;
   final List<Goal> goals;
+  final Map<String?, String> goalNames;
   final SaveGoal? save;
+  final ValueChanged<Goal>? onEditMeasure;
+  final ValueChanged<Goal>? onHistory;
   final ValueChanged<Goal>? onDetails;
 
   @override
-  State<_EventPropertiesDialog> createState() => _EventPropertiesDialogState();
+  State<_GoalSummaryDialog> createState() => _GoalSummaryDialogState();
 }
 
-class _EventPropertiesDialogState extends State<_EventPropertiesDialog> {
+class _GoalSummaryDialogState extends State<_GoalSummaryDialog> {
   /// What's been changed, keyed as `update_goal` takes it; null clears.
   final _changes = <String, Object?>{};
 
@@ -159,20 +175,25 @@ class _EventPropertiesDialogState extends State<_EventPropertiesDialog> {
   void _toggle(_Property property) =>
       setState(() => _editing = _editing == property ? null : property);
 
+  /// Closes it, then calls [then] with the goal.
+  void _leaveFor(ValueChanged<Goal> then) {
+    Navigator.of(context).pop();
+    then(_goal);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final text = theme.textTheme;
     final colors = theme.colorScheme;
     final changed = _changes.isNotEmpty;
+    // The overall goal gives its events nothing.
+    final events = !_goal.isOverall;
     return AlertDialog(
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Event properties',
-            style: text.labelLarge?.copyWith(color: colors.primary),
-          ),
+          if (events) _priorityHeader(),
           Text(goalName(_goal)),
           if (_goal.path case final path? when path.contains(' › '))
             Text(
@@ -189,21 +210,47 @@ class _EventPropertiesDialogState extends State<_EventPropertiesDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _priorityRow(),
-              _colorRow(),
+              if (_editing == _Property.priority)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: colors.primary, width: 1.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: _priorityEditor(_priority, _inheritedPriority),
+                ),
+              MeasureCard(
+                goal: _goal,
+                goalNames: widget.goalNames,
+                // Not while other changes wait to be saved, which leaving
+                // for the measure's editor would throw away.
+                onEdit: switch (widget.onEditMeasure) {
+                  final edit? when _editable && !changed => () => _leaveFor(
+                    edit,
+                  ),
+                  _ => null,
+                },
+              ),
+              const SizedBox(height: 20),
               Padding(
-                padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
-                child: Text(
-                  _editable
-                      ? 'Tap one to change it. Its events, and sub-goals '
-                            'with nothing set, take these.'
-                      : 'Its events, and sub-goals with nothing set, take '
-                            'these.',
-                  style: text.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: HowItsDoing(goal: _goal),
+              ),
+              if (events) ...[
+                const SizedBox(height: 16),
+                _colorRow(),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
+                  child: Text(
+                    'Its events, and sub-goals with nothing set, take its '
+                    'priority and color.',
+                    style: text.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
                   ),
                 ),
-              ),
+              ],
               if (_error case final error?)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -225,12 +272,14 @@ class _EventPropertiesDialogState extends State<_EventPropertiesDialog> {
               ),
             ]
           : [
+              if (widget.onHistory case final onHistory?)
+                TextButton(
+                  onPressed: () => _leaveFor(onHistory),
+                  child: const Text('History'),
+                ),
               if (widget.onDetails case final onDetails?)
                 TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    onDetails(_goal);
-                  },
+                  onPressed: () => _leaveFor(onDetails),
                   child: const Text('Details'),
                 ),
               TextButton(
@@ -241,26 +290,65 @@ class _EventPropertiesDialogState extends State<_EventPropertiesDialog> {
     );
   }
 
-  Widget _priorityRow() {
+  /// Its priority's chip, and where it comes from; tapped, it opens for
+  /// editing.
+  Widget _priorityHeader() {
+    final theme = Theme.of(context);
     final own = _priority;
     final inherited = _inheritedPriority;
-    final shown = own ?? inherited;
-    return _PropertyCard(
-      icon: const Icon(Icons.low_priority),
-      label: 'Priority',
-      value: shown == null ? 'None' : '$shown',
-      source: switch ((own, inherited)) {
-        (_?, _) => 'Set on this goal',
-        (null, _?) => _inheritedFrom((g) => g.priority != null),
-        (null, null) => 'Not set here or above',
-      },
-      own: own != null,
-      editing: _editing == _Property.priority,
-      onTap: _editable ? () => _toggle(_Property.priority) : null,
-      onClear: _editable && own != null
-          ? () => _set('priority', null, _goal.priority)
-          : null,
-      editor: _priorityEditor(own, inherited),
+    final source = switch ((own, inherited)) {
+      (_?, _) => 'Set on this goal',
+      (null, _?) => _inheritedFrom((g) => g.priority != null),
+      (null, null) => 'Not set here or above',
+    };
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Tooltip(
+            message: 'Priority',
+            child: InkWell(
+              onTap: _editable ? () => _toggle(_Property.priority) : null,
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: PriorityChip(
+                  priority: own ?? inherited,
+                  own: own != null,
+                  label: own == null && inherited == null
+                      ? 'No priority'
+                      : null,
+                  large: true,
+                ),
+              ),
+            ),
+          ),
+          if (_changes.containsKey('priority'))
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 6),
+              child: Tooltip(
+                message: 'Changed',
+                child: Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.tertiary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              source,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -278,7 +366,7 @@ class _EventPropertiesDialogState extends State<_EventPropertiesDialog> {
             for (final p in _priorities)
               ChoiceChip(
                 showCheckmark: false,
-                label: Text('$p'),
+                label: Text('P$p'),
                 selected: own == p && !other,
                 onSelected: (_) {
                   _otherPriority = false;

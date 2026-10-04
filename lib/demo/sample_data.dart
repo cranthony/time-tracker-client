@@ -165,6 +165,7 @@ class SampleData {
     'tofu': 'Tofu tikka masala',
     'neighbor': 'Be a good neighbor',
     'parents': 'Visit parents every 2 months',
+    'trains': 'Book the train a month ahead',
     'cousins': 'Visit cousins every week',
   };
 
@@ -277,6 +278,16 @@ class SampleData {
         'zero_at_days': 90,
       },
       ..._health('parents'),
+      ..._time(0, 0),
+    }),
+    // A third level down, its color inherited like its parent's.
+    Goal.fromJson({
+      'id': 'trains',
+      'parent_id': 'parents',
+      'name': _names['trains'],
+      'status': 'active',
+      'effective_color': '#f6bf26',
+      'priority': 3,
       ..._time(0, 0),
     }),
     Goal.fromJson({

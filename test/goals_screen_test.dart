@@ -15,6 +15,7 @@ import 'package:time_tracker_client/screens/goals_screen.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/widgets/health.dart';
+import 'package:time_tracker_client/widgets/priority_chip.dart';
 import 'package:time_tracker_client/widgets/properties_dialog.dart';
 
 void main() {
@@ -48,10 +49,36 @@ void main() {
   bool ticked(WidgetTester tester, String status) =>
       tester.widget<CheckboxMenuButton>(option(status)).value == true;
 
+  /// A goal's name, from its title: plain, or with a priority chip after
+  /// it.
+  String? nameIn(Text title) =>
+      title.data ?? (title.textSpan as TextSpan?)?.text;
+
   List<String?> shownNames(WidgetTester tester) => tester
       .widgetList<ListTile>(find.byType(ListTile))
-      .map((t) => (t.title as Text).data)
+      .map((t) => nameIn(t.title as Text))
       .toList();
+
+  /// The title of the goal named [name].
+  Finder titled(String name) =>
+      find.byWidgetPredicate((w) => w is Text && nameIn(w) == name);
+
+  /// Swipes [name]'s goal right, showing or hiding its sub-goals.
+  Future<void> swipe(WidgetTester tester, String name) async {
+    await tester.drag(titled(name).first, const Offset(100, 0));
+    await tester.pumpAndSettle();
+  }
+
+  /// The bands down the left of [name]'s goal.
+  GoalBands bandsOf(WidgetTester tester, String name) =>
+      tester.widget<GoalBands>(
+        find.descendant(
+          of: find
+              .ancestor(of: titled(name).first, matching: find.byType(Stack))
+              .first,
+          matching: find.byType(GoalBands),
+        ),
+      );
 
   /// Opens [name]'s details from its menu; tapping it shows its measure.
   Future<void> openDetails(WidgetTester tester, String name) async {
@@ -143,20 +170,21 @@ void main() {
       await tester.pumpWidget(app(tree()));
       await tester.pumpAndSettle();
 
-      // Sub-goals start collapsed, under their parent's arrow; how many
+      // Sub-goals start collapsed, their parent's band an arrow; how many
       // isn't said.
       expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
-      expect(find.byTooltip('Expand Cooking'), findsOneWidget);
+      expect(bandsOf(tester, 'Cooking').shape, GoalBandShape.collapsed);
       expect(find.textContaining('sub-goal'), findsNothing);
-      // Priorities are only under "Event properties".
-      expect(find.textContaining('Priority'), findsNothing);
+      // Its priority, after its name.
+      expect(find.text('P1'), findsOneWidget);
       expect(find.text('Proposed'), findsWidgets);
       expect(find.text('3 of 200 labels in use'), findsOneWidget);
       // Only a goal with sub-goals can be expanded.
-      expect(find.byTooltip('Expand Hosting'), findsNothing);
+      expect(bandsOf(tester, 'Hosting').shape, GoalBandShape.plain);
+      await swipe(tester, 'Hosting');
+      expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
 
-      await tester.tap(find.byTooltip('Expand Cooking'));
-      await tester.pumpAndSettle();
+      await swipe(tester, 'Cooking');
       expect(shownNames(tester), [
         'Cooking',
         'Tofu tikka',
@@ -164,15 +192,14 @@ void main() {
         'Idea',
         'Old habit',
       ]);
-      // The sub-goal is indented under its parent.
-      final indent = tester
-          .widgetList<ListTile>(find.byType(ListTile))
-          .map((t) => (t.contentPadding as EdgeInsetsDirectional).start)
-          .toList();
-      expect(indent[1], greaterThan(indent[0]));
+      expect(bandsOf(tester, 'Cooking').shape, GoalBandShape.expanded);
+      // The sub-goal is indented under its parent, beside its band.
+      expect(bandsOf(tester, 'Cooking').bands, hasLength(1));
+      expect(bandsOf(tester, 'Tofu tikka').bands, hasLength(2));
+      // Its inherited priority, too.
+      expect(find.text('P1'), findsNWidgets(2));
 
-      await tester.tap(find.byTooltip('Collapse Cooking'));
-      await tester.pumpAndSettle();
+      await swipe(tester, 'Cooking');
       expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
     },
   );
@@ -312,7 +339,7 @@ void main() {
         .widgetList<PopupMenuItem<String>>(find.byType(PopupMenuItem<String>))
         .map((i) => (i.child as Text).data)
         .toList();
-    expect(items, ['Add sub-goal', 'Measure', 'History', 'Details']);
+    expect(items, ['Add sub-goal', 'Edit', 'History', 'Details']);
 
     await tester.tap(find.text('Details'));
     await tester.pumpAndSettle();
@@ -325,21 +352,23 @@ void main() {
     );
   });
 
-  testWidgets("tapping a goal's flag shows or hides its sub-goals", (
-    tester,
-  ) async {
+  testWidgets('swiping a goal right shows or hides its sub-goals; tapping '
+      'opens it', (tester) async {
     await tester.pumpWidget(app(tree()));
     await tester.pumpAndSettle();
 
-    Finder flagOf(String name) => find.descendant(
-      of: find.ancestor(of: find.text(name), matching: find.byType(ListTile)),
-      matching: find.byType(GoalFlag),
-    );
-    await tester.tap(flagOf('Cooking'));
+    await swipe(tester, 'Cooking');
+    expect(shownNames(tester), contains('Tofu tikka'));
+    // A short drag doesn't count.
+    await tester.drag(titled('Cooking'), const Offset(20, 0));
     await tester.pumpAndSettle();
     expect(shownNames(tester), contains('Tofu tikka'));
-    await tester.tap(flagOf('Cooking'));
+    await swipe(tester, 'Cooking');
+    expect(shownNames(tester), isNot(contains('Tofu tikka')));
+
+    await tester.tap(titled('Cooking'));
     await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
     expect(shownNames(tester), isNot(contains('Tofu tikka')));
   });
 
@@ -761,24 +790,6 @@ void main() {
       expect(find.text("Average of the top-level goals'"), findsNothing);
     });
 
-    testWidgets('can be the priority it gives its events', (tester) async {
-      await tester.pumpWidget(app(tree()));
-      await tester.pumpAndSettle();
-
-      await pick(tester, 'Event properties');
-      expect(find.text('Priority 1'), findsOneWidget);
-      // Neither its time nor its measure.
-      expect(find.textContaining(' in 24h'), findsNothing);
-      // A goal that gives none shows nothing for it.
-      expect(
-        find.descendant(
-          of: find.widgetWithText(ListTile, 'Idea'),
-          matching: find.text('Proposed'),
-        ),
-        findsOneWidget,
-      );
-    });
-
     testWidgets('is kept for next time', (tester) async {
       await tester.pumpWidget(app(goals()));
       await tester.pumpAndSettle();
@@ -792,7 +803,7 @@ void main() {
     });
   });
 
-  group('the measure dialog', () {
+  group("a goal's measure, in its dialog", () {
     InMemoryGoalsRepository measured() => InMemoryGoalsRepository([
       const Goal(
         id: 'app',
@@ -822,7 +833,6 @@ void main() {
 
       await tester.tap(find.text('Make an app'));
       await tester.pumpAndSettle();
-      expect(inDialog(find.text('Measure')), findsOneWidget);
       expect(inDialog(find.text('Time spent')), findsOneWidget);
       expect(inDialog(find.text('10h per 7 days')), findsOneWidget);
       expect(inDialog(find.text('Target')), findsOneWidget);
@@ -857,7 +867,7 @@ void main() {
 
       await tester.tap(find.byTooltip('More for Make an app'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Measure'));
+      await tester.tap(find.text('Edit'));
       await tester.pumpAndSettle();
       expect(inDialog(find.text('10h per 7 days')), findsOneWidget);
 
@@ -1030,7 +1040,7 @@ void main() {
     });
   });
 
-  group('the event properties dialog', () {
+  group("a goal's priority and color, in its dialog", () {
     InMemoryGoalsRepository withColors() => InMemoryGoalsRepository([
       const Goal(id: 'cook', name: 'Cooking', priority: 1),
       const Goal(id: 'tofu', name: 'Tofu tikka', parentId: 'cook'),
@@ -1049,84 +1059,60 @@ void main() {
     Goal goalOf(GoalList goals, String id) =>
         goals.goals.firstWhere((g) => g.id == id);
 
-    /// Shows each goal's event properties, with Cooking expanded unless
-    /// not to [expand].
-    Future<void> showEventProperties(
-      WidgetTester tester, {
-      bool expand = true,
-    }) async {
-      await tester.tap(find.byTooltip('Show under each goal…'));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.widgetWithText(RadioMenuButton<GoalSummary>, 'Event properties'),
-      );
-      await tester.pumpAndSettle();
-      if (!expand) return;
-      await tester.tap(
-        find.descendant(
-          of: find.ancestor(
-            of: find.text('Cooking'),
-            matching: find.byType(ListTile),
+    PriorityChip chipOf(WidgetTester tester, String name) =>
+        tester.widget<PriorityChip>(
+          find.descendant(
+            of: find.ancestor(
+              of: titled(name),
+              matching: find.byType(ListTile),
+            ),
+            matching: find.byType(PriorityChip),
           ),
-          matching: find.byType(GoalFlag),
-        ),
-      );
-      await tester.pumpAndSettle();
-    }
+        );
 
-    setUp(
-      () => SharedPreferencesAsyncPlatform.instance =
-          InMemorySharedPreferencesAsync.empty(),
-    );
-    tearDown(
-      () => SharedPreferencesAsyncPlatform.instance =
-          InMemorySharedPreferencesAsync.empty(),
-    );
-
-    testWidgets('the summary shows only what is set on each goal', (
-      tester,
-    ) async {
+    testWidgets("each goal's priority is a chip: filled if set on it, "
+        'outlined if inherited', (tester) async {
       await tester.pumpWidget(app(withColors()));
       await tester.pumpAndSettle();
-      await showEventProperties(tester);
+      await swipe(tester, 'Cooking');
 
-      expect(find.text('Priority 1'), findsOneWidget);
-      expect(find.text('Priority 3'), findsOneWidget);
-      // Tofu tikka inherits its priority, so doesn't show it.
-      expect(
-        find.descendant(
-          of: find.widgetWithText(ListTile, 'Tofu tikka'),
-          matching: find.textContaining('Priority'),
-        ),
-        findsNothing,
-      );
+      expect(chipOf(tester, 'Cooking').priority, 1);
+      expect(chipOf(tester, 'Cooking').own, isTrue);
+      expect(chipOf(tester, 'Curry').priority, 3);
+      expect(chipOf(tester, 'Curry').own, isTrue);
+      // Tofu tikka inherits its priority.
+      expect(chipOf(tester, 'Tofu tikka').priority, 1);
+      expect(chipOf(tester, 'Tofu tikka').own, isFalse);
     });
 
     testWidgets('opens on tapping a goal, saying where each property comes '
         'from', (tester) async {
       await tester.pumpWidget(app(withColors()));
       await tester.pumpAndSettle();
-      await showEventProperties(tester);
+      await swipe(tester, 'Cooking');
 
-      await tester.tap(find.text('Tofu tikka'));
+      await tester.tap(titled('Tofu tikka'));
       await tester.pumpAndSettle();
-      expect(inDialog(find.text('Event properties')), findsOneWidget);
+      expect(inDialog(find.byType(PriorityChip)), findsOneWidget);
       expect(inDialog(find.text('Cooking › Tofu tikka')), findsOneWidget);
       expect(inDialog(find.text('Inherited from Cooking')), findsOneWidget);
       expect(inDialog(find.text('Follows priority 1')), findsOneWidget);
+      // Its measure, and how it's doing, are there too.
+      expect(inDialog(find.text('Add a measure')), findsOneWidget);
+      expect(inDialog(find.text("How it's doing")), findsOneWidget);
       // Nothing of its own to clear.
       expect(inDialog(find.text('Clear')), findsNothing);
-      expect(inDialog(find.text('Set')), findsNWidgets(2));
+      expect(inDialog(find.text('Set')), findsOneWidget);
 
       await tester.tap(inDialog(find.text('Close')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Curry'));
+      await tester.tap(titled('Curry'));
       await tester.pumpAndSettle();
       expect(inDialog(find.text('Set on this goal')), findsNWidgets(2));
-      expect(inDialog(find.text('Clear')), findsNWidgets(2));
+      expect(inDialog(find.text('Clear')), findsOneWidget);
     });
 
-    testWidgets("the overall goal's card doesn't open it", (tester) async {
+    testWidgets("the overall goal's has neither", (tester) async {
       await tester.pumpWidget(
         app(
           InMemoryGoalsRepository([
@@ -1140,11 +1126,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await showEventProperties(tester, expand: false);
 
       await tester.tap(find.text('Overall'));
       await tester.pumpAndSettle();
-      expect(inDialog(find.text('Event properties')), findsNothing);
+      expect(inDialog(find.text('Your rating')), findsWidgets);
+      expect(inDialog(find.byType(PriorityChip)), findsNothing);
+      expect(inDialog(find.text('Color')), findsNothing);
     });
 
     testWidgets('sets a priority, then clears it to inherit again', (
@@ -1153,14 +1140,14 @@ void main() {
       final repo = withColors();
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
-      await showEventProperties(tester);
+      await swipe(tester, 'Cooking');
 
-      await tester.tap(find.text('Tofu tikka'));
+      await tester.tap(titled('Tofu tikka'));
       await tester.pumpAndSettle();
-      await tester.tap(inDialog(find.text('Priority')).first);
+      await tester.tap(inDialog(find.byType(PriorityChip)));
       await tester.pumpAndSettle();
       expect(inDialog(find.text('Inherit from Cooking (1)')), findsOneWidget);
-      await tester.tap(inDialog(find.widgetWithText(ChoiceChip, '0')));
+      await tester.tap(inDialog(find.widgetWithText(ChoiceChip, 'P0')));
       await tester.pumpAndSettle();
       expect(inDialog(find.text('Set on this goal')), findsOneWidget);
       // Its color follows its priority, so it'll change too.
@@ -1170,29 +1157,32 @@ void main() {
 
       expect(find.byType(AlertDialog), findsNothing);
       expect(goalOf(await repo.goals(), 'tofu').priority, 0);
-      expect(find.text('Priority 0'), findsOneWidget);
+      expect(chipOf(tester, 'Tofu tikka').priority, 0);
+      expect(chipOf(tester, 'Tofu tikka').own, isTrue);
 
-      await tester.tap(find.text('Tofu tikka'));
+      await tester.tap(titled('Tofu tikka'));
       await tester.pumpAndSettle();
-      await tester.tap(inDialog(find.text('Clear')));
+      await tester.tap(inDialog(find.byType(PriorityChip)));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Inherit from Cooking (1)')));
       await tester.pumpAndSettle();
       expect(inDialog(find.text('Inherited from Cooking')), findsOneWidget);
       await tester.tap(inDialog(find.text('Save')));
       await tester.pumpAndSettle();
 
       expect(goalOf(await repo.goals(), 'tofu').priority, isNull);
-      expect(find.text('Priority 0'), findsNothing);
+      expect(chipOf(tester, 'Tofu tikka').own, isFalse);
     });
 
     testWidgets('"…" takes any other priority', (tester) async {
       final repo = withColors();
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
-      await showEventProperties(tester);
+      await swipe(tester, 'Cooking');
 
-      await tester.tap(find.text('Tofu tikka'));
+      await tester.tap(titled('Tofu tikka'));
       await tester.pumpAndSettle();
-      await tester.tap(inDialog(find.text('Set')).first);
+      await tester.tap(inDialog(find.byType(PriorityChip)));
       await tester.pumpAndSettle();
       await tester.tap(inDialog(find.widgetWithText(ChoiceChip, '…')));
       await tester.pumpAndSettle();
@@ -1208,9 +1198,9 @@ void main() {
       final repo = withColors();
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
-      await showEventProperties(tester);
+      await swipe(tester, 'Cooking');
 
-      await tester.tap(find.text('Curry'));
+      await tester.tap(titled('Curry'));
       await tester.pumpAndSettle();
       await tester.tap(inDialog(find.text('Clear')).last);
       await tester.pumpAndSettle();
@@ -1419,7 +1409,8 @@ void main() {
   });
 
   testWidgets(
-    'an active goal shows its own color, or outlines the one it inherits',
+    "a goal's band is its own color, or the one it inherits, dashed, beside "
+    "its ancestors'",
     (tester) async {
       await tester.pumpWidget(
         app(
@@ -1436,35 +1427,28 @@ void main() {
               'parent_id': 'own',
               'effective_color': '#123456',
             }),
+            Goal.fromJson({
+              'id': 'idle',
+              'name': 'Idle',
+              'status': 'inactive',
+              'background_color': '#abcdef',
+            }),
           ]),
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Expand Own'));
-      await tester.pumpAndSettle();
+      await swipe(tester, 'Own');
 
-      List<Icon> iconsOf(String name) => tester
-          .widgetList<Icon>(
-            find.descendant(
-              of: find.ancestor(
-                of: find.text(name),
-                matching: find.byType(ListTile),
-              ),
-              matching: find.descendant(
-                of: find.byType(GoalFlag),
-                matching: find.byType(Icon),
-              ),
-            ),
-          )
-          .toList();
-
-      final own = iconsOf('Own');
-      expect(own.map((i) => (i.icon, i.color)), [
-        (Icons.flag, const Color(0xFF123456)),
+      const own = GoalBand(color: Color(0xFF123456), dashed: false);
+      expect(bandsOf(tester, 'Own').bands, [own]);
+      expect(bandsOf(tester, 'Kid').bands, [
+        own,
+        const GoalBand(color: Color(0xFF123456), dashed: true),
       ]);
-      expect(iconsOf('Kid').map((i) => (i.icon, i.color)), [
-        (Icons.outlined_flag, const Color(0xFF123456)),
-      ]);
+      // An inactive goal's is grey, and dashed.
+      final idle = bandsOf(tester, 'Idle').bands.single;
+      expect(idle.dashed, isTrue);
+      expect(idle.color, isNot(const Color(0xFFABCDEF)));
     },
   );
 
