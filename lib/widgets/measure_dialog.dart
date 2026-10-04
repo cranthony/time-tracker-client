@@ -7,8 +7,8 @@ import '../services/mcp_client.dart';
 import 'health.dart';
 import 'measure_editor.dart';
 
-/// Saves [changes] to [goal], returning every goal as the server has them
-/// now: [GoalsRepository.updateGoal].
+/// Saves [changes] to [goal], returning every goal as they're to be shown
+/// now.
 typedef SaveGoal = Future<GoalList> Function(
   Goal goal,
   Map<String, Object?> changes,

@@ -132,6 +132,28 @@ class Goal {
     path: json['path'] as String?,
     properties: Map.unmodifiable(json),
   );
+
+  /// The goal as [Goal.fromJson] takes it: what the server sent, with the
+  /// typed fields over it.
+  Map<String, Object?> toJson() => {
+    ...properties,
+    'id': id,
+    'parent_id': parentId,
+    'name': name,
+    'status': status,
+    'background_color': backgroundColor,
+    'priority': priority,
+    'fixed_time': fixedTime,
+    'measure': measure,
+    'effective_color': effectiveColor,
+    'health': health,
+    'health_period': healthPeriod,
+    'health_trend': healthTrend.map((r) => r?.toString() ?? '-').join(','),
+    'stale_days': staleDays,
+    'minutes_24h': minutes24h,
+    'minutes_7d': minutes7d,
+    'minutes_by_statuses': minutesByStatuses?.map((m) => m.toJson()).toList(),
+  };
 }
 
 /// The overall goal's id: the goal above every other, whose sub-goals are

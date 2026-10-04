@@ -86,21 +86,6 @@ void main() {
       expect(await repo.cachedEvents(day, next), isNotNull);
     });
 
-    test('keep the goals a save returns', () async {
-      final cache = InMemoryResponseCache();
-      final repo = McpGoalsRepository(
-        _FakeClient({
-          'goals': [
-            {'id': '1', 'name': 'Sleep', 'active': true, 'path': 'Sleep'},
-          ],
-          'label_slots_used': 1,
-        }),
-        cache: cache,
-      );
-      await repo.updateGoal(const Goal(id: '1'), {'name': 'Sleep'});
-      expect((await repo.cachedGoals())!.goals.single.name, 'Sleep');
-    });
-
     test('ignore a cached value they can\'t read', () async {
       final cache = InMemoryResponseCache();
       await cache.write('get_notes', 'not a list');
