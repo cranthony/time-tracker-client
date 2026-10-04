@@ -6,7 +6,7 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
-## 5.3.0
+## 5.4.0
 
 - Picking an event's goals, in its short dialog or its Details, no
   longer means scrolling every goal. The goals picked sit on top as
@@ -15,6 +15,28 @@ on. Add the new version's section here at the same time; CI checks both.
   match sits; Enter picks the top one. With the search empty, the goals
   are a tree that opens only down to the ones picked; the arrow beside
   a goal shows or hides its sub-goals.
+
+## 5.3.0
+
+- On the Goals page, each goal shows its color as a band down the left
+  in place of its flag: solid if the color is its own, dashed if it's
+  inherited. A sub-goal is indented by one band, its ancestors' bands
+  running down beside its own, so its nesting can be seen at a glance;
+  dashed bands side by side are offset into a checkerboard, and their
+  dashes line up down the page. A goal with sub-goals has an arrow on
+  its band, as tall as the goal, while they're hidden, and its band
+  widens down into theirs while they're shown.
+- Swipe a goal right to show or hide its sub-goals. Tapping a goal now
+  always opens it.
+- Each active goal's priority shows as a chip after its name, as on the
+  Events page: filled if it's set on the goal, outlined if inherited.
+- A goal's measure and its event properties are one dialog: its priority
+  chip at the top (tap it to change it), then its measure, how it's
+  doing, and its color. The "Event properties" choice under each goal is
+  gone, and "Measure" in a goal's menu is now "Edit". The choices under
+  each goal are now in the order Time spent, Time as a percentage,
+  Measure.
+- The sample data has a goal three levels deep.
 
 ## 5.2.0
 

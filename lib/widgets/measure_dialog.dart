@@ -31,215 +31,111 @@ String _average(Goal goal) => goal.isOverall
     ? "the average of the top-level goals' ratings"
     : "the average of its sub-goals' ratings";
 
-/// Shows how [goal]'s health is rated: its measure in words and its
-/// settings, with a button to edit it (or add one), and how it's doing
-/// by it: its latest rating, its last 8 days, the days gone unrated and,
-/// for a measure of time or events, its recent time.
-///
-/// Editing closes it and opens [showEditMeasureDialog] in its place, so
-/// dialogs don't stack; that saves with [save], then [onSaved] is called
-/// with every goal. Without [save], or for a goal with no id, it can't be
-/// edited. "History" and "Details" close it, then call [onHistory] or
-/// [onDetails] with the goal as it is now. [goals] lists the goals a
-/// measure can look at; [goalNames] names them.
-Future<void> showMeasureDialog(
-  BuildContext context,
-  Goal goal, {
-  Map<String?, String> goalNames = const {},
-  SaveGoal? save,
-  ValueChanged<GoalList>? onSaved,
-  Future<List<Goal>> Function()? goals,
-  ValueChanged<Goal>? onHistory,
-  ValueChanged<Goal>? onDetails,
-}) async {
-  // True when "Edit measure" (or "Add a measure") closed it.
-  final edit = await showDialog<bool>(
-    context: context,
-    builder: (_) => _MeasureDialog(
-      goal: goal,
-      goalNames: goalNames,
-      editable: save != null && goal.id != null,
-      onHistory: onHistory,
-      onDetails: onDetails,
-    ),
-  );
-  if (edit != true || save == null || !context.mounted) return;
-  final saved = await showEditMeasureDialog(
-    context,
-    goal,
-    save: save,
-    goals: goals,
-  );
-  if (saved != null) onSaved?.call(saved);
-}
-
-class _MeasureDialog extends StatefulWidget {
-  const _MeasureDialog({
+/// How [goal]'s health is rated: its measure in words and its settings,
+/// with a button to edit it (or add one) when there's [onEdit].
+/// [goalNames] names the goals a measure looks at.
+class MeasureCard extends StatelessWidget {
+  const MeasureCard({
+    super.key,
     required this.goal,
-    required this.goalNames,
-    required this.editable,
-    required this.onHistory,
-    required this.onDetails,
+    this.goalNames = const {},
+    this.onEdit,
   });
 
   final Goal goal;
   final Map<String?, String> goalNames;
-  final bool editable;
-  final ValueChanged<Goal>? onHistory;
-  final ValueChanged<Goal>? onDetails;
-
-  @override
-  State<_MeasureDialog> createState() => _MeasureDialogState();
-}
-
-class _MeasureDialogState extends State<_MeasureDialog> {
-  void _leaveFor(ValueChanged<Goal> then) {
-    Navigator.of(context).pop();
-    then(widget.goal);
-  }
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final text = theme.textTheme;
     final colors = theme.colorScheme;
-    final goal = widget.goal;
     final measure = goal.measure;
     final kind = measure?['kind'] as String?;
-    final editable = widget.editable;
     final muted = text.bodySmall?.copyWith(color: colors.onSurfaceVariant);
-    return AlertDialog(
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Measure',
-            style: text.labelLarge?.copyWith(color: colors.primary),
-          ),
-          Text(goalName(goal)),
-        ],
-      ),
-      contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      content: SingleChildScrollView(
+    return Card.filled(
+      margin: EdgeInsets.zero,
+      color: colors.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Card.filled(
-              margin: EdgeInsets.zero,
-              color: colors.surfaceContainerHighest,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          _kindIcons[kind] ?? Icons.functions,
-                          size: 18,
-                          color: colors.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            measureKinds[kind] ??
-                                (goal.isOverall
-                                    ? 'Average of the top-level goals'
-                                    : 'Average of its sub-goals'),
-                            style: text.labelLarge?.copyWith(
-                              color: colors.primary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      measure == null
-                          ? 'No measure of its own'
-                          : describeMeasure(
-                              measure,
-                              full: true,
-                              goalNames: widget.goalNames,
-                            ),
-                      style: text.titleLarge,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      measure == null
-                          ? "It's rated each day as ${_average(goal)}."
-                          : measureKindHints[kind] ?? '',
-                      style: muted,
-                    ),
-                    if (measure != null) ...[
-                      const SizedBox(height: 12),
-                      for (final (label, value) in describeMeasureSettings(
-                        measure,
-                        goalNames: widget.goalNames,
-                      ))
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              SizedBox(
-                                width: 84,
-                                child: Text(
-                                  label,
-                                  style: text.bodyMedium?.copyWith(
-                                    color: colors.onSurfaceVariant,
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                child: Text(value, style: text.bodyMedium),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-                    if (editable) ...[
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: FilledButton.tonalIcon(
-                          onPressed: () => Navigator.of(context).pop(true),
-                          icon: Icon(measure == null ? Icons.add : Icons.edit),
-                          label: Text(
-                            measure == null ? 'Add a measure' : 'Edit measure',
+            Row(
+              children: [
+                Icon(
+                  _kindIcons[kind] ?? Icons.functions,
+                  size: 18,
+                  color: colors.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    measureKinds[kind] ??
+                        (goal.isOverall
+                            ? 'Average of the top-level goals'
+                            : 'Average of its sub-goals'),
+                    style: text.labelLarge?.copyWith(color: colors.primary),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              measure == null
+                  ? 'No measure of its own'
+                  : describeMeasure(measure, full: true, goalNames: goalNames),
+              style: text.titleLarge,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              measure == null
+                  ? "It's rated each day as ${_average(goal)}."
+                  : measureKindHints[kind] ?? '',
+              style: muted,
+            ),
+            if (measure != null) ...[
+              const SizedBox(height: 12),
+              for (final (label, value) in describeMeasureSettings(
+                measure,
+                goalNames: goalNames,
+              ))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 84,
+                        child: Text(
+                          label,
+                          style: text.bodyMedium?.copyWith(
+                            color: colors.onSurfaceVariant,
                           ),
                         ),
                       ),
+                      Expanded(child: Text(value, style: text.bodyMedium)),
                     ],
-                  ],
+                  ),
+                ),
+            ],
+            if (onEdit case final onEdit?) ...[
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.tonalIcon(
+                  onPressed: onEdit,
+                  icon: Icon(measure == null ? Icons.add : Icons.edit),
+                  label: Text(
+                    measure == null ? 'Add a measure' : 'Edit measure',
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: _HowItsDoing(goal: goal),
-            ),
+            ],
           ],
         ),
       ),
-      actions: [
-        if (widget.onHistory case final onHistory?)
-          TextButton(
-            onPressed: () => _leaveFor(onHistory),
-            child: const Text('History'),
-          ),
-        if (widget.onDetails case final onDetails?)
-          TextButton(
-            onPressed: () => _leaveFor(onDetails),
-            child: const Text('Details'),
-          ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Close'),
-        ),
-      ],
     );
   }
 }
@@ -247,8 +143,8 @@ class _MeasureDialogState extends State<_MeasureDialog> {
 /// [goal]'s latest rating and when it was, its last 8 days, how many days
 /// have gone unrated, and its recent time, if its measure is of time or
 /// events (or of its sub-goals', which are).
-class _HowItsDoing extends StatelessWidget {
-  const _HowItsDoing({required this.goal});
+class HowItsDoing extends StatelessWidget {
+  const HowItsDoing({super.key, required this.goal});
 
   final Goal goal;
 
