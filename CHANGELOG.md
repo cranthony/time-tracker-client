@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.12.2
+
+- The Notes page shows the latest compacted note and when notes were
+  last compacted as they were last time, while it asks the server again,
+  rather than leaving them out until it answers.
+
 ## 4.12.1
 
 - On the Events page, an event's duration box says how it's drawn: with
