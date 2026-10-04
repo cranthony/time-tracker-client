@@ -8,9 +8,9 @@ on. Add the new version's section here at the same time; CI checks both.
 
 ## 4.3.1
 
-- A weighted rollup's weights no longer list completed or deleted
-  sub-goals (any weight they had is kept), and grey out ones that aren't
-  active, saying they aren't rated.
+- A weighted rollup's weights only list active and inactive sub-goals
+  (any weight the others had is kept), and grey out inactive ones,
+  saying they aren't rated.
 - A count's "What's counted" field no longer starts the keyboard
   capitalized, and says it's for display only.
 

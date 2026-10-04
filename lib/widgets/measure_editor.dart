@@ -4,9 +4,9 @@ import '../models/goal.dart';
 import '../models/measure.dart';
 import 'durations.dart';
 
-/// The statuses of sub-goals a weighted rollup's weights leave out:
-/// they're done with.
-const _hiddenFromWeights = {'completed', 'deleted'};
+/// The statuses of sub-goals a weighted rollup's weights leave out: not
+/// yet taken up, or done with.
+const _hiddenFromWeights = {'proposed', 'completed', 'archived', 'deleted'};
 
 /// Edits a goal's measure: a kind picked from [measureKinds] (or none),
 /// then that kind's fields. Calls [onChanged] with the measure as it
@@ -330,8 +330,8 @@ class _MeasureEditorState extends State<MeasureEditor> {
                   : goal.parentId == widget.goalId))
             goal,
       ];
-      // Every sub-goal keeps its weight, but a completed or deleted one
-      // isn't shown; one that isn't active (and so isn't rated) is greyed.
+      // Every sub-goal keeps its weight, but only active and inactive ones
+      // are shown; an inactive one (which isn't rated) is greyed.
       _subGoalIds = {for (final goal in subGoals) goal.id!};
       final shown = [
         for (final goal in subGoals)

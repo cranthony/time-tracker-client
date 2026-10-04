@@ -12,6 +12,8 @@ void main() {
       Goal(id: 'soup', name: 'Soup', parentId: 'cook', status: 'inactive'),
       Goal(id: 'cake', name: 'Cake', parentId: 'cook', status: 'completed'),
       Goal(id: 'stew', name: 'Stew', parentId: 'cook', status: 'deleted'),
+      Goal(id: 'pie', name: 'Pie', parentId: 'cook', status: 'proposed'),
+      Goal(id: 'jam', name: 'Jam', parentId: 'cook', status: 'archived'),
     ];
 
     Future<List<Measure?>> pump(WidgetTester tester) async {
@@ -38,13 +40,16 @@ void main() {
       return changes;
     }
 
-    testWidgets('hides completed and deleted sub-goals', (tester) async {
+    testWidgets('hides proposed, completed, archived and deleted '
+        'sub-goals', (tester) async {
       await pump(tester);
 
       expect(find.widgetWithText(TextField, 'Tofu'), findsOneWidget);
       expect(find.widgetWithText(TextField, 'Soup'), findsOneWidget);
       expect(find.widgetWithText(TextField, 'Cake'), findsNothing);
       expect(find.widgetWithText(TextField, 'Stew'), findsNothing);
+      expect(find.widgetWithText(TextField, 'Pie'), findsNothing);
+      expect(find.widgetWithText(TextField, 'Jam'), findsNothing);
     });
 
     testWidgets('greys an inactive sub-goal, saying why', (tester) async {
