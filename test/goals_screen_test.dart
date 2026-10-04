@@ -637,8 +637,8 @@ void main() {
       );
     });
 
-    testWidgets('edits the measure over it, saying how it reads, then shows '
-        'it saved', (tester) async {
+    testWidgets('edits the measure in its place, saying how it reads, then '
+        'goes back to the goals', (tester) async {
       final repo = measured();
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
@@ -647,8 +647,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Edit measure'));
       await tester.pumpAndSettle();
-      // Stacked over the measure dialog.
-      expect(find.byType(AlertDialog), findsNWidgets(2));
+      // In place of the measure dialog, not stacked over it.
+      expect(find.byType(AlertDialog), findsOneWidget);
       expect(inDialog(find.text('Reads as: 10h per 7 days')), findsOneWidget);
       // Nothing changed yet.
       final save = find.widgetWithText(FilledButton, 'Save');
@@ -665,9 +665,8 @@ void main() {
         'target_min': 720,
         'interval_days': 7,
       });
-      // Back on the measure dialog, showing what was saved.
-      expect(find.byType(AlertDialog), findsOneWidget);
-      expect(inDialog(find.text('12h per 7 days')), findsOneWidget);
+      // Back on the goals page.
+      expect(find.byType(AlertDialog), findsNothing);
       expect(find.text('Saved.'), findsOneWidget);
     });
 
@@ -721,7 +720,7 @@ void main() {
         'kind': 'count',
         'target': 3,
       });
-      expect(inDialog(find.text('3 events per day')), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
     });
 
     testWidgets('asks before removing the measure, saying its past ratings '
@@ -754,7 +753,7 @@ void main() {
       await tester.tap(inDialog(find.text('Remove')));
       await tester.pumpAndSettle();
       expect(measureOf(await repo.goals(), 'app'), isNull);
-      expect(inDialog(find.text('No measure of its own')), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
     });
 
     testWidgets('asks before throwing away an edit', (tester) async {
@@ -774,8 +773,7 @@ void main() {
 
       await tester.tap(find.text('Discard'));
       await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsOneWidget);
-      expect(inDialog(find.text('10h per 7 days')), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
       expect(measureOf(await repo.goals(), 'app')?['target_min'], 600);
     });
   });

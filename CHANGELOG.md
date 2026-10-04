@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.3.2
+
+- "Edit measure" (or "Add a measure") now opens the measure editor in
+  place of the Measure dialog rather than over it, so closing the editor
+  goes straight back to the goals.
+
 ## 4.3.1
 
 - A weighted rollup's weights only list active and inactive sub-goals
