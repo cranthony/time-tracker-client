@@ -34,7 +34,7 @@ import '../widgets/status_message.dart';
 /// statuses are shown: proposed, active and inactive goals to start with.
 /// The menu beside it picks what each goal shows under its name: its
 /// time spent, its measure, its time as a share of each window, or its
-/// events' priority and fixed time ([GoalSummary]), kept on the device.
+/// events' priority ([GoalSummary]), kept on the device.
 /// Only active goals take up a calendar label; the others keep their
 /// history. Tapping a goal shows its measure and how it's doing by it, and
 /// lets one edit it ([showMeasureDialog]) -- or, while each goal shows
@@ -349,7 +349,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
     onDetails: _open,
   );
 
-  /// Shows the priority, fixed time and color [goal] gives its events,
+  /// Shows the priority and color [goal] gives its events,
   /// from which each can be set or cleared, and its details opened.
   Future<void> _eventProperties(Goal goal) => showEventPropertiesDialog(
     context,
@@ -747,7 +747,7 @@ enum GoalSummary {
   /// Its time as a share of each window: "37.5% of 24h · 6% of 7d".
   percent('Time as a percentage'),
 
-  /// What's set on it for its events: "Priority 2 · Fixed time".
+  /// What's set on it for its events: "Priority 2".
   eventProperties('Event properties');
 
   const GoalSummary(this.label);
@@ -1121,8 +1121,7 @@ GoalList _withChanged(
 
 /// [goals] in place of [list]'s, parents first, each goal's sub-goals
 /// after it in the order given, and each path made again from its
-/// ancestors' names, and the priority and fixed time each inherits from
-/// them.
+/// ancestors' names, and the priority each inherits from them.
 GoalList _inTree(GoalList list, List<Goal> goals) {
   final ids = {for (final goal in goals) goal.id};
   final children = <String?, List<Goal>>{};
@@ -1150,23 +1149,12 @@ GoalList _inTree(GoalList list, List<Goal> goals) {
             : goal.parentId == null
             ? null
             : goal.effectivePriority);
-    final fixedTime =
-        goal.fixedTime ??
-        (parent != null
-            ? parent.effectiveFixedTime
-            : goal.parentId == null
-            ? null
-            : goal.effectiveFixedTime);
-    final shown =
-        path == goal.path &&
-            priority == goal.effectivePriority &&
-            fixedTime == goal.effectiveFixedTime
+    final shown = path == goal.path && priority == goal.effectivePriority
         ? goal
         : Goal.fromJson({
             ...goal.toJson(),
             'path': path,
             'effective_priority': priority,
-            'effective_fixed_time': fixedTime,
           });
     ordered.add(shown);
     for (final child in children[goal.id] ?? const <Goal>[]) {
@@ -1315,20 +1303,13 @@ String formatTimestamp(BuildContext context, DateTime time) {
       '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
 }
 
-/// The priority and fixed time set on [goal] for its events: "Priority 2
-/// · Fixed time". Ones it inherits are left out, so what's set on it
-/// stands out. Null if neither is set.
-String? describeEventProperties(Goal goal) {
-  final parts = [
-    if (goal.priority case final priority?) 'Priority $priority',
-    switch (goal.fixedTime) {
-      true => 'Fixed time',
-      false => 'Flexible time',
-      null => null,
-    },
-  ].nonNulls;
-  return parts.isEmpty ? null : parts.join(' · ');
-}
+/// The priority set on [goal] for its events: "Priority 2". One it
+/// inherits is left out, so what's set on it stands out. Null if none is
+/// set.
+String? describeEventProperties(Goal goal) => switch (goal.priority) {
+  final priority? => 'Priority $priority',
+  null => null,
+};
 
 /// [day] and [week] minutes as "9h in 24h · 10h in 7d", or with
 /// [asPercent], as shares of each window: "37.5% of 24h · 6% of 7d". With

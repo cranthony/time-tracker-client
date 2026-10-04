@@ -23,8 +23,9 @@ class Event {
   /// The event as the server sent it.
   final Map<String, dynamic> properties;
 
-  /// The priority it's treated as: its own, else its primary goal's (or
-  /// that goal's nearest ancestor's); null if none of them has one.
+  /// The priority it's treated as: its own, else the highest (lowest
+  /// numbered) among all its goals, each goal's own or its nearest
+  /// ancestor's; null if none of them has one.
   int? get effectivePriority =>
       properties['effective_priority'] as int? ??
       properties['priority'] as int?;

@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.0.0
+
+- Goals no longer have a fixed time, matching the server: an event is at
+  a fixed time only if it says so itself. The event properties dialog
+  and a goal's details no longer offer it, and the Goals page's "Event
+  properties" summary shows only a goal's priority.
+- An event without a priority of its own takes the highest (lowest
+  numbered) of all its goals', not just its primary goal's; the primary
+  goal only decides its color.
+
 ## 4.12.2
 
 - The Notes page shows the latest compacted note and when notes were

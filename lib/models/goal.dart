@@ -12,11 +12,9 @@ class Goal {
     this.status = 'active',
     this.backgroundColor,
     this.priority,
-    this.fixedTime,
     this.measure,
     this.effectiveColor,
     this.effectivePriority,
-    this.effectiveFixedTime,
     this.health,
     this.healthPeriod,
     this.healthTrend = const [],
@@ -49,9 +47,6 @@ class Goal {
   final String? backgroundColor;
   final int? priority;
 
-  /// Whether its events stay at their set time; null if it doesn't say.
-  final bool? fixedTime;
-
   /// How its health is rated in each day's reflection, e.g. {"kind":
   /// "duration", "target_min": 600}; null if it isn't measured (then it's
   /// rated by its sub-goals', if any are). See measure.dart.
@@ -67,14 +62,8 @@ class Goal {
   /// [priority].
   final int? effectivePriority;
 
-  /// The same for [fixedTime].
-  final bool? effectiveFixedTime;
-
   /// Whether [effectivePriority] comes from an ancestor, not its own.
   bool get inheritsPriority => priority == null && effectivePriority != null;
-
-  /// Whether [effectiveFixedTime] comes from an ancestor, not its own.
-  bool get inheritsFixedTime => fixedTime == null && effectiveFixedTime != null;
 
   /// Its latest confirmed rating (0-100), if it's had one.
   final int? health;
@@ -126,7 +115,6 @@ class Goal {
         (json['active'] == false ? 'inactive' : 'active'),
     backgroundColor: json['background_color'] as String?,
     priority: json['priority'] as int?,
-    fixedTime: json['fixed_time'] as bool?,
     measure: switch (json['measure']) {
       final Map measure => Map.unmodifiable(measure.cast<String, Object?>()),
       _ => null,
@@ -134,8 +122,6 @@ class Goal {
     effectiveColor: json['effective_color'] as String?,
     effectivePriority:
         json['effective_priority'] as int? ?? json['priority'] as int?,
-    effectiveFixedTime:
-        json['effective_fixed_time'] as bool? ?? json['fixed_time'] as bool?,
     health: json['health'] as int?,
     healthPeriod: json['health_period'] as String?,
     healthTrend: [
@@ -163,11 +149,9 @@ class Goal {
     'status': status,
     'background_color': backgroundColor,
     'priority': priority,
-    'fixed_time': fixedTime,
     'measure': measure,
     'effective_color': effectiveColor,
     'effective_priority': effectivePriority,
-    'effective_fixed_time': effectiveFixedTime,
     'health': health,
     'health_period': healthPeriod,
     'health_trend': healthTrend.map((r) => r?.toString() ?? '-').join(','),

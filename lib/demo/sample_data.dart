@@ -107,6 +107,8 @@ class SampleData {
       _at(18, 30),
       _at(21, 0),
       goals: ['host', 'tofu'],
+      // Tofu's, inherited from Cooking: Hosting has none.
+      priority: 2,
     ),
     _event('read', 'Reading', _at(21, 0), _at(22, 30)),
   ];
@@ -199,7 +201,6 @@ class SampleData {
       'status': 'active',
       'effective_color': '#039be5',
       'priority': 0,
-      'fixed_time': true,
       'measure': {
         'kind': 'time_constraint',
         'edge': 'start',
@@ -232,7 +233,6 @@ class SampleData {
       'background_color': '#33b679',
       'effective_color': '#33b679',
       'priority': 2,
-      'fixed_time': false,
       'measure': {'kind': 'rollup', 'agg': 'percentile', 'percentile': 0},
       ..._health('cook'),
       ..._time(120, 270),
