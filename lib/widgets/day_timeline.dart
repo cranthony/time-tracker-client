@@ -218,8 +218,9 @@ List<T> placeLabels<T>(
 /// and it says how long it is. One pushed down by the event above it is
 /// joined to where it truly is by a line from a bracket in the gutter.
 /// [now] and the [lastCompaction], if they're in the day, are marked
-/// with lines across, under the events, labeled "now" and "last
-/// compaction" at their right ends.
+/// with lines across, under the events; zoomed in past the
+/// [defaultTimelineScale], they're labeled "now" and "last compaction"
+/// in place of the times beside them.
 class DayTimeline extends StatelessWidget {
   const DayTimeline({
     super.key,
@@ -303,25 +304,35 @@ class DayTimeline extends StatelessWidget {
     final nowY = yIfToday(now);
     final compactionY = yIfToday(lastCompaction);
     final colors = theme.colorScheme;
-    // The lines' labels, at the left edge over the times, the later moved
-    // down clear of the other if they're close.
+    // The lines' labels, in place of the times beside them, only when
+    // zoomed in: each centered on its line, unless that's too close to the
+    // one above.
     final markerStyle = (text.labelSmall ?? const TextStyle()).copyWith(
       fontSize: _bandFontSize,
-      fontWeight: FontWeight.w600,
+      fontWeight: FontWeight.w400,
       height: 1.2,
     );
-    final markerHeight = scaler.scale(_bandFontSize) * 1.2 + 2;
     final markers = <_Marker>[];
-    for (final (y, label, color) in [
-      if (compactionY != null)
-        (compactionY, 'last compaction', colors.tertiary),
-      if (nowY != null) (nowY, 'now', colors.error),
-    ]..sort((a, b) => a.$1.compareTo(b.$1))) {
-      final clear = switch (markers.lastOrNull) {
-        final above? => above.y + markerHeight + 1,
-        null => double.negativeInfinity,
-      };
-      markers.add((y: math.max(y, clear), label: label, color: color));
+    if (scale > defaultTimelineScale) {
+      for (final (y, label, color) in [
+        if (compactionY != null)
+          (compactionY, 'last compaction', colors.tertiary),
+        if (nowY != null) (nowY, 'now', colors.error),
+      ]..sort((a, b) => a.$1.compareTo(b.$1))) {
+        final painter = _markerText(label, markerStyle, scaler);
+        final height = painter.height;
+        painter.dispose();
+        final clear = switch (markers.lastOrNull) {
+          final above? => above.y + (above.height + height) / 2 + 1,
+          null => double.negativeInfinity,
+        };
+        markers.add((
+          y: math.max(y, clear),
+          height: height,
+          label: label,
+          color: color,
+        ));
+      }
     }
     final rail = _RailPainter(
       day: day,
@@ -340,7 +351,6 @@ class DayTimeline extends StatelessWidget {
       compactionY: compactionY,
       compactionColor: colors.tertiary,
       markers: markers,
-      markerHeight: markerHeight,
       edgeColor: colors.onSurface,
       hourColor: colors.onSurfaceVariant,
       gridColor: colors.outlineVariant.withValues(alpha: 0.5),
@@ -357,7 +367,6 @@ class DayTimeline extends StatelessWidget {
                   markers: markers,
                   style: markerStyle,
                   scaler: scaler,
-                  onColor: colors.surface,
                 ),
           child: SizedBox(
             width: constraints.maxWidth,
@@ -641,47 +650,47 @@ class _StripPainter extends CustomPainter {
       old.color != color;
 }
 
-/// A line across the timeline to label: [label], centered at [y] (on the
-/// line, unless that's too close to another), at the left edge.
-typedef _Marker = ({double y, String label, Color color});
+/// A line across the timeline to label: [label], [height] tall, centered
+/// at [y] (on the line, unless that's too close to another), in place of
+/// the times beside it.
+typedef _Marker = ({double y, double height, String label, Color color});
 
-/// The labels of the lines across the timeline, at its left edge, in
-/// place of the times there: each a small box in its line's color.
+/// [label] as a line's label is drawn: right-aligned in the time column,
+/// on two lines if it needs them.
+TextPainter _markerText(String label, TextStyle style, TextScaler scaler) =>
+    TextPainter(
+      text: TextSpan(text: label, style: style),
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.right,
+      textScaler: scaler,
+      maxLines: 2,
+    )..layout(maxWidth: _timeWidth - 6);
+
+/// The labels of the lines across the timeline, in the time column in
+/// place of the times there: small text in its line's color.
 class _MarkerLabelsPainter extends CustomPainter {
   _MarkerLabelsPainter({
     required this.markers,
     required this.style,
     required this.scaler,
-    required this.onColor,
   });
 
   final List<_Marker> markers;
   final TextStyle style;
   final TextScaler scaler;
 
-  /// The labels' text color, on their lines' colors.
-  final Color onColor;
-
   @override
   void paint(Canvas canvas, Size size) {
     for (final marker in markers) {
-      final painter = TextPainter(
-        text: TextSpan(
-          text: marker.label,
-          style: style.copyWith(color: onColor),
-        ),
-        textDirection: TextDirection.ltr,
-        textScaler: scaler,
-        maxLines: 1,
-      )..layout();
-      final width = painter.width + 8;
-      final height = painter.height + 2;
-      final rect = Rect.fromLTWH(2, marker.y - height / 2, width, height);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, const Radius.circular(3)),
-        Paint()..color = marker.color,
+      final painter = _markerText(
+        marker.label,
+        style.copyWith(color: marker.color.withValues(alpha: 0.8)),
+        scaler,
       );
-      painter.paint(canvas, Offset(rect.left + 4, rect.top + 1));
+      painter.paint(
+        canvas,
+        Offset(_timeWidth - 6 - painter.width, marker.y - painter.height / 2),
+      );
       painter.dispose();
     }
   }
@@ -716,7 +725,6 @@ class _RailPainter extends CustomPainter {
     required this.compactionY,
     required this.compactionColor,
     required this.markers,
-    required this.markerHeight,
     required this.edgeColor,
     required this.hourColor,
     required this.gridColor,
@@ -747,7 +755,6 @@ class _RailPainter extends CustomPainter {
   /// The lines' labels, which the times give way to, and how tall each
   /// is.
   final List<_Marker> markers;
-  final double markerHeight;
   final Color edgeColor;
   final Color hourColor;
   final Color gridColor;
@@ -890,7 +897,7 @@ class _RailPainter extends CustomPainter {
     ];
     // The lines' labels come first; any time they'd cover isn't shown.
     bool clearOfMarkers(_TimeLabel label) => markers.every(
-      (m) => (m.y - label.y).abs() >= (markerHeight + labelHeight) / 2,
+      (m) => (m.y - label.y).abs() >= (m.height + labelHeight) / 2,
     );
     final placed = placeLabels(
       candidates.where(clearOfMarkers),

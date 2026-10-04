@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.11.0
+
+- On the Events page, the days slide: drag left or right and the next
+  day or the one before follows your finger, already loaded, scrolled to
+  the same time of day; the arrows slide too. The days either side of
+  the one shown are loaded in the background to be ready.
+- "now" and "last compaction" are small, plain labels in their lines'
+  colors, in place of the times beside them, and only when zoomed in.
+
 ## 4.10.0
 
 - Each event on the Events page says how long it is and its priority
