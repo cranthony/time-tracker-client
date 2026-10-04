@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
-
 import '../models/note.dart';
 import '../services/notes_repository.dart';
 import 'outbox.dart';
@@ -35,9 +33,6 @@ class NoteOutbox extends Outbox<PendingNote, void> {
   /// Oldest first.
   List<PendingNote> get pending => items;
 
-  /// Called after each note is saved.
-  VoidCallback? onSaved;
-
   /// The uncompacted notes, fetched at most once a round, to check
   /// whether a note was saved already.
   List<Note>? _onServer;
@@ -46,7 +41,7 @@ class NoteOutbox extends Outbox<PendingNote, void> {
     final pending = PendingNote(
       id: '${now().microsecondsSinceEpoch}-${_random.nextInt(0x7fffffff)}',
       // Whole seconds, so the note can be recognised if the server stores
-      // it with less precision (see _alreadySaved).
+      // it with less precision (see savedIn).
       note: Note(
         timestamp: _truncateToSeconds(note.timestamp),
         description: note.description,
@@ -86,16 +81,14 @@ class NoteOutbox extends Outbox<PendingNote, void> {
       );
     }
     final onServer = _onServer;
-    if (onServer == null || !_alreadySaved(item.note, onServer)) {
+    if (onServer == null || !savedIn(item.note, onServer)) {
       await _repository.addNote(item.note).timeout(Outbox.requestTimeout);
     }
   }
 
-  @override
-  void saved(PendingNote item, void result) => onSaved?.call();
-
-  /// Whether an earlier attempt already saved [note], but we never heard.
-  static bool _alreadySaved(Note note, List<Note> onServer) => onServer.any(
+  /// Whether [onServer] has [note]: an earlier attempt saved it, but we
+  /// never heard, or it's been fetched since it was saved.
+  static bool savedIn(Note note, List<Note> onServer) => onServer.any(
     (n) =>
         (n.description ?? '') == (note.description ?? '') &&
         n.timestamp.difference(note.timestamp).abs() <

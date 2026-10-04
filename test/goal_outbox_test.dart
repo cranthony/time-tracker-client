@@ -82,10 +82,11 @@ void main() {
     }
   });
 
-  test('sends saves one at a time, in order, then says it is done', () async {
+  test('sends saves one at a time, in order, then wants the goals '
+      'fetched, once', () async {
     final box = outbox();
-    final events = <GoalSaveEvent>[];
-    box.events.listen(events.add);
+    final wanted = <bool>[];
+    box.addListener(() => wanted.add(box.wantsFetch));
     box.start();
 
     final shownAs = box.create({'name': 'Running', 'parent_id': null});
@@ -94,15 +95,51 @@ void main() {
     await settled(box);
 
     expect(server.calls, ['create Running', 'update cook {priority: 2}']);
-    expect(events, [
-      isA<GoalSaved>()
-          .having((e) => e.save.goalId, 'goalId', shownAs)
-          .having((e) => e.createdId, 'createdId', 'g1'),
-      isA<GoalSaved>().having((e) => e.save.goalId, 'goalId', 'cook'),
-      isA<GoalSavesDone>(),
-    ]);
     expect(box.saves, isEmpty);
     expect(store.items, isEmpty);
+    // Kept, with the id the server gave the new goal, until fetched.
+    expect(box.justSaved.map((s) => (s.item.goalId, s.result)), [
+      (shownAs, 'g1'),
+      ('cook', null),
+    ]);
+    // Not while any were still to be sent.
+    expect(wanted.last, isTrue);
+    expect(wanted.where((w) => w), hasLength(1));
+
+    final fetched = box.fetching();
+    expect(box.wantsFetch, isFalse);
+    fetched();
+    expect(box.justSaved, isEmpty);
+  });
+
+  test('what was saved while the goals were fetched is kept after', () async {
+    final box = outbox();
+    box.update('cook', {'priority': 2});
+    await box.flush();
+    final fetched = box.fetching();
+    box.update('cook', {'priority': 3});
+    await box.flush();
+    expect(box.wantsFetch, isTrue);
+
+    fetched();
+    expect(box.justSaved.single.item.changes, {'priority': 3});
+    expect(box.wantsFetch, isTrue);
+  });
+
+  test("a save gone from the store was saved by another sender: it's "
+      'kept until fetched, without a result', () async {
+    final app = outbox();
+    final shownAs = app.create({'name': 'Running', 'parent_id': null});
+    await app.refresh();
+
+    await outbox().flush(ignoreBackoff: true);
+    expect(app.justSaved, isEmpty);
+    await app.refresh();
+    expect(app.saves, isEmpty);
+    expect(app.justSaved.map((s) => (s.item.goalId, s.result)), [
+      (shownAs, null),
+    ]);
+    expect(app.wantsFetch, isTrue);
   });
 
   test('a save to a goal with one waiting joins it, to be sent as one', () {
@@ -180,8 +217,6 @@ void main() {
     server.loseResponses = false;
     server.calls.clear();
     final after = outbox();
-    final events = <GoalSaveEvent>[];
-    after.events.listen(events.add);
     after.start();
     await after.flush();
 
@@ -190,10 +225,7 @@ void main() {
       (await server.goals()).goals.where((g) => g.name == 'Running'),
       hasLength(1),
     );
-    expect(
-      events.first,
-      isA<GoalSaved>().having((e) => e.createdId, 'createdId', 'g1'),
-    );
+    expect(after.justSaved.single.result, 'g1');
     expect(after.saves, isEmpty);
   });
 

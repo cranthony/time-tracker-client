@@ -8,17 +8,10 @@ import '../services/mcp_client.dart';
 import 'outbox.dart';
 import 'pending_goal_save.dart';
 
-/// What happened to a goal save: see [GoalOutbox.events].
+/// What happened to a goal save: see [GoalOutbox.events]. Saves that
+/// went through are in [Outbox.justSaved].
 sealed class GoalSaveEvent {
   const GoalSaveEvent();
-}
-
-/// [save] reached the server. For a new goal, [createdId] is the id the
-/// server gave it, if it said.
-class GoalSaved extends GoalSaveEvent {
-  const GoalSaved(this.save, this.createdId);
-  final PendingGoalSave save;
-  final String? createdId;
 }
 
 /// [save] failed, as its [PendingGoalSave.lastError] says. It's kept, and
@@ -27,12 +20,6 @@ class GoalSaved extends GoalSaveEvent {
 class GoalSaveFailed extends GoalSaveEvent {
   const GoalSaveFailed(this.save);
   final PendingGoalSave save;
-}
-
-/// A round of sending saved something, and is over: the goals can be
-/// fetched again, once, to show them as the server has them.
-class GoalSavesDone extends GoalSaveEvent {
-  const GoalSavesDone();
 }
 
 /// Goal saves waiting to be sent to the server, or that failed: an
@@ -49,7 +36,7 @@ class GoalOutbox extends Outbox<PendingGoalSave, String?> {
 
   final GoalsRepository _repository;
   int _nextId = 0;
-  // Synchronous, so a save is heard of before it leaves [saves].
+  // Synchronous, so a failure is heard of as it's kept.
   final _events = StreamController<GoalSaveEvent>.broadcast(sync: true);
 
   /// Every save waiting, being sent, or that failed, oldest first.
@@ -173,14 +160,7 @@ class GoalOutbox extends Outbox<PendingGoalSave, String?> {
   bool retries(Object error) => error is! McpException;
 
   @override
-  void saved(PendingGoalSave item, String? result) =>
-      _emit(GoalSaved(item, result));
-
-  @override
   void failed(PendingGoalSave item) => _emit(GoalSaveFailed(item));
-
-  @override
-  void sentAll() => _emit(const GoalSavesDone());
 
   @override
   void dispose() {

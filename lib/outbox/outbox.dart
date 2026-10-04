@@ -53,7 +53,12 @@ abstract interface class OutboxItem<T extends OutboxItem<T>> {
 /// in flight keeps the two from sending it at once.
 ///
 /// [send] sends an item, giving an [R] (e.g. the id the server gave it);
-/// [saved], [failed] and [sentAll] say how sending went.
+/// [failed] says when sending one didn't go well.
+///
+/// What's saved, here or by the background task, stays in [justSaved]
+/// until a fetch of what the server has, started after it was saved, is
+/// in (see [fetching]), so whatever shows the items can show it until
+/// then, rather than it going missing in between.
 abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   Outbox({required this._store, DateTime Function()? clock})
     : _clock = clock ?? DateTime.now;
@@ -80,6 +85,13 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
       Duration(seconds: min(60, 5 * pow(2, attempts - 1).toInt()));
 
   List<T> _items = [];
+
+  /// The items as last read from, or written to, the store.
+  List<T> _stored = [];
+  final _justSaved = <({T item, R? result, int seq})>[];
+  int _seq = 0;
+  int _fetchedSeq = 0;
+  bool _disposed = false;
   String? _sendingId;
   bool _needsSignIn = false;
   bool _running = false;
@@ -89,6 +101,29 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
 
   /// Oldest first.
   List<T> get items => List.unmodifiable(_items);
+
+  /// Items saved, here or by another sender, oldest first, that the last
+  /// fetch of what's saved may not have: each with what [send] gave, or
+  /// null if another sender saved it.
+  List<({T item, R? result})> get justSaved => [
+    for (final e in _justSaved) (item: e.item, result: e.result),
+  ];
+
+  /// Whether something was saved since the last fetch started, and
+  /// nothing is being sent: it's time to fetch what's saved, once.
+  bool get wantsFetch =>
+      _flushing == null && _justSaved.any((e) => e.seq > _fetchedSeq);
+
+  /// Call as a fetch of what's saved starts; call what it gives once it's
+  /// in, and shown, to let go of what was saved before it started.
+  void Function() fetching() {
+    final seq = _fetchedSeq = _seq;
+    return () {
+      final before = _justSaved.length;
+      _justSaved.removeWhere((e) => e.seq <= seq);
+      if (_justSaved.length != before) _notify();
+    };
+  }
 
   /// Whether anything is left to send: the server hasn't refused it.
   bool get hasUnsent => _items.any((item) => !item.refused);
@@ -126,18 +161,9 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   @protected
   void flushStarting() {}
 
-  /// Called after [item] is saved, with what [send] gave, just before
-  /// it's dropped.
-  @protected
-  void saved(T item, R result) {}
-
   /// Called after sending [item] failed: it's [item] as it's kept now.
   @protected
   void failed(T item) {}
-
-  /// Called at the end of a round that saved something.
-  @protected
-  void sentAll() {}
 
   /// Picks up changes made elsewhere (the background task).
   Future<void> refresh() => change((items) => items);
@@ -169,7 +195,12 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   @override
   void dispose() {
     stop();
+    _disposed = true;
     super.dispose();
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
   }
 
   /// Sends due items one at a time, oldest first, until one fails in a way
@@ -185,101 +216,97 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
           })
           .whenComplete(() {
             _flushing = null;
+            // So what shows the items hears it's time to fetch.
+            _notify();
             schedule();
           });
 
   Future<FlushResult> _flush(bool ignoreBackoff) async {
     flushStarting();
-    var savedAny = false;
-    try {
-      while (true) {
-        await refresh();
-        final now = _clock();
-        final next = _items
-            .where((item) => _isDue(item, now, ignoreBackoff))
-            .firstOrNull;
-        if (next == null) break;
+    while (true) {
+      await refresh();
+      final now = _clock();
+      final next = _items
+          .where((item) => _isDue(item, now, ignoreBackoff))
+          .firstOrNull;
+      if (next == null) break;
 
-        // Claimed before the first await, so dropping it is refused from
-        // here on. Whatever happens next, even the store failing, the
-        // claim is let go of below, or it would look in flight until the
-        // app restarts.
-        _sendingId = next.id;
-        try {
-          // If it was dropped just before, it's gone: skip it.
-          var stillPending = false;
-          await change((items) {
-            stillPending = items.any((item) => item.id == next.id);
-            return [
-              for (final item in items)
-                item.id == next.id
-                    ? item.copyWith(sendingSince: () => now)
-                    : item,
-            ];
-          });
-          if (!stillPending) continue;
-          // An earlier attempt, or a sender that gave up on it (see
-          // inFlightTimeout), may have saved it even though nobody heard.
-          final result = await send(
-            next,
-            maybeSaved: next.attempts > 0 || next.sendingSince != null,
-          );
-          _sendingId = null;
-          savedAny = true;
-          // Said before it's dropped, so whatever shows it can show it as
-          // saved without it going missing in between.
-          saved(next, result);
-          await change(
-            (items) => [
-              for (final item in items)
-                if (item.id != next.id) item,
-            ],
-          );
-        } on SignInRequiredException {
-          _sendingId = null;
-          _needsSignIn = true;
+      // Claimed before the first await, so dropping it is refused from
+      // here on. Whatever happens next, even the store failing, the
+      // claim is let go of below, or it would look in flight until the
+      // app restarts.
+      _sendingId = next.id;
+      try {
+        // If it was dropped just before, it's gone: skip it.
+        var stillPending = false;
+        await change((items) {
+          stillPending = items.any((item) => item.id == next.id);
+          return [
+            for (final item in items)
+              item.id == next.id
+                  ? item.copyWith(sendingSince: () => now)
+                  : item,
+          ];
+        });
+        if (!stillPending) continue;
+        // An earlier attempt, or a sender that gave up on it (see
+        // inFlightTimeout), may have saved it even though nobody heard.
+        final result = await send(
+          next,
+          maybeSaved: next.attempts > 0 || next.sendingSince != null,
+        );
+        _sendingId = null;
+        // Kept before it's dropped, so whatever shows it can show it as
+        // saved without it going missing in between.
+        _justSaved.add((item: next, result: result, seq: ++_seq));
+        await change(
+          (items) => [
+            for (final item in items)
+              if (item.id != next.id) item,
+          ],
+        );
+      } on SignInRequiredException {
+        _sendingId = null;
+        _needsSignIn = true;
+        final kept = next.copyWith(
+          sendingSince: () => null,
+          lastError: () => 'Sign in to save',
+        );
+        await _replace(kept);
+        failed(kept);
+        break;
+      } catch (e) {
+        _sendingId = null;
+        if (!retries(e)) {
+          // The server answered, saying no: it wasn't saved, and other
+          // items may well be.
           final kept = next.copyWith(
-            sendingSince: () => null,
-            lastError: () => 'Sign in to save',
-          );
-          await _replace(kept);
-          failed(kept);
-          break;
-        } catch (e) {
-          _sendingId = null;
-          if (!retries(e)) {
-            // The server answered, saying no: it wasn't saved, and other
-            // items may well be.
-            final kept = next.copyWith(
-              attempts: 0,
-              sendingSince: () => null,
-              lastError: () => describeSaveError(e),
-              nextAttemptAt: () => null,
-              refused: true,
-            );
-            await _replace(kept);
-            failed(kept);
-            continue;
-          }
-          final attempts = next.attempts + 1;
-          final kept = next.copyWith(
-            attempts: attempts,
+            attempts: 0,
             sendingSince: () => null,
             lastError: () => describeSaveError(e),
-            nextAttemptAt: () => _clock().add(backoff(attempts)),
+            nextAttemptAt: () => null,
+            refused: true,
           );
           await _replace(kept);
           failed(kept);
-          // Most failures are the connection or the server; the rest would
-          // likely fail the same way, so leave them for the next round.
-          break;
-        } finally {
-          _sendingId = null;
+          continue;
         }
-        if (!_running && !ignoreBackoff) break;
+        final attempts = next.attempts + 1;
+        final kept = next.copyWith(
+          attempts: attempts,
+          sendingSince: () => null,
+          lastError: () => describeSaveError(e),
+          nextAttemptAt: () => _clock().add(backoff(attempts)),
+        );
+        await _replace(kept);
+        failed(kept);
+        // Most failures are the connection or the server; the rest would
+        // likely fail the same way, so leave them for the next round.
+        break;
+      } finally {
+        _sendingId = null;
       }
-    } finally {
-      if (savedAny) sentAll();
+      if (!_running && !ignoreBackoff) break;
     }
     return _result();
   }
@@ -337,16 +364,24 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
     final shown = order(change(_items));
     if (!identical(shown, _items)) {
       _items = shown;
-      notifyListeners();
+      _notify();
     }
     final result = _lock.then((_) async {
       final before = await _store.load().timeout(storeTimeout);
+      // Gone since this outbox last read or wrote them: another sender
+      // (the background task) saved them, as nothing else drops them.
+      final ids = {for (final item in before) item.id};
+      for (final item in _stored) {
+        if (!ids.contains(item.id)) {
+          _justSaved.add((item: item, result: null, seq: ++_seq));
+        }
+      }
       final after = order(change(before));
       if (!identical(after, before)) {
         await _store.save(after).timeout(storeTimeout);
       }
-      _items = after;
-      notifyListeners();
+      _items = _stored = after;
+      _notify();
     });
     _lock = result.catchError((_) {});
     return result;

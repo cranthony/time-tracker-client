@@ -72,29 +72,19 @@ class GoalsScreen extends StatefulWidget {
 }
 
 class _GoalsScreenState extends State<GoalsScreen> {
-  /// The goals as the server last listed them, with the saves it's
-  /// answered since made to them.
+  /// The goals as the server last listed them.
   GoalList? _fromServer;
 
-  /// The goals shown: [_fromServer], with the saves waiting in the
-  /// outbox, or that failed, made to them; or [_held].
-  GoalList? get _goals => _lastShown =
-      _held ??
-      switch (_fromServer) {
-        final goals? => _withSaves(goals, widget.outbox.saves),
-        null => null,
-      };
-  GoalList? _lastShown;
-
-  /// The goals shown until they're fetched again, when saves were made
-  /// elsewhere (by the background task) that these don't have.
-  GoalList? _held;
-
-  /// The saves in the outbox, by id, when it last changed.
-  var _known = <String>{};
-
-  /// The saves heard saved here, by id, as they leave the outbox.
-  final _heard = <String>{};
+  /// The goals shown: [_fromServer], with the saves made since it was
+  /// fetched, here or by the background task, then those waiting in the
+  /// outbox, or that failed, made to them.
+  GoalList? get _goals => switch (_fromServer) {
+    final goals? => _withSaves(
+      _withSaved(goals, widget.outbox.justSaved),
+      widget.outbox.saves,
+    ),
+    null => null,
+  };
 
   StreamSubscription<GoalSaveEvent>? _saveEvents;
 
@@ -121,7 +111,6 @@ class _GoalsScreenState extends State<GoalsScreen> {
   void initState() {
     super.initState();
     widget.outbox.addListener(_outboxChanged);
-    _known = {for (final save in widget.outbox.saves) save.id};
     _saveEvents = widget.outbox.events.listen(_onSaveEvent);
     _showCached();
     _load();
@@ -173,37 +162,14 @@ class _GoalsScreenState extends State<GoalsScreen> {
 
   void _outboxChanged() {
     if (!mounted) return;
-    final ids = {for (final save in widget.outbox.saves) save.id};
-    final gone = _known.difference(ids);
-    _known = ids;
-    // Gone without a word: saved elsewhere. Shown as they were until
-    // the goals are fetched with them.
-    if (gone.difference(_heard).isNotEmpty && _held == null) {
-      _held = _lastShown;
-      _load();
-    }
-    _heard.removeAll(gone);
+    // Once, after the last of a round is answered, rather than after each.
+    if (widget.outbox.wantsFetch) _load();
     setState(() {});
   }
 
   void _onSaveEvent(GoalSaveEvent event) {
     if (!mounted) return;
     switch (event) {
-      case GoalSaved(:final save, :final createdId):
-        _heard.add(save.id);
-        final goals = _fromServer;
-        if (goals == null) return;
-        // So it doesn't go missing until the goals are fetched again.
-        setState(() {
-          _fromServer = switch ((save.isNew, createdId)) {
-            (false, _) => _withChanged(goals, save.goalId, save.changes),
-            (true, final id?) => _inTree(goals, [
-              ...goals.goals,
-              Goal.fromJson({...save.goal.toJson(), 'id': id}),
-            ]),
-            (true, null) => goals,
-          };
-        });
       // Said once, not again each time it's tried again by itself.
       case GoalSaveFailed(:final save) when save.refused || save.attempts <= 1:
         final name = save.isNew
@@ -223,41 +189,33 @@ class _GoalsScreenState extends State<GoalsScreen> {
         );
       case GoalSaveFailed():
         break;
-      case GoalSavesDone():
-        _load();
     }
   }
 
   Future<void> _load() async {
+    final fetched = widget.outbox.fetching();
     try {
       final goals = await widget.repository.goals();
       if (!mounted) return;
-      _heard.addAll(widget.outbox.reconcile(goals).map((save) => save.id));
+      widget.outbox.reconcile(goals);
       setState(() {
-        // While saves are being sent these may be behind them: they're
-        // fetched again once the last is answered.
-        if (_fromServer == null || _held != null || !widget.outbox.busy) {
-          _fromServer = goals;
-        }
-        _held = null;
+        // Saves made while these were fetched are still made to them.
+        _fromServer = goals;
         _stale = false;
         _error = null;
         _needsSignIn = false;
       });
+      fetched();
     } on SignInRequiredException {
       if (!mounted) return;
       setState(() {
         _fromServer = null;
-        _held = null;
         _stale = false;
         _needsSignIn = true;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _held = null;
-        _error = e;
-      });
+      setState(() => _error = e);
     }
   }
 
@@ -314,13 +272,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
   }
 
   /// Drops the saves that failed for the goal shown as [id].
-  void _discard(String id) {
-    _heard.addAll([
-      for (final save in widget.outbox.saves)
-        if (save.goalId == id) save.id,
-    ]);
-    widget.outbox.discard(id);
-  }
+  void _discard(String id) => widget.outbox.discard(id);
 
   /// The save that failed for the goal shown as [id], if one did.
   PendingGoalSave? _failed(String? id) =>
@@ -329,7 +281,11 @@ class _GoalsScreenState extends State<GoalsScreen> {
   /// Whether the goal shown as [id] is new, and the server hasn't made it
   /// yet: it can't be opened until then.
   bool _unmade(String? id) =>
-      widget.outbox.saves.any((s) => s.goalId == id && s.isNew);
+      widget.outbox.saves.any((s) => s.goalId == id && s.isNew) ||
+      // Made by the background task, which didn't say its id.
+      widget.outbox.justSaved.any(
+        (s) => s.item.goalId == id && s.item.isNew && s.result == null,
+      );
 
   /// Shows [goal]'s details to edit; one whose save failed opens with the
   /// changes that weren't saved, to save again.
@@ -1099,6 +1055,28 @@ class _GoalTile extends StatelessWidget {
       onLongPress: saving ? null : onLongPress,
     );
   }
+}
+
+/// [goals] with [saved], saves the server has answered, made to them, as
+/// far as they don't have them yet: each new goal added, with the id the
+/// server gave it if that's known, and each goal's changes made.
+GoalList _withSaved(
+  GoalList goals,
+  List<({PendingGoalSave item, String? result})> saved,
+) {
+  var shown = goals;
+  for (final (:item, :result) in saved) {
+    if (!item.isNew) {
+      shown = _withChanged(shown, item.goalId, item.changes);
+    } else if (item.madeIn(shown) == null &&
+        !shown.goals.any((g) => result != null && g.id == result)) {
+      shown = _inTree(shown, [
+        ...shown.goals,
+        Goal.fromJson({...item.goal.toJson(), 'id': result ?? item.goalId}),
+      ]);
+    }
+  }
+  return shown;
 }
 
 /// [goals] with [saves] made to them, oldest first: each new goal added,

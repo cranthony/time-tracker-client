@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
+import 'package:time_tracker_client/outbox/pending_note.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
@@ -38,10 +39,11 @@ void main() {
     Future<void> Function()? onSignOut,
     Stream<DateTime>? addNoteRequests,
     String? version,
+    OutboxStore<PendingNote>? store,
   }) {
     outboxNow = now;
     outbox = NoteOutbox(
-      store: InMemoryOutboxStore(),
+      store: store ?? InMemoryOutboxStore(),
       repository: repo,
       clock: () => outboxNow,
     )..start();
@@ -407,6 +409,69 @@ void main() {
     expect(saved.timestamp.difference(before).inSeconds.abs(), lessThan(5));
     await taps.close();
   });
+
+  screenTest('a note saved stays shown while the notes are fetched with '
+      'it', (tester) async {
+    final repo = _GatedFetchRepository();
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+    final fetched = repo.fetches;
+
+    repo.fetchGate = Completer();
+    await outbox.add(Note(timestamp: today(9, 30), description: 'Standup'));
+    await tester.pumpAndSettle();
+    expect(outbox.pending, isEmpty);
+    expect(repo.fetches, fetched + 1);
+    expect(find.text('Standup'), findsOneWidget);
+
+    repo.fetchGate!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Standup'), findsOneWidget);
+    expect(outbox.justSaved, isEmpty);
+  });
+
+  screenTest('a note saved by the background task is shown, and the notes '
+      'are fetched with it', (tester) async {
+    final store = InMemoryOutboxStore<PendingNote>();
+    final repo = _GatedFetchRepository();
+    await tester.pumpWidget(app(repo, store: store));
+    await tester.pumpAndSettle();
+    // The app goes to the background with a note to save.
+    outbox.stop();
+    await outbox.add(Note(timestamp: today(9, 30), description: 'Standup'));
+    await tester.pump();
+    expect(outbox.pending, hasLength(1));
+
+    await NoteOutbox(store: store, repository: repo).flush(ignoreBackoff: true);
+    repo.fetchGate = Completer();
+    final fetched = repo.fetches;
+
+    // And comes back.
+    outbox.start();
+    await tester.pumpAndSettle();
+    expect(outbox.pending, isEmpty);
+    expect(repo.fetches, fetched + 1);
+    expect(find.text('Standup'), findsOneWidget);
+
+    repo.fetchGate!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Standup'), findsOneWidget);
+    expect(outbox.justSaved, isEmpty);
+  });
+}
+
+/// A server whose notes, while [fetchGate] is set, are listed once it's
+/// completed.
+class _GatedFetchRepository extends InMemoryNotesRepository {
+  Completer<void>? fetchGate;
+  var fetches = 0;
+
+  @override
+  Future<List<Note>> uncompactedNotes() async {
+    fetches++;
+    await fetchGate?.future;
+    return super.uncompactedNotes();
+  }
 }
 
 class _SignInRepository extends InMemoryNotesRepository {
