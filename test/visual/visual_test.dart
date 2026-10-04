@@ -15,6 +15,7 @@ import 'package:time_tracker_client/screens/goal_history_screen.dart';
 import 'package:time_tracker_client/screens/goals_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
 import 'package:time_tracker_client/theme.dart';
+import 'package:time_tracker_client/widgets/priority_chip.dart';
 
 /// A fixed moment, so every run renders the same thing.
 final _now = DateTime(2026, 10, 2, 13, 30);
@@ -71,6 +72,36 @@ void main() {
       );
     });
 
+    // Every goal expanded, by swiping right: three levels of bands.
+    testWidgets('goals expanded ($mode)', (tester) async {
+      await render(
+        tester,
+        'goals_expanded',
+        GoalsScreen(
+          outbox: _idleGoalOutbox(),
+          repository: sample.goalsRepository(),
+          serverLabel: 'sample',
+        ),
+        then: () async {
+          for (final name in [
+            'Learn vegetarian cooking',
+            'Be a good neighbor',
+            'Visit parents every 2 months',
+          ]) {
+            final goal = find.textContaining(name, findRichText: true);
+            await tester.ensureVisible(goal);
+            await tester.pumpAndSettle();
+            await tester.drag(goal, const Offset(100, 0));
+            await tester.pumpAndSettle();
+          }
+          await tester.ensureVisible(
+            find.textContaining('Book the train', findRichText: true),
+          );
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
     testWidgets('goals with every status ($mode)', (tester) async {
       await render(
         tester,
@@ -81,8 +112,11 @@ void main() {
           serverLabel: 'sample',
         ),
         then: () async {
-          // Its sub-goal shows the flag of a goal that inherits its color.
-          await tester.tap(find.byTooltip('Expand Learn vegetarian cooking'));
+          // Its sub-goal shows the band of a goal that inherits its color.
+          await tester.drag(
+            find.textContaining('Learn vegetarian cooking', findRichText: true),
+            const Offset(100, 0),
+          );
           await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('Show goals that are…'));
           await tester.pumpAndSettle();
@@ -135,7 +169,9 @@ void main() {
             serverLabel: 'sample',
           ),
           then: () async {
-            await tester.tap(find.text('Wake up at 7am'));
+            await tester.tap(
+              find.textContaining('Wake up at 7am', findRichText: true),
+            );
             await tester.pumpAndSettle();
             if (!editing) return;
             await tester.tap(find.text('Edit measure'));
@@ -145,12 +181,10 @@ void main() {
       });
     }
 
-    // A sub-goal's event properties, inherited, as tapping it shows them
-    // under "Event properties"; then its priority being edited.
+    // A sub-goal, as tapping it shows it, its priority inherited; then its
+    // priority being picked.
     for (final editing in [false, true]) {
-      final name = editing
-          ? 'goal_event_properties_edit'
-          : 'goal_event_properties';
+      final name = editing ? 'goal_dialog_priority' : 'goal_dialog';
       testWidgets('$name ($mode)', (tester) async {
         await render(
           tester,
@@ -161,23 +195,27 @@ void main() {
             serverLabel: 'sample',
           ),
           then: () async {
-            await tester.tap(find.byTooltip('Show under each goal…'));
+            await tester.drag(
+              find.textContaining(
+                'Learn vegetarian cooking',
+                findRichText: true,
+              ),
+              const Offset(100, 0),
+            );
             await tester.pumpAndSettle();
             await tester.tap(
-              find.widgetWithText(
-                RadioMenuButton<GoalSummary>,
-                'Event properties',
+              find.textContaining('Tofu tikka masala', findRichText: true),
+            );
+            await tester.pumpAndSettle();
+            if (!editing) return;
+            await tester.tap(
+              find.descendant(
+                of: find.byType(AlertDialog),
+                matching: find.byType(PriorityChip),
               ),
             );
             await tester.pumpAndSettle();
-            await tester.tap(find.byTooltip('Expand Learn vegetarian cooking'));
-            await tester.pumpAndSettle();
-            await tester.tap(find.text('Tofu tikka masala'));
-            await tester.pumpAndSettle();
-            if (!editing) return;
-            await tester.tap(find.text('Set').first);
-            await tester.pumpAndSettle();
-            await tester.tap(find.widgetWithText(ChoiceChip, '1'));
+            await tester.tap(find.widgetWithText(ChoiceChip, 'P1'));
             await tester.pumpAndSettle();
           },
         );
@@ -210,7 +248,10 @@ void main() {
           serverLabel: 'sample',
         ),
         then: () async {
-          await tester.tap(find.byTooltip('Expand Learn vegetarian cooking'));
+          await tester.drag(
+            find.textContaining('Learn vegetarian cooking', findRichText: true),
+            const Offset(100, 0),
+          );
           await tester.pumpAndSettle();
           await tester.longPress(find.text('Host friends weekly'));
           await tester.pumpAndSettle();
@@ -228,7 +269,10 @@ void main() {
           serverLabel: 'sample',
         ),
         then: () async {
-          await tester.tap(find.byTooltip('Expand Learn vegetarian cooking'));
+          await tester.drag(
+            find.textContaining('Learn vegetarian cooking', findRichText: true),
+            const Offset(100, 0),
+          );
           await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('More for Tofu tikka masala'));
           await tester.pumpAndSettle();
