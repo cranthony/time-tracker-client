@@ -33,7 +33,7 @@ void main() {
   InMemoryGoalsRepository tree() => InMemoryGoalsRepository([
     const Goal(id: 'cook', name: 'Cooking', priority: 1),
     const Goal(id: 'tofu', name: 'Tofu tikka', parentId: 'cook'),
-    const Goal(id: 'host', name: 'Hosting', fixedTime: true),
+    const Goal(id: 'host', name: 'Hosting'),
     const Goal(id: 'idea', name: 'Idea', status: 'proposed'),
     const Goal(id: 'old', name: 'Old habit', status: 'inactive'),
     const Goal(id: 'done', name: 'Done thing', status: 'completed'),
@@ -75,7 +75,6 @@ void main() {
       'status': 'completed',
       'background_color': '#7bd148',
       'priority': 2,
-      'fixed_time': true,
       'path': 'Cooking › Tofu tikka',
       'new_thing': 'x',
     });
@@ -149,9 +148,8 @@ void main() {
       expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
       expect(find.byTooltip('Expand Cooking'), findsOneWidget);
       expect(find.textContaining('sub-goal'), findsNothing);
-      // Priorities and fixed time are only under "Event properties".
+      // Priorities are only under "Event properties".
       expect(find.textContaining('Priority'), findsNothing);
-      expect(find.text('Fixed time'), findsNothing);
       expect(find.text('Proposed'), findsWidgets);
       expect(find.text('3 of 200 labels in use'), findsOneWidget);
       // Only a goal with sub-goals can be expanded.
@@ -763,18 +761,15 @@ void main() {
       expect(find.text("Average of the top-level goals'"), findsNothing);
     });
 
-    testWidgets('can be the priority and fixed time it gives its events', (
-      tester,
-    ) async {
+    testWidgets('can be the priority it gives its events', (tester) async {
       await tester.pumpWidget(app(tree()));
       await tester.pumpAndSettle();
 
       await pick(tester, 'Event properties');
       expect(find.text('Priority 1'), findsOneWidget);
-      expect(find.text('Fixed time'), findsOneWidget);
       // Neither its time nor its measure.
       expect(find.textContaining(' in 24h'), findsNothing);
-      // A goal that gives neither shows nothing for them.
+      // A goal that gives none shows nothing for it.
       expect(
         find.descendant(
           of: find.widgetWithText(ListTile, 'Idea'),
@@ -1037,14 +1032,13 @@ void main() {
 
   group('the event properties dialog', () {
     InMemoryGoalsRepository withColors() => InMemoryGoalsRepository([
-      const Goal(id: 'cook', name: 'Cooking', priority: 1, fixedTime: true),
+      const Goal(id: 'cook', name: 'Cooking', priority: 1),
       const Goal(id: 'tofu', name: 'Tofu tikka', parentId: 'cook'),
       const Goal(
         id: 'curry',
         name: 'Curry',
         parentId: 'cook',
         priority: 3,
-        fixedTime: false,
         backgroundColor: '#123456',
       ),
     ]);
@@ -1096,9 +1090,9 @@ void main() {
       await tester.pumpAndSettle();
       await showEventProperties(tester);
 
-      expect(find.text('Priority 1 · Fixed time'), findsOneWidget);
-      expect(find.text('Priority 3 · Flexible time'), findsOneWidget);
-      // Tofu tikka inherits both, so shows neither.
+      expect(find.text('Priority 1'), findsOneWidget);
+      expect(find.text('Priority 3'), findsOneWidget);
+      // Tofu tikka inherits its priority, so doesn't show it.
       expect(
         find.descendant(
           of: find.widgetWithText(ListTile, 'Tofu tikka'),
@@ -1118,19 +1112,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(inDialog(find.text('Event properties')), findsOneWidget);
       expect(inDialog(find.text('Cooking › Tofu tikka')), findsOneWidget);
-      expect(inDialog(find.text('Inherited from Cooking')), findsNWidgets(2));
-      expect(inDialog(find.text('Fixed time')), findsOneWidget);
+      expect(inDialog(find.text('Inherited from Cooking')), findsOneWidget);
       expect(inDialog(find.text('Follows priority 1')), findsOneWidget);
       // Nothing of its own to clear.
       expect(inDialog(find.text('Clear')), findsNothing);
-      expect(inDialog(find.text('Set')), findsNWidgets(3));
+      expect(inDialog(find.text('Set')), findsNWidgets(2));
 
       await tester.tap(inDialog(find.text('Close')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Curry'));
       await tester.pumpAndSettle();
-      expect(inDialog(find.text('Set on this goal')), findsNWidgets(3));
-      expect(inDialog(find.text('Clear')), findsNWidgets(3));
+      expect(inDialog(find.text('Set on this goal')), findsNWidgets(2));
+      expect(inDialog(find.text('Clear')), findsNWidgets(2));
     });
 
     testWidgets("the overall goal's card doesn't open it", (tester) async {
@@ -1183,7 +1176,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(inDialog(find.text('Clear')));
       await tester.pumpAndSettle();
-      expect(inDialog(find.text('Inherited from Cooking')), findsNWidgets(2));
+      expect(inDialog(find.text('Inherited from Cooking')), findsOneWidget);
       await tester.tap(inDialog(find.text('Save')));
       await tester.pumpAndSettle();
 
@@ -1209,25 +1202,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(goalOf(await repo.goals(), 'tofu').priority, 7);
-    });
-
-    testWidgets('sets whether its events are at a fixed time', (tester) async {
-      final repo = withColors();
-      await tester.pumpWidget(app(repo));
-      await tester.pumpAndSettle();
-      await showEventProperties(tester);
-
-      await tester.tap(find.text('Tofu tikka'));
-      await tester.pumpAndSettle();
-      await tester.tap(inDialog(find.text('Time')));
-      await tester.pumpAndSettle();
-      await tester.tap(inDialog(find.text('Flexible')));
-      await tester.pumpAndSettle();
-      await tester.tap(inDialog(find.text('Save')));
-      await tester.pumpAndSettle();
-
-      expect(goalOf(await repo.goals(), 'tofu').fixedTime, isFalse);
-      expect(find.text('Flexible time'), findsOneWidget);
     });
 
     testWidgets("clears a goal's own color", (tester) async {

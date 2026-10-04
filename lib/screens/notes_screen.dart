@@ -83,9 +83,10 @@ class _NotesScreenState extends State<NotesScreen> {
     _load();
   }
 
-  /// Shows the notes kept from last time, unless the server answered
-  /// first.
+  /// Shows the notes and compaction status kept from last time, unless
+  /// the server answered first.
   Future<void> _showCached() async {
+    unawaited(_showCachedStatus());
     final notes = await widget.repository.cachedUncompactedNotes();
     if (!mounted || notes == null) return;
     if (_notes != null || _needsSignIn || _error != null) return;
@@ -93,6 +94,12 @@ class _NotesScreenState extends State<NotesScreen> {
       _notes = notes;
       _stale = true;
     });
+  }
+
+  Future<void> _showCachedStatus() async {
+    final status = await widget.repository.cachedCompactionStatus();
+    if (!mounted || status == null || _status != null) return;
+    setState(() => _status = status);
   }
 
   @override

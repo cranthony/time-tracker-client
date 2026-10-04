@@ -8,8 +8,8 @@ import 'measure_dialog.dart' show SaveGoal;
 /// The priorities offered as buttons; "…" takes any other.
 const _priorities = [0, 1, 2, 3];
 
-/// Shows what [goal] gives its events and sub-goals: its priority, whether
-/// its events are at a fixed time, and its label's color, each saying
+/// Shows what [goal] gives its events and sub-goals: its priority and its
+/// label's color, each saying
 /// whether it's set on the goal or where it comes from: an ancestor, or
 /// for a color, the priority.
 ///
@@ -36,7 +36,7 @@ Future<void> showEventPropertiesDialog(
 );
 
 /// The properties the dialog edits, as `update_goal` names them.
-enum _Property { priority, fixedTime, color }
+enum _Property { priority, color }
 
 class _EventPropertiesDialog extends StatefulWidget {
   const _EventPropertiesDialog({
@@ -88,7 +88,6 @@ class _EventPropertiesDialogState extends State<_EventPropertiesDialog> {
       _changes.containsKey(key) ? _changes[key] : was;
 
   int? get _priority => _value('priority', _goal.priority) as int?;
-  bool? get _fixedTime => _value('fixed_time', _goal.fixedTime) as bool?;
   String? get _color =>
       _value('background_color', _goal.backgroundColor) as String?;
 
@@ -124,11 +123,6 @@ class _EventPropertiesDialogState extends State<_EventPropertiesDialog> {
   int? get _inheritedPriority => switch (_byId(_goal.parentId)) {
     final parent? => parent.effectivePriority,
     null => _goal.inheritsPriority ? _goal.effectivePriority : null,
-  };
-
-  bool? get _inheritedFixedTime => switch (_byId(_goal.parentId)) {
-    final parent? => parent.effectiveFixedTime,
-    null => _goal.inheritsFixedTime ? _goal.effectiveFixedTime : null,
   };
 
   /// "Inherited from Cooking", naming the nearest ancestor for which
@@ -196,7 +190,6 @@ class _EventPropertiesDialogState extends State<_EventPropertiesDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _priorityRow(),
-              _fixedTimeRow(),
               _colorRow(),
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
@@ -343,65 +336,6 @@ class _EventPropertiesDialogState extends State<_EventPropertiesDialog> {
           style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
         ),
       ],
-    );
-  }
-
-  Widget _fixedTimeRow() {
-    final own = _fixedTime;
-    final inherited = _inheritedFixedTime;
-    String describe(bool? fixed) => switch (fixed) {
-      true => 'Fixed time',
-      false => 'Flexible time',
-      null => 'Not set',
-    };
-    return _PropertyCard(
-      icon: Icon(
-        own ?? inherited ?? false ? Icons.push_pin : Icons.push_pin_outlined,
-      ),
-      label: 'Time',
-      value: describe(own ?? inherited),
-      source: switch ((own, inherited)) {
-        (_?, _) => 'Set on this goal',
-        (null, _?) => _inheritedFrom((g) => g.fixedTime != null),
-        (null, null) => 'Not set here or above',
-      },
-      own: own != null,
-      editing: _editing == _Property.fixedTime,
-      onTap: _editable ? () => _toggle(_Property.fixedTime) : null,
-      onClear: _editable && own != null
-          ? () => _set('fixed_time', null, _goal.fixedTime)
-          : null,
-      editor: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SegmentedButton<bool?>(
-            showSelectedIcon: false,
-            segments: [
-              const ButtonSegment(value: true, label: Text('Fixed')),
-              const ButtonSegment(value: false, label: Text('Flexible')),
-              ButtonSegment(
-                value: null,
-                label: Text(switch (inherited) {
-                  true => 'Inherit (fixed)',
-                  false => 'Inherit (flexible)',
-                  null => 'Unset',
-                }),
-              ),
-            ],
-            selected: {own},
-            onSelectionChanged: (picked) =>
-                _set('fixed_time', picked.single, _goal.fixedTime),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Whether its events stay at their set time. Sub-goals that say '
-            'nothing take this.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
     );
   }
 

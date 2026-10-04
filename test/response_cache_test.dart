@@ -63,6 +63,30 @@ void main() {
       expect(cached!.single.description, 'a');
     });
 
+    test('keep what get_compaction_status returned', () async {
+      final cache = InMemoryResponseCache();
+      final repo = McpNotesRepository(
+        _FakeClient({
+          'last_compaction': '2026-10-02T21:05:00-04:00',
+          'latest_compacted_note': {
+            'timestamp': '2026-10-02T20:30:00-04:00',
+            'description': 'Done with dinner',
+            'compaction_id': 'c1',
+          },
+        }),
+        cache: cache,
+      );
+      expect(await repo.cachedCompactionStatus(), isNull);
+
+      await repo.compactionStatus();
+      final cached = await McpNotesRepository(
+        _FakeClient(null),
+        cache: cache,
+      ).cachedCompactionStatus();
+      expect(cached!.lastCompaction, DateTime.utc(2026, 10, 3, 1, 5));
+      expect(cached.latestCompacted?.description, 'Done with dinner');
+    });
+
     test('keep list_events only when asked, for one day', () async {
       final cache = InMemoryResponseCache();
       final day = DateTime(2026, 9, 30);
@@ -90,8 +114,10 @@ void main() {
     test('ignore a cached value they can\'t read', () async {
       final cache = InMemoryResponseCache();
       await cache.write('get_notes', 'not a list');
+      await cache.write('get_compaction_status', 'not a map');
       final repo = McpNotesRepository(_FakeClient(null), cache: cache);
       expect(await repo.cachedUncompactedNotes(), isNull);
+      expect(await repo.cachedCompactionStatus(), isNull);
     });
   });
 
@@ -242,6 +268,45 @@ void main() {
       expect(find.text('Sign in to see your goals.'), findsOneWidget);
       expect(refreshing(), findsNothing);
     });
+
+    testWidgets('Notes shows the kept compaction status while it refreshes', (
+      tester,
+    ) async {
+      final repo = _GatedNotesRepository(
+        cached: [],
+        fresh: [],
+        cachedStatus: CompactionStatus(
+          lastCompaction: DateTime(2026, 9, 30, 7, 30),
+          latestCompacted: Note(
+            timestamp: DateTime(2026, 9, 29, 22, 40),
+            description: 'Lights out',
+            compactionId: 'c1',
+          ),
+        ),
+        freshStatus: CompactionStatus(
+          lastCompaction: DateTime(2026, 9, 30, 11, 0),
+          latestCompacted: Note(
+            timestamp: DateTime(2026, 9, 30, 10, 0),
+            description: 'Coffee',
+            compactionId: 'c2',
+          ),
+        ),
+      );
+      final outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: repo);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: NotesScreen(repository: repo, outbox: outbox),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Lights out'), findsOneWidget);
+      expect(find.text('Last compacted Sep 30, 2026, 7:30 AM'), findsOneWidget);
+
+      repo.gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Coffee'), findsOneWidget);
+      expect(find.text('Lights out'), findsNothing);
+    });
   });
 }
 
@@ -258,16 +323,31 @@ class _FakeClient extends McpClient {
   ]) async => result;
 }
 
-/// Has [cached] notes kept, and answers with [fresh] once [gate] opens.
+/// Has [cached] notes and [cachedStatus] kept, and answers with [fresh]
+/// and [freshStatus] once [gate] opens.
 class _GatedNotesRepository extends InMemoryNotesRepository {
-  _GatedNotesRepository({required this.cached, required List<Note> fresh})
-    : super(fresh);
+  _GatedNotesRepository({
+    required this.cached,
+    required List<Note> fresh,
+    this.cachedStatus,
+    CompactionStatus freshStatus = const CompactionStatus(),
+  }) : super(fresh, freshStatus);
 
   final List<Note> cached;
+  final CompactionStatus? cachedStatus;
   final gate = Completer<void>();
 
   @override
   Future<List<Note>?> cachedUncompactedNotes() async => cached;
+
+  @override
+  Future<CompactionStatus?> cachedCompactionStatus() async => cachedStatus;
+
+  @override
+  Future<CompactionStatus> compactionStatus() async {
+    await gate.future;
+    return super.compactionStatus();
+  }
 
   @override
   Future<List<Note>> uncompactedNotes() async {
