@@ -217,8 +217,9 @@ List<T> placeLabels<T>(
 /// strip down its edge is solid only as far as it lasts, dashed below,
 /// and it says how long it is. One pushed down by the event above it is
 /// joined to where it truly is by a line from a bracket in the gutter.
-/// [now], if it's in the day, is marked with a line across, under the
-/// events.
+/// [now] and the [lastCompaction], if they're in the day, are marked
+/// with lines across, under the events, labeled "now" and "last
+/// compaction" at their right ends.
 class DayTimeline extends StatelessWidget {
   const DayTimeline({
     super.key,
@@ -227,6 +228,7 @@ class DayTimeline extends StatelessWidget {
     this.goals = const {},
     this.scale = defaultTimelineScale,
     this.now,
+    this.lastCompaction,
     this.onTap,
   });
 
@@ -239,6 +241,10 @@ class DayTimeline extends StatelessWidget {
   final Map<String, Goal> goals;
   final double scale;
   final DateTime? now;
+
+  /// When notes were last compacted into the calendar: what's before it
+  /// is as the notes had it.
+  final DateTime? lastCompaction;
   final ValueChanged<Event>? onTap;
 
   /// Midnight at the end of the day.
@@ -290,11 +296,33 @@ class DayTimeline extends StatelessWidget {
       y(dayEnd) + _pad,
       (placements.map((p) => p.bottom).fold(0.0, math.max)) + _pad,
     );
-    final nowY = switch (now) {
-      final now? when !now.isBefore(day) && now.isBefore(dayEnd) => y(now),
+    double? yIfToday(DateTime? t) => switch (t) {
+      final t? when !t.isBefore(day) && t.isBefore(dayEnd) => y(t),
       _ => null,
     };
+    final nowY = yIfToday(now);
+    final compactionY = yIfToday(lastCompaction);
     final colors = theme.colorScheme;
+    // The lines' labels, at the left edge over the times, the later moved
+    // down clear of the other if they're close.
+    final markerStyle = (text.labelSmall ?? const TextStyle()).copyWith(
+      fontSize: _bandFontSize,
+      fontWeight: FontWeight.w600,
+      height: 1.2,
+    );
+    final markerHeight = scaler.scale(_bandFontSize) * 1.2 + 2;
+    final markers = <_Marker>[];
+    for (final (y, label, color) in [
+      if (compactionY != null)
+        (compactionY, 'last compaction', colors.tertiary),
+      if (nowY != null) (nowY, 'now', colors.error),
+    ]..sort((a, b) => a.$1.compareTo(b.$1))) {
+      final clear = switch (markers.lastOrNull) {
+        final above? => above.y + markerHeight + 1,
+        null => double.negativeInfinity,
+      };
+      markers.add((y: math.max(y, clear), label: label, color: color));
+    }
     final rail = _RailPainter(
       day: day,
       dayEnd: dayEnd,
@@ -309,6 +337,10 @@ class DayTimeline extends StatelessWidget {
       baseStyle: text.labelSmall ?? const TextStyle(),
       nowY: nowY,
       nowColor: colors.error,
+      compactionY: compactionY,
+      compactionColor: colors.tertiary,
+      markers: markers,
+      markerHeight: markerHeight,
       edgeColor: colors.onSurface,
       hourColor: colors.onSurfaceVariant,
       gridColor: colors.outlineVariant.withValues(alpha: 0.5),
@@ -319,6 +351,14 @@ class DayTimeline extends StatelessWidget {
         final cardWidth = math.max(0.0, constraints.maxWidth - _cardsLeft - 8);
         return CustomPaint(
           painter: rail,
+          foregroundPainter: markers.isEmpty
+              ? null
+              : _MarkerLabelsPainter(
+                  markers: markers,
+                  style: markerStyle,
+                  scaler: scaler,
+                  onColor: colors.surface,
+                ),
           child: SizedBox(
             width: constraints.maxWidth,
             height: height,
@@ -403,6 +443,7 @@ class _EventCard extends StatelessWidget {
     final muted = colors.onSurfaceVariant;
     final strike = cancelled ? TextDecoration.lineThrough : null;
     final duration = formatDuration(event.end.difference(event.start));
+    final priority = event.effectivePriority ?? defaultPriority;
     return Semantics(
       label:
           '$summary, ${timeLabel(event.start)} to ${timeLabel(event.end)}'
@@ -445,25 +486,31 @@ class _EventCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                          if (placement.compressed && duration != null)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 6),
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  border: Border.all(color: colors.outline),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                  ),
-                                  child: Text(
-                                    duration,
-                                    style: styles.chip?.copyWith(color: muted),
-                                  ),
-                                ),
+                          if (duration != null)
+                            // Filled when it's shorter than it's drawn.
+                            _Chip(
+                              text: duration,
+                              style: styles.chip?.copyWith(
+                                color: placement.compressed
+                                    ? colors.onTertiaryContainer
+                                    : muted,
                               ),
+                              fill: placement.compressed
+                                  ? colors.tertiaryContainer
+                                  : null,
+                              border: placement.compressed
+                                  ? colors.tertiary
+                                  : colors.outline,
                             ),
+                          _Chip(
+                            text: 'P$priority',
+                            style: styles.chip?.copyWith(
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            fill: priorityColor(priority),
+                            border: priorityColor(priority),
+                          ),
                         ],
                       ),
                       for (final (i, id) in ids.indexed)
@@ -498,6 +545,38 @@ class _EventCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A small box of [text] at the end of an event's summary: its duration,
+/// or its priority.
+class _Chip extends StatelessWidget {
+  const _Chip({
+    required this.text,
+    required this.style,
+    required this.border,
+    this.fill,
+  });
+
+  final String text;
+  final TextStyle? style;
+  final Color border;
+  final Color? fill;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(left: 6),
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        color: fill,
+        border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(text, style: style),
+      ),
+    ),
+  );
 }
 
 /// A small diamond in a goal's [color], or outlined if it has none.
@@ -562,6 +641,58 @@ class _StripPainter extends CustomPainter {
       old.color != color;
 }
 
+/// A line across the timeline to label: [label], centered at [y] (on the
+/// line, unless that's too close to another), at the left edge.
+typedef _Marker = ({double y, String label, Color color});
+
+/// The labels of the lines across the timeline, at its left edge, in
+/// place of the times there: each a small box in its line's color.
+class _MarkerLabelsPainter extends CustomPainter {
+  _MarkerLabelsPainter({
+    required this.markers,
+    required this.style,
+    required this.scaler,
+    required this.onColor,
+  });
+
+  final List<_Marker> markers;
+  final TextStyle style;
+  final TextScaler scaler;
+
+  /// The labels' text color, on their lines' colors.
+  final Color onColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final marker in markers) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: marker.label,
+          style: style.copyWith(color: onColor),
+        ),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final width = painter.width + 8;
+      final height = painter.height + 2;
+      final rect = Rect.fromLTWH(2, marker.y - height / 2, width, height);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(3)),
+        Paint()..color = marker.color,
+      );
+      painter.paint(canvas, Offset(rect.left + 4, rect.top + 1));
+      painter.dispose();
+    }
+  }
+
+  @override
+  bool shouldRepaint(_MarkerLabelsPainter old) =>
+      old.markers.length != markers.length ||
+      [for (final (i, m) in markers.indexed) m != old.markers[i]]
+          .any((changed) => changed);
+}
+
 /// A time label to draw: [time] at [y], and whether an event starts or
 /// ends there.
 typedef _TimeLabel = ({DateTime time, double y, bool edge});
@@ -582,6 +713,10 @@ class _RailPainter extends CustomPainter {
     required this.baseStyle,
     required this.nowY,
     required this.nowColor,
+    required this.compactionY,
+    required this.compactionColor,
+    required this.markers,
+    required this.markerHeight,
     required this.edgeColor,
     required this.hourColor,
     required this.gridColor,
@@ -603,6 +738,16 @@ class _RailPainter extends CustomPainter {
   /// Where now is, if it's in the day: a line across, under the events.
   final double? nowY;
   final Color nowColor;
+
+  /// Where the last compaction is, if it's in the day: a dashed line
+  /// across, under the events.
+  final double? compactionY;
+  final Color compactionColor;
+
+  /// The lines' labels, which the times give way to, and how tall each
+  /// is.
+  final List<_Marker> markers;
+  final double markerHeight;
   final Color edgeColor;
   final Color hourColor;
   final Color gridColor;
@@ -658,6 +803,18 @@ class _RailPainter extends CustomPainter {
     _paintBandLabels(canvas);
     _paintTimeLabels(canvas);
     _paintLeaders(canvas);
+    if (compactionY case final y?) {
+      final paint = Paint()
+        ..color = compactionColor
+        ..strokeWidth = 1.5;
+      for (var x = _timeWidth; x < size.width; x += 8) {
+        canvas.drawLine(
+          Offset(x, y),
+          Offset(math.min(x + 4, size.width), y),
+          paint,
+        );
+      }
+    }
     if (nowY case final y?) {
       final now = Paint()
         ..color = nowColor
@@ -731,8 +888,12 @@ class _RailPainter extends CustomPainter {
       for (final t in edges) (time: t, y: _y(t), edge: true),
       for (final t in _hours) (time: t, y: _y(t), edge: false),
     ];
+    // The lines' labels come first; any time they'd cover isn't shown.
+    bool clearOfMarkers(_TimeLabel label) => markers.every(
+      (m) => (m.y - label.y).abs() >= (markerHeight + labelHeight) / 2,
+    );
     final placed = placeLabels(
-      candidates,
+      candidates.where(clearOfMarkers),
       top: (l) => l.y - labelHeight / 2,
       height: labelHeight,
     );
@@ -810,5 +971,6 @@ class _RailPainter extends CustomPainter {
       old.events != events ||
       old.edgeColor != edgeColor ||
       old.nowY != nowY ||
+      old.compactionY != compactionY ||
       old.scaler != scaler;
 }

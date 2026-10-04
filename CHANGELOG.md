@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.10.0
+
+- Each event on the Events page says how long it is and its priority
+  ("P1", in the priority's color) at its top right. The length is filled
+  in when the event is shorter than it's drawn.
+- The line for now is labeled "now", and a dashed line marks the last
+  compaction, labeled "last compaction", both at the left edge.
+- Swipe left or right to go to the next day or the one before, and pinch
+  to zoom in or out around your fingers.
+
 ## 4.9.0
 
 - The Events page is a timeline of the day, midnight to midnight, at a

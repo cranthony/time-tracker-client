@@ -16,9 +16,11 @@ import '../widgets/status_message.dart';
 
 /// One day's events on a timeline ([DayTimeline]), from midnight to
 /// midnight, with buttons to step to the day before or after and to zoom
-/// in or out. Tapping the date picks another; tapping an event shows all
-/// its properties, and lets one change them. It opens scrolled to now,
-/// on today, or else to the day's first event.
+/// in or out. Swiping left or right steps a day too, and pinching zooms
+/// around the fingers. Tapping the date picks another; tapping an event
+/// shows all its properties, and lets one change them. It opens scrolled
+/// to now, on today, or else to the day's first event. The last
+/// compaction, from the goals, is marked on it.
 ///
 /// The day it opens on, today, is kept for next time, so it shows at once
 /// while it refreshes. Other days load afresh.
@@ -75,8 +77,29 @@ class _EventsScreenState extends State<EventsScreen> {
   /// until they're loaded, or without goals.
   Map<String, Goal> _goalsById = const {};
 
-  /// The timeline's zoom: logical pixels per minute.
+  /// When notes were last compacted, as the goals say; null until
+  /// they're loaded.
+  DateTime? _lastCompaction;
+
+  /// The timeline's zoom: logical pixels per minute, from the first of
+  /// [timelineScales] to the last; the buttons step between them, and
+  /// pinching goes anywhere between.
   double _scale = defaultTimelineScale;
+
+  /// Where a zoom this frame is to scroll the timeline to, once it's laid
+  /// out.
+  double? _scrollTo;
+
+  /// The pointers down on the timeline, where they are, for pinching.
+  final _pointers = <int, Offset>{};
+
+  /// While pinching: the distance between the fingers and the zoom when
+  /// it started. The timeline doesn't scroll by dragging meanwhile.
+  ({double distance, double scale})? _pinch;
+
+  /// Whether the gesture under way has been a pinch, so it doesn't also
+  /// step a day.
+  bool _pinched = false;
 
   final _scroll = ScrollController();
 
@@ -99,20 +122,26 @@ class _EventsScreenState extends State<EventsScreen> {
     super.dispose();
   }
 
-  /// Loads the goals, for their colors. Best effort: without them, goals
-  /// are named as the events have them, with outlined diamonds.
+  /// Loads the goals, for their colors, and when notes were last
+  /// compacted: those kept from last time, then the server's. Best
+  /// effort: without them, goals are named as the events have them, with
+  /// outlined diamonds, and the last compaction isn't marked.
   Future<void> _loadGoals() async {
     final repository = widget.goalsRepository;
     if (repository == null) return;
-    try {
-      final goals =
-          (await repository.cachedGoals()) ?? await repository.goals();
+    void show(GoalList goals) {
       if (!mounted) return;
-      setState(
-        () => _goalsById = {for (final goal in goals.goals) ?goal.id: goal},
-      );
+      setState(() {
+        _goalsById = {for (final goal in goals.goals) ?goal.id: goal};
+        _lastCompaction = goals.asOf;
+      });
+    }
+
+    try {
+      if (await repository.cachedGoals() case final cached?) show(cached);
+      show(await repository.goals());
     } catch (_) {
-      // Shown without their colors.
+      // Shown as they were.
     }
   }
 
@@ -140,22 +169,79 @@ class _EventsScreenState extends State<EventsScreen> {
     });
   }
 
-  /// Zooms to the next of [timelineScales] in [direction], keeping the
-  /// time at the middle of the screen there.
-  void _zoom(int direction) {
-    final i = timelineScales.indexOf(_scale) + direction;
-    if (i < 0 || i >= timelineScales.length) return;
-    final next = timelineScales[i];
+  /// The zoom level the zoom-in button goes to, or zoom-out with
+  /// [direction] -1: the next of [timelineScales] past this one; null at
+  /// the end.
+  double? _nextScale(int direction) => direction > 0
+      ? timelineScales.where((s) => s > _scale + 1e-6).firstOrNull
+      : timelineScales.where((s) => s < _scale - 1e-6).lastOrNull;
+
+  /// Zooms to [next], keeping the time [focus] down the screen (the
+  /// middle, by default) where it is.
+  void _zoomTo(double next, {double? focus}) {
+    next = next.clamp(timelineScales.first, timelineScales.last);
+    if (next == _scale) return;
     if (_scroll.hasClients) {
       final position = _scroll.position;
-      final half = position.viewportDimension / 2;
-      final target = (position.pixels + half) * next / _scale - half;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_scroll.hasClients) return;
-        _scroll.jumpTo(target.clamp(0, _scroll.position.maxScrollExtent));
-      });
+      final at = focus ?? position.viewportDimension / 2;
+      final pad = timelineOffset(
+        _day,
+        day: _day,
+        dayEnd: _dayEnd,
+        scale: _scale,
+      );
+      // From where an earlier zoom this frame will put it, if one will.
+      final from = _scrollTo ?? position.pixels;
+      final first = _scrollTo == null;
+      _scrollTo = (from + at - pad) * next / _scale + pad - at;
+      // Once it's laid out at the new zoom, so it can scroll that far.
+      if (first) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final target = _scrollTo;
+          _scrollTo = null;
+          if (!_scroll.hasClients || target == null) return;
+          _scroll.jumpTo(target.clamp(0, _scroll.position.maxScrollExtent));
+        });
+      }
     }
     setState(() => _scale = next);
+  }
+
+  void _pointerDown(PointerDownEvent event) {
+    if (_pointers.isEmpty) _pinched = false;
+    _pointers[event.pointer] = event.localPosition;
+    if (_pointers.length == 2) {
+      final [a, b] = _pointers.values.toList();
+      setState(() {
+        _pinch = (distance: (a - b).distance, scale: _scale);
+        _pinched = true;
+      });
+    }
+  }
+
+  void _pointerMove(PointerMoveEvent event) {
+    if (!_pointers.containsKey(event.pointer)) return;
+    _pointers[event.pointer] = event.localPosition;
+    final pinch = _pinch;
+    if (pinch == null || _pointers.length < 2 || pinch.distance < 1) return;
+    final [a, b, ...] = _pointers.values.toList();
+    _zoomTo(
+      pinch.scale * (a - b).distance / pinch.distance,
+      focus: (a.dy + b.dy) / 2,
+    );
+  }
+
+  void _pointerUp(PointerEvent event) {
+    _pointers.remove(event.pointer);
+    if (_pointers.length < 2 && _pinch != null) setState(() => _pinch = null);
+  }
+
+  /// Steps a day on a swipe: to the next on one to the left, the one
+  /// before on one to the right. Not after a pinch.
+  void _swiped(DragEndDetails details) {
+    final speed = details.primaryVelocity ?? 0;
+    if (_pinched || speed.abs() < 300) return;
+    _step(speed < 0 ? 1 : -1);
   }
 
   static DateTime _midnight(DateTime t) {
@@ -372,9 +458,12 @@ class _EventsScreenState extends State<EventsScreen> {
           ),
         ],
       ),
-      body: RefreshingBar(
-        refreshing: _stale && _error == null && !_needsSignIn,
-        child: RefreshIndicator(onRefresh: _load, child: _buildBody(context)),
+      body: GestureDetector(
+        onHorizontalDragEnd: _swiped,
+        child: RefreshingBar(
+          refreshing: _stale && _error == null && !_needsSignIn,
+          child: RefreshIndicator(onRefresh: _load, child: _buildBody(context)),
+        ),
       ),
       floatingActionButton: (_events?.isEmpty ?? true) || _needsSignIn
           ? null
@@ -384,18 +473,20 @@ class _EventsScreenState extends State<EventsScreen> {
                 FloatingActionButton.small(
                   heroTag: 'zoom-in',
                   tooltip: 'Zoom in',
-                  onPressed: _scale == timelineScales.last
-                      ? null
-                      : () => _zoom(1),
+                  onPressed: switch (_nextScale(1)) {
+                    final next? => () => _zoomTo(next),
+                    null => null,
+                  },
                   child: const Icon(Icons.zoom_in),
                 ),
                 const SizedBox(height: 8),
                 FloatingActionButton.small(
                   heroTag: 'zoom-out',
                   tooltip: 'Zoom out',
-                  onPressed: _scale == timelineScales.first
-                      ? null
-                      : () => _zoom(-1),
+                  onPressed: switch (_nextScale(-1)) {
+                    final next? => () => _zoomTo(next),
+                    null => null,
+                  },
                   child: const Icon(Icons.zoom_out),
                 ),
               ],
@@ -444,21 +535,31 @@ class _EventsScreenState extends State<EventsScreen> {
             text: 'Could not load events. These may be out of date.\n$_error',
           ),
         Expanded(
-          child: ListView(
-            controller: _scroll,
-            physics: const AlwaysScrollableScrollPhysics(),
-            // Clear of the zoom buttons.
-            padding: const EdgeInsets.only(bottom: 120),
-            children: [
-              DayTimeline(
-                events: events,
-                day: _day,
-                goals: _goalsById,
-                scale: _scale,
-                now: widget.clock(),
-                onTap: _openEvent,
-              ),
-            ],
+          // Raw pointers, so pinching doesn't contend with scrolling.
+          child: Listener(
+            onPointerDown: _pointerDown,
+            onPointerMove: _pointerMove,
+            onPointerUp: _pointerUp,
+            onPointerCancel: _pointerUp,
+            child: ListView(
+              controller: _scroll,
+              physics: _pinch == null
+                  ? const AlwaysScrollableScrollPhysics()
+                  : const NeverScrollableScrollPhysics(),
+              // Clear of the zoom buttons.
+              padding: const EdgeInsets.only(bottom: 120),
+              children: [
+                DayTimeline(
+                  events: events,
+                  day: _day,
+                  goals: _goalsById,
+                  scale: _scale,
+                  now: widget.clock(),
+                  lastCompaction: _lastCompaction,
+                  onTap: _openEvent,
+                ),
+              ],
+            ),
           ),
         ),
       ],
