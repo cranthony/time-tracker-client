@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.3.1
+
+- A weighted rollup's weights no longer list completed or deleted
+  sub-goals (any weight they had is kept), and grey out ones that aren't
+  active, saying they aren't rated.
+- A count's "What's counted" field no longer starts the keyboard
+  capitalized, and says it's for display only.
+
 ## 4.3.0
 
 - Tapping a goal, or the Overall card, shows its measure: what kind it
