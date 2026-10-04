@@ -99,7 +99,9 @@ class OneWayAction {
 /// the changes; false calls the save off, keeping the dialog open.
 /// [inferred] marks values that were guessed rather than set, by key, with
 /// a note shown after them (e.g. "from its label"): keeping one, even
-/// unchanged, counts as a change, so saving confirms it.
+/// unchanged, counts as a change, so saving confirms it. [changes] opens
+/// it with those changes already made, e.g. ones that couldn't be saved
+/// before; closing it without changing them more doesn't ask first.
 Future<R?> showPropertiesDialog<R>(
   BuildContext context, {
   required String Function(Map<String, Object?> values) title,
@@ -114,6 +116,7 @@ Future<R?> showPropertiesDialog<R>(
   Map<String, Map<String, String>> choices = const {},
   Map<String, PropertyLink> links = const {},
   Map<String, String> inferred = const {},
+  Map<String, Object?> changes = const {},
   OneWayAction? oneWayAction,
   String signInHint = 'Sign in again, then try again.',
 }) => showDialog<R>(
@@ -131,6 +134,7 @@ Future<R?> showPropertiesDialog<R>(
     choices: choices,
     links: links,
     inferred: inferred,
+    changes: changes,
     oneWayAction: oneWayAction,
     signInHint: signInHint,
   ),
@@ -150,6 +154,7 @@ class _PropertiesDialog<R> extends StatefulWidget {
     required this.choices,
     required this.links,
     required this.inferred,
+    required this.changes,
     required this.oneWayAction,
     required this.signInHint,
   });
@@ -168,6 +173,9 @@ class _PropertiesDialog<R> extends StatefulWidget {
   final Map<String, Map<String, String>> choices;
   final Map<String, PropertyLink> links;
   final Map<String, String> inferred;
+
+  /// The changes it opens with.
+  final Map<String, Object?> changes;
   final OneWayAction? oneWayAction;
 
   /// What to do when saving needs sign-in.
@@ -247,9 +255,20 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     });
   }
 
+  /// Whether [_changes] differ from those it opened with: closing then
+  /// asks first.
+  bool get _changedHere =>
+      _changes.length != widget.changes.length ||
+      _changes.entries.any(
+        (e) =>
+            !widget.changes.containsKey(e.key) ||
+            e.value != widget.changes[e.key],
+      );
+
   @override
   void initState() {
     super.initState();
+    _changes.addAll(widget.changes);
     // Goals are shown by name, so they're needed before anything opens.
     if (widget.kinds.values.any(
       (kind) =>
@@ -458,7 +477,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     final count = _changes.length;
     final oneWay = widget.oneWayAction;
     return PopScope(
-      canPop: _changes.isEmpty && !_saving,
+      canPop: !_changedHere && !_saving,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && !_saving) _confirmDiscard();
       },

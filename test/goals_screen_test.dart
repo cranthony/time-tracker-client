@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
@@ -91,7 +93,7 @@ void main() {
       expect(goals.labelSlotsUsed, 12);
     });
 
-    test('updateGoal names cleared fields, then lists again', () async {
+    test('updateGoal names cleared fields', () async {
       final client = _FakeClient();
       await McpGoalsRepository(client).updateGoal(const Goal(id: 'g1'), {
         'measure': null,
@@ -102,17 +104,26 @@ void main() {
         'goal': {'id': 'g1', 'name': 'Vegetarian cooking'},
         'clear_fields': ['measure'],
       });
-      expect(client.calls.last.$1, 'get_goals');
+      // Listing them again is left until every change is saved.
+      expect(client.calls, hasLength(1));
     });
 
-    test('createGoal leaves out what was never set', () async {
+    test('createGoal leaves out what was never set, and finds its id in '
+        'the answer', () async {
       final client = _FakeClient();
-      await McpGoalsRepository(client)
+      final id = await McpGoalsRepository(client)
           .createGoal({'name': 'Cooking', 'parent_id': null});
-      expect(client.calls.first.$1, 'create_goal');
-      expect(client.calls.first.$2, {
+      expect(client.calls.single.$1, 'create_goal');
+      expect(client.calls.single.$2, {
         'goal': {'name': 'Cooking'},
       });
+      expect(id, 'g1');
+      // Not one of the same name under another goal.
+      expect(
+        await McpGoalsRepository(client)
+            .createGoal({'name': 'Cooking', 'parent_id': 'g0'}),
+        isNull,
+      );
     });
   });
 
@@ -242,7 +253,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton, 'Completed'));
     await tester.pumpAndSettle();
-    expect(find.text('Saved.'), findsOneWidget);
     // Completed goals aren't shown until asked for.
     expect(shownNames(tester), isNot(contains('Hosting')));
     expect(
@@ -258,7 +268,6 @@ void main() {
 
     await pickStatus(tester, 'Idea', 'Active');
 
-    expect(find.text('Saved.'), findsOneWidget);
     expect(
       (await repo.goals()).goals.firstWhere((g) => g.id == 'idea').status,
       'active',
@@ -354,7 +363,6 @@ void main() {
     await tester.tap(find.text('Save 1 change'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Added.'), findsOneWidget);
     final added = (await repo.goals()).goals.firstWhere(
       (g) => g.name == 'Weekly dinners',
     );
@@ -367,6 +375,190 @@ void main() {
       'Idea',
       'Old habit',
     ]);
+  });
+
+  /// Lets a second go by, a frame at a time: what pumpAndSettle does,
+  /// for when a goal being saved keeps it from settling.
+  Future<void> settle(WidgetTester tester) async {
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
+
+  /// In the dialog open, sets the goal's name to [name].
+  Future<void> rename(WidgetTester tester, String name) async {
+    final label = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.text('name'),
+    );
+    final row = find.ancestor(of: label, matching: find.byType(PropertyRow));
+    await tester.tap(
+      find.descendant(of: row, matching: find.byType(InkWell)).first,
+    );
+    await settle(tester);
+    await tester.enterText(find.byType(TextField), name);
+    await tester.tap(find.byTooltip('Keep edit'));
+    await settle(tester);
+  }
+
+  /// Adds a top-level goal named [name] from the "+" button.
+  Future<void> addGoal(WidgetTester tester, String name) async {
+    await tester.tap(find.byTooltip('Add goal'));
+    await settle(tester);
+    await tester.tap(find.text('(none)').first);
+    await settle(tester);
+    await tester.enterText(find.byType(TextField), name);
+    await tester.tap(find.byTooltip('Keep edit'));
+    await settle(tester);
+    await tester.tap(find.text('Save 1 change'));
+    await settle(tester);
+  }
+
+  testWidgets('saving closes the dialog at once, and saves in the '
+      'background, in order', (tester) async {
+    final repo = _GatedGoalsRepository(tree());
+    await tester.pumpWidget(app(repo));
+    await settle(tester);
+
+    await addGoal(tester, 'Running');
+    await settle(tester);
+    // Closed, and shown already, saving.
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(shownNames(tester), contains('Running'));
+    expect(find.byTooltip('Saving…'), findsOneWidget);
+    // Another can be added straight away.
+    await addGoal(tester, 'Swimming');
+    await settle(tester);
+    expect(shownNames(tester), containsAllInOrder(['Running', 'Swimming']));
+    expect(find.byTooltip('Saving…'), findsNWidgets(2));
+    // Renaming a goal shows at once, too.
+    await tester.tap(find.byTooltip('More for Hosting'));
+    await settle(tester);
+    await tester.tap(find.text('Details'));
+    await settle(tester);
+    await rename(tester, 'Parties');
+    await tester.tap(find.text('Save 1 change'));
+    await settle(tester);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(shownNames(tester), contains('Parties'));
+
+    // Sent one at a time, in order.
+    final fetched = repo.fetches;
+    expect(repo.sent, ['create Running']);
+    repo.answer();
+    await tester.pump();
+    expect(repo.sent, ['create Running', 'create Swimming']);
+    // Running has its id, so it can be opened; Swimming is still saving.
+    expect(find.byTooltip('Saving…'), findsOneWidget);
+    expect(find.byTooltip('More for Running'), findsOneWidget);
+    repo.answer();
+    await tester.pump();
+    expect(repo.sent, ['create Running', 'create Swimming', 'update host']);
+    expect(find.byTooltip('Saving…'), findsNothing);
+    // The goals are only fetched once every change is saved.
+    expect(repo.fetches, fetched);
+    repo.answer();
+    await tester.pumpAndSettle();
+    expect(repo.fetches, fetched + 1);
+    expect(shownNames(tester), containsAll(['Running', 'Swimming', 'Parties']));
+    expect(
+      (await repo.goals()).goals.map((g) => g.name),
+      containsAll(['Running', 'Swimming', 'Parties']),
+    );
+  });
+
+  testWidgets('a new goal that fails to save stays, marked, to edit and '
+      'save again', (tester) async {
+    final repo = _GatedGoalsRepository(tree());
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await addGoal(tester, 'Running');
+    repo.fail(McpException('No room for it.'));
+    await tester.pumpAndSettle();
+    expect(find.text("Couldn't save Running. No room for it."), findsOneWidget);
+    // Still there, with an error in place of its menu.
+    expect(shownNames(tester), contains('Running'));
+    expect(find.byTooltip('Not saved: No room for it.'), findsOneWidget);
+    expect(find.byTooltip('More for Running'), findsNothing);
+
+    // Tapping it opens what was entered, to change and save again.
+    await tester.tap(find.text('Running'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save 1 change'), findsOneWidget);
+    await rename(tester, 'Jogging');
+    await tester.tap(find.text('Save 1 change'));
+    await settle(tester);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byTooltip('Saving…'), findsOneWidget);
+    expect(repo.sent.last, 'create Jogging');
+
+    repo.answer();
+    await tester.pumpAndSettle();
+    expect(shownNames(tester), contains('Jogging'));
+    expect(shownNames(tester), isNot(contains('Running')));
+    expect(find.byTooltip('Not saved: No room for it.'), findsNothing);
+    expect(
+      (await repo.goals()).goals.map((g) => g.name),
+      containsAll(['Jogging']),
+    );
+  });
+
+  testWidgets('a save that failed can be tried again as it was, or '
+      'discarded', (tester) async {
+    final repo = _GatedGoalsRepository(tree());
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await addGoal(tester, 'Running');
+    repo.fail(McpException('No room for it.'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Retry'));
+    await settle(tester);
+    expect(repo.sent, ['create Running', 'create Running']);
+    expect(find.byTooltip('Saving…'), findsOneWidget);
+    repo.fail(McpException('Still no room.'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Not saved: Still no room.'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Discard'));
+    await tester.pumpAndSettle();
+    expect(shownNames(tester), isNot(contains('Running')));
+    expect(find.byTooltip('Not saved: Still no room.'), findsNothing);
+  });
+
+  testWidgets('a change that fails to save stays, to edit and save again', (
+    tester,
+  ) async {
+    final repo = _GatedGoalsRepository(tree());
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await openDetails(tester, 'Hosting');
+    await rename(tester, 'Parties');
+    await tester.tap(find.text('Save 1 change'));
+    await settle(tester);
+    repo.fail(McpException('Try later.'));
+    await tester.pumpAndSettle();
+    // Kept, though the goals were fetched again.
+    expect(shownNames(tester), contains('Parties'));
+    expect(find.byTooltip('Not saved: Try later.'), findsOneWidget);
+
+    // Opens as the server has it, with the change to save again.
+    await tester.tap(find.text('Parties'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save 1 change'), findsOneWidget);
+    await tester.tap(find.text('Save 1 change'));
+    await settle(tester);
+    expect(repo.sent, ['update host', 'update host']);
+    repo.answer();
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Not saved: Try later.'), findsNothing);
+    expect(
+      (await repo.goals()).goals.firstWhere((g) => g.id == 'host').name,
+      'Parties',
+    );
   });
 
   testWidgets('a new goal needs a name', (tester) async {
@@ -667,7 +859,6 @@ void main() {
       });
       // Back on the goals page.
       expect(find.byType(AlertDialog), findsNothing);
-      expect(find.text('Saved.'), findsOneWidget);
     });
 
     testWidgets("can't save a measure missing what it needs, and says why", (
@@ -1417,4 +1608,58 @@ class _HistoryClient extends McpClient {
       },
     ];
   }
+}
+
+/// Holds each save until the test answers it, or fails it.
+class _GatedGoalsRepository implements GoalsRepository {
+  _GatedGoalsRepository(this._inner);
+
+  final InMemoryGoalsRepository _inner;
+
+  /// What's been sent, oldest first: "create" and its name, or "update" and its id.
+  final sent = <String>[];
+  final _waiting = <Completer<void>>[];
+
+  /// Lets the oldest save waiting through.
+  void answer() => _waiting.removeAt(0).complete();
+
+  /// Fails the oldest save waiting with [error].
+  void fail(Object error) => _waiting.removeAt(0).completeError(error);
+
+  Future<void> _gate(String what) {
+    sent.add(what);
+    final gate = Completer<void>();
+    _waiting.add(gate);
+    return gate.future;
+  }
+
+  /// How many times every goal has been fetched.
+  var fetches = 0;
+
+  @override
+  Future<String?> createGoal(Map<String, Object?> fields) async {
+    await _gate('create ${fields['name']}');
+    return _inner.createGoal(fields);
+  }
+
+  @override
+  Future<void> updateGoal(Goal goal, Map<String, Object?> changes) async {
+    await _gate('update ${goal.id}');
+    return _inner.updateGoal(goal, changes);
+  }
+
+  @override
+  Future<GoalList> goals() {
+    fetches++;
+    return _inner.goals();
+  }
+
+  @override
+  Future<GoalList?> cachedGoals() => _inner.cachedGoals();
+
+  @override
+  Future<GoalList> reorderGoals(List<String> ids) => _inner.reorderGoals(ids);
+
+  @override
+  Future<List<Assessment>> history(Goal goal) => _inner.history(goal);
 }

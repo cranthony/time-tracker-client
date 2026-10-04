@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.4.0
+
+- Saving a goal's details, a new goal, or a measure now closes the dialog
+  at once, as adding a note does, and saves in the background: the change
+  shows straight away, and a goal still being added shows a spinner in
+  place of its menu until the server has made it. Saves go to the server
+  one at a time, in order, and the goals are fetched once, after the
+  last, rather than after each.
+- A save that fails isn't lost: the goal stays, with an error in place
+  of its menu, offering to try again, edit, or discard it. Tapping it
+  opens what wasn't saved, to change and save again.
+
 ## 4.3.2
 
 - "Edit measure" (or "Add a measure") now opens the measure editor in

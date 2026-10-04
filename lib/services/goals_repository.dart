@@ -14,12 +14,14 @@ abstract class GoalsRepository {
   Future<GoalList?> cachedGoals();
 
   /// Creates a goal from [fields], keyed as `create_goal` takes them.
-  /// Returns every goal, as [goals] does.
-  Future<GoalList> createGoal(Map<String, Object?> fields);
+  /// Returns its id, or null if it can't be told apart from the others.
+  /// Call [goals] for every goal as they are now: saving one after another,
+  /// that's only needed after the last.
+  Future<String?> createGoal(Map<String, Object?> fields);
 
   /// Saves [changes], keyed as `update_goal` takes them, to [goal]; a null
-  /// clears that property. Returns every goal, as [goals] does.
-  Future<GoalList> updateGoal(Goal goal, Map<String, Object?> changes);
+  /// clears that property. Call [goals] for every goal as they are now.
+  Future<void> updateGoal(Goal goal, Map<String, Object?> changes);
 
   /// Puts sibling goals (sharing a parent), by id, in this order, among
   /// the places they hold. Returns every goal, as [goals] does.
@@ -59,18 +61,25 @@ class McpGoalsRepository implements GoalsRepository {
   }
 
   @override
-  Future<GoalList> createGoal(Map<String, Object?> fields) async {
-    await _client.callTool('create_goal', {
+  Future<String?> createGoal(Map<String, Object?> fields) async {
+    final result = await _client.callTool('create_goal', {
       'goal': {
         for (final MapEntry(:key, :value) in fields.entries) key: ?value,
       },
     });
-    // create_goal answers with only some of them.
-    return goals();
+    if ((result as Map)['created_id'] case final String id) return id;
+    // From a server too old to say which is new: a name is only used once
+    // among siblings.
+    return _decode(result).goals
+        .where(
+          (g) => g.parentId == fields['parent_id'] && g.name == fields['name'],
+        )
+        .firstOrNull
+        ?.id;
   }
 
   @override
-  Future<GoalList> updateGoal(Goal goal, Map<String, Object?> changes) async {
+  Future<void> updateGoal(Goal goal, Map<String, Object?> changes) async {
     // The server keeps whatever is left out or null, and clears what
     // clear_fields names.
     final clear = [
@@ -84,8 +93,6 @@ class McpGoalsRepository implements GoalsRepository {
       },
       if (clear.isNotEmpty) 'clear_fields': clear,
     });
-    // update_goal answers with only some of them.
-    return goals();
   }
 
   @override
@@ -143,7 +150,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
     }
     final ordered = <Goal>[];
     void visit(Goal goal, String path) {
-      ordered.add(Goal.fromJson({..._json(goal), 'path': path}));
+      ordered.add(Goal.fromJson({...goal.toJson(), 'path': path}));
       for (final child in byParent[goal.id] ?? const <Goal>[]) {
         visit(child, '$path › ${goalName(child)}');
       }
@@ -177,40 +184,16 @@ class InMemoryGoalsRepository implements GoalsRepository {
   }
 
   @override
-  Future<GoalList> createGoal(Map<String, Object?> fields) async {
-    _goals.add(
-      Goal.fromJson({'status': 'active', ...fields, 'id': 'g${_nextId++}'}),
-    );
-    return goals();
+  Future<String> createGoal(Map<String, Object?> fields) async {
+    final id = 'g${_nextId++}';
+    _goals.add(Goal.fromJson({'status': 'active', ...fields, 'id': id}));
+    return id;
   }
 
   @override
-  Future<GoalList> updateGoal(Goal goal, Map<String, Object?> changes) async {
+  Future<void> updateGoal(Goal goal, Map<String, Object?> changes) async {
     final i = _goals.indexWhere((g) => g.id == goal.id);
     if (i < 0) throw StateError('No goal ${goal.id}');
-    _goals[i] = Goal.fromJson({..._json(_goals[i]), ...changes});
-    return goals();
+    _goals[i] = Goal.fromJson({..._goals[i].toJson(), ...changes});
   }
-
-  static Map<String, Object?> _json(Goal goal) => {
-    ...goal.properties,
-    'id': goal.id,
-    'parent_id': goal.parentId,
-    'name': goal.name,
-    'status': goal.status,
-    'background_color': goal.backgroundColor,
-    'priority': goal.priority,
-    'fixed_time': goal.fixedTime,
-    'measure': goal.measure,
-    'effective_color': goal.effectiveColor,
-    'health': goal.health,
-    'health_period': goal.healthPeriod,
-    'health_trend': goal.healthTrend.map((r) => r?.toString() ?? '-').join(','),
-    'stale_days': goal.staleDays,
-    'minutes_24h': goal.minutes24h,
-    'minutes_7d': goal.minutes7d,
-    'minutes_by_statuses': goal.minutesByStatuses
-        ?.map((m) => m.toJson())
-        .toList(),
-  };
 }

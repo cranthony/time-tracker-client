@@ -56,14 +56,16 @@ String? _needsName(Map<String, Object?> values) => switch (values['name']) {
 ///
 /// Tapping one of its editable values opens it for editing, in place;
 /// "Save" sends every change with [save]. Returns what [save] returned
-/// (every goal, as the server has them now), or null if nothing was
+/// (every goal, as they're to be shown now), or null if nothing was
 /// saved. Without [save], or for a goal with no id, nothing can be edited.
 /// [goals] lists the goals its parent can be. Tapping its status moves it
 /// to another; [confirmSave] is asked first, with the changes, and can
-/// call the save off.
+/// call the save off. [changes] opens it with those changes already made:
+/// ones that couldn't be saved before.
 Future<GoalList?> showGoalDialog(
   BuildContext context,
   Goal goal, {
+  Map<String, Object?> changes = const {},
   Future<GoalList> Function(Goal goal, Map<String, Object?> changes)? save,
   Future<bool> Function(Map<String, Object?> changes)? confirmSave,
   Future<List<Goal>> Function()? goals,
@@ -91,6 +93,7 @@ Future<GoalList?> showGoalDialog(
   hints: goal.isOverall ? {..._hints, ..._overallHints} : _hints,
   goals: goals,
   validate: _needsName,
+  changes: changes,
   confirmSave: confirmSave,
   save: save == null || goal.id == null
       ? null
@@ -100,12 +103,14 @@ Future<GoalList?> showGoalDialog(
 
 /// Shows the properties a new goal can start with, under [parentId] if
 /// given, and creates it with [create] on "Save". Returns what [create]
-/// returned (every goal, as the server has them now), or null if nothing
-/// was created.
+/// returned (every goal, as they're to be shown now), or null if nothing
+/// was created. [fields] opens it with those already filled in: a goal
+/// that couldn't be created before.
 Future<GoalList?> showNewGoalDialog(
   BuildContext context, {
   required Future<GoalList> Function(Map<String, Object?> fields) create,
   String? parentId,
+  Map<String, Object?> fields = const {},
   Future<List<Goal>> Function()? goals,
 }) => showPropertiesDialog<GoalList>(
   context,
@@ -124,6 +129,10 @@ Future<GoalList?> showNewGoalDialog(
   hints: _hints,
   goals: goals,
   validate: _needsName,
+  changes: {
+    for (final MapEntry(:key, :value) in fields.entries)
+      if (key != 'parent_id' && value != null) key: value,
+  },
   save: (changes) => create({'parent_id': parentId, ...changes}),
   signInHint: 'Sign in again from the Goals page, then try again.',
 );
