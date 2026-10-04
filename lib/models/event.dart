@@ -23,6 +23,23 @@ class Event {
   /// The event as the server sent it.
   final Map<String, dynamic> properties;
 
+  /// The priority it's treated as: its own, else its primary goal's (or
+  /// that goal's nearest ancestor's); null if none of them has one.
+  int? get effectivePriority =>
+      properties['effective_priority'] as int? ??
+      properties['priority'] as int?;
+
+  /// The ids of the goals it serves, primary goal first.
+  List<String> get goalIds => [
+    for (final id in properties['goal_ids'] as List? ?? const []) '$id',
+  ];
+
+  /// The names of [goalIds], in the same order, if the server sent them.
+  List<String?> get goalNames => [
+    for (final name in properties['goal_names'] as List? ?? const [])
+      name as String?,
+  ];
+
   factory Event.fromJson(Map<String, dynamic> json) => Event(
     start: DateTime.parse(json['start'] as String),
     end: DateTime.parse(json['end'] as String),

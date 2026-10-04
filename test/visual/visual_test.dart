@@ -266,6 +266,37 @@ void main() {
       );
     });
 
+    // Zoomed all the way out, the whole day; zoomed in, around the
+    // events too short for their text.
+    for (final (name, zoom) in [
+      ('events_zoomed_out', -3),
+      ('events_zoomed_in', 2),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          EventsScreen(
+            repository: sample.eventsRepository(),
+            goalsRepository: sample.goalsRepository(),
+            serverLabel: 'sample',
+            clock: () => _now,
+          ),
+          then: () async {
+            final button = find.byTooltip(zoom < 0 ? 'Zoom out' : 'Zoom in');
+            for (var i = 0; i < zoom.abs(); i++) {
+              await tester.tap(button);
+              await tester.pumpAndSettle();
+            }
+            if (zoom > 0) {
+              await tester.ensureVisible(find.text('Call Mom'));
+              await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
+
     testWidgets('event series ($mode)', (tester) async {
       await render(
         tester,
@@ -277,6 +308,8 @@ void main() {
           clock: () => _now,
         ),
         then: () async {
+          await tester.ensureVisible(find.text('Morning routine'));
+          await tester.pumpAndSettle();
           await tester.tap(find.text('Morning routine'));
           await tester.pumpAndSettle();
           final link = find.text('Repeats: see or change the series');

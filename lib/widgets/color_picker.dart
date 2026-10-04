@@ -16,6 +16,23 @@ String colorToHex(Color color) =>
 Color contrastingColor(Color color) =>
     color.computeLuminance() > 0.45 ? Colors.black : Colors.white;
 
+/// The priority an event or goal with none, anywhere up its tree, is
+/// treated as, and colored as.
+const defaultPriority = 2;
+
+/// Each priority's color, as the server colors events and labels: any
+/// priority past these takes the nearest one's.
+const _priorityColors = {
+  0: Color(0xFFE1E1E1),
+  1: Color(0xFFFBD75B),
+  2: Color(0xFFA4BDFC),
+  3: Color(0xFF7AE7BF),
+};
+
+/// The color of [priority], or of [defaultPriority] if null.
+Color priorityColor(int? priority) =>
+    _priorityColors[(priority ?? defaultPriority).clamp(0, 3)]!;
+
 /// Google Calendar's calendar colors, by hue then shade.
 const calendarColors = [
   Color(0xFFAC725E),

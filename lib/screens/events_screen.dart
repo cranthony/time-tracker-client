@@ -8,14 +8,17 @@ import '../services/events_repository.dart';
 import '../services/mcp_client.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
+import '../widgets/day_timeline.dart';
 import '../widgets/event_dialog.dart';
 import '../widgets/recurrence_dialog.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
-/// One day's events, with buttons to step to the day before or after.
-/// Tapping the date picks another; tapping an event shows all its
-/// properties, and lets one change them.
+/// One day's events on a timeline ([DayTimeline]), from midnight to
+/// midnight, with buttons to step to the day before or after and to zoom
+/// in or out. Tapping the date picks another; tapping an event shows all
+/// its properties, and lets one change them. It opens scrolled to now,
+/// on today, or else to the day's first event.
 ///
 /// The day it opens on, today, is kept for next time, so it shows at once
 /// while it refreshes. Other days load afresh.
@@ -68,12 +71,91 @@ class _EventsScreenState extends State<EventsScreen> {
   bool _needsSignIn = false;
   bool _signingIn = false;
 
+  /// The goals by id, for the colors and names of events' goals; empty
+  /// until they're loaded, or without goals.
+  Map<String, Goal> _goalsById = const {};
+
+  /// The timeline's zoom: logical pixels per minute.
+  double _scale = defaultTimelineScale;
+
+  final _scroll = ScrollController();
+
+  /// Whether the timeline is still to be scrolled to the day's first
+  /// event, or now: once its events are shown.
+  bool _scrollPending = true;
+
   @override
   void initState() {
     super.initState();
     _day = _firstDay = _midnight(widget.clock());
     _showCached();
     _load();
+    _loadGoals();
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// Loads the goals, for their colors. Best effort: without them, goals
+  /// are named as the events have them, with outlined diamonds.
+  Future<void> _loadGoals() async {
+    final repository = widget.goalsRepository;
+    if (repository == null) return;
+    try {
+      final goals =
+          (await repository.cachedGoals()) ?? await repository.goals();
+      if (!mounted) return;
+      setState(
+        () => _goalsById = {for (final goal in goals.goals) ?goal.id: goal},
+      );
+    } catch (_) {
+      // Shown without their colors.
+    }
+  }
+
+  DateTime get _dayEnd => _dayAfter(_day);
+
+  /// Scrolls the timeline to now, on today, or else to the first event,
+  /// once it's laid out.
+  void _scrollToStart() {
+    final events = _events;
+    if (!_scrollPending || events == null || events.isEmpty) return;
+    _scrollPending = false;
+    final now = widget.clock();
+    final starts = [
+      for (final e in events)
+        if (e.end.isAfter(_day)) e.start.isBefore(_day) ? _day : e.start,
+    ]..sort();
+    final today = sameDay(now, _day);
+    final at = today ? now : starts.firstOrNull ?? _day;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      final y =
+          timelineOffset(at, day: _day, dayEnd: _dayEnd, scale: _scale) -
+          (today ? 120 : 24);
+      _scroll.jumpTo(y.clamp(0, _scroll.position.maxScrollExtent));
+    });
+  }
+
+  /// Zooms to the next of [timelineScales] in [direction], keeping the
+  /// time at the middle of the screen there.
+  void _zoom(int direction) {
+    final i = timelineScales.indexOf(_scale) + direction;
+    if (i < 0 || i >= timelineScales.length) return;
+    final next = timelineScales[i];
+    if (_scroll.hasClients) {
+      final position = _scroll.position;
+      final half = position.viewportDimension / 2;
+      final target = (position.pixels + half) * next / _scale - half;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_scroll.hasClients) return;
+        _scroll.jumpTo(target.clamp(0, _scroll.position.maxScrollExtent));
+      });
+    }
+    setState(() => _scale = next);
   }
 
   static DateTime _midnight(DateTime t) {
@@ -134,6 +216,7 @@ class _EventsScreenState extends State<EventsScreen> {
       _events = null;
       _stale = false;
       _error = null;
+      _scrollPending = true;
     });
     _showCached();
     _load();
@@ -164,6 +247,8 @@ class _EventsScreenState extends State<EventsScreen> {
       ),
     );
     await _load();
+    // Its goals may have changed, and with them its diamonds.
+    await _loadGoals();
   }
 
   /// Every goal, for picking an event's goals; null without goals.
@@ -291,6 +376,30 @@ class _EventsScreenState extends State<EventsScreen> {
         refreshing: _stale && _error == null && !_needsSignIn,
         child: RefreshIndicator(onRefresh: _load, child: _buildBody(context)),
       ),
+      floatingActionButton: (_events?.isEmpty ?? true) || _needsSignIn
+          ? null
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.small(
+                  heroTag: 'zoom-in',
+                  tooltip: 'Zoom in',
+                  onPressed: _scale == timelineScales.last
+                      ? null
+                      : () => _zoom(1),
+                  child: const Icon(Icons.zoom_in),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
+                  heroTag: 'zoom-out',
+                  tooltip: 'Zoom out',
+                  onPressed: _scale == timelineScales.first
+                      ? null
+                      : () => _zoom(-1),
+                  child: const Icon(Icons.zoom_out),
+                ),
+              ],
+            ),
     );
   }
 
@@ -324,65 +433,35 @@ class _EventsScreenState extends State<EventsScreen> {
         child: StatusMessage(icon: Icons.event_busy, text: 'No events.'),
       );
     }
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
+    _scrollToStart();
+    return Column(
       children: [
-        // The last events loaded, or kept from last time, are still shown.
+        // The last events loaded, or kept from last time, are still shown,
+        // under this.
         if (_error != null)
           StatusMessage(
             icon: Icons.cloud_off,
             text: 'Could not load events. These may be out of date.\n$_error',
           ),
-        for (final (i, event) in events.indexed) ...[
-          if (i > 0) const Divider(height: 1),
-          _EventTile(event: event, day: _day, onTap: () => _openEvent(event)),
-        ],
+        Expanded(
+          child: ListView(
+            controller: _scroll,
+            physics: const AlwaysScrollableScrollPhysics(),
+            // Clear of the zoom buttons.
+            padding: const EdgeInsets.only(bottom: 120),
+            children: [
+              DayTimeline(
+                events: events,
+                day: _day,
+                goals: _goalsById,
+                scale: _scale,
+                now: widget.clock(),
+                onTap: _openEvent,
+              ),
+            ],
+          ),
+        ),
       ],
     );
-  }
-}
-
-class _EventTile extends StatelessWidget {
-  const _EventTile({
-    required this.event,
-    required this.day,
-    required this.onTap,
-  });
-
-  final Event event;
-  final VoidCallback onTap;
-
-  /// The day being shown: a start or end on another day shows its date.
-  final DateTime day;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cancelled = event.isCancelled;
-    final muted = TextStyle(
-      color: theme.hintColor,
-      decoration: cancelled ? TextDecoration.lineThrough : null,
-    );
-    final summary = event.summary;
-    return ListTile(
-      title: Text(
-        summary == null || summary.isEmpty ? '(no summary)' : summary,
-        style: summary == null || summary.isEmpty || cancelled ? muted : null,
-      ),
-      subtitle: Text(
-        '${_when(context, event.start)} – ${_when(context, event.end)}'
-        '${cancelled ? ' · cancelled' : ''}',
-      ),
-      onTap: onTap,
-    );
-  }
-
-  String _when(BuildContext context, DateTime t) {
-    final local = t.toLocal();
-    final strings = MaterialLocalizations.of(context);
-    final time = strings.formatTimeOfDay(TimeOfDay.fromDateTime(local));
-    return sameDay(local, day)
-        ? time
-        : '${strings.formatShortMonthDay(local)}, $time';
   }
 }

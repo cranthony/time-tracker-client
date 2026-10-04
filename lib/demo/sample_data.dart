@@ -55,7 +55,14 @@ class SampleData {
   ];
 
   List<Event> get events => [
-    _event('sleep', 'Sleep', _at(23, 0, -1), _at(7, 0), sleep: true),
+    _event(
+      'sleep',
+      'Sleep',
+      _at(23, 0, -1),
+      _at(7, 0),
+      sleep: true,
+      priority: 3,
+    ),
     _event(
       'morning_today',
       'Morning routine',
@@ -63,6 +70,7 @@ class SampleData {
       _at(8, 0),
       goals: ['wake'],
       series: 'morning',
+      priority: 0,
     ),
     _event(
       'work',
@@ -70,8 +78,19 @@ class SampleData {
       _at(8, 0),
       _at(12, 0),
       goals: ['tracker'],
+      priority: 1,
     ),
     _event('lunch', 'Lunch', _at(12, 0), _at(13, 0)),
+    // Too short for their text: drawn taller, and pushed down.
+    _event(
+      'call',
+      'Call Mom',
+      _at(13, 0),
+      _at(13, 5),
+      goals: ['parents', 'neighbor'],
+      priority: 1,
+    ),
+    _event('plants', 'Water the plants', _at(13, 5), _at(13, 15)),
     // Never given goals: Tofu's is inferred from its label.
     _event(
       'class',
@@ -80,6 +99,7 @@ class SampleData {
       _at(16, 0),
       goals: ['tofu'],
       fromLabel: true,
+      priority: 2,
     ),
     _event(
       'dinner',
@@ -100,6 +120,7 @@ class SampleData {
     bool sleep = false,
     String? series,
     bool fromLabel = false,
+    int? priority,
   }) => Event.fromJson({
     'id': id,
     'summary': summary,
@@ -111,6 +132,7 @@ class SampleData {
     if (sleep) 'is_end_of_day_sleep': true,
     'recurring_event_id': ?series,
     if (fromLabel) 'goals_from_label': true,
+    'effective_priority': ?priority,
   });
 
   /// The series "Morning routine" is part of: every weekday since a month

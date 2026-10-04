@@ -8,22 +8,6 @@ import 'measure_dialog.dart' show SaveGoal;
 /// The priorities offered as buttons; "…" takes any other.
 const _priorities = [0, 1, 2, 3];
 
-/// The priority a goal with none, anywhere up its tree, is colored as.
-const _defaultPriority = 2;
-
-/// Each priority's label color, as the server colors them: any priority
-/// past these takes the nearest one's.
-const _priorityColors = {
-  0: Color(0xFFE1E1E1),
-  1: Color(0xFFFBD75B),
-  2: Color(0xFFA4BDFC),
-  3: Color(0xFF7AE7BF),
-};
-
-/// The label color of [priority], or of the default priority if null.
-Color priorityColor(int? priority) =>
-    _priorityColors[(priority ?? _defaultPriority).clamp(0, 3)]!;
-
 /// Shows what [goal] gives its events and sub-goals: its priority, whether
 /// its events are at a fixed time, and its label's color, each saying
 /// whether it's set on the goal or where it comes from: an ancestor, or
@@ -432,7 +416,7 @@ class _EventPropertiesDialogState extends State<_EventPropertiesDialog> {
         parseColor(ancestor?.backgroundColor) ??
         (unchanged ? parseColor(_goal.effectiveColor) : null) ??
         priorityColor(_priority ?? _inheritedPriority);
-    final follows = _priority ?? _inheritedPriority ?? _defaultPriority;
+    final follows = _priority ?? _inheritedPriority ?? defaultPriority;
     return _PropertyCard(
       icon: _Swatch(color: shown, inherited: own == null),
       label: 'Color',
