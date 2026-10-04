@@ -8,9 +8,12 @@ import '../models/goal.dart';
 /// only the branches holding a picked goal.
 ///
 /// Lists every active goal in [goals] (in tree order, as the server gives
-/// them) and any inactive one already [picked]. Calls [onChanged] with the
-/// new ids, in the order they were picked, so the first stays the primary
-/// goal.
+/// them) and any inactive one already [picked], or with [inactive], every
+/// goal; never those in [exclude]. Calls [onChanged] with the new ids, in
+/// the order they were picked, so the first stays the primary goal.
+///
+/// With [single], it picks one goal, with no chips: tapping a goal (or
+/// Enter, for the top match) calls [onChanged] with just that one.
 class GoalsPicker extends StatefulWidget {
   const GoalsPicker({
     super.key,
@@ -18,12 +21,22 @@ class GoalsPicker extends StatefulWidget {
     required this.picked,
     required this.onChanged,
     required this.marker,
+    this.single = false,
+    this.inactive = false,
+    this.exclude = const {},
+    this.autofocus = false,
     this.maxListHeight = 320,
   });
 
   final List<Goal> goals;
   final List<String> picked;
   final ValueChanged<List<String>> onChanged;
+  final bool single;
+  final bool inactive;
+  final Set<String> exclude;
+
+  /// Whether the search takes the keyboard at once.
+  final bool autofocus;
 
   /// Drawn before each goal's name, e.g. a dot in its color.
   final Widget Function(Goal goal) marker;
@@ -51,7 +64,8 @@ class _GoalsPickerState extends State<GoalsPicker> {
     for (final goal in widget.goals)
       if (goal.id != null &&
           !goal.isOverall &&
-          (goal.active || widget.picked.contains(goal.id)))
+          !widget.exclude.contains(goal.id) &&
+          (widget.inactive || goal.active || widget.picked.contains(goal.id)))
         goal,
   ];
 
@@ -75,6 +89,10 @@ class _GoalsPickerState extends State<GoalsPicker> {
   /// Picks or unpicks [goal]; a goal picked opens the tree down to it.
   void _toggle(Goal goal, bool on) {
     if (on) _open.addAll(_ancestorsOf([goal.id!]));
+    if (widget.single) {
+      widget.onChanged([goal.id!]);
+      return;
+    }
     widget.onChanged([
       for (final id in widget.picked)
         if (id != goal.id) id,
@@ -91,6 +109,12 @@ class _GoalsPickerState extends State<GoalsPicker> {
     return cut < 0 ? null : path.substring(0, cut);
   }
 
+  /// The words of [query], to match in any order.
+  static List<String> _words(String query) => [
+    for (final word in query.toLowerCase().split(RegExp(r'\s+')))
+      if (word.isNotEmpty) word,
+  ];
+
   /// Whether every word of [query] is in [goal]'s path (or name).
   static bool _matches(Goal goal, List<String> words) {
     final text = (goal.path ?? goalName(goal)).toLowerCase();
@@ -101,10 +125,7 @@ class _GoalsPickerState extends State<GoalsPicker> {
   Widget build(BuildContext context) {
     final shown = _shown;
     if (shown.isEmpty) return const Text('No active goals.');
-    final words = [
-      for (final word in _search.text.toLowerCase().split(RegExp(r'\s+')))
-        if (word.isNotEmpty) word,
-    ];
+    final words = _words(_search.text);
     final rows = words.isEmpty
         ? _tree(shown)
         : [
@@ -115,11 +136,12 @@ class _GoalsPickerState extends State<GoalsPicker> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (widget.picked.isNotEmpty) _chips(context),
+        if (widget.picked.isNotEmpty && !widget.single) _chips(context),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: TextField(
             controller: _search,
+            autofocus: widget.autofocus,
             decoration: InputDecoration(
               isDense: true,
               border: const OutlineInputBorder(),
@@ -137,7 +159,9 @@ class _GoalsPickerState extends State<GoalsPicker> {
             // Kept focused after Enter, ready for the next goal.
             onEditingComplete: () {},
             // The top match, picked (or unpicked) from the keyboard.
-            onSubmitted: (_) {
+            // What's typed now, which may not have been built yet.
+            onSubmitted: (text) {
+              final words = _words(text);
               if (words.isEmpty) return;
               for (final goal in shown) {
                 if (_matches(goal, words)) {
@@ -250,34 +274,181 @@ class _GoalsPickerState extends State<GoalsPicker> {
   Widget _row(Goal goal, {int depth = 0, String? subtitle, Widget? trailing}) {
     final hint = Theme.of(context).hintColor;
     final picked = widget.picked.contains(goal.id);
+    final title = Row(
+      children: [
+        widget.marker(goal),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            goalName(goal),
+            style: goal.active ? null : TextStyle(color: hint),
+          ),
+        ),
+      ],
+    );
+    final under = subtitle == null
+        ? null
+        : Text(
+            subtitle,
+            style: TextStyle(color: hint),
+            overflow: TextOverflow.ellipsis,
+          );
+    if (widget.single) {
+      return ListTile(
+        key: ValueKey(goal.id!),
+        dense: true,
+        contentPadding: EdgeInsetsDirectional.only(start: 16.0 * depth + 12),
+        selected: picked,
+        leading: Icon(
+          picked ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+        ),
+        trailing: trailing,
+        title: title,
+        subtitle: under,
+        onTap: () => _toggle(goal, true),
+      );
+    }
     return CheckboxListTile(
-      key: ValueKey(goal.id),
+      key: ValueKey(goal.id!),
       dense: true,
       contentPadding: EdgeInsetsDirectional.only(start: 16.0 * depth),
       controlAffinity: ListTileControlAffinity.leading,
       value: picked,
       // With the box leading, this sits at the end.
       secondary: trailing,
-      title: Row(
-        children: [
-          widget.marker(goal),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              goalName(goal),
-              style: goal.active ? null : TextStyle(color: hint),
-            ),
-          ),
-        ],
-      ),
-      subtitle: subtitle == null
-          ? null
-          : Text(
-              subtitle,
-              style: TextStyle(color: hint),
-              overflow: TextOverflow.ellipsis,
-            ),
+      title: title,
+      subtitle: under,
       onChanged: (on) => _toggle(goal, on == true),
     );
   }
 }
+
+/// [id] and every goal under it in [goals]: what can't be its parent.
+Set<String> goalAndSubGoals(List<Goal> goals, String id) {
+  final under = {id};
+  // In tree order, a goal's parent comes before it.
+  for (final goal in goals) {
+    if (goal.id case final child? when under.contains(goal.parentId)) {
+      under.add(child);
+    }
+  }
+  return under;
+}
+
+/// One goal, shown by its whole path, picked by tapping it: a dialog
+/// searches [goals] or browses their tree (see [GoalsPicker]). With
+/// [noneLabel], the dialog can pick no goal too, which [value] null shows
+/// as; without, null shows [hint].
+class GoalField extends StatelessWidget {
+  const GoalField({
+    super.key,
+    required this.goals,
+    required this.value,
+    required this.onChanged,
+    required this.marker,
+    this.title = 'Pick a goal',
+    this.hint = 'Pick a goal',
+    this.noneLabel,
+    this.exclude = const {},
+  });
+
+  final List<Goal> goals;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  final Widget Function(Goal goal) marker;
+  final String title;
+  final String hint;
+  final String? noneLabel;
+  final Set<String> exclude;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final goal = goals.where((g) => g.id == value).firstOrNull;
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: () async {
+        final picked = await showGoalPicker(
+          context,
+          goals: goals,
+          value: value,
+          marker: marker,
+          title: title,
+          noneLabel: noneLabel,
+          exclude: exclude,
+        );
+        if (picked != null) onChanged(picked.id);
+      },
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          isDense: true,
+          border: OutlineInputBorder(),
+          suffixIcon: Icon(Icons.arrow_drop_down),
+        ),
+        child: goal == null
+            ? Text(
+                value == null ? noneLabel ?? hint : value!,
+                style: value == null && noneLabel == null
+                    ? TextStyle(color: theme.hintColor)
+                    : null,
+              )
+            : Row(
+                children: [
+                  marker(goal),
+                  const SizedBox(width: 8),
+                  // The whole path, wrapping as it needs to.
+                  Flexible(child: Text(goal.path ?? goalName(goal))),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+/// Asks for one of [goals], [value] picked to start with; see
+/// [GoalField]. Null if called off; otherwise the goal picked, its id
+/// null for none.
+Future<({String? id})?> showGoalPicker(
+  BuildContext context, {
+  required List<Goal> goals,
+  required String? value,
+  required Widget Function(Goal goal) marker,
+  String title = 'Pick a goal',
+  String? noneLabel,
+  Set<String> exclude = const {},
+}) => showDialog<({String? id})>(
+  context: context,
+  builder: (context) => AlertDialog(
+    title: Text(title),
+    content: SizedBox(
+      width: 420,
+      child: GoalsPicker(
+        goals: goals,
+        picked: [?value],
+        single: true,
+        inactive: true,
+        exclude: exclude,
+        autofocus: true,
+        // Room left on the screen for the list, past the dialog's title,
+        // search and buttons.
+        maxListHeight: (MediaQuery.sizeOf(context).height - 320).clamp(
+          160,
+          400,
+        ),
+        marker: marker,
+        onChanged: (ids) => Navigator.pop(context, (id: ids.single)),
+      ),
+    ),
+    actions: [
+      if (noneLabel != null)
+        TextButton(
+          onPressed: () => Navigator.pop(context, (id: null)),
+          child: Text(noneLabel),
+        ),
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+    ],
+  ),
+);

@@ -14,6 +14,7 @@ import 'package:time_tracker_client/screens/goal_history_screen.dart';
 import 'package:time_tracker_client/screens/goals_screen.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
+import 'package:time_tracker_client/widgets/goals_picker.dart';
 import 'package:time_tracker_client/widgets/health.dart';
 import 'package:time_tracker_client/widgets/priority_chip.dart';
 import 'package:time_tracker_client/widgets/properties_dialog.dart';
@@ -1268,12 +1269,21 @@ void main() {
       final row = find.ancestor(of: label, matching: find.byType(PropertyRow));
       await tester.tap(find.descendant(of: row, matching: find.text('(none)')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(DropdownButton<String?>));
+      await tester.tap(find.byType(GoalField));
       await tester.pumpAndSettle();
-      // Listed by name, not by path.
-      expect(find.text('Cooking › Tofu tikka'), findsNothing);
-      await tester.tap(find.text('Tofu tikka').last);
+      final picker = find.byType(GoalsPicker);
+      // Not under itself.
+      expect(
+        find.descendant(of: picker, matching: find.text('Hosting')),
+        findsNothing,
+      );
+      // Under its parent, until opened.
+      expect(find.text('Tofu tikka'), findsNothing);
+      await tester.tap(find.byTooltip('Show 1 sub-goal'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Tofu tikka'));
+      await tester.pumpAndSettle();
+      expect(picker, findsNothing);
       // Picked: its whole path.
       expect(find.text('Cooking › Tofu tikka'), findsOneWidget);
       await tester.tap(find.byTooltip('Keep edit'));
@@ -1287,6 +1297,79 @@ void main() {
       );
     },
   );
+
+  testWidgets("a goal can't be put under itself or its sub-goals, and can "
+      'be made top-level', (tester) async {
+    final repo = tree();
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await swipe(tester, 'Cooking');
+    await openDetails(tester, 'Tofu tikka');
+    final dialog = find.byType(AlertDialog);
+    final row = find.ancestor(
+      of: find.descendant(of: dialog, matching: find.text('parent_id')),
+      matching: find.byType(PropertyRow),
+    );
+    await tester.tap(
+      find.descendant(of: row, matching: find.byType(InkWell)).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(GoalField));
+    await tester.pumpAndSettle();
+    // Searched by path; not itself.
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(GoalsPicker),
+        matching: find.byType(TextField),
+      ),
+      'cook',
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(GoalsPicker),
+        matching: find.text('Tofu tikka'),
+      ),
+      findsNothing,
+    );
+    await tester.tap(find.text('None (top-level)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Keep edit'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save 1 change'));
+    await tester.pumpAndSettle();
+    expect(
+      (await repo.goals()).goals.firstWhere((g) => g.id == 'tofu').parentId,
+      isNull,
+    );
+
+    await openDetails(tester, 'Cooking');
+    await tester.tap(
+      find
+          .descendant(
+            of: find.ancestor(
+              of: find.descendant(
+                of: find.byType(AlertDialog),
+                matching: find.text('parent_id'),
+              ),
+              matching: find.byType(PropertyRow),
+            ),
+            matching: find.byType(InkWell),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(GoalField));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(GoalsPicker),
+        matching: find.text('Cooking'),
+      ),
+      findsNothing,
+    );
+  });
 
   /// Opens [goal]'s details, then its measure for editing.
   Future<Finder> openMeasure(WidgetTester tester, String goal) async {
@@ -1373,14 +1456,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(pick);
     await tester.pumpAndSettle();
-    // Not the goal itself.
-    expect(
-      find.descendant(
-        of: find.byType(DropdownMenuItem<String?>),
-        matching: find.text('Cooking'),
-      ),
-      findsNothing,
-    );
+    // Not the goal itself, though its sub-goal shows it as its path.
+    expect(find.byKey(const ValueKey('cook')), findsNothing);
+    expect(find.byKey(const ValueKey('tofu')), findsOneWidget);
     await tester.tap(find.text('Hosting').last);
     await tester.pumpAndSettle();
     final subGoals = find.text("Include its sub-goals' events");
@@ -1773,15 +1851,16 @@ void main() {
       );
       await tester.tap(find.descendant(of: row, matching: find.text('(none)')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(DropdownButton<String?>));
+      await tester.tap(find.byType(GoalField));
       await tester.pumpAndSettle();
 
-      expect(find.text('Old habit'), findsWidgets);
+      final picker = find.byType(GoalsPicker);
       expect(
-        find.descendant(
-          of: find.byType(DropdownMenuItem<String?>),
-          matching: find.text('Overall'),
-        ),
+        find.descendant(of: picker, matching: find.text('Old habit')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: picker, matching: find.text('Overall')),
         findsNothing,
       );
     });

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
 import '../models/measure.dart';
+import 'color_picker.dart';
 import 'durations.dart';
+import 'goals_picker.dart';
 
 /// The statuses of sub-goals a weighted rollup's weights leave out: not
 /// yet taken up, or done with.
@@ -378,29 +380,17 @@ class _MeasureEditorState extends State<MeasureEditor> {
                   ? const Text("Couldn't load the goals.")
                   : const LinearProgressIndicator();
             }
-            final choices = [
-              for (final goal in goals)
-                if (goal.id != null &&
-                    !goal.isOverall &&
-                    goal.id != widget.goalId)
-                  goal,
-            ];
-            return DropdownButton<String?>(
-              isExpanded: true,
-              hint: const Text('Pick a goal'),
-              value: choices.any((g) => g.id == eventsOf) ? eventsOf : null,
-              items: [
-                for (final goal in choices)
-                  DropdownMenuItem(
-                    value: goal.id,
-                    child: Padding(
-                      padding: EdgeInsetsDirectional.only(
-                        start: 16.0 * goal.depth,
-                      ),
-                      child: Text(goalName(goal)),
-                    ),
-                  ),
-              ],
+            return GoalField(
+              goals: goals,
+              value: eventsOf,
+              title: 'Count the events of',
+              exclude: {?widget.goalId},
+              marker: (goal) => switch (parseColor(
+                goal.backgroundColor ?? goal.effectiveColor,
+              )) {
+                final c? => ColorDot(color: c, size: 12),
+                null => const SizedBox(width: 12),
+              },
               onChanged: (picked) {
                 setState(() => setEventsOf(picked));
                 _changed();
