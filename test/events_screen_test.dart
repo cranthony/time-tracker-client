@@ -392,7 +392,9 @@ void main() {
       await edit(tester, inDialog(find.text('Deep focus')));
       // Active goals only; the first picked is the primary goal.
       expect(inDialog(find.text('Old')), findsNothing);
-      expect(inDialog(find.text('Primary goal')), findsOneWidget);
+      expect(inDialog(find.byTooltip('Primary goal')), findsOneWidget);
+      await tester.ensureVisible(inDialog(find.text('Exercise')));
+      await tester.pumpAndSettle();
       await tester.tap(inDialog(find.text('Exercise')));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byTooltip('Keep edit'));
@@ -664,6 +666,8 @@ void main() {
       expect(inDialog(find.byType(GoalDiamond)), findsOneWidget);
       await tester.ensureVisible(inDialog(find.text('Deep focus')));
       await tester.tap(inDialog(find.text('Deep focus')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(inDialog(find.text('Exercise')));
       await tester.pumpAndSettle();
       await tester.tap(inDialog(find.text('Exercise')));
       await tester.pumpAndSettle();
