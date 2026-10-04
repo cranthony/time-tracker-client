@@ -4,6 +4,10 @@ import '../models/goal.dart';
 import '../models/measure.dart';
 import 'durations.dart';
 
+/// The statuses of sub-goals a weighted rollup's weights leave out: not
+/// yet taken up, or done with.
+const _hiddenFromWeights = {'proposed', 'completed', 'archived', 'deleted'};
+
 /// Edits a goal's measure: a kind picked from [measureKinds] (or none),
 /// then that kind's fields. Calls [onChanged] with the measure as it
 /// stands after every edit -- null for none -- whether or not it's valid
@@ -326,18 +330,28 @@ class _MeasureEditorState extends State<MeasureEditor> {
                   : goal.parentId == widget.goalId))
             goal,
       ];
+      // Every sub-goal keeps its weight, but only active and inactive ones
+      // are shown; an inactive one (which isn't rated) is greyed.
       _subGoalIds = {for (final goal in subGoals) goal.id!};
-      if (subGoals.isEmpty) return const Text('It has no sub-goals yet.');
+      final shown = [
+        for (final goal in subGoals)
+          if (!_hiddenFromWeights.contains(goal.status)) goal,
+      ];
+      if (shown.isEmpty) return const Text('It has no sub-goals yet.');
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (final goal in subGoals)
+          for (final goal in shown)
             _field(
               _weights.putIfAbsent(goal.id!, TextEditingController.new),
               goalName(goal),
               hint: '0',
               number: true,
+              muted: goal.active
+                  ? null
+                  : '${goalStatuses[goal.status] ?? goal.status}: '
+                        "not rated, so it doesn't count",
             ),
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -359,6 +373,8 @@ class _MeasureEditorState extends State<MeasureEditor> {
     String? suffix,
     bool number = false,
     int maxLines = 1,
+    String? muted,
+    bool capitalize = true,
   }) => Padding(
     padding: const EdgeInsets.only(top: 12),
     child: TextField(
@@ -370,7 +386,7 @@ class _MeasureEditorState extends State<MeasureEditor> {
           : TextInputType.text,
       minLines: 1,
       maxLines: maxLines,
-      textCapitalization: number
+      textCapitalization: number || !capitalize
           ? TextCapitalization.none
           : TextCapitalization.sentences,
       decoration: InputDecoration(
@@ -381,6 +397,14 @@ class _MeasureEditorState extends State<MeasureEditor> {
         floatingLabelBehavior: FloatingLabelBehavior.always,
         hintText: hint,
         suffixText: suffix,
+        // Greyed, with why, for a field that doesn't count for now.
+        labelStyle: muted == null
+            ? null
+            : TextStyle(color: Theme.of(context).hintColor),
+        floatingLabelStyle: muted == null
+            ? null
+            : TextStyle(color: Theme.of(context).hintColor),
+        helperText: muted,
       ),
       onChanged: (_) => _changed(),
     ),
@@ -448,7 +472,13 @@ class _MeasureEditorState extends State<MeasureEditor> {
           ],
           'count' => [
             _field(_target, 'Target', number: true),
-            _field(_noun, "What's counted", hint: 'e.g. visits'),
+            _field(
+              _noun,
+              "What's counted (display only)",
+              hint: 'e.g. visits',
+              // Read mid-sentence ("2 of 3 visits"), so lower-case.
+              capitalize: false,
+            ),
             ...lookBack,
             ..._whoseEvents(theme),
           ],
