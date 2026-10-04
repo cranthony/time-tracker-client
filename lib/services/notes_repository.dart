@@ -26,6 +26,10 @@ abstract class NotesRepository {
   /// When notes were last compacted, and the latest note compacted.
   Future<CompactionStatus> compactionStatus();
 
+  /// What [compactionStatus] last returned, kept from an earlier run of
+  /// the app; null if there's nothing kept.
+  Future<CompactionStatus?> cachedCompactionStatus();
+
   /// A short description of the backend, shown in the UI.
   String get label;
 }
@@ -39,6 +43,7 @@ class McpNotesRepository implements NotesRepository {
   final ResponseCache? _cache;
 
   static const _cacheKey = 'get_notes';
+  static const _statusCacheKey = 'get_compaction_status';
 
   @override
   String get label => _client.endpoint.host;
@@ -98,8 +103,23 @@ class McpNotesRepository implements NotesRepository {
   @override
   Future<CompactionStatus> compactionStatus() async {
     final result = await _client.callTool('get_compaction_status', {});
-    return CompactionStatus.fromJson((result as Map).cast<String, dynamic>());
+    final status = _status(result);
+    await _cache?.write(_statusCacheKey, result);
+    return status;
   }
+
+  @override
+  Future<CompactionStatus?> cachedCompactionStatus() async {
+    try {
+      final result = await _cache?.read(_statusCacheKey);
+      return result == null ? null : _status(result);
+    } catch (_) {
+      return null; // From an older version of the app, perhaps.
+    }
+  }
+
+  static CompactionStatus _status(Object? result) =>
+      CompactionStatus.fromJson((result as Map).cast<String, dynamic>());
 }
 
 /// Keeps notes in memory. Used when no server is configured, and in tests.
@@ -116,6 +136,9 @@ class InMemoryNotesRepository implements NotesRepository {
 
   @override
   Future<CompactionStatus> compactionStatus() async => status;
+
+  @override
+  Future<CompactionStatus?> cachedCompactionStatus() async => null;
 
   final _notes = <Note>[];
   var _nextRow = 1;
