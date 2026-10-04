@@ -63,14 +63,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Today'), findsOneWidget);
-    // By start time; one that began the day before shows its date.
-    final summaries = tester
-        .widgetList<ListTile>(find.byType(ListTile))
-        .map((t) => (t.title as Text).data)
-        .toList();
-    expect(summaries, ['Sleep', 'Work', 'Lunch']);
-    expect(find.text('Sep 29, 11:00 PM – 7:00 AM'), findsOneWidget);
-    expect(find.text('9:00 AM – 10:30 AM'), findsOneWidget);
+    // Down the timeline, by start time; one that began the day before
+    // from the top.
+    double top(String summary) => tester.getTopLeft(find.text(summary)).dy;
+    expect(top('Sleep'), lessThan(top('Work')));
+    expect(top('Work'), lessThan(top('Lunch')));
+    expect(find.bySemanticsLabel('Sleep, 11:00 PM to 7:00 AM'), findsOneWidget);
+    expect(find.bySemanticsLabel('Work, 9:00 AM to 10:30 AM'), findsOneWidget);
     expect(find.text('Dinner'), findsNothing);
 
     await tester.tap(find.byTooltip('Previous day'));
@@ -78,7 +77,7 @@ void main() {
     expect(find.text('Yesterday'), findsOneWidget);
     expect(find.text('Dinner'), findsOneWidget);
     expect(find.text('Sleep'), findsOneWidget);
-    expect(find.text('6:00 PM – 7:00 PM'), findsOneWidget);
+    expect(find.bySemanticsLabel('Dinner, 6:00 PM to 7:00 PM'), findsOneWidget);
     expect(find.text('Lunch'), findsNothing);
 
     await tester.tap(find.byTooltip('Next day'));
@@ -105,6 +104,8 @@ void main() {
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.text('Work'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Work'));
     await tester.pumpAndSettle();
     final dialog = find.byType(AlertDialog);
@@ -168,6 +169,8 @@ void main() {
           ]),
         ),
       );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Work').first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Work').first);
       await tester.pumpAndSettle();
@@ -455,6 +458,8 @@ void main() {
 
     /// Opens the event, then its series, and renames the series.
     Future<void> renameSeries(WidgetTester tester) async {
+      await tester.ensureVisible(find.text('Standup'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Standup'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Repeats: see or change the series'));

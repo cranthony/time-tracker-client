@@ -6,6 +6,24 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.9.0
+
+- The Events page is a timeline of the day, midnight to midnight, at a
+  constant scale. Down its left edge are the times where events start
+  and end, then the hours, as many as fit; zoom in or out with the
+  buttons at the bottom right. It opens on now, or on another day at its
+  first event.
+- Beside the times, a band shows the priority of the most important
+  event going on, in its priority's color, labeled "P0" to "P3" where it
+  starts and stops; it's clear where nothing is.
+- Each event shows its summary, then its goals, the primary goal first,
+  each after a diamond in the goal's color.
+- An event too short for its text is drawn as tall as it needs: the
+  strip down its edge is solid for as long as it lasts and dashed below,
+  it says how long it is, and a bracket beside the band marks its real
+  span. One pushed down by the event before it is joined by a line to
+  where it truly starts.
+
 ## 4.8.0
 
 - A goal can be measured by follow-through: each of its events that's
