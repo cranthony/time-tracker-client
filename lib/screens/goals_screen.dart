@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/goal.dart';
@@ -13,7 +15,8 @@ import '../services/mcp_client.dart';
 import 'goal_history_screen.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
-import '../widgets/event_properties_dialog.dart';
+import '../widgets/goal_summary_dialog.dart';
+import '../widgets/priority_chip.dart';
 import '../widgets/goal_dialog.dart';
 import '../widgets/health.dart';
 import '../widgets/measure_dialog.dart';
@@ -23,8 +26,7 @@ import '../widgets/status_message.dart';
 /// The overall goal at the top -- its rating, and the time spent on goals
 /// of the statuses shown in the last 24 hours and 7 days, each event once
 /// -- then every other goal, as a tree: each one's color, name, status,
-/// priority and
-/// measure, the time spent on it (and its sub-goals) in the last 24 hours
+/// priority (as a chip, like the Events page's) and measure, the time spent on it (and its sub-goals) in the last 24 hours
 /// and 7 days up to the last compaction, which is noted at the top, and
 /// its last 8 days' ratings, with its sub-goals indented under it. A goal
 /// with sub-goals starts collapsed, saying how many it has; tapping its
@@ -33,13 +35,12 @@ import '../widgets/status_message.dart';
 /// going with it, until "Done". The filter at the top right picks which
 /// statuses are shown: proposed, active and inactive goals to start with.
 /// The menu beside it picks what each goal shows under its name: its
-/// time spent, its measure, its time as a share of each window, or its
-/// events' priority ([GoalSummary]), kept on the device.
+/// time spent, its measure, or its time as a share of each window
+/// ([GoalSummary]), kept on the device.
 /// Only active goals take up a calendar label; the others keep their
-/// history. Tapping a goal shows its measure and how it's doing by it, and
-/// lets one edit it ([showMeasureDialog]) -- or, while each goal shows
-/// its event properties, those, to set or clear
-/// ([showEventPropertiesDialog]); tapping its ratings shows its
+/// history. Tapping a goal shows its priority, its measure and how it's
+/// doing by it, and its color, from which each can be edited
+/// ([showGoalSummaryDialog]); tapping its ratings shows its
 /// history; its menu adds a sub-goal, or shows its measure, history or
 /// details: all its properties, which can be changed, its status included.
 /// "+" adds a top-level goal.
@@ -334,28 +335,20 @@ class _GoalsScreenState extends State<GoalsScreen> {
     }
   }
 
-  /// Shows [goal]'s measure, from which it can be edited, and its
-  /// history or details opened.
-  Future<void> _measure(Goal goal) => showMeasureDialog(
+  /// Shows [goal]'s priority, measure, how it's doing and color, from
+  /// which each can be edited, and its history or details opened.
+  Future<void> _show(Goal goal) => showGoalSummaryDialog(
     context,
     goal,
+    goals: _goals?.goals ?? const [],
     goalNames: {
       for (final goal in _goals?.goals ?? const <Goal>[])
         goal.id: goalName(goal),
     },
     save: _update,
-    goals: _allGoals,
+    onEditMeasure: (goal) =>
+        showEditMeasureDialog(context, goal, save: _update, goals: _allGoals),
     onHistory: _history,
-    onDetails: _open,
-  );
-
-  /// Shows the priority and color [goal] gives its events,
-  /// from which each can be set or cleared, and its details opened.
-  Future<void> _eventProperties(Goal goal) => showEventPropertiesDialog(
-    context,
-    goal,
-    goals: _goals?.goals ?? const [],
-    save: _update,
     onDetails: _open,
   );
 
@@ -565,6 +558,37 @@ class _GoalsScreenState extends State<GoalsScreen> {
       for (final goal in withStatus)
         if (!underCollapsed(goal)) goal,
     ];
+    // Each goal's ancestors, from the top, whose bands it carries.
+    List<Goal> ancestorsOf(Goal goal) {
+      final chain = <Goal>[];
+      for (
+        var parent = byId[goal.parentId];
+        parent != null && !chain.contains(parent);
+        parent = byId[parent.parentId]
+      ) {
+        chain.insert(0, parent);
+      }
+      return chain;
+    }
+
+    final ancestors = [for (final goal in shown) ancestorsOf(goal)];
+    // The divider above the [i]th goal leaves the bands it shares with the
+    // goal above it unbroken.
+    int sharedAbove(int i) {
+      if (i == 0) return 0;
+      final above = [...ancestors[i - 1], shown[i - 1]];
+      var shared = 0;
+      while (shared < ancestors[i].length &&
+          shared < above.length &&
+          ancestors[i][shared] == above[shared]) {
+        shared++;
+      }
+      return shared;
+    }
+
+    Widget divider(int i) =>
+        Divider(height: 1, indent: sharedAbove(i) * goalBandWidth);
+
     if (_reordering) {
       return ReorderableListView.builder(
         buildDefaultDragHandles: false,
@@ -583,9 +607,11 @@ class _GoalsScreenState extends State<GoalsScreen> {
           key: ValueKey(shown[i].id),
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (i > 0) const Divider(height: 1),
+            if (i > 0) divider(i),
             _GoalTile(
               goal: shown[i],
+              ancestors: ancestors[i],
+              joined: sharedAbove(i),
               goalNames: names,
               subGoals: subGoals[shown[i].id] ?? 0,
               expanded: _expanded.contains(shown[i].id),
@@ -646,7 +672,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
           time: overall?.timeFor(_shown) ?? goals.timeFor(_shown),
           summary: _summary,
           goalNames: names,
-          onTap: overall == null ? null : () => _measure(overall),
+          onTap: overall == null ? null : () => _show(overall),
           onHistory: overall == null ? null : () => _history(overall),
         ),
         if (shown.isEmpty)
@@ -655,9 +681,11 @@ class _GoalsScreenState extends State<GoalsScreen> {
             text: 'No goals with these statuses.',
           ),
         for (final (i, goal) in shown.indexed) ...[
-          if (i > 0) const Divider(height: 1),
+          if (i > 0) divider(i),
           _GoalTile(
             goal: goal,
+            ancestors: ancestors[i],
+            joined: sharedAbove(i),
             goalNames: names,
             shownStatuses: _shown,
             summary: _summary,
@@ -675,13 +703,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
               final save when save.refused => save.lastError,
               final save => '${save.lastError}. Trying again soon',
             },
-            onTap: switch ((_failed(goal.id), _summary)) {
-              (_?, _) => () => _open(goal),
-              (null, GoalSummary.eventProperties) => () => _eventProperties(
-                goal,
-              ),
-              (null, _) => () => _measure(goal),
-            },
+            onTap: _failed(goal.id) == null
+                ? () => _show(goal)
+                : () => _open(goal),
             onDetails: () => _open(goal),
             onRetry: () => widget.outbox.retry(goal.id!),
             onDiscard: () => _discard(goal.id!),
@@ -741,14 +765,11 @@ enum GoalSummary {
   /// days: "9h in 24h · 10h in 7d".
   time('Time spent'),
 
-  /// What its measure rates: "10h per 7 days".
-  measure('Measure'),
-
   /// Its time as a share of each window: "37.5% of 24h · 6% of 7d".
   percent('Time as a percentage'),
 
-  /// What's set on it for its events: "Priority 2".
-  eventProperties('Event properties');
+  /// What its measure rates: "10h per 7 days".
+  measure('Measure');
 
   const GoalSummary(this.label);
 
@@ -789,41 +810,23 @@ class _SummaryPicker extends StatelessWidget {
   }
 }
 
-/// An active goal's flag: solid in its own color if it has one; otherwise
-/// an outline in the color it inherits, from its parent or its priority.
-class GoalFlag extends StatelessWidget {
-  const GoalFlag({super.key, required this.goal});
+/// How wide each goal's band is, down the left of the Goals page: also
+/// how far each level of sub-goals is indented, its band beside its
+/// parent's.
+const goalBandWidth = 6.0;
 
-  final Goal goal;
+/// How long each dash of a dashed band is, and each gap between.
+const _dash = 5.0;
 
-  @override
-  Widget build(BuildContext context) {
-    if (parseColor(goal.backgroundColor) case final own?) {
-      return Icon(Icons.flag, color: own);
-    }
-    return Icon(
-      Icons.outlined_flag,
-      color: parseColor(goal.effectiveColor) ?? Theme.of(context).hintColor,
-    );
-  }
-}
-
-/// Each status's icon.
-const _statusIcons = {
-  'proposed': Icons.lightbulb_outline,
-  'active': Icons.flag,
-  'inactive': Icons.pause_circle_outline,
-  'completed': Icons.check_circle_outline,
-  'archived': Icons.inventory_2_outlined,
-  'deleted': Icons.delete_outline,
-};
-
-/// The width of the expand arrow before a goal's flag.
-const _arrowWidth = 32.0;
+/// How far a goal's band juts out to say it has sub-goals: as an arrow,
+/// collapsed. (Expanded, it widens down over its sub-goals' bands.)
+const _bandTip = 8.0;
 
 class _GoalTile extends StatelessWidget {
   const _GoalTile({
     required this.goal,
+    this.ancestors = const [],
+    this.joined = 0,
     this.goalNames = const {},
     this.shownStatuses,
     this.summary = GoalSummary.time,
@@ -855,6 +858,13 @@ class _GoalTile extends StatelessWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onDiscard;
 
+  /// Its ancestors, from the top: their bands run down beside its own.
+  final List<Goal> ancestors;
+
+  /// How many of [ancestors]' bands it shares with the row above, which
+  /// run on up over the divider between them.
+  final int joined;
+
   /// Every goal's name, by id, to say whose events it's measured by.
   final Map<String?, String> goalNames;
 
@@ -871,10 +881,11 @@ class _GoalTile extends StatelessWidget {
   /// Whether its sub-goals are shown.
   final bool expanded;
 
-  /// Shows or hides its sub-goals: its arrow and its flag do this.
+  /// Shows or hides its sub-goals: swiping it right does this.
   final VoidCallback onToggle;
 
-  /// Shows its measure: tapping it, or "Measure" in its menu.
+  /// Opens it, to see and edit its priority, measure and color: tapping
+  /// it, or "Edit" in its menu.
   final VoidCallback? onTap;
 
   /// Shows its details: "Details" in its menu.
@@ -914,7 +925,6 @@ class _GoalTile extends StatelessWidget {
         goalNames: goalNames,
       ),
       (GoalSummary.measure, null) => null,
-      (GoalSummary.eventProperties, _) => describeEventProperties(goal),
       _ => switch (filtered ?? (goal.minutes24h, goal.minutes7d)) {
         (final int day, final int week) => describeTime(
           day,
@@ -925,55 +935,34 @@ class _GoalTile extends StatelessWidget {
         _ => null,
       },
     };
-    final flag = Tooltip(
-      message: goalStatuses[goal.status] ?? goal.status,
-      child: goal.active
-          ? GoalFlag(goal: goal)
-          : Icon(
-              _statusIcons[goal.status] ?? Icons.outlined_flag,
-              color: theme.hintColor,
-            ),
-    );
-    return ListTile(
-      contentPadding: EdgeInsetsDirectional.only(
-        start: 4.0 + 24.0 * goal.depth,
-        end: 4,
-      ),
-      leading: subGoals > 0
-          // The arrow and the flag together show or hide its sub-goals.
-          ? Tooltip(
-              message: '${expanded ? 'Collapse' : 'Expand'} ${goalName(goal)}',
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: onToggle,
-                child: SizedBox(
-                  height: 40,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: _arrowWidth,
-                        child: Icon(
-                          expanded ? Icons.expand_more : Icons.chevron_right,
-                        ),
-                      ),
-                      flag,
-                      const SizedBox(width: 4),
-                    ],
-                  ),
+    // Its own priority, filled; else the one it inherits, outlined. Only
+    // an active goal's events take one.
+    final priority = goal.active ? goal.effectivePriority : null;
+    final bands = [
+      for (final goal in [...ancestors, goal]) _bandOf(context, goal),
+    ];
+    final listTile = ListTile(
+      contentPadding: const EdgeInsetsDirectional.only(start: 8, end: 4),
+      // Its priority after its name, as the Events page puts it after an
+      // event's summary.
+      title: Text.rich(
+        TextSpan(
+          text: goalName(goal),
+          children: [
+            if (priority != null) ...[
+              const TextSpan(text: ' '),
+              WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: PriorityChip(
+                  priority: priority,
+                  own: goal.priority != null,
                 ),
               ),
-            )
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Lines up with the arrows' flags.
-                const SizedBox(width: _arrowWidth),
-                flag,
-                const SizedBox(width: 4),
-              ],
-            ),
-      title: Text(goalName(goal), style: faded),
+            ],
+          ],
+        ),
+        style: faded,
+      ),
       subtitle: details.isEmpty && shown == null
           ? null
           : Text(
@@ -1059,16 +1048,284 @@ class _GoalTile extends StatelessWidget {
               },
               itemBuilder: (context) => const [
                 PopupMenuItem(value: 'sub', child: Text('Add sub-goal')),
-                PopupMenuItem(value: 'measure', child: Text('Measure')),
+                PopupMenuItem(value: 'measure', child: Text('Edit')),
                 PopupMenuItem(value: 'history', child: Text('History')),
                 PopupMenuItem(value: 'details', child: Text('Details')),
               ],
             ),
         ],
       ),
+    );
+    final parent = subGoals > 0;
+    final bandsWidth = goalBandWidth * bands.length + _bandTip;
+    final tile = InkWell(
       onTap: saving ? null : onTap,
       onLongPress: saving ? null : onLongPress,
+      // The row is as tall as its text; the bands are drawn down beside it.
+      child: Stack(
+        children: [
+          Padding(
+            padding: EdgeInsetsDirectional.only(start: bandsWidth),
+            child: listTile,
+          ),
+          PositionedDirectional(
+            start: 0,
+            top: 0,
+            bottom: 0,
+            width: bandsWidth,
+            // Not a tooltip: on a phone, one opens on the long press that
+            // starts reordering.
+            child: Semantics(
+              label: parent
+                  ? '${expanded ? 'Expanded' : 'Collapsed'}: swipe right to '
+                        '${expanded ? 'collapse' : 'expand'}'
+                  : null,
+              child: GoalBands(
+                bands: bands,
+                joined: joined,
+                shape: !parent
+                    ? GoalBandShape.plain
+                    : expanded
+                    ? GoalBandShape.expanded
+                    : GoalBandShape.collapsed,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
+    // Swiping it right shows or hides its sub-goals, if it has any.
+    return parent && !saving && dragIndex == null
+        ? _SwipeRight(onSwipe: onToggle, child: tile)
+        : tile;
+  }
+
+  /// [goal]'s band: its own color, solid, or the one it inherits, dashed.
+  /// Only an active goal's is in color.
+  static GoalBand _bandOf(BuildContext context, Goal goal) {
+    final own = parseColor(goal.backgroundColor);
+    final color = goal.active ? own ?? parseColor(goal.effectiveColor) : null;
+    return GoalBand(
+      color: color ?? Theme.of(context).colorScheme.outlineVariant,
+      dashed: own == null || !goal.active,
+    );
+  }
+}
+
+/// [child], which follows a finger dragging it right, a little, and springs
+/// back; dragged far enough, or flicked, it calls [onSwipe].
+class _SwipeRight extends StatefulWidget {
+  const _SwipeRight({required this.onSwipe, required this.child});
+
+  final VoidCallback onSwipe;
+  final Widget child;
+
+  @override
+  State<_SwipeRight> createState() => _SwipeRightState();
+}
+
+class _SwipeRightState extends State<_SwipeRight> {
+  /// How far it's been dragged right, up to [_far].
+  double _dx = 0;
+
+  /// How far a drag has to go to count, and as far as the row follows it.
+  static const _far = 48.0;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onHorizontalDragUpdate: (details) =>
+        setState(() => _dx = (_dx + details.delta.dx).clamp(0, _far)),
+    onHorizontalDragEnd: (details) {
+      if (_dx >= _far || (details.primaryVelocity ?? 0) > 600) {
+        widget.onSwipe();
+      }
+      setState(() => _dx = 0);
+    },
+    onHorizontalDragCancel: () => setState(() => _dx = 0),
+    child: AnimatedContainer(
+      duration: _dx == 0 ? const Duration(milliseconds: 150) : Duration.zero,
+      transform: Matrix4.translationValues(_dx, 0, 0),
+      child: widget.child,
+    ),
+  );
+}
+
+/// One goal's band: its color, and whether it's dashed, for one inherited.
+class GoalBand {
+  const GoalBand({required this.color, required this.dashed});
+
+  final Color color;
+  final bool dashed;
+
+  @override
+  bool operator ==(Object other) =>
+      other is GoalBand && other.color == color && other.dashed == dashed;
+
+  @override
+  int get hashCode => Object.hash(color, dashed);
+}
+
+/// How a goal's own band ends: plainly, with no sub-goals; as an arrow
+/// pointing right, its sub-goals hidden; or slanting down to them, shown.
+enum GoalBandShape { plain, collapsed, expanded }
+
+/// A goal's [bands] side by side down the left of its row: its
+/// ancestors', then its own, shaped as [shape] says. The first [joined]
+/// run on up over the divider above, which they share with the row there.
+///
+/// Dashes are laid out from the top of the list, not of the row, so a
+/// dashed band runs evenly down every row it's in.
+class GoalBands extends LeafRenderObjectWidget {
+  const GoalBands({
+    super.key,
+    required this.bands,
+    required this.shape,
+    required this.joined,
+  });
+
+  final List<GoalBand> bands;
+  final GoalBandShape shape;
+  final int joined;
+
+  @override
+  RenderGoalBands createRenderObject(BuildContext context) => RenderGoalBands(
+    bands: bands,
+    shape: shape,
+    joined: joined,
+    scroll: Scrollable.maybeOf(context)?.position,
+  );
+
+  @override
+  void updateRenderObject(BuildContext context, RenderGoalBands renderObject) =>
+      renderObject
+        ..bands = bands
+        ..shape = shape
+        ..joined = joined
+        ..scroll = Scrollable.maybeOf(context)?.position
+        // Rows above may have grown or shrunk, moving this one without
+        // repainting it, which would leave its dashes out of step.
+        ..markNeedsPaint();
+}
+
+/// Lays out and paints [GoalBands].
+class RenderGoalBands extends RenderBox {
+  RenderGoalBands({
+    required this._bands,
+    required this._shape,
+    required this._joined,
+    required this.scroll,
+  });
+
+  /// The list's scrolling, to find where in the list the row is.
+  ScrollPosition? scroll;
+
+  List<GoalBand> _bands;
+  set bands(List<GoalBand> value) {
+    if (listEquals(value, _bands)) return;
+    _bands = value;
+    markNeedsPaint();
+  }
+
+  GoalBandShape _shape;
+  set shape(GoalBandShape value) {
+    if (value == _shape) return;
+    _shape = value;
+    markNeedsPaint();
+  }
+
+  int _joined;
+  set joined(int value) {
+    if (value == _joined) return;
+    _joined = value;
+    markNeedsPaint();
+  }
+
+  @override
+  bool get sizedByParent => true;
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => constraints.biggest;
+
+  /// How far the row's top is from the list's: where it sits in the
+  /// viewport, plus how far that's scrolled. Rows painted at different
+  /// scrolls agree on it.
+  double get _top {
+    final viewport = RenderAbstractViewport.maybeOf(this);
+    final scroll = this.scroll;
+    if (viewport == null || scroll == null || !scroll.hasPixels) return 0;
+    return localToGlobal(Offset.zero, ancestor: viewport).dy + scroll.pixels;
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final canvas = context.canvas;
+    final h = size.height;
+    final top = _top;
+    canvas.save();
+    canvas.translate(offset.dx, offset.dy);
+    // Dashes [from] to [to] across, [y0] to [h] down, as the [column]th
+    // band's: every other band's are offset by one, so dashed bands side
+    // by side make a checkerboard, each level apart from the next.
+    void dashes(Paint paint, int column, double from, double to, double y0) {
+      const period = 2 * _dash;
+      var y = -(top % period) + (column.isOdd ? _dash : 0) - period;
+      for (; y < h; y += period) {
+        final rect = Rect.fromLTRB(from, y, to, y + _dash);
+        if (rect.bottom > y0) {
+          canvas.drawRect(
+            rect.intersect(Rect.fromLTRB(from, y0, to, h)),
+            paint,
+          );
+        }
+      }
+    }
+
+    for (final (i, band) in _bands.indexed) {
+      final x0 = goalBandWidth * i;
+      final x1 = x0 + goalBandWidth;
+      // Over the divider above, if it's shared with the row there.
+      final y0 = i < _joined ? -1.0 : 0.0;
+      final paint = Paint()..color = band.color;
+      final shape = i == _bands.length - 1 ? _shape : GoalBandShape.plain;
+      if (band.dashed) {
+        dashes(paint, i, x0, x1, y0);
+      } else {
+        canvas.drawRect(Rect.fromLTRB(x0, y0, x1, h), paint);
+      }
+      switch (shape) {
+        case GoalBandShape.plain:
+          break;
+        case GoalBandShape.collapsed:
+          // An arrow pointing right, as tall as the row, always solid:
+          // dashed, it'd be too faint to see.
+          final mid = h / 2;
+          canvas.drawPath(
+            Path()
+              ..moveTo(x1, 0)
+              ..lineTo(x1 + _bandTip, mid)
+              ..lineTo(x1, h)
+              ..close(),
+            paint,
+          );
+        case GoalBandShape.expanded:
+          // Widening down over where its sub-goals' bands start, dashed as
+          // the next band's would be.
+          final slant = Path()
+            ..moveTo(x1, 0)
+            ..lineTo(x1 + goalBandWidth, h)
+            ..lineTo(x1, h)
+            ..close();
+          if (!band.dashed) {
+            canvas.drawPath(slant, paint);
+          } else {
+            canvas.save();
+            canvas.clipPath(slant);
+            dashes(paint, i + 1, x1, x1 + goalBandWidth, 0);
+            canvas.restore();
+          }
+      }
+    }
+    canvas.restore();
   }
 }
 
@@ -1245,8 +1502,6 @@ class _OverallCard extends StatelessWidget {
     };
     final shown = switch ((summary, time)) {
       (GoalSummary.measure, _) => measure,
-      (GoalSummary.eventProperties, _) =>
-        goal == null ? null : describeEventProperties(goal),
       (_, (final day, final week)) =>
         '${describeTime(day, week, asPercent: summary == GoalSummary.percent)!} '
             'on the goals shown',
@@ -1302,14 +1557,6 @@ String formatTimestamp(BuildContext context, DateTime time) {
   return '${strings.formatShortDate(local)}, '
       '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
 }
-
-/// The priority set on [goal] for its events: "Priority 2". One it
-/// inherits is left out, so what's set on it stands out. Null if none is
-/// set.
-String? describeEventProperties(Goal goal) => switch (goal.priority) {
-  final priority? => 'Priority $priority',
-  null => null,
-};
 
 /// [day] and [week] minutes as "9h in 24h · 10h in 7d", or with
 /// [asPercent], as shares of each window: "37.5% of 24h · 6% of 7d". With
