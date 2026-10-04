@@ -80,10 +80,43 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Last compacted Oct 2, 2026, 9:05 PM'), findsOneWidget);
+    expect(find.text('Done with dinner'), findsOneWidget);
+    expect(find.text('8:30 PM'), findsOneWidget);
+    // Above the line, and the notes since below it.
+    final line = tester.getTopLeft(
+      find.text('Last compacted Oct 2, 2026, 9:05 PM'),
+    );
     expect(
-      find.text(
-        'Latest compacted note: Oct 2, 2026, 8:30 PM · Done with dinner',
+      tester.getTopLeft(find.text('Done with dinner')).dy,
+      lessThan(line.dy),
+    );
+    expect(tester.getTopLeft(find.text('Started')).dy, greaterThan(line.dy));
+  });
+
+  screenTest('can\'t change the latest compacted note', (tester) async {
+    await tester.pumpWidget(
+      app(
+        InMemoryNotesRepository(
+          [],
+          CompactionStatus(
+            lastCompaction: DateTime(2026, 10, 2, 21, 5),
+            latestCompacted: Note(
+              id: 'c',
+              timestamp: DateTime(2026, 10, 2, 20, 30),
+              description: 'Done with dinner',
+              compactionId: 'c1',
+            ),
+          ),
+        ),
       ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Done with dinner'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit note'), findsNothing);
+    expect(
+      find.text('No uncompacted notes.\nTap + to add one.'),
       findsOneWidget,
     );
   });

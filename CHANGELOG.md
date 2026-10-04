@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.12.0
+
+- The Notes page shows the latest compacted note above the notes since,
+  smaller and muted with a calendar mark, and under it a dashed line, as
+  on the Events page, for when notes were last compacted.
+
 ## 4.11.0
 
 - On the Events page, the days slide: drag left or right and the next
