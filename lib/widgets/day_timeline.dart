@@ -17,19 +17,33 @@ const defaultTimelineScale = 1.5;
 /// Space above midnight and below the next, so their labels fit.
 const _pad = 12.0;
 
-/// The column of times, then the band of priorities, then the gutter the
-/// leaders of moved events are drawn in, then the events.
+/// The column of times, then the band of priorities, [_bandPadding] in
+/// from either side of its column, then the band of events, then the
+/// gutter each event's color fills from its piece of the band to it,
+/// then the events. Where an event is drawn at its times, its band, that
+/// fill and the strip down its edge make a bar as wide as the priority
+/// band, as far from it as its padding.
 const _timeWidth = 64.0;
 const _bandWidth = 24.0;
-const _gutterWidth = 16.0;
-const _cardsLeft = _timeWidth + _bandWidth + _gutterWidth;
+const _bandPadding = 2.0;
+const _gutterWidth = 8.0;
+const _eventBandLeft = _timeWidth + _bandWidth + _bandPadding;
+const _eventBandWidth =
+    _bandWidth - 2 * _bandPadding - _gutterWidth - _stripWidth;
+const _cardsLeft = _eventBandLeft + _eventBandWidth + _gutterWidth;
 
-/// The space each event leaves above and below it, inside where it's
-/// placed, so ones end to end stay apart.
-const _cardInset = 1.5;
+/// How wide the line round each event is, in its color.
+const _outlineWidth = 1.25;
+
+/// How faint a cancelled event's band and outline are.
+const _cancelledAlpha = 0.4;
 
 /// The colored strip down an event's left edge.
 const _stripWidth = 4.0;
+
+/// How round an event's corners on the right are, where it meets no
+/// other.
+const _cardRadius = 8.0;
 
 /// The padding inside an event, around its text.
 const _cardPadding = EdgeInsets.fromLTRB(8, 4, 8, 4);
@@ -210,6 +224,19 @@ List<PriorityRun> priorityRuns(
   return runs;
 }
 
+/// The color [event] is shown in: its primary goal's, if [goals] has it
+/// and it has one, or else its priority's.
+Color eventColor(Event event, Map<String, Goal> goals) {
+  final goal = switch (event.goalIds) {
+    [final id, ...] => goals[id],
+    _ => null,
+  };
+  return (goal == null
+          ? null
+          : parseColor(goal.effectiveColor ?? goal.backgroundColor)) ??
+      priorityColor(event.effectivePriority);
+}
+
 /// Picks which of [candidates] to show, [height] tall at [top]: each in
 /// turn, unless it'd overlap one already picked. So the ones first win.
 List<T> placeLabels<T>(
@@ -234,14 +261,17 @@ List<T> placeLabels<T>(
 /// first, then the hours, as many as fit. Beside them, a band in the
 /// color of the priority of the most important event going on, clear
 /// where nothing is, labeled "P0" to "P3" where each run of it starts and
-/// stops. Then each event: its summary, then a line for each of its
-/// goals, the primary goal first, each after a diamond in the goal's
-/// color ([goals] gives them; one not among them gets an outline).
+/// stops. Beside that, a band as wide of the events, each where its
+/// times put it, in its [eventColor]. Then each event: its summary, then
+/// a line for each of its goals, the primary goal first, each after a
+/// diamond in the goal's color ([goals] gives them; one not among them
+/// gets an outline). Its color fills the gutter from its piece of the
+/// band to it, and a thin line of it runs round it.
 ///
 /// An event too short for that is drawn as tall as its text needs: the
 /// strip down its edge is solid only as far as it lasts, dashed below,
 /// and it says how long it is. One pushed down by the event above it is
-/// joined to where it truly is by a line from a bracket in the gutter.
+/// joined to where it truly is by that fill from the band.
 /// [now] and the [lastCompaction], if they're in the day, are marked
 /// with lines across, under the events; zoomed in past the
 /// [defaultTimelineScale], they're labeled "now" and "last compacted"
@@ -319,7 +349,6 @@ class DayTimeline extends StatelessWidget {
         _cardPadding.vertical +
         summaryLine +
         event.goalIds.length * goalLine +
-        2 * _cardInset +
         // Slack for rounding, so the text never overflows.
         2;
 
@@ -379,6 +408,7 @@ class DayTimeline extends StatelessWidget {
       dayEnd: dayEnd,
       scale: scale,
       events: events,
+      goals: goals,
       runs: runs,
       placements: placements,
       timeLabel: (t) =>
@@ -393,7 +423,6 @@ class DayTimeline extends StatelessWidget {
       markers: markers,
       edgeColor: colors.onSurface,
       coverColor: theme.scaffoldBackgroundColor,
-      leaderColor: colors.outline,
     );
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -427,28 +456,29 @@ class DayTimeline extends StatelessWidget {
                 height: height,
                 child: Stack(
                   children: [
-                    for (final placement in placements)
+                    for (final (i, placement) in placements.indexed)
                       Positioned(
                         left: _cardsLeft,
                         top: placement.top,
                         width: cardWidth,
                         height: placement.bottom - placement.top,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: _cardInset,
-                          ),
-                          child: _EventCard(
-                            placement: placement,
-                            goals: goals,
-                            styles: styles,
-                            onTap: onTap == null
-                                ? null
-                                : () => onTap!(placement.event),
-                            timeLabel: (t) => MaterialLocalizations.of(context)
-                                .formatTimeOfDay(
-                                  TimeOfDay.fromDateTime(t.toLocal()),
-                                ),
-                          ),
+                        child: _EventCard(
+                          placement: placement,
+                          joinedAbove:
+                              i > 0 &&
+                              placements[i - 1].bottom >= placement.top,
+                          joinedBelow:
+                              i + 1 < placements.length &&
+                              placements[i + 1].top <= placement.bottom,
+                          goals: goals,
+                          styles: styles,
+                          onTap: onTap == null
+                              ? null
+                              : () => onTap!(placement.event),
+                          timeLabel: (t) => MaterialLocalizations.of(context)
+                              .formatTimeOfDay(
+                                TimeOfDay.fromDateTime(t.toLocal()),
+                              ),
                         ),
                       ),
                   ],
@@ -511,6 +541,8 @@ class _CardStyles {
 class _EventCard extends StatelessWidget {
   const _EventCard({
     required this.placement,
+    required this.joinedAbove,
+    required this.joinedBelow,
     required this.goals,
     required this.styles,
     required this.onTap,
@@ -518,6 +550,13 @@ class _EventCard extends StatelessWidget {
   });
 
   final TimelinePlacement placement;
+
+  /// Whether the event before it ends where it starts, and the one after
+  /// starts where it ends. Where two meet, the corners are square and
+  /// only the lower one's outline is drawn, so the line between them is
+  /// no thicker than the rest.
+  final bool joinedAbove;
+  final bool joinedBelow;
   final Map<String, Goal> goals;
   final _CardStyles styles;
   final VoidCallback? onTap;
@@ -540,7 +579,10 @@ class _EventCard extends StatelessWidget {
     };
     final ids = event.goalIds;
     final names = event.goalNames;
-    final primary = ids.isEmpty ? null : _colorOf(ids.first);
+    final color = eventColor(event, goals);
+    final outline = cancelled
+        ? color.withValues(alpha: _cancelledAlpha)
+        : color;
     final muted = colors.onSurfaceVariant;
     final strike = cancelled ? TextDecoration.lineThrough : null;
     final duration = formatDuration(event.end.difference(event.start));
@@ -553,97 +595,164 @@ class _EventCard extends StatelessWidget {
       excludeSemantics: true,
       child: Material(
         color: colors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(8),
+        // Square on the left, where its fill from the band meets it, and
+        // where it meets another event.
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.only(
+            topRight: Radius.circular(joinedAbove ? 0 : _cardRadius),
+            bottomRight: Radius.circular(joinedBelow ? 0 : _cardRadius),
+          ),
+        ),
         clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              CustomPaint(
-                size: const Size(_stripWidth, double.infinity),
-                painter: _StripPainter(
-                  solidFrom: placement.trueTop - placement.top - _cardInset,
-                  solidTo: placement.trueBottom - placement.top - _cardInset,
-                  color: primary ?? colors.outline,
+        child: CustomPaint(
+          foregroundPainter: _OutlinePainter(
+            color: outline,
+            topRadius: joinedAbove ? 0 : _cardRadius,
+            bottomRadius: joinedBelow ? 0 : _cardRadius,
+            bottom: !joinedBelow,
+          ),
+          child: InkWell(
+            onTap: onTap,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                CustomPaint(
+                  size: const Size(_stripWidth, double.infinity),
+                  painter: _StripPainter(
+                    solidFrom: placement.trueTop - placement.top,
+                    solidTo: placement.trueBottom - placement.top,
+                    color: outline,
+                  ),
                 ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: _cardPadding,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              summary,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: styles.summary?.copyWith(
-                                color: cancelled ? muted : null,
-                                decoration: strike,
-                              ),
-                            ),
-                          ),
-                          if (duration != null)
-                            // Square-cornered when it's drawn taller than
-                            // it lasts; open at the top when it's drawn
-                            // shorter, having started above.
-                            _Chip(
-                              text: duration,
-                              style: styles.chip?.copyWith(color: muted),
-                              border: colors.outline,
-                              shape: placement.compressed
-                                  ? _ChipShape.square
-                                  : placement.shortened
-                                  ? _ChipShape.openTop
-                                  : _ChipShape.rounded,
-                            ),
-                          _Chip(
-                            text: 'P$priority',
-                            style: styles.chip?.copyWith(
-                              color: Colors.black87,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            fill: priorityColor(priority),
-                            border: priorityColor(priority),
-                          ),
-                        ],
-                      ),
-                      for (final (i, id) in ids.indexed)
+                Expanded(
+                  child: Padding(
+                    padding: _cardPadding,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Row(
                           children: [
-                            _Diamond(color: _colorOf(id), outline: muted),
-                            const SizedBox(width: 6),
                             Expanded(
                               child: Text(
-                                switch (goals[id]) {
-                                  final goal? => goalName(goal),
-                                  null =>
-                                    (i < names.length ? names[i] : null) ?? id,
-                                },
+                                summary,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: styles.goal?.copyWith(
-                                  color: muted,
+                                style: styles.summary?.copyWith(
+                                  color: cancelled ? muted : null,
                                   decoration: strike,
                                 ),
                               ),
                             ),
+                            if (duration != null)
+                              // Square-cornered when it's drawn taller than
+                              // it lasts; open at the top when it's drawn
+                              // shorter, having started above.
+                              _Chip(
+                                text: duration,
+                                style: styles.chip?.copyWith(color: muted),
+                                border: colors.outline,
+                                shape: placement.compressed
+                                    ? _ChipShape.square
+                                    : placement.shortened
+                                    ? _ChipShape.openTop
+                                    : _ChipShape.rounded,
+                              ),
+                            _Chip(
+                              text: 'P$priority',
+                              style: styles.chip?.copyWith(
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              fill: priorityColor(priority),
+                              border: priorityColor(priority),
+                            ),
                           ],
                         ),
-                    ],
+                        for (final (i, id) in ids.indexed)
+                          Row(
+                            children: [
+                              _Diamond(color: _colorOf(id), outline: muted),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  switch (goals[id]) {
+                                    final goal? => goalName(goal),
+                                    null =>
+                                      (i < names.length ? names[i] : null) ??
+                                          id,
+                                  },
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: styles.goal?.copyWith(
+                                    color: muted,
+                                    decoration: strike,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// The outline round an event, in [color], inside its edge so it's no
+/// taller than its piece of the band: square on the left, where the fill
+/// from the band meets it, its top right corner [topRadius] round and
+/// its bottom right [bottomRadius]; and with no [bottom] edge where the
+/// event after it starts, whose top edge is drawn there instead.
+class _OutlinePainter extends CustomPainter {
+  _OutlinePainter({
+    required this.color,
+    required this.topRadius,
+    required this.bottomRadius,
+    required this.bottom,
+  });
+
+  final Color color;
+  final double topRadius;
+  final double bottomRadius;
+  final bool bottom;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = (Offset.zero & size).deflate(_outlineWidth / 2);
+    final top = Radius.circular(math.max(0, topRadius - _outlineWidth / 2));
+    final low = Radius.circular(math.max(0, bottomRadius - _outlineWidth / 2));
+    final path = Path()
+      ..moveTo(rect.left, bottom ? rect.bottom : size.height)
+      ..lineTo(rect.left, rect.top)
+      ..lineTo(rect.right - top.x, rect.top)
+      ..arcToPoint(Offset(rect.right, rect.top + top.y), radius: top)
+      ..lineTo(rect.right, bottom ? rect.bottom - low.y : size.height);
+    if (bottom) {
+      path
+        ..arcToPoint(Offset(rect.right - low.x, rect.bottom), radius: low)
+        ..lineTo(rect.left, rect.bottom);
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = _outlineWidth,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_OutlinePainter old) =>
+      old.color != color ||
+      old.topRadius != topRadius ||
+      old.bottomRadius != bottomRadius ||
+      old.bottom != bottom;
 }
 
 /// How a [_Chip]'s outline is drawn.
@@ -971,14 +1080,15 @@ class _AxisPainter extends CustomPainter {
 
 /// The rail down the left edge, under the events and over the
 /// [TimelineAxis]: the times events start and end, the priority band and
-/// its labels, and the leaders from moved events to where they truly
-/// are. It covers the axis' times its labels would overlap.
+/// its labels, and the band of events, with the fill from each piece of
+/// it to its event. It covers the axis' times its labels would overlap.
 class _RailPainter extends CustomPainter {
   _RailPainter({
     required this.day,
     required this.dayEnd,
     required this.scale,
     required this.events,
+    required this.goals,
     required this.runs,
     required this.placements,
     required this.timeLabel,
@@ -991,13 +1101,13 @@ class _RailPainter extends CustomPainter {
     required this.markers,
     required this.edgeColor,
     required this.coverColor,
-    required this.leaderColor,
   });
 
   final DateTime day;
   final DateTime dayEnd;
   final double scale;
   final List<Event> events;
+  final Map<String, Goal> goals;
   final List<PriorityRun> runs;
   final List<TimelinePlacement> placements;
   final String Function(DateTime) timeLabel;
@@ -1022,7 +1132,6 @@ class _RailPainter extends CustomPainter {
 
   /// The background, to cover the axis' times with.
   final Color coverColor;
-  final Color leaderColor;
 
   double _y(DateTime t) =>
       timelineOffset(t, day: day, dayEnd: dayEnd, scale: scale);
@@ -1040,9 +1149,9 @@ class _RailPainter extends CustomPainter {
     for (final run in runs) {
       canvas.drawRect(
         Rect.fromLTRB(
-          _timeWidth + 2,
+          _timeWidth + _bandPadding,
           _y(run.start),
-          _timeWidth + _bandWidth - 2,
+          _timeWidth + _bandWidth - _bandPadding,
           _y(run.end),
         ),
         Paint()..color = priorityColor(run.priority),
@@ -1050,7 +1159,7 @@ class _RailPainter extends CustomPainter {
     }
     _paintBandLabels(canvas);
     _paintTimeLabels(canvas);
-    _paintLeaders(canvas);
+    _paintEventBand(canvas);
     if (compactionY case final y?) {
       final paint = Paint()
         ..color = compactionColor
@@ -1101,9 +1210,9 @@ class _RailPainter extends CustomPainter {
     for (final label in placed) {
       final painter = _text('P${label.run.priority}', style);
       final rect = Rect.fromLTWH(
-        _timeWidth + 2,
+        _timeWidth + _bandPadding,
         label.top,
-        _bandWidth - 4,
+        _bandWidth - 2 * _bandPadding,
         labelHeight,
       );
       // On a run too short for it, it carries its own color.
@@ -1192,42 +1301,35 @@ class _RailPainter extends CustomPainter {
     }
   }
 
-  /// For each event drawn taller than its times, a bracket in the gutter
-  /// over the time it truly takes; for each pushed down, a line from
-  /// where it truly starts to it.
-  void _paintLeaders(Canvas canvas) {
-    final paint = Paint()
-      ..color = leaderColor
-      ..strokeWidth = 1.2
-      ..style = PaintingStyle.stroke;
-    const x = _timeWidth + _bandWidth + 3;
+  /// Each event's piece of the band, where its times put it, in its
+  /// color, and the same color across the gutter from it to its event,
+  /// widening or narrowing to meet the event's edge. Later events are
+  /// drawn over earlier ones they overlap.
+  void _paintEventBand(Canvas canvas) {
+    const left = _eventBandLeft;
+    const right = _eventBandLeft + _eventBandWidth;
     for (final p in placements) {
-      if (!p.compressed) {
-        // Only pushed down.
-      } else if (p.trueBottom - p.trueTop < 2) {
-        canvas.drawCircle(
-          Offset(x + 2, p.trueTop),
-          2,
-          paint..style = PaintingStyle.fill,
-        );
-        paint.style = PaintingStyle.stroke;
-      } else {
-        canvas.drawPath(
-          Path()
-            ..moveTo(x + 4, p.trueTop)
-            ..lineTo(x, p.trueTop)
-            ..lineTo(x, p.trueBottom)
-            ..lineTo(x + 4, p.trueBottom),
-          paint,
-        );
+      var color = eventColor(p.event, goals);
+      if (p.event.isCancelled) {
+        color = color.withValues(alpha: _cancelledAlpha);
       }
-      if (p.displaced) {
-        canvas.drawLine(
-          Offset(x + 4, p.trueTop),
-          Offset(_cardsLeft, p.top + 10),
-          paint,
-        );
-      }
+      // Exactly where its card is, if it's drawn at its times; and no
+      // thinner than a line, if it has none.
+      final top = p.trueTop;
+      final bottom = math.max(p.trueBottom, top + 1);
+      // Into the card's border, so no seam shows.
+      const edge = _cardsLeft + _outlineWidth / 2;
+      canvas.drawPath(
+        Path()
+          ..moveTo(left, top)
+          ..lineTo(right, top)
+          ..lineTo(edge, p.top)
+          ..lineTo(edge, p.bottom)
+          ..lineTo(right, bottom)
+          ..lineTo(left, bottom)
+          ..close(),
+        Paint()..color = color,
+      );
     }
   }
 
@@ -1236,6 +1338,7 @@ class _RailPainter extends CustomPainter {
       old.scale != scale ||
       old.day != day ||
       old.events != events ||
+      old.goals != goals ||
       old.edgeColor != edgeColor ||
       old.coverColor != coverColor ||
       old.nowY != nowY ||

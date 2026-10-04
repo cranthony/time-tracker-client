@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.6.0
+
+- On the Events page, a band beside the priority band, and as wide,
+  shows each event where its times put it, in its color: its primary
+  goal's, or else its priority's. That color fills the space from its
+  piece of the band to the event, and a thin line of it runs round the
+  event, in place of the gray bracket and line that marked where a
+  moved or stretched event truly is. A cancelled event's are faint.
+- Events that meet share one line between them, in the later one's
+  color, and their corners there are square.
+
 ## 5.5.0
 
 - Tapping a gap on the Events page's timeline (anywhere but an event)
