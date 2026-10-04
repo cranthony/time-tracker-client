@@ -253,3 +253,93 @@ String? measureProblem(Measure measure) {
   }
   return null;
 }
+
+/// [measure]'s settings, one per row, as a label and its value: ("Target",
+/// "10h"), ("Over", "7 days"), ("Events of", "This goal and its
+/// sub-goals"). Only what it sets, besides the target, look-back and whose
+/// events. Other goals are named from [goalNames] if it has them.
+List<(String, String)> describeMeasureSettings(
+  Measure measure, {
+  Map<String?, String> goalNames = const {},
+}) {
+  String days(num days) => days == 1 ? '1 day' : '$days days';
+  final interval = days(_number(measure['interval_days']) ?? 1);
+  final subGoals = measure['include_sub_goals'] != false;
+  final of = switch ((measure['events_of'], measure['goal_ids'])) {
+    (final String id, _) =>
+      '${goalNames[id] ?? 'Another goal'}'
+          '${subGoals ? ' and its sub-goals' : ' only'}',
+    // From before events_of.
+    (_, final List ids) =>
+      '${ids.map((id) => goalNames[id] ?? 'another goal').join(', ')}'
+          '${subGoals ? ', with sub-goals' : ' only'}',
+    _ => subGoals ? 'This goal and its sub-goals' : 'This goal only',
+  };
+  final zeroAtDays = switch (_number(measure['zero_at_days'])) {
+    final zero? => [('Zero at', days(zero))],
+    null => <(String, String)>[],
+  };
+  switch (measure['kind']) {
+    case 'duration':
+      final target = _number(measure['target_min']);
+      return [
+        ('Target', target == null ? 'not set' : formatMinutes(target)),
+        ('Over', interval),
+        ...zeroAtDays,
+        ('Events of', of),
+      ];
+    case 'count':
+      final noun = switch (measure['noun']) {
+        final String noun when noun.trim().isNotEmpty => noun.trim(),
+        _ => 'events',
+      };
+      final target = _number(measure['target']);
+      // "1 visit", not "1 visits".
+      final shown = target == 1 && noun.endsWith('s') && noun.length > 1
+          ? noun.substring(0, noun.length - 1)
+          : noun;
+      return [
+        ('Target', '${target ?? '?'} $shown'),
+        ('Over', interval),
+        ...zeroAtDays,
+        ('Events of', of),
+      ];
+    case 'time_constraint':
+      return [
+        (
+          'When',
+          '${measure['edge'] == 'end' ? 'Last event ends' : 'First event starts'} '
+              '${measure['when'] == 'after' ? 'not before' : 'by'} '
+              '${measure['target'] ?? '?'}',
+        ),
+        if (_number(measure['grace_min']) case final grace?)
+          ('Grace', '$grace min'),
+        if (_number(measure['zero_at_min']) case final zero?)
+          ('Zero at', '$zero min off'),
+        ('Events of', of),
+      ];
+    case 'subjective':
+      return [
+        if (measure['prompt'] case final String prompt) ('Question', prompt),
+        ('Asked', 'every ${interval == '1 day' ? 'day' : interval}'),
+      ];
+    case 'llm':
+      return [
+        if (measure['rubric'] case final String rubric) ('Rubric', rubric),
+      ];
+    case 'rollup':
+      final agg = measure['agg'] ?? 'mean';
+      return [
+        ('Combines', rollupAggregates[agg] ?? '$agg'),
+        if (agg == 'percentile')
+          if (_number(measure['percentile']) case final p?)
+            ('Percentile', _ordinal(p)),
+        if (agg == 'weighted')
+          if (measure['weights'] case final Map weights)
+            for (final MapEntry(:key, :value) in weights.entries)
+              (goalNames[key] ?? '$key', 'weight $value'),
+      ];
+    default:
+      return [];
+  }
+}

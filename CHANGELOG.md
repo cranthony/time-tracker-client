@@ -6,6 +6,19 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.3.0
+
+- Tapping a goal, or the Overall card, shows its measure: what kind it
+  is, what it rates ("10h per 7 days") and its settings, and how it's
+  doing by it: its latest rating, its last 8 days, the days gone
+  unrated and its recent time. "Edit measure" (or "Add a measure")
+  opens the measure editor over it, saying how the measure reads as you
+  change it, or what's missing. "Remove" clears it, asking first; its
+  past ratings stay.
+- A goal's details, where every property can be changed, are now under
+  "Details" in its menu, or the Measure dialog's. The menu also has
+  "Measure".
+
 ## 4.2.0
 
 - The note sheet has - and + buttons beside the time, to move it a

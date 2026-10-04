@@ -5,8 +5,10 @@ For now it shows your **uncompacted notes**, by day, and has a **+** button to
 record a new one; tap a note to change its description or time, or to
 delete it. An **Events** page, from the bar at the bottom, shows a day's
 events from your calendar; tap one to see or edit it, including the goals
-it serves. A **Goals** page lists your goals as a tree: tap one to change
-it, add a sub-goal from its menu, or move it to another status:
+it serves. A **Goals** page lists your goals as a tree: tap one to see
+its measure and how it's doing by it, and to edit the measure; its menu
+adds a sub-goal, or opens its details to change anything else, or move
+it to another status:
 proposed, active, inactive, completed, archived or deleted. Only active
 goals take up one of the calendar's event labels; the rest keep their
 history. Proposed, active and inactive goals are shown to start with,

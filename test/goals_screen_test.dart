@@ -4,6 +4,7 @@ import 'package:shared_preferences_platform_interface/in_memory_shared_preferenc
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:time_tracker_client/models/assessment.dart';
 import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/models/measure.dart';
 import 'package:time_tracker_client/screens/goal_history_screen.dart';
 import 'package:time_tracker_client/screens/goals_screen.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
@@ -38,6 +39,14 @@ void main() {
       .widgetList<ListTile>(find.byType(ListTile))
       .map((t) => (t.title as Text).data)
       .toList();
+
+  /// Opens [name]'s details from its menu; tapping it shows its measure.
+  Future<void> openDetails(WidgetTester tester, String name) async {
+    await tester.tap(find.byTooltip('More for $name'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Details'));
+    await tester.pumpAndSettle();
+  }
 
   test('Goal.fromJson reads a server from before statuses', () {
     expect(Goal.fromJson({'id': 'g', 'active': false}).status, 'inactive');
@@ -194,8 +203,7 @@ void main() {
     String name,
     String status,
   ) async {
-    await tester.tap(find.text(name));
-    await tester.pumpAndSettle();
+    await openDetails(tester, name);
     final dialog = find.byType(AlertDialog);
     final label = find.descendant(of: dialog, matching: find.text('status'));
     final row = find.ancestor(of: label, matching: find.byType(PropertyRow));
@@ -285,7 +293,7 @@ void main() {
         .widgetList<PopupMenuItem<String>>(find.byType(PopupMenuItem<String>))
         .map((i) => (i.child as Text).data)
         .toList();
-    expect(items, ['Add sub-goal', 'History', 'Details']);
+    expect(items, ['Add sub-goal', 'Measure', 'History', 'Details']);
 
     await tester.tap(find.text('Details'));
     await tester.pumpAndSettle();
@@ -531,6 +539,247 @@ void main() {
     });
   });
 
+  group('the measure dialog', () {
+    InMemoryGoalsRepository measured() => InMemoryGoalsRepository([
+      const Goal(
+        id: 'app',
+        name: 'Make an app',
+        measure: {'kind': 'duration', 'target_min': 600, 'interval_days': 7},
+        health: 88,
+        healthPeriod: '2026-09-30',
+        healthTrend: [70, null, 88],
+        staleDays: 2,
+        minutes24h: 240,
+        minutes7d: 1500,
+      ),
+      const Goal(id: 'cook', name: 'Cooking'),
+      const Goal(id: 'old', name: 'Old habit', status: 'inactive'),
+    ]);
+
+    Finder inDialog(Finder finder) =>
+        find.descendant(of: find.byType(AlertDialog).last, matching: finder);
+
+    Measure? measureOf(GoalList goals, String id) =>
+        goals.goals.firstWhere((g) => g.id == id).measure;
+
+    testWidgets("opens on tapping a goal, with its settings and how it's "
+        'doing', (tester) async {
+      await tester.pumpWidget(app(measured()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Make an app'));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('Measure')), findsOneWidget);
+      expect(inDialog(find.text('Time spent')), findsOneWidget);
+      expect(inDialog(find.text('10h per 7 days')), findsOneWidget);
+      expect(inDialog(find.text('Target')), findsOneWidget);
+      expect(
+        inDialog(find.text('This goal and its sub-goals')),
+        findsOneWidget,
+      );
+      expect(
+        inDialog(find.text('On track · last rated 2026-09-30')),
+        findsOneWidget,
+      );
+      expect(inDialog(find.byType(TrendSparkline)), findsOneWidget);
+      expect(inDialog(find.text('2 days unrated')), findsOneWidget);
+      expect(
+        inDialog(find.text('4h in 24h · 25h in 7d spent')),
+        findsOneWidget,
+      );
+      expect(inDialog(find.text('Edit measure')), findsOneWidget);
+
+      // "Details" swaps it for the goal's details.
+      await tester.tap(inDialog(find.text('Details')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(inDialog(find.text('parent_id')), findsOneWidget);
+    });
+
+    testWidgets("its goal's menu opens it too, and it opens the history", (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(measured()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('More for Make an app'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Measure'));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('10h per 7 days')), findsOneWidget);
+
+      await tester.tap(inDialog(find.text('History')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byType(GoalHistoryScreen), findsOneWidget);
+    });
+
+    testWidgets("says how a goal without a measure is rated, and that an "
+        "inactive one isn't", (tester) async {
+      await tester.pumpWidget(app(measured()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Old habit'));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('No measure of its own')), findsOneWidget);
+      expect(
+        inDialog(
+          find.text(
+            "It's rated each day as the average of its sub-goals' ratings.",
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(inDialog(find.text('Add a measure')), findsOneWidget);
+      expect(
+        inDialog(find.text('Only active goals are rated.')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('edits the measure over it, saying how it reads, then shows '
+        'it saved', (tester) async {
+      final repo = measured();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Make an app'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit measure'));
+      await tester.pumpAndSettle();
+      // Stacked over the measure dialog.
+      expect(find.byType(AlertDialog), findsNWidgets(2));
+      expect(inDialog(find.text('Reads as: 10h per 7 days')), findsOneWidget);
+      // Nothing changed yet.
+      final save = find.widgetWithText(FilledButton, 'Save');
+      expect(tester.widget<FilledButton>(save).onPressed, isNull);
+
+      await tester.enterText(find.widgetWithText(TextField, 'Target'), '12h');
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('Reads as: 12h per 7 days')), findsOneWidget);
+      await tester.tap(save);
+      await tester.pumpAndSettle();
+
+      expect(measureOf(await repo.goals(), 'app'), {
+        'kind': 'duration',
+        'target_min': 720,
+        'interval_days': 7,
+      });
+      // Back on the measure dialog, showing what was saved.
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(inDialog(find.text('12h per 7 days')), findsOneWidget);
+      expect(find.text('Saved.'), findsOneWidget);
+    });
+
+    testWidgets("can't save a measure missing what it needs, and says why", (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(measured()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Make an app'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit measure'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextField, 'Target'), '');
+      await tester.pumpAndSettle();
+
+      expect(
+        inDialog(find.text('Enter a target time, like 10h or 1h 30m.')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
+            .onPressed,
+        isNull,
+      );
+    });
+
+    testWidgets('adds a measure to a goal without one', (tester) async {
+      final repo = measured();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Cooking'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add a measure'));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('Pick a kind of measure.')), findsOneWidget);
+      // No measure to remove.
+      expect(inDialog(find.text('Remove')), findsNothing);
+      await tester.tap(find.byType(DropdownButton<String?>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Number of events').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextField, 'Target'), '3');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(measureOf(await repo.goals(), 'cook'), {
+        'kind': 'count',
+        'target': 3,
+      });
+      expect(inDialog(find.text('3 events per day')), findsOneWidget);
+    });
+
+    testWidgets('asks before removing the measure, saying its past ratings '
+        'stay', (tester) async {
+      final repo = measured();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Make an app'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit measure'));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Remove')));
+      await tester.pumpAndSettle();
+      expect(find.text('Remove the measure?'), findsOneWidget);
+      expect(
+        find.text(
+          "Make an app will be rated by the average of its sub-goals' "
+          'ratings instead. Its past ratings stay.',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Keep it'));
+      await tester.pumpAndSettle();
+      expect(measureOf(await repo.goals(), 'app'), isNotNull);
+
+      await tester.tap(inDialog(find.text('Remove')));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Remove')));
+      await tester.pumpAndSettle();
+      expect(measureOf(await repo.goals(), 'app'), isNull);
+      expect(inDialog(find.text('No measure of its own')), findsOneWidget);
+    });
+
+    testWidgets('asks before throwing away an edit', (tester) async {
+      final repo = measured();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Make an app'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit measure'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextField, 'Target'), '12h');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Discard changes?'), findsOneWidget);
+
+      await tester.tap(find.text('Discard'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(inDialog(find.text('10h per 7 days')), findsOneWidget);
+      expect(measureOf(await repo.goals(), 'app')?['target_min'], 600);
+    });
+  });
+
   testWidgets('says when notes were never compacted', (tester) async {
     await tester.pumpWidget(app(tree()));
     await tester.pumpAndSettle();
@@ -578,8 +827,7 @@ void main() {
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Hosting'));
-      await tester.pumpAndSettle();
+      await openDetails(tester, 'Hosting');
       final dialog = find.byType(AlertDialog);
       final label = find.descendant(
         of: dialog,
@@ -608,10 +856,9 @@ void main() {
     },
   );
 
-  /// Opens [goal]'s dialog, then its measure for editing.
+  /// Opens [goal]'s details, then its measure for editing.
   Future<Finder> openMeasure(WidgetTester tester, String goal) async {
-    await tester.tap(find.text(goal));
-    await tester.pumpAndSettle();
+    await openDetails(tester, goal);
     final dialog = find.byType(AlertDialog);
     final label = find.descendant(of: dialog, matching: find.text('measure'));
     final row = find.ancestor(of: label, matching: find.byType(PropertyRow));
@@ -1058,7 +1305,10 @@ void main() {
       await tester.pumpWidget(app(withOverall()));
       await tester.pumpAndSettle();
 
+      // Tapping it shows its measure, which leads to its details.
       await tester.tap(find.text('Overall'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Details'));
       await tester.pumpAndSettle();
       final dialog = find.byType(AlertDialog);
       expect(
@@ -1089,8 +1339,7 @@ void main() {
       await tester.pumpWidget(app(withOverall()));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Cooking'));
-      await tester.pumpAndSettle();
+      await openDetails(tester, 'Cooking');
       final dialog = find.byType(AlertDialog);
       final row = find.ancestor(
         of: find.descendant(of: dialog, matching: find.text('parent_id')),
