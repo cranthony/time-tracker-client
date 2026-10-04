@@ -74,7 +74,7 @@ void main() {
     // Shown where it sits in the tree, and the search kept for the next.
     expect(find.text('Tofu'), findsNWidgets(2));
     expect(
-      tester.widget<TextField>(find.byType(TextField)).focusNode?.hasFocus,
+      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
       isTrue,
     );
 

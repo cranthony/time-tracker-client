@@ -37,7 +37,6 @@ class GoalsPicker extends StatefulWidget {
 
 class _GoalsPickerState extends State<GoalsPicker> {
   final _search = TextEditingController();
-  final _searchFocus = FocusNode();
 
   /// The goals whose sub-goals are shown, while the search is empty.
   late final Set<String> _open = _ancestorsOf(widget.picked);
@@ -45,7 +44,6 @@ class _GoalsPickerState extends State<GoalsPicker> {
   @override
   void dispose() {
     _search.dispose();
-    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -122,7 +120,6 @@ class _GoalsPickerState extends State<GoalsPicker> {
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: TextField(
             controller: _search,
-            focusNode: _searchFocus,
             decoration: InputDecoration(
               isDense: true,
               border: const OutlineInputBorder(),
@@ -137,6 +134,8 @@ class _GoalsPickerState extends State<GoalsPicker> {
                     ),
             ),
             onChanged: (_) => setState(() {}),
+            // Kept focused after Enter, ready for the next goal.
+            onEditingComplete: () {},
             // The top match, picked (or unpicked) from the keyboard.
             onSubmitted: (_) {
               if (words.isEmpty) return;
@@ -144,8 +143,6 @@ class _GoalsPickerState extends State<GoalsPicker> {
                 if (_matches(goal, words)) {
                   _toggle(goal, !widget.picked.contains(goal.id));
                   setState(_search.clear);
-                  // Ready for the next one.
-                  _searchFocus.requestFocus();
                   return;
                 }
               }
