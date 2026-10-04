@@ -145,6 +145,45 @@ void main() {
       });
     }
 
+    // A sub-goal's event properties, inherited, as tapping it shows them
+    // under "Event properties"; then its priority being edited.
+    for (final editing in [false, true]) {
+      final name = editing
+          ? 'goal_event_properties_edit'
+          : 'goal_event_properties';
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          GoalsScreen(
+            outbox: _idleGoalOutbox(),
+            repository: sample.goalsRepository(),
+            serverLabel: 'sample',
+          ),
+          then: () async {
+            await tester.tap(find.byTooltip('Show under each goal…'));
+            await tester.pumpAndSettle();
+            await tester.tap(
+              find.widgetWithText(
+                RadioMenuButton<GoalSummary>,
+                'Event properties',
+              ),
+            );
+            await tester.pumpAndSettle();
+            await tester.tap(find.byTooltip('Expand Learn vegetarian cooking'));
+            await tester.pumpAndSettle();
+            await tester.tap(find.text('Tofu tikka masala'));
+            await tester.pumpAndSettle();
+            if (!editing) return;
+            await tester.tap(find.text('Set').first);
+            await tester.pumpAndSettle();
+            await tester.tap(find.widgetWithText(ChoiceChip, '1'));
+            await tester.pumpAndSettle();
+          },
+        );
+      });
+    }
+
     testWidgets('goal measure overall ($mode)', (tester) async {
       await render(
         tester,

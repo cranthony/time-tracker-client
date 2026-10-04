@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.7.0
+
+- Under "Event properties", tapping a goal on the Goals page opens its
+  event properties: its priority, fixed time and color, each saying
+  whether it's set on the goal or where it comes from, with "Set" or
+  "Clear". Priorities 0 to 3 are a tap away, and "…" takes any other;
+  clearing one shows what it'll inherit.
+
 ## 4.6.0
 
 - A goal can be measured by a time window: whether one of the day's

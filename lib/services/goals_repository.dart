@@ -149,15 +149,22 @@ class InMemoryGoalsRepository implements GoalsRepository {
       byParent.putIfAbsent(goal.parentId, () => []).add(goal);
     }
     final ordered = <Goal>[];
-    void visit(Goal goal, String path) {
-      ordered.add(Goal.fromJson({...goal.toJson(), 'path': path}));
+    // Each with what it inherits, as the server gives it.
+    void visit(Goal goal, Goal? parent, String path) {
+      final listed = Goal.fromJson({
+        ...goal.toJson(),
+        'path': path,
+        'effective_priority': goal.priority ?? parent?.effectivePriority,
+        'effective_fixed_time': goal.fixedTime ?? parent?.effectiveFixedTime,
+      });
+      ordered.add(listed);
       for (final child in byParent[goal.id] ?? const <Goal>[]) {
-        visit(child, '$path › ${goalName(child)}');
+        visit(child, listed, '$path › ${goalName(child)}');
       }
     }
 
     for (final root in byParent[null] ?? const <Goal>[]) {
-      visit(root, goalName(root));
+      visit(root, null, goalName(root));
     }
     return GoalList(
       goals: ordered,
