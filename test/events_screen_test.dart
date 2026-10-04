@@ -86,6 +86,52 @@ void main() {
     expect(find.text('No events.'), findsOneWidget);
   });
 
+  testWidgets('swiping left or right steps a day', (tester) async {
+    final repo = InMemoryEventsRepository([
+      Event(start: at(30, 11), end: at(30, 13), summary: 'Today'),
+      Event(start: at(29, 11), end: at(29, 13), summary: 'Before'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.fling(find.byType(ListView), const Offset(300, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(find.text('Yesterday'), findsOneWidget);
+    expect(find.text('Before'), findsOneWidget);
+
+    await tester.fling(find.byType(ListView), const Offset(-300, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(find.text('Before'), findsNothing);
+    expect(find.text('Today'), findsWidgets);
+  });
+
+  testWidgets('pinching zooms, and doesn\'t step a day', (tester) async {
+    final repo = InMemoryEventsRepository([
+      Event(start: at(30, 11), end: at(30, 13), summary: 'Work'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+    double height() => tester.getSize(find.byType(InkWell).first).height;
+    final before = height();
+
+    final center = tester.getCenter(find.byType(ListView));
+    final a = await tester.startGesture(center - const Offset(40, 0));
+    final b = await tester.startGesture(center + const Offset(40, 0));
+    for (var i = 1; i <= 8; i++) {
+      await a.moveTo(center - Offset(40.0 + 10 * i, 0));
+      await b.moveTo(center + Offset(40.0 + 10 * i, 0));
+      await tester.pump();
+    }
+    await a.up();
+    await b.up();
+    await tester.pumpAndSettle();
+
+    // From 80 apart to 240: three times as tall, less the space it
+    // leaves around it.
+    expect(height(), moreOrLessEquals((before + 3) * 3 - 3, epsilon: 1));
+    expect(find.text('Today'), findsOneWidget);
+  });
+
   testWidgets('tapping an event shows all its properties', (tester) async {
     final repo = InMemoryEventsRepository([
       Event.fromJson({

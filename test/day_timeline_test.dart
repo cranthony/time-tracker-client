@@ -149,8 +149,9 @@ void main() {
       // A listed goal by its name now; another by the event's.
       expect(top('Dinner'), lessThan(top('Host friends weekly')));
       expect(top('Host friends weekly'), lessThan(top('Tofu tikka')));
-      // Long enough for its text: it doesn't say how long it is.
-      expect(find.text('1h 50m'), findsNothing);
+      // How long it is, and its priority: none, so the default.
+      expect(find.text('1h 50m'), findsOneWidget);
+      expect(find.text('P2'), findsOneWidget);
     });
 
     testWidgets('says how long an event too short for its text is', (
@@ -158,11 +159,18 @@ void main() {
     ) async {
       await tester.pumpWidget(
         timeline([
-          event('Call Mom', at(0, 10), at(0, 15), goals: ['a', 'b']),
+          event(
+            'Call Mom',
+            at(0, 10),
+            at(0, 15),
+            goals: ['a', 'b'],
+            priority: 0,
+          ),
         ]),
       );
       expect(find.text('Call Mom'), findsOneWidget);
       expect(find.text('5m'), findsOneWidget);
+      expect(find.text('P0'), findsOneWidget);
     });
 
     testWidgets('a tap on an event says which', (tester) async {
