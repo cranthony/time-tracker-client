@@ -117,21 +117,38 @@ void main() {
       });
     }
 
-    testWidgets('goal measure ($mode)', (tester) async {
+    // A goal's measure, as tapping it shows it; then being edited.
+    for (final editing in [false, true]) {
+      final name = editing ? 'goal_measure_edit' : 'goal_measure';
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          GoalsScreen(
+            repository: sample.goalsRepository(),
+            serverLabel: 'sample',
+          ),
+          then: () async {
+            await tester.tap(find.text('Wake up at 7am'));
+            await tester.pumpAndSettle();
+            if (!editing) return;
+            await tester.tap(find.text('Edit measure'));
+            await tester.pumpAndSettle();
+          },
+        );
+      });
+    }
+
+    testWidgets('goal measure overall ($mode)', (tester) async {
       await render(
         tester,
-        'goal_measure',
+        'goal_measure_overall',
         GoalsScreen(
           repository: sample.goalsRepository(),
           serverLabel: 'sample',
         ),
         then: () async {
-          await tester.tap(find.text('Wake up at 7am'));
-          await tester.pumpAndSettle();
-          final measure = find.text('Starts by 07:00 (10 min grace)');
-          await tester.ensureVisible(measure);
-          await tester.pumpAndSettle();
-          await tester.tap(measure);
+          await tester.tap(find.text('Overall'));
           await tester.pumpAndSettle();
         },
       );
@@ -165,7 +182,9 @@ void main() {
         then: () async {
           await tester.tap(find.byTooltip('Expand Learn vegetarian cooking'));
           await tester.pumpAndSettle();
-          await tester.tap(find.text('Tofu tikka masala'));
+          await tester.tap(find.byTooltip('More for Tofu tikka masala'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Details'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('Learn vegetarian cooking').last);
           await tester.pumpAndSettle();

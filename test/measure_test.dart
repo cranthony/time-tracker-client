@@ -225,6 +225,83 @@ void main() {
     expect(measureProblem({'kind': 'hours'}), contains('kind'));
   });
 
+  test('describeMeasureSettings lists what a measure sets', () {
+    expect(
+      describeMeasureSettings({
+        'kind': 'duration',
+        'target_min': 600,
+        'interval_days': 7,
+      }),
+      [
+        ('Target', '10h'),
+        ('Over', '7 days'),
+        ('Events of', 'This goal and its sub-goals'),
+      ],
+    );
+    expect(
+      describeMeasureSettings(
+        {
+          'kind': 'count',
+          'target': 1,
+          'noun': 'visits',
+          'interval_days': 60,
+          'zero_at_days': 90,
+          'events_of': 'g',
+          'include_sub_goals': false,
+        },
+        goalNames: {'g': 'Family'},
+      ),
+      [
+        ('Target', '1 visit'),
+        ('Over', '60 days'),
+        ('Zero at', '90 days'),
+        ('Events of', 'Family only'),
+      ],
+    );
+    expect(
+      describeMeasureSettings({
+        'kind': 'time_constraint',
+        'edge': 'end',
+        'when': 'after',
+        'target': '17:30',
+        'grace_min': 10,
+        'zero_at_min': 60,
+      }),
+      [
+        ('When', 'Last event ends not before 17:30'),
+        ('Grace', '10 min'),
+        ('Zero at', '60 min off'),
+        ('Events of', 'This goal and its sub-goals'),
+      ],
+    );
+    expect(
+      describeMeasureSettings({'kind': 'subjective', 'prompt': 'How was it?'}),
+      [('Question', 'How was it?'), ('Asked', 'every day')],
+    );
+    expect(describeMeasureSettings({'kind': 'llm', 'rubric': 'Kind?'}), [
+      ('Rubric', 'Kind?'),
+    ]);
+    expect(
+      describeMeasureSettings(
+        {
+          'kind': 'rollup',
+          'agg': 'weighted',
+          'weights': {'a': 2},
+        },
+        goalNames: {'a': 'Tofu'},
+      ),
+      [('Combines', 'Weighted'), ('Tofu', 'weight 2')],
+    );
+    expect(
+      describeMeasureSettings({
+        'kind': 'rollup',
+        'agg': 'percentile',
+        'percentile': 50,
+      }),
+      [('Combines', 'Percentile'), ('Percentile', '50th')],
+    );
+  });
+
   test('Goal.fromJson reads its measure', () {
     final goal = Goal.fromJson({
       'id': 'g',

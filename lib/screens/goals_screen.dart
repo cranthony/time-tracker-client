@@ -10,6 +10,7 @@ import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/goal_dialog.dart';
 import '../widgets/health.dart';
+import '../widgets/measure_dialog.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
@@ -29,9 +30,10 @@ import '../widgets/status_message.dart';
 /// time spent, its measure, its time as a share of each window, or its
 /// events' priority and fixed time ([GoalSummary]), kept on the device.
 /// Only active goals take up a calendar label; the others keep their
-/// history. Tapping a goal shows its details, all its properties, and lets
-/// one change them, its status included; tapping its ratings shows its
-/// history; its menu adds a sub-goal, or shows its history or details;
+/// history. Tapping a goal shows its measure and how it's doing by it, and
+/// lets one edit it ([showMeasureDialog]); tapping its ratings shows its
+/// history; its menu adds a sub-goal, or shows its measure, history or
+/// details: all its properties, which can be changed, its status included.
 /// "+" adds a top-level goal.
 class GoalsScreen extends StatefulWidget {
   const GoalsScreen({
@@ -218,6 +220,22 @@ class _GoalsScreenState extends State<GoalsScreen> {
       goals: _allGoals,
     ),
     'Saved.',
+  );
+
+  /// Shows [goal]'s measure, from which it can be edited, and its
+  /// history or details opened.
+  Future<void> _measure(Goal goal) => showMeasureDialog(
+    context,
+    goal,
+    goalNames: {
+      for (final goal in _goals?.goals ?? const <Goal>[])
+        goal.id: goalName(goal),
+    },
+    save: widget.repository.updateGoal,
+    onSaved: (goals) => _saved(goals, 'Saved.'),
+    goals: _allGoals,
+    onHistory: _history,
+    onDetails: _open,
   );
 
   void _history(Goal goal) => Navigator.of(context).push(
@@ -456,6 +474,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 if (!_expanded.remove(shown[i].id)) _expanded.add(shown[i].id!);
               }),
               onTap: null,
+              onDetails: () {},
               onAddSubGoal: () {},
               onHistory: () {},
             ),
@@ -507,7 +526,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
           time: overall?.timeFor(_shown) ?? goals.timeFor(_shown),
           summary: _summary,
           goalNames: names,
-          onTap: overall == null ? null : () => _open(overall),
+          onTap: overall == null ? null : () => _measure(overall),
           onHistory: overall == null ? null : () => _history(overall),
         ),
         if (shown.isEmpty)
@@ -527,7 +546,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
             onToggle: () => setState(() {
               if (!_expanded.remove(goal.id)) _expanded.add(goal.id!);
             }),
-            onTap: () => _open(goal),
+            onTap: () => _measure(goal),
+            onDetails: () => _open(goal),
             onLongPress: () => setState(() => _reordering = true),
             onAddSubGoal: () => _add(parentId: goal.id),
             onHistory: () => _history(goal),
@@ -671,6 +691,7 @@ class _GoalTile extends StatelessWidget {
     required this.expanded,
     required this.onToggle,
     required this.onTap,
+    required this.onDetails,
     this.onLongPress,
     this.dragIndex,
     required this.onAddSubGoal,
@@ -698,8 +719,11 @@ class _GoalTile extends StatelessWidget {
   /// Shows or hides its sub-goals: its arrow and its flag do this.
   final VoidCallback onToggle;
 
-  /// Shows its details: tapping it, or "Details" in its menu.
+  /// Shows its measure: tapping it, or "Measure" in its menu.
   final VoidCallback? onTap;
+
+  /// Shows its details: "Details" in its menu.
+  final VoidCallback onDetails;
   final VoidCallback? onLongPress;
 
   /// While reordering, its index in the list, for its drag handle; null
@@ -847,10 +871,12 @@ class _GoalTile extends StatelessWidget {
               onSelected: (choice) => switch (choice) {
                 'sub' => onAddSubGoal(),
                 'history' => onHistory(),
-                _ => onTap?.call(),
+                'measure' => onTap?.call(),
+                _ => onDetails(),
               },
               itemBuilder: (context) => const [
                 PopupMenuItem(value: 'sub', child: Text('Add sub-goal')),
+                PopupMenuItem(value: 'measure', child: Text('Measure')),
                 PopupMenuItem(value: 'history', child: Text('History')),
                 PopupMenuItem(value: 'details', child: Text('Details')),
               ],
@@ -899,7 +925,7 @@ GoalList _withSiblingOrder(GoalList goals, List<String> ids) {
 
 /// The overall goal, above the rest: its rating and last 8 days, and the
 /// time spent on the goals of the statuses shown. Tapping it shows its
-/// details; tapping its ratings, its history. Without [goal] (from an
+/// measure, and from there its details; tapping its ratings, its history. Without [goal] (from an
 /// older server), just the time.
 class _OverallCard extends StatelessWidget {
   const _OverallCard({
