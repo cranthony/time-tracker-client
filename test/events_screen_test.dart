@@ -105,6 +105,44 @@ void main() {
     expect(find.text('Today'), findsWidgets);
   });
 
+  testWidgets('the days either side are loaded, and slide in with a drag', (
+    tester,
+  ) async {
+    final repo = InMemoryEventsRepository([
+      Event(start: at(30, 11), end: at(30, 13), summary: 'Today'),
+      Event(start: at(29, 11), end: at(29, 13), summary: 'Before'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    // Part-way through a drag to the right, the day before is already
+    // there beside today, scrolled to the same time of day.
+    final drag = await tester.startGesture(
+      tester.getCenter(find.byType(ListView)),
+    );
+    await drag.moveBy(const Offset(30, 0));
+    await drag.moveBy(const Offset(200, 0));
+    await tester.pump();
+    expect(find.text('Before'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(
+      tester.getTopLeft(find.text('Before')).dy,
+      tester
+          .getTopLeft(
+            find.descendant(
+              of: find.byType(PageView),
+              matching: find.text('Today'),
+            ),
+          )
+          .dy,
+    );
+    await drag.moveBy(const Offset(300, 0));
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect(find.text('Yesterday'), findsOneWidget);
+    expect(find.text('Before'), findsOneWidget);
+  });
+
   testWidgets('pinching zooms, and doesn\'t step a day', (tester) async {
     final repo = InMemoryEventsRepository([
       Event(start: at(30, 11), end: at(30, 13), summary: 'Work'),

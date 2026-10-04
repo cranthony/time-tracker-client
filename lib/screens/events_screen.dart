@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
@@ -16,14 +18,16 @@ import '../widgets/status_message.dart';
 
 /// One day's events on a timeline ([DayTimeline]), from midnight to
 /// midnight, with buttons to step to the day before or after and to zoom
-/// in or out. Swiping left or right steps a day too, and pinching zooms
+/// in or out. Swiping left or right slides to the day after or before,
+/// which are loaded in the background to be ready, and pinching zooms
 /// around the fingers. Tapping the date picks another; tapping an event
 /// shows all its properties, and lets one change them. It opens scrolled
 /// to now, on today, or else to the day's first event. The last
 /// compaction, from the goals, is marked on it.
 ///
 /// The day it opens on, today, is kept for next time, so it shows at once
-/// while it refreshes. Other days load afresh.
+/// while it refreshes. Other days load afresh, and are loaded again when
+/// shown after an event was changed.
 class EventsScreen extends StatefulWidget {
   const EventsScreen({
     super.key,
@@ -59,16 +63,36 @@ class EventsScreen extends StatefulWidget {
 }
 
 class _EventsScreenState extends State<EventsScreen> {
+  /// The page [_firstDay] is on; the days before and after it are on the
+  /// pages before and after.
+  static const _firstPage = 100000;
+
+  /// How long sliding to the next or previous day takes.
+  static const _slide = Duration(milliseconds: 300);
+
   /// Midnight, local time, at the start of the day shown.
   late DateTime _day;
 
   /// The day shown first; its events are kept for next time.
   late final DateTime _firstDay;
-  List<Event>? _events;
 
-  /// [_events] are the ones kept from last time; the server hasn't
-  /// answered since.
-  bool _stale = false;
+  final _pages = PageController(initialPage: _firstPage);
+
+  /// The page the arrows last sent it sliding to, until it gets there, so
+  /// a second tap goes on from there.
+  int? _slidingTo;
+
+  /// The events of the day shown and the days around it, as far as
+  /// they're loaded. The days either side are loaded in the background,
+  /// to be ready to slide in.
+  final _events = <DateTime, List<Event>>{};
+
+  /// The days in [_events] the server has answered for since anything
+  /// was last changed. The rest are kept from last time, or may be out of
+  /// date, and are loaded again when shown.
+  final _fresh = <DateTime>{};
+
+  /// Why the day shown couldn't be loaded, if it couldn't.
   Object? _error;
   bool _needsSignIn = false;
   bool _signingIn = false;
@@ -94,32 +118,75 @@ class _EventsScreenState extends State<EventsScreen> {
   final _pointers = <int, Offset>{};
 
   /// While pinching: the distance between the fingers and the zoom when
-  /// it started. The timeline doesn't scroll by dragging meanwhile.
+  /// it started. Nothing scrolls or slides by dragging meanwhile.
   ({double distance, double scale})? _pinch;
 
-  /// Whether the gesture under way has been a pinch, so it doesn't also
-  /// step a day.
-  bool _pinched = false;
+  /// Each day's timeline's scroll controller. One made for a day sliding
+  /// in starts at the same time of day as the day shown.
+  final _scrolls = <DateTime, ScrollController>{};
 
-  final _scroll = ScrollController();
-
-  /// Whether the timeline is still to be scrolled to the day's first
-  /// event, or now: once its events are shown.
+  /// Whether the timeline is still to be scrolled to the first day's
+  /// first event, or now: once its events are shown.
   bool _scrollPending = true;
+
+  /// The day shown's events, if they're loaded.
+  List<Event>? get _shown => _events[_day];
+
+  /// Whether the day shown is kept from last time, or may be out of date,
+  /// and is being loaded again.
+  bool get _stale => _events.containsKey(_day) && !_fresh.contains(_day);
 
   @override
   void initState() {
     super.initState();
     _day = _firstDay = _midnight(widget.clock());
     _showCached();
-    _load();
+    _refresh();
     _loadGoals();
   }
 
   @override
   void dispose() {
-    _scroll.dispose();
+    _pages.dispose();
+    for (final scroll in _scrolls.values) {
+      scroll.dispose();
+    }
     super.dispose();
+  }
+
+  /// The day on [page].
+  DateTime _dayAt(int page) => DateTime(
+    _firstDay.year,
+    _firstDay.month,
+    _firstDay.day + page - _firstPage,
+  );
+
+  /// The page [day] is on.
+  int _pageOf(DateTime day) =>
+      _firstPage +
+      DateTime.utc(day.year, day.month, day.day)
+          .difference(
+            DateTime.utc(_firstDay.year, _firstDay.month, _firstDay.day),
+          )
+          .inDays;
+
+  ScrollController _scrollFor(DateTime day) => _scrolls.putIfAbsent(day, () {
+    final shown = _scrolls[_day];
+    return ScrollController(
+      initialScrollOffset: shown != null && shown.hasClients ? shown.offset : 0,
+    );
+  });
+
+  ScrollController get _scroll => _scrollFor(_day);
+
+  /// Drops the scroll controllers of days no longer on screen, so the
+  /// next to slide in start where the day shown is.
+  void _dropHiddenScrolls() {
+    _scrolls.removeWhere((day, scroll) {
+      if (day == _day || scroll.hasClients) return false;
+      scroll.dispose();
+      return true;
+    });
   }
 
   /// Loads the goals, for their colors, and when notes were last
@@ -150,7 +217,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Scrolls the timeline to now, on today, or else to the first event,
   /// once it's laid out.
   void _scrollToStart() {
-    final events = _events;
+    final events = _shown;
     if (!_scrollPending || events == null || events.isEmpty) return;
     _scrollPending = false;
     final now = widget.clock();
@@ -208,14 +275,10 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   void _pointerDown(PointerDownEvent event) {
-    if (_pointers.isEmpty) _pinched = false;
     _pointers[event.pointer] = event.localPosition;
     if (_pointers.length == 2) {
       final [a, b] = _pointers.values.toList();
-      setState(() {
-        _pinch = (distance: (a - b).distance, scale: _scale);
-        _pinched = true;
-      });
+      setState(() => _pinch = (distance: (a - b).distance, scale: _scale));
     }
   }
 
@@ -233,15 +296,19 @@ class _EventsScreenState extends State<EventsScreen> {
 
   void _pointerUp(PointerEvent event) {
     _pointers.remove(event.pointer);
-    if (_pointers.length < 2 && _pinch != null) setState(() => _pinch = null);
-  }
-
-  /// Steps a day on a swipe: to the next on one to the left, the one
-  /// before on one to the right. Not after a pinch.
-  void _swiped(DragEndDetails details) {
-    final speed = details.primaryVelocity ?? 0;
-    if (_pinched || speed.abs() < 300) return;
-    _step(speed < 0 ? 1 : -1);
+    if (_pointers.length >= 2 || _pinch == null) return;
+    setState(() => _pinch = null);
+    // A drag just before the pinch may have left the days part-way across.
+    if (_pages.hasClients) {
+      final page = _pages.page ?? _pageOf(_day).toDouble();
+      if ((page - page.round()).abs() > 0.001) {
+        _pages.animateToPage(
+          _pageOf(_day),
+          duration: _slide,
+          curve: Curves.easeOut,
+        );
+      }
+    }
   }
 
   static DateTime _midnight(DateTime t) {
@@ -252,60 +319,74 @@ class _EventsScreenState extends State<EventsScreen> {
   static DateTime _dayAfter(DateTime day) =>
       DateTime(day.year, day.month, day.day + 1);
 
-  /// Shows the day's events kept from last time, unless the server
+  /// Shows the first day's events kept from last time, unless the server
   /// answered first. Only [_firstDay]'s are kept.
   Future<void> _showCached() async {
-    final day = _day;
-    if (day != _firstDay) return;
+    final day = _firstDay;
     final events = await widget.repository.cachedEvents(day, _dayAfter(day));
-    if (!mounted || day != _day || events == null) return;
-    if (_events != null || _needsSignIn || _error != null) return;
-    setState(() {
-      _events = events;
-      _stale = true;
-    });
+    if (!mounted || events == null || _events.containsKey(day)) return;
+    if (_needsSignIn || (_error != null && day == _day)) return;
+    setState(() => _events[day] = events);
   }
 
-  Future<void> _load() async {
-    final day = _day;
+  /// Loads [day]'s events, the day shown's by default. Only the day
+  /// shown's errors are shown; another day's is loaded again when it is.
+  Future<void> _load([DateTime? day]) async {
+    final which = day ?? _day;
     try {
       final events = await widget.repository.events(
-        day,
-        _dayAfter(day),
-        keep: day == _firstDay,
+        which,
+        _dayAfter(which),
+        keep: which == _firstDay,
       );
-      // Another day was picked while this one loaded.
-      if (!mounted || day != _day) return;
+      if (!mounted) return;
       setState(() {
-        _events = events;
-        _stale = false;
-        _error = null;
-        _needsSignIn = false;
+        _events[which] = events;
+        _fresh.add(which);
+        if (which == _day) {
+          _error = null;
+          _needsSignIn = false;
+        }
       });
     } on SignInRequiredException {
-      if (!mounted || day != _day) return;
+      if (!mounted || which != _day) return;
       setState(() {
-        _events = null;
-        _stale = false;
+        _events.remove(which);
+        _fresh.remove(which);
         _needsSignIn = true;
       });
     } catch (e) {
-      if (!mounted || day != _day) return;
+      if (!mounted || which != _day) return;
       setState(() => _error = e);
     }
   }
 
+  /// Loads the day shown, unless not to [reloadShown], then in the
+  /// background the days either side that the server hasn't answered for.
+  Future<void> _refresh({bool reloadShown = true}) async {
+    final day = _day;
+    if (reloadShown) await _load(day);
+    if (!mounted || _needsSignIn || day != _day) return;
+    for (final other in [
+      _dayAfter(day),
+      DateTime(day.year, day.month, day.day - 1),
+    ]) {
+      if (!_fresh.contains(other)) unawaited(_load(other));
+    }
+  }
+
+  /// Shows [day], the page slid to: at once if it's loaded, loading it
+  /// again if it may be out of date, and the days either side if they
+  /// aren't loaded. Days well away from it are let go.
   void _show(DateTime day) {
     if (day == _day) return;
     setState(() {
       _day = day;
-      _events = null;
-      _stale = false;
       _error = null;
-      _scrollPending = true;
+      _events.removeWhere((d, _) => (_pageOf(d) - _pageOf(day)).abs() > 3);
+      _fresh.retainWhere(_events.containsKey);
     });
-    _showCached();
-    _load();
+    _refresh(reloadShown: !_fresh.contains(day));
   }
 
   Future<void> _openEvent(Event event) async {
@@ -332,7 +413,9 @@ class _EventsScreenState extends State<EventsScreen> {
         ),
       ),
     );
-    await _load();
+    // It may have moved others, on other days too.
+    _fresh.clear();
+    await _refresh();
     // Its goals may have changed, and with them its diamonds.
     await _loadGoals();
   }
@@ -390,12 +473,18 @@ class _EventsScreenState extends State<EventsScreen> {
         ),
       ),
     );
-    await _load();
+    _fresh.clear();
+    await _refresh();
     return true;
   }
 
-  void _step(int days) =>
-      _show(DateTime(_day.year, _day.month, _day.day + days));
+  /// Slides [days] on, from the day shown or the one it's sliding to.
+  void _step(int days) {
+    if (!_pages.hasClients) return;
+    final page = (_slidingTo ?? _pageOf(_day)) + days;
+    _slidingTo = page;
+    _pages.animateToPage(page, duration: _slide, curve: Curves.easeInOut);
+  }
 
   Future<void> _pickDay() async {
     final picked = await showDatePicker(
@@ -404,7 +493,9 @@ class _EventsScreenState extends State<EventsScreen> {
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
     );
-    if (picked != null) _show(_midnight(picked));
+    if (picked != null && _pages.hasClients) {
+      _pages.jumpToPage(_pageOf(_midnight(picked)));
+    }
   }
 
   Future<void> _signIn() async {
@@ -412,7 +503,7 @@ class _EventsScreenState extends State<EventsScreen> {
     setState(() => _signingIn = true);
     try {
       await widget.onSignIn!();
-      await _load();
+      await _refresh();
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Sign-in failed: $e')));
     } finally {
@@ -422,7 +513,11 @@ class _EventsScreenState extends State<EventsScreen> {
 
   Future<void> _signOut() async {
     await widget.onSignOut!();
-    await _load();
+    setState(() {
+      _events.clear();
+      _fresh.clear();
+    });
+    await _refresh();
   }
 
   @override
@@ -458,14 +553,35 @@ class _EventsScreenState extends State<EventsScreen> {
           ),
         ],
       ),
-      body: GestureDetector(
-        onHorizontalDragEnd: _swiped,
-        child: RefreshingBar(
-          refreshing: _stale && _error == null && !_needsSignIn,
-          child: RefreshIndicator(onRefresh: _load, child: _buildBody(context)),
+      body: RefreshingBar(
+        refreshing: _stale && _error == null && !_needsSignIn,
+        child: NotificationListener<ScrollEndNotification>(
+          // The days' sliding, not a timeline's scrolling.
+          onNotification: (notification) {
+            if (notification.depth == 0) {
+              _slidingTo = null;
+              _dropHiddenScrolls();
+            }
+            return false;
+          },
+          // Raw pointers, so pinching doesn't contend with scrolling.
+          child: Listener(
+            onPointerDown: _pointerDown,
+            onPointerMove: _pointerMove,
+            onPointerUp: _pointerUp,
+            onPointerCancel: _pointerUp,
+            child: PageView.builder(
+              controller: _pages,
+              physics: _pinch == null
+                  ? null
+                  : const NeverScrollableScrollPhysics(),
+              onPageChanged: (page) => _show(_dayAt(page)),
+              itemBuilder: (context, page) => _buildDay(context, _dayAt(page)),
+            ),
+          ),
         ),
       ),
-      floatingActionButton: (_events?.isEmpty ?? true) || _needsSignIn
+      floatingActionButton: (_shown?.isEmpty ?? true) || _needsSignIn
           ? null
           : Column(
               mainAxisSize: MainAxisSize.min,
@@ -494,10 +610,13 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  Widget _buildBody(BuildContext context) {
-    final events = _events;
+  /// [day]'s page: its timeline, or why it can't be shown.
+  Widget _buildDay(BuildContext context, DateTime day) {
+    final events = _events[day];
+    final shown = day == _day;
+    final Widget page;
     if (_needsSignIn) {
-      return FillViewport(
+      page = FillViewport(
         child: StatusMessage(
           icon: Icons.lock_outline,
           text: 'Sign in to see your events.',
@@ -509,40 +628,33 @@ class _EventsScreenState extends State<EventsScreen> {
                 ),
         ),
       );
-    }
-    if (_error != null && (events == null || events.isEmpty)) {
-      return FillViewport(
+    } else if (shown && _error != null && (events == null || events.isEmpty)) {
+      page = FillViewport(
         child: StatusMessage(
           icon: Icons.cloud_off,
           text: 'Could not load events.\n$_error',
         ),
       );
-    }
-    if (events == null) return const Center(child: CircularProgressIndicator());
-    if (events.isEmpty) {
-      return const FillViewport(
+    } else if (events == null) {
+      return const Center(child: CircularProgressIndicator());
+    } else if (events.isEmpty) {
+      page = const FillViewport(
         child: StatusMessage(icon: Icons.event_busy, text: 'No events.'),
       );
-    }
-    _scrollToStart();
-    return Column(
-      children: [
-        // The last events loaded, or kept from last time, are still shown,
-        // under this.
-        if (_error != null)
-          StatusMessage(
-            icon: Icons.cloud_off,
-            text: 'Could not load events. These may be out of date.\n$_error',
-          ),
-        Expanded(
-          // Raw pointers, so pinching doesn't contend with scrolling.
-          child: Listener(
-            onPointerDown: _pointerDown,
-            onPointerMove: _pointerMove,
-            onPointerUp: _pointerUp,
-            onPointerCancel: _pointerUp,
+    } else {
+      if (shown) _scrollToStart();
+      page = Column(
+        children: [
+          // The last events loaded, or kept from last time, are still
+          // shown, under this.
+          if (shown && _error != null)
+            StatusMessage(
+              icon: Icons.cloud_off,
+              text: 'Could not load events. These may be out of date.\n$_error',
+            ),
+          Expanded(
             child: ListView(
-              controller: _scroll,
+              controller: _scrollFor(day),
               physics: _pinch == null
                   ? const AlwaysScrollableScrollPhysics()
                   : const NeverScrollableScrollPhysics(),
@@ -551,7 +663,7 @@ class _EventsScreenState extends State<EventsScreen> {
               children: [
                 DayTimeline(
                   events: events,
-                  day: _day,
+                  day: day,
                   goals: _goalsById,
                   scale: _scale,
                   now: widget.clock(),
@@ -561,8 +673,9 @@ class _EventsScreenState extends State<EventsScreen> {
               ],
             ),
           ),
-        ),
-      ],
-    );
+        ],
+      );
+    }
+    return RefreshIndicator(onRefresh: _refresh, child: page);
   }
 }
