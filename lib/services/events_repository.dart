@@ -5,6 +5,26 @@ import '../models/repeat.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
+/// The fields `update_event` and `update_recurrence` can remove, by
+/// listing them in `clear_fields` (time-tracking-google-calendar-mcp#119).
+/// Sent as null, any other field is kept as it was, so a change to null
+/// clears one of these and is ignored for the rest. Not summary, start or
+/// end, which every event has, nor goal_ids, whose [] means no goals.
+const clearableFields = {
+  'priority',
+  'description',
+  'location',
+  'min_duration',
+  'is_fixed_duration',
+  'is_fixed_time',
+};
+
+/// [changes]' fields to clear: those changed to null that can be.
+List<String> _cleared(Map<String, Object?> changes) => [
+  for (final MapEntry(:key, :value) in changes.entries)
+    if (value == null && clearableFields.contains(key)) key,
+];
+
 /// Where events come from. The app talks to this rather than to MCP
 /// directly so screens can be exercised without a server.
 abstract class EventsRepository {
@@ -112,7 +132,8 @@ class McpEventsRepository implements EventsRepository {
     Map<String, Object?> changes, {
     String? startingAt,
   }) async {
-    // The server keeps whatever is left out.
+    final cleared = _cleared(changes);
+    // The server keeps whatever is left out, but clear_fields.
     final result = await _client.callTool('update_recurrence', {
       'recurrence': {
         'id': recurrence.id,
@@ -121,6 +142,7 @@ class McpEventsRepository implements EventsRepository {
         if (changes.containsKey('goal_ids')) 'goals_from_label': false,
       },
       'starting_at_event_id': ?startingAt,
+      if (cleared.isNotEmpty) 'clear_fields': cleared,
     });
     return [
       for (final r in result as List)
@@ -156,6 +178,9 @@ class McpEventsRepository implements EventsRepository {
         // server keeps inferred ones inferred.
         if (changes.containsKey('goal_ids')) 'goals_from_label': false,
       },
+      // The event's fields sent as null are kept; these are removed.
+      if (_cleared(changes) case final cleared when cleared.isNotEmpty)
+        'clear_fields': cleared,
     });
     return (result as List)
         .map((e) => Event.fromJson((e as Map).cast<String, dynamic>()))
@@ -199,7 +224,8 @@ class InMemoryEventsRepository implements EventsRepository {
     splits.add(startingAt);
     final updated = Recurrence.fromJson({
       ...recurrence.toJson(),
-      for (final MapEntry(:key, :value) in changes.entries) key: ?value,
+      for (final MapEntry(:key, :value) in changes.entries)
+        if (value != null || clearableFields.contains(key)) key: value,
       if (changes['repeat'] case final Map repeat)
         'schedule': Repeat.fromJson(repeat.cast()).describe(),
     });

@@ -138,13 +138,7 @@ Future<SummaryOutcome<List<Recurrence>>?> showSeriesSummaryDialog(
         if (scope == null) return null;
         return () => save({
           for (final MapEntry(:key, :value) in changes.entries)
-            // update_recurrence keeps what's left out, so a value cleared
-            // is sent as empty, not left out.
-            key: value == null && _textKeys.contains(key)
-                ? ''
-                : value is Repeat
-                ? value.toJson()
-                : value,
+            key: value is Repeat ? value.toJson() : value,
         }, scope);
       },
       remove: switch (delete) {
@@ -165,9 +159,6 @@ Future<SummaryOutcome<List<Recurrence>>?> showSeriesSummaryDialog(
     ),
   );
 }
-
-/// The text properties, which can be cleared.
-const _textKeys = {'summary', 'location', 'description'};
 
 /// The trash can's action: what it asks, and [run]s once confirmed.
 class _Removal {
@@ -472,7 +463,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        shown == null ? 'No priority' : 'P$shown',
+        switch (shown) {
+          final p? => 'P$p',
+          // Cleared, and so to follow its goals' once saved.
+          null when _changes.containsKey('priority') => 'From goals',
+          null => 'No priority',
+        },
         style: theme.textTheme.labelLarge?.copyWith(
           color: own == null ? theme.colorScheme.onSurface : Colors.black87,
           fontWeight: FontWeight.w600,
@@ -541,18 +537,15 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 selected: other,
                 onSelected: (_) => setState(() => _otherPriority = true),
               ),
-              // A series' can't be cleared: update_recurrence keeps
-              // what's left out.
-              if (!widget.series)
-                ChoiceChip(
-                  showCheckmark: false,
-                  label: const Text('From its goals'),
-                  selected: own == null && !other,
-                  onSelected: (_) {
-                    _otherPriority = false;
-                    _set('priority', null);
-                  },
-                ),
+              ChoiceChip(
+                showCheckmark: false,
+                label: const Text('From its goals'),
+                selected: own == null && !other,
+                onSelected: (_) {
+                  _otherPriority = false;
+                  _set('priority', null);
+                },
+              ),
             ],
           ),
           if (other)
@@ -601,7 +594,10 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
             hintText: 'Summary',
           ),
           onChanged: (typed) =>
-              _set('summary', typed.trim().isEmpty ? null : typed.trim()),
+              // Every event has a summary: one emptied is kept as it was.
+              typed.trim().isEmpty
+              ? setState(() => _changes.remove('summary'))
+              : _set('summary', typed.trim()),
           onSubmitted: (_) => setState(() => _editing = null),
         ),
       );
