@@ -77,11 +77,24 @@ class _GoalsScreenState extends State<GoalsScreen> {
   GoalList? _fromServer;
 
   /// The goals shown: [_fromServer], with the saves waiting in the
-  /// outbox, or that failed, made to them.
-  GoalList? get _goals => switch (_fromServer) {
-    final goals? => _withSaves(goals, widget.outbox.saves),
-    null => null,
-  };
+  /// outbox, or that failed, made to them; or [_held].
+  GoalList? get _goals => _lastShown =
+      _held ??
+      switch (_fromServer) {
+        final goals? => _withSaves(goals, widget.outbox.saves),
+        null => null,
+      };
+  GoalList? _lastShown;
+
+  /// The goals shown until they're fetched again, when saves were made
+  /// elsewhere (by the background task) that these don't have.
+  GoalList? _held;
+
+  /// The saves in the outbox, by id, when it last changed.
+  var _known = <String>{};
+
+  /// The saves heard saved here, by id, as they leave the outbox.
+  final _heard = <String>{};
 
   StreamSubscription<GoalSaveEvent>? _saveEvents;
 
@@ -108,6 +121,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
   void initState() {
     super.initState();
     widget.outbox.addListener(_outboxChanged);
+    _known = {for (final save in widget.outbox.saves) save.id};
     _saveEvents = widget.outbox.events.listen(_onSaveEvent);
     _showCached();
     _load();
@@ -158,13 +172,25 @@ class _GoalsScreenState extends State<GoalsScreen> {
   }
 
   void _outboxChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final ids = {for (final save in widget.outbox.saves) save.id};
+    final gone = _known.difference(ids);
+    _known = ids;
+    // Gone without a word: saved elsewhere. Shown as they were until
+    // the goals are fetched with them.
+    if (gone.difference(_heard).isNotEmpty && _held == null) {
+      _held = _lastShown;
+      _load();
+    }
+    _heard.removeAll(gone);
+    setState(() {});
   }
 
   void _onSaveEvent(GoalSaveEvent event) {
     if (!mounted) return;
     switch (event) {
       case GoalSaved(:final save, :final createdId):
+        _heard.add(save.id);
         final goals = _fromServer;
         if (goals == null) return;
         // So it doesn't go missing until the goals are fetched again.
@@ -178,19 +204,25 @@ class _GoalsScreenState extends State<GoalsScreen> {
             (true, null) => goals,
           };
         });
-      case GoalSaveFailed(:final save):
+      // Said once, not again each time it's tried again by itself.
+      case GoalSaveFailed(:final save) when save.refused || save.attempts <= 1:
         final name = save.isNew
             ? save.goal.name
             : _goals?.goals.where((g) => g.id == save.goalId).firstOrNull?.name;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Couldn't save ${name ?? 'a goal'}. ${save.error}"),
+            content: Text(
+              "Couldn't save ${name ?? 'a goal'}. ${save.lastError}"
+              "${save.refused ? '' : ' Trying again soon.'}",
+            ),
             action: SnackBarAction(
               label: 'Retry',
               onPressed: () => widget.outbox.retry(save.goalId),
             ),
           ),
         );
+      case GoalSaveFailed():
+        break;
       case GoalSavesDone():
         _load();
     }
@@ -200,11 +232,14 @@ class _GoalsScreenState extends State<GoalsScreen> {
     try {
       final goals = await widget.repository.goals();
       if (!mounted) return;
-      widget.outbox.reconcile(goals);
+      _heard.addAll(widget.outbox.reconcile(goals).map((save) => save.id));
       setState(() {
         // While saves are being sent these may be behind them: they're
         // fetched again once the last is answered.
-        if (_fromServer == null || !widget.outbox.busy) _fromServer = goals;
+        if (_fromServer == null || _held != null || !widget.outbox.busy) {
+          _fromServer = goals;
+        }
+        _held = null;
         _stale = false;
         _error = null;
         _needsSignIn = false;
@@ -213,12 +248,16 @@ class _GoalsScreenState extends State<GoalsScreen> {
       if (!mounted) return;
       setState(() {
         _fromServer = null;
+        _held = null;
         _stale = false;
         _needsSignIn = true;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e);
+      setState(() {
+        _held = null;
+        _error = e;
+      });
     }
   }
 
@@ -274,10 +313,18 @@ class _GoalsScreenState extends State<GoalsScreen> {
     return _goals!;
   }
 
+  /// Drops the saves that failed for the goal shown as [id].
+  void _discard(String id) {
+    _heard.addAll([
+      for (final save in widget.outbox.saves)
+        if (save.goalId == id) save.id,
+    ]);
+    widget.outbox.discard(id);
+  }
+
   /// The save that failed for the goal shown as [id], if one did.
-  PendingGoalSave? _failed(String? id) => widget.outbox.saves
-      .where((s) => s.goalId == id && s.error != null)
-      .lastOrNull;
+  PendingGoalSave? _failed(String? id) =>
+      widget.outbox.saves.where((s) => s.goalId == id && s.failed).lastOrNull;
 
   /// Whether the goal shown as [id] is new, and the server hasn't made it
   /// yet: it can't be opened until then.
@@ -412,7 +459,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
     setState(() => _signingIn = true);
     try {
       await widget.onSignIn!();
-      widget.outbox.retryAll();
+      unawaited(widget.outbox.retryNow());
       await _load();
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Sign-in failed: $e')));
@@ -654,13 +701,17 @@ class _GoalsScreenState extends State<GoalsScreen> {
             // nothing is reordered under changes still being saved, or
             // around a goal that couldn't be made.
             saving: _unmade(goal.id) && _failed(goal.id) == null,
-            failed: _failed(goal.id)?.error,
+            failed: switch (_failed(goal.id)) {
+              null => null,
+              final save when save.refused => save.lastError,
+              final save => '${save.lastError}. Trying again soon',
+            },
             onTap: _failed(goal.id) == null
                 ? () => _measure(goal)
                 : () => _open(goal),
             onDetails: () => _open(goal),
             onRetry: () => widget.outbox.retry(goal.id!),
-            onDiscard: () => widget.outbox.discard(goal.id!),
+            onDiscard: () => _discard(goal.id!),
             onLongPress:
                 widget.outbox.busy || widget.outbox.saves.any((s) => s.isNew)
                 ? null

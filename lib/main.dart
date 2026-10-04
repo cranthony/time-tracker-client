@@ -78,13 +78,21 @@ Future<void> main() async {
   );
 }
 
-/// Runs WorkManager's background task (Android) that saves pending notes.
+/// Runs WorkManager's background task (Android) that saves pending notes
+/// and goal saves.
 @pragma('vm:entry-point')
 void backgroundDispatcher() => BackgroundSync.run(() {
-  final repository = McpNotesRepository(
-    _client(_authSession(interactive: false)),
-  );
-  return NoteOutbox(store: PrefsOutboxStore.notes(), repository: repository);
+  final client = _client(_authSession(interactive: false));
+  return [
+    NoteOutbox(
+      store: PrefsOutboxStore.notes(),
+      repository: McpNotesRepository(client),
+    ),
+    GoalOutbox(
+      store: PrefsOutboxStore.goals(),
+      repository: McpGoalsRepository(client),
+    ),
+  ];
 });
 
 AuthSession _authSession({required bool interactive}) => AuthSession(
@@ -121,8 +129,7 @@ class TimeTrackerApp extends StatefulWidget {
   final GoalsRepository goalsRepository;
   final NoteOutbox outbox;
 
-  /// Goal saves waiting to be sent, or that failed. Only sent while the
-  /// app is open; they're kept until it is again.
+  /// Goal saves waiting to be sent, or that failed.
   final GoalOutbox goalOutbox;
   final AuthSession? auth;
 
@@ -176,7 +183,10 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     widget.goalOutbox.stop();
     widget.outbox.stop();
     await widget.outbox.refresh();
-    if (widget.outbox.pending.isNotEmpty) await BackgroundSync.schedule();
+    await widget.goalOutbox.refresh();
+    if (widget.outbox.hasUnsent || widget.goalOutbox.hasUnsent) {
+      await BackgroundSync.schedule();
+    }
   }
 
   /// Signs out, and forgets what the server said while signed in.

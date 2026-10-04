@@ -9,10 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 ## 4.5.0
 
 - Goal saves waiting to be sent, and ones that failed, are kept on the
-  phone, so they survive the app closing and switching tabs. Ones that
-  failed for want of a connection are tried again when the app opens;
-  ones the server refused wait to be retried. A new goal that may have
-  been made before the app closed is looked for before it's made again.
+  phone, so they survive the app closing and switching tabs. They're
+  sent the same way notes are: ones that failed for want of a connection
+  are tried again by themselves, after 5s, 10s, 20s, 40s, then every
+  minute, and on Android the background task sends them once the app is
+  closed. Ones the server refused wait to be retried. A new goal that may
+  have been made before an answer was lost is looked for before it's made
+  again.
 - A save to a goal that already has one waiting, or that failed, joins
   it, so they're sent as one edit.
 - Signing in again on the Goals page retries every save that failed.
