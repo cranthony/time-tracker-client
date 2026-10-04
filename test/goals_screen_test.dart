@@ -558,6 +558,41 @@ void main() {
     expect(find.byTooltip('Not saved: No room for it.'), findsOneWidget);
   });
 
+  testWidgets('a new goal saved by the background task stays shown until '
+      'the goals are fetched with it', (tester) async {
+    final store = InMemoryOutboxStore<PendingGoalSave>();
+    final server = tree();
+    final repo = _GatedGoalsRepository(server);
+    // Not started: as when the app is in the background.
+    final outbox = GoalOutbox(store: store, repository: repo);
+    await tester.pumpWidget(app(repo, outbox: outbox));
+    await tester.pumpAndSettle();
+    await addGoal(tester, 'Running');
+    expect(repo.sent, isEmpty);
+    expect(find.byTooltip('Saving…'), findsOneWidget);
+
+    // The background task saves it, with its own outbox.
+    await GoalOutbox(
+      store: store,
+      repository: server,
+    ).flush(ignoreBackoff: true);
+    repo.fetchGate = Completer();
+    final fetched = repo.fetches;
+
+    // The app hears of it only as gone from the outbox.
+    await outbox.refresh();
+    await tester.pump();
+    expect(outbox.saves, isEmpty);
+    expect(repo.fetches, fetched + 1);
+    expect(shownNames(tester), contains('Running'));
+
+    repo.fetchGate!.complete();
+    await tester.pumpAndSettle();
+    expect(shownNames(tester), contains('Running'));
+    expect(find.byTooltip('Saving…'), findsNothing);
+    expect(find.byTooltip('More for Running'), findsOneWidget);
+  });
+
   testWidgets('a change that fails to save stays, to edit and save again', (
     tester,
   ) async {
@@ -1678,9 +1713,13 @@ class _GatedGoalsRepository implements GoalsRepository {
     return _inner.updateGoal(goal, changes);
   }
 
+  /// While set, fetching every goal waits for it.
+  Completer<void>? fetchGate;
+
   @override
-  Future<GoalList> goals() {
+  Future<GoalList> goals() async {
     fetches++;
+    await fetchGate?.future;
     return _inner.goals();
   }
 
