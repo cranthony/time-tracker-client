@@ -19,7 +19,7 @@ const _pad = 12.0;
 
 /// The column of times, then the band of priorities, then the gutter the
 /// leaders of moved events are drawn in, then the events.
-const _timeWidth = 60.0;
+const _timeWidth = 64.0;
 const _bandWidth = 24.0;
 const _gutterWidth = 16.0;
 const _cardsLeft = _timeWidth + _bandWidth + _gutterWidth;
@@ -64,6 +64,10 @@ class TimelinePlacement {
 
   /// Whether it's drawn taller than it lasts.
   bool get compressed => bottom - top > trueBottom - trueTop + 0.5;
+
+  /// Whether it's drawn shorter than it lasts: pushed down by the event
+  /// above, but still ending where it ends.
+  bool get shortened => bottom - top < trueBottom - trueTop - 0.5;
 }
 
 /// The run of time from [start] to [end] in which the most important
@@ -219,7 +223,7 @@ List<T> placeLabels<T>(
 /// joined to where it truly is by a line from a bracket in the gutter.
 /// [now] and the [lastCompaction], if they're in the day, are marked
 /// with lines across, under the events; zoomed in past the
-/// [defaultTimelineScale], they're labeled "now" and "last compaction"
+/// [defaultTimelineScale], they're labeled "now" and "last compacted"
 /// in place of the times beside them.
 class DayTimeline extends StatelessWidget {
   const DayTimeline({
@@ -316,7 +320,7 @@ class DayTimeline extends StatelessWidget {
     if (scale > defaultTimelineScale) {
       for (final (y, label, color) in [
         if (compactionY != null)
-          (compactionY, 'last compaction', colors.tertiary),
+          (compactionY, 'last\ncompacted', colors.tertiary),
         if (nowY != null) (nowY, 'now', colors.error),
       ]..sort((a, b) => a.$1.compareTo(b.$1))) {
         final painter = _markerText(label, markerStyle, scaler);
@@ -496,20 +500,18 @@ class _EventCard extends StatelessWidget {
                             ),
                           ),
                           if (duration != null)
-                            // Filled when it's shorter than it's drawn.
+                            // Square-cornered when it's drawn taller than
+                            // it lasts; open at the top when it's drawn
+                            // shorter, having started above.
                             _Chip(
                               text: duration,
-                              style: styles.chip?.copyWith(
-                                color: placement.compressed
-                                    ? colors.onTertiaryContainer
-                                    : muted,
-                              ),
-                              fill: placement.compressed
-                                  ? colors.tertiaryContainer
-                                  : null,
-                              border: placement.compressed
-                                  ? colors.tertiary
-                                  : colors.outline,
+                              style: styles.chip?.copyWith(color: muted),
+                              border: colors.outline,
+                              shape: placement.compressed
+                                  ? _ChipShape.square
+                                  : placement.shortened
+                                  ? _ChipShape.openTop
+                                  : _ChipShape.rounded,
                             ),
                           _Chip(
                             text: 'P$priority',
@@ -556,6 +558,17 @@ class _EventCard extends StatelessWidget {
   }
 }
 
+/// How a [_Chip]'s outline is drawn.
+enum _ChipShape {
+  rounded,
+
+  /// With square corners.
+  square,
+
+  /// Rounded, with no top edge.
+  openTop,
+}
+
 /// A small box of [text] at the end of an event's summary: its duration,
 /// or its priority.
 class _Chip extends StatelessWidget {
@@ -564,28 +577,78 @@ class _Chip extends StatelessWidget {
     required this.style,
     required this.border,
     this.fill,
+    this.shape = _ChipShape.rounded,
   });
 
   final String text;
   final TextStyle? style;
   final Color border;
   final Color? fill;
+  final _ChipShape shape;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(left: 6),
-    child: DecoratedBox(
-      decoration: BoxDecoration(
-        color: fill,
-        border: Border.all(color: border),
-        borderRadius: BorderRadius.circular(4),
+  Widget build(BuildContext context) {
+    final radius = shape == _ChipShape.square ? 0.0 : 4.0;
+    final open = shape == _ChipShape.openTop;
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: CustomPaint(
+        foregroundPainter: open ? _OpenTopPainter(border, radius) : null,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: fill,
+            border: open ? null : Border.all(color: border),
+            borderRadius: BorderRadius.circular(radius),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(text, style: style),
+          ),
+        ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Text(text, style: style),
-      ),
-    ),
-  );
+    );
+  }
+}
+
+/// A chip's outline with no top edge: down its sides and round the
+/// bottom, in [color], as wide as the others' borders.
+class _OpenTopPainter extends CustomPainter {
+  _OpenTopPainter(this.color, this.radius);
+
+  final Color color;
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = (Offset.zero & size).deflate(0.5);
+    final corner = Radius.circular(radius - 0.5);
+    canvas.drawPath(
+      Path()
+        ..moveTo(rect.left, rect.top)
+        ..lineTo(rect.left, rect.bottom - corner.y)
+        ..arcToPoint(
+          Offset(rect.left + corner.x, rect.bottom),
+          radius: corner,
+          clockwise: false,
+        )
+        ..lineTo(rect.right - corner.x, rect.bottom)
+        ..arcToPoint(
+          Offset(rect.right, rect.bottom - corner.y),
+          radius: corner,
+          clockwise: false,
+        )
+        ..lineTo(rect.right, rect.top),
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        // A border's width; a stroke's default is a hairline.
+        ..strokeWidth = 1,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_OpenTopPainter old) =>
+      old.color != color || old.radius != radius;
 }
 
 /// A small diamond in a goal's [color], or outlined if it has none.
@@ -656,15 +719,14 @@ class _StripPainter extends CustomPainter {
 typedef _Marker = ({double y, double height, String label, Color color});
 
 /// [label] as a line's label is drawn: right-aligned in the time column,
-/// on two lines if it needs them.
+/// its lines broken where it says, never by width, so no word is cut.
 TextPainter _markerText(String label, TextStyle style, TextScaler scaler) =>
     TextPainter(
       text: TextSpan(text: label, style: style),
       textDirection: TextDirection.ltr,
       textAlign: TextAlign.right,
       textScaler: scaler,
-      maxLines: 2,
-    )..layout(maxWidth: _timeWidth - 6);
+    )..layout();
 
 /// The labels of the lines across the timeline, in the time column in
 /// place of the times there: small text in its line's color.
