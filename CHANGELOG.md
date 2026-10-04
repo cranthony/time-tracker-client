@@ -8,13 +8,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 ## 4.7.0
 
-- Under "Event properties", the Goals page says when a goal's priority is
-  inherited: "Priority 2 (inherited)". A fixed time it inherits is shown
-  too.
-- Tapping a goal there opens its event properties: its priority, fixed
-  time and color, each saying whether it's set on the goal or where it
-  comes from, with "Set" or "Clear". Priorities 0 to 3 are a tap away,
-  and "…" takes any other; clearing one shows what it'll inherit.
+- Under "Event properties", tapping a goal on the Goals page opens its
+  event properties: its priority, fixed time and color, each saying
+  whether it's set on the goal or where it comes from, with "Set" or
+  "Clear". Priorities 0 to 3 are a tap away, and "…" takes any other;
+  clearing one shows what it'll inherit.
 
 ## 4.6.0
 

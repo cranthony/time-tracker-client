@@ -1089,7 +1089,7 @@ void main() {
           InMemorySharedPreferencesAsync.empty(),
     );
 
-    testWidgets('the summary says when a priority is inherited', (
+    testWidgets('the summary shows only what is set on each goal', (
       tester,
     ) async {
       await tester.pumpWidget(app(withColors()));
@@ -1097,8 +1097,15 @@ void main() {
       await showEventProperties(tester);
 
       expect(find.text('Priority 1 · Fixed time'), findsOneWidget);
-      expect(find.text('Priority 1 (inherited) · Fixed time'), findsOneWidget);
       expect(find.text('Priority 3 · Flexible time'), findsOneWidget);
+      // Tofu tikka inherits both, so shows neither.
+      expect(
+        find.descendant(
+          of: find.widgetWithText(ListTile, 'Tofu tikka'),
+          matching: find.textContaining('Priority'),
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('opens on tapping a goal, saying where each property comes '
@@ -1170,7 +1177,7 @@ void main() {
 
       expect(find.byType(AlertDialog), findsNothing);
       expect(goalOf(await repo.goals(), 'tofu').priority, 0);
-      expect(find.text('Priority 0 · Fixed time'), findsOneWidget);
+      expect(find.text('Priority 0'), findsOneWidget);
 
       await tester.tap(find.text('Tofu tikka'));
       await tester.pumpAndSettle();
@@ -1181,7 +1188,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(goalOf(await repo.goals(), 'tofu').priority, isNull);
-      expect(find.text('Priority 1 (inherited) · Fixed time'), findsOneWidget);
+      expect(find.text('Priority 0'), findsNothing);
     });
 
     testWidgets('"…" takes any other priority', (tester) async {
@@ -1220,10 +1227,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(goalOf(await repo.goals(), 'tofu').fixedTime, isFalse);
-      expect(
-        find.text('Priority 1 (inherited) · Flexible time'),
-        findsOneWidget,
-      );
+      expect(find.text('Flexible time'), findsOneWidget);
     });
 
     testWidgets("clears a goal's own color", (tester) async {

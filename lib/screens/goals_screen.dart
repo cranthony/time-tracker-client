@@ -747,7 +747,7 @@ enum GoalSummary {
   /// Its time as a share of each window: "37.5% of 24h · 6% of 7d".
   percent('Time as a percentage'),
 
-  /// What it gives its events: "Priority 2 (inherited) · Fixed time".
+  /// What's set on it for its events: "Priority 2 · Fixed time".
   eventProperties('Event properties');
 
   const GoalSummary(this.label);
@@ -1315,15 +1315,13 @@ String formatTimestamp(BuildContext context, DateTime time) {
       '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
 }
 
-/// The priority and fixed time [goal] gives its events, its own or
-/// inherited: "Priority 2 (inherited) · Fixed time". Null if it gives
-/// neither.
+/// The priority and fixed time set on [goal] for its events: "Priority 2
+/// · Fixed time". Ones it inherits are left out, so what's set on it
+/// stands out. Null if neither is set.
 String? describeEventProperties(Goal goal) {
-  final inherited = goal.inheritsPriority ? ' (inherited)' : '';
   final parts = [
-    if (goal.effectivePriority case final priority?)
-      'Priority $priority$inherited',
-    switch (goal.effectiveFixedTime) {
+    if (goal.priority case final priority?) 'Priority $priority',
+    switch (goal.fixedTime) {
       true => 'Fixed time',
       false => 'Flexible time',
       null => null,
