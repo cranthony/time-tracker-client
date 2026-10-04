@@ -6,7 +6,7 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
-## 5.3.1
+## 5.4.1
 
 - Swiping between days on the Events page keeps the time of day shown.
   It went back to midnight after a day that was still loading or had no
@@ -14,6 +14,16 @@ on. Add the new version's section here at the same time; CI checks both.
 - The hours down the side of the Events page stay still while the days
   slide past them. Each day's own marks, such as the times its events
   start and end, "now" and "last compacted", slide with it.
+
+## 5.4.0
+
+- Picking an event's goals, in its short dialog or its Details, no
+  longer means scrolling every goal. The goals picked sit on top as
+  chips, the primary goal starred; ✕ removes one. "Search goals" finds
+  a goal by any words of its path, e.g. "cook tofu", showing where each
+  match sits; Enter picks the top one. With the search empty, the goals
+  are a tree that opens only down to the ones picked; the arrow beside
+  a goal shows or hides its sub-goals.
 
 ## 5.3.0
 

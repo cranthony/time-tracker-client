@@ -8,6 +8,7 @@ import '../models/note.dart';
 import '../services/mcp_client.dart';
 import 'color_picker.dart';
 import 'durations.dart';
+import 'goals_picker.dart';
 import 'measure_editor.dart';
 
 /// How a property is shown and edited.
@@ -1000,9 +1001,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     });
   }
 
-  /// Ticks for every active goal (and any inactive one already picked), in
-  /// tree order; the goals are kept in the order they were ticked, so the
-  /// first stays the primary goal.
+  /// Its goals, searched for or picked from the tree; see [GoalsPicker].
   Widget _goalsPicker(BuildContext context) {
     final picked = _draft as List<String>;
     if (_goals == null) {
@@ -1021,37 +1020,19 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         ],
       );
     }
-    return _withGoals(context, (goals) {
-      final shown = [
-        for (final goal in goals)
-          if (goal.id != null && (goal.active || picked.contains(goal.id)))
-            goal,
-      ];
-      if (shown.isEmpty) return const Text('No active goals.');
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final goal in shown)
-            CheckboxListTile(
-              dense: true,
-              contentPadding: EdgeInsetsDirectional.only(
-                start: 16.0 * goal.depth,
-              ),
-              controlAffinity: ListTileControlAffinity.leading,
-              value: picked.contains(goal.id),
-              title: _goalLabel(goal, indent: false),
-              subtitle: picked.isNotEmpty && picked.first == goal.id
-                  ? const Text('Primary goal')
-                  : null,
-              onChanged: (on) => setState(() {
-                picked.remove(goal.id);
-                if (on == true) picked.add(goal.id!);
-              }),
-            ),
-        ],
-      );
-    });
+    return _withGoals(
+      context,
+      (goals) => GoalsPicker(
+        goals: goals,
+        picked: picked,
+        onChanged: (ids) => setState(() => _draft = ids),
+        marker: (goal) =>
+            switch (parseColor(goal.backgroundColor ?? goal.effectiveColor)) {
+              final c? => ColorDot(color: c, size: 12),
+              null => const SizedBox(width: 12),
+            },
+      ),
+    );
   }
 
   Future<void> _pickDay() async {
