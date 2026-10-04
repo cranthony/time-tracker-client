@@ -95,6 +95,41 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
   );
 }
 
+/// Shows a new event, from [start] to [end], as [showEventSummaryDialog]
+/// shows one, blank but for its times, with its summary open to type.
+/// "Create", once it has a summary, sends it with [create], as
+/// `create_event` takes it. Returns what [create] returned (the events the
+/// server changed), or null if it was called off.
+Future<List<Event>?> showNewEventDialog(
+  BuildContext context, {
+  required DateTime start,
+  required DateTime end,
+  required Future<List<Event>> Function(Map<String, Object?> fields) create,
+  Map<String, Goal> goals = const {},
+  Future<List<Goal>> Function()? loadGoals,
+}) async {
+  final values = {
+    'start': localIsoTimestamp(start),
+    'end': localIsoTimestamp(end),
+  };
+  final outcome = await showDialog<SummaryOutcome<List<Event>>>(
+    context: context,
+    builder: (_) => _SummaryDialog<List<Event>>(
+      values: values,
+      creating: true,
+      goals: goals,
+      loadGoals: loadGoals,
+      save: (changes) async =>
+          () => create({...values, ...changes}),
+      remove: null,
+    ),
+  );
+  return switch (outcome) {
+    SummarySaved(:final value) => value,
+    _ => null,
+  };
+}
+
 /// Shows the recurring series [recurrence] as [showEventSummaryDialog]
 /// shows an event, with how it repeats under its summary, and its first
 /// event's times.
@@ -194,6 +229,7 @@ class _SummaryDialog<T> extends StatefulWidget {
     required this.save,
     required this.remove,
     this.series = false,
+    this.creating = false,
     this.openSeries,
   });
 
@@ -211,6 +247,10 @@ class _SummaryDialog<T> extends StatefulWidget {
 
   /// Whether it's a series, rather than an event.
   final bool series;
+
+  /// Whether it's a new event, not yet on the server: it opens with its
+  /// summary to type, and "Create" sends it once it has one.
+  final bool creating;
   final Future<bool> Function()? openSeries;
 
   @override
@@ -234,6 +274,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   String? _error;
 
   bool get _editable => widget.save != null;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.creating) _editing = _Field.summary;
+  }
 
   @override
   void dispose() {
@@ -393,7 +439,28 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           ),
         ),
       ),
-      actions: changed
+      actions: widget.creating
+          ? [
+              TextButton(
+                onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                // Every event has a summary.
+                onPressed:
+                    _saving ||
+                        (_value('summary') as String? ?? '').trim().isEmpty
+                    ? null
+                    : _save,
+                child: _saving
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Create'),
+              ),
+            ]
+          : changed
           ? [
               TextButton(
                 onPressed: _saving ? null : () => Navigator.of(context).pop(),

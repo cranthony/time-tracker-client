@@ -15,6 +15,7 @@ import 'package:time_tracker_client/screens/goal_history_screen.dart';
 import 'package:time_tracker_client/screens/goals_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
 import 'package:time_tracker_client/theme.dart';
+import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/priority_chip.dart';
 
 /// A fixed moment, so every run renders the same thing.
@@ -307,6 +308,35 @@ void main() {
           serverLabel: 'sample',
           clock: () => _now,
         ),
+      );
+    });
+
+    // A new event, from tapping the gap before dinner.
+    testWidgets('event_new ($mode)', (tester) async {
+      await render(
+        tester,
+        'event_new',
+        EventsScreen(
+          repository: sample.eventsRepository(),
+          goalsRepository: sample.goalsRepository(),
+          serverLabel: 'sample',
+          clock: () => _now,
+        ),
+        then: () async {
+          final timeline = find.byType(DayTimeline);
+          final day = DateTime(_now.year, _now.month, _now.day);
+          final y = timelineOffset(
+            DateTime(_now.year, _now.month, _now.day, 17),
+            day: day,
+            dayEnd: day.add(const Duration(days: 1)),
+            scale: defaultTimelineScale,
+          );
+          await tester.tapAt(
+            tester.getTopLeft(timeline) +
+                Offset(tester.getSize(timeline).width - 20, y),
+          );
+          await tester.pumpAndSettle();
+        },
       );
     });
 

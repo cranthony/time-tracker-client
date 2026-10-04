@@ -116,6 +116,19 @@ double timelineHeight(DateTime day, double scale) {
   return timelineOffset(dayEnd, day: day, dayEnd: dayEnd, scale: scale) + _pad;
 }
 
+/// The time [offset] down a [DayTimeline] is: the inverse of
+/// [timelineOffset], clamped to the day.
+DateTime timelineTime(
+  double offset, {
+  required DateTime day,
+  required DateTime dayEnd,
+  required double scale,
+}) {
+  final length = dayEnd.difference(day).inSeconds / 60;
+  final minutes = ((offset - _pad) / scale).clamp(0, length);
+  return day.add(Duration(seconds: (minutes * 60).round()));
+}
+
 /// Where each of [events] is drawn, by start: at its times, at [scale],
 /// unless it needs more room for its text ([minHeight]) than it lasts,
 /// or the event above it does. Then it's drawn taller, or lower, but
@@ -237,6 +250,9 @@ List<T> placeLabels<T>(
 /// Under it all is its [TimelineAxis], unless not to draw its [axis]:
 /// then it's drawn over one drawn apart, and covers the axis' times its
 /// own labels would overlap.
+///
+/// Tapping an event calls [onTap] with it; tapping anywhere else calls
+/// [onTapTime] with the time there.
 class DayTimeline extends StatelessWidget {
   const DayTimeline({
     super.key,
@@ -247,6 +263,7 @@ class DayTimeline extends StatelessWidget {
     this.now,
     this.lastCompaction,
     this.onTap,
+    this.onTapTime,
     this.axis = true,
   });
 
@@ -264,6 +281,9 @@ class DayTimeline extends StatelessWidget {
   /// is as the notes had it.
   final DateTime? lastCompaction;
   final ValueChanged<Event>? onTap;
+
+  /// Called with the time at a tap that isn't on an event.
+  final ValueChanged<DateTime>? onTapTime;
 
   /// Whether to draw its [TimelineAxis] under it.
   final bool axis;
@@ -389,36 +409,50 @@ class DayTimeline extends StatelessWidget {
                     style: markerStyle,
                     scaler: scaler,
                   ),
-            child: SizedBox(
-              width: constraints.maxWidth,
-              height: height,
-              child: Stack(
-                children: [
-                  for (final placement in placements)
-                    Positioned(
-                      left: _cardsLeft,
-                      top: placement.top,
-                      width: cardWidth,
-                      height: placement.bottom - placement.top,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: _cardInset,
-                        ),
-                        child: _EventCard(
-                          placement: placement,
-                          goals: goals,
-                          styles: styles,
-                          onTap: onTap == null
-                              ? null
-                              : () => onTap!(placement.event),
-                          timeLabel: (t) => MaterialLocalizations.of(context)
-                              .formatTimeOfDay(
-                                TimeOfDay.fromDateTime(t.toLocal()),
-                              ),
-                        ),
+            child: GestureDetector(
+              // The events' own taps win where they are.
+              behavior: HitTestBehavior.opaque,
+              onTapUp: onTapTime == null
+                  ? null
+                  : (details) => onTapTime!(
+                      timelineTime(
+                        details.localPosition.dy,
+                        day: day,
+                        dayEnd: dayEnd,
+                        scale: scale,
                       ),
                     ),
-                ],
+              child: SizedBox(
+                width: constraints.maxWidth,
+                height: height,
+                child: Stack(
+                  children: [
+                    for (final placement in placements)
+                      Positioned(
+                        left: _cardsLeft,
+                        top: placement.top,
+                        width: cardWidth,
+                        height: placement.bottom - placement.top,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: _cardInset,
+                          ),
+                          child: _EventCard(
+                            placement: placement,
+                            goals: goals,
+                            styles: styles,
+                            onTap: onTap == null
+                                ? null
+                                : () => onTap!(placement.event),
+                            timeLabel: (t) => MaterialLocalizations.of(context)
+                                .formatTimeOfDay(
+                                  TimeOfDay.fromDateTime(t.toLocal()),
+                                ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
