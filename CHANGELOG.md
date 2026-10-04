@@ -15,7 +15,8 @@ on. Add the new version's section here at the same time; CI checks both.
   goal picked now. Tapping a goal picks it; Enter picks the top match.
   The field shows the goal's whole path.
 - A goal's parent can no longer be the goal itself or one of its own
-  sub-goals. "None (top-level)" makes it a top-level goal.
+  sub-goals, nor an archived or deleted goal, unless it's already the
+  parent. "None (top-level)" makes it a top-level goal.
 - Enter in a goal search picks what was just typed, even typed fast.
 
 ## 5.6.0

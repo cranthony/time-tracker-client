@@ -946,8 +946,15 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         value: _draft as String?,
         title: 'Pick its parent goal',
         noneLabel: 'None (top-level)',
-        // Not under itself.
-        exclude: id is String ? goalAndSubGoals(goals, id) : const {},
+        exclude: {
+          // Not under itself,
+          if (id is String) ...goalAndSubGoals(goals, id),
+          // nor under a goal put away, unless it's there already.
+          for (final goal in goals)
+            if (const {'archived', 'deleted'}.contains(goal.status) &&
+                goal.id != _draft)
+              ?goal.id,
+        },
         marker: _goalDot,
         onChanged: (id) => setState(() => _draft = id),
       ),

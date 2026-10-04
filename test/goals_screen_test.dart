@@ -1317,6 +1317,24 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byType(GoalField));
     await tester.pumpAndSettle();
+    // Not a goal put away; inactive ones, though.
+    final picker = find.byType(GoalsPicker);
+    expect(
+      find.descendant(of: picker, matching: find.text('Shelved')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: picker, matching: find.text('Oops')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: picker, matching: find.text('Old habit')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: picker, matching: find.text('Done thing')),
+      findsOneWidget,
+    );
     // Searched by path; not itself.
     await tester.enterText(
       find.descendant(
@@ -1367,6 +1385,49 @@ void main() {
         of: find.byType(GoalsPicker),
         matching: find.text('Cooking'),
       ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('a goal put away is still listed as the parent it is', (
+    tester,
+  ) async {
+    final repo = InMemoryGoalsRepository([
+      const Goal(id: 'shelf', name: 'Shelved', status: 'archived'),
+      const Goal(id: 'leaf', name: 'Leaf', parentId: 'shelf'),
+      const Goal(id: 'oops', name: 'Oops', status: 'deleted'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Show goals that are…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(CheckboxMenuButton, 'Archived'));
+    await tester.pumpAndSettle();
+    await tester.tapAt(Offset.zero);
+    await tester.pumpAndSettle();
+    await swipe(tester, 'Shelved');
+    await openDetails(tester, 'Leaf');
+    final row = find.ancestor(
+      of: find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('parent_id'),
+      ),
+      matching: find.byType(PropertyRow),
+    );
+    await tester.tap(
+      find.descendant(of: row, matching: find.byType(InkWell)).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(GoalField));
+    await tester.pumpAndSettle();
+    final picker = find.byType(GoalsPicker);
+    expect(
+      find.descendant(of: picker, matching: find.text('Shelved')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: picker, matching: find.text('Oops')),
       findsNothing,
     );
   });
