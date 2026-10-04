@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/goal.dart';
 import '../models/measure.dart';
+import '../outbox/goal_outbox.dart';
+import '../outbox/pending_goal_save.dart';
+import '../outbox/save_error.dart';
 import '../services/goals_repository.dart';
 import '../services/mcp_client.dart';
 import 'goal_history_screen.dart';
@@ -39,6 +44,7 @@ class GoalsScreen extends StatefulWidget {
   const GoalsScreen({
     super.key,
     required this.repository,
+    required this.outbox,
     required this.serverLabel,
     this.onSignIn,
     this.onSignOut,
@@ -46,6 +52,10 @@ class GoalsScreen extends StatefulWidget {
   });
 
   final GoalsRepository repository;
+
+  /// Where saves go, to be sent in the background: the dialogs close at
+  /// once, as notes' do.
+  final GoalOutbox outbox;
 
   /// Which server this build talks to, for the About dialog.
   final String serverLabel;
@@ -62,10 +72,21 @@ class GoalsScreen extends StatefulWidget {
 }
 
 class _GoalsScreenState extends State<GoalsScreen> {
-  GoalList? _goals;
+  /// The goals as the server last listed them, with the saves it's
+  /// answered since made to them.
+  GoalList? _fromServer;
 
-  /// [_goals] are the ones kept from last time; the server hasn't answered
-  /// since.
+  /// The goals shown: [_fromServer], with the saves waiting in the
+  /// outbox, or that failed, made to them.
+  GoalList? get _goals => switch (_fromServer) {
+    final goals? => _withSaves(goals, widget.outbox.saves),
+    null => null,
+  };
+
+  StreamSubscription<GoalSaveEvent>? _saveEvents;
+
+  /// [_fromServer] are the ones kept from last time; the server hasn't
+  /// answered since.
   bool _stale = false;
   Object? _error;
   bool _needsSignIn = false;
@@ -83,29 +104,11 @@ class _GoalsScreenState extends State<GoalsScreen> {
   /// What each goal shows under its name.
   GoalSummary _summary = GoalSummary.time;
 
-  /// The changes saved from the dialogs, sent one at a time, in order.
-  Future<void> _sending = Future.value();
-
-  /// How many of them haven't been answered yet: while any haven't, the
-  /// goals shown have them in, ahead of the server.
-  int _unsaved = 0;
-
-  /// Goals added here that the server hasn't answered for yet, by the id
-  /// they're shown with until it does. They can't be opened until then.
-  final _provisional = <String>{};
-  int _nextProvisional = 1;
-
-  /// Saves that failed, by the id of the goal they're for, kept to try
-  /// again: shown in the goals, each goal with an error in place of its
-  /// menu, until they're saved or discarded.
-  final _failed = <String, _FailedSave>{};
-
-  /// The goals as the server last listed them, without [_failed].
-  GoalList? _fromServer;
-
   @override
   void initState() {
     super.initState();
+    widget.outbox.addListener(_outboxChanged);
+    _saveEvents = widget.outbox.events.listen(_onSaveEvent);
     _showCached();
     _load();
     _loadSummary();
@@ -140,22 +143,68 @@ class _GoalsScreenState extends State<GoalsScreen> {
   Future<void> _showCached() async {
     final goals = await widget.repository.cachedGoals();
     if (!mounted || goals == null) return;
-    if (_goals != null || _needsSignIn || _error != null) return;
+    if (_fromServer != null || _needsSignIn || _error != null) return;
     setState(() {
-      _goals = goals;
+      _fromServer = goals;
       _stale = true;
     });
+  }
+
+  @override
+  void dispose() {
+    widget.outbox.removeListener(_outboxChanged);
+    _saveEvents?.cancel();
+    super.dispose();
+  }
+
+  void _outboxChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onSaveEvent(GoalSaveEvent event) {
+    if (!mounted) return;
+    switch (event) {
+      case GoalSaved(:final save, :final createdId):
+        final goals = _fromServer;
+        if (goals == null) return;
+        // So it doesn't go missing until the goals are fetched again.
+        setState(() {
+          _fromServer = switch ((save.isNew, createdId)) {
+            (false, _) => _withChanged(goals, save.goalId, save.changes),
+            (true, final id?) => _inTree(goals, [
+              ...goals.goals,
+              Goal.fromJson({...save.goal.toJson(), 'id': id}),
+            ]),
+            (true, null) => goals,
+          };
+        });
+      case GoalSaveFailed(:final save):
+        final name = save.isNew
+            ? save.goal.name
+            : _goals?.goals.where((g) => g.id == save.goalId).firstOrNull?.name;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Couldn't save ${name ?? 'a goal'}. ${save.error}"),
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: () => widget.outbox.retry(save.goalId),
+            ),
+          ),
+        );
+      case GoalSavesDone():
+        _load();
+    }
   }
 
   Future<void> _load() async {
     try {
       final goals = await widget.repository.goals();
-      // The last change saved brings the goals with it, and these may not
-      // have them yet.
-      if (!mounted || _unsaved > 0) return;
+      if (!mounted) return;
+      widget.outbox.reconcile(goals);
       setState(() {
-        _showFromServer(goals);
-        _provisional.clear();
+        // While saves are being sent these may be behind them: they're
+        // fetched again once the last is answered.
+        if (_fromServer == null || !widget.outbox.busy) _fromServer = goals;
         _stale = false;
         _error = null;
         _needsSignIn = false;
@@ -163,7 +212,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
     } on SignInRequiredException {
       if (!mounted) return;
       setState(() {
-        _goals = null;
+        _fromServer = null;
         _stale = false;
         _needsSignIn = true;
       });
@@ -177,7 +226,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
   /// ReorderableListView.onReorderItem gives it) among its siblings, shows the new
   /// order at once, and saves it.
   Future<void> _reorder(List<Goal> shown, int oldIndex, int newIndex) async {
-    final goals = _goals;
+    final goals = _fromServer;
     if (goals == null) return;
     final moved = shown[oldIndex];
     final order = [...shown]
@@ -192,14 +241,16 @@ class _GoalsScreenState extends State<GoalsScreen> {
         if (goal.parentId == moved.parentId) goal.id!,
     ];
     if (ids.join(',') == before.join(',')) return;
-    setState(() => _goals = _withSiblingOrder(goals, ids));
+    setState(() => _fromServer = _withSiblingOrder(goals, ids));
     final messenger = ScaffoldMessenger.of(context);
     try {
       final saved = await widget.repository.reorderGoals(ids);
-      if (mounted) setState(() => _showFromServer(saved));
+      if (mounted) setState(() => _fromServer = saved);
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text("Couldn't save the new order. ${_why(e)}")),
+        SnackBar(
+          content: Text("Couldn't save the new order. ${describeSaveError(e)}"),
+        ),
       );
       await _load();
     }
@@ -209,188 +260,42 @@ class _GoalsScreenState extends State<GoalsScreen> {
   Future<List<Goal>> _allGoals() async =>
       (await widget.repository.goals()).goals;
 
-  /// Shows [goals], from the server, with the saves that failed made to
-  /// them. A new goal that failed is let go of if the server has it after
-  /// all: the answer may have been lost, not the request.
-  void _showFromServer(GoalList goals) {
-    _fromServer = goals;
-    _failed.removeWhere(
-      (_, failed) =>
-          failed.isNew &&
-          goals.goals.any(
-            (g) =>
-                g.parentId == failed.changes['parent_id'] &&
-                g.name == failed.changes['name'],
-          ),
-    );
-    var shown = goals;
-    for (final MapEntry(key: id, value: failed) in _failed.entries) {
-      shown = failed.isNew
-          ? _inTree(shown, [...shown.goals, failed.goal(id)])
-          : _withChanged(shown, id, failed.changes);
-    }
-    _goals = shown;
-  }
-
-  /// Sends [send] after every change before it, without waiting for it:
-  /// the dialogs close at once, as notes' do. Once the last change is
-  /// answered, the goals are fetched, once, and shown as the server has
-  /// them. If [send] fails, says so, and calls [failed] with why.
-  void _sendInBackground(
-    String what,
-    Future<void> Function() send, {
-    required void Function(String why) failed,
-    required VoidCallback retry,
-  }) {
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() => _unsaved++);
-    _sending = _sending.then((_) async {
-      Object? error;
-      try {
-        await send();
-      } catch (e) {
-        error = e;
-      }
-      if (!mounted) return;
-      setState(() {
-        _unsaved--;
-        if (error != null) failed(_why(error));
-      });
-      if (error != null) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text("Couldn't save $what. ${_why(error)}"),
-            action: SnackBarAction(
-              label: 'Retry',
-              onPressed: () {
-                if (mounted) retry();
-              },
-            ),
-          ),
-        );
-      }
-      if (_unsaved == 0) await _load();
-    });
-  }
-
-  /// Shows [changes] to [goal] at once, and saves them in the background,
-  /// with any of its changes that failed before. Returns the goals as
-  /// they're shown now.
+  /// Saves [changes] to [goal] in the background. Returns the goals as
+  /// they're shown now, with them.
   Future<GoalList> _update(Goal goal, Map<String, Object?> changes) async {
-    final id = goal.id!;
-    final all = {...?_failed[id]?.changes, ...changes};
-    final shown = _withChanged(_goals!, id, all);
-    setState(() {
-      _failed.remove(id);
-      _goals = shown;
-    });
-    _sendInBackground(
-      goalName(goal),
-      () => widget.repository.updateGoal(goal, all),
-      // Any failed already were sent before these, so these win.
-      failed: (why) => _failed[id] = _FailedSave(
-        changes: {...?_failed[id]?.changes, ...all},
-        isNew: false,
-        why: why,
-      ),
-      retry: () => _retry(id),
-    );
-    return shown;
+    widget.outbox.update(goal.id!, changes);
+    return _goals!;
   }
 
-  /// Shows a goal made from [fields] at once, and creates it in the
-  /// background; [id] is the one it was shown with before, if it failed.
-  /// Returns the goals as they're shown now.
-  Future<GoalList> _create(Map<String, Object?> fields, {String? id}) async {
-    final shownAs = id ?? 'unsaved-${_nextProvisional++}';
-    final goals = _goals!;
-    final shown = _inTree(goals, [
-      for (final goal in goals.goals)
-        if (goal.id != shownAs) goal,
-      Goal.fromJson({'status': 'active', ...fields, 'id': shownAs}),
-    ]);
-    setState(() {
-      _failed.remove(shownAs);
-      _goals = shown;
-      _provisional.add(shownAs);
-    });
-    _sendInBackground(
-      switch (fields['name']) {
-        final String name when name.isNotEmpty => name,
-        _ => 'the new goal',
-      },
-      () async {
-        // Without its id, it waits for the goals to be fetched.
-        if (await widget.repository.createGoal(fields) case final created?) {
-          _created(shownAs, created);
-        }
-      },
-      failed: (why) {
-        _provisional.remove(shownAs);
-        _failed[shownAs] = _FailedSave(changes: fields, isNew: true, why: why);
-      },
-      retry: () => _retry(shownAs),
-    );
-    return shown;
+  /// Creates a goal from [fields] in the background. Returns the goals as
+  /// they're shown now, with it.
+  Future<GoalList> _create(Map<String, Object?> fields) async {
+    widget.outbox.create(fields);
+    return _goals!;
   }
 
-  /// Gives the goal shown as [id] the id the server gave it, [created],
-  /// so it can be opened.
-  void _created(String id, String created) {
-    final goals = _goals;
-    if (!mounted || goals == null) return;
-    setState(() {
-      _provisional.remove(id);
-      _goals = _inTree(goals, [
-        for (final goal in goals.goals)
-          goal.id == id
-              ? Goal.fromJson({...goal.toJson(), 'id': created})
-              : goal,
-      ]);
-    });
-  }
+  /// The save that failed for the goal shown as [id], if one did.
+  PendingGoalSave? _failed(String? id) => widget.outbox.saves
+      .where((s) => s.goalId == id && s.error != null)
+      .lastOrNull;
 
-  /// Sends the save that failed for the goal shown as [id] again, as it
-  /// was.
-  void _retry(String id) {
-    final failed = _failed[id];
-    final goal = _goals?.goals.where((g) => g.id == id).firstOrNull;
-    if (failed == null || goal == null) return;
-    if (failed.isNew) {
-      _create(failed.changes, id: id);
-    } else {
-      _update(goal, const {});
-    }
-  }
-
-  /// Lets go of the save that failed for the goal shown as [id]: a new
-  /// goal goes, and a goal's changes are undone, as soon as nothing else
-  /// is being saved.
-  void _discard(String id) {
-    final failed = _failed[id];
-    if (failed == null) return;
-    setState(() {
-      _failed.remove(id);
-      if (_fromServer case final goals? when _unsaved == 0) {
-        _showFromServer(goals);
-      } else if (failed.isNew) {
-        _goals = _inTree(_goals!, [
-          for (final goal in _goals!.goals)
-            if (goal.id != id) goal,
-        ]);
-      }
-    });
-  }
+  /// Whether the goal shown as [id] is new, and the server hasn't made it
+  /// yet: it can't be opened until then.
+  bool _unmade(String? id) =>
+      widget.outbox.saves.any((s) => s.goalId == id && s.isNew);
 
   /// Shows [goal]'s details to edit; one whose save failed opens with the
   /// changes that weren't saved, to save again.
   Future<void> _open(Goal goal) async {
     final id = goal.id!;
-    switch (_failed[id]) {
-      case _FailedSave(isNew: true, :final changes):
+    switch (_failed(id)) {
+      case PendingGoalSave(isNew: true, :final changes):
         await showNewGoalDialog(
           context,
-          create: (fields) => _create(fields, id: id),
+          create: (fields) async {
+            widget.outbox.update(id, fields, replace: true);
+            return _goals!;
+          },
           parentId: changes['parent_id'] as String?,
           fields: changes,
           goals: _allGoals,
@@ -404,7 +309,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
           context,
           saved,
           changes: failed?.changes ?? const {},
-          save: _update,
+          // What wasn't saved is among the changes, as they stand now.
+          save: failed == null
+              ? _update
+              : (goal, changes) async {
+                  widget.outbox.update(id, changes, replace: true);
+                  return _goals!;
+                },
           confirmSave: (changes) => switch (changes['status']) {
             final String status when status != saved.status => _confirmStatus(
               saved,
@@ -501,6 +412,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
     setState(() => _signingIn = true);
     try {
       await widget.onSignIn!();
+      widget.outbox.retryAll();
       await _load();
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Sign-in failed: $e')));
@@ -561,7 +473,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
             : null,
         body: RefreshingBar(
           refreshing:
-              (_stale && _error == null && !_needsSignIn) || _unsaved > 0,
+              (_stale && _error == null && !_needsSignIn) || widget.outbox.busy,
           child: RefreshIndicator(onRefresh: _load, child: _buildBody(context)),
         ),
       ),
@@ -741,15 +653,16 @@ class _GoalsScreenState extends State<GoalsScreen> {
             // One the server hasn't made yet has nothing to open, and
             // nothing is reordered under changes still being saved, or
             // around a goal that couldn't be made.
-            saving: _provisional.contains(goal.id),
-            failed: _failed[goal.id]?.why,
-            onTap: _failed.containsKey(goal.id)
-                ? () => _open(goal)
-                : () => _measure(goal),
+            saving: _unmade(goal.id) && _failed(goal.id) == null,
+            failed: _failed(goal.id)?.error,
+            onTap: _failed(goal.id) == null
+                ? () => _measure(goal)
+                : () => _open(goal),
             onDetails: () => _open(goal),
-            onRetry: () => _retry(goal.id!),
-            onDiscard: () => _discard(goal.id!),
-            onLongPress: _unsaved > 0 || _failed.values.any((f) => f.isNew)
+            onRetry: () => widget.outbox.retry(goal.id!),
+            onDiscard: () => widget.outbox.discard(goal.id!),
+            onLongPress:
+                widget.outbox.busy || widget.outbox.saves.any((s) => s.isNew)
                 ? null
                 : () => setState(() => _reordering = true),
             onAddSubGoal: () => _add(parentId: goal.id),
@@ -1137,33 +1050,18 @@ class _GoalTile extends StatelessWidget {
   }
 }
 
-/// A save that failed, kept to try again.
-class _FailedSave {
-  const _FailedSave({
-    required this.changes,
-    required this.isNew,
-    required this.why,
-  });
-
-  /// For a new goal, everything it's made with; else, the changes to it,
-  /// keyed as `update_goal` takes them.
-  final Map<String, Object?> changes;
-  final bool isNew;
-
-  /// Why it failed.
-  final String why;
-
-  /// The new goal it would make, shown as [id].
-  Goal goal(String id) =>
-      Goal.fromJson({'status': 'active', ...changes, 'id': id});
+/// [goals] with [saves] made to them, oldest first: each new goal added,
+/// and each goal's changes made.
+GoalList _withSaves(GoalList goals, List<PendingGoalSave> saves) {
+  if (saves.isEmpty) return goals;
+  var shown = goals;
+  for (final save in saves) {
+    shown = save.isNew
+        ? _inTree(shown, [...shown.goals, save.goal])
+        : _withChanged(shown, save.goalId, save.changes);
+  }
+  return shown;
 }
-
-/// Why [e] kept something from being saved, to say after "Couldn't save".
-String _why(Object e) => switch (e) {
-  SignInRequiredException() => 'Sign in again, then try again.',
-  McpException(:final message) => message,
-  _ => '$e',
-};
 
 /// [goals] with [changes], keyed as `update_goal` takes them, made to the
 /// goal with [id]: moved, if it's given another parent, and renamed in

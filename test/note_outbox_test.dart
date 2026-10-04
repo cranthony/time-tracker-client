@@ -42,7 +42,7 @@ class FlakyRepository extends InMemoryNotesRepository {
 
 void main() {
   late FlakyRepository server;
-  late InMemoryOutboxStore store;
+  late InMemoryOutboxStore<PendingNote> store;
   late DateTime now;
 
   NoteOutbox outbox() =>
@@ -68,7 +68,7 @@ void main() {
 
     expect(result.remaining, 0);
     expect(box.pending, isEmpty);
-    expect(store.notes, isEmpty);
+    expect(store.items, isEmpty);
     final saved = (await server.uncompactedNotes()).single;
     expect(saved.description, 'Standup');
     // Truncated to whole seconds.
@@ -157,7 +157,7 @@ void main() {
   });
 
   test('leaves a note alone while another sender has it in flight', () async {
-    store.notes = [PendingNote(id: 'a', note: note, sendingSince: now)];
+    store.items = [PendingNote(id: 'a', note: note, sendingSince: now)];
     final box = outbox();
     await box.flush(ignoreBackoff: true);
     expect(server.addCalls, 0);
@@ -175,7 +175,7 @@ void main() {
     // The background task saved it, then was stopped before it could say
     // so: no failed attempts, just its stale claim.
     await server.addNote(note);
-    store.notes = [
+    store.items = [
       PendingNote(
         id: 'a',
         note: note,
@@ -191,7 +191,7 @@ void main() {
 
   test('a store that fails while claiming a note doesn\'t leave it '
       'saving', () async {
-    final failing = _FailingStore()..notes = [PendingNote(id: 'a', note: note)];
+    final failing = _FailingStore()..items = [PendingNote(id: 'a', note: note)];
     store = failing;
     final box = outbox();
     failing.failSaves = true;
@@ -209,7 +209,7 @@ void main() {
   testWidgets('a store that never answers doesn\'t hold up later changes', (
     tester,
   ) async {
-    final hanging = _FailingStore()..notes = [PendingNote(id: 'a', note: note)];
+    final hanging = _FailingStore()..items = [PendingNote(id: 'a', note: note)];
     store = hanging;
     final box = outbox();
     hanging.hang = true;
@@ -231,7 +231,7 @@ void main() {
 
     expect(await box.cancel(pending), isTrue);
     expect(box.pending, isEmpty);
-    expect(store.notes, isEmpty);
+    expect(store.items, isEmpty);
 
     await box.restore(pending);
     expect(box.pending.single.id, pending.id);
@@ -240,7 +240,7 @@ void main() {
   test('PrefsOutboxStore round-trips', () async {
     SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty();
-    final prefs = PrefsOutboxStore();
+    final prefs = PrefsOutboxStore.notes();
     final pending = PendingNote(
       id: 'x',
       note: note,
@@ -250,7 +250,7 @@ void main() {
     );
     await prefs.save([pending]);
 
-    final loaded = (await PrefsOutboxStore().load()).single;
+    final loaded = (await PrefsOutboxStore.notes().load()).single;
     expect(loaded.toJson(), pending.toJson());
 
     await prefs.save([]);
@@ -259,7 +259,7 @@ void main() {
 }
 
 /// Can fail to save, or stop answering altogether.
-class _FailingStore extends InMemoryOutboxStore {
+class _FailingStore extends InMemoryOutboxStore<PendingNote> {
   bool failSaves = false;
   bool hang = false;
 

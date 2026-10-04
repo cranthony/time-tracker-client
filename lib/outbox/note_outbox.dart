@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
 import '../models/note.dart';
 import '../services/mcp_client.dart';
 import '../services/notes_repository.dart';
 import 'outbox_store.dart';
 import 'pending_note.dart';
+import 'save_error.dart';
 
 /// Notes waiting to be saved to the server. New notes land here first (and
 /// in [OutboxStore], so they survive the app closing), then get sent one at
@@ -27,7 +27,7 @@ class NoteOutbox extends ChangeNotifier {
   }) : _clock = clock ?? DateTime.now,
        _random = random ?? Random();
 
-  final OutboxStore _store;
+  final OutboxStore<PendingNote> _store;
   final NotesRepository _repository;
   final DateTime Function() _clock;
   final Random _random;
@@ -199,7 +199,7 @@ class NoteOutbox extends ChangeNotifier {
           next.copyWith(
             attempts: attempts,
             sendingSince: () => null,
-            lastError: () => _describe(e),
+            lastError: () => describeSaveError(e),
             nextAttemptAt: () => _clock().add(backoff(attempts)),
           ),
         );
@@ -281,13 +281,6 @@ class NoteOutbox extends ChangeNotifier {
   static DateTime _truncateToSeconds(DateTime t) => t.subtract(
     Duration(microseconds: t.microsecond, milliseconds: t.millisecond),
   );
-
-  static String _describe(Object e) => switch (e) {
-    McpException(:final message) => message,
-    TimeoutException() => 'The server took too long to answer',
-    http.ClientException() => 'No connection to the server',
-    _ => e.toString().replaceFirst(RegExp(r'^\w*Exception: '), ''),
-  };
 }
 
 class FlushResult {
