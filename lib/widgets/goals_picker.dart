@@ -37,6 +37,7 @@ class GoalsPicker extends StatefulWidget {
 
 class _GoalsPickerState extends State<GoalsPicker> {
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
 
   /// The goals whose sub-goals are shown, while the search is empty.
   late final Set<String> _open = _ancestorsOf(widget.picked);
@@ -44,6 +45,7 @@ class _GoalsPickerState extends State<GoalsPicker> {
   @override
   void dispose() {
     _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -72,11 +74,15 @@ class _GoalsPickerState extends State<GoalsPicker> {
     return above;
   }
 
-  void _toggle(Goal goal, bool on) => widget.onChanged([
-    for (final id in widget.picked)
-      if (id != goal.id) id,
-    if (on) goal.id!,
-  ]);
+  /// Picks or unpicks [goal]; a goal picked opens the tree down to it.
+  void _toggle(Goal goal, bool on) {
+    if (on) _open.addAll(_ancestorsOf([goal.id!]));
+    widget.onChanged([
+      for (final id in widget.picked)
+        if (id != goal.id) id,
+      if (on) goal.id!,
+    ]);
+  }
 
   /// [goal]'s path above it, e.g. "Cooking" for "Cooking › Tofu"; null
   /// for a top-level goal.
@@ -116,6 +122,7 @@ class _GoalsPickerState extends State<GoalsPicker> {
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: TextField(
             controller: _search,
+            focusNode: _searchFocus,
             decoration: InputDecoration(
               isDense: true,
               border: const OutlineInputBorder(),
@@ -137,6 +144,8 @@ class _GoalsPickerState extends State<GoalsPicker> {
                 if (_matches(goal, words)) {
                   _toggle(goal, !widget.picked.contains(goal.id));
                   setState(_search.clear);
+                  // Ready for the next one.
+                  _searchFocus.requestFocus();
                   return;
                 }
               }

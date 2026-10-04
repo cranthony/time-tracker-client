@@ -71,6 +71,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(picked, ['tofu']);
     expect(find.text('Running'), findsOneWidget);
+    // Shown where it sits in the tree, and the search kept for the next.
+    expect(find.text('Tofu'), findsNWidgets(2));
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).focusNode?.hasFocus,
+      isTrue,
+    );
 
     await tester.enterText(find.byType(TextField), 'nothing like it');
     await tester.pumpAndSettle();
