@@ -70,6 +70,20 @@ void main() {
       expect(lunch.top, lunch.trueTop);
     });
 
+    test('an event pushed down, but long enough, is drawn shorter than '
+        'it lasts, ending where it ends', () {
+      final [call, work] = place([
+        event('Call', at(9), at(9, 5)),
+        event('Work', at(9, 5), at(11)),
+      ]);
+      expect(call.compressed, isTrue);
+      expect(call.shortened, isFalse);
+      expect(work.displaced, isTrue);
+      expect(work.shortened, isTrue);
+      expect(work.compressed, isFalse);
+      expect(work.bottom, work.trueBottom);
+    });
+
     test('clips an event from the day before to midnight', () {
       final [sleep] = place([event('Sleep', DateTime(2026, 9, 29, 23), at(7))]);
       expect(sleep.trueTop, 12);
