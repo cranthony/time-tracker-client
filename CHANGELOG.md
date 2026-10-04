@@ -6,7 +6,7 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
-## 4.11.1
+## 4.12.1
 
 - On the Events page, an event's duration box says how it's drawn: with
   square corners when the event is drawn taller than it lasts (to fit
@@ -16,6 +16,12 @@ on. Add the new version's section here at the same time; CI checks both.
 - The last compaction's line is labeled "last compacted", on two lines,
   so it's no longer cut off; the times down the side have a little more
   room.
+
+## 4.12.0
+
+- The Notes page shows the latest compacted note above the notes since,
+  smaller and muted with a calendar mark, and under it a dashed line, as
+  on the Events page, for when notes were last compacted.
 
 ## 4.11.0
 
