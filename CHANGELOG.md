@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.2.0
+
+- Clearing an event's or a series' priority, location, description or
+  minimum duration now removes it, rather than leaving it as it was. A
+  priority cleared ("From its goals") makes it follow its goals'
+  priority again; the chip says "From goals" until it's saved. A
+  series' priority can now be cleared too.
+- An emptied summary is no longer a change: every event keeps one.
+
 ## 5.1.0
 
 - Tapping an event on the Events page shows a shorter dialog with the
