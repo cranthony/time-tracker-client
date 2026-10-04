@@ -34,9 +34,9 @@ String _average(Goal goal) => goal.isOverall
 /// by it: its latest rating, its last 8 days, the days gone unrated and,
 /// for a measure of time or events, its recent time.
 ///
-/// Editing opens [showEditMeasureDialog] over it, which saves with
-/// [save]; this then shows the measure saved, and calls [onSaved] with
-/// every goal. Without [save], or for a goal with no id, it can't be
+/// Editing closes it and opens [showEditMeasureDialog] in its place, so
+/// dialogs don't stack; that saves with [save], then [onSaved] is called
+/// with every goal. Without [save], or for a goal with no id, it can't be
 /// edited. "History" and "Details" close it, then call [onHistory] or
 /// [onDetails] with the goal as it is now. [goals] lists the goals a
 /// measure can look at; [goalNames] names them.
@@ -49,35 +49,40 @@ Future<void> showMeasureDialog(
   Future<List<Goal>> Function()? goals,
   ValueChanged<Goal>? onHistory,
   ValueChanged<Goal>? onDetails,
-}) => showDialog<void>(
-  context: context,
-  builder: (_) => _MeasureDialog(
-    goal: goal,
-    goalNames: goalNames,
+}) async {
+  // True when "Edit measure" (or "Add a measure") closed it.
+  final edit = await showDialog<bool>(
+    context: context,
+    builder: (_) => _MeasureDialog(
+      goal: goal,
+      goalNames: goalNames,
+      editable: save != null && goal.id != null,
+      onHistory: onHistory,
+      onDetails: onDetails,
+    ),
+  );
+  if (edit != true || save == null || !context.mounted) return;
+  final saved = await showEditMeasureDialog(
+    context,
+    goal,
     save: save,
-    onSaved: onSaved,
     goals: goals,
-    onHistory: onHistory,
-    onDetails: onDetails,
-  ),
-);
+  );
+  if (saved != null) onSaved?.call(saved);
+}
 
 class _MeasureDialog extends StatefulWidget {
   const _MeasureDialog({
     required this.goal,
     required this.goalNames,
-    required this.save,
-    required this.onSaved,
-    required this.goals,
+    required this.editable,
     required this.onHistory,
     required this.onDetails,
   });
 
   final Goal goal;
   final Map<String?, String> goalNames;
-  final SaveGoal? save;
-  final ValueChanged<GoalList>? onSaved;
-  final Future<List<Goal>> Function()? goals;
+  final bool editable;
   final ValueChanged<Goal>? onHistory;
   final ValueChanged<Goal>? onDetails;
 
@@ -86,29 +91,9 @@ class _MeasureDialog extends StatefulWidget {
 }
 
 class _MeasureDialogState extends State<_MeasureDialog> {
-  /// The goal as last saved here.
-  late Goal _goal = widget.goal;
-
-  Future<void> _edit() async {
-    final saved = await showEditMeasureDialog(
-      context,
-      _goal,
-      save: widget.save!,
-      goals: widget.goals,
-    );
-    if (saved == null || !mounted) return;
-    setState(() {
-      _goal = saved.goals.firstWhere(
-        (goal) => goal.id == _goal.id,
-        orElse: () => _goal,
-      );
-    });
-    widget.onSaved?.call(saved);
-  }
-
   void _leaveFor(ValueChanged<Goal> then) {
     Navigator.of(context).pop();
-    then(_goal);
+    then(widget.goal);
   }
 
   @override
@@ -116,10 +101,10 @@ class _MeasureDialogState extends State<_MeasureDialog> {
     final theme = Theme.of(context);
     final text = theme.textTheme;
     final colors = theme.colorScheme;
-    final goal = _goal;
+    final goal = widget.goal;
     final measure = goal.measure;
     final kind = measure?['kind'] as String?;
-    final editable = widget.save != null && goal.id != null;
+    final editable = widget.editable;
     final muted = text.bodySmall?.copyWith(color: colors.onSurfaceVariant);
     return AlertDialog(
       title: Column(
@@ -217,7 +202,7 @@ class _MeasureDialogState extends State<_MeasureDialog> {
                       Align(
                         alignment: Alignment.centerRight,
                         child: FilledButton.tonalIcon(
-                          onPressed: _edit,
+                          onPressed: () => Navigator.of(context).pop(true),
                           icon: Icon(measure == null ? Icons.add : Icons.edit),
                           label: Text(
                             measure == null ? 'Add a measure' : 'Edit measure',
