@@ -94,4 +94,108 @@ void main() {
     );
     expect(noun.textCapitalization, TextCapitalization.none);
   });
+
+  group('time window, and only on days with events', () {
+    const goals = [
+      Goal(id: 'eat', name: 'Eat well'),
+      Goal(id: 'lunch', name: 'Eat lunch', parentId: 'eat'),
+      Goal(id: 'salsa', name: 'Practice salsa'),
+    ];
+
+    Future<List<Measure?>> pump(WidgetTester tester, Measure? measure) async {
+      final changes = <Measure?>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: MeasureEditor(
+                measure: measure,
+                onChanged: changes.add,
+                goalId: 'lunch',
+                goals: Future.value(goals),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return changes;
+    }
+
+    testWidgets('a time window keeps what it was given, and its window', (
+      tester,
+    ) async {
+      final changes = await pump(tester, const {
+        'kind': 'time_window',
+        'from': '11:30',
+        'to': '13:30',
+        'grace_min': 15,
+        'events_of': 'eat',
+        'include_sub_goals': false,
+      });
+      expect(find.text('From 11:30'), findsOneWidget);
+      expect(find.text('to 13:30'), findsOneWidget);
+
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Zero at, in minutes off'),
+        '60',
+      );
+      await tester.pump();
+      expect(changes.last, {
+        'kind': 'time_window',
+        'from': '11:30',
+        'to': '13:30',
+        'grace_min': 15,
+        'zero_at_min': 60,
+        'events_of': 'eat',
+        'include_sub_goals': false,
+      });
+      expect(measureProblem(changes.last!), isNull);
+    });
+
+    testWidgets('only_if is turned on for its own goal, or another', (
+      tester,
+    ) async {
+      final changes = await pump(tester, const {
+        'kind': 'subjective',
+        'prompt': 'How did practice go?',
+      });
+      await tester.tap(find.text('Only rate days with events'));
+      await tester.pumpAndSettle();
+      expect(changes.last?['only_if'], <String, Object?>{});
+
+      await tester.tap(find.text('Another goal'));
+      await tester.pumpAndSettle();
+      expect(changes.last?['only_if'], {'events_of': ''});
+      expect(measureProblem(changes.last!), contains('Choose the goal'));
+
+      await tester.tap(find.text('Pick a goal'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Practice salsa').last);
+      await tester.pumpAndSettle();
+      expect(changes.last, {
+        'kind': 'subjective',
+        'prompt': 'How did practice go?',
+        'only_if': {'events_of': 'salsa'},
+      });
+
+      await tester.tap(find.text('Only rate days with events'));
+      await tester.pumpAndSettle();
+      expect(changes.last?.containsKey('only_if'), isFalse);
+    });
+
+    testWidgets('only_if is read back as it was saved', (tester) async {
+      final changes = await pump(tester, const {
+        'kind': 'count',
+        'target': 1,
+        'only_if': {'events_of': 'salsa', 'include_sub_goals': false},
+      });
+      await tester.enterText(find.widgetWithText(TextField, 'Target'), '2');
+      await tester.pump();
+      expect(changes.last?['only_if'], {
+        'events_of': 'salsa',
+        'include_sub_goals': false,
+      });
+    });
+  });
 }

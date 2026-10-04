@@ -144,9 +144,11 @@ void main() {
       await tester.pumpWidget(app(tree()));
       await tester.pumpAndSettle();
 
-      // Sub-goals start collapsed: their parent says how many it has.
+      // Sub-goals start collapsed, under their parent's arrow; how many
+      // isn't said.
       expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
-      expect(find.text('1 sub-goal'), findsOneWidget);
+      expect(find.byTooltip('Expand Cooking'), findsOneWidget);
+      expect(find.textContaining('sub-goal'), findsNothing);
       // Priorities and fixed time are only under "Event properties".
       expect(find.textContaining('Priority'), findsNothing);
       expect(find.text('Fixed time'), findsNothing);
@@ -164,7 +166,6 @@ void main() {
         'Idea',
         'Old habit',
       ]);
-      expect(find.text('1 sub-goal'), findsNothing);
       // The sub-goal is indented under its parent.
       final indent = tester
           .widgetList<ListTile>(find.byType(ListTile))
@@ -769,7 +770,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await pick(tester, 'Event properties');
-      expect(find.text('Priority 1\n1 sub-goal'), findsOneWidget);
+      expect(find.text('Priority 1'), findsOneWidget);
       expect(find.text('Fixed time'), findsOneWidget);
       // Neither its time nor its measure.
       expect(find.textContaining(' in 24h'), findsNothing);

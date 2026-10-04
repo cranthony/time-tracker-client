@@ -302,6 +302,81 @@ void main() {
     );
   });
 
+  test('a time window and only_if are described, checked and listed', () {
+    const lunch = {
+      'kind': 'time_window',
+      'from': '11:30',
+      'to': '13:30',
+      'grace_min': 15,
+      'zero_at_min': 60,
+      'events_of': 'eat',
+      'include_sub_goals': false,
+    };
+    const names = {'eat': 'Eat well', 'salsa': 'Practice salsa'};
+    expect(
+      describeMeasure(lunch, goalNames: names),
+      'Between 11:30 and 13:30, of Eat well (not sub-goals)',
+    );
+    expect(
+      describeMeasure(lunch, full: true, goalNames: names),
+      'Between 11:30 and 13:30 (15 min grace), of Eat well (not sub-goals)',
+    );
+    expect(measureProblem(lunch), isNull);
+    expect(describeMeasureSettings(lunch, goalNames: names), [
+      ('Window', '11:30 to 13:30'),
+      ('Grace', '15 min'),
+      ('Zero at', '60 min off'),
+      ('Events of', 'Eat well only'),
+    ]);
+    expect(
+      measureProblem({'kind': 'time_window', 'from': '11:30'}),
+      contains("window's start and end"),
+    );
+    expect(measureProblem({...lunch, 'zero_at_min': 10}), contains('Zero at'));
+
+    // Any kind can be rated only on days with events.
+    const practice = {
+      'kind': 'subjective',
+      'prompt': 'How did practice go?',
+      'only_if': {'events_of': 'salsa'},
+    };
+    expect(
+      describeMeasure(practice, full: true, goalNames: names),
+      'Your rating, only on days with events of Practice salsa\n'
+      '“How did practice go?”',
+    );
+    expect(describeMeasureSettings(practice, goalNames: names), [
+      ('Question', 'How did practice go?'),
+      ('Asked', 'every day'),
+      ('Only on days with', 'events of Practice salsa'),
+    ]);
+    expect(measureProblem(practice), isNull);
+    expect(
+      describeMeasure({
+        'kind': 'duration',
+        'target_min': 30,
+        'only_if': <String, Object?>{},
+      }),
+      '30m per day, only on days with its events',
+    );
+    expect(
+      describeMeasure({
+        'kind': 'llm',
+        'rubric': 'r',
+        'only_if': {'include_sub_goals': false},
+      }),
+      "Claude's judgement, only on days with its own events",
+    );
+    expect(
+      measureProblem({
+        'kind': 'llm',
+        'rubric': 'r',
+        'only_if': {'events_of': ''},
+      }),
+      contains('Choose the goal'),
+    );
+  });
+
   test('Goal.fromJson reads its measure', () {
     final goal = Goal.fromJson({
       'id': 'g',

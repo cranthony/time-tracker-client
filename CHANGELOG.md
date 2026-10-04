@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.6.0
+
+- A goal can be measured by a time window: whether one of the day's
+  events falls between two times, with a grace and a "zero at", as for
+  a time of day. A day without any is rated 0. Lunch between 11:30 and
+  1:30, say, measuring "Eat well"'s events.
+- Any measure can be rated only on days with events of its goal, or of
+  another: other days are skipped, without asking its question. "How did
+  practice go?" only on days of practice.
+- The Goals page no longer says how many sub-goals a collapsed goal has:
+  its arrow says it has some.
+
 ## 4.5.0
 
 - Goal saves waiting to be sent, and ones that failed, are kept on the

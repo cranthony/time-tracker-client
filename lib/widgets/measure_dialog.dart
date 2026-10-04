@@ -19,6 +19,7 @@ const _kindIcons = {
   'duration': Icons.timer_outlined,
   'count': Icons.tag,
   'time_constraint': Icons.schedule,
+  'time_window': Icons.timelapse,
   'subjective': Icons.star_outline,
   'llm': Icons.auto_awesome_outlined,
   'rollup': Icons.account_tree_outlined,
