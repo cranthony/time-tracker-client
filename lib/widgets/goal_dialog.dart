@@ -11,7 +11,6 @@ const _kinds = {
   'parent_id': PropertyKind.goal,
   'background_color': PropertyKind.color,
   'priority': PropertyKind.integer,
-  'fixed_time': PropertyKind.optionalFlag,
   'measure': PropertyKind.measure,
   'target': PropertyKind.text,
   'deadline': PropertyKind.date,
@@ -26,7 +25,6 @@ const _hints = {
   'status':
       "Only an active goal holds one of the calendar's event labels and is "
       'rated; any other status keeps its history.',
-  'fixed_time': 'Events and sub-goals that say nothing take this.',
   'measure':
       "How its health is rated each day, 0-100, confirmed in the daily "
       "reflection. With none, it's rated by its sub-goals' average.",
@@ -83,7 +81,6 @@ Future<GoalList?> showGoalDialog(
     'parent_id': goal.parentId,
     'background_color': goal.backgroundColor,
     'priority': goal.priority,
-    'fixed_time': goal.fixedTime,
     'measure': goal.measure,
     ...goal.properties,
   },

@@ -155,7 +155,6 @@ class InMemoryGoalsRepository implements GoalsRepository {
         ...goal.toJson(),
         'path': path,
         'effective_priority': goal.priority ?? parent?.effectivePriority,
-        'effective_fixed_time': goal.fixedTime ?? parent?.effectiveFixedTime,
       });
       ordered.add(listed);
       for (final child in byParent[goal.id] ?? const <Goal>[]) {
