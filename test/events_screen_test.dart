@@ -86,7 +86,9 @@ void main() {
     await tester.tap(find.byTooltip('Next day'));
     await tester.tap(find.byTooltip('Next day'));
     await tester.pumpAndSettle();
-    expect(find.text('No events.'), findsOneWidget);
+    expect(find.text('Lunch'), findsNothing);
+    // Nothing that day: its empty timeline, to tap to add one.
+    expect(find.text('No events.\nTap a time to add one.'), findsOneWidget);
   });
 
   testWidgets('swiping left or right steps a day', (tester) async {
@@ -809,6 +811,151 @@ void main() {
     });
   });
 
+  group('creating an event', () {
+    Finder inDialog(Finder f) =>
+        find.descendant(of: find.byType(AlertDialog), matching: f);
+
+    /// Taps today's timeline, away from the times, at [time].
+    Future<void> tapAt(WidgetTester tester, DateTime time) async {
+      final timeline = find.byType(DayTimeline);
+      final y = timelineOffset(
+        time,
+        day: at(30, 0),
+        dayEnd: at(31, 0),
+        scale: defaultTimelineScale,
+      );
+      await tester.tapAt(
+        tester.getTopLeft(timeline) +
+            Offset(tester.getSize(timeline).width - 20, y),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('tapping between events opens a blank one there, up to the '
+        'next', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 'w', start: at(30, 9), end: at(30, 10, 30), summary: 'Work'),
+        Event(id: 'l', start: at(30, 12), end: at(30, 13), summary: 'Lunch'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tapAt(tester, at(30, 11, 20));
+
+      // From the quarter hour, cut short by Lunch.
+      expect(
+        inDialog(find.text('Wed, Sep 30 · 11:15 AM – 12:00 PM')),
+        findsOneWidget,
+      );
+      expect(inDialog(find.text('Add location')), findsOneWidget);
+      expect(inDialog(find.text('Add description')), findsOneWidget);
+      expect(find.byTooltip('Cancel event'), findsNothing);
+      expect(find.text('Details'), findsNothing);
+      // Its summary, open to type; it can't be made without one.
+      final summary = inDialog(find.byType(TextField));
+      expect(tester.widget<TextField>(summary).controller!.text, isEmpty);
+      final create = find.widgetWithText(FilledButton, 'Create');
+      expect(tester.widget<FilledButton>(create).onPressed, isNull);
+
+      await tester.enterText(summary, 'Admin');
+      await tester.pumpAndSettle();
+      await tester.tap(create);
+      await tester.pumpAndSettle();
+      expect(repo.created, [
+        {
+          'start': localIsoTimestamp(at(30, 11, 15)),
+          'end': localIsoTimestamp(at(30, 12)),
+          'summary': 'Admin',
+        },
+      ]);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text('Event created.'), findsOneWidget);
+      expect(find.text('Admin'), findsOneWidget);
+    });
+
+    testWidgets('on an empty day, lasts an hour; Cancel makes nothing', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tapAt(tester, at(30, 14, 5));
+      expect(
+        inDialog(find.text('Wed, Sep 30 · 2:00 PM – 3:00 PM')),
+        findsOneWidget,
+      );
+      await tester.enterText(inDialog(find.byType(TextField)), 'Gym');
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(repo.created, isEmpty);
+      expect(find.byType(AlertDialog), findsNothing);
+    });
+
+    testWidgets('tapping the "No events." card opens one there', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      // It lets the tap through, to the timeline under it.
+      await tester.tap(
+        find.text('No events.\nTap a time to add one.'),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Create'), findsOneWidget);
+    });
+
+    testWidgets('tapping an event still opens it', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 'w', start: at(30, 11), end: at(30, 13), summary: 'Work'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tapAt(tester, at(30, 12));
+      expect(inDialog(find.text('Work')), findsOneWidget);
+      expect(find.text('Create'), findsNothing);
+    });
+
+    testWidgets("shows the server's error and keeps what was typed", (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([])
+        ..error = McpException('Overlaps a fixed-time event');
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tapAt(tester, at(30, 14));
+      await tester.enterText(inDialog(find.byType(TextField)), 'Gym');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text("Couldn't save. Overlaps a fixed-time event"),
+        findsOneWidget,
+      );
+      expect(inDialog(find.text('Gym')), findsOneWidget);
+    });
+
+    test('McpEventsRepository sends create_event its fields set', () async {
+      final client = _RecurrenceClient();
+      await McpEventsRepository(client).createEvent({
+        'start': localIsoTimestamp(at(30, 14)),
+        'end': localIsoTimestamp(at(30, 15)),
+        'summary': 'Gym',
+        'priority': null,
+        'goal_ids': ['g1'],
+      });
+      expect(client.name, 'create_event');
+      expect(client.arguments, {
+        'event': {
+          'start': localIsoTimestamp(at(30, 14)),
+          'end': localIsoTimestamp(at(30, 15)),
+          'summary': 'Gym',
+          'goal_ids': ['g1'],
+        },
+      });
+    });
+  });
+
   group('a recurring series', () {
     InMemoryEventsRepository series() => InMemoryEventsRepository(
       [
@@ -1198,7 +1345,7 @@ void main() {
 
       await tester.tap(find.text('Events'));
       await tester.pumpAndSettle();
-      expect(find.text('No events.'), findsOneWidget);
+      expect(find.text('No events.\nTap a time to add one.'), findsOneWidget);
 
       await tester.tap(find.text('Goals'));
       await tester.pumpAndSettle();
@@ -1272,6 +1419,15 @@ class _RecordingRepository extends InMemoryEventsRepository {
     if (error case final error?) throw error;
     saved.add(changes);
     return [...await super.updateEvent(event, changes), ...alsoMoved];
+  }
+
+  final created = <Map<String, Object?>>[];
+
+  @override
+  Future<List<Event>> createEvent(Map<String, Object?> fields) async {
+    if (error case final error?) throw error;
+    created.add(fields);
+    return [...await super.createEvent(fields), ...alsoMoved];
   }
 }
 

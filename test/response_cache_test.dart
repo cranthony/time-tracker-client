@@ -204,7 +204,9 @@ void main() {
       expect(refreshing(), findsNothing);
       repo.gate.complete();
       await tester.pumpAndSettle();
-      expect(find.text('No events.'), findsOneWidget);
+      // Nothing that day: its empty timeline.
+      expect(find.text('No events.\nTap a time to add one.'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
     testWidgets('Events shows kept events only for the first day', (

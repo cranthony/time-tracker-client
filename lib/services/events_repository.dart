@@ -42,6 +42,11 @@ abstract class EventsRepository {
   /// [event] included.
   Future<List<Event>> updateEvent(Event event, Map<String, Object?> changes);
 
+  /// Creates an event with [fields], keyed and encoded as `create_event`
+  /// takes them; those that are null are left out. Returns every event the
+  /// server changed to make room, the new one included.
+  Future<List<Event>> createEvent(Map<String, Object?> fields);
+
   /// The recurring series [id] is, or is one of the events of.
   Future<Recurrence> recurrence(String id);
 
@@ -166,6 +171,18 @@ class McpEventsRepository implements EventsRepository {
   }
 
   @override
+  Future<List<Event>> createEvent(Map<String, Object?> fields) async {
+    final result = await _client.callTool('create_event', {
+      'event': {
+        for (final MapEntry(:key, :value) in fields.entries) key: ?value,
+      },
+    });
+    return (result as List)
+        .map((e) => Event.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  @override
   Future<List<Event>> updateEvent(
     Event event,
     Map<String, Object?> changes,
@@ -269,6 +286,19 @@ class InMemoryEventsRepository implements EventsRepository {
 
   @override
   Future<List<Event>?> cachedEvents(DateTime from, DateTime to) async => null;
+
+  /// The ids [createEvent] has given, to give the next a new one.
+  int _created = 0;
+
+  @override
+  Future<List<Event>> createEvent(Map<String, Object?> fields) async {
+    final created = Event.fromJson({
+      for (final MapEntry(:key, :value) in fields.entries) key: ?value,
+      'id': 'new-${++_created}',
+    });
+    _events.add(created);
+    return [created];
+  }
 
   @override
   Future<List<Event>> updateEvent(

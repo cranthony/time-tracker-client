@@ -25,7 +25,8 @@ import '../widgets/status_message.dart';
 /// around the fingers. The days slide over a [TimelineAxis] that stays
 /// still, scrolled up and down with them, so every day is at the same
 /// time of day. Tapping the date picks another; tapping an event
-/// shows all its properties, and lets one change them. It opens scrolled
+/// shows all its properties, and lets one change them; tapping between
+/// events creates one there. It opens scrolled
 /// to now, on today, or else to the day's first event. The last
 /// compaction, from the goals, is marked on it.
 ///
@@ -396,6 +397,51 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
+  /// The new event's length, unless the next event starts sooner.
+  static const _newEventLength = Duration(hours: 1);
+
+  /// Opens a new, blank event at [time], tapped on [day]'s timeline: from
+  /// the quarter hour it's in, for [_newEventLength] or up to the next
+  /// event, whichever is sooner.
+  Future<void> _createAt(DateTime day, DateTime time) async {
+    final start = DateTime(
+      time.year,
+      time.month,
+      time.day,
+      time.hour,
+      time.minute - time.minute % 15,
+    );
+    var end = start.add(_newEventLength);
+    for (final event in _events[day] ?? const <Event>[]) {
+      if (event.start.isAfter(start) && event.start.isBefore(end)) {
+        end = event.start;
+      }
+    }
+    final created = await showNewEventDialog(
+      context,
+      start: start,
+      end: end,
+      create: widget.repository.createEvent,
+      goals: _goalsById,
+      loadGoals: _goals,
+    );
+    if (created == null || !mounted) return;
+    final moved = created.length - 1;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          moved <= 0
+              ? 'Event created.'
+              : 'Event created. $moved other event${moved == 1 ? '' : 's'} '
+                    'moved to make room.',
+        ),
+      ),
+    );
+    _fresh.clear();
+    await _refresh();
+    await _loadGoals();
+  }
+
   /// Opens every one of [event]'s properties.
   Future<void> _openEventDetails(Event event) async {
     final updated = await showEventDialog(
@@ -749,14 +795,9 @@ class _EventsScreenState extends State<EventsScreen> {
           child: CircularProgressIndicator(),
         ),
       );
-    } else if (events.isEmpty) {
-      return _inView(
-        view,
-        const StatusMessage(icon: Icons.event_busy, text: 'No events.'),
-      );
     }
     // Drawn past the page's foot, if an event's drawn past midnight.
-    return OverflowBox(
+    final timeline = OverflowBox(
       alignment: Alignment.topCenter,
       minHeight: 0,
       maxHeight: double.infinity,
@@ -768,8 +809,25 @@ class _EventsScreenState extends State<EventsScreen> {
         now: widget.clock(),
         lastCompaction: _lastCompaction,
         onTap: _openEvent,
+        onTapTime: (time) => _createAt(day, time),
         axis: false,
       ),
+    );
+    if (events.isNotEmpty) return timeline;
+    // Still tapped through, to add one anywhere.
+    return Stack(
+      children: [
+        Positioned.fill(child: timeline),
+        IgnorePointer(
+          child: _inView(
+            view,
+            const StatusMessage(
+              icon: Icons.event_busy,
+              text: 'No events.\nTap a time to add one.',
+            ),
+          ),
+        ),
+      ],
     );
   }
 

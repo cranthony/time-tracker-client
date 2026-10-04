@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.5.0
+
+- Tapping a gap on the Events page's timeline (anywhere but an event)
+  opens a new, blank event there, with its summary ready to type. It
+  starts at the quarter hour you tapped and lasts an hour, or until the
+  next event if that's sooner. Set any of its other properties as you
+  would an event's, then tap "Create", which needs a summary.
+- On a day with no events, tap any time, the "No events." card
+  included, to add one there.
+
 ## 5.4.1
 
 - Swiping between days on the Events page keeps the time of day shown.
