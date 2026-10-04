@@ -95,6 +95,37 @@ void main() {
     expect(noun.textCapitalization, TextCapitalization.none);
   });
 
+  testWidgets('a follow-through measure keeps what it was given', (
+    tester,
+  ) async {
+    final changes = <Measure?>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MeasureEditor(
+              measure: const {'kind': 'follow_through', 'penalty': 50},
+              onChanged: changes.add,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Over the last'),
+      '60',
+    );
+    await tester.pump();
+
+    expect(changes.last, {
+      'kind': 'follow_through',
+      'penalty': 50,
+      'look_back_days': 60,
+    });
+    expect(measureProblem(changes.last!), isNull);
+  });
+
   group('time window, and only on days with events', () {
     const goals = [
       Goal(id: 'eat', name: 'Eat well'),

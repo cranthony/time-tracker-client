@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.8.0
+
+- A goal can be measured by follow-through: each of its events that's
+  cancelled (pushed off the calendar, or cancelled in a compaction) costs
+  points, 25 unless set, and each day with one that happened wins 25
+  back. The rating carries over between, so it stays low until days with
+  kept events make it up. It starts at 100 30 days back (or however many
+  are set), so an older cancellation is forgotten.
+
 ## 4.7.0
 
 - Under "Event properties", tapping a goal on the Goals page opens its
