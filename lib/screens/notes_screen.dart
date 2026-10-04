@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -14,8 +15,8 @@ import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
 /// All the uncompacted notes, plus any not saved yet, by day, with a "+"
-/// to add another, under when notes were last compacted into the calendar
-/// and the latest note compacted. Tapping a saved note edits or deletes
+/// to add another, under the latest note compacted and a dashed line for
+/// when notes were last compacted into the calendar. Tapping a saved note edits or deletes
 /// it.
 class NotesScreen extends StatefulWidget {
   const NotesScreen({
@@ -367,28 +368,42 @@ class _NotesScreenState extends State<NotesScreen> {
       banner = null;
     }
 
-    final status = switch (_status) {
-      final status? when !needsSignIn => _CompactionHeader(status: status),
-      _ => null,
-    };
+    // The latest note compacted, over a dashed line for the compaction,
+    // above the notes since.
+    final status = needsSignIn ? null : _status;
+    final latest = status?.latestCompacted;
+    final compaction = <Widget>[
+      if (latest != null) ...[
+        DayHeader(day: latest.timestamp, today: widget.clock()),
+        _CompactedNoteTile(note: latest),
+      ],
+      if (status != null) _CompactionLine(at: status.lastCompaction),
+    ];
     if (rows.isEmpty) {
-      return FillViewport(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [?status, banner!],
-        ),
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverList.list(children: compaction),
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(child: banner),
+          ),
+        ],
       );
     }
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 88), // clear the FAB
       children: [
-        ?status,
+        ...compaction,
         ?banner,
         for (final (i, row) in rows.indexed) ...[
-          if (i == 0 || !sameDay(rows[i - 1].at, row.at))
+          // The compacted note's day isn't headed twice.
+          if (i == 0
+              ? latest == null || !sameDay(latest.timestamp, row.at)
+              : !sameDay(rows[i - 1].at, row.at))
             DayHeader(day: row.at, today: widget.clock())
-          else
+          else if (i > 0)
             const Divider(height: 1),
           row.tile,
         ],
@@ -397,49 +412,110 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 }
 
-/// When notes were last compacted into the calendar, and the latest note
-/// that was: the notes below come after it.
-class _CompactionHeader extends StatelessWidget {
-  const _CompactionHeader({required this.status});
+/// The latest note compacted into the calendar: like the notes after it,
+/// but smaller and muted, and not to be changed.
+class _CompactedNoteTile extends StatelessWidget {
+  const _CompactedNoteTile({required this.note});
 
-  final CompactionStatus status;
+  final Note note;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final strings = MaterialLocalizations.of(context);
-    String at(DateTime time) {
-      final local = time.toLocal();
-      return '${strings.formatShortDate(local)}, '
-          '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
-    }
-
-    final style = theme.textTheme.bodySmall?.copyWith(
-      color: theme.colorScheme.onSurfaceVariant,
+    final muted = TextStyle(color: theme.colorScheme.onSurfaceVariant);
+    return ListTile(
+      dense: true,
+      leading: Text(
+        _time(context, note),
+        style: theme.textTheme.titleSmall?.merge(muted),
+      ),
+      title: Text(switch (note.description) {
+        final String d when d.isNotEmpty => d,
+        _ => '(no description)',
+      }, style: muted),
+      trailing: Tooltip(
+        message: 'Compacted into the calendar',
+        child: Icon(
+          Icons.event_available,
+          size: 18,
+          color: theme.colorScheme.tertiary,
+        ),
+      ),
     );
-    final latest = status.latestCompacted;
+  }
+}
+
+/// A dashed line, as on the Events timeline, for when notes were last
+/// compacted: the note above it is in the calendar, those below aren't
+/// yet.
+class _CompactionLine extends StatelessWidget {
+  const _CompactionLine({required this.at});
+
+  /// Null if notes have never been compacted.
+  final DateTime? at;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.tertiary;
+    final String label;
+    if (at case final at?) {
+      final strings = MaterialLocalizations.of(context);
+      final local = at.toLocal();
+      label =
+          'Last compacted ${strings.formatShortDate(local)}, '
+          '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
+    } else {
+      label = 'Notes not compacted yet';
+    }
+    final dashes = Expanded(
+      child: CustomPaint(
+        size: const Size.fromHeight(1.5),
+        painter: _DashPainter(color),
+      ),
+    );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: Row(
         children: [
-          Text(switch (status.lastCompaction) {
-            final last? => 'Last compacted ${at(last)}',
-            null => 'Notes not compacted yet',
-          }, style: style),
-          if (latest != null)
-            Text(
-              'Latest compacted note: ${at(latest.timestamp)}'
-              '${switch (latest.description) {
-                final String d when d.isNotEmpty => ' · $d',
-                _ => '',
-              }}',
-              style: style,
+          dashes,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(color: color),
             ),
+          ),
+          dashes,
         ],
       ),
     );
   }
+}
+
+/// 4px dashes 4px apart, across.
+class _DashPainter extends CustomPainter {
+  const _DashPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = size.height;
+    final y = size.height / 2;
+    for (var x = 0.0; x < size.width; x += 8) {
+      canvas.drawLine(
+        Offset(x, y),
+        Offset(math.min(x + 4, size.width), y),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashPainter old) => old.color != color;
 }
 
 class _NoteTile extends StatelessWidget {
