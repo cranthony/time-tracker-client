@@ -6,6 +6,25 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 4.5.0
+
+- Goal saves waiting to be sent, and ones that failed, are kept on the
+  phone, so they survive the app closing and switching tabs. They're
+  sent the same way notes are: ones that failed for want of a connection
+  are tried again by themselves, after 5s, 10s, 20s, 40s, then every
+  minute, and on Android the background task sends them once the app is
+  closed. Ones the server refused wait to be retried. A new goal that may
+  have been made before an answer was lost is looked for before it's made
+  again.
+- A save to a goal that already has one waiting, or that failed, joins
+  it, so they're sent as one edit.
+- Signing in again on the Goals page retries every save that failed.
+- A note or goal that was just saved no longer goes missing from its
+  page until the list is fetched again, whether the app saved it or the
+  background task did; notes the background task saved used to stay
+  missing until the page was refreshed. Each page fetches once after a
+  round of saves, rather than after each.
+
 ## 4.4.0
 
 - Saving a goal's details, a new goal, or a measure now closes the dialog

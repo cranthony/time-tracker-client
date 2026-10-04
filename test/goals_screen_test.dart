@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
+import 'package:time_tracker_client/outbox/pending_goal_save.dart';
+import 'package:time_tracker_client/outbox/outbox_store.dart';
+import 'package:time_tracker_client/outbox/goal_outbox.dart';
 import 'package:time_tracker_client/models/assessment.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/measure.dart';
@@ -15,8 +18,16 @@ import 'package:time_tracker_client/widgets/health.dart';
 import 'package:time_tracker_client/widgets/properties_dialog.dart';
 
 void main() {
-  Widget app(GoalsRepository repo) => MaterialApp(
-    home: GoalsScreen(repository: repo, serverLabel: 'offline demo'),
+  /// The Goals page over [repo], saving through [outbox], or an outbox of
+  /// its own.
+  Widget app(GoalsRepository repo, {GoalOutbox? outbox}) => MaterialApp(
+    home: GoalsScreen(
+      repository: repo,
+      outbox:
+          outbox ??
+          (GoalOutbox(store: InMemoryOutboxStore(), repository: repo)..start()),
+      serverLabel: 'offline demo',
+    ),
   );
 
   InMemoryGoalsRepository tree() => InMemoryGoalsRepository([
@@ -526,6 +537,60 @@ void main() {
     await tester.pumpAndSettle();
     expect(shownNames(tester), isNot(contains('Running')));
     expect(find.byTooltip('Not saved: Still no room.'), findsNothing);
+  });
+
+  testWidgets('a goal that failed to save is still there when the app opens '
+      'again', (tester) async {
+    final store = InMemoryOutboxStore<PendingGoalSave>();
+    final repo = _GatedGoalsRepository(tree());
+    GoalOutbox outbox() => GoalOutbox(store: store, repository: repo)..start();
+    await tester.pumpWidget(app(repo, outbox: outbox()));
+    await tester.pumpAndSettle();
+    await addGoal(tester, 'Running');
+    repo.fail(McpException('No room for it.'));
+    await tester.pumpAndSettle();
+
+    // The app closes, and opens again.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(app(repo, outbox: outbox()));
+    await tester.pumpAndSettle();
+    expect(shownNames(tester), contains('Running'));
+    expect(find.byTooltip('Not saved: No room for it.'), findsOneWidget);
+  });
+
+  testWidgets('a new goal saved by the background task stays shown until '
+      'the goals are fetched with it', (tester) async {
+    final store = InMemoryOutboxStore<PendingGoalSave>();
+    final server = tree();
+    final repo = _GatedGoalsRepository(server);
+    // Not started: as when the app is in the background.
+    final outbox = GoalOutbox(store: store, repository: repo);
+    await tester.pumpWidget(app(repo, outbox: outbox));
+    await tester.pumpAndSettle();
+    await addGoal(tester, 'Running');
+    expect(repo.sent, isEmpty);
+    expect(find.byTooltip('Saving…'), findsOneWidget);
+
+    // The background task saves it, with its own outbox.
+    await GoalOutbox(
+      store: store,
+      repository: server,
+    ).flush(ignoreBackoff: true);
+    repo.fetchGate = Completer();
+    final fetched = repo.fetches;
+
+    // The app hears of it only as gone from the outbox.
+    await outbox.refresh();
+    await tester.pump();
+    expect(outbox.saves, isEmpty);
+    expect(repo.fetches, fetched + 1);
+    expect(shownNames(tester), contains('Running'));
+
+    repo.fetchGate!.complete();
+    await tester.pumpAndSettle();
+    expect(shownNames(tester), contains('Running'));
+    expect(find.byTooltip('Saving…'), findsNothing);
+    expect(find.byTooltip('More for Running'), findsOneWidget);
   });
 
   testWidgets('a change that fails to save stays, to edit and save again', (
@@ -1648,9 +1713,13 @@ class _GatedGoalsRepository implements GoalsRepository {
     return _inner.updateGoal(goal, changes);
   }
 
+  /// While set, fetching every goal waits for it.
+  Completer<void>? fetchGate;
+
   @override
-  Future<GoalList> goals() {
+  Future<GoalList> goals() async {
     fetches++;
+    await fetchGate?.future;
     return _inner.goals();
   }
 

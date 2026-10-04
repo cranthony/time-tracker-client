@@ -8,6 +8,7 @@ import 'auth/platform_receiver.dart'
 import 'auth/token_store.dart';
 import 'demo/sample_data.dart';
 import 'outbox/background_sync.dart';
+import 'outbox/goal_outbox.dart';
 import 'outbox/note_outbox.dart';
 import 'outbox/outbox_store.dart';
 import 'platform/add_note_shortcut.dart';
@@ -35,16 +36,18 @@ Future<void> main() async {
   if (_mcpUrl.isEmpty) {
     final sample = _sampleData ? SampleData(DateTime.now()) : null;
     final repository = sample?.notesRepository() ?? InMemoryNotesRepository();
+    final goals = sample?.goalsRepository() ?? InMemoryGoalsRepository();
     runApp(
       TimeTrackerApp(
         repository: repository,
         eventsRepository:
             sample?.eventsRepository() ?? InMemoryEventsRepository(),
-        goalsRepository: sample?.goalsRepository() ?? InMemoryGoalsRepository(),
+        goalsRepository: goals,
         outbox: NoteOutbox(
           store: InMemoryOutboxStore(),
           repository: repository,
         ),
+        goalOutbox: GoalOutbox(store: InMemoryOutboxStore(), repository: goals),
       ),
     );
     return;
@@ -55,25 +58,41 @@ Future<void> main() async {
   final client = _client(auth);
   final cache = PrefsResponseCache();
   final repository = McpNotesRepository(client, cache: cache);
+  final goals = McpGoalsRepository(client, cache: cache);
   runApp(
     TimeTrackerApp(
       repository: repository,
       eventsRepository: McpEventsRepository(client, cache: cache),
-      goalsRepository: McpGoalsRepository(client, cache: cache),
-      outbox: NoteOutbox(store: PrefsOutboxStore(), repository: repository),
+      goalsRepository: goals,
+      outbox: NoteOutbox(
+        store: PrefsOutboxStore.notes(),
+        repository: repository,
+      ),
+      goalOutbox: GoalOutbox(
+        store: PrefsOutboxStore.goals(),
+        repository: goals,
+      ),
       auth: auth,
       cache: cache,
     ),
   );
 }
 
-/// Runs WorkManager's background task (Android) that saves pending notes.
+/// Runs WorkManager's background task (Android) that saves pending notes
+/// and goal saves.
 @pragma('vm:entry-point')
 void backgroundDispatcher() => BackgroundSync.run(() {
-  final repository = McpNotesRepository(
-    _client(_authSession(interactive: false)),
-  );
-  return NoteOutbox(store: PrefsOutboxStore(), repository: repository);
+  final client = _client(_authSession(interactive: false));
+  return [
+    NoteOutbox(
+      store: PrefsOutboxStore.notes(),
+      repository: McpNotesRepository(client),
+    ),
+    GoalOutbox(
+      store: PrefsOutboxStore.goals(),
+      repository: McpGoalsRepository(client),
+    ),
+  ];
 });
 
 AuthSession _authSession({required bool interactive}) => AuthSession(
@@ -100,6 +119,7 @@ class TimeTrackerApp extends StatefulWidget {
     required this.eventsRepository,
     required this.goalsRepository,
     required this.outbox,
+    required this.goalOutbox,
     this.auth,
     this.cache,
   });
@@ -108,6 +128,9 @@ class TimeTrackerApp extends StatefulWidget {
   final EventsRepository eventsRepository;
   final GoalsRepository goalsRepository;
   final NoteOutbox outbox;
+
+  /// Goal saves waiting to be sent, or that failed.
+  final GoalOutbox goalOutbox;
   final AuthSession? auth;
 
   /// The server's last answers, which the repositories keep; emptied on
@@ -128,6 +151,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     super.initState();
     BackgroundSync.cancel();
     widget.outbox.start();
+    widget.goalOutbox.start();
     _lifecycle = AppLifecycleListener(
       onResume: _onForeground,
       onPause: _onBackground,
@@ -152,12 +176,17 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     // The background task may have refreshed tokens and saved notes.
     widget.auth?.reload();
     widget.outbox.start();
+    widget.goalOutbox.start();
   }
 
   Future<void> _onBackground() async {
+    widget.goalOutbox.stop();
     widget.outbox.stop();
     await widget.outbox.refresh();
-    if (widget.outbox.pending.isNotEmpty) await BackgroundSync.schedule();
+    await widget.goalOutbox.refresh();
+    if (widget.outbox.hasUnsent || widget.goalOutbox.hasUnsent) {
+      await BackgroundSync.schedule();
+    }
   }
 
   /// Signs out, and forgets what the server said while signed in.
@@ -171,6 +200,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     _lifecycle.dispose();
     _addNoteShortcut.dispose();
     widget.outbox.dispose();
+    widget.goalOutbox.dispose();
     super.dispose();
   }
 
@@ -185,6 +215,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         eventsRepository: widget.eventsRepository,
         goalsRepository: widget.goalsRepository,
         outbox: widget.outbox,
+        goalOutbox: widget.goalOutbox,
         onSignIn: widget.auth?.signIn,
         onSignOut: widget.auth == null ? null : _signOut,
         addNoteRequests: _addNoteShortcut.taps,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
+import 'package:time_tracker_client/outbox/goal_outbox.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/note.dart';
@@ -224,7 +225,11 @@ void main() {
       );
       await tester.pumpWidget(
         MaterialApp(
-          home: GoalsScreen(repository: repo, serverLabel: 'test'),
+          home: GoalsScreen(
+            outbox: _idleGoalOutbox(),
+            repository: repo,
+            serverLabel: 'test',
+          ),
         ),
       );
       await tester.pump();
@@ -313,3 +318,9 @@ class _GatedGoalsRepository extends InMemoryGoalsRepository {
     return super.goals();
   }
 }
+
+/// For a Goals page that saves nothing.
+GoalOutbox _idleGoalOutbox() => GoalOutbox(
+  store: InMemoryOutboxStore(),
+  repository: InMemoryGoalsRepository(),
+);

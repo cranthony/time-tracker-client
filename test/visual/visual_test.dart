@@ -4,6 +4,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/services/goals_repository.dart';
+import 'package:time_tracker_client/outbox/goal_outbox.dart';
 import 'package:time_tracker_client/demo/sample_data.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
@@ -62,6 +64,7 @@ void main() {
         tester,
         'goals',
         GoalsScreen(
+          outbox: _idleGoalOutbox(),
           repository: sample.goalsRepository(),
           serverLabel: 'sample',
         ),
@@ -73,6 +76,7 @@ void main() {
         tester,
         'goals_every_status',
         GoalsScreen(
+          outbox: _idleGoalOutbox(),
           repository: sample.goalsRepository(),
           serverLabel: 'sample',
         ),
@@ -101,6 +105,7 @@ void main() {
           tester,
           name,
           GoalsScreen(
+            outbox: _idleGoalOutbox(),
             repository: sample.goalsRepository(),
             serverLabel: 'sample',
           ),
@@ -125,6 +130,7 @@ void main() {
           tester,
           name,
           GoalsScreen(
+            outbox: _idleGoalOutbox(),
             repository: sample.goalsRepository(),
             serverLabel: 'sample',
           ),
@@ -144,6 +150,7 @@ void main() {
         tester,
         'goal_measure_overall',
         GoalsScreen(
+          outbox: _idleGoalOutbox(),
           repository: sample.goalsRepository(),
           serverLabel: 'sample',
         ),
@@ -159,6 +166,7 @@ void main() {
         tester,
         'goals_reorder',
         GoalsScreen(
+          outbox: _idleGoalOutbox(),
           repository: sample.goalsRepository(),
           serverLabel: 'sample',
         ),
@@ -176,6 +184,7 @@ void main() {
         tester,
         'goal_parent',
         GoalsScreen(
+          outbox: _idleGoalOutbox(),
           repository: sample.goalsRepository(),
           serverLabel: 'sample',
         ),
@@ -269,3 +278,9 @@ void main() {
     });
   }
 }
+
+/// For a Goals page that saves nothing.
+GoalOutbox _idleGoalOutbox() => GoalOutbox(
+  store: InMemoryOutboxStore(),
+  repository: InMemoryGoalsRepository(),
+);

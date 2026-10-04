@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/outbox/goal_outbox.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/note.dart';
@@ -563,6 +564,10 @@ void main() {
           eventsRepository: InMemoryEventsRepository(),
           goalsRepository: InMemoryGoalsRepository(),
           outbox: outbox,
+          goalOutbox: GoalOutbox(
+            store: InMemoryOutboxStore(),
+            repository: InMemoryGoalsRepository(),
+          ),
           addNoteRequests: addNoteRequests,
         ),
       );

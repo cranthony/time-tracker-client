@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../outbox/goal_outbox.dart';
 import '../outbox/note_outbox.dart';
 import '../services/goals_repository.dart';
 import '../services/events_repository.dart';
@@ -20,6 +21,7 @@ class HomeScreen extends StatefulWidget {
     required this.eventsRepository,
     required this.goalsRepository,
     required this.outbox,
+    required this.goalOutbox,
     this.onSignIn,
     this.onSignOut,
     this.addNoteRequests,
@@ -30,6 +32,7 @@ class HomeScreen extends StatefulWidget {
   final EventsRepository eventsRepository;
   final GoalsRepository goalsRepository;
   final NoteOutbox outbox;
+  final GoalOutbox goalOutbox;
   final Future<void> Function()? onSignIn;
   final Future<void> Function()? onSignOut;
 
@@ -89,6 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         _Tab.goals => GoalsScreen(
           repository: widget.goalsRepository,
+          outbox: widget.goalOutbox,
           serverLabel: widget.notesRepository.label,
           onSignIn: widget.onSignIn,
           onSignOut: widget.onSignOut,

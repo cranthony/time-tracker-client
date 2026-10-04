@@ -76,7 +76,7 @@ class _NotesScreenState extends State<NotesScreen> {
   @override
   void initState() {
     super.initState();
-    widget.outbox.onSaved = _load;
+    widget.outbox.addListener(_outboxChanged);
     _addNoteRequests = widget.addNoteRequests?.listen((at) => _addNote(at: at));
     _showCached();
     _load();
@@ -96,13 +96,20 @@ class _NotesScreenState extends State<NotesScreen> {
 
   @override
   void dispose() {
-    widget.outbox.onSaved = null;
+    widget.outbox.removeListener(_outboxChanged);
     _addNoteRequests?.cancel();
     super.dispose();
   }
 
+  /// Fetches the notes again once notes are saved, here or by the
+  /// background task, so they're shown as the server has them.
+  void _outboxChanged() {
+    if (mounted && widget.outbox.wantsFetch) _load();
+  }
+
   Future<void> _load() async {
     unawaited(_loadStatus());
+    final fetched = widget.outbox.fetching();
     try {
       final notes = await widget.repository.uncompactedNotes();
       if (!mounted) return;
@@ -112,6 +119,7 @@ class _NotesScreenState extends State<NotesScreen> {
         _error = null;
         _needsSignIn = false;
       });
+      fetched();
     } on SignInRequiredException {
       if (!mounted) return;
       setState(() {
@@ -306,6 +314,14 @@ class _NotesScreenState extends State<NotesScreen> {
             onTap: note.id == null ? null : () => _editNote(note),
           ),
         ),
+      // Saved since the notes were fetched: shown as the notes they are
+      // until they're fetched with them.
+      for (final (:item, result: _) in widget.outbox.justSaved)
+        if (!NoteOutbox.savedIn(item.note, notes ?? const []))
+          (
+            at: item.note.timestamp,
+            tile: _NoteTile(note: item.note, changing: false),
+          ),
       for (final note in pending)
         (
           at: note.note.timestamp,
