@@ -14,7 +14,10 @@
 /// | `time_       | `edge` ("start" of the day's first event, or "end" of  |
 /// | constraint`  | its last), `target` "HH:MM"; optional `when` ("by" or  |
 /// |              | "after"), `grace_min`, `zero_at_min`                   |
-/// | (all three)  | optional `events_of`, a goal whose events count as     |
+/// | `time_       | `from` and `to` "HH:MM": whether one of the day's      |
+/// | window`      | events falls in the window; optional `grace_min`,      |
+/// |              | `zero_at_min`. A day without any is rated 0            |
+/// | (all four)   | optional `events_of`, a goal whose events count as     |
 /// |              | though they were its own goal's, and                   |
 /// |              | `include_sub_goals`                                    |
 /// | `subjective` | `prompt`, asked in a reflection every `interval_days`  |
@@ -22,6 +25,9 @@
 /// | `llm`        | `rubric` Claude rates the day against                  |
 /// | `rollup`     | optional `agg`: "mean" (default), "weighted" (with     |
 /// |              | `weights`) or "percentile" (with `percentile`)         |
+/// | (any)        | optional `only_if`: {`events_of`, `include_sub_goals`},|
+/// |              | both optional ({} is the goal itself): rated only on   |
+/// |              | days with such an event, and skipped on the rest       |
 typedef Measure = Map<String, Object?>;
 
 /// The kinds of measure, as the server names them, and as the app shows
@@ -30,6 +36,7 @@ const measureKinds = {
   'duration': 'Time spent',
   'count': 'Number of events',
   'time_constraint': 'Time of day',
+  'time_window': 'Time window',
   'subjective': 'Your rating',
   'llm': "Claude's judgement",
   'rollup': 'From sub-goals',
@@ -47,6 +54,11 @@ const measureKindHints = {
       "When the day's first event starts, or its last ends: full marks by "
       'the time (or not before it), within the grace, falling to none at '
       '"zero at" minutes off. Up by 7, in by 9:30, out by 5:30.',
+  'time_window':
+      "Whether one of the day's events falls between two times: full marks "
+      'for one that overlaps them at all, within the grace, falling to none '
+      'at "zero at" minutes out. A day without any is rated 0. Lunch between '
+      '11:30 and 1:30.',
   'subjective':
       "You're asked in a reflection every few days; on the days between, "
       "the day before's rating carries over. Rating it any time starts the "
@@ -105,6 +117,38 @@ String describeMeasure(
   bool full = false,
   Map<String?, String> goalNames = const {},
 }) {
+  final described = _describe(measure, full: full, goalNames: goalNames);
+  final onlyIf = switch (_onlyIfOf(measure, goalNames)) {
+    final days? => ', only on days with $days',
+    null => '',
+  };
+  if (onlyIf.isEmpty) return described;
+  // On the first line, before a prompt or rubric.
+  final end = described.indexOf('\n');
+  return end < 0
+      ? '$described$onlyIf'
+      : '${described.substring(0, end)}$onlyIf${described.substring(end)}';
+}
+
+/// Whose events [measure]'s `only_if` asks for, if it has one: "its
+/// events", "events of Practice", "its own events" (not its sub-goals').
+String? _onlyIfOf(Measure measure, Map<String?, String> goalNames) {
+  final onlyIf = measure['only_if'];
+  if (onlyIf is! Map) return null;
+  final subGoals = onlyIf['include_sub_goals'] != false;
+  return switch (onlyIf['events_of']) {
+    final String id =>
+      'events of ${goalNames[id] ?? 'another goal'}'
+          '${subGoals ? '' : ' (not sub-goals)'}',
+    _ => subGoals ? 'its events' : 'its own events',
+  };
+}
+
+String _describe(
+  Measure measure, {
+  required bool full,
+  required Map<String?, String> goalNames,
+}) {
   final kind = measure['kind'];
   final of = switch ((
     measure['events_of'],
@@ -150,6 +194,10 @@ String describeMeasure(
           '${measure['when'] == 'after' ? 'not before' : 'by'} '
           '${measure['target'] ?? '?'}'
           '${full && grace > 0 ? ' ($grace min grace)' : ''}$of';
+    case 'time_window':
+      final grace = _number(measure['grace_min']) ?? 0;
+      return 'Between ${measure['from'] ?? '?'} and ${measure['to'] ?? '?'}'
+          '${full && grace > 0 ? ' ($grace min grace)' : ''}$of';
     case 'subjective':
       final prompt = measure['prompt'];
       final every = _number(measure['interval_days']) ?? 1;
@@ -182,8 +230,29 @@ String describeMeasure(
 String? measureProblem(Measure measure) {
   bool positive(Object? n) => n is num && n > 0;
   bool text(Object? s) => s is String && s.trim().isNotEmpty;
+  bool time(Object? t) =>
+      t is String && RegExp(r'^([01]\d|2[0-3]):[0-5]\d$').hasMatch(t);
+  String? graceProblem() {
+    final grace = measure['grace_min'] ?? 0;
+    if (grace is! num || grace < 0) {
+      return 'The grace must be 0 minutes or more.';
+    }
+    final zeroAt = measure['zero_at_min'];
+    if (zeroAt != null && (zeroAt is! num || zeroAt <= grace)) {
+      return '"Zero at" must be more minutes off than the grace.';
+    }
+    return null;
+  }
+
   if (measure.containsKey('events_of') && !text(measure['events_of'])) {
     return 'Choose the goal whose events count.';
+  }
+  if (measure.containsKey('only_if')) {
+    final onlyIf = measure['only_if'];
+    if (onlyIf is! Map ||
+        (onlyIf.containsKey('events_of') && !text(onlyIf['events_of']))) {
+      return 'Choose the goal whose events it rates the day on.';
+    }
   }
   switch (measure['kind']) {
     case 'duration' || 'count':
@@ -207,19 +276,13 @@ String? measureProblem(Measure measure) {
       if (measure['edge'] != 'start' && measure['edge'] != 'end') {
         return "Pick the first event's start or the last one's end.";
       }
-      final target = measure['target'];
-      if (target is! String ||
-          !RegExp(r'^([01]\d|2[0-3]):[0-5]\d$').hasMatch(target)) {
-        return 'Pick a target time.';
+      if (!time(measure['target'])) return 'Pick a target time.';
+      if (graceProblem() case final problem?) return problem;
+    case 'time_window':
+      if (!time(measure['from']) || !time(measure['to'])) {
+        return "Pick the window's start and end.";
       }
-      final grace = measure['grace_min'] ?? 0;
-      if (grace is! num || grace < 0) {
-        return 'The grace must be 0 minutes or more.';
-      }
-      final zeroAt = measure['zero_at_min'];
-      if (zeroAt != null && (zeroAt is! num || zeroAt <= grace)) {
-        return '"Zero at" must be more minutes late than the grace.';
-      }
+      if (graceProblem() case final problem?) return problem;
     case 'subjective':
       if (!text(measure['prompt'])) return 'Ask a question.';
       if (!positive(measure['interval_days'] ?? 1)) {
@@ -261,7 +324,16 @@ String? measureProblem(Measure measure) {
 List<(String, String)> describeMeasureSettings(
   Measure measure, {
   Map<String?, String> goalNames = const {},
-}) {
+}) => [
+  ..._settings(measure, goalNames),
+  if (_onlyIfOf(measure, goalNames) case final days?)
+    ('Only on days with', days),
+];
+
+List<(String, String)> _settings(
+  Measure measure,
+  Map<String?, String> goalNames,
+) {
   String days(num days) => days == 1 ? '1 day' : '$days days';
   final interval = days(_number(measure['interval_days']) ?? 1);
   final subGoals = measure['include_sub_goals'] != false;
@@ -312,6 +384,15 @@ List<(String, String)> describeMeasureSettings(
               '${measure['when'] == 'after' ? 'not before' : 'by'} '
               '${measure['target'] ?? '?'}',
         ),
+        if (_number(measure['grace_min']) case final grace?)
+          ('Grace', '$grace min'),
+        if (_number(measure['zero_at_min']) case final zero?)
+          ('Zero at', '$zero min off'),
+        ('Events of', of),
+      ];
+    case 'time_window':
+      return [
+        ('Window', '${measure['from'] ?? '?'} to ${measure['to'] ?? '?'}'),
         if (_number(measure['grace_min']) case final grace?)
           ('Grace', '$grace min'),
         if (_number(measure['zero_at_min']) case final zero?)

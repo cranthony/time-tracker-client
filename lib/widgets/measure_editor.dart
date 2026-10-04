@@ -13,10 +13,11 @@ const _hiddenFromWeights = {'proposed', 'completed', 'archived', 'deleted'};
 /// stands after every edit -- null for none -- whether or not it's valid
 /// yet; see [measureProblem].
 ///
-/// A time-spent or number-of-events measure looks at the events of its own
-/// goal, or of goals chosen from [goals]; with or without their sub-goals,
-/// over the last few days. A weighted rollup weighs each of [goalId]'s
-/// sub-goals, from [goals].
+/// A time-spent, number-of-events, time-of-day or time-window measure looks
+/// at the events of its own goal, or of a goal chosen from [goals]; with or
+/// without their sub-goals. A weighted rollup weighs each of [goalId]'s
+/// sub-goals, from [goals]. Any measure can be rated only on days with
+/// events of its goal, or of another.
 class MeasureEditor extends StatefulWidget {
   const MeasureEditor({
     super.key,
@@ -53,6 +54,8 @@ class _MeasureEditorState extends State<MeasureEditor> {
   final _zeroAtDays = TextEditingController();
   final _percentile = TextEditingController();
   String _timeTarget = '09:00';
+  String _windowFrom = '12:00';
+  String _windowTo = '13:00';
   String _edge = 'start';
   String _when = 'by';
   String _agg = 'mean';
@@ -69,6 +72,13 @@ class _MeasureEditorState extends State<MeasureEditor> {
   bool _otherGoal = false;
   String? _eventsOf;
   bool _subGoals = true;
+
+  /// Whether it's rated only on days with events of its goal, or of
+  /// another; which, once picked; and whether their sub-goals' count.
+  bool _onlyIf = false;
+  bool _onlyIfOtherGoal = false;
+  String? _onlyIfEventsOf;
+  bool _onlyIfSubGoals = true;
 
   @override
   void initState() {
@@ -87,6 +97,12 @@ class _MeasureEditorState extends State<MeasureEditor> {
     };
     _otherGoal = _eventsOf != null;
     if (m['include_sub_goals'] == false) _subGoals = false;
+    if (m['only_if'] case final Map onlyIf) {
+      _onlyIf = true;
+      if (onlyIf['events_of'] case final String id) _onlyIfEventsOf = id;
+      _onlyIfOtherGoal = onlyIf.containsKey('events_of');
+      _onlyIfSubGoals = onlyIf['include_sub_goals'] != false;
+    }
     _interval.text = text(m['interval_days']);
     _zeroAtDays.text = text(m['zero_at_days']);
     switch (_kind) {
@@ -101,6 +117,11 @@ class _MeasureEditorState extends State<MeasureEditor> {
         if (m['target'] case final String target) _timeTarget = target;
         if (m['edge'] == 'end') _edge = 'end';
         if (m['when'] == 'after') _when = 'after';
+        _grace.text = text(m['grace_min']);
+        _zeroAt.text = text(m['zero_at_min']);
+      case 'time_window':
+        if (m['from'] case final String from) _windowFrom = from;
+        if (m['to'] case final String to) _windowTo = to;
         _grace.text = text(m['grace_min']);
         _zeroAt.text = text(m['zero_at_min']);
       case 'subjective':
@@ -145,7 +166,20 @@ class _MeasureEditorState extends State<MeasureEditor> {
   /// The measure as the fields have it; a field that's empty is left out,
   /// and one that doesn't parse is kept as typed, for [measureProblem] to
   /// refuse.
-  Measure? get _measure {
+  Measure? get _measure => switch (_kindMeasure) {
+    final measure? when _onlyIf => {
+      ...measure,
+      'only_if': {
+        // Another goal not picked yet is empty, for measureProblem.
+        if (_onlyIfOtherGoal) 'events_of': _onlyIfEventsOf ?? '',
+        if (!_onlyIfSubGoals) 'include_sub_goals': false,
+      },
+    },
+    final measure => measure,
+  };
+
+  /// The measure as its kind's fields have it, without `only_if`.
+  Measure? get _kindMeasure {
     Object? number(TextEditingController c) {
       final t = c.text.trim();
       return t.isEmpty ? null : (num.tryParse(t) ?? t);
@@ -192,6 +226,14 @@ class _MeasureEditorState extends State<MeasureEditor> {
         'zero_at_min': ?number(_zeroAt),
         ...source,
       },
+      'time_window' => {
+        'kind': 'time_window',
+        'from': _windowFrom,
+        'to': _windowTo,
+        'grace_min': ?number(_grace),
+        'zero_at_min': ?number(_zeroAt),
+        ...source,
+      },
       'subjective' => {
         'kind': 'subjective',
         'prompt': text(_prompt),
@@ -214,42 +256,99 @@ class _MeasureEditorState extends State<MeasureEditor> {
 
   void _changed() => widget.onChanged(_measure);
 
-  Future<void> _pickTimeTarget() async {
-    final [hour, minute] = _timeTarget.split(':').map(int.parse).toList();
+  /// Asks for a time of day, starting from [current] ("HH:MM"), and gives
+  /// [set] the one picked.
+  Future<void> _pickTime(String current, ValueChanged<String> set) async {
+    final [hour, minute] = current.split(':').map(int.parse).toList();
     final picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay(hour: hour, minute: minute),
     );
     if (picked == null) return;
     setState(() {
-      _timeTarget =
-          '${picked.hour.toString().padLeft(2, '0')}:'
-          '${picked.minute.toString().padLeft(2, '0')}';
+      set(
+        '${picked.hour.toString().padLeft(2, '0')}:'
+        '${picked.minute.toString().padLeft(2, '0')}',
+      );
     });
     _changed();
   }
 
-  /// Whose events a time-spent, number-of-events or time-of-day measure
-  /// looks at: its own goal's, or another's, as though it were that goal.
-  List<Widget> _whoseEvents(ThemeData theme) {
-    return [
-      Padding(
-        padding: const EdgeInsets.only(top: 12, bottom: 4),
-        child: Text('Events of', style: theme.textTheme.labelMedium),
+  /// A chip showing [time], which picks another with [_pickTime].
+  Widget _timeChip(String time, ValueChanged<String> set, {String? label}) =>
+      ActionChip(
+        avatar: const Icon(Icons.schedule),
+        label: Text(label == null ? time : '$label $time'),
+        onPressed: () => _pickTime(time, set),
+      );
+
+  /// Whose events a time-spent, number-of-events, time-of-day or
+  /// time-window measure looks at: its own goal's, or another's, as though
+  /// it were that goal.
+  List<Widget> _whoseEvents(ThemeData theme) => [
+    Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 4),
+      child: Text('Events of', style: theme.textTheme.labelMedium),
+    ),
+    ..._goalChoice(
+      otherGoal: _otherGoal,
+      setOtherGoal: (other) => _otherGoal = other,
+      eventsOf: _eventsOf,
+      setEventsOf: (id) => _eventsOf = id,
+      subGoals: _subGoals,
+      setSubGoals: (on) => _subGoals = on,
+    ),
+  ];
+
+  /// Whether it's rated only on days with events of its goal, or another's:
+  /// on the rest, it's skipped, and a question isn't asked.
+  List<Widget> _onlyIfDays(ThemeData theme) => [
+    SwitchListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: const Text('Only rate days with events'),
+      subtitle: const Text('Other days are skipped, without asking.'),
+      value: _onlyIf,
+      onChanged: (on) {
+        setState(() => _onlyIf = on);
+        _changed();
+      },
+    ),
+    if (_onlyIf)
+      ..._goalChoice(
+        otherGoal: _onlyIfOtherGoal,
+        setOtherGoal: (other) => _onlyIfOtherGoal = other,
+        eventsOf: _onlyIfEventsOf,
+        setEventsOf: (id) => _onlyIfEventsOf = id,
+        subGoals: _onlyIfSubGoals,
+        setSubGoals: (on) => _onlyIfSubGoals = on,
       ),
+  ];
+
+  /// This goal or another, picked from [MeasureEditor.goals], and whether
+  /// its sub-goals' events count.
+  List<Widget> _goalChoice({
+    required bool otherGoal,
+    required ValueChanged<bool> setOtherGoal,
+    required String? eventsOf,
+    required ValueChanged<String?> setEventsOf,
+    required bool subGoals,
+    required ValueChanged<bool> setSubGoals,
+  }) {
+    return [
       SegmentedButton<bool>(
         showSelectedIcon: false,
         segments: const [
           ButtonSegment(value: false, label: Text('This goal')),
           ButtonSegment(value: true, label: Text('Another goal')),
         ],
-        selected: {_otherGoal},
+        selected: {otherGoal},
         onSelectionChanged: (picked) {
-          setState(() => _otherGoal = picked.single);
+          setState(() => setOtherGoal(picked.single));
           _changed();
         },
       ),
-      if (_otherGoal)
+      if (otherGoal)
         FutureBuilder(
           future: widget.goals,
           builder: (context, snapshot) {
@@ -272,7 +371,7 @@ class _MeasureEditorState extends State<MeasureEditor> {
             return DropdownButton<String?>(
               isExpanded: true,
               hint: const Text('Pick a goal'),
-              value: choices.any((g) => g.id == _eventsOf) ? _eventsOf : null,
+              value: choices.any((g) => g.id == eventsOf) ? eventsOf : null,
               items: [
                 for (final goal in choices)
                   DropdownMenuItem(
@@ -286,7 +385,7 @@ class _MeasureEditorState extends State<MeasureEditor> {
                   ),
               ],
               onChanged: (picked) {
-                setState(() => _eventsOf = picked);
+                setState(() => setEventsOf(picked));
                 _changed();
               },
             );
@@ -296,9 +395,9 @@ class _MeasureEditorState extends State<MeasureEditor> {
         dense: true,
         contentPadding: EdgeInsets.zero,
         title: const Text("Include its sub-goals' events"),
-        value: _subGoals,
+        value: subGoals,
         onChanged: (on) {
-          setState(() => _subGoals = on);
+          setState(() => setSubGoals(on));
           _changed();
         },
       ),
@@ -437,6 +536,10 @@ class _MeasureEditorState extends State<MeasureEditor> {
         ),
       ),
     ];
+    final minutesOff = [
+      _field(_grace, 'Grace, in minutes', hint: '0', number: true),
+      _field(_zeroAt, 'Zero at, in minutes off', hint: '60', number: true),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -515,19 +618,24 @@ class _MeasureEditorState extends State<MeasureEditor> {
             ),
             Padding(
               padding: const EdgeInsets.only(top: 12),
-              child: ActionChip(
-                avatar: const Icon(Icons.schedule),
-                label: Text(_timeTarget),
-                onPressed: _pickTimeTarget,
+              child: _timeChip(_timeTarget, (t) => _timeTarget = t),
+            ),
+            ...minutesOff,
+            ..._whoseEvents(theme),
+          ],
+          'time_window' => [
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _timeChip(_windowFrom, (t) => _windowFrom = t, label: 'From'),
+                  _timeChip(_windowTo, (t) => _windowTo = t, label: 'to'),
+                ],
               ),
             ),
-            _field(_grace, 'Grace, in minutes', hint: '0', number: true),
-            _field(
-              _zeroAt,
-              'Zero at, in minutes off',
-              hint: '60',
-              number: true,
-            ),
+            ...minutesOff,
             ..._whoseEvents(theme),
           ],
           'subjective' => [
@@ -568,6 +676,7 @@ class _MeasureEditorState extends State<MeasureEditor> {
           ],
           _ => const <Widget>[],
         },
+        if (kind != null) ..._onlyIfDays(theme),
       ],
     );
   }

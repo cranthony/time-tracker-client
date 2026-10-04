@@ -880,8 +880,6 @@ class _GoalTile extends StatelessWidget {
       if (!goal.active) goalStatuses[goal.status] ?? goal.status,
       if (goal.staleDays case final stale? when stale > 0)
         '$stale day${stale == 1 ? '' : 's'} unrated',
-      if (subGoals > 0 && !expanded)
-        '$subGoals sub-goal${subGoals == 1 ? '' : 's'}',
     ].nonNulls.join(' · ');
     final rated =
         goal.active &&
