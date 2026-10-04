@@ -7,6 +7,7 @@ import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/recurrence.dart';
+import 'package:time_tracker_client/models/repeat.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
@@ -16,6 +17,7 @@ import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/widgets/durations.dart';
+import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
 
 void main() {
   final now = DateTime(2026, 9, 30, 12);
@@ -170,7 +172,7 @@ void main() {
     expect(find.text('Today'), findsOneWidget);
   });
 
-  testWidgets('tapping an event shows all its properties', (tester) async {
+  testWidgets("an event's Details show all its properties", (tester) async {
     final repo = InMemoryEventsRepository([
       Event.fromJson({
         'id': 'e1',
@@ -191,6 +193,8 @@ void main() {
     await tester.ensureVisible(find.text('Work'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Work'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Details'));
     await tester.pumpAndSettle();
     final dialog = find.byType(AlertDialog);
     expect(dialog, findsOneWidget);
@@ -227,7 +231,7 @@ void main() {
     expect(dialog, findsNothing);
   });
 
-  group('editing in the event dialog', () {
+  group("editing in an event's Details", () {
     Event work() => Event.fromJson({
       'id': 'e1',
       'summary': 'Work',
@@ -257,6 +261,8 @@ void main() {
       await tester.ensureVisible(find.text('Work').first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Work').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Details'));
       await tester.pumpAndSettle();
     }
 
@@ -517,6 +523,207 @@ void main() {
     });
   });
 
+  group('the event summary', () {
+    Event work() => Event.fromJson({
+      'id': 'e1',
+      'summary': 'Work',
+      'start': localIsoTimestamp(at(30, 9)),
+      'end': localIsoTimestamp(at(30, 10, 30)),
+      'description': 'Deep work',
+      'location': null,
+      'goal_ids': ['g1'],
+      'goal_names': ['Deep focus'],
+      'priority': 2,
+      'effective_priority': 2,
+      'is_fixed_time': false,
+      'is_cancelled': false,
+    });
+
+    Future<void> open(WidgetTester tester, EventsRepository repo) async {
+      await tester.pumpWidget(
+        app(
+          repo,
+          goals: InMemoryGoalsRepository([
+            const Goal(
+              id: 'g1',
+              name: 'Deep focus',
+              priority: 1,
+              backgroundColor: '#4986e7',
+            ),
+            const Goal(id: 'g2', name: 'Exercise', priority: 2),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Work').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Work').first);
+      await tester.pumpAndSettle();
+    }
+
+    Finder inDialog(Finder f) =>
+        find.descendant(of: find.byType(AlertDialog), matching: f);
+
+    testWidgets('shows the properties one edits, blank ones as hints', (
+      tester,
+    ) async {
+      await open(tester, _RecordingRepository([work()]));
+      expect(inDialog(find.text('P2')), findsOneWidget);
+      expect(inDialog(find.text('Work')), findsOneWidget);
+      expect(
+        inDialog(find.text('Wed, Sep 30 · 9:00 AM – 10:30 AM')),
+        findsOneWidget,
+      );
+      expect(inDialog(find.text('Add location')), findsOneWidget);
+      expect(inDialog(find.text('Deep work')), findsOneWidget);
+      expect(inDialog(find.text('Flexible time')), findsOneWidget);
+      expect(inDialog(find.text('Deep focus')), findsOneWidget);
+      // Not in a series, so no link to one.
+      expect(inDialog(find.text('Repeats · see series')), findsNothing);
+      // Nor the properties it leaves to Details.
+      expect(inDialog(find.text('id')), findsNothing);
+
+      await tester.tap(find.text('Details'));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('is_cancelled')), findsOneWidget);
+    });
+
+    testWidgets('tapping a property edits it; Save sends the changes', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([work()]);
+      await open(tester, repo);
+
+      await tester.tap(inDialog(find.text('P2')));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('P0')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(inDialog(find.text('Work')));
+      await tester.pumpAndSettle();
+      await tester.enterText(inDialog(find.byType(TextField)), 'Admin');
+      await tester.pumpAndSettle();
+
+      await tester.tap(inDialog(find.text('Add location')));
+      await tester.pumpAndSettle();
+      await tester.enterText(inDialog(find.byType(TextField)), 'Office');
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(inDialog(find.text('Flexible time')));
+      await tester.tap(inDialog(find.text('Flexible time')));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('Fixed time')), findsOneWidget);
+
+      // With changes, Details gives way to Cancel and Save.
+      expect(find.text('Details'), findsNothing);
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {
+          'priority': 0,
+          'summary': 'Admin',
+          'location': 'Office',
+          'is_fixed_time': true,
+        },
+      ]);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text('Saved.'), findsOneWidget);
+    });
+
+    testWidgets('changing the start keeps its length', (tester) async {
+      final repo = _RecordingRepository([work()]);
+      await open(tester, repo);
+      await tester.tap(inDialog(find.textContaining('Sep 30 ·')));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('9:00 AM')));
+      await tester.pumpAndSettle();
+      // The time picker, typed into.
+      await tester.tap(find.byIcon(Icons.keyboard_outlined));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(0), '11');
+      await tester.enterText(find.byType(TextField).at(1), '00');
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(
+        inDialog(find.text('Wed, Sep 30 · 11:00 AM – 12:30 PM')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {
+          'end': localIsoTimestamp(at(30, 12, 30)),
+          'start': localIsoTimestamp(at(30, 11)),
+        },
+      ]);
+    });
+
+    testWidgets('picks goals, shown with their diamonds', (tester) async {
+      final repo = _RecordingRepository([work()]);
+      await open(tester, repo);
+      expect(inDialog(find.byType(GoalDiamond)), findsOneWidget);
+      await tester.ensureVisible(inDialog(find.text('Deep focus')));
+      await tester.tap(inDialog(find.text('Deep focus')));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Exercise')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(inDialog(find.text('Done')));
+      await tester.tap(inDialog(find.text('Done')));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.byType(GoalDiamond)), findsNWidgets(2));
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {
+          'goal_ids': ['g1', 'g2'],
+        },
+      ]);
+    });
+
+    testWidgets('the trash can cancels it, after asking', (tester) async {
+      final repo = _RecordingRepository([work()]);
+      await open(tester, repo);
+      await tester.tap(find.byTooltip('Cancel event'));
+      await tester.pumpAndSettle();
+      expect(find.text('Cancel this event?'), findsOneWidget);
+      expect(
+        find.text(
+          '"Work" on Wed, Sep 30 leaves the list. This can\'t be undone.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Keep event'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, isEmpty);
+
+      await tester.tap(find.byTooltip('Cancel event'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel event'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {'is_cancelled': true},
+      ]);
+      expect(find.text('Event cancelled.'), findsOneWidget);
+    });
+
+    testWidgets("shows the server's error and keeps the edits", (tester) async {
+      final repo = _RecordingRepository([work()])
+        ..error = McpException('Overlaps a fixed-time event');
+      await open(tester, repo);
+      await tester.tap(inDialog(find.text('P2')));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('P1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text("Couldn't save. Overlaps a fixed-time event"),
+        findsOneWidget,
+      );
+      expect(find.text('Save'), findsOneWidget);
+    });
+  });
+
   group('a recurring series', () {
     InMemoryEventsRepository series() => InMemoryEventsRepository(
       [
@@ -534,22 +741,26 @@ void main() {
           'summary': 'Standup',
           'start': localIsoTimestamp(at(7, 9)),
           'end': localIsoTimestamp(at(7, 10)),
-          'rules': ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE'],
+          'repeat': {
+            'every': 'week',
+            'weekdays': ['mon', 'wed'],
+          },
           'schedule': 'Every week on Mon, Wed',
         }),
       ],
     );
 
-    /// Opens the event, then its series, and renames the series.
+    /// Opens the event, then its series' Details, and renames the series.
     Future<void> renameSeries(WidgetTester tester) async {
       await tester.ensureVisible(find.text('Standup'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Standup'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Repeats: see or change the series'));
+      await tester.tap(find.text('Repeats · see series'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Details').last);
       await tester.pumpAndSettle();
       expect(find.text('Every week on Mon, Wed'), findsOneWidget);
-      expect(find.text('RRULE:FREQ=WEEKLY;BYDAY=MO,WE'), findsOneWidget);
       final dialog = find.byType(AlertDialog).last;
       await tester.tap(
         find.descendant(of: dialog, matching: find.text('Standup')).last,
@@ -579,7 +790,7 @@ void main() {
       expect(repo.splits, ['standup_0930']);
       expect((await repo.recurrence('standup')).summary, 'Team standup');
       expect(find.text('Saved this and following events.'), findsOneWidget);
-      // Both dialogs closed.
+      // Every dialog closed.
       expect(find.byType(AlertDialog), findsNothing);
     });
 
@@ -602,6 +813,201 @@ void main() {
       await tester.pumpAndSettle();
       expect(repo.splits, [null]);
       expect(find.text('Saved every event in the series.'), findsOneWidget);
+    });
+
+    /// Opens the event, then its series' summary.
+    Future<void> openSeries(WidgetTester tester) async {
+      await tester.ensureVisible(find.text('Standup'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Standup'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Repeats · see series'));
+      await tester.pumpAndSettle();
+    }
+
+    Finder inSeries(Finder f) =>
+        find.descendant(of: find.byType(AlertDialog).last, matching: f);
+
+    testWidgets("the series' summary shows how it repeats, and its first "
+        "event's times", (tester) async {
+      await tester.pumpWidget(app(series()));
+      await tester.pumpAndSettle();
+      await openSeries(tester);
+      expect(inSeries(find.text('Series')), findsOneWidget);
+      expect(inSeries(find.text('Every week on Mon, Wed')), findsOneWidget);
+      expect(
+        inSeries(find.text('9:00 AM – 10:00 AM · from Mon, Sep 7')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('saving the series says what it may change, but for the '
+        'time', (tester) async {
+      final repo = series();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await openSeries(tester);
+      await tester.tap(inSeries(find.text('Standup')));
+      await tester.pumpAndSettle();
+      await tester.enterText(inSeries(find.byType(TextField)), 'Sync');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Saving may set every property of each of these events to the '
+          "series', except its time, even events you changed on their own.",
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('All events'));
+      await tester.pumpAndSettle();
+      expect(repo.splits, [null]);
+      expect((await repo.recurrence('standup')).summary, 'Sync');
+      expect(find.text('Saved every event in the series.'), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+    });
+
+    testWidgets("saving the series' time says it may move every event", (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(series()));
+      await tester.pumpAndSettle();
+      await openSeries(tester);
+      await tester.tap(inSeries(find.textContaining('from Mon, Sep 7')));
+      await tester.pumpAndSettle();
+      await tester.tap(inSeries(find.text('Mon, Sep 7')).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('8'));
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Saving may set every property of each of these events to the '
+          "series', and move each one to the series' new time, even events "
+          'you changed or moved on their own.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Go back'));
+      await tester.pumpAndSettle();
+      expect(find.text('Save'), findsOneWidget); // Still open.
+    });
+
+    testWidgets('changes how the series repeats', (tester) async {
+      final repo = series();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await openSeries(tester);
+      await tester.tap(inSeries(find.text('Every week on Mon, Wed')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('fri'));
+      await tester.pumpAndSettle();
+      expect(
+        inSeries(find.text('Every week on Mon, Wed, Fri')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('After'));
+      await tester.pumpAndSettle();
+      expect(
+        inSeries(find.text('Every week on Mon, Wed, Fri, 10 times')),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(find.text('Save'));
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('This and following events'));
+      await tester.pumpAndSettle();
+      expect(repo.splits, ['standup_0930']);
+      expect((await repo.recurrence('standup')).repeat?.toJson(), {
+        'every': 'week',
+        'interval': 1,
+        'weekdays': ['mon', 'wed', 'fri'],
+        'count': 10,
+      });
+    });
+
+    testWidgets('the trash can deletes this and following events, after '
+        'asking', (tester) async {
+      final repo = series();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await openSeries(tester);
+      await tester.tap(find.byTooltip('Delete this and following events'));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete this and following events?'), findsOneWidget);
+      await tester.tap(find.text('Keep events'));
+      await tester.pumpAndSettle();
+      expect(find.text('Series'), findsOneWidget); // Still open.
+
+      await tester.tap(find.byTooltip('Delete this and following events'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete events'));
+      await tester.pumpAndSettle();
+      expect(find.text('Deleted this and following events.'), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text('Standup'), findsNothing);
+    });
+
+    test('McpEventsRepository deletes from an event on, never the whole '
+        'series', () async {
+      final client = _RecurrenceClient();
+      final recurrence = Recurrence.fromJson({
+        'id': 'standup',
+        'start': '2026-09-07T09:00:00Z',
+        'end': '2026-09-07T10:00:00Z',
+      });
+      await McpEventsRepository(client)
+          .deleteRecurrence(recurrence, startingAt: 'standup_0930');
+      expect(client.name, 'delete_recurrence');
+      expect(client.arguments, {
+        'id': 'standup',
+        'starting_at_event_id': 'standup_0930',
+      });
+    });
+
+    test('Repeat says how it repeats in words', () {
+      expect(
+        Repeat.fromJson({
+          'every': 'week',
+          'weekdays': ['mon', 'wed'],
+        }).describe(),
+        'Every week on Mon, Wed',
+      );
+      expect(
+        Repeat.fromJson({
+          'every': 'month',
+          'interval': 2,
+          'month_days': [1, -1],
+          'until': '2026-12-31',
+        }).describe(),
+        'Every 2 months on the 1st, the last day, until Dec 31, 2026',
+      );
+      expect(
+        Repeat.fromJson({
+          'every': 'year',
+          'months': [11],
+          'nth_weekdays': [
+            {'nth': 4, 'weekday': 'thu'},
+          ],
+          'count': 1,
+        }).describe(),
+        'Every year on the fourth Thu in Nov, once',
+      );
+      // What the app doesn't edit is sent back as it was.
+      expect(
+        Repeat.fromJson({
+          'every': 'week',
+          'skipped': ['2026-10-05T09:00:00-04:00'],
+        }).copyWith(interval: 2).toJson(),
+        {
+          'every': 'week',
+          'interval': 2,
+          'skipped': ['2026-10-05T09:00:00-04:00'],
+        },
+      );
     });
 
     test('McpEventsRepository sends update_recurrence what changed', () async {
@@ -738,6 +1144,7 @@ class _RecordingRepository extends InMemoryEventsRepository {
 class _RecurrenceClient extends McpClient {
   _RecurrenceClient() : super(endpoint: Uri.parse('http://test'));
 
+  String? name;
   Map<String, Object?>? arguments;
 
   @override
@@ -745,6 +1152,7 @@ class _RecurrenceClient extends McpClient {
     String name, [
     Map<String, Object?> arguments = const {},
   ]) async {
+    this.name = name;
     this.arguments = arguments;
     return [
       {

@@ -297,29 +297,43 @@ void main() {
       });
     }
 
-    testWidgets('event series ($mode)', (tester) async {
-      await render(
-        tester,
-        'event_series',
-        EventsScreen(
-          repository: sample.eventsRepository(),
-          goalsRepository: sample.goalsRepository(),
-          serverLabel: 'sample',
-          clock: () => _now,
-        ),
-        then: () async {
-          await tester.ensureVisible(find.text('Morning routine'));
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('Morning routine'));
-          await tester.pumpAndSettle();
-          final link = find.text('Repeats: see or change the series');
-          await tester.ensureVisible(link);
-          await tester.pumpAndSettle();
-          await tester.tap(link);
-          await tester.pumpAndSettle();
-        },
-      );
-    });
+    // An event's summary; then its series', with how it repeats open
+    // for editing; then the series' Details.
+    for (final (name, steps) in [
+      ('event', <String>[]),
+      ('event_series', ['Repeats · see series']),
+      (
+        'event_series_repeat',
+        ['Repeats · see series', 'Every week on Mon, Tue, Wed, Thu, Fri'],
+      ),
+      ('event_series_details', ['Repeats · see series', 'Details']),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          EventsScreen(
+            repository: sample.eventsRepository(),
+            goalsRepository: sample.goalsRepository(),
+            serverLabel: 'sample',
+            clock: () => _now,
+          ),
+          then: () async {
+            await tester.ensureVisible(find.text('Morning routine'));
+            await tester.pumpAndSettle();
+            await tester.tap(find.text('Morning routine'));
+            await tester.pumpAndSettle();
+            for (final step in steps) {
+              final tapped = find.text(step).last;
+              await tester.ensureVisible(tapped);
+              await tester.pumpAndSettle();
+              await tester.tap(tapped);
+              await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
 
     testWidgets('notes ($mode)', (tester) async {
       final notes = sample.notesRepository();

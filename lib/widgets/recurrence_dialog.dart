@@ -14,7 +14,7 @@ enum SeriesScope {
 }
 
 /// Shows every property of the recurring series [recurrence], as the server
-/// sent it, under its summary: its schedule in words, its rules, and the
+/// sent it, under its summary: its schedule in words, how it repeats, and the
 /// properties its events share.
 ///
 /// Tapping a value opens it for editing; "Save" sends every change with
@@ -43,7 +43,7 @@ Future<List<Recurrence>?> showRecurrenceDialog(
     },
     // The schedule first: it's what makes this a series.
     properties: {
-      for (final key in ['schedule', 'rules', 'summary', 'start', 'end'])
+      for (final key in ['schedule', 'repeat', 'summary', 'start', 'end'])
         key: typed[key],
       ...recurrence.properties,
       ...typed,
@@ -54,9 +54,6 @@ Future<List<Recurrence>?> showRecurrenceDialog(
         'goal_ids': 'from its label',
     },
     hints: const {
-      'rules':
-          'One rule per line, like RRULE:FREQ=WEEKLY;BYDAY=MO,WE. The '
-          'schedule above says them in words.',
       'start': "When the series' first event starts.",
       'end': "When the series' first event ends.",
     },
@@ -69,7 +66,7 @@ Future<List<Recurrence>?> showRecurrenceDialog(
     confirmSave: fromEventId == null
         ? null
         : (changes) async {
-            final picked = await _askScope(context);
+            final picked = await askSeriesScope(context, changes);
             if (picked != null) scope = picked;
             return picked != null;
           },
@@ -78,48 +75,74 @@ Future<List<Recurrence>?> showRecurrenceDialog(
   );
 }
 
-/// Asks whether a change is for every event in the series, or the one it
-/// was opened from and those after it; null to go back.
-Future<SeriesScope?> _askScope(BuildContext context) => showDialog<SeriesScope>(
+/// Asks whether [changes] to a series are for every event in it, or the
+/// one it was opened from and those after it; null to go back.
+///
+/// It first says what saving may do to events changed on their own. The
+/// server found (time-tracking-google-calendar-mcp#116) that any edit to
+/// a series resets every one of its events' properties but their times to
+/// the series', even ones the edit leaves out, and that an edit to its
+/// times moves every event onto them. That's Google Calendar's behavior,
+/// not anything it documents, so this says "may".
+Future<SeriesScope?> askSeriesScope(
+  BuildContext context,
+  Map<String, Object?> changes,
+) => showDialog<SeriesScope>(
   context: context,
-  builder: (context) => SimpleDialog(
-    title: const Text('Change which events?'),
-    children: [
-      SimpleDialogOption(
-        onPressed: () => Navigator.of(context).pop(SeriesScope.all),
-        child: const ListTile(
-          leading: Icon(Icons.event_repeat),
-          title: Text('All events'),
-          subtitle: Text(
-            'Every event in the series, except any changed on its own.',
+  builder: (context) {
+    final theme = Theme.of(context);
+    final moves = changes.containsKey('start') || changes.containsKey('end');
+    return SimpleDialog(
+      title: const Text('Change which events?'),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+          child: Text(
+            moves
+                ? "Saving may set every property of each of these events "
+                      "to the series', and move each one to the series' new "
+                      'time, even events you changed or moved on their own.'
+                : "Saving may set every property of each of these events "
+                      "to the series', except its time, even events you "
+                      'changed on their own.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
-      ),
-      SimpleDialogOption(
-        onPressed: () => Navigator.of(context).pop(SeriesScope.following),
-        child: const ListTile(
-          leading: Icon(Icons.east),
-          title: Text('This and following events'),
-          subtitle: Text(
-            'Starts a new series from this event; the earlier ones stay '
-            'as they are.',
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(context).pop(SeriesScope.all),
+          child: const ListTile(
+            leading: Icon(Icons.event_repeat),
+            title: Text('All events'),
+            subtitle: Text('Every event in the series.'),
           ),
         ),
-      ),
-      SimpleDialogOption(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: Text('Go back'),
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(context).pop(SeriesScope.following),
+          child: const ListTile(
+            leading: Icon(Icons.east),
+            title: Text('This and following events'),
+            subtitle: Text(
+              'Starts a new series from this event; the earlier ones stay '
+              'as they are.',
+            ),
+          ),
         ),
-      ),
-    ],
-  ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text('Go back'),
+          ),
+        ),
+      ],
+    );
+  },
 );
 
 const _kinds = {
   'summary': PropertyKind.text,
-  'rules': PropertyKind.lines,
   'start': PropertyKind.time,
   'end': PropertyKind.time,
   'description': PropertyKind.multiline,
