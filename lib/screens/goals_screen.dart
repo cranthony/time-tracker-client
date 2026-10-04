@@ -13,6 +13,7 @@ import '../services/mcp_client.dart';
 import 'goal_history_screen.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
+import '../widgets/event_properties_dialog.dart';
 import '../widgets/goal_dialog.dart';
 import '../widgets/health.dart';
 import '../widgets/measure_dialog.dart';
@@ -36,7 +37,9 @@ import '../widgets/status_message.dart';
 /// events' priority and fixed time ([GoalSummary]), kept on the device.
 /// Only active goals take up a calendar label; the others keep their
 /// history. Tapping a goal shows its measure and how it's doing by it, and
-/// lets one edit it ([showMeasureDialog]); tapping its ratings shows its
+/// lets one edit it ([showMeasureDialog]) -- or, while each goal shows
+/// its event properties, those, to set or clear
+/// ([showEventPropertiesDialog]); tapping its ratings shows its
 /// history; its menu adds a sub-goal, or shows its measure, history or
 /// details: all its properties, which can be changed, its status included.
 /// "+" adds a top-level goal.
@@ -343,6 +346,16 @@ class _GoalsScreenState extends State<GoalsScreen> {
     save: _update,
     goals: _allGoals,
     onHistory: _history,
+    onDetails: _open,
+  );
+
+  /// Shows the priority, fixed time and color [goal] gives its events,
+  /// from which each can be set or cleared, and its details opened.
+  Future<void> _eventProperties(Goal goal) => showEventPropertiesDialog(
+    context,
+    goal,
+    goals: _goals?.goals ?? const [],
+    save: _update,
     onDetails: _open,
   );
 
@@ -662,9 +675,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
               final save when save.refused => save.lastError,
               final save => '${save.lastError}. Trying again soon',
             },
-            onTap: _failed(goal.id) == null
-                ? () => _measure(goal)
-                : () => _open(goal),
+            onTap: switch ((_failed(goal.id), _summary)) {
+              (_?, _) => () => _open(goal),
+              (null, GoalSummary.eventProperties) => () => _eventProperties(
+                goal,
+              ),
+              (null, _) => () => _measure(goal),
+            },
             onDetails: () => _open(goal),
             onRetry: () => widget.outbox.retry(goal.id!),
             onDiscard: () => _discard(goal.id!),
@@ -730,7 +747,7 @@ enum GoalSummary {
   /// Its time as a share of each window: "37.5% of 24h · 6% of 7d".
   percent('Time as a percentage'),
 
-  /// What it gives its events: "Priority 2 · Fixed time".
+  /// What it gives its events: "Priority 2 (inherited) · Fixed time".
   eventProperties('Event properties');
 
   const GoalSummary(this.label);
@@ -1104,7 +1121,8 @@ GoalList _withChanged(
 
 /// [goals] in place of [list]'s, parents first, each goal's sub-goals
 /// after it in the order given, and each path made again from its
-/// ancestors' names.
+/// ancestors' names, and the priority and fixed time each inherits from
+/// them.
 GoalList _inTree(GoalList list, List<Goal> goals) {
   final ids = {for (final goal in goals) goal.id};
   final children = <String?, List<Goal>>{};
@@ -1113,7 +1131,7 @@ GoalList _inTree(GoalList list, List<Goal> goals) {
     children.putIfAbsent(parent, () => []).add(goal);
   }
   final ordered = <Goal>[];
-  void visit(Goal goal, String? parentPath) {
+  void visit(Goal goal, Goal? parent, String? parentPath) {
     final path = switch ((parentPath, goal.parentId)) {
       (final parent?, _) => '$parent › ${goalName(goal)}',
       (null, null) => goalName(goal),
@@ -1124,17 +1142,39 @@ GoalList _inTree(GoalList list, List<Goal> goals) {
         _ => goalName(goal),
       },
     };
-    ordered.add(
-      path == goal.path
-          ? goal
-          : Goal.fromJson({...goal.toJson(), 'path': path}),
-    );
+    // Under a goal that isn't listed, what it inherits is as it was.
+    final priority =
+        goal.priority ??
+        (parent != null
+            ? parent.effectivePriority
+            : goal.parentId == null
+            ? null
+            : goal.effectivePriority);
+    final fixedTime =
+        goal.fixedTime ??
+        (parent != null
+            ? parent.effectiveFixedTime
+            : goal.parentId == null
+            ? null
+            : goal.effectiveFixedTime);
+    final shown =
+        path == goal.path &&
+            priority == goal.effectivePriority &&
+            fixedTime == goal.effectiveFixedTime
+        ? goal
+        : Goal.fromJson({
+            ...goal.toJson(),
+            'path': path,
+            'effective_priority': priority,
+            'effective_fixed_time': fixedTime,
+          });
+    ordered.add(shown);
     for (final child in children[goal.id] ?? const <Goal>[]) {
-      visit(child, path);
+      visit(child, shown, path);
     }
   }
 
-  children[null]?.forEach((goal) => visit(goal, null));
+  children[null]?.forEach((goal) => visit(goal, null, null));
   return GoalList(
     goals: ordered,
     labelSlotsUsed: list.labelSlotsUsed,
@@ -1275,12 +1315,15 @@ String formatTimestamp(BuildContext context, DateTime time) {
       '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
 }
 
-/// The priority and fixed time [goal] gives its events: "Priority 2 ·
-/// Fixed time". Null if it gives neither.
+/// The priority and fixed time [goal] gives its events, its own or
+/// inherited: "Priority 2 (inherited) · Fixed time". Null if it gives
+/// neither.
 String? describeEventProperties(Goal goal) {
+  final inherited = goal.inheritsPriority ? ' (inherited)' : '';
   final parts = [
-    if (goal.priority case final priority?) 'Priority $priority',
-    switch (goal.fixedTime) {
+    if (goal.effectivePriority case final priority?)
+      'Priority $priority$inherited',
+    switch (goal.effectiveFixedTime) {
       true => 'Fixed time',
       false => 'Flexible time',
       null => null,

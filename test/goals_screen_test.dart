@@ -1035,6 +1035,215 @@ void main() {
     });
   });
 
+  group('the event properties dialog', () {
+    InMemoryGoalsRepository withColors() => InMemoryGoalsRepository([
+      const Goal(id: 'cook', name: 'Cooking', priority: 1, fixedTime: true),
+      const Goal(id: 'tofu', name: 'Tofu tikka', parentId: 'cook'),
+      const Goal(
+        id: 'curry',
+        name: 'Curry',
+        parentId: 'cook',
+        priority: 3,
+        fixedTime: false,
+        backgroundColor: '#123456',
+      ),
+    ]);
+
+    Finder inDialog(Finder finder) =>
+        find.descendant(of: find.byType(AlertDialog).last, matching: finder);
+
+    Goal goalOf(GoalList goals, String id) =>
+        goals.goals.firstWhere((g) => g.id == id);
+
+    /// Shows each goal's event properties, with Cooking expanded unless
+    /// not to [expand].
+    Future<void> showEventProperties(
+      WidgetTester tester, {
+      bool expand = true,
+    }) async {
+      await tester.tap(find.byTooltip('Show under each goal…'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(RadioMenuButton<GoalSummary>, 'Event properties'),
+      );
+      await tester.pumpAndSettle();
+      if (!expand) return;
+      await tester.tap(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('Cooking'),
+            matching: find.byType(ListTile),
+          ),
+          matching: find.byType(GoalFlag),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    setUp(
+      () => SharedPreferencesAsyncPlatform.instance =
+          InMemorySharedPreferencesAsync.empty(),
+    );
+    tearDown(
+      () => SharedPreferencesAsyncPlatform.instance =
+          InMemorySharedPreferencesAsync.empty(),
+    );
+
+    testWidgets('the summary says when a priority is inherited', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(withColors()));
+      await tester.pumpAndSettle();
+      await showEventProperties(tester);
+
+      expect(find.text('Priority 1 · Fixed time'), findsOneWidget);
+      expect(find.text('Priority 1 (inherited) · Fixed time'), findsOneWidget);
+      expect(find.text('Priority 3 · Flexible time'), findsOneWidget);
+    });
+
+    testWidgets('opens on tapping a goal, saying where each property comes '
+        'from', (tester) async {
+      await tester.pumpWidget(app(withColors()));
+      await tester.pumpAndSettle();
+      await showEventProperties(tester);
+
+      await tester.tap(find.text('Tofu tikka'));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('Event properties')), findsOneWidget);
+      expect(inDialog(find.text('Cooking › Tofu tikka')), findsOneWidget);
+      expect(inDialog(find.text('Inherited from Cooking')), findsNWidgets(2));
+      expect(inDialog(find.text('Fixed time')), findsOneWidget);
+      expect(inDialog(find.text('Follows priority 1')), findsOneWidget);
+      // Nothing of its own to clear.
+      expect(inDialog(find.text('Clear')), findsNothing);
+      expect(inDialog(find.text('Set')), findsNWidgets(3));
+
+      await tester.tap(inDialog(find.text('Close')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Curry'));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('Set on this goal')), findsNWidgets(3));
+      expect(inDialog(find.text('Clear')), findsNWidgets(3));
+    });
+
+    testWidgets("the overall goal's card doesn't open it", (tester) async {
+      await tester.pumpWidget(
+        app(
+          InMemoryGoalsRepository([
+            const Goal(
+              id: overallGoalId,
+              name: 'Overall',
+              measure: {'kind': 'subjective'},
+            ),
+            const Goal(id: 'cook', name: 'Cooking', priority: 1),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await showEventProperties(tester, expand: false);
+
+      await tester.tap(find.text('Overall'));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('Event properties')), findsNothing);
+    });
+
+    testWidgets('sets a priority, then clears it to inherit again', (
+      tester,
+    ) async {
+      final repo = withColors();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await showEventProperties(tester);
+
+      await tester.tap(find.text('Tofu tikka'));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Priority')).first);
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('Inherit from Cooking (1)')), findsOneWidget);
+      await tester.tap(inDialog(find.widgetWithText(ChoiceChip, '0')));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('Set on this goal')), findsOneWidget);
+      // Its color follows its priority, so it'll change too.
+      expect(inDialog(find.text('Will follow priority 0')), findsOneWidget);
+      await tester.tap(inDialog(find.text('Save')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(goalOf(await repo.goals(), 'tofu').priority, 0);
+      expect(find.text('Priority 0 · Fixed time'), findsOneWidget);
+
+      await tester.tap(find.text('Tofu tikka'));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Clear')));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('Inherited from Cooking')), findsNWidgets(2));
+      await tester.tap(inDialog(find.text('Save')));
+      await tester.pumpAndSettle();
+
+      expect(goalOf(await repo.goals(), 'tofu').priority, isNull);
+      expect(find.text('Priority 1 (inherited) · Fixed time'), findsOneWidget);
+    });
+
+    testWidgets('"…" takes any other priority', (tester) async {
+      final repo = withColors();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await showEventProperties(tester);
+
+      await tester.tap(find.text('Tofu tikka'));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Set')).first);
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.widgetWithText(ChoiceChip, '…')));
+      await tester.pumpAndSettle();
+      await tester.enterText(inDialog(find.byType(TextField)), '7');
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Save')));
+      await tester.pumpAndSettle();
+
+      expect(goalOf(await repo.goals(), 'tofu').priority, 7);
+    });
+
+    testWidgets('sets whether its events are at a fixed time', (tester) async {
+      final repo = withColors();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await showEventProperties(tester);
+
+      await tester.tap(find.text('Tofu tikka'));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Time')));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Flexible')));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Save')));
+      await tester.pumpAndSettle();
+
+      expect(goalOf(await repo.goals(), 'tofu').fixedTime, isFalse);
+      expect(
+        find.text('Priority 1 (inherited) · Flexible time'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("clears a goal's own color", (tester) async {
+      final repo = withColors();
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await showEventProperties(tester);
+
+      await tester.tap(find.text('Curry'));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Clear')).last);
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('Will follow priority 3')), findsOneWidget);
+      await tester.tap(inDialog(find.text('Save')));
+      await tester.pumpAndSettle();
+
+      expect(goalOf(await repo.goals(), 'curry').backgroundColor, isNull);
+    });
+  });
+
   testWidgets('says when notes were never compacted', (tester) async {
     await tester.pumpWidget(app(tree()));
     await tester.pumpAndSettle();

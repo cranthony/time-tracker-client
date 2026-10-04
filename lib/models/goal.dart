@@ -15,6 +15,8 @@ class Goal {
     this.fixedTime,
     this.measure,
     this.effectiveColor,
+    this.effectivePriority,
+    this.effectiveFixedTime,
     this.health,
     this.healthPeriod,
     this.healthTrend = const [],
@@ -59,6 +61,20 @@ class Goal {
   /// inherits from its priority or its parent. Null from a server too old
   /// to say.
   final String? effectiveColor;
+
+  /// The priority its events take: [priority], or its nearest ancestor's;
+  /// null if none of them has one. From a server too old to say, it's
+  /// [priority].
+  final int? effectivePriority;
+
+  /// The same for [fixedTime].
+  final bool? effectiveFixedTime;
+
+  /// Whether [effectivePriority] comes from an ancestor, not its own.
+  bool get inheritsPriority => priority == null && effectivePriority != null;
+
+  /// Whether [effectiveFixedTime] comes from an ancestor, not its own.
+  bool get inheritsFixedTime => fixedTime == null && effectiveFixedTime != null;
 
   /// Its latest confirmed rating (0-100), if it's had one.
   final int? health;
@@ -116,6 +132,10 @@ class Goal {
       _ => null,
     },
     effectiveColor: json['effective_color'] as String?,
+    effectivePriority:
+        json['effective_priority'] as int? ?? json['priority'] as int?,
+    effectiveFixedTime:
+        json['effective_fixed_time'] as bool? ?? json['fixed_time'] as bool?,
     health: json['health'] as int?,
     healthPeriod: json['health_period'] as String?,
     healthTrend: [
@@ -146,6 +166,8 @@ class Goal {
     'fixed_time': fixedTime,
     'measure': measure,
     'effective_color': effectiveColor,
+    'effective_priority': effectivePriority,
+    'effective_fixed_time': effectiveFixedTime,
     'health': health,
     'health_period': healthPeriod,
     'health_trend': healthTrend.map((r) => r?.toString() ?? '-').join(','),

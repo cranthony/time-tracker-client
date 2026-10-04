@@ -209,6 +209,8 @@ class SampleData {
       'status': 'active',
       'background_color': '#33b679',
       'effective_color': '#33b679',
+      'priority': 2,
+      'fixed_time': false,
       'measure': {'kind': 'rollup', 'agg': 'percentile', 'percentile': 0},
       ..._health('cook'),
       ..._time(120, 270),
