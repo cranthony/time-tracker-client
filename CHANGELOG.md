@@ -6,6 +6,27 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.1.0
+
+- Tapping an event on the Events page shows a shorter dialog with the
+  properties you edit most: its priority as a chip above its summary,
+  its times on one line, a "Repeats · see series" chip if it's in a
+  series, its location and description (with "Add location" and "Add
+  description" when they're blank), whether it's at a fixed time, and
+  its goals, each after its colored diamond. Tap one to change it in
+  place, then Save. "Details" opens every property, as before.
+- The trash can at its top right cancels the event, after asking.
+- "See series" opens the series the same way, with how it repeats under
+  its summary. Tap that to change the frequency, the interval, the
+  weekdays and when it ends. The series' trash can deletes this event
+  and the ones after it, after asking; earlier events stay.
+- Saving a change to a series says what it may do to its events: set
+  each one's properties to the series', except its time, or, if you
+  changed the time, move each one to it too, even events you changed
+  on their own.
+- A series' schedule comes from the server as a structured repeat, not
+  RFC 5545 rules.
+
 ## 5.0.0
 
 - Goals no longer have a fixed time, matching the server: an event is at

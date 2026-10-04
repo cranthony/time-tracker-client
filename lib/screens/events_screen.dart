@@ -12,6 +12,7 @@ import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/event_dialog.dart';
+import '../widgets/event_summary_dialog.dart';
 import '../widgets/recurrence_dialog.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
@@ -389,8 +390,28 @@ class _EventsScreenState extends State<EventsScreen> {
     _refresh(reloadShown: !_fresh.contains(day));
   }
 
+  /// Opens [event]'s summary, and from it, its details.
   Future<void> _openEvent(Event event) async {
-    final messenger = ScaffoldMessenger.of(context);
+    final outcome = await showEventSummaryDialog(
+      context,
+      event,
+      save: (changes) => widget.repository.updateEvent(event, changes),
+      goals: _goalsById,
+      loadGoals: _goals,
+      openSeries: (seriesId) => _openSeries(seriesId, event),
+    );
+    if (!mounted) return;
+    switch (outcome) {
+      case SummarySaved(:final value):
+        await _saved(event, value);
+      case SummaryDetails():
+        await _openEventDetails(event);
+      case null:
+    }
+  }
+
+  /// Opens every one of [event]'s properties.
+  Future<void> _openEventDetails(Event event) async {
     final updated = await showEventDialog(
       context,
       event,
@@ -398,10 +419,15 @@ class _EventsScreenState extends State<EventsScreen> {
       goals: _goals,
       openSeries: (seriesId) => _openSeries(seriesId, event),
     );
-    if (updated == null) return;
+    if (updated != null) await _saved(event, updated);
+  }
+
+  /// Says what saving [event] did, [updated] being what the server
+  /// changed, and loads the days again.
+  Future<void> _saved(Event event, List<Event> updated) async {
     final moved = updated.where((e) => e.id != event.id).length;
     final cancelled = updated.any((e) => e.id == event.id && e.isCancelled);
-    messenger.showSnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           cancelled
@@ -426,8 +452,9 @@ class _EventsScreenState extends State<EventsScreen> {
     null => null,
   };
 
-  /// Opens the recurring series [seriesId], from its [event]. True if a
-  /// change to it was saved, after which the day is loaded again.
+  /// Opens the recurring series [seriesId]'s summary, from its [event],
+  /// and from it, its details. True if a change to it was saved, after
+  /// which the day is loaded again.
   Future<bool> _openSeries(String seriesId, Event event) async {
     final messenger = ScaffoldMessenger.of(context);
     final Recurrence recurrence;
@@ -447,7 +474,53 @@ class _EventsScreenState extends State<EventsScreen> {
       );
       return false;
     }
+    if (!mounted || event.id == null) return false;
+    // What was saved, for saying so.
+    String? said;
+    final outcome = await showSeriesSummaryDialog(
+      context,
+      recurrence,
+      fromEventId: event.id!,
+      fromEventStart: event.start,
+      goals: _goalsById,
+      loadGoals: _goals,
+      save: (changes, scope) {
+        said = scope == SeriesScope.following
+            ? 'Saved this and following events.'
+            : 'Saved every event in the series.';
+        return widget.repository.updateRecurrence(
+          recurrence,
+          changes,
+          startingAt: scope == SeriesScope.following ? event.id : null,
+        );
+      },
+      // Always from this event on: see EventsRepository.deleteRecurrence.
+      delete: () {
+        said = 'Deleted this and following events.';
+        return widget.repository.deleteRecurrence(
+          recurrence,
+          startingAt: event.id!,
+        );
+      },
+    );
     if (!mounted) return false;
+    switch (outcome) {
+      case SummaryDetails():
+        return _openSeriesDetails(recurrence, event);
+      case SummarySaved():
+        messenger.showSnackBar(SnackBar(content: Text(said!)));
+        _fresh.clear();
+        await _refresh();
+        return true;
+      case null:
+        return false;
+    }
+  }
+
+  /// Opens every one of [recurrence]'s properties, from its [event]. True
+  /// if a change to it was saved.
+  Future<bool> _openSeriesDetails(Recurrence recurrence, Event event) async {
+    final messenger = ScaffoldMessenger.of(context);
     SeriesScope? savedFor;
     final saved = await showRecurrenceDialog(
       context,

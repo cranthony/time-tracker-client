@@ -1,10 +1,11 @@
 import 'note.dart';
+import 'repeat.dart';
 
 /// A recurring series of events, as a whole, mirroring the Time Tracker MCP
 /// server's `PublicRecurrence`: its own id (every one of its events'
-/// `recurring_event_id`), when its first event starts and ends, its RFC
-/// 5545 [rules], and its [schedule] in words. Its other properties apply
-/// to every event in it that wasn't edited on its own.
+/// `recurring_event_id`), when its first event starts and ends, how it
+/// [repeat]s, and its [schedule] in words. Its other properties apply to
+/// every event in it.
 ///
 /// Only the fields the app uses are typed; everything the server sent
 /// stays in [properties].
@@ -14,7 +15,7 @@ class Recurrence {
     required this.start,
     required this.end,
     this.summary,
-    this.rules = const [],
+    this.repeat,
     this.schedule,
     this.properties = const {},
   });
@@ -24,10 +25,12 @@ class Recurrence {
   final DateTime end;
   final String? summary;
 
-  /// E.g. ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE"].
-  final List<String> rules;
+  /// How it repeats; null for a series made elsewhere that repeats in a
+  /// way a [Repeat] can't say, which [schedule] then gives as its raw
+  /// RFC 5545 rules. Leaving it out of an update keeps those rules.
+  final Repeat? repeat;
 
-  /// [rules] in words, e.g. "Every week on Mon, Wed".
+  /// How it repeats in words, e.g. "Every week on Mon, Wed".
   final String? schedule;
 
   /// The series as the server sent it.
@@ -38,7 +41,10 @@ class Recurrence {
     start: DateTime.parse(json['start'] as String),
     end: DateTime.parse(json['end'] as String),
     summary: json['summary'] as String?,
-    rules: [...(json['rules'] as List? ?? const []).cast<String>()],
+    repeat: switch (json['repeat']) {
+      final Map repeat => Repeat.fromJson(repeat.cast()),
+      _ => null,
+    },
     schedule: json['schedule'] as String?,
     properties: Map.unmodifiable(json),
   );
@@ -51,7 +57,7 @@ class Recurrence {
     'summary': summary,
     'start': localIsoTimestamp(start),
     'end': localIsoTimestamp(end),
-    'rules': rules,
+    'repeat': repeat?.toJson(),
     'schedule': schedule,
   };
 }

@@ -146,7 +146,10 @@ class SampleData {
       'start': localIsoTimestamp(_at(7, 0, -28)),
       'end': localIsoTimestamp(_at(8, 0, -28)),
       'time_zone': 'America/New_York',
-      'rules': ['RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'],
+      'repeat': {
+        'every': 'week',
+        'weekdays': ['mon', 'tue', 'wed', 'thu', 'fri'],
+      },
       'schedule': 'Every week on Mon, Tue, Wed, Thu, Fri',
       'goal_ids': ['wake'],
       'goal_names': [_names['wake']],

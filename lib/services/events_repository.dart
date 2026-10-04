@@ -1,6 +1,7 @@
 import '../models/event.dart';
 import '../models/note.dart';
 import '../models/recurrence.dart';
+import '../models/repeat.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
@@ -32,6 +33,23 @@ abstract class EventsRepository {
     Recurrence recurrence,
     Map<String, Object?> changes, {
     String? startingAt,
+  });
+
+  /// Deletes [recurrence]'s events from [startingAt] (one of its events'
+  /// ids) on, ending the series just before it; the events before it are
+  /// kept. Returns what's left of the series: nothing if [startingAt] was
+  /// its first event, else the series, now ending before it.
+  ///
+  /// There's deliberately no way here to delete a series whole. The
+  /// server's `delete_recurrence` can, but that cancels every one of its
+  /// events, past ones included: each then counts against its goals'
+  /// follow-through as a cancellation, and its time no longer counts as
+  /// spent. Someone deleting a series almost always means it won't happen
+  /// any more, not that it never should have, which is what deleting from
+  /// an event on says; deleting from its first event deletes it all.
+  Future<List<Recurrence>> deleteRecurrence(
+    Recurrence recurrence, {
+    required String startingAt,
   });
 }
 
@@ -111,6 +129,21 @@ class McpEventsRepository implements EventsRepository {
   }
 
   @override
+  Future<List<Recurrence>> deleteRecurrence(
+    Recurrence recurrence, {
+    required String startingAt,
+  }) async {
+    final result = await _client.callTool('delete_recurrence', {
+      'id': recurrence.id,
+      'starting_at_event_id': startingAt,
+    });
+    return [
+      for (final r in result as List)
+        Recurrence.fromJson((r as Map).cast<String, dynamic>()),
+    ];
+  }
+
+  @override
   Future<List<Event>> updateEvent(
     Event event,
     Map<String, Object?> changes,
@@ -167,9 +200,30 @@ class InMemoryEventsRepository implements EventsRepository {
     final updated = Recurrence.fromJson({
       ...recurrence.toJson(),
       for (final MapEntry(:key, :value) in changes.entries) key: ?value,
+      if (changes['repeat'] case final Map repeat)
+        'schedule': Repeat.fromJson(repeat.cast()).describe(),
     });
     _recurrences[recurrence.id] = updated;
     return [updated];
+  }
+
+  /// Drops the series' events from [startingAt]'s start on. The series is
+  /// dropped too if none are left before it; otherwise it's kept as it
+  /// was, since in memory its events aren't generated from it.
+  @override
+  Future<List<Recurrence>> deleteRecurrence(
+    Recurrence recurrence, {
+    required String startingAt,
+  }) async {
+    bool inSeries(Event e) =>
+        e.properties['recurring_event_id'] == recurrence.id;
+    final from = _events.firstWhere((e) => e.id == startingAt).start;
+    _events.removeWhere((e) => inSeries(e) && !e.start.isBefore(from));
+    if (from.isAfter(recurrence.start) && _events.any(inSeries)) {
+      return [recurrence];
+    }
+    _recurrences.remove(recurrence.id);
+    return [];
   }
 
   /// Like the server, leaves out cancelled events.
