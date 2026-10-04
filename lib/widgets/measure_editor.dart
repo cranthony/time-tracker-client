@@ -13,8 +13,8 @@ const _hiddenFromWeights = {'proposed', 'completed', 'archived', 'deleted'};
 /// stands after every edit -- null for none -- whether or not it's valid
 /// yet; see [measureProblem].
 ///
-/// A time-spent, number-of-events, time-of-day or time-window measure looks
-/// at the events of its own goal, or of a goal chosen from [goals]; with or
+/// A time-spent, number-of-events, time-of-day, time-window or
+/// follow-through measure looks at the events of its own goal, or of a goal chosen from [goals]; with or
 /// without their sub-goals. A weighted rollup weighs each of [goalId]'s
 /// sub-goals, from [goals]. Any measure can be rated only on days with
 /// events of its goal, or of another.
@@ -53,6 +53,9 @@ class _MeasureEditorState extends State<MeasureEditor> {
   final _interval = TextEditingController();
   final _zeroAtDays = TextEditingController();
   final _percentile = TextEditingController();
+  final _penalty = TextEditingController();
+  final _recovery = TextEditingController();
+  final _lookBack = TextEditingController();
   String _timeTarget = '09:00';
   String _windowFrom = '12:00';
   String _windowTo = '13:00';
@@ -124,6 +127,10 @@ class _MeasureEditorState extends State<MeasureEditor> {
         if (m['to'] case final String to) _windowTo = to;
         _grace.text = text(m['grace_min']);
         _zeroAt.text = text(m['zero_at_min']);
+      case 'follow_through':
+        _penalty.text = text(m['penalty']);
+        _recovery.text = text(m['recovery']);
+        _lookBack.text = text(m['look_back_days']);
       case 'subjective':
         _prompt.text = text(m['prompt']);
       case 'llm':
@@ -156,6 +163,9 @@ class _MeasureEditorState extends State<MeasureEditor> {
       _interval,
       _zeroAtDays,
       _percentile,
+      _penalty,
+      _recovery,
+      _lookBack,
       ..._weights.values,
     ]) {
       c.dispose();
@@ -234,6 +244,13 @@ class _MeasureEditorState extends State<MeasureEditor> {
         'zero_at_min': ?number(_zeroAt),
         ...source,
       },
+      'follow_through' => {
+        'kind': 'follow_through',
+        'penalty': ?number(_penalty),
+        'recovery': ?number(_recovery),
+        'look_back_days': ?number(_lookBack),
+        ...source,
+      },
       'subjective' => {
         'kind': 'subjective',
         'prompt': text(_prompt),
@@ -282,8 +299,8 @@ class _MeasureEditorState extends State<MeasureEditor> {
         onPressed: () => _pickTime(time, set),
       );
 
-  /// Whose events a time-spent, number-of-events, time-of-day or
-  /// time-window measure looks at: its own goal's, or another's, as though
+  /// Whose events a time-spent, number-of-events, time-of-day, time-window
+  /// or follow-through measure looks at: its own goal's, or another's, as though
   /// it were that goal.
   List<Widget> _whoseEvents(ThemeData theme) => [
     Padding(
@@ -636,6 +653,38 @@ class _MeasureEditorState extends State<MeasureEditor> {
               ),
             ),
             ...minutesOff,
+            ..._whoseEvents(theme),
+          ],
+          'follow_through' => [
+            _field(
+              _penalty,
+              'Lost per cancelled event',
+              hint: '25',
+              suffix: 'points',
+              number: true,
+            ),
+            _field(
+              _recovery,
+              'Won back per day kept',
+              hint: '25',
+              suffix: 'points',
+              number: true,
+            ),
+            _field(
+              _lookBack,
+              'Over the last',
+              hint: '30',
+              suffix: 'days',
+              number: true,
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'It starts at 100 that many days back; a cancellation before '
+                "then is forgotten. It's between 0 and 100.",
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
             ..._whoseEvents(theme),
           ],
           'subjective' => [

@@ -17,7 +17,10 @@
 /// | `time_       | `from` and `to` "HH:MM": whether one of the day's      |
 /// | window`      | events falls in the window; optional `grace_min`,      |
 /// |              | `zero_at_min`. A day without any is rated 0            |
-/// | (all four)   | optional `events_of`, a goal whose events count as     |
+/// | `follow_     | optional `penalty` (default 25) lost per cancelled     |
+/// | through`     | event, `recovery` (default 25) regained per day with a |
+/// |              | kept one, from 100 `look_back_days` (default 30) back  |
+/// | (all five)   | optional `events_of`, a goal whose events count as     |
 /// |              | though they were its own goal's, and                   |
 /// |              | `include_sub_goals`                                    |
 /// | `subjective` | `prompt`, asked in a reflection every `interval_days`  |
@@ -37,6 +40,7 @@ const measureKinds = {
   'count': 'Number of events',
   'time_constraint': 'Time of day',
   'time_window': 'Time window',
+  'follow_through': 'Follow-through',
   'subjective': 'Your rating',
   'llm': "Claude's judgement",
   'rollup': 'From sub-goals',
@@ -59,6 +63,10 @@ const measureKindHints = {
       'for one that overlaps them at all, within the grace, falling to none '
       'at "zero at" minutes out. A day without any is rated 0. Lunch between '
       '11:30 and 1:30.',
+  'follow_through':
+      "Keeping your word: each of its events that's cancelled (pushed off, "
+      "or cancelled in a compaction) costs points, and they're won back on "
+      'days with one that happened. Low ratings carry over until then.',
   'subjective':
       "You're asked in a reflection every few days; on the days between, "
       "the day before's rating carries over. Rating it any time starts the "
@@ -198,6 +206,11 @@ String _describe(
       final grace = _number(measure['grace_min']) ?? 0;
       return 'Between ${measure['from'] ?? '?'} and ${measure['to'] ?? '?'}'
           '${full && grace > 0 ? ' ($grace min grace)' : ''}$of';
+    case 'follow_through':
+      final (penalty, recovery, lookBack) = _followThrough(measure);
+      return 'Follow-through'
+          '${full ? ' (−$penalty per cancellation, +$recovery per day kept, '
+                    'over ${_days(lookBack)})' : ''}$of';
     case 'subjective':
       final prompt = measure['prompt'];
       final every = _number(measure['interval_days']) ?? 1;
@@ -224,6 +237,14 @@ String _describe(
       return '$measure';
   }
 }
+
+/// A follow-through measure's penalty, recovery and look-back, with the
+/// server's defaults for any it doesn't set.
+(num, num, num) _followThrough(Measure measure) => (
+  _number(measure['penalty']) ?? 25,
+  _number(measure['recovery']) ?? 25,
+  _number(measure['look_back_days']) ?? 30,
+);
 
 /// What's wrong with [measure], in a sentence, or null if it's fine: the
 /// checks the server makes, so the editor can say so before saving.
@@ -283,6 +304,17 @@ String? measureProblem(Measure measure) {
         return "Pick the window's start and end.";
       }
       if (graceProblem() case final problem?) return problem;
+    case 'follow_through':
+      if (!positive(measure['penalty'] ?? 25)) {
+        return 'The points lost per cancellation must be above 0.';
+      }
+      if (!positive(measure['recovery'] ?? 25)) {
+        return 'The points won back per day must be above 0.';
+      }
+      final lookBack = measure['look_back_days'] ?? 30;
+      if (lookBack is! int || lookBack < 1) {
+        return 'The days to look back must be a whole number, 1 or more.';
+      }
     case 'subjective':
       if (!text(measure['prompt'])) return 'Ask a question.';
       if (!positive(measure['interval_days'] ?? 1)) {
@@ -397,6 +429,14 @@ List<(String, String)> _settings(
           ('Grace', '$grace min'),
         if (_number(measure['zero_at_min']) case final zero?)
           ('Zero at', '$zero min off'),
+        ('Events of', of),
+      ];
+    case 'follow_through':
+      final (penalty, recovery, lookBack) = _followThrough(measure);
+      return [
+        ('Per cancellation', '−$penalty'),
+        ('Per day kept', '+$recovery'),
+        ('Over', days(lookBack)),
         ('Events of', of),
       ];
     case 'subjective':

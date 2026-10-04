@@ -20,6 +20,7 @@ const _kindIcons = {
   'count': Icons.tag,
   'time_constraint': Icons.schedule,
   'time_window': Icons.timelapse,
+  'follow_through': Icons.handshake_outlined,
   'subjective': Icons.star_outline,
   'llm': Icons.auto_awesome_outlined,
   'rollup': Icons.account_tree_outlined,

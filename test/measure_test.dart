@@ -385,4 +385,47 @@ void main() {
     expect(goal.measure, {'kind': 'count', 'target': 2});
     expect(Goal.fromJson({'id': 'g'}).measure, isNull);
   });
+
+  test('a follow-through measure is described, checked and listed', () {
+    const word = {'kind': 'follow_through'};
+    const tuned = {
+      'kind': 'follow_through',
+      'penalty': 50,
+      'recovery': 20,
+      'look_back_days': 60,
+      'events_of': 'promise',
+    };
+    const names = {'promise': 'Keep promises'};
+    expect(describeMeasure(word), 'Follow-through');
+    expect(
+      describeMeasure(word, full: true),
+      'Follow-through (−25 per cancellation, +25 per day kept, over 30 days)',
+    );
+    expect(
+      describeMeasure(tuned, full: true, goalNames: names),
+      'Follow-through (−50 per cancellation, +20 per day kept, over 60 days)'
+      ', of Keep promises',
+    );
+    expect(describeMeasureSettings(word), [
+      ('Per cancellation', '−25'),
+      ('Per day kept', '+25'),
+      ('Over', '30 days'),
+      ('Events of', 'This goal and its sub-goals'),
+    ]);
+    expect(measureProblem(word), isNull);
+    expect(measureProblem(tuned), isNull);
+    expect(
+      measureProblem({...word, 'penalty': 0}),
+      contains('lost per cancellation'),
+    );
+    expect(
+      measureProblem({...word, 'recovery': -1}),
+      contains('won back per day'),
+    );
+    expect(
+      measureProblem({...word, 'look_back_days': 7.5}),
+      contains('whole number'),
+    );
+    expect(measureKinds, contains('follow_through'));
+  });
 }
