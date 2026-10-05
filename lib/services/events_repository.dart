@@ -88,6 +88,13 @@ class McpEventsRepository implements EventsRepository {
   /// Holds one call's `min_time`, `max_time` and result.
   static const _cacheKey = 'list_events';
 
+  /// `reallocate` for `create_event` and `update_event`: false, so the
+  /// server writes nothing if an event's new times would move, shrink,
+  /// split or cancel any other event, and says what would have changed
+  /// instead. The app keeps times clear of other events itself (see
+  /// EventRoom), so it never means to.
+  static const _noReallocation = false;
+
   @override
   Future<List<Event>> events(
     DateTime from,
@@ -176,6 +183,9 @@ class McpEventsRepository implements EventsRepository {
       'event': {
         for (final MapEntry(:key, :value) in fields.entries) key: ?value,
       },
+      // Never moves or shrinks other events to make room: see
+      // [_noReallocation].
+      'reallocate': _noReallocation,
     });
     return (result as List)
         .map((e) => Event.fromJson((e as Map).cast<String, dynamic>()))
@@ -198,6 +208,7 @@ class McpEventsRepository implements EventsRepository {
       // The event's fields sent as null are kept; these are removed.
       if (_cleared(changes) case final cleared when cleared.isNotEmpty)
         'clear_fields': cleared,
+      'reallocate': _noReallocation,
     });
     return (result as List)
         .map((e) => Event.fromJson((e as Map).cast<String, dynamic>()))

@@ -10,6 +10,7 @@ import '../models/recurrence.dart';
 import '../models/repeat.dart';
 import '../services/mcp_client.dart';
 import 'color_picker.dart';
+import 'event_room.dart';
 import 'goals_picker.dart';
 import 'recurrence_dialog.dart';
 import 'repeat_editor.dart';
@@ -44,11 +45,13 @@ final class SummaryDetails<T> extends SummaryOutcome<T> {
 /// color; [loadGoals] lists them to pick from. In a series, its "Repeats"
 /// chip calls [openSeries] with the series' id; if that saved a change
 /// (returning true), this closes, returning null. "Details" closes it
-/// with [SummaryDetails].
+/// with [SummaryDetails]. Changing its times keeps them clear of the
+/// events in [room].
 Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
   BuildContext context,
   Event event, {
   Future<List<Event>> Function(Map<String, Object?> changes)? save,
+  EventRoom room = const EventRoom.none(),
   Map<String, Goal> goals = const {},
   Future<List<Goal>> Function()? loadGoals,
   Future<bool> Function(String seriesId)? openSeries,
@@ -70,6 +73,7 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
       },
       goals: goals,
       loadGoals: loadGoals,
+      room: room,
       save: save == null || event.id == null
           ? null
           : (changes) async =>
@@ -99,11 +103,13 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
 /// shows one, blank but for its times, with its summary open to type.
 /// "Create", once it has a summary, sends it with [create], as
 /// `create_event` takes it. Returns what [create] returned (the events the
-/// server changed), or null if it was called off.
+/// server changed), or null if it was called off. Its times are kept
+/// clear of the events in [room].
 Future<List<Event>?> showNewEventDialog(
   BuildContext context, {
   required DateTime start,
   required DateTime end,
+  EventRoom room = const EventRoom.none(),
   required Future<List<Event>> Function(Map<String, Object?> fields) create,
   Map<String, Goal> goals = const {},
   Future<List<Goal>> Function()? loadGoals,
@@ -117,6 +123,7 @@ Future<List<Event>?> showNewEventDialog(
     builder: (_) => _SummaryDialog<List<Event>>(
       values: values,
       creating: true,
+      room: room,
       goals: goals,
       loadGoals: loadGoals,
       save: (changes) async =>
@@ -230,6 +237,7 @@ class _SummaryDialog<T> extends StatefulWidget {
     required this.remove,
     this.series = false,
     this.creating = false,
+    this.room = const EventRoom.none(),
     this.openSeries,
   });
 
@@ -251,6 +259,9 @@ class _SummaryDialog<T> extends StatefulWidget {
   /// Whether it's a new event, not yet on the server: it opens with its
   /// summary to type, and "Create" sends it once it has one.
   final bool creating;
+
+  /// The other events its times are kept clear of.
+  final EventRoom room;
   final Future<bool> Function()? openSeries;
 
   @override
@@ -326,8 +337,19 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   DateTime _time(String key) => DateTime.parse(_value(key) as String).toLocal();
 
   Future<void> _save() async {
-    if (!_time('end').isAfter(_time('start'))) {
+    final start = _time('start');
+    final end = _time('end');
+    if (!end.isAfter(start)) {
       setState(() => _error = 'The end has to be after the start.');
+      return;
+    }
+    // Overlaps it had already are left alone.
+    final moved =
+        widget.creating ||
+        _changes.containsKey('start') ||
+        _changes.containsKey('end');
+    if (widget.room.overlapping(start, end) case final other? when moved) {
+      setState(() => _error = 'It would overlap ${_describe(other)}.');
       return;
     }
     final save = await widget.save!(Map.of(_changes));
@@ -756,10 +778,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
             child: Text(
-              widget.series
-                  ? "The series' first event. Changing the start keeps its "
-                        'length.'
-                  : 'Changing the start keeps its length.',
+              [
+                if (widget.series) "The series' first event.",
+                'Changing the start keeps its length; − and + take a '
+                    'quarter hour off or add one.',
+                ?_room(start, end),
+              ].join(' '),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -770,9 +794,38 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     );
   }
 
+  /// The free time either side of it, between the events before and
+  /// after, if there are any.
+  String? _room(DateTime start, DateTime end) {
+    final strings = MaterialLocalizations.of(context);
+    String time(DateTime t) =>
+        strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()));
+    final earliest = widget.room.earliestStart(start);
+    final latest = widget.room.latestEnd(end);
+    return switch ((earliest, latest)) {
+      (final from?, final to?) =>
+        'Free from ${time(from)} to ${time(to)}, between the events '
+            'either side.',
+      (final from?, null) => 'Free from ${time(from)}, after the event before.',
+      (null, final to?) =>
+        'Free until ${time(to)}, when the next event starts.',
+      (null, null) => null,
+    };
+  }
+
+  /// [label], then [key]'s date and time to pick, with − and + either
+  /// side of the time to move it a quarter hour (see [EventRoom]).
   Widget _timePicker(BuildContext context, String label, String key) {
     final strings = MaterialLocalizations.of(context);
     final current = _time(key);
+    final start = _time('start');
+    final end = _time('end');
+    final room = widget.room;
+    final (earlier, later) = key == 'start'
+        ? (room.earlierStart(start), room.laterStart(start, end))
+        : (room.earlierEnd(start, end), room.laterEnd(end));
+    void move(DateTime to) =>
+        key == 'start' ? _setTimes(to, end) : _setTimes(start, to);
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Row(
@@ -782,18 +835,38 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
             child: Wrap(
               spacing: 8,
               runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 ActionChip(
                   avatar: const Icon(Icons.calendar_today),
                   label: Text(strings.formatMediumDate(current)),
                   onPressed: () => _pickDate(key),
                 ),
-                ActionChip(
-                  avatar: const Icon(Icons.schedule),
-                  label: Text(
-                    strings.formatTimeOfDay(TimeOfDay.fromDateTime(current)),
-                  ),
-                  onPressed: () => _pickTime(key),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.remove),
+                      tooltip: '$label 15 min earlier',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: earlier == null ? null : () => move(earlier),
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.schedule),
+                      label: Text(
+                        strings.formatTimeOfDay(
+                          TimeOfDay.fromDateTime(current),
+                        ),
+                      ),
+                      onPressed: () => _pickTime(key),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add),
+                      tooltip: '$label 15 min later',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: later == null ? null : () => move(later),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -803,14 +876,39 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     );
   }
 
-  /// Sets [key]'s time to [time]; a new start moves the end with it, so
-  /// the length stays as it was.
+  /// [other] by its summary and times, for saying it's in the way.
+  String _describe(Event other) {
+    final strings = MaterialLocalizations.of(context);
+    String time(DateTime t) =>
+        strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()));
+    final name = switch (other.summary) {
+      final s? when s.isNotEmpty => '"$s"',
+      _ => 'another event',
+    };
+    return '$name, ${time(other.start)} – ${time(other.end)}';
+  }
+
+  /// Sets [key]'s time to [time], picked; a new start moves the end with
+  /// it, so the length stays as it was. Either is kept clear of the
+  /// events in the way: a start inside one moves to its end, and an end
+  /// past the next one's start comes back to it.
   void _setTime(String key, DateTime time) {
+    final start = _time('start');
+    final end = _time('end');
+    final DateTime newStart;
+    final DateTime newEnd;
     if (key == 'start') {
-      final length = _time('end').difference(_time('start'));
-      _set('end', localIsoTimestamp(time.add(length)));
+      (newStart, newEnd) = widget.room.moveStart(time, end.difference(start));
+    } else {
+      newStart = start;
+      newEnd = time.isAfter(start) ? widget.room.fitEnd(start, time) : time;
     }
-    _set(key, localIsoTimestamp(time));
+    _setTimes(newStart, newEnd);
+  }
+
+  void _setTimes(DateTime start, DateTime end) {
+    _set('start', localIsoTimestamp(start));
+    _set('end', localIsoTimestamp(end));
     setState(() => _error = null);
   }
 
