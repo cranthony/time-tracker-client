@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.14.0
+
+- In a weighted measure's editor, a sub-goal's weight can be set aside
+  until a day: "Set aside until…" picks the day, and "Then" is what it
+  weighs from that day on. Its settings show it as "weight 0 until
+  2026-11-05, then 1". The close button makes it a plain weight again.
+
 ## 5.13.0
 
 - The Events page's day summary and the Goals page's summary each have
