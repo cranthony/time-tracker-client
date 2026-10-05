@@ -73,6 +73,45 @@ void main() {
 
       expect(changes.last?['weights'], {'tofu': 4, 'soup': 2, 'cake': 3});
     });
+
+    testWidgets('keeps a sub-goal set aside until a day, and can bring it '
+        'back', (tester) async {
+      final changes = <Measure?>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: MeasureEditor(
+                measure: const {
+                  'kind': 'rollup',
+                  'agg': 'weighted',
+                  'weights': {
+                    'tofu': 1,
+                    'soup': {'weight': 0, 'until': '2026-11-05', 'then': 2},
+                  },
+                },
+                onChanged: changes.add,
+                goalId: 'cook',
+                goals: Future.value(goals),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Nov 5'), findsOneWidget);
+      await tester.enterText(find.widgetWithText(TextField, 'Then'), '3');
+      await tester.pump();
+      expect(changes.last?['weights'], {
+        'tofu': 1,
+        'soup': {'weight': 0, 'until': '2026-11-05', 'then': 3},
+      });
+
+      await tester.tap(find.byTooltip("Don't set it aside"));
+      await tester.pump();
+      expect(changes.last?['weights'], {'tofu': 1, 'soup': 0});
+    });
   });
 
   testWidgets("a count's noun starts lower-case", (tester) async {

@@ -27,7 +27,9 @@
 /// |              | (default 1), carried over from the day before between  |
 /// | `llm`        | `rubric` Claude rates the day against                  |
 /// | `rollup`     | optional `agg`: "mean" (default), "weighted" (with     |
-/// |              | `weights`) or "percentile" (with `percentile`)         |
+/// |              | `weights`) or "percentile" (with `percentile`); a      |
+/// |              | weight is a number or a temporary one (see             |
+/// |              | [isTemporaryWeight])                                   |
 /// | `traits`     | `traits`: trait ids, or "all" active ones; optional    |
 /// |              | `weights` ({trait id: weight}, default 1) and          |
 /// |              | `window_days` (default 30)                             |
@@ -363,8 +365,11 @@ String? measureProblem(Measure measure) {
           final weights = measure['weights'];
           if (weights is! Map ||
               weights.isEmpty ||
-              weights.values.any((w) => w is! num || w < 0)) {
-            return 'Give at least one sub-goal a weight, 0 or more.';
+              weights.values.any(
+                (w) => !isTemporaryWeight(w) && (w is! num || w < 0),
+              )) {
+            return 'Give at least one sub-goal a weight, 0 or more; one set '
+                'aside needs a day, and a weight, 0 or more, for after it.';
           }
         case 'percentile':
           final p = measure['percentile'];
@@ -501,7 +506,14 @@ List<(String, String)> _settings(
         if (agg == 'weighted')
           if (measure['weights'] case final Map weights)
             for (final MapEntry(:key, :value) in weights.entries)
-              (goalNames[key] ?? '$key', 'weight $value'),
+              (
+                goalNames[key] ?? '$key',
+                switch (value) {
+                  {'weight': final w, 'until': final until, 'then': final t} =>
+                    'weight $w until $until, then $t',
+                  _ => 'weight $value',
+                },
+              ),
       ];
     case 'traits':
       return [
@@ -522,3 +534,18 @@ List<(String, String)> _settings(
       return [];
   }
 }
+
+/// Whether [weight] is a weighted rollup's temporary weight,
+/// `{"weight": 0, "until": "2026-11-05", "then": 1}`: it weighs `weight` on
+/// days before `until` and `then` from it on -- a sub-goal set aside for a
+/// while.
+bool isTemporaryWeight(Object? weight) =>
+    weight is Map &&
+    weight.length == 3 &&
+    weight['weight'] is num &&
+    (weight['weight'] as num) >= 0 &&
+    weight['then'] is num &&
+    (weight['then'] as num) >= 0 &&
+    weight['until'] is String &&
+    RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(weight['until'] as String) &&
+    DateTime.tryParse(weight['until'] as String) != null;

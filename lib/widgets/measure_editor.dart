@@ -81,6 +81,12 @@ class _MeasureEditorState extends State<MeasureEditor> {
   /// The traits to pick from, once asked for.
   Future<List<Trait>>? _traitList;
 
+  /// For a sub-goal set aside for a while: the day ("YYYY-MM-DD") its
+  /// weight changes, and what it weighs from then on. Its weight until
+  /// then is in [_weights].
+  final _until = <String, String>{};
+  final _then = <String, TextEditingController>{};
+
   /// The goal's sub-goals, once [MeasureEditor.goals] has them: a weight
   /// for any other goal, one that's since moved, isn't kept.
   Set<String>? _subGoalIds;
@@ -160,7 +166,14 @@ class _MeasureEditorState extends State<MeasureEditor> {
         _percentile.text = m['agg'] == 'min' ? '0' : text(m['percentile']);
         if (m['weights'] case final Map weights) {
           for (final MapEntry(:key, :value) in weights.entries) {
-            _weights[key as String] = TextEditingController(text: text(value));
+            final id = key as String;
+            if (value case {'until': final String until}) {
+              _weights[id] = TextEditingController(text: text(value['weight']));
+              _until[id] = until;
+              _then[id] = TextEditingController(text: text(value['then']));
+            } else {
+              _weights[id] = TextEditingController(text: text(value));
+            }
           }
         }
       case 'traits':
@@ -201,6 +214,7 @@ class _MeasureEditorState extends State<MeasureEditor> {
       _window,
       ..._weights.values,
       ..._traitWeights.values,
+      ..._then.values,
     ]) {
       c.dispose();
     }
@@ -297,7 +311,17 @@ class _MeasureEditorState extends State<MeasureEditor> {
         if (_agg == 'weighted')
           'weights': {
             for (final MapEntry(:key, :value) in _weights.entries)
-              if (_subGoalIds?.contains(key) ?? true) key: ?number(value),
+              if (_subGoalIds?.contains(key) ?? true)
+                key: ?switch (_until[key]) {
+                  // Set aside: a field left empty is null, for
+                  // measureProblem to ask for.
+                  final until? => {
+                    'weight': number(value),
+                    'until': until,
+                    'then': number(_then[key]!),
+                  },
+                  null => number(value),
+                },
           },
         if (_agg == 'percentile') 'percentile': number(_percentile),
       },
@@ -491,22 +515,13 @@ class _MeasureEditorState extends State<MeasureEditor> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (final goal in shown)
-            _field(
-              _weights.putIfAbsent(goal.id!, TextEditingController.new),
-              goalName(goal),
-              hint: '0',
-              number: true,
-              muted: goal.active
-                  ? null
-                  : '${goalStatuses[goal.status] ?? goal.status}: '
-                        "not rated, so it doesn't count",
-            ),
+          for (final goal in shown) ..._weightField(goal),
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               'A sub-goal with no weight, or one added later, counts for '
-              'nothing.',
+              'nothing. One set aside weighs its weight until the day '
+              'picked, then the other.',
               style: theme.textTheme.bodySmall,
             ),
           ),
@@ -599,6 +614,93 @@ class _MeasureEditorState extends State<MeasureEditor> {
       ),
     ),
   ];
+
+  /// A sub-goal's weight, and whether it's set aside until a day, with
+  /// what it weighs from then on.
+  List<Widget> _weightField(Goal goal) {
+    final id = goal.id!;
+    final until = _until[id];
+    final localizations = MaterialLocalizations.of(context);
+    return [
+      _field(
+        _weights.putIfAbsent(id, TextEditingController.new),
+        until == null ? goalName(goal) : '${goalName(goal)}, until then',
+        hint: '0',
+        number: true,
+        muted: goal.active
+            ? null
+            : '${goalStatuses[goal.status] ?? goal.status}: '
+                  "not rated, so it doesn't count",
+      ),
+      if (until == null)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            icon: const Icon(Icons.event),
+            label: const Text('Set aside until…'),
+            onPressed: () => _pickUntil(id),
+          ),
+        )
+      else
+        Row(
+          children: [
+            ActionChip(
+              avatar: const Icon(Icons.event),
+              label: Text(
+                'From ${localizations.formatMediumDate(DateTime.parse(until))}',
+              ),
+              onPressed: () => _pickUntil(id),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _field(
+                _then.putIfAbsent(id, TextEditingController.new),
+                'Then',
+                hint: '1',
+                number: true,
+              ),
+            ),
+            IconButton(
+              tooltip: "Don't set it aside",
+              icon: const Icon(Icons.close),
+              onPressed: () {
+                setState(() {
+                  _until.remove(id);
+                  _then.remove(id)?.dispose();
+                });
+                _changed();
+              },
+            ),
+          ],
+        ),
+    ];
+  }
+
+  /// Asks for the day sub-goal [id]'s weight changes: from then on it
+  /// weighs what's in [_then] (1, unless something's there already).
+  Future<void> _pickUntil(String id) async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final current = switch (_until[id]) {
+      final until? => DateTime.parse(until),
+      null => DateTime(today.year, today.month + 1, today.day),
+    };
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current.isBefore(today) ? today : current,
+      firstDate: today,
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _until[id] =
+          '${picked.year.toString().padLeft(4, '0')}-'
+          '${picked.month.toString().padLeft(2, '0')}-'
+          '${picked.day.toString().padLeft(2, '0')}';
+      final then = _then.putIfAbsent(id, TextEditingController.new);
+      if (then.text.trim().isEmpty) then.text = '1';
+    });
+    _changed();
+  }
 
   Widget _field(
     TextEditingController controller,

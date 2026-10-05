@@ -6,7 +6,7 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
-## 5.14.0
+## 5.15.0
 
 - Traits. The Goals page's app bar opens the **Traits** list: each trait's
   name, definition, status, latest score (the mean across the goals rated
@@ -25,6 +25,13 @@ on. Add the new version's section here at the same time; CI checks both.
 - An event's details show **what happened** at it: who it was with and
   for, its activity and place, how creative, how much effort and how much
   attention (0-3 each), what was new, and why. Tap to edit them.
+
+## 5.14.0
+
+- In a weighted measure's editor, a sub-goal's weight can be set aside
+  until a day: "Set aside until…" picks the day, and "Then" is what it
+  weighs from that day on. Its settings show it as "weight 0 until
+  2026-11-05, then 1". The close button makes it a plain weight again.
 
 ## 5.13.0
 
