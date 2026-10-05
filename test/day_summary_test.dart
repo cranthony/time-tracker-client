@@ -1,0 +1,116 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/widgets/day_summary.dart';
+
+void main() {
+  final day = DateTime(2026, 9, 30);
+  DateTime at(int hour, [int minute = 0]) =>
+      DateTime(2026, 9, 30, hour, minute);
+
+  Event event(
+    DateTime start,
+    DateTime end, {
+    int? priority,
+    List<String> goals = const [],
+    bool cancelled = false,
+  }) => Event(
+    start: start,
+    end: end,
+    isCancelled: cancelled,
+    properties: {'effective_priority': ?priority, 'goal_ids': goals},
+  );
+
+  /// Each share's label and hours.
+  Map<String, double> hours(List<SummarySlice> slices) => {
+    for (final slice in slices) slice.label: slice.time.inMinutes / 60,
+  };
+
+  group('priorityShares', () {
+    test('splits the day by priority, then what is unscheduled', () {
+      final slices = priorityShares([
+        event(at(9), at(12), priority: 1),
+        event(at(13), at(14), priority: 0),
+        // None counts as the default, P2.
+        event(at(14), at(16)),
+        event(at(18), at(19), priority: 2),
+      ], day);
+      expect(hours(slices), {'P0': 1, 'P1': 3, 'P2': 3, 'Unscheduled': 17});
+      expect(slices.last.color, isNull);
+    });
+
+    test('counts only the part of an event on the day', () {
+      final slices = priorityShares([
+        event(at(22, 0).subtract(const Duration(days: 1)), at(6), priority: 3),
+        event(at(23), at(2).add(const Duration(days: 1)), priority: 3),
+      ], day);
+      expect(hours(slices), {'P3': 7, 'Unscheduled': 17});
+    });
+
+    test('shares overlapping time, so it adds up to the day', () {
+      final slices = priorityShares([
+        event(at(9), at(11), priority: 1),
+        event(at(10), at(12), priority: 2),
+      ], day);
+      expect(hours(slices), {'P1': 1.5, 'P2': 1.5, 'Unscheduled': 21});
+    });
+
+    test('leaves out cancelled events', () {
+      final slices = priorityShares([
+        event(at(9), at(10), priority: 1, cancelled: true),
+      ], day);
+      expect(hours(slices), {'Unscheduled': 24});
+    });
+  });
+
+  group('goalShares', () {
+    final goals = {
+      for (final goal in [
+        const Goal(id: overallGoalId, name: 'Overall'),
+        const Goal(id: 'cook', name: 'Cook', effectiveColor: '#33b679'),
+        const Goal(id: 'tofu', parentId: 'cook', name: 'Tofu'),
+        const Goal(id: 'curry', parentId: 'cook', name: 'Curry'),
+        const Goal(id: 'work', name: 'Work'),
+        const Goal(id: 'run', name: 'Run'),
+        const Goal(id: 'read', name: 'Read'),
+        const Goal(id: 'top', parentId: overallGoalId, name: 'Top'),
+      ])
+        goal.id!: goal,
+    };
+    final events = [
+      event(at(8), at(12), goals: ['work']),
+      event(at(12), at(14), goals: ['tofu', 'curry']),
+      event(at(14), at(15), goals: ['tofu']),
+      event(at(15), at(16), goals: ['run']),
+      event(at(16), at(16, 30), goals: ['read']),
+      event(at(16, 30), at(18), goals: ['top']),
+      event(at(18), at(20)),
+    ];
+
+    test('the top goals, the rest, no goal, then unscheduled', () {
+      expect(hours(goalShares(events, day, goals)), {
+        'Work': 4,
+        'Tofu': 2,
+        'Top': 1.5,
+        '3 other goals': 2.5,
+        'No goal': 2,
+        'Unscheduled': 12,
+      });
+    });
+
+    test("top-level goals count their sub-goals' time once", () {
+      final slices = goalShares(events, day, goals, topLevel: true);
+      expect(hours(slices), {
+        'Work': 4,
+        'Cook': 3,
+        // Under the overall goal, which is above every goal: top-level.
+        'Top': 1.5,
+        '2 other goals': 1.5,
+        'No goal': 2,
+        'Unscheduled': 12,
+      });
+      expect(slices[1].color, const Color(0xFF33B679));
+    });
+  });
+}

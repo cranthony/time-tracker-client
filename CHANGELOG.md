@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.8.0
+
+- The Events page opens with a summary of the day above the timeline: a
+  bar split by how much of the day went to each priority, with each
+  share's percentage under it, and the time with nothing scheduled left
+  empty. Swiping it, or tapping a title, turns to the top goals of the
+  day, or to the top-level goals they're under: the three with the most
+  time, then the rest together, then events with no goal. Where events
+  overlap, they share the time; an event with more than one goal splits
+  its time between them.
+
 ## 5.7.0
 
 - A goal's parent, in its Details, and the goal a measure counts the
