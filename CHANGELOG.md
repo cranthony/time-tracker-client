@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.11.1
+
+- The web app runs only its own code. It loads its graphics engine from
+  its own site rather than Google's, and the published app has a
+  Content-Security-Policy: no scripts from other sites, and connections
+  only to the server, the sign-in service and Google's fonts. The
+  sign-in page's script moved to its own file for that.
+
 ## 5.11.0
 
 - The Events page marks each note not yet compacted into the calendar,

@@ -13,6 +13,18 @@
         "--dart-define=SAMPLE_DATA=true"
       ],
       "port": 8765
+    },
+    {
+      "name": "web-build",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8766",
+        "--directory",
+        "build/web"
+      ],
+      "port": 8766
     }
   ]
 }

@@ -153,6 +153,28 @@ Every push to `main` builds the web app and publishes it to
 - The server's **`MCP_CORS_ALLOWED_ORIGINS`** set to
   `https://cranthony.github.io` (on Render: the service's Environment tab).
 
+#### Content-Security-Policy
+
+The published app runs only its own code. The build serves CanvasKit (the
+WebAssembly graphics engine) from the app's own site rather than Google's
+CDN (`--no-web-resources-cdn`), and `tool/web_csp.dart` then adds a
+Content-Security-Policy to `index.html` that:
+
+- runs scripts and WebAssembly only from the app's own site: no inline
+  scripts, no `eval`, nothing from other sites;
+- lets the page connect only to its own site, the MCP server, AuthKit
+  (which the tool reads from the server's metadata during the build) and
+  Google's font server, which supplies fonts for emoji and other scripts.
+
+`web/callback.html` has its own fixed policy, and its script is in
+`web/callback.js`. To try the published setup locally:
+
+```powershell
+flutter build web --csp --no-web-resources-cdn --dart-define-from-file=config.json
+dart run tool/web_csp.dart build/web https://your-service.onrender.com/mcp
+python -m http.server 8765 --directory build/web
+```
+
 ## Run on Android
 
 ### Install from Google Play (internal testing)
@@ -281,8 +303,12 @@ Specifically:
    sign in again each session. They aren't really protected while the
    tab is open: flutter_secure_storage does encrypt them, but keeps the
    key right beside them, so any script running on the page could read
-   them. The client registration (not a secret) stays in `localStorage`,
-   so a new session reuses it instead of registering another client.
+   them. The published app's
+   [Content-Security-Policy](#content-security-policy) keeps other
+   sites' scripts off the page. Browser extensions allowed to read the
+   site, and programs running as you, can still read them. The client
+   registration (not a secret) stays in `localStorage`, so a new session
+   reuses it instead of registering another client.
 
 Redirect URIs it registers:
 
