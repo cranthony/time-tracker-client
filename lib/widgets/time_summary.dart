@@ -44,8 +44,8 @@ List<SummarySlice> topShares<K>(
 /// Some time at a glance, under a page's heading: [pages], such as
 /// [SummaryBar]s, under their [titles]. Swiping, or tapping a title,
 /// turns between them, and it grows or shrinks between their heights as
-/// it's swiped. With [onCollapsed], a chevron folds it away to its
-/// titles, and back.
+/// it's swiped. With [onCollapsed], a chevron folds it away, leaving
+/// only a quiet "Show summary" to bring it back.
 class TimeSummary extends StatefulWidget {
   const TimeSummary({
     super.key,
@@ -64,7 +64,7 @@ class TimeSummary extends StatefulWidget {
   final Widget? trailing;
   final int initialPage;
 
-  /// Whether it shows only its titles.
+  /// Whether it's folded away.
   final bool collapsed;
 
   /// Called with whether it's to be [collapsed]; null for no chevron.
@@ -155,25 +155,43 @@ class _TimeSummaryState extends State<TimeSummary> {
   );
 
   /// The titles, the current one bold and underlined, then [trailing]
-  /// and the chevron.
+  /// and the chevron; folded away, only a quiet "Show summary" by the
+  /// chevron.
   Widget _header(BuildContext context) {
     final theme = Theme.of(context);
     final onCollapsed = widget.onCollapsed;
+    if (widget.collapsed && onCollapsed != null) {
+      return Row(
+        children: [
+          const Spacer(),
+          GestureDetector(
+            onTap: () => onCollapsed(false),
+            child: Text(
+              'Show summary',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Show summary',
+            icon: const Icon(Icons.expand_more),
+            onPressed: () => onCollapsed(false),
+          ),
+        ],
+      );
+    }
     return Row(
       children: [
         for (final (i, title) in widget.titles.indexed) ...[
           if (i > 0) const SizedBox(width: 14),
           GestureDetector(
-            onTap: () {
-              if (widget.collapsed) onCollapsed?.call(false);
-              if (_pages.hasClients) {
-                _pages.animateToPage(
-                  i,
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeOut,
-                );
-              }
-            },
+            onTap: () => _pages.animateToPage(
+              i,
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOut,
+            ),
             child: Text(
               title,
               style: theme.textTheme.labelLarge?.copyWith(
@@ -188,15 +206,13 @@ class _TimeSummaryState extends State<TimeSummary> {
           ),
         ],
         const Spacer(),
-        if (!widget.collapsed) ?widget.trailing,
+        ?widget.trailing,
         if (onCollapsed != null)
           IconButton(
             visualDensity: VisualDensity.compact,
-            tooltip: widget.collapsed ? 'Show summary' : 'Hide summary',
-            icon: Icon(
-              widget.collapsed ? Icons.expand_more : Icons.expand_less,
-            ),
-            onPressed: () => onCollapsed(!widget.collapsed),
+            tooltip: 'Hide summary',
+            icon: const Icon(Icons.expand_less),
+            onPressed: () => onCollapsed(true),
           ),
       ],
     );
