@@ -6,6 +6,20 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.11.0
+
+- The Events page marks each note not yet compacted into the calendar,
+  saved or still waiting to be, with a dashed line across like the "last
+  compacted" one, but thinner and fainter, as a hint. Zoomed in, each is
+  labeled "pending note", like "now" and "last compacted", where there's
+  room.
+- A "Go to now" button, above the zoom buttons, goes to today with now
+  about a third of the way down the screen.
+- The Events page goes back to the day, time and zoom it was left on,
+  after switching to Notes or Goals, or closing the app, if it's back
+  within 30 minutes. After that it opens on today, at now, as before; and
+  so it does if it was left on today and it's since become tomorrow.
+
 ## 5.10.0
 
 - The Goals page has a summary of the last 24 hours and 7 days under its

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../outbox/goal_outbox.dart';
 import '../outbox/note_outbox.dart';
 import '../services/goals_repository.dart';
+import '../services/events_place.dart';
 import '../services/events_repository.dart';
 import '../services/notes_repository.dart';
 import 'goals_screen.dart';
@@ -58,6 +59,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// showing; broadcast, since each one listens anew.
   final _toNotes = StreamController<DateTime>.broadcast();
 
+  /// Where Events was left, to go back there.
+  final _eventsPlace = EventsPlaceStore();
+
   @override
   void initState() {
     super.initState();
@@ -92,9 +96,12 @@ class _HomeScreenState extends State<HomeScreen> {
           repository: widget.eventsRepository,
           serverLabel: widget.notesRepository.label,
           goalsRepository: widget.goalsRepository,
+          notesRepository: widget.notesRepository,
+          outbox: widget.outbox,
           onSignIn: widget.onSignIn,
           onSignOut: widget.onSignOut,
           version: widget.version,
+          placeStore: _eventsPlace,
         ),
         _Tab.goals => GoalsScreen(
           repository: widget.goalsRepository,

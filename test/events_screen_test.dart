@@ -926,7 +926,7 @@ void main() {
       );
       await tester.tapAt(
         tester.getTopLeft(timeline) +
-            Offset(tester.getSize(timeline).width - 20, y),
+            Offset(tester.getSize(timeline).width / 2, y),
       );
       await tester.pumpAndSettle();
     }
@@ -1448,6 +1448,77 @@ void main() {
     await tester.tap(find.text('Sign in'));
     await tester.pumpAndSettle();
     expect(find.text('Work'), findsOneWidget);
+  });
+
+  testWidgets('"Go to now" shows today, with now a third of the way down', (
+    tester,
+  ) async {
+    final repo = InMemoryEventsRepository([
+      Event(start: at(29, 6), end: at(29, 7), summary: 'Early'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Previous day'));
+    await tester.pumpAndSettle();
+    expect(find.text('Yesterday'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Go to now'));
+    await tester.pumpAndSettle();
+    expect(find.text('Today'), findsOneWidget);
+    final position = tester
+        .state<ScrollableState>(
+          find.byWidgetPredicate(
+            (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+          ),
+        )
+        .position;
+    final day = DateTime(2026, 9, 30);
+    expect(
+      position.pixels,
+      moreOrLessEquals(
+        timelineOffset(
+              now,
+              day: day,
+              dayEnd: DateTime(2026, 10, 1),
+              scale: defaultTimelineScale,
+            ) -
+            position.viewportDimension / 3,
+      ),
+    );
+  });
+
+  testWidgets('marks the notes not yet compacted, saved or not', (
+    tester,
+  ) async {
+    final notes = InMemoryNotesRepository([
+      Note(timestamp: at(30, 8), description: 'Up'),
+      Note(timestamp: at(30, 7), description: 'Old', compactionId: 'c1'),
+      Note(timestamp: at(29, 22), description: 'Yesterday'),
+    ]);
+    // Not started, so it stays unsaved.
+    final outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: notes);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EventsScreen(
+          repository: InMemoryEventsRepository(),
+          serverLabel: 'offline demo',
+          notesRepository: notes,
+          outbox: outbox,
+          clock: () => now,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    List<DateTime> marked() =>
+        tester.widget<DayTimeline>(find.byType(DayTimeline).first).pendingNotes
+          ..sort();
+    expect(marked(), [at(29, 22), at(30, 8)]);
+
+    await tester.runAsync(
+      () => outbox.add(Note(timestamp: at(30, 9, 30), description: 'Coffee')),
+    );
+    await tester.pumpAndSettle();
+    expect(marked(), [at(29, 22), at(30, 8), at(30, 9, 30)]);
   });
 
   group('HomeScreen', () {
