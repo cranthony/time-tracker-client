@@ -284,6 +284,23 @@ void main() {
     expect(await repo.uncompactedNotes(), hasLength(2));
   });
 
+  screenTest('a server error after sign-in is shown, not the sign-in '
+      'prompt', (tester) async {
+    final repo = _SignInRepository([])
+      ..failure = McpException('Tool get_notes failed: token revoked');
+    await tester.pumpWidget(
+      app(repo, onSignIn: () async => repo.signedIn = true),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Sign in to see your notes.'), findsOneWidget);
+
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sign in to see your notes.'), findsNothing);
+    expect(find.textContaining('Could not load notes.'), findsOneWidget);
+    expect(find.textContaining('token revoked'), findsOneWidget);
+  });
+
   screenTest('tapping a note edits it', (tester) async {
     final repo = InMemoryNotesRepository([
       Note(timestamp: today(9, 30), description: 'Standup'),
@@ -542,9 +559,13 @@ class _SignInRepository extends InMemoryNotesRepository {
   _SignInRepository(super.notes);
   bool signedIn = false;
 
+  /// Thrown once signed in, as a server that can't answer would.
+  Exception? failure;
+
   @override
   Future<List<Note>> uncompactedNotes() async {
     if (!signedIn) throw SignInRequiredException();
+    if (failure case final failure?) throw failure;
     return super.uncompactedNotes();
   }
 

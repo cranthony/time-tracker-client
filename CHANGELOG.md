@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.11.2
+
+- When the server fails after you sign in, the Notes, Events and Goals
+  pages say what went wrong ("Could not load notes", with the server's
+  reason) instead of asking you to sign in again.
+
 ## 5.11.1
 
 - The web app runs only its own code. It loads its graphics engine from
