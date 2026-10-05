@@ -4,22 +4,6 @@ import '../models/goal.dart';
 import 'color_picker.dart';
 import 'day_summary.dart';
 
-/// How [GoalsTimeSummary] lays itself out. A mockup's choice, for now.
-enum GoalsSummaryStyle {
-  /// Both windows' bars, one over the other, with one legend.
-  stacked,
-
-  /// One page for each window, swiped between.
-  windows,
-
-  /// One page for each breakdown, swiped between, with a switch for the
-  /// window.
-  toggle,
-}
-
-/// Mockup only: which [GoalsSummaryStyle] the Goals page shows.
-var goalsSummaryStyle = GoalsSummaryStyle.stacked;
-
 /// A goal's minutes in the last 24 hours, or 7 days with [week], through
 /// goals with [statuses].
 int _minutes(Goal goal, Set<String> statuses, bool week) {
@@ -90,9 +74,9 @@ List<SummarySlice> topLevelShares(
   );
 }
 
-/// The same by priority: each goal's own time, apart from its
-/// sub-goals', counted toward its priority. Only roughly right: an
-/// event's own priority isn't known here.
+/// The same by goal priority: each goal's own time, apart from its
+/// sub-goals', counted toward the goal's priority, whatever its events'
+/// own priorities.
 List<SummarySlice> goalPriorityShares(
   List<Goal> goals,
   Set<String> statuses, {
@@ -115,7 +99,7 @@ List<SummarySlice> goalPriorityShares(
     [
       for (final p in byPriority.keys.toList()..sort())
         SummarySlice(
-          'P$p',
+          'P$p goals',
           priorityColor(p),
           Duration(minutes: byPriority[p]!),
         ),
@@ -126,9 +110,10 @@ List<SummarySlice> goalPriorityShares(
 }
 
 /// The time on goals in the last 24 hours and 7 days, as the Goals page
-/// counts it, at a glance: by top-level goal, or by priority, and the
-/// rest of the time.
-class GoalsTimeSummary extends StatefulWidget {
+/// counts it, at a glance: each window's bar, one over the other, split
+/// by top-level goal, or by goal priority, and the rest of the window,
+/// not on goals. Swiping it, or tapping a title, turns between the two.
+class GoalsTimeSummary extends StatelessWidget {
   const GoalsTimeSummary({
     super.key,
     required this.goals,
@@ -149,66 +134,38 @@ class GoalsTimeSummary extends StatefulWidget {
   final int initialPage;
 
   @override
-  State<GoalsTimeSummary> createState() => _GoalsTimeSummaryState();
-}
-
-class _GoalsTimeSummaryState extends State<GoalsTimeSummary> {
-  /// For [GoalsSummaryStyle.toggle]: whether it shows the last 7 days.
-  var _week = false;
-
-  List<SummarySlice> _topLevel(bool week) => topLevelShares(
-    widget.goals,
-    widget.statuses,
-    week: week,
-    onGoals: week ? widget.onGoals.$2 : widget.onGoals.$1,
-  );
-
-  List<SummarySlice> _priorities(bool week) => goalPriorityShares(
-    widget.goals,
-    widget.statuses,
-    week: week,
-    onGoals: week ? widget.onGoals.$2 : widget.onGoals.$1,
-  );
-
-  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final (day, week) = onGoals;
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       color: theme.colorScheme.surfaceContainerLow,
       clipBehavior: Clip.antiAlias,
-      child: switch (goalsSummaryStyle) {
-        GoalsSummaryStyle.stacked => _Stacked(
-          day: _topLevel(false),
-          week: _topLevel(true),
-        ),
-        GoalsSummaryStyle.windows => SummaryPages(
-          titles: const ['Last 24 hours', 'Last 7 days'],
-          initialPage: widget.initialPage,
-          pages: [_topLevel(false), _topLevel(true)],
-        ),
-        GoalsSummaryStyle.toggle => SummaryPages(
-          titles: const ['Top-level goals', 'Priorities'],
-          initialPage: widget.initialPage,
-          pages: [_topLevel(_week), _priorities(_week)],
-          trailing: SegmentedButton<bool>(
-            showSelectedIcon: false,
-            style: SegmentedButton.styleFrom(
-              visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              textStyle: theme.textTheme.labelSmall,
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-            ),
-            segments: const [
-              ButtonSegment(value: false, label: Text('24h')),
-              ButtonSegment(value: true, label: Text('7d')),
-            ],
-            selected: {_week},
-            onSelectionChanged: (picked) =>
-                setState(() => _week = picked.single),
+      child: SummaryPages(
+        titles: const ['Top-level goals', 'Goal priorities'],
+        initialPage: initialPage,
+        trailing: Text(
+          '24h · 7d',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-      },
+        pages: [
+          _Stacked(
+            day: topLevelShares(goals, statuses, week: false, onGoals: day),
+            week: topLevelShares(goals, statuses, week: true, onGoals: week),
+          ),
+          _Stacked(
+            day: goalPriorityShares(goals, statuses, week: false, onGoals: day),
+            week: goalPriorityShares(
+              goals,
+              statuses,
+              week: true,
+              onGoals: week,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -278,22 +235,10 @@ class _Stacked extends StatelessWidget {
       for (final slice in [...day, ...week]) slice.label: slice.color,
     };
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+      padding: const EdgeInsets.only(top: 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text(
-                'Top-level goals',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const Spacer(),
-              Text('24h · 7d', style: faint),
-            ],
-          ),
           bar('24h', day),
           bar('7d', week),
           const SizedBox(height: 8),

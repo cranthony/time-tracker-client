@@ -1848,7 +1848,10 @@ void main() {
 
       // Not in the tree itself.
       expect(shownNames(tester), ['Overall', 'Cooking', 'Old habit']);
-      expect(find.byType(Card), findsOneWidget);
+      expect(
+        find.ancestor(of: find.text('Overall'), matching: find.byType(Card)),
+        findsOneWidget,
+      );
       expect(
         find.text('1h 30m in 24h · 12h 15m in 7d on the goals shown'),
         findsOneWidget,

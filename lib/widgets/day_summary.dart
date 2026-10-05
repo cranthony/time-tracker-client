@@ -188,9 +188,12 @@ class DaySummary extends StatelessWidget {
             titles: const ['Priorities', 'Goals', 'Top-level goals'],
             initialPage: initialPage,
             pages: [
-              priorityShares(events, day),
-              goalShares(events, day, goals),
-              goalShares(events, day, goals, topLevel: true),
+              for (final slices in [
+                priorityShares(events, day),
+                goalShares(events, day, goals),
+                goalShares(events, day, goals, topLevel: true),
+              ])
+                SummaryBar(slices: slices),
             ],
           ),
           Divider(height: 1, color: theme.colorScheme.outlineVariant),
@@ -200,7 +203,7 @@ class DaySummary extends StatelessWidget {
   }
 }
 
-/// [pages] of shares, each a [SummaryBar], under their [titles]: swiping,
+/// [pages], such as [SummaryBar]s, under their [titles]: swiping,
 /// or tapping a title, turns between them. It grows or shrinks between
 /// their heights as it's swiped.
 class SummaryPages extends StatefulWidget {
@@ -213,7 +216,7 @@ class SummaryPages extends StatefulWidget {
   });
 
   final List<String> titles;
-  final List<List<SummarySlice>> pages;
+  final List<Widget> pages;
 
   /// At the end of the titles' row.
   final Widget? trailing;
@@ -261,7 +264,7 @@ class _SummaryPagesState extends State<SummaryPages> {
           controller: _pages,
           onPageChanged: (page) => setState(() => _page = page),
           children: [
-            for (final (i, slices) in widget.pages.indexed)
+            for (final (i, page) in widget.pages.indexed)
               // As tall as it needs, whatever the summary's height this
               // frame.
               OverflowBox(
@@ -274,7 +277,7 @@ class _SummaryPagesState extends State<SummaryPages> {
                   },
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                    child: SummaryBar(slices: slices),
+                    child: page,
                   ),
                 ),
               ),

@@ -75,6 +75,27 @@ void main() {
       );
     });
 
+    // The time summary swiped to its goal priorities.
+    testWidgets('goals_summary_priorities ($mode)', (tester) async {
+      await render(
+        tester,
+        'goals_summary_priorities',
+        GoalsScreen(
+          outbox: _idleGoalOutbox(),
+          repository: sample.goalsRepository(),
+          serverLabel: 'sample',
+        ),
+        then: () async {
+          await tester.fling(
+            find.byType(SummaryPages),
+            const Offset(-300, 0),
+            1000,
+          );
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
     // Every goal expanded, by swiping right: three levels of bands.
     testWidgets('goals expanded ($mode)', (tester) async {
       await render(
@@ -91,7 +112,8 @@ void main() {
             'Be a good neighbor',
             'Visit parents every 2 months',
           ]) {
-            final goal = find.textContaining(name, findRichText: true);
+            // Its tile, after the time summary's legend.
+            final goal = find.textContaining(name, findRichText: true).last;
             await tester.ensureVisible(goal);
             await tester.pumpAndSettle();
             await tester.drag(goal, const Offset(100, 0));
@@ -117,7 +139,9 @@ void main() {
         then: () async {
           // Its sub-goal shows the band of a goal that inherits its color.
           await tester.drag(
-            find.textContaining('Learn vegetarian cooking', findRichText: true),
+            find
+                .textContaining('Learn vegetarian cooking', findRichText: true)
+                .last,
             const Offset(100, 0),
           );
           await tester.pumpAndSettle();
@@ -173,7 +197,7 @@ void main() {
           ),
           then: () async {
             await tester.tap(
-              find.textContaining('Wake up at 7am', findRichText: true),
+              find.textContaining('Wake up at 7am', findRichText: true).last,
             );
             await tester.pumpAndSettle();
             if (!editing) return;
@@ -199,10 +223,12 @@ void main() {
           ),
           then: () async {
             await tester.drag(
-              find.textContaining(
-                'Learn vegetarian cooking',
-                findRichText: true,
-              ),
+              find
+                  .textContaining(
+                    'Learn vegetarian cooking',
+                    findRichText: true,
+                  )
+                  .last,
               const Offset(100, 0),
             );
             await tester.pumpAndSettle();
@@ -252,7 +278,9 @@ void main() {
         ),
         then: () async {
           await tester.drag(
-            find.textContaining('Learn vegetarian cooking', findRichText: true),
+            find
+                .textContaining('Learn vegetarian cooking', findRichText: true)
+                .last,
             const Offset(100, 0),
           );
           await tester.pumpAndSettle();
@@ -273,7 +301,9 @@ void main() {
         ),
         then: () async {
           await tester.drag(
-            find.textContaining('Learn vegetarian cooking', findRichText: true),
+            find
+                .textContaining('Learn vegetarian cooking', findRichText: true)
+                .last,
             const Offset(100, 0),
           );
           await tester.pumpAndSettle();
