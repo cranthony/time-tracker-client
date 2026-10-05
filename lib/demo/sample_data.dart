@@ -17,7 +17,9 @@ import '../services/traits_repository.dart';
 /// The goals cover what the Goals page can show: every status, sub-goals,
 /// own and inherited colors, health with a sparkline, days gone unrated,
 /// a skipped day, a proposed rating not yet confirmed, and the time spent
-/// on each up to the last compaction.
+/// on each up to the last compaction. Two friends are rated by traits --
+/// one with cadences of their own -- with what happened at their events,
+/// their histories, what matters to them, and a week of trait scores.
 class SampleData {
   SampleData(this.now);
 
@@ -44,20 +46,274 @@ class SampleData {
     minutesByPriority,
   );
 
-  /// The five starting traits, as a new calendar's Traits tab has them,
-  /// and a week of one's scores.
+  /// The five starting traits, as a new calendar's Traits tab has them; a
+  /// week of their scores across the two friends; and each friend's
+  /// latest rating, part by part, history and what matters to them.
   TraitsRepository traitsRepository() => InMemoryTraitsRepository(
     traits: traits,
     history: [
-      for (var back = 7; back >= 1; back--)
-        TraitDay(
-          traitId: 'reliable',
-          name: 'Reliable',
-          day: _day(_today.subtract(Duration(days: back))),
-          score: 60 + back * 4,
-        ),
+      for (final (i, trait) in traits.indexed)
+        for (var back = 7; back >= 1; back--)
+          TraitDay(
+            traitId: trait.id!,
+            name: trait.name,
+            day: _day(_today.subtract(Duration(days: back))),
+            score:
+                ((_traitScores['sam']![i] + _traitScores['priya']![i]) / 2 -
+                        back * (i + 1))
+                    .round()
+                    .clamp(0, 100),
+            goals: {
+              'sam': (_traitScores['sam']![i] - back * (i + 1)).clamp(0, 100),
+              'priya': (_traitScores['priya']![i] - back).clamp(0, 100),
+            },
+          ),
     ],
+    ratings: {
+      for (final id in ['sam', 'priya']) id: _traitsRating(id),
+    },
+    digests: {
+      for (final id in ['sam', 'priya']) id: _digest(id),
+    },
+    descriptions: {
+      'sam':
+          'Friend from the dance class.\n\n## What matters to them\n\n'
+          '- ${_day(_today.subtract(const Duration(days: 40)))}: training '
+          'for a half marathon in the spring\n'
+          '- ${_day(_today.subtract(const Duration(days: 12)))}: starts a new '
+          'job next month',
+      'priya':
+          '## What matters to them\n\n'
+          '- ${_day(_today.subtract(const Duration(days: 20)))}: loves jazz, '
+          'and trying new restaurants',
+    },
   );
+
+  /// Each friend's latest score for each of [traits], in order.
+  static const _traitScores = {
+    'sam': [50, 95, 70, 100, 85],
+    'priya': [80, 60, 0, 50, 75],
+  };
+
+  /// Sam's own Reliable parts: a cadence of visits, and of dance.
+  static const _samsReliable = [
+    {'kind': 'continuity', 'last_within_days': 7, 'next_within_days': 7},
+    {'kind': 'follow_through'},
+    {'kind': 'count', 'target': 1, 'interval_days': 14, 'activity': 'visit'},
+    {'kind': 'count', 'target': 1, 'interval_days': 7, 'activity': 'dance'},
+  ];
+
+  TraitsRating _traitsRating(String id) {
+    final scores = _traitScores[id]!;
+    final rated = scores.reduce((a, b) => a + b) ~/ scores.length;
+    final parts = <String, List<PartScore>>{
+      'thoughtful': [
+        PartScore(
+          key: 'prep',
+          kind: 'prep',
+          score: scores[0],
+          said: '1 of 2 prep events in the last 30 days',
+          eventIds: ['$id-gift'],
+        ),
+        const PartScore(
+          key: 'judgment',
+          kind: 'judgment',
+          said: 'To be judged in the reflection',
+          rubric: 'Did the events and notes reflect what matters to them?',
+        ),
+      ],
+      'reliable': [
+        PartScore(
+          key: 'continuity',
+          kind: 'continuity',
+          score: scores[1],
+          said: 'Last 1 day ago; next in 5 days (within 7 and 7 days)',
+          eventIds: ['$id-dance'],
+        ),
+        const PartScore(
+          key: 'follow_through',
+          kind: 'follow_through',
+          score: 100,
+          said: 'Nothing cancelled or kept that day, from 100',
+        ),
+      ],
+      'creative': [
+        PartScore(
+          key: 'together_creative',
+          kind: 'together_creative',
+          score: scores[2],
+          said:
+              '${scores[2] == 0 ? 0 : 1} of 1 events making something '
+              'together in the last 30 days',
+          eventIds: [if (scores[2] > 0) '$id-cook'],
+        ),
+      ],
+      'adventurous': [
+        PartScore(
+          key: 'novelty',
+          kind: 'novelty',
+          score: scores[3],
+          said: '${scores[3] ~/ 50} of 2 new experiences in the last 30 days',
+          eventIds: ['$id-jazz'],
+        ),
+      ],
+      'generous': [
+        PartScore(
+          key: 'effort_paid',
+          kind: 'effort_paid',
+          score: scores[4],
+          said: '${scores[4] * 6} of 600 effort-minutes in the last 30 days',
+          eventIds: ['$id-cook', '$id-gift'],
+        ),
+        const PartScore(
+          key: 'attention',
+          kind: 'attention',
+          score: 100,
+          said: 'Mean attention 3.0 of 3 over 2 events in the last 30 days',
+        ),
+      ],
+    };
+    return TraitsRating(
+      rating: rated,
+      day: _day(_today.subtract(const Duration(days: 1))),
+      explanation:
+          'Traits (${[for (final (i, t) in traits.indexed) '${t.name} ${scores[i]}'].join(', ')}) → $rated',
+      traits: [
+        for (final (i, trait) in traits.indexed)
+          TraitScore(
+            traitId: trait.id!,
+            name: trait.name,
+            score: scores[i],
+            parts: parts[trait.id]!,
+          ),
+      ],
+    );
+  }
+
+  GoalDigest _digest(String id) {
+    final events = [
+      _past(
+        id,
+        'jazz',
+        'Jazz night',
+        9,
+        20,
+        facets: {
+          'with_goal_ids': [id],
+          'activity': 'jazz club',
+          'place': 'the cellar',
+          'new': 'both',
+          'attention': 3,
+          'why': 'first time at a jazz club together',
+        },
+      ),
+      _past(
+        id,
+        'gift',
+        'Wrap a birthday present',
+        6,
+        18,
+        goal: 'neighbor',
+        facets: {
+          'for_goal_ids': [id],
+          'activity': 'gift',
+          'effort': 2,
+        },
+      ),
+      _past(
+        id,
+        'cook',
+        'Cook dumplings',
+        4,
+        18,
+        facets: {
+          'with_goal_ids': [id],
+          'activity': 'cook',
+          'place': 'home',
+          'creative': 2,
+          'effort': 2,
+          'attention': 3,
+          'why': 'folded them together; talked about the new job',
+        },
+      ),
+      _past(
+        id,
+        'dance',
+        'Salsa social',
+        1,
+        20,
+        facets: {
+          'with_goal_ids': [id],
+          'activity': 'dance',
+          'place': 'the hall',
+          'new': 'none',
+          'attention': 2,
+        },
+      ),
+    ];
+    return GoalDigest(
+      goalId: id,
+      eventsCounted: events.length,
+      withFacets: events.length,
+      activities: [
+        for (final (label, count, back) in [
+          ('dance', 6, 1),
+          ('cook', 2, 4),
+          ('gift', 1, 6),
+          ('jazz club', 1, 9),
+        ])
+          DigestEntry(
+            label: label,
+            count: count,
+            first: _day(
+              _today.subtract(Duration(days: back + 20 * (count - 1))),
+            ),
+            last: _day(_today.subtract(Duration(days: back))),
+          ),
+      ],
+      places: [
+        DigestEntry(
+          label: 'the hall',
+          count: 6,
+          first: _day(_today.subtract(const Duration(days: 101))),
+          last: _day(_today.subtract(const Duration(days: 1))),
+        ),
+        DigestEntry(
+          label: 'home',
+          count: 2,
+          first: _day(_today.subtract(const Duration(days: 24))),
+          last: _day(_today.subtract(const Duration(days: 4))),
+        ),
+      ],
+      whatMatters: id == 'sam'
+          ? '- ${_day(_today.subtract(const Duration(days: 40)))}: training '
+                'for a half marathon in the spring\n'
+                '- ${_day(_today.subtract(const Duration(days: 12)))}: starts '
+                'a new job next month'
+          : '- ${_day(_today.subtract(const Duration(days: 20)))}: loves '
+                'jazz, and trying new restaurants',
+      events: events,
+    );
+  }
+
+  /// A past event of [id]'s, [daysAgo] days back at [hour], as the server
+  /// sends it, with [facets].
+  Map<String, dynamic> _past(
+    String id,
+    String key,
+    String summary,
+    int daysAgo,
+    int hour, {
+    String? goal,
+    Map<String, Object?> facets = const {},
+  }) => {
+    'id': '$id-$key',
+    'summary': summary,
+    'start': localIsoTimestamp(_at(hour, 0, -daysAgo)),
+    'end': localIsoTimestamp(_at(hour + 2, 0, -daysAgo)),
+    'goal_ids': [goal ?? id],
+    'facets': facets,
+  };
 
   static String _day(DateTime day) =>
       '${day.year}-${day.month.toString().padLeft(2, '0')}-'
@@ -162,7 +418,21 @@ class SampleData {
       goals: ['tracker'],
       priority: 1,
     ),
-    _event('lunch', 'Lunch', _at(12, 0), _at(13, 0)),
+    _event(
+      'lunch',
+      'Lunch with Sam',
+      _at(12, 0),
+      _at(13, 0),
+      goals: ['sam'],
+      facets: {
+        'with_goal_ids': ['sam'],
+        'activity': 'lunch',
+        'place': 'the noodle bar',
+        'new': 'place',
+        'attention': 3,
+        'why': 'talked through the job offer; phones away',
+      },
+    ),
     // Too short for their text: drawn taller, and pushed down.
     _event(
       'call',
@@ -207,6 +477,7 @@ class SampleData {
     String? series,
     bool fromLabel = false,
     int? priority,
+    Map<String, Object?>? facets,
   }) => Event.fromJson({
     'id': id,
     'summary': summary,
@@ -219,6 +490,7 @@ class SampleData {
     'recurring_event_id': ?series,
     if (fromLabel) 'goals_from_label': true,
     'effective_priority': ?priority,
+    'facets': ?facets,
   });
 
   /// The series "Morning routine" is part of: every weekday since a month
@@ -251,6 +523,9 @@ class SampleData {
     'parents': 'Visit parents every 2 months',
     'trains': 'Book the train a month ahead',
     'cousins': 'Visit cousins every week',
+    'friends': 'Keep up with friends',
+    'sam': 'Sam',
+    'priya': 'Priya',
   };
 
   /// When notes were last compacted, which goals' recent time is counted
@@ -391,6 +666,46 @@ class SampleData {
       ..._time(0, 180),
     }),
     Goal.fromJson({
+      'id': 'friends',
+      'name': _names['friends'],
+      'status': 'active',
+      'background_color': '#7986cb',
+      'effective_color': '#7986cb',
+      'priority': 2,
+      ..._health('friends'),
+      ..._time(60, 420),
+    }),
+    // Rated by traits, with cadences of its own.
+    Goal.fromJson({
+      'id': 'sam',
+      'parent_id': 'friends',
+      'name': _names['sam'],
+      'status': 'active',
+      'effective_color': '#7986cb',
+      'measure': {
+        'kind': 'traits',
+        'traits': 'all',
+        'parts': {'reliable': _samsReliable},
+      },
+      ..._health('sam'),
+      ..._time(60, 300),
+    }),
+    // Rated by traits, as the Traits tab has them.
+    Goal.fromJson({
+      'id': 'priya',
+      'parent_id': 'friends',
+      'name': _names['priya'],
+      'status': 'active',
+      'effective_color': '#7986cb',
+      'measure': {
+        'kind': 'traits',
+        'traits': 'all',
+        'weights': {'creative': 2},
+      },
+      ..._health('priya'),
+      ..._time(0, 120),
+    }),
+    Goal.fromJson({
       'id': 'book',
       'name': 'Write a book about time',
       'status': 'proposed',
@@ -421,6 +736,9 @@ class SampleData {
     'overall': [70, 75, 66, 62, 70, 82, 80, 82],
     'parents': [100, 100, 100, 100, 100, 100, 100, 100],
     'cousins': [100, 100, 93, 79, 64, 100, 100, 100],
+    'friends': [70, 72, 68, 75, 74, 77, 76, 79],
+    'sam': [72, 75, 70, 78, 76, 80, 79, 80],
+    'priya': [55, 58, 60, 62, 60, 64, 63, 52],
   };
 
   /// The cache columns the server keeps: the latest confirmed rating, its
@@ -456,7 +774,7 @@ class SampleData {
             rating: ratings[i],
             method: switch (id) {
               'tofu' => 'subjective',
-              'cook' || 'neighbor' || 'overall' => 'rollup',
+              'cook' || 'neighbor' || 'overall' || 'friends' => 'rollup',
               _ => 'metric',
             },
             status: i == ratings.length - 1 ? 'proposed' : 'confirmed',
@@ -479,6 +797,7 @@ class SampleData {
           ? '1 of 1 in the last ${id == 'parents' ? 60 : 7} days → 100'
           : '0 of 1 in the last 7 days; met until a few days ago → $rating',
     'cook' => 'Lowest of 1 sub-goal → $rating',
+    'sam' || 'priya' => 'Traits, part by part, over the last 30 days → $rating',
     _ => 'Mean of 2 sub-goals → $rating',
   };
 
