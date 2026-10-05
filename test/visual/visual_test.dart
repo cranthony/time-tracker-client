@@ -76,10 +76,12 @@ void main() {
       );
     });
 
-    // The time summary swiped to its priorities, and folded away.
+    // The time summary swiped to its priorities, folded away, and
+    // turned to percentages.
     for (final (name, step) in [
       ('goals_summary_priorities', null),
       ('goals_summary_collapsed', 'Hide summary'),
+      ('goals_percentages', 'Show percentages'),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
         await render(

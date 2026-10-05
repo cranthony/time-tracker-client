@@ -14,9 +14,10 @@ proposed, active, inactive, completed, archived or deleted. Only active
 goals take up one of the calendar's event labels; the rest keep their
 history. Proposed, active and inactive goals are shown to start with,
 and the filter at the top right picks others. The menu beside it picks what
-each goal shows under its name: its time spent, its measure, its time
-as a percentage, or its events' priority. A summary under the heading
-splits the last 24 hours and 7 days by the goals shown, or by priority.
+each goal shows under its name: its time spent, its measure, or its
+events' priority. A summary under the heading splits the last 24 hours
+and 7 days by the goals shown, or by priority, and its toggle shows
+time, there and under each goal, as percentages or durations.
 Each active goal shows its health — its latest confirmed rating, a small chart of recent ones, and how many periods have gone unassessed — and its menu opens its history. Later it will show the summaries the server
 generates.
 

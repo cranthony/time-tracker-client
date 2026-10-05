@@ -6,6 +6,20 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.13.0
+
+- The Events page's day summary and the Goals page's summary each have
+  a toggle by their chevron, % on one half and a clock on the other,
+  the one shown filled in. Tapping it anywhere turns each share's
+  percentage into its time, such as "1h 30m", and back. Each page keeps
+  it as it was left next time.
+- On the Goals page, the toggle also decides how "Time spent" shows
+  under each goal and on the overall card: "9h in 24h", or "37.5% of
+  24h". "Time as a percentage" is gone from the menu; if it was picked,
+  "Time spent" shows percentages instead.
+- When a summary's titles don't fit beside the toggle and chevron on a
+  narrow screen, they shrink to fit.
+
 ## 5.12.0
 
 - On the Events page, the strip down an event's left edge is solid all

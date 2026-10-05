@@ -3,6 +3,8 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import 'durations.dart';
+
 /// One share of some time: by priority or goal.
 class SummarySlice {
   const SummarySlice(this.label, this.color, this.time);
@@ -45,7 +47,9 @@ List<SummarySlice> topShares<K>(
 /// [SummaryBar]s, under their [titles]. Swiping, or tapping a title,
 /// turns between them, and it grows or shrinks between their heights as
 /// it's swiped. With [onCollapsed], a chevron folds it away, leaving
-/// only a quiet "Show summary" to bring it back.
+/// only a quiet "Show summary" to bring it back. With [onDurations], a
+/// button by it turns its [SummaryBar]s between percentages and
+/// durations.
 class TimeSummary extends StatefulWidget {
   const TimeSummary({
     super.key,
@@ -54,6 +58,8 @@ class TimeSummary extends StatefulWidget {
     this.initialPage = 0,
     this.collapsed = false,
     this.onCollapsed,
+    this.durations = false,
+    this.onDurations,
   });
 
   final List<String> titles;
@@ -66,6 +72,13 @@ class TimeSummary extends StatefulWidget {
 
   /// Called with whether it's to be [collapsed]; null for no chevron.
   final ValueChanged<bool>? onCollapsed;
+
+  /// Whether its [SummaryBar]s show each share's duration, rather than
+  /// its percentage.
+  final bool durations;
+
+  /// Called with whether to show [durations]; null for no button.
+  final ValueChanged<bool>? onDurations;
 
   @override
   State<TimeSummary> createState() => _TimeSummaryState();
@@ -105,7 +118,10 @@ class _TimeSummaryState extends State<TimeSummary> {
             alignment: Alignment.topCenter,
             child: Offstage(
               offstage: widget.collapsed,
-              child: TickerMode(enabled: !widget.collapsed, child: _body()),
+              child: TickerMode(
+                enabled: !widget.collapsed,
+                child: SummaryUnit(durations: widget.durations, child: _body()),
+              ),
             ),
           ),
           Divider(height: 1, color: theme.colorScheme.outlineVariant),
@@ -181,28 +197,51 @@ class _TimeSummaryState extends State<TimeSummary> {
     }
     return Row(
       children: [
-        for (final (i, title) in widget.titles.indexed) ...[
-          if (i > 0) const SizedBox(width: 14),
-          GestureDetector(
-            onTap: () => _pages.animateToPage(
-              i,
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOut,
-            ),
-            child: Text(
-              title,
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: i == _page
-                    ? theme.colorScheme.onSurface
-                    : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                fontWeight: i == _page ? FontWeight.w700 : FontWeight.w500,
-                decoration: i == _page ? TextDecoration.underline : null,
-                decorationThickness: 2,
+        // Shrunk to fit, if they must, by what's after them.
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final (i, title) in widget.titles.indexed) ...[
+                    if (i > 0) const SizedBox(width: 14),
+                    GestureDetector(
+                      onTap: () => _pages.animateToPage(
+                        i,
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOut,
+                      ),
+                      child: Text(
+                        title,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: i == _page
+                              ? theme.colorScheme.onSurface
+                              : theme.colorScheme.onSurfaceVariant.withValues(
+                                  alpha: 0.6,
+                                ),
+                          fontWeight: i == _page
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          decoration: i == _page
+                              ? TextDecoration.underline
+                              : null,
+                          decorationThickness: 2,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
+        ),
+        if (widget.onDurations case final onDurations?) ...[
+          const SizedBox(width: 8),
+          _UnitSwitch(durations: widget.durations, onChanged: onDurations),
         ],
-        const Spacer(),
         if (onCollapsed != null)
           IconButton(
             visualDensity: VisualDensity.compact,
@@ -215,8 +254,89 @@ class _TimeSummaryState extends State<TimeSummary> {
   }
 }
 
+/// Two halves, percentages and durations, split by a line, the one
+/// shown filled in. A tap anywhere on it turns to the other.
+class _UnitSwitch extends StatelessWidget {
+  const _UnitSwitch({required this.durations, required this.onChanged});
+
+  final bool durations;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    const radius = Radius.circular(11);
+    // Inside its border.
+    const inner = Radius.circular(10);
+    Widget half(IconData icon, bool on) {
+      final chosen = durations == on;
+      return Container(
+        width: 26,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: chosen ? colors.secondaryContainer : null,
+          borderRadius: on
+              ? const BorderRadius.horizontal(right: inner)
+              : const BorderRadius.horizontal(left: inner),
+        ),
+        child: Icon(
+          icon,
+          size: 14,
+          color: chosen ? colors.onSecondaryContainer : colors.onSurfaceVariant,
+        ),
+      );
+    }
+
+    return Tooltip(
+      message: durations ? 'Show percentages' : 'Show durations',
+      child: InkWell(
+        onTap: () => onChanged(!durations),
+        borderRadius: const BorderRadius.all(radius),
+        // Taller to tap than it looks.
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          child: Container(
+            height: 22,
+            decoration: BoxDecoration(
+              border: Border.all(color: colors.outline),
+              borderRadius: const BorderRadius.all(radius),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                half(Icons.percent, false),
+                Container(width: 1, color: colors.outline),
+                half(Icons.schedule, true),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Whether the [SummaryBar]s under it show durations, rather than
+/// percentages.
+class SummaryUnit extends InheritedWidget {
+  const SummaryUnit({super.key, required this.durations, required super.child});
+
+  final bool durations;
+
+  /// Whether [context]'s bars show durations; percentages, with no
+  /// [SummaryUnit] over it.
+  static bool durationsOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<SummaryUnit>()?.durations ??
+      false;
+
+  @override
+  bool updateShouldNotify(SummaryUnit oldWidget) =>
+      durations != oldWidget.durations;
+}
+
 /// [rows] as bars split by share, one over another, with one legend
-/// under them: each share's percentage of each row's whole. A row's
+/// under them: each share's percentage of each row's whole, or, under a
+/// [SummaryUnit] with durations, its time, to the minute. A row's
 /// label, if it has one, goes before its bar. Time on nothing in
 /// particular is left empty.
 class SummaryBar extends StatelessWidget {
@@ -247,9 +367,15 @@ class SummaryBar extends StatelessWidget {
       ...labels.where((label) => colors[label] != null),
       ...labels.where((label) => colors[label] == null),
     ];
-    String percent(List<SummarySlice> slices, String label) {
+    final durations = SummaryUnit.durationsOf(context);
+    String amount(List<SummarySlice> slices, String label) {
       final slice = slices.where((s) => s.label == label).firstOrNull;
       if (slice == null) return '–';
+      if (durations) {
+        return formatDuration(
+          Duration(minutes: (slice.time.inSeconds / 60).round()),
+        )!;
+      }
       final total = slices.fold(0, (sum, s) => sum + s.time.inSeconds);
       return '${(100 * slice.time.inSeconds / total).round()}%';
     }
@@ -309,7 +435,7 @@ class SummaryBar extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    [for (final (_, slices) in rows) percent(slices, label)]
+                    [for (final (_, slices) in rows) amount(slices, label)]
                         .join(' · '),
                     style: small?.copyWith(fontWeight: FontWeight.w700),
                   ),
