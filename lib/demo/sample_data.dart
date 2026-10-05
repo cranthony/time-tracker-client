@@ -279,8 +279,9 @@ class SampleData {
     ];
     return GoalDigest(
       goalId: id,
-      eventsCounted: events.length,
-      withFacets: events.length,
+      // Older events than [events], which are only the latest few.
+      eventsCounted: 10,
+      withFacets: 10,
       activities: [
         for (final (label, count, back) in [
           ('dance', 6, 1),
