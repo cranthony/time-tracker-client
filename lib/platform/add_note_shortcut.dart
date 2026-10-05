@@ -38,6 +38,17 @@ class AddNoteShortcut {
     }
   }
 
+  /// Tells Android the New note dialog opened for a tap has its field
+  /// focused, so it can show the keyboard once its window has focus too.
+  Future<void> fieldReady() async {
+    if (!_enabled) return;
+    try {
+      await _channel.invokeMethod<void>('fieldReady');
+    } on PlatformException catch (e) {
+      debugPrint('Home screen widget unavailable: $e');
+    }
+  }
+
   void dispose() {
     if (_enabled) _channel.setMethodCallHandler(null);
     _taps.close();

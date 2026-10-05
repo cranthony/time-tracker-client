@@ -38,6 +38,7 @@ void main() {
     Future<void> Function()? onSignIn,
     Future<void> Function()? onSignOut,
     Stream<DateTime>? addNoteRequests,
+    VoidCallback? onAddNoteFieldFocused,
     String? version,
     OutboxStore<PendingNote>? store,
   }) {
@@ -55,6 +56,7 @@ void main() {
         onSignIn: onSignIn,
         onSignOut: onSignOut,
         addNoteRequests: addNoteRequests,
+        onAddNoteFieldFocused: onAddNoteFieldFocused,
         version: version,
       ),
     );
@@ -406,6 +408,35 @@ void main() {
     final saved = (await repo.uncompactedNotes()).single;
     expect(saved.description, 'Woke up');
     expect(saved.timestamp, tappedAt);
+    await taps.close();
+  });
+
+  screenTest('says when the home screen "+"\'s dialog has its field focused', (
+    tester,
+  ) async {
+    final taps = StreamController<DateTime>();
+    var focused = 0;
+    await tester.pumpWidget(
+      app(
+        InMemoryNotesRepository(),
+        addNoteRequests: taps.stream,
+        onAddNoteFieldFocused: () => focused++,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Not for the screen's own "+".
+    await tester.tap(find.byTooltip('Add note'));
+    await tester.pumpAndSettle();
+    expect(find.text('New note'), findsOneWidget);
+    expect(focused, 0);
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+
+    taps.add(today(7, 5));
+    await tester.pumpAndSettle();
+    expect(find.text('New note'), findsOneWidget);
+    expect(focused, 1);
     await taps.close();
   });
 

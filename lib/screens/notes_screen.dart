@@ -26,6 +26,7 @@ class NotesScreen extends StatefulWidget {
     this.onSignIn,
     this.onSignOut,
     this.addNoteRequests,
+    this.onAddNoteFieldFocused,
     this.version,
     DateTime Function()? clock,
   }) : clock = clock ?? DateTime.now;
@@ -42,6 +43,10 @@ class NotesScreen extends StatefulWidget {
   /// Each event opens the New note dialog, timed at the event's time: taps
   /// on the home screen "+" widget.
   final Stream<DateTime>? addNoteRequests;
+
+  /// Called when the New note dialog opened for one of [addNoteRequests]
+  /// has its field focused.
+  final VoidCallback? onAddNoteFieldFocused;
 
   /// The app's version, for the About dialog; null until it's known.
   final String? version;
@@ -78,7 +83,9 @@ class _NotesScreenState extends State<NotesScreen> {
   void initState() {
     super.initState();
     widget.outbox.addListener(_outboxChanged);
-    _addNoteRequests = widget.addNoteRequests?.listen((at) => _addNote(at: at));
+    _addNoteRequests = widget.addNoteRequests?.listen(
+      (at) => _addNote(at: at, onFieldFocused: widget.onAddNoteFieldFocused),
+    );
     _showCached();
     _load();
   }
@@ -154,12 +161,16 @@ class _NotesScreenState extends State<NotesScreen> {
     await _load();
   }
 
-  Future<void> _addNote({DateTime? at}) async {
+  Future<void> _addNote({DateTime? at, VoidCallback? onFieldFocused}) async {
     if (_dialogOpen) return;
     _dialogOpen = true;
     final Note? note;
     try {
-      note = await showAddNoteDialog(context, time: at);
+      note = await showAddNoteDialog(
+        context,
+        time: at,
+        onFieldFocused: onFieldFocused,
+      );
     } finally {
       _dialogOpen = false;
     }

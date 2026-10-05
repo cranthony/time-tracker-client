@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.8.1
+
+- The home screen "+" brings up the keyboard with the New note dialog
+  reliably. It used to miss now and then, when the app's window was
+  ready before the dialog's text box: the app asked for the keyboard
+  too early and didn't ask again. Now it waits until both are ready.
+
 ## 5.8.0
 
 - The Events page opens with a summary of the day above the timeline: a
