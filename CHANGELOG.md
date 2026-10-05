@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.12.0
+
+- On the Events page, the strip down an event's left edge is solid all
+  the way, no longer dashed where the event is drawn taller than it
+  lasts.
+- Where two events meet in the same color, or colors too close to tell
+  apart, a hairline divides them across the band, along the fill to the
+  events, and over their strips.
+
 ## 5.11.2
 
 - When the server fails after you sign in, the Notes, Events and Goals
