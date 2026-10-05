@@ -12,7 +12,10 @@ import '../outbox/pending_goal_save.dart';
 import '../outbox/save_error.dart';
 import '../services/goals_repository.dart';
 import '../services/mcp_client.dart';
+import '../services/traits_repository.dart';
 import 'goal_history_screen.dart';
+import 'goal_traits_screen.dart';
+import 'traits_screen.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/goal_summary_dialog.dart';
@@ -44,8 +47,10 @@ import '../widgets/status_message.dart';
 /// doing by it, and its color, from which each can be edited
 /// ([showGoalSummaryDialog]); tapping its ratings shows its
 /// history; its menu adds a sub-goal, or shows its measure, history or
-/// details: all its properties, which can be changed, its status included.
-/// "+" adds a top-level goal.
+/// details: all its properties, which can be changed, its status included
+/// -- and, for a goal rated by traits, its traits page
+/// ([GoalTraitsScreen]). "+" adds a top-level goal. With a [TraitsScope],
+/// the app bar opens the traits ([TraitsScreen]).
 class GoalsScreen extends StatefulWidget {
   const GoalsScreen({
     super.key,
@@ -415,6 +420,36 @@ class _GoalsScreenState extends State<GoalsScreen> {
     ),
   );
 
+  Map<String?, String> get _goalNames => {
+    for (final goal in _goals?.goals ?? const <Goal>[]) goal.id: goalName(goal),
+  };
+
+  /// [goal]'s traits page, for a goal rated by traits; null without a
+  /// [TraitsScope], or for any other goal.
+  VoidCallback? _traitsOf(Goal goal) {
+    final traits = TraitsScope.of(context);
+    if (traits == null ||
+        goal.measure?['kind'] != 'traits' ||
+        goal.id == null) {
+      return null;
+    }
+    return () => Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => GoalTraitsScreen(
+          goal: goal,
+          repository: traits,
+          goalNames: _goalNames,
+        ),
+      ),
+    );
+  }
+
+  void _openTraits(TraitsRepository traits) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => TraitsScreen(repository: traits, goalNames: _goalNames),
+    ),
+  );
+
   Future<void> _add({String? parentId}) async {
     // So the new sub-goal can be seen.
     if (parentId != null) setState(() => _expanded.add(parentId));
@@ -520,6 +555,12 @@ class _GoalsScreenState extends State<GoalsScreen> {
                     ),
                   if (ready)
                     _SummaryPicker(summary: _summary, onChanged: _setSummary),
+                  if (TraitsScope.of(context) case final traits? when ready)
+                    IconButton(
+                      tooltip: 'Traits',
+                      icon: const Icon(Icons.psychology_outlined),
+                      onPressed: () => _openTraits(traits),
+                    ),
                   AppMenu(
                     serverLabel: widget.serverLabel,
                     version: widget.version,
@@ -773,6 +814,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 : () => setState(() => _reordering = true),
             onAddSubGoal: () => _add(parentId: goal.id),
             onHistory: () => _history(goal),
+            onTraits: _traitsOf(goal),
           ),
         ],
       ],
@@ -925,6 +967,7 @@ class _GoalTile extends StatelessWidget {
     this.dragIndex,
     required this.onAddSubGoal,
     required this.onHistory,
+    this.onTraits,
     this.saving = false,
     this.failed,
     this.onRetry,
@@ -988,6 +1031,10 @@ class _GoalTile extends StatelessWidget {
 
   /// Shows its history: tapping its ratings, or "History" in its menu.
   final VoidCallback onHistory;
+
+  /// Shows its traits page, for a goal rated by traits: "Traits" in its
+  /// menu. Null for any other goal.
+  final VoidCallback? onTraits;
 
   @override
   Widget build(BuildContext context) {
@@ -1132,14 +1179,17 @@ class _GoalTile extends StatelessWidget {
               onSelected: (choice) => switch (choice) {
                 'sub' => onAddSubGoal(),
                 'history' => onHistory(),
+                'traits' => onTraits?.call(),
                 'measure' => onTap?.call(),
                 _ => onDetails(),
               },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'sub', child: Text('Add sub-goal')),
-                PopupMenuItem(value: 'measure', child: Text('Edit')),
-                PopupMenuItem(value: 'history', child: Text('History')),
-                PopupMenuItem(value: 'details', child: Text('Details')),
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'sub', child: Text('Add sub-goal')),
+                const PopupMenuItem(value: 'measure', child: Text('Edit')),
+                const PopupMenuItem(value: 'history', child: Text('History')),
+                if (onTraits != null)
+                  const PopupMenuItem(value: 'traits', child: Text('Traits')),
+                const PopupMenuItem(value: 'details', child: Text('Details')),
               ],
             ),
         ],
