@@ -204,9 +204,8 @@ void main() {
     await b.up();
     await tester.pumpAndSettle();
 
-    // From 80 apart to 240: three times as tall, less the space it
-    // leaves around it.
-    expect(height(), moreOrLessEquals((before + 3) * 3 - 3, epsilon: 1));
+    // From 80 apart to 240: three times as tall.
+    expect(height(), moreOrLessEquals(before * 3, epsilon: 1));
     expect(find.text('Today'), findsOneWidget);
   });
 

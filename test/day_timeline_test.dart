@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/widgets/color_picker.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 
 void main() {
@@ -124,6 +125,38 @@ void main() {
       height: 14,
     );
     expect(placed, [0.0, 100.0, 50.0, 120.0]);
+  });
+
+  group('eventColor', () {
+    const goals = {
+      'host': Goal(id: 'host', name: 'Host', effectiveColor: '#f4511e'),
+      'plain': Goal(id: 'plain', name: 'Plain'),
+    };
+
+    test("is its primary goal's color", () {
+      expect(
+        eventColor(
+          event('Dinner', at(18), at(20), goals: ['host'], priority: 1),
+          goals,
+        ),
+        const Color(0xFFF4511E),
+      );
+    });
+
+    test("is its priority's without a primary goal with a color", () {
+      for (final ids in [
+        <String>[],
+        ['plain', 'host'],
+        ['unknown'],
+      ]) {
+        expect(
+          eventColor(event('E', at(1), at(2), goals: ids, priority: 1), goals),
+          priorityColor(1),
+        );
+      }
+      // With none, the default priority's.
+      expect(eventColor(event('E', at(1), at(2)), goals), priorityColor(null));
+    });
   });
 
   group('DayTimeline', () {
