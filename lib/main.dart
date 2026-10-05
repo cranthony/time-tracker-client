@@ -219,6 +219,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         onSignIn: widget.auth?.signIn,
         onSignOut: widget.auth == null ? null : _signOut,
         addNoteRequests: _addNoteShortcut.taps,
+        onAddNoteFieldFocused: _addNoteShortcut.fieldReady,
         version: _version,
       ),
     );

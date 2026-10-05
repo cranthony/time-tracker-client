@@ -23,15 +23,31 @@ class MainActivity : FlutterActivity() {
      */
     private var launchAddNoteAt: Long? = null
 
-    /** Whether to show the keyboard when the window gains focus; see showKeyboardOnFocus. */
+    /**
+     * An add-note request waiting to show the keyboard, until the window
+     * has focus and the dialog's field is ready, in either order; see
+     * awaitKeyboard.
+     */
     private var keyboardWanted = false
+
+    /** Whether the New note dialog's field has focus; see "fieldReady". */
+    private var fieldReady = false
+
+    /** Gives up on a keyboard that never got both; see awaitKeyboard. */
+    private val giveUpOnKeyboard = Runnable {
+        if (keyboardWanted) {
+            Log.d(TAG, "gave up waiting to show the keyboard")
+            keyboardWanted = false
+            restoreSoftInputMode()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Not when re-created: that's the same launch, already handled.
         if (savedInstanceState == null && isAddNote(intent)) {
             Log.d(TAG, "onCreate: add note")
             launchAddNoteAt = System.currentTimeMillis()
-            showKeyboardOnFocus()
+            awaitKeyboard()
         }
         super.onCreate(savedInstanceState)
     }
@@ -45,6 +61,11 @@ class MainActivity : FlutterActivity() {
                 if (call.method == "takeLaunchRequest") {
                     result.success(launchAddNoteAt)
                     launchAddNoteAt = null
+                } else if (call.method == "fieldReady") {
+                    Log.d(TAG, "fieldReady")
+                    fieldReady = true
+                    showKeyboardIfReady()
+                    result.success(null)
                 } else {
                     result.notImplemented()
                 }
@@ -58,7 +79,7 @@ class MainActivity : FlutterActivity() {
         if (isAddNote(intent)) {
             Log.d(TAG, "onNewIntent: add note")
             // In front already, the dialog's field can show it by itself.
-            if (!hasWindowFocus()) showKeyboardOnFocus()
+            if (!hasWindowFocus()) awaitKeyboard()
             addNoteChannel?.invokeMethod("addNote", System.currentTimeMillis())
             return
         }
@@ -79,40 +100,55 @@ class MainActivity : FlutterActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         Log.d(TAG, "onWindowFocusChanged: $hasFocus")
-        if (hasFocus && keyboardWanted) {
-            keyboardWanted = false
-            // The New note dialog focuses its text field as it opens, but
-            // when the "+" launches or brings back the app, that's before
-            // the window has focus, and Android ignores keyboard requests
-            // from a window without it. So ask again now. Posted, because
-            // the window's views get input focus only after this returns.
-            // If the dialog isn't up yet, this does nothing, and the field
-            // shows the keyboard itself when it's focused.
-            window.decorView.post {
-                val view = currentFocus ?: return@post
-                Log.d(TAG, "showing the keyboard")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    view.windowInsetsController?.show(WindowInsets.Type.ime())
-                } else {
-                    getSystemService(InputMethodManager::class.java).showSoftInput(view, 0)
-                }
-            }
-            // Back to the manifest's mode once Android has acted on it.
-            window.decorView.postDelayed({
-                window.setSoftInputMode(SOFT_INPUT_STATE_UNSPECIFIED or SOFT_INPUT_ADJUST_RESIZE)
-            }, 1000)
-        }
+        if (hasFocus) showKeyboardIfReady()
     }
 
     /**
-     * Shows the keyboard when the window next gains focus. In the
-     * manifest's "unspecified" mode, Android hides the keyboard as a window
-     * gains focus, and on Android 16 that wins over the request made then
-     * (see onWindowFocusChanged); "always visible" has it show it instead.
+     * Shows the keyboard for an add-note request once both the window has
+     * focus and the dialog's field does. The field asks for the keyboard
+     * itself as it's focused, but when the "+" launches or brings back the
+     * app, that's often before the window has focus, and Android ignores
+     * keyboard requests from a window without it. Whichever comes second
+     * asks again here. Asking before the field is focused would be for
+     * the FlutterView with no text input behind it, so it waits for both.
+     *
+     * In the manifest's "unspecified" mode, Android hides the keyboard as
+     * a window gains focus, and on Android 16 that wins over a request
+     * made then; "always visible" stops that until the keyboard is shown.
      */
-    private fun showKeyboardOnFocus() {
+    private fun awaitKeyboard() {
         keyboardWanted = true
+        fieldReady = false
         window.setSoftInputMode(SOFT_INPUT_STATE_ALWAYS_VISIBLE or SOFT_INPUT_ADJUST_RESIZE)
+        // A slow cold start takes a few seconds; a dialog that never
+        // opens (one was open already) never says it's ready.
+        window.decorView.removeCallbacks(giveUpOnKeyboard)
+        window.decorView.postDelayed(giveUpOnKeyboard, 10_000)
+    }
+
+    private fun showKeyboardIfReady() {
+        if (!keyboardWanted || !fieldReady || !hasWindowFocus()) return
+        keyboardWanted = false
+        window.decorView.removeCallbacks(giveUpOnKeyboard)
+        // Posted, because just after the window gains focus its views get
+        // input focus only once onWindowFocusChanged returns.
+        window.decorView.post {
+            val view = currentFocus ?: return@post
+            Log.d(TAG, "showing the keyboard")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                view.windowInsetsController?.show(WindowInsets.Type.ime())
+            } else {
+                getSystemService(InputMethodManager::class.java).showSoftInput(view, 0)
+            }
+        }
+        // Back to the manifest's mode once Android has acted on it.
+        window.decorView.postDelayed({ restoreSoftInputMode() }, 1000)
+    }
+
+    private fun restoreSoftInputMode() {
+        // Unless another request came since.
+        if (keyboardWanted) return
+        window.setSoftInputMode(SOFT_INPUT_STATE_UNSPECIFIED or SOFT_INPUT_ADJUST_RESIZE)
     }
 
     /** Ignores relaunching from Recents, which replays the original intent. */
