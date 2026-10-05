@@ -4,15 +4,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
-import '../models/facets.dart';
+import '../models/facts.dart';
 import '../models/goal.dart';
 import '../models/note.dart';
+import '../models/person.dart';
 import '../models/recurrence.dart';
 import '../models/repeat.dart';
 import '../services/mcp_client.dart';
+import '../services/people_repository.dart';
+import '../services/traits_repository.dart';
 import 'color_picker.dart';
 import 'event_room.dart';
-import 'facets_dialog.dart';
+import 'facts_dialog.dart';
 import 'goals_picker.dart';
 import 'recurrence_dialog.dart';
 import 'repeat_editor.dart';
@@ -290,6 +293,49 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
 
   late final Future<List<Goal>>? _goalList = widget.loadGoals?.call();
 
+  /// Everyone's names, once the [PeopleScope] has them, for who it was
+  /// with and for; the locations', for where; and the traits', from the
+  /// [TraitsScope], for its judgments.
+  Map<String?, String> _personNames = {selfPersonId: defaultSelf.name};
+  Map<String?, String> _locationNames = const {};
+  Map<String?, String> _traitNames = const {};
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadPeople();
+  }
+
+  bool _peopleAsked = false;
+
+  Future<void> _loadPeople() async {
+    if (_peopleAsked) return;
+    _peopleAsked = true;
+    final repository = PeopleScope.of(context);
+    final traits = TraitsScope.of(context);
+    try {
+      final people = await repository?.people();
+      final locations = await repository?.locations();
+      final traitList = await traits?.traits(
+        statuses: const ['active', 'off', 'archived'],
+      );
+      if (!mounted) return;
+      setState(() {
+        if (people != null) {
+          _personNames = {for (final p in people.withSelf) p.id: personName(p)};
+        }
+        if (locations != null) {
+          _locationNames = {for (final l in locations) l.id: l.name};
+        }
+        if (traitList != null) {
+          _traitNames = {for (final t in traitList) t.id: t.name};
+        }
+      });
+    } catch (_) {
+      // Named by id, then.
+    }
+  }
+
   bool _saving = false;
   String? _error;
 
@@ -466,7 +512,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               ),
               _fixedTimeRow(context),
               _goalsRow(context),
-              if (widget.facets) _facetsRow(context),
+              if (widget.facets) _factsRow(context),
             ],
           ),
         ),
@@ -1165,7 +1211,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   }
 
   List<String> get _goalIds => [
-    for (final id in _value('goal_ids') as List? ?? const []) '$id',
+    for (final id in _value('action_ids') as List? ?? const []) '$id',
   ];
 
   /// Its goals, each after a diamond in the goal's color, as on the
@@ -1175,15 +1221,15 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     final editing = _editing == _Field.goals;
     final ids = _goalIds;
     final names = [
-      if (!_changes.containsKey('goal_ids'))
-        for (final name in widget.values['goal_names'] as List? ?? const [])
+      if (!_changes.containsKey('action_ids'))
+        for (final name in widget.values['action_names'] as List? ?? const [])
           name as String?,
     ];
     return _row(
       context,
       icon: Icons.flag_outlined,
       editing: editing,
-      changedKey: 'goal_ids',
+      changedKey: 'action_ids',
       onTap: editing || widget.loadGoals == null
           ? null
           : () => _open(_Field.goals),
@@ -1227,36 +1273,34 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     );
   }
 
-  /// Its facets in a line, and the evidence under them; tapped to edit
-  /// them in [showFacetsDialog].
-  Widget _facetsRow(BuildContext context) {
+  /// Who it was with and for, and where, in a line, and the notes on
+  /// each person under it, then how many judgments the assistant made of
+  /// it; tapped to edit the facts in [showFactsDialog].
+  Widget _factsRow(BuildContext context) {
     final theme = Theme.of(context);
-    final facets = Facets.fromJson(_value('facets'));
-    final empty = facets == null || facets.isEmpty;
-    final names = <String?, String>{
-      for (final MapEntry(:key, :value) in widget.goals.entries)
-        key: goalName(value),
-    };
+    final facts = Facts.fromJson(_value('facts'));
+    final judgments = judgmentsFromJson(widget.values['judgments']);
+    final empty = (facts == null || facts.isEmpty) && judgments.isEmpty;
     return _row(
       context,
       icon: Icons.auto_awesome_outlined,
-      changedKey: 'facets',
+      changedKey: 'facts',
       onTap: () async {
         setState(() => _editing = null);
-        final edited = await showFacetsDialog(
+        final edited = await showFactsDialog(
           context,
-          facets,
-          goals: widget.goals,
-          loadGoals: widget.loadGoals,
+          facts,
+          judgments: judgments,
+          traitNames: _traitNames,
         );
         if (edited == null || !mounted) return;
-        final was = Facets.fromJson(widget.values['facets']) ?? const Facets();
+        final was = Facts.fromJson(widget.values['facts']) ?? const Facts();
         setState(() {
           if (edited == was) {
-            _changes.remove('facets');
+            _changes.remove('facts');
           } else {
             // Null removes them: see clearableFields.
-            _changes['facets'] = edited.isEmpty ? null : edited.toJson();
+            _changes['facts'] = edited.isEmpty ? null : edited.toJson();
           }
         });
       },
@@ -1270,13 +1314,23 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(facets.describe(names), style: theme.textTheme.bodyLarge),
-                if (facets.why case final why?)
+                if (facts?.describe(_personNames, _locationNames)
+                    case final line? when line.isNotEmpty)
+                  Text(line, style: theme.textTheme.bodyLarge),
+                for (final MapEntry(:key, :value)
+                    in facts?.notes.entries ??
+                        const <MapEntry<String, String>>[])
                   Text(
-                    '“$why”',
+                    '${_personNames[key] ?? key}: $value',
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontStyle: FontStyle.italic,
                     ),
+                  ),
+                if (judgments.isNotEmpty)
+                  Text(
+                    '${judgments.length} judgment'
+                    '${judgments.length == 1 ? '' : 's'} by Claude',
+                    style: theme.textTheme.bodySmall,
                   ),
               ],
             ),
@@ -1306,7 +1360,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               GoalsPicker(
                 goals: list,
                 picked: picked,
-                onChanged: (ids) => _set('goal_ids', ids),
+                leavesOnly: true,
+                onChanged: (ids) => _set('action_ids', ids),
                 marker: (goal) => GoalDiamond(
                   color: parseColor(
                     goal.effectiveColor ?? goal.backgroundColor,

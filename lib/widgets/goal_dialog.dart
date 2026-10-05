@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../models/goal.dart';
 import 'properties_dialog.dart';
 
-/// What a goal's properties are edited as: everything `update_goal` can
-/// change.
+/// What an action's or group's properties are edited as, where they're
+/// rated: everything the sample data keeps.
 const _kinds = {
   'name': PropertyKind.text,
   'status': PropertyKind.choice,
@@ -18,16 +18,18 @@ const _kinds = {
 };
 
 const _hints = {
-  'parent_id': 'The goal this is part of; none for a top-level goal.',
-  'background_color': "With no color, the goal takes its priority's color.",
+  'parent_id': 'The group this is in; none for the top level.',
+  'background_color': "With no color, it takes its priority's color.",
   'priority':
-      'Events and sub-goals with no priority of their own take this one.',
+      'Events and the actions under it with no priority of their own take '
+      'this one.',
   'status':
-      "Only an active goal holds one of the calendar's event labels and is "
-      'rated; any other status keeps its history.',
+      "Only an active action holds one of the calendar's event labels and "
+      'is rated; a proposed one was made by Claude, for you to review. Any '
+      'other status keeps its history.',
   'measure':
-      "How its health is rated each day, 0-100, confirmed in the daily "
-      "reflection. With none, it's rated by its sub-goals' average.",
+      "Its target: how its health is rated each day, 0-100. With none, a "
+      "group is rated by the average of what's in it.",
 };
 
 /// What the overall goal's properties are edited as: it's always active
@@ -45,9 +47,26 @@ const _overallHints = {
       'top-level goals\'.',
 };
 
+/// What they're edited as where they aren't rated, as the server's
+/// `update_action` and `update_action_group` take them: a group has no
+/// status.
+Map<String, PropertyKind> _serverKinds({required bool group}) => {
+  for (final MapEntry(:key, :value) in _kinds.entries)
+    if (const {
+          'name',
+          'status',
+          'parent_id',
+          'background_color',
+          'priority',
+          'note',
+        }.contains(key) &&
+        !(group && key == 'status'))
+      key: value,
+};
+
 String? _needsName(Map<String, Object?> values) => switch (values['name']) {
   final String name when name.trim().isNotEmpty => null,
-  _ => 'A goal needs a name.',
+  _ => 'It needs a name.',
 };
 
 /// Shows every property of [goal], as the server sent it, under its name.
@@ -67,6 +86,7 @@ Future<GoalList?> showGoalDialog(
   Future<GoalList> Function(Goal goal, Map<String, Object?> changes)? save,
   Future<bool> Function(Map<String, Object?> changes)? confirmSave,
   Future<List<Goal>> Function()? goals,
+  bool rated = true,
 }) => showPropertiesDialog<GoalList>(
   context,
   title: (values) => switch (values['name']) {
@@ -84,7 +104,11 @@ Future<GoalList?> showGoalDialog(
     'measure': goal.measure,
     ...goal.properties,
   },
-  kinds: goal.isOverall ? _overallKinds : _kinds,
+  kinds: goal.isOverall
+      ? _overallKinds
+      : rated
+      ? _kinds
+      : _serverKinds(group: goal.isGroup),
   choices: const {'status': goalStatuses},
   required: const {'name', 'status'},
   hints: goal.isOverall ? {..._hints, ..._overallHints} : _hints,
@@ -95,34 +119,39 @@ Future<GoalList?> showGoalDialog(
   save: save == null || goal.id == null
       ? null
       : (changes) => save(goal, changes),
-  signInHint: 'Sign in again from the Goals page, then try again.',
+  signInHint: 'Sign in again from the Plan page, then try again.',
 );
 
-/// Shows the properties a new goal can start with, under [parentId] if
-/// given, and creates it with [create] on "Save". Returns what [create]
-/// returned (every goal, as they're to be shown now), or null if nothing
-/// was created. [fields] opens it with those already filled in: a goal
-/// that couldn't be created before.
+/// Shows the properties a new action -- or with [group], a group of them
+/// -- can start with, in group [parentId] if given, and creates it with
+/// [create] on "Save". Returns what [create] returned (every action, as
+/// they're to be shown now), or null if nothing was created. [fields]
+/// opens it with those already filled in: one that couldn't be created
+/// before.
 Future<GoalList?> showNewGoalDialog(
   BuildContext context, {
   required Future<GoalList> Function(Map<String, Object?> fields) create,
   String? parentId,
+  bool group = false,
   Map<String, Object?> fields = const {},
   Future<List<Goal>> Function()? goals,
+  bool rated = true,
 }) => showPropertiesDialog<GoalList>(
   context,
   title: (values) => switch (values['name']) {
     final String name when name.isNotEmpty => name,
-    _ => parentId == null ? 'New goal' : 'New sub-goal',
+    _ => group || fields['kind'] == 'group' ? 'New group' : 'New action',
   },
   properties: {
     'name': null,
     'parent_id': parentId,
     'priority': null,
-    'measure': null,
+    if (rated) 'measure': null,
     'note': null,
   },
-  kinds: _kinds,
+  kinds: rated
+      ? _kinds
+      : _serverKinds(group: group || fields['kind'] == 'group'),
   hints: _hints,
   goals: goals,
   validate: _needsName,
@@ -130,6 +159,7 @@ Future<GoalList?> showNewGoalDialog(
     for (final MapEntry(:key, :value) in fields.entries)
       if (key != 'parent_id' && value != null) key: value,
   },
-  save: (changes) => create({'parent_id': parentId, ...changes}),
-  signInHint: 'Sign in again from the Goals page, then try again.',
+  save: (changes) =>
+      create({'parent_id': parentId, if (group) 'kind': 'group', ...changes}),
+  signInHint: 'Sign in again from the Plan page, then try again.',
 );

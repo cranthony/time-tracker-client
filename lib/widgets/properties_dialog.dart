@@ -944,14 +944,16 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       (goals) => GoalField(
         goals: goals,
         value: _draft as String?,
-        title: 'Pick its parent goal',
+        title: 'Pick its group',
         noneLabel: 'None (top-level)',
         exclude: {
           // Not under itself,
           if (id is String) ...goalAndSubGoals(goals, id),
-          // nor under a goal put away, unless it's there already.
+          // nor under an action -- only groups hold anything -- or one put
+          // away, unless it's there already.
           for (final goal in goals)
-            if (const {'archived', 'deleted'}.contains(goal.status) &&
+            if ((!goal.isGroup ||
+                    const {'archived', 'deleted'}.contains(goal.status)) &&
                 goal.id != _draft)
               ?goal.id,
         },

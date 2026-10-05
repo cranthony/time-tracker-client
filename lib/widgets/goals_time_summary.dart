@@ -70,7 +70,7 @@ List<SummarySlice> visibleGoalShares(
         share.color,
         Duration(minutes: (share.time.inMinutes * scale).round()),
       ),
-    if (rest > 0) SummarySlice('Not on goals', null, Duration(minutes: rest)),
+    if (rest > 0) SummarySlice('Not on actions', null, Duration(minutes: rest)),
   ];
 }
 
@@ -159,7 +159,7 @@ class GoalsTimeSummary extends StatelessWidget {
       onGoals: onGoals,
     );
     return TimeSummary(
-      titles: ['Visible goals', if (byPriority != null) 'By priority'],
+      titles: ['Visible actions', if (byPriority != null) 'By priority'],
       initialPage: initialPage,
       collapsed: collapsed,
       onCollapsed: onCollapsed,

@@ -399,7 +399,11 @@ class _NotesScreenState extends State<NotesScreen> {
         DayHeader(day: latest.timestamp, today: widget.clock()),
         _CompactedNoteTile(note: latest),
       ],
-      if (status != null) _CompactionLine(at: status.lastCompaction),
+      if (status != null)
+        _CompactionLine(
+          at: status.lastCompaction,
+          judging: status.judgmentsPending != null,
+        ),
     ];
     if (rows.isEmpty) {
       return CustomScrollView(
@@ -471,10 +475,13 @@ class _CompactedNoteTile extends StatelessWidget {
 /// compacted: the note above it is in the calendar, those below aren't
 /// yet.
 class _CompactionLine extends StatelessWidget {
-  const _CompactionLine({required this.at});
+  const _CompactionLine({required this.at, this.judging = false});
 
   /// Null if notes have never been compacted.
   final DateTime? at;
+
+  /// Whether that compaction's judgments are still to be made.
+  final bool judging;
 
   @override
   Widget build(BuildContext context) {
@@ -486,7 +493,8 @@ class _CompactionLine extends StatelessWidget {
       final local = at.toLocal();
       label =
           'Last compacted ${strings.formatShortDate(local)}, '
-          '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
+          '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}'
+          '${judging ? ' · judgments pending' : ''}';
     } else {
       label = 'Notes not compacted yet';
     }

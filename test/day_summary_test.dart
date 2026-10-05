@@ -20,7 +20,7 @@ void main() {
     start: start,
     end: end,
     isCancelled: cancelled,
-    properties: {'effective_priority': ?priority, 'goal_ids': goals},
+    properties: {'effective_priority': ?priority, 'action_ids': goals},
   );
 
   /// Each share's label and hours.
@@ -94,7 +94,7 @@ void main() {
         'Work': 4,
         'Tofu': 2,
         'Top': 1.5,
-        '3 other goals': 2.5,
+        '3 other actions': 2.5,
         'No goal': 2,
         'Unscheduled': 12,
       });
@@ -107,7 +107,7 @@ void main() {
         'Cook': 3,
         // Under the overall goal, which is above every goal: top-level.
         'Top': 1.5,
-        '2 other goals': 1.5,
+        '2 other actions': 1.5,
         'No goal': 2,
         'Unscheduled': 12,
       });

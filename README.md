@@ -4,21 +4,39 @@ A Flutter app for the [Time Tracker MCP server](https://github.com/cranthony/tim
 For now it shows your **uncompacted notes**, by day, and has a **+** button to
 record a new one; tap a note to change its description or time, or to
 delete it. An **Events** page, from the bar at the bottom, shows a day's
-events from your calendar; tap one to see or edit it, including the goals
-it serves. Above them, a summary shows how the day's time is split by
-priority; swipe it to see the top goals, or the top-level goals. A **Goals** page lists your goals as a tree: tap one to see
-its measure and how it's doing by it, and to edit the measure; its menu
-adds a sub-goal, or opens its details to change anything else, or move
-it to another status:
-proposed, active, inactive, completed, archived or deleted. Only active
-goals take up one of the calendar's event labels; the rest keep their
-history. Proposed, active and inactive goals are shown to start with,
-and the filter at the top right picks others. The menu beside it picks what
-each goal shows under its name: its time spent, its measure, or its
-events' priority. A summary under the heading splits the last 24 hours
-and 7 days by the goals shown, or by priority, and its toggle shows
-time, there and under each goal, as percentages or durations.
-The Goals page's app bar opens the **Traits** goals can be rated by (Thoughtful, Reliable, Creative, Adventurous, Generous to start with): each one's latest score and recent trend, editable, with what's behind a score a tap away. A goal rated by traits has a page of its own, from its menu, with its traits' scores, what matters to them, its history of activities and places, and its events with what happened at each, which an event's details also show and edit. Each active goal shows its health — its latest confirmed rating, a small chart of recent ones, and how many periods have gone unassessed — and its menu opens its history. Later it will show the summaries the server
+events from your calendar; tap one to see or edit it, including the actions
+done at it and what happened: who it was with and for, where, and notes.
+Above them, a summary shows how the day's time is split by priority;
+swipe it to see the top actions, or the top-level groups. A **Plan** page
+has four sections, each folded away or opened from its heading:
+
+- **Traits** (how to be): each trait you define -- none is built in. A
+  trait is made of parts: chiefly *judgments*, which Claude makes of each
+  event, each with a rubric, a rating scale of your own, and the facts
+  it's judged from (actions, action history and location history, each
+  with a lookback, location, general notes, person notes); and counts,
+  time spent, continuity and follow-through, which can count one action
+  or group. Every part reads the events with someone, or those done for
+  them. Tap one to edit it.
+- **People** (who): Self, always, then everyone else, each with a context
+  that tells people of the same name apart, in any number of circles.
+  Tap a circle to see only its people; tap a person for their page: who
+  they are, which traits apply to them (every active one, or those
+  picked, with their own parts for any) and what matters to them.
+- **Locations** (where): the places events happen, each with a hint the
+  assistant recognizes it by.
+- **Actions** (do): what you do with your time, as a tree of groups --
+  names that roll up the actions in them -- with actions, the only thing
+  events are given, as its leaves. Only active actions take up one of the
+  calendar's event labels. An action Claude made is *proposed* until you
+  approve it.
+
+The sample data goes further than the server does so far: each action's
+target, health, history and time spent, and each person's relationship
+health (gray, disconnected, to green, healthy), trait scores, with
+Claude's judgments behind each, and history.
+
+Later it will show the summaries the server
 generates.
 
 It is built for Android and also runs on Windows and in Chrome. Chrome
@@ -42,14 +60,14 @@ needs no extra tooling, so it's the quickest way to try changes.
 
    If you skip `--dart-define-from-file=config.json` in the commands below,
    the app runs in an **offline demo mode** with in-memory notes. That's
-   handy for UI work. To fill it with sample notes, events and goals, see
+   handy for UI work. To fill it with sample notes, events and a plan, see
    [Try it with sample data](#try-it-with-sample-data).
 
 ## Try it with sample data
 
 To try the app on your own machine without a server or signing in, launch
 it with `SAMPLE_DATA=true`. It starts with a realistic day of
-[sample notes, events and goals](#sample-data), dated relative to today.
+[sample notes, events and a plan](#sample-data), dated relative to today.
 You need only Flutter and a clone of this repo (steps 1 and 2 above); skip
 `config.json`.
 
@@ -386,19 +404,24 @@ server.
 
 ### Sample data
 
-`lib/demo/sample_data.dart` is a realistic day of notes, events and goals
-for trying the app without a server. Its goals have every status,
-sub-goals, their own and inherited colors, and health ratings, including
-skipped periods, periods not yet assessed, and a proposed rating. It's
-dated relative to today, so it never goes stale. To run the app with it,
+`lib/demo/sample_data.dart` is a realistic day of notes, events and a plan
+for trying the app without a server. Its traits are made of facets and
+cadences; its people, Self and six others in five circles, run from
+healthy to disconnected, with Claude's judgments of their recent events
+behind each score; its actions are a tree of groups three levels deep,
+with every status, their own and inherited colors, and health ratings,
+including skipped periods, periods not yet assessed, and a proposed
+rating. It's dated relative to today, so it never goes stale. To run the app with it,
 see [Try it with sample data](#try-it-with-sample-data).
 
 ### Visual tests
 
 `test/visual` renders the main screens with the sample data, at a phone's
-size, in light and dark: Goals (with the status filter closed and open,
-and its time summary on each page and folded away), a goal's history,
-Events (with each page of its day summary, and folded away) and Notes.
+size, in light and dark: Plan (its traits, people and a circle,
+locations, a trait being edited, and its actions, with the status filter closed and open,
+and the time summary on each page and folded away), a person's page, an
+action's history, Events (with each page of its day summary, folded away,
+and what happened at an event) and Notes.
 It writes them, at 2x and with the real fonts (Roboto and Material
 Icons, from the Flutter SDK), to `build/screenshots/`. This is the quick
 way to see a UI change without running the app:

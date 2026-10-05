@@ -26,8 +26,8 @@ void main() {
     isCancelled: cancelled,
     properties: {
       'effective_priority': ?priority,
-      'goal_ids': goals,
-      'goal_names': ?names,
+      'action_ids': goals,
+      'action_names': ?names,
     },
   );
 

@@ -13,7 +13,9 @@ import '../models/goal.dart';
 /// the order they were picked, so the first stays the primary goal.
 ///
 /// With [single], it picks one goal, with no chips: tapping a goal (or
-/// Enter, for the top match) calls [onChanged] with just that one.
+/// Enter, for the top match) calls [onChanged] with just that one. With
+/// [leavesOnly], groups are shown, to find what's in them, but can't be
+/// picked: only actions can be given to an event.
 class GoalsPicker extends StatefulWidget {
   const GoalsPicker({
     super.key,
@@ -24,6 +26,7 @@ class GoalsPicker extends StatefulWidget {
     this.single = false,
     this.inactive = false,
     this.exclude = const {},
+    this.leavesOnly = false,
     this.autofocus = false,
     this.maxListHeight = 320,
   });
@@ -34,6 +37,7 @@ class GoalsPicker extends StatefulWidget {
   final bool single;
   final bool inactive;
   final Set<String> exclude;
+  final bool leavesOnly;
 
   /// Whether the search takes the keyboard at once.
   final bool autofocus;
@@ -164,6 +168,7 @@ class _GoalsPickerState extends State<GoalsPicker> {
               final words = _words(text);
               if (words.isEmpty) return;
               for (final goal in shown) {
+                if (widget.leavesOnly && goal.isGroup) continue;
                 if (_matches(goal, words)) {
                   _toggle(goal, !widget.picked.contains(goal.id));
                   setState(_search.clear);
@@ -293,6 +298,17 @@ class _GoalsPickerState extends State<GoalsPicker> {
             style: TextStyle(color: hint),
             overflow: TextOverflow.ellipsis,
           );
+    if (widget.leavesOnly && goal.isGroup) {
+      return ListTile(
+        key: ValueKey(goal.id!),
+        dense: true,
+        contentPadding: EdgeInsetsDirectional.only(start: 16.0 * depth + 12),
+        leading: Icon(Icons.folder_outlined, color: hint),
+        trailing: trailing,
+        title: title,
+        subtitle: under,
+      );
+    }
     if (widget.single) {
       return ListTile(
         key: ValueKey(goal.id!),

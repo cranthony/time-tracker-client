@@ -303,7 +303,7 @@ void main() {
       'end': localIsoTimestamp(at(30, 10, 30)),
       'description': 'Deep work',
       'location': null,
-      'goal_ids': ['g1'],
+      'action_ids': ['g1'],
       'min_duration': 'PT1H',
       'priority': 2,
       'is_fixed_time': false,
@@ -471,7 +471,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(repo.saved, [
         {
-          'goal_ids': ['g1', 'g2'],
+          'action_ids': ['g1', 'g2'],
         },
       ]);
     });
@@ -480,7 +480,7 @@ void main() {
         'confirm them', (tester) async {
       final inferred = Event.fromJson({
         ...work().toJson(),
-        'goals_from_label': true,
+        'actions_from_label': true,
       });
       final repo = _RecordingRepository([inferred]);
       await openWork(tester, repo);
@@ -503,7 +503,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(repo.saved, [
         {
-          'goal_ids': ['g1'],
+          'action_ids': ['g1'],
         },
       ]);
     });
@@ -514,18 +514,21 @@ void main() {
         final client = _RecurrenceClient();
         final event = Event.fromJson({
           ...work().toJson(),
-          'goals_from_label': true,
+          'actions_from_label': true,
         });
 
         await McpEventsRepository(client)
             .updateEvent(event, {'summary': 'Focus'});
-        expect((client.arguments!['event'] as Map)['goals_from_label'], isTrue);
+        expect(
+          (client.arguments!['event'] as Map)['actions_from_label'],
+          isTrue,
+        );
 
         await McpEventsRepository(client).updateEvent(event, {
-          'goal_ids': ['g1'],
+          'action_ids': ['g1'],
         });
         expect(
-          (client.arguments!['event'] as Map)['goals_from_label'],
+          (client.arguments!['event'] as Map)['actions_from_label'],
           isFalse,
         );
       },
@@ -597,8 +600,8 @@ void main() {
       'end': localIsoTimestamp(at(30, 10, 30)),
       'description': 'Deep work',
       'location': null,
-      'goal_ids': ['g1'],
-      'goal_names': ['Deep focus'],
+      'action_ids': ['g1'],
+      'action_names': ['Deep focus'],
       'priority': 2,
       'effective_priority': 2,
       'is_fixed_time': false,
@@ -815,7 +818,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(repo.saved, [
         {
-          'goal_ids': ['g1', 'g2'],
+          'action_ids': ['g1', 'g2'],
         },
       ]);
     });
@@ -1079,7 +1082,7 @@ void main() {
         'end': localIsoTimestamp(at(30, 15)),
         'summary': 'Gym',
         'priority': null,
-        'goal_ids': ['g1'],
+        'action_ids': ['g1'],
       });
       expect(client.name, 'create_event');
       expect(client.arguments, {
@@ -1087,7 +1090,7 @@ void main() {
           'start': localIsoTimestamp(at(30, 14)),
           'end': localIsoTimestamp(at(30, 15)),
           'summary': 'Gym',
-          'goal_ids': ['g1'],
+          'action_ids': ['g1'],
         },
         // Never moving other events to make room.
         'reallocate': false,
@@ -1559,7 +1562,7 @@ void main() {
       );
     }
 
-    testWidgets('opens on Notes, and switches to Events and Goals', (
+    testWidgets('opens on Notes, and switches to Events and Plan', (
       tester,
     ) async {
       await tester.pumpWidget(home());
@@ -1577,11 +1580,11 @@ void main() {
       await tester.tap(
         find.descendant(
           of: find.byType(NavigationBar),
-          matching: find.text('Goals'),
+          matching: find.text('Plan'),
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('No goals yet.\nTap + to add one.'), findsOneWidget);
+      expect(find.text('No actions yet.\nTap + to add one.'), findsOneWidget);
       outbox.stop();
     });
 

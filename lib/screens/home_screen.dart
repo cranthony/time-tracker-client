@@ -8,11 +8,11 @@ import '../services/goals_repository.dart';
 import '../services/events_place.dart';
 import '../services/events_repository.dart';
 import '../services/notes_repository.dart';
-import 'goals_screen.dart';
 import 'events_screen.dart';
 import 'notes_screen.dart';
+import 'plan_screen.dart';
 
-/// Notes, Events and Goals, with a bar at the bottom to switch between
+/// Notes, Events and Plan, with a bar at the bottom to switch between
 /// them. Notes comes first. Each loads afresh when it's switched to, so one sees
 /// a sign-in or sign-out done on the other.
 class HomeScreen extends StatefulWidget {
@@ -103,7 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
           version: widget.version,
           placeStore: _eventsPlace,
         ),
-        _Tab.goals => GoalsScreen(
+        _Tab.plan => PlanScreen(
           repository: widget.goalsRepository,
           outbox: widget.goalOutbox,
           serverLabel: widget.notesRepository.label,
@@ -127,9 +127,9 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Events',
           ),
           NavigationDestination(
-            icon: Icon(Icons.flag_outlined),
-            selectedIcon: Icon(Icons.flag),
-            label: 'Goals',
+            icon: Icon(Icons.explore_outlined),
+            selectedIcon: Icon(Icons.explore),
+            label: 'Plan',
           ),
         ],
       ),
@@ -137,4 +137,4 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-enum _Tab { notes, events, goals }
+enum _Tab { notes, events, plan }

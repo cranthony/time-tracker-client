@@ -11,7 +11,7 @@ import 'package:time_tracker_client/models/assessment.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/measure.dart';
 import 'package:time_tracker_client/screens/goal_history_screen.dart';
-import 'package:time_tracker_client/screens/goals_screen.dart';
+import 'package:time_tracker_client/screens/plan_screen.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/widgets/goals_picker.dart';
@@ -20,14 +20,14 @@ import 'package:time_tracker_client/widgets/priority_chip.dart';
 import 'package:time_tracker_client/widgets/properties_dialog.dart';
 
 void main() {
-  /// The Goals page over [repo], saving through [outbox], or an outbox of
-  /// its own.
+  /// The Plan page over [repo], saving through [outbox], or an outbox of
+  /// its own: its Actions section, with no traits or people to show.
   Widget app(
     GoalsRepository repo, {
     GoalOutbox? outbox,
     Future<void> Function()? onSignIn,
   }) => MaterialApp(
-    home: GoalsScreen(
+    home: PlanScreen(
       repository: repo,
       outbox:
           outbox ??
@@ -38,12 +38,17 @@ void main() {
   );
 
   InMemoryGoalsRepository tree() => InMemoryGoalsRepository([
-    const Goal(id: 'cook', name: 'Cooking', priority: 1),
+    const Goal(
+      id: 'cook',
+      name: 'Cooking',
+      priority: 1,
+      properties: {'kind': 'group'},
+    ),
     const Goal(id: 'tofu', name: 'Tofu tikka', parentId: 'cook'),
     const Goal(id: 'host', name: 'Hosting'),
     const Goal(id: 'idea', name: 'Idea', status: 'proposed'),
-    const Goal(id: 'old', name: 'Old habit', status: 'inactive'),
-    const Goal(id: 'done', name: 'Done thing', status: 'completed'),
+    const Goal(id: 'old', name: 'Old habit', status: 'proposed'),
+    const Goal(id: 'done', name: 'Done thing', status: 'archived'),
     const Goal(id: 'shelf', name: 'Shelved', status: 'archived'),
     const Goal(id: 'oops', name: 'Oops', status: 'deleted'),
   ]);
@@ -95,7 +100,7 @@ void main() {
   }
 
   test('Goal.fromJson reads a server from before statuses', () {
-    expect(Goal.fromJson({'id': 'g', 'active': false}).status, 'inactive');
+    expect(Goal.fromJson({'id': 'g', 'active': false}).status, 'archived');
     expect(Goal.fromJson({'id': 'g', 'active': true}).status, 'active');
     expect(Goal.fromJson({'id': 'g', 'status': 'archived'}).active, isFalse);
   });
@@ -105,7 +110,7 @@ void main() {
       'id': 'g1',
       'parent_id': 'g0',
       'name': 'Tofu tikka',
-      'status': 'completed',
+      'status': 'archived',
       'background_color': '#7bd148',
       'priority': 2,
       'path': 'Cooking › Tofu tikka',
@@ -117,59 +122,6 @@ void main() {
     expect(goal.properties['new_thing'], 'x');
   });
 
-  group('McpGoalsRepository', () {
-    test('lists goals of every status', () async {
-      final client = _FakeClient();
-      final goals = await McpGoalsRepository(client).goals();
-      expect(client.calls.single.$1, 'get_goals');
-      expect(client.calls.single.$2, {
-        'statuses': [
-          'proposed',
-          'active',
-          'inactive',
-          'completed',
-          'archived',
-          'deleted',
-        ],
-      });
-      expect(goals.goals.single.name, 'Cooking');
-      expect(goals.labelSlotsUsed, 12);
-    });
-
-    test('updateGoal names cleared fields', () async {
-      final client = _FakeClient();
-      await McpGoalsRepository(client).updateGoal(const Goal(id: 'g1'), {
-        'measure': null,
-        'name': 'Vegetarian cooking',
-      });
-      expect(client.calls.first.$1, 'update_goal');
-      expect(client.calls.first.$2, {
-        'goal': {'id': 'g1', 'name': 'Vegetarian cooking'},
-        'clear_fields': ['measure'],
-      });
-      // Listing them again is left until every change is saved.
-      expect(client.calls, hasLength(1));
-    });
-
-    test('createGoal leaves out what was never set, and finds its id in '
-        'the answer', () async {
-      final client = _FakeClient();
-      final id = await McpGoalsRepository(client)
-          .createGoal({'name': 'Cooking', 'parent_id': null});
-      expect(client.calls.single.$1, 'create_goal');
-      expect(client.calls.single.$2, {
-        'goal': {'name': 'Cooking'},
-      });
-      expect(id, 'g1');
-      // Not one of the same name under another goal.
-      expect(
-        await McpGoalsRepository(client)
-            .createGoal({'name': 'Cooking', 'parent_id': 'g0'}),
-        isNull,
-      );
-    });
-  });
-
   testWidgets('a server error after sign-in is shown, not the sign-in '
       'prompt', (tester) async {
     final repo = _SignInGoalsRepository(tree())
@@ -178,17 +130,17 @@ void main() {
       app(repo, onSignIn: () async => repo.signedIn = true),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Sign in to see your goals.'), findsOneWidget);
+    expect(find.text('Sign in to see your plan.'), findsOneWidget);
 
     await tester.tap(find.text('Sign in'));
     await tester.pumpAndSettle();
-    expect(find.text('Sign in to see your goals.'), findsNothing);
-    expect(find.textContaining('Could not load goals.'), findsOneWidget);
+    expect(find.text('Sign in to see your plan.'), findsNothing);
+    expect(find.textContaining('Could not load actions.'), findsOneWidget);
     expect(find.textContaining('token revoked'), findsOneWidget);
   });
 
   testWidgets(
-    'lists proposed, active and inactive goals as a tree, with the label count',
+    'lists proposed and active actions as a tree, with the label count',
     (tester) async {
       await tester.pumpWidget(app(tree()));
       await tester.pumpAndSettle();
@@ -200,7 +152,7 @@ void main() {
       expect(find.textContaining('sub-goal'), findsNothing);
       // Its priority, after its name.
       expect(find.text('P1'), findsOneWidget);
-      expect(find.text('Proposed'), findsWidgets);
+      expect(find.text('Proposed by Claude: review it'), findsWidgets);
       expect(find.text('3 of 200 labels in use'), findsOneWidget);
       // Only a goal with sub-goals can be expanded.
       expect(bandsOf(tester, 'Hosting').shape, GoalBandShape.plain);
@@ -227,45 +179,48 @@ void main() {
     },
   );
 
-  testWidgets('the filter at the top right picks which statuses are shown', (
-    tester,
-  ) async {
+  testWidgets("the filter in the Actions heading picks which statuses are "
+      'shown', (tester) async {
     await tester.pumpWidget(app(tree()));
     await tester.pumpAndSettle();
     Badge badge() => tester.widget<Badge>(
       find.descendant(
-        of: find.byTooltip('Show goals that are…'),
+        of: find.byTooltip('Show actions that are…'),
         matching: find.byType(Badge),
       ),
     );
     expect(badge().isLabelVisible, isFalse);
 
-    await tester.tap(find.byTooltip('Show goals that are…'));
+    await tester.tap(find.byTooltip('Show actions that are…'));
     await tester.pumpAndSettle();
-    for (final status in ['Proposed', 'Active', 'Inactive']) {
+    for (final status in ['Proposed', 'Active']) {
       expect(ticked(tester, status), isTrue);
     }
+    expect(ticked(tester, 'Archived'), isFalse);
     expect(ticked(tester, 'Deleted'), isFalse);
+    // Actions are never inactive or completed.
+    expect(option('Inactive'), findsNothing);
+    expect(option('Completed'), findsNothing);
 
     // It stays open while several are ticked.
-    await tester.tap(option('Inactive'));
+    await tester.tap(option('Proposed'));
     await tester.pumpAndSettle();
-    await tester.tap(option('Completed'));
+    await tester.tap(option('Archived'));
     await tester.pumpAndSettle();
     await tester.tap(option('Deleted'));
     await tester.pumpAndSettle();
-    expect(ticked(tester, 'Inactive'), isFalse);
+    expect(ticked(tester, 'Proposed'), isFalse);
     expect(ticked(tester, 'Deleted'), isTrue);
     expect(shownNames(tester), contains('Done thing'));
     expect(shownNames(tester), contains('Oops'));
     expect(shownNames(tester), isNot(contains('Old habit')));
     expect(badge().isLabelVisible, isTrue);
 
-    for (final status in ['Proposed', 'Active', 'Completed', 'Deleted']) {
+    for (final status in ['Active', 'Archived', 'Deleted']) {
       await tester.tap(option(status));
       await tester.pumpAndSettle();
     }
-    expect(find.text('No goals with these statuses.'), findsOneWidget);
+    expect(find.text('No actions with these statuses.'), findsOneWidget);
   });
 
   /// Opens [name]'s details, and picks [status] for its status.
@@ -292,14 +247,14 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets("a goal's status is changed in its details, asking first to "
-      'move an active one', (tester) async {
+  testWidgets("an action's status is changed in its details, asking first "
+      'to move an active one', (tester) async {
     final repo = tree();
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
-    await pickStatus(tester, 'Hosting', 'Completed');
-    expect(find.text('Move Hosting to completed?'), findsOneWidget);
+    await pickStatus(tester, 'Hosting', 'Archived');
+    expect(find.text('Move Hosting to archived?'), findsOneWidget);
     await tester.tap(find.text('Keep it'));
     await tester.pumpAndSettle();
     // Still open, with the change kept, to save or revert.
@@ -311,13 +266,13 @@ void main() {
 
     await tester.tap(find.text('Save 1 change'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, 'Completed'));
+    await tester.tap(find.widgetWithText(TextButton, 'Archived'));
     await tester.pumpAndSettle();
-    // Completed goals aren't shown until asked for.
+    // Archived actions aren't shown until asked for.
     expect(shownNames(tester), isNot(contains('Hosting')));
     expect(
       (await repo.goals()).goals.firstWhere((g) => g.id == 'host').status,
-      'completed',
+      'archived',
     );
   });
 
@@ -351,18 +306,37 @@ void main() {
     );
   });
 
-  testWidgets("a goal's menu adds a sub-goal, or shows its history or "
-      'details', (tester) async {
-    await tester.pumpWidget(app(tree()));
+  testWidgets("a group's menu adds to it; an action's shows its history or "
+      "details; a proposed one's approves it", (tester) async {
+    final repo = tree();
+    await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
+    Future<List<String?>> menuOf(String name) async {
+      await tester.tap(find.byTooltip('More for $name'));
+      await tester.pumpAndSettle();
+      return tester
+          .widgetList<PopupMenuItem<String>>(find.byType(PopupMenuItem<String>))
+          .map((i) => (i.child as Text).data)
+          .toList();
+    }
 
-    await tester.tap(find.byTooltip('More for Hosting'));
+    expect(await menuOf('Cooking'), [
+      'Add action',
+      'Add group',
+      'Edit',
+      'History',
+      'Details',
+    ]);
+    await tester.tapAt(Offset.zero);
     await tester.pumpAndSettle();
-    final items = tester
-        .widgetList<PopupMenuItem<String>>(find.byType(PopupMenuItem<String>))
-        .map((i) => (i.child as Text).data)
-        .toList();
-    expect(items, ['Add sub-goal', 'Edit', 'History', 'Details']);
+    expect(await menuOf('Idea'), ['Approve', 'Edit', 'History', 'Details']);
+    await tester.tap(find.text('Approve'));
+    await tester.pumpAndSettle();
+    expect(
+      (await repo.goals()).goals.firstWhere((g) => g.id == 'idea').status,
+      'active',
+    );
+    expect(await menuOf('Hosting'), ['Edit', 'History', 'Details']);
 
     await tester.tap(find.text('Details'));
     await tester.pumpAndSettle();
@@ -395,23 +369,23 @@ void main() {
     expect(shownNames(tester), isNot(contains('Tofu tikka')));
   });
 
-  testWidgets('adds a sub-goal under the goal whose menu it came from', (
+  testWidgets('adds an action to the group whose menu it came from', (
     tester,
   ) async {
     final repo = tree();
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('More for Hosting'));
+    await tester.tap(find.byTooltip('More for Cooking'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add sub-goal'));
+    await tester.tap(find.text('Add action'));
     await tester.pumpAndSettle();
-    expect(find.text('New sub-goal'), findsOneWidget);
-    // Its parent, by name.
+    expect(find.text('New action'), findsOneWidget);
+    // Its group, by name.
     expect(
       find.descendant(
         of: find.byType(AlertDialog),
-        matching: find.text('Hosting'),
+        matching: find.text('Cooking'),
       ),
       findsOneWidget,
     );
@@ -419,24 +393,51 @@ void main() {
     // Saving with no name is refused.
     await tester.tap(find.text('(none)').first);
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'Weekly dinners');
+    await tester.enterText(find.byType(TextField), 'Make curry');
     await tester.tap(find.byTooltip('Keep edit'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save 1 change'));
     await tester.pumpAndSettle();
 
     final added = (await repo.goals()).goals.firstWhere(
-      (g) => g.name == 'Weekly dinners',
+      (g) => g.name == 'Make curry',
     );
-    expect(added.parentId, 'host');
-    // Its parent is expanded, so it's in sight; Cooking stays collapsed.
+    expect(added.parentId, 'cook');
+    expect(added.isGroup, isFalse);
+    // Its group is expanded, so it's in sight.
     expect(shownNames(tester), [
       'Cooking',
+      'Tofu tikka',
+      'Make curry',
       'Hosting',
-      'Weekly dinners',
       'Idea',
       'Old habit',
     ]);
+  });
+
+  testWidgets('adds a group from the Actions heading', (tester) async {
+    final repo = tree();
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Add an action or group'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New group'));
+    await tester.pumpAndSettle();
+    expect(find.text('New group'), findsOneWidget);
+    await tester.tap(find.text('(none)').first);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Music');
+    await tester.tap(find.byTooltip('Keep edit'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save 1 change'));
+    await tester.pumpAndSettle();
+
+    final added = (await repo.goals()).goals.firstWhere(
+      (g) => g.name == 'Music',
+    );
+    expect(added.isGroup, isTrue);
+    expect(find.text('Empty group'), findsOneWidget);
   });
 
   /// Lets a second go by, a frame at a time: what pumpAndSettle does,
@@ -463,9 +464,12 @@ void main() {
     await settle(tester);
   }
 
-  /// Adds a top-level goal named [name] from the "+" button.
+  /// Adds a top-level action named [name] from the "+" in the Actions
+  /// heading.
   Future<void> addGoal(WidgetTester tester, String name) async {
-    await tester.tap(find.byTooltip('Add goal'));
+    await tester.tap(find.byTooltip('Add an action or group'));
+    await settle(tester);
+    await tester.tap(find.text('New action'));
     await settle(tester);
     await tester.tap(find.text('(none)').first);
     await settle(tester);
@@ -681,9 +685,11 @@ void main() {
     await tester.pumpWidget(app(tree()));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Add goal'));
+    await tester.tap(find.byTooltip('Add an action or group'));
     await tester.pumpAndSettle();
-    expect(find.text('New goal'), findsOneWidget);
+    await tester.tap(find.text('New action'));
+    await tester.pumpAndSettle();
+    expect(find.text('New action'), findsOneWidget);
     // Change something other than the name, then try to save.
     await tester.tap(find.text('(none)').at(2)); // priority
     await tester.pumpAndSettle();
@@ -692,7 +698,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save 1 change'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('A goal needs a name.'), findsOneWidget);
+    expect(find.textContaining('It needs a name.'), findsOneWidget);
   });
 
   testWidgets('the time spent on each goal is shown, as of the last '
@@ -755,7 +761,7 @@ void main() {
     );
 
     Future<void> pick(WidgetTester tester, String label) async {
-      await tester.tap(find.byTooltip('Show under each goal…'));
+      await tester.tap(find.byTooltip('Show under each action…'));
       await tester.pumpAndSettle();
       await tester.tap(
         find.widgetWithText(RadioMenuButton<GoalSummary>, label),
@@ -776,22 +782,20 @@ void main() {
       await tester.pumpWidget(app(goals()));
       await tester.pumpAndSettle();
 
-      // Its measure is only under "Measure".
+      // Its target is only under "Target".
       expect(find.text('9h in 24h · 28h in 7d'), findsOneWidget);
       expect(find.text('10h in 7d'), findsOneWidget);
       expect(find.textContaining('per 7 days'), findsNothing);
     });
 
-    testWidgets('can be its measure', (tester) async {
+    testWidgets('can be its target', (tester) async {
       await tester.pumpWidget(app(goals()));
       await tester.pumpAndSettle();
 
-      await pick(tester, 'Measure');
-      // Its measure moves up, and isn't said twice; without one, nothing.
+      await pick(tester, 'Target');
+      // Its target moves up, and isn't said twice; without one, nothing.
       expect(find.text('10h per 7 days'), findsOneWidget);
-      // The Overall card's too: it's rated by the top-level goals'.
       expect(find.textContaining('in 24h'), findsNothing);
-      expect(find.text("Average of the top-level goals'"), findsOneWidget);
       expect(
         find.descendant(
           of: find.widgetWithText(ListTile, 'Idea'),
@@ -799,8 +803,6 @@ void main() {
         ),
         findsNothing,
       );
-
-      expect(find.text("Average of the top-level goals'"), findsOneWidget);
     });
 
     testWidgets("is in percentages, as the time summary's toggle says", (
@@ -813,15 +815,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('37.5% of 24h · 16.7% of 7d'), findsOneWidget);
       expect(find.text('6% of 7d'), findsOneWidget);
-      // The Overall card's too, without its measure.
-      expect(
-        find.text('37.5% of 24h · 22.6% of 7d on the goals shown'),
-        findsOneWidget,
-      );
-      expect(find.text("Average of the top-level goals'"), findsNothing);
 
-      // Under "Measure", the toggle changes only the summary.
-      await pick(tester, 'Measure');
+      // Under "Target", the toggle changes only the summary.
+      await pick(tester, 'Target');
       expect(find.textContaining('of 24h'), findsNothing);
       expect(find.text('10h per 7 days'), findsOneWidget);
 
@@ -834,7 +830,7 @@ void main() {
     testWidgets('is kept for next time', (tester) async {
       await tester.pumpWidget(app(goals()));
       await tester.pumpAndSettle();
-      await pick(tester, 'Measure');
+      await pick(tester, 'Target');
       await tester.tap(find.byTooltip('Show percentages'));
       await tester.pumpAndSettle();
 
@@ -872,7 +868,7 @@ void main() {
         minutes7d: 1500,
       ),
       const Goal(id: 'cook', name: 'Cooking'),
-      const Goal(id: 'old', name: 'Old habit', status: 'inactive'),
+      const Goal(id: 'old', name: 'Old habit', status: 'proposed'),
     ]);
 
     Finder inDialog(Finder finder) =>
@@ -932,8 +928,8 @@ void main() {
       expect(find.byType(GoalHistoryScreen), findsOneWidget);
     });
 
-    testWidgets("says how a goal without a measure is rated, and that an "
-        "inactive one isn't", (tester) async {
+    testWidgets("says how one without a measure is rated, and that a "
+        "proposed one isn't", (tester) async {
       await tester.pumpWidget(app(measured()));
       await tester.pumpAndSettle();
 
@@ -943,14 +939,15 @@ void main() {
       expect(
         inDialog(
           find.text(
-            "It's rated each day as the average of its sub-goals' ratings.",
+            "It's rated each day as the average of the ratings of what's in "
+            'it.',
           ),
         ),
         findsOneWidget,
       );
       expect(inDialog(find.text('Add a measure')), findsOneWidget);
       expect(
-        inDialog(find.text('Only active goals are rated.')),
+        inDialog(find.text('Only active actions are rated.')),
         findsOneWidget,
       );
     });
@@ -1055,8 +1052,8 @@ void main() {
       expect(find.text('Remove the measure?'), findsOneWidget);
       expect(
         find.text(
-          "Make an app will be rated by the average of its sub-goals' "
-          'ratings instead. Its past ratings stay.',
+          'Make an app will be rated by the average of the ratings of '
+          "what's in it instead. Its past ratings stay.",
         ),
         findsOneWidget,
       );
@@ -1167,28 +1164,6 @@ void main() {
       expect(inDialog(find.text('Clear')), findsOneWidget);
     });
 
-    testWidgets("the overall goal's has neither", (tester) async {
-      await tester.pumpWidget(
-        app(
-          InMemoryGoalsRepository([
-            const Goal(
-              id: overallGoalId,
-              name: 'Overall',
-              measure: {'kind': 'subjective'},
-            ),
-            const Goal(id: 'cook', name: 'Cooking', priority: 1),
-          ]),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Overall'));
-      await tester.pumpAndSettle();
-      expect(inDialog(find.text('Your rating')), findsWidgets);
-      expect(inDialog(find.byType(PriorityChip)), findsNothing);
-      expect(inDialog(find.text('Color')), findsNothing);
-    });
-
     testWidgets('sets a priority, then clears it to inherit again', (
       tester,
     ) async {
@@ -1283,8 +1258,8 @@ void main() {
 
     await tester.longPress(find.text('Hosting'));
     await tester.pumpAndSettle();
-    expect(find.text('Reorder goals'), findsOneWidget);
-    expect(find.byTooltip('Add goal'), findsNothing);
+    expect(find.text('Reorder actions'), findsOneWidget);
+    expect(find.byTooltip('Add an action or group'), findsNothing);
 
     // Hosting, dragged above Cooking.
     final handle = find.byTooltip('Drag to move Hosting');
@@ -1303,54 +1278,59 @@ void main() {
 
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
-    expect(find.text('Goals'), findsOneWidget);
+    expect(find.text('Plan'), findsOneWidget);
     expect(find.byTooltip('More for Hosting'), findsOneWidget);
   });
 
-  testWidgets(
-    "a goal's parent is picked from the tree, and shown as its path",
-    (tester) async {
-      final repo = tree();
-      await tester.pumpWidget(app(repo));
-      await tester.pumpAndSettle();
+  testWidgets("an action's group is picked from the groups, and shown as "
+      'its path', (tester) async {
+    final repo = InMemoryGoalsRepository([
+      const Goal(id: 'cook', name: 'Cooking', properties: {'kind': 'group'}),
+      const Goal(
+        id: 'indian',
+        name: 'Indian',
+        parentId: 'cook',
+        properties: {'kind': 'group'},
+      ),
+      const Goal(id: 'tofu', name: 'Tofu tikka', parentId: 'indian'),
+      const Goal(id: 'host', name: 'Hosting'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
 
-      await openDetails(tester, 'Hosting');
-      final dialog = find.byType(AlertDialog);
-      final label = find.descendant(
-        of: dialog,
-        matching: find.text('parent_id'),
-      );
-      final row = find.ancestor(of: label, matching: find.byType(PropertyRow));
-      await tester.tap(find.descendant(of: row, matching: find.text('(none)')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byType(GoalField));
-      await tester.pumpAndSettle();
-      final picker = find.byType(GoalsPicker);
-      // Not under itself.
-      expect(
-        find.descendant(of: picker, matching: find.text('Hosting')),
-        findsNothing,
-      );
-      // Under its parent, until opened.
-      expect(find.text('Tofu tikka'), findsNothing);
-      await tester.tap(find.byTooltip('Show 1 sub-goal'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Tofu tikka'));
-      await tester.pumpAndSettle();
-      expect(picker, findsNothing);
-      // Picked: its whole path.
-      expect(find.text('Cooking › Tofu tikka'), findsOneWidget);
-      await tester.tap(find.byTooltip('Keep edit'));
-      await tester.pumpAndSettle();
-      expect(
-        find.descendant(
-          of: dialog,
-          matching: find.text('Cooking › Tofu tikka'),
-        ),
-        findsOneWidget,
-      );
-    },
-  );
+    await openDetails(tester, 'Hosting');
+    final dialog = find.byType(AlertDialog);
+    final label = find.descendant(of: dialog, matching: find.text('parent_id'));
+    final row = find.ancestor(of: label, matching: find.byType(PropertyRow));
+    await tester.tap(find.descendant(of: row, matching: find.text('(none)')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(GoalField));
+    await tester.pumpAndSettle();
+    final picker = find.byType(GoalsPicker);
+    // Not itself, nor an action.
+    expect(
+      find.descendant(of: picker, matching: find.text('Hosting')),
+      findsNothing,
+    );
+    expect(find.text('Tofu tikka'), findsNothing);
+    // A group in a group, once its group's opened.
+    expect(find.text('Indian'), findsNothing);
+    await tester.tap(find.byTooltip('Show 1 sub-goal'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Indian'));
+    await tester.pumpAndSettle();
+    expect(picker, findsNothing);
+    // Picked: its whole path.
+    expect(find.text('Cooking › Indian'), findsOneWidget);
+    await tester.tap(find.byTooltip('Keep edit'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save 1 change'));
+    await tester.pumpAndSettle();
+    expect(
+      (await repo.goals()).goals.firstWhere((g) => g.id == 'host').parentId,
+      'indian',
+    );
+  });
 
   testWidgets("a goal can't be put under itself or its sub-goals, and can "
       'be made top-level', (tester) async {
@@ -1371,22 +1351,17 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byType(GoalField));
     await tester.pumpAndSettle();
-    // Not a goal put away; inactive ones, though.
+    // Only a group: Cooking, its own.
     final picker = find.byType(GoalsPicker);
+    for (final action in ['Shelved', 'Oops', 'Old habit', 'Hosting']) {
+      expect(
+        find.descendant(of: picker, matching: find.text(action)),
+        findsNothing,
+        reason: action,
+      );
+    }
     expect(
-      find.descendant(of: picker, matching: find.text('Shelved')),
-      findsNothing,
-    );
-    expect(
-      find.descendant(of: picker, matching: find.text('Oops')),
-      findsNothing,
-    );
-    expect(
-      find.descendant(of: picker, matching: find.text('Old habit')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: picker, matching: find.text('Done thing')),
+      find.descendant(of: picker, matching: find.text('Cooking')),
       findsOneWidget,
     );
     // Searched by path; not itself.
@@ -1439,49 +1414,6 @@ void main() {
         of: find.byType(GoalsPicker),
         matching: find.text('Cooking'),
       ),
-      findsNothing,
-    );
-  });
-
-  testWidgets('a goal put away is still listed as the parent it is', (
-    tester,
-  ) async {
-    final repo = InMemoryGoalsRepository([
-      const Goal(id: 'shelf', name: 'Shelved', status: 'archived'),
-      const Goal(id: 'leaf', name: 'Leaf', parentId: 'shelf'),
-      const Goal(id: 'oops', name: 'Oops', status: 'deleted'),
-    ]);
-    await tester.pumpWidget(app(repo));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Show goals that are…'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(CheckboxMenuButton, 'Archived'));
-    await tester.pumpAndSettle();
-    await tester.tapAt(Offset.zero);
-    await tester.pumpAndSettle();
-    await swipe(tester, 'Shelved');
-    await openDetails(tester, 'Leaf');
-    final row = find.ancestor(
-      of: find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.text('parent_id'),
-      ),
-      matching: find.byType(PropertyRow),
-    );
-    await tester.tap(
-      find.descendant(of: row, matching: find.byType(InkWell)).first,
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(GoalField));
-    await tester.pumpAndSettle();
-    final picker = find.byType(GoalsPicker);
-    expect(
-      find.descendant(of: picker, matching: find.text('Shelved')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: picker, matching: find.text('Oops')),
       findsNothing,
     );
   });
@@ -1623,7 +1555,7 @@ void main() {
             Goal.fromJson({
               'id': 'idle',
               'name': 'Idle',
-              'status': 'inactive',
+              'status': 'proposed',
               'background_color': '#abcdef',
             }),
           ]),
@@ -1638,7 +1570,7 @@ void main() {
         own,
         const GoalBand(color: Color(0xFF123456), dashed: true),
       ]);
-      // An inactive goal's is grey, and dashed.
+      // A proposed action's is grey, and dashed.
       final idle = bandsOf(tester, 'Idle').bands.single;
       expect(idle.dashed, isTrue);
       expect(idle.color, isNot(const Color(0xFFABCDEF)));
@@ -1669,19 +1601,6 @@ void main() {
     });
     expect(goals.asOf, DateTime.utc(2026, 10, 3, 1, 5));
     expect(GoalList.fromJson({'goals': []}).asOf, isNull);
-  });
-
-  test("McpGoalsRepository reads a goal's history", () async {
-    final client = _HistoryClient();
-    final history = await McpGoalsRepository(client)
-        .history(const Goal(id: 'g1'));
-    expect(client.arguments, {
-      'goal_ids': ['g1'],
-    });
-    expect(history.map((a) => (a.day, a.rating, a.confirmed)), [
-      ('2026-09-29', 60, true),
-      ('2026-09-30', null, false),
-    ]);
   });
 
   testWidgets("a rated goal shows its health, trend and what's overdue", (
@@ -1801,7 +1720,8 @@ void main() {
           staleDays: 0,
         ),
         const Goal(id: 'cook', name: 'Cooking'),
-        const Goal(id: 'old', name: 'Old habit', status: 'inactive'),
+        const Goal(id: 'old', name: 'Old habit', status: 'proposed'),
+        const Goal(id: 'music', name: 'Music', properties: {'kind': 'group'}),
       ],
       {
         overallGoalId: [
@@ -1815,9 +1735,9 @@ void main() {
       DateTime(2026, 10, 2, 21),
       const [
         StatusMinutes(statuses: {'active'}, minutes24h: 60, minutes7d: 600),
-        StatusMinutes(statuses: {'inactive'}, minutes24h: 30, minutes7d: 90),
+        StatusMinutes(statuses: {'proposed'}, minutes24h: 30, minutes7d: 90),
         StatusMinutes(
-          statuses: {'active', 'inactive'},
+          statuses: {'active', 'proposed'},
           minutes24h: 0,
           minutes7d: 45,
         ),
@@ -1841,9 +1761,9 @@ void main() {
                     minutes24h: 60,
                     minutes7d: 600,
                   ),
-                  // Its inactive sub-goal's.
+                  // Its proposed action's.
                   StatusMinutes(
-                    statuses: {'inactive'},
+                    statuses: {'proposed'},
                     minutes24h: 30,
                     minutes7d: 90,
                   ),
@@ -1859,9 +1779,9 @@ void main() {
 
       expect(find.text('1h 30m in 24h · 11h 30m in 7d'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Show goals that are…'));
+      await tester.tap(find.byTooltip('Show actions that are…'));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(CheckboxMenuButton, 'Inactive'));
+      await tester.tap(find.widgetWithText(CheckboxMenuButton, 'Proposed'));
       await tester.pumpAndSettle();
 
       expect(find.text('1h in 24h · 10h in 7d'), findsOneWidget);
@@ -1895,69 +1815,14 @@ void main() {
       expect(GoalList.fromJson({'goals': []}).timeFor({'active'}), isNull);
     });
 
-    testWidgets('sits above the tree with the time on the goals shown, '
-        'which follows the filter', (tester) async {
+    testWidgets("isn't listed among the actions", (tester) async {
       await tester.pumpWidget(app(withOverall()));
       await tester.pumpAndSettle();
 
-      // Not in the tree itself.
-      expect(shownNames(tester), ['Overall', 'Cooking', 'Old habit']);
-      expect(
-        find.ancestor(of: find.text('Overall'), matching: find.byType(Card)),
-        findsOneWidget,
-      );
-      expect(
-        find.text('1h 30m in 24h · 12h 15m in 7d on the goals shown'),
-        findsOneWidget,
-      );
-
-      await tester.tap(find.byTooltip('Show goals that are…'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(CheckboxMenuButton, 'Inactive'));
-      await tester.pumpAndSettle();
-
-      expect(
-        find.textContaining('1h in 24h · 10h 45m in 7d on the goals shown'),
-        findsOneWidget,
-      );
+      expect(shownNames(tester), ['Cooking', 'Old habit', 'Music']);
     });
 
-    testWidgets('opens its details, without a status or parent, and its '
-        'history from its ratings', (tester) async {
-      await tester.pumpWidget(app(withOverall()));
-      await tester.pumpAndSettle();
-
-      // Tapping it shows its measure, which leads to its details.
-      await tester.tap(find.text('Overall'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Details'));
-      await tester.pumpAndSettle();
-      final dialog = find.byType(AlertDialog);
-      expect(
-        find.descendant(of: dialog, matching: find.text('measure')),
-        findsOneWidget,
-      );
-      for (final property in ['status', 'parent_id', 'background_color']) {
-        final row = find.ancestor(
-          of: find.descendant(of: dialog, matching: find.text(property)),
-          matching: find.byType(PropertyRow),
-        );
-        // Shown, but not editable: no tap target.
-        expect(
-          find.descendant(of: row, matching: find.byType(InkWell)),
-          findsNothing,
-          reason: property,
-        );
-      }
-      await tester.tap(find.text('Close'));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byTooltip('History of Overall'));
-      await tester.pumpAndSettle();
-      expect(find.byType(HealthHistoryChart), findsOneWidget);
-    });
-
-    testWidgets("isn't offered as a goal's parent", (tester) async {
+    testWidgets("isn't offered as a group to be in", (tester) async {
       await tester.pumpWidget(app(withOverall()));
       await tester.pumpAndSettle();
 
@@ -1974,7 +1839,7 @@ void main() {
 
       final picker = find.byType(GoalsPicker);
       expect(
-        find.descendant(of: picker, matching: find.text('Old habit')),
+        find.descendant(of: picker, matching: find.text('Music')),
         findsOneWidget,
       );
       expect(
@@ -1984,64 +1849,11 @@ void main() {
     });
   });
 
-  testWidgets('says when there are no goals yet', (tester) async {
+  testWidgets('says when there are no actions yet', (tester) async {
     await tester.pumpWidget(app(InMemoryGoalsRepository()));
     await tester.pumpAndSettle();
-    expect(find.text('No goals yet.\nTap + to add one.'), findsOneWidget);
+    expect(find.text('No actions yet.\nTap + to add one.'), findsOneWidget);
   });
-}
-
-/// Records each tool call, and answers every one with a single goal.
-class _FakeClient extends McpClient {
-  _FakeClient() : super(endpoint: Uri.parse('http://test'));
-
-  final calls = <(String, Map<String, Object?>)>[];
-
-  @override
-  Future<Object?> callTool(
-    String name, [
-    Map<String, Object?> arguments = const {},
-  ]) async {
-    calls.add((name, arguments));
-    return {
-      'goals': [
-        {'id': 'g1', 'name': 'Cooking', 'active': true, 'path': 'Cooking'},
-      ],
-      'label_slots_used': 12,
-      'label_slots_total': 200,
-    };
-  }
-}
-
-/// Answers get_goal_history with two assessments.
-class _HistoryClient extends McpClient {
-  _HistoryClient() : super(endpoint: Uri.parse('http://test'));
-
-  Map<String, Object?>? arguments;
-
-  @override
-  Future<Object?> callTool(
-    String name, [
-    Map<String, Object?> arguments = const {},
-  ]) async {
-    this.arguments = arguments;
-    return [
-      {
-        'goal_id': 'g1',
-        'day': '2026-09-29',
-        'rating': 60,
-        'method': 'subjective',
-        'status': 'confirmed',
-      },
-      {
-        'goal_id': 'g1',
-        'day': '2026-09-30',
-        'rating': 'skip',
-        'method': 'subjective',
-        'status': 'proposed',
-      },
-    ];
-  }
 }
 
 /// Holds each save until the test answers it, or fails it.
@@ -2049,6 +1861,12 @@ class _GatedGoalsRepository implements GoalsRepository {
   _GatedGoalsRepository(this._inner);
 
   final InMemoryGoalsRepository _inner;
+
+  @override
+  bool get rated => _inner.rated;
+
+  @override
+  bool get reorderable => _inner.reorderable;
 
   /// What's been sent, oldest first: "create" and its name, or "update" and its id.
   final sent = <String>[];

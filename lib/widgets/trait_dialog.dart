@@ -7,21 +7,28 @@ import 'parts_editor.dart';
 /// Creates a trait (with no [trait]) or edits one -- its name, definition,
 /// status and parts -- checking it as the server does ([traitProblem]),
 /// then saving it with [save], which gets it whole. Returns what [save]
-/// returned, or null if it was called off.
+/// returned, or null if it was called off. [actions] names the actions
+/// a cadence part can count, by id.
 Future<Trait?> showTraitDialog(
   BuildContext context, {
   Trait? trait,
   required Future<Trait> Function(Trait trait) save,
+  Map<String, String> actions = const {},
 }) => showDialog<Trait>(
   context: context,
-  builder: (_) => _TraitDialog(trait: trait, save: save),
+  builder: (_) => _TraitDialog(trait: trait, save: save, actions: actions),
 );
 
 class _TraitDialog extends StatefulWidget {
-  const _TraitDialog({required this.trait, required this.save});
+  const _TraitDialog({
+    required this.trait,
+    required this.save,
+    required this.actions,
+  });
 
   final Trait? trait;
   final Future<Trait> Function(Trait trait) save;
+  final Map<String, String> actions;
 
   @override
   State<_TraitDialog> createState() => _TraitDialogState();
@@ -136,7 +143,7 @@ class _TraitDialogState extends State<_TraitDialog> {
                 child: Text(switch (_status) {
                   'off' => "Kept, but not rated for now.",
                   'archived' => 'Retired: not rated. Its history is kept.',
-                  _ => 'Rated, for every goal whose traits measure picks it.',
+                  _ => 'Rated for everyone, Self included.',
                 }, style: theme.textTheme.bodySmall),
               ),
               Padding(
@@ -144,13 +151,14 @@ class _TraitDialogState extends State<_TraitDialog> {
                 child: Text('Parts', style: theme.textTheme.titleSmall),
               ),
               Text(
-                "Its score is the weighted mean of its parts', each scored "
-                "over the events of the goal using it, leaving out a part "
-                'with nothing to score it by.',
+                "Its score for a person is the weighted mean of its parts', "
+                'each scored over the events with or for them, leaving out '
+                'a part with nothing to score it by.',
                 style: theme.textTheme.bodySmall,
               ),
               PartsEditor(
                 parts: _parts,
+                actions: widget.actions,
                 onChanged: (parts) => setState(() => _parts = parts),
               ),
               if (problem != null)

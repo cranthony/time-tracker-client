@@ -2,19 +2,36 @@ import 'package:flutter/material.dart';
 
 import '../models/trait.dart';
 
-/// Edits a trait's parts -- each one's kind, settings and weight, and a
-/// judgment's rubric -- as cards, with "Add part" below them. Calls
-/// [onChanged] with the parts as they stand after every edit, whether or
-/// not they're valid yet; see [partProblem].
+/// Edits a trait's parts -- each one's kind, settings, weight and whether
+/// it reads events with someone or for them -- as cards, with "Add part"
+/// below them. A judgment's card edits its rubric, its rating scale and
+/// the facts Claude judges it from, each history with its lookback.
+/// Calls [onChanged] with the parts as they stand after every edit,
+/// whether or not they're valid yet; see [partProblem]. [actions] names
+/// the actions and groups a part can count, by id.
 class PartsEditor extends StatefulWidget {
-  const PartsEditor({super.key, required this.parts, required this.onChanged});
+  const PartsEditor({
+    super.key,
+    required this.parts,
+    required this.onChanged,
+    this.actions = const {},
+  });
 
   final List<Part> parts;
   final ValueChanged<List<Part>> onChanged;
+  final Map<String, String> actions;
 
   @override
   State<PartsEditor> createState() => _PartsEditorState();
 }
+
+/// What a new judgment starts with: a scale of 0 to 3, judged from the
+/// event's actions and notes.
+const Part newJudgment = {
+  'kind': 'judgment',
+  'ratings': {'0': '', '1': '', '2': '', '3': ''},
+  'facts': ['action', 'general_notes'],
+};
 
 class _PartsEditorState extends State<PartsEditor> {
   late final List<_PartDraft> _drafts = [
@@ -46,7 +63,7 @@ class _PartsEditorState extends State<PartsEditor> {
           alignment: AlignmentDirectional.centerStart,
           child: TextButton.icon(
             onPressed: () {
-              _drafts.add(_PartDraft.from(const {'kind': 'prep'}));
+              _drafts.add(_PartDraft.from(newJudgment));
               _changed();
             },
             icon: const Icon(Icons.add),
@@ -94,6 +111,31 @@ class _PartsEditorState extends State<PartsEditor> {
               ],
             ),
             if (kind != null) Text(kind.hint, style: theme.textTheme.bodySmall),
+            Padding(
+              padding: const EdgeInsets.only(top: 12, right: 8),
+              child: SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: [
+                  for (final MapEntry(:key, :value) in engagementTypes.entries)
+                    ButtonSegment(value: key, label: Text(value)),
+                ],
+                selected: {draft.engagement},
+                onSelectionChanged: (picked) {
+                  draft.engagement = picked.single;
+                  _changed();
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4, right: 8),
+              child: Text(
+                draft.engagement == 'for'
+                    ? "Reads the events done for them while they weren't "
+                          'there.'
+                    : 'Reads the events they were at with you.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
             _input(
               draft.controller('weight'),
               'Weight',
@@ -101,18 +143,174 @@ class _PartsEditorState extends State<PartsEditor> {
               number: true,
             ),
             for (final field in kind?.fields ?? const [])
-              _input(
-                draft.controller(field.field),
-                field.label + (field.required ? '' : ' (optional)'),
-                hint: field.hint,
-                number: !textFields.contains(field.field),
-                maxLines: field.field == 'rubric' ? 4 : 1,
-              ),
+              if (field.field == 'action')
+                _actionPicker(draft)
+              else
+                _input(
+                  draft.controller(field.field),
+                  field.label + (field.required ? '' : ' (optional)'),
+                  hint: field.hint,
+                  number: !textFields.contains(field.field),
+                  maxLines: field.field == 'rubric' ? 4 : 1,
+                ),
+            if (draft.kind == 'judgment') ..._judgmentFields(theme, draft),
           ],
         ),
       ),
     );
   }
+
+  /// The action or group a part counts: any, or one of
+  /// [PartsEditor.actions].
+  Widget _actionPicker(_PartDraft draft) {
+    final current = draft.controller('action').text;
+    final known = widget.actions.containsKey(current);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, right: 8),
+      child: DropdownButtonFormField<String?>(
+        initialValue: current.isEmpty ? null : current,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          labelText: 'Action or group (optional)',
+          isDense: true,
+          border: OutlineInputBorder(),
+        ),
+        items: [
+          const DropdownMenuItem(value: null, child: Text('Any action')),
+          for (final MapEntry(:key, :value) in widget.actions.entries)
+            DropdownMenuItem(value: key, child: Text(value)),
+          if (current.isNotEmpty && !known)
+            DropdownMenuItem(value: current, child: Text(current)),
+        ],
+        onChanged: (picked) {
+          draft.controller('action').text = picked ?? '';
+          _changed();
+        },
+      ),
+    );
+  }
+
+  /// A judgment's rating scale and facts.
+  List<Widget> _judgmentFields(ThemeData theme, _PartDraft draft) => [
+    Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Text('Ratings', style: theme.textTheme.labelLarge),
+    ),
+    for (final (i, rating) in draft.ratings.indexed)
+      Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 64,
+              child: TextField(
+                controller: rating.score,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Score',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => _changed(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: rating.label,
+                minLines: 1,
+                maxLines: 3,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Means',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => _changed(),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Remove rating ${rating.score.text}',
+              icon: const Icon(Icons.close),
+              onPressed: () {
+                draft.ratings.removeAt(i).dispose();
+                _changed();
+              },
+            ),
+          ],
+        ),
+      ),
+    Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: TextButton.icon(
+        onPressed: () {
+          final next = draft.ratings.isEmpty
+              ? 0
+              : (draft.ratings
+                        .map((r) => int.tryParse(r.score.text) ?? 0)
+                        .reduce((a, b) => a > b ? a : b) +
+                    1);
+          draft.ratings.add(_RatingDraft(next, ''));
+          _changed();
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('Add rating'),
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text('Judged from', style: theme.textTheme.labelLarge),
+    ),
+    Text(
+      'What Claude is shown about each event, for one person or a named '
+      'group of them.',
+      style: theme.textTheme.bodySmall,
+    ),
+    for (final MapEntry(:key, :value) in judgmentFacts.entries)
+      Row(
+        children: [
+          Expanded(
+            child: CheckboxListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text(value.label),
+              subtitle: Text(value.hint),
+              value: draft.facts.containsKey(key),
+              onChanged: (on) {
+                if (on ?? false) {
+                  draft.facts[key] = value.lookback
+                      ? TextEditingController(text: '$defaultLookbackDays')
+                      : null;
+                } else {
+                  draft.facts.remove(key)?.dispose();
+                }
+                _changed();
+              },
+            ),
+          ),
+          if (draft.facts[key] case final lookback?)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: SizedBox(
+                width: 96,
+                child: TextField(
+                  controller: lookback,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Lookback',
+                    suffixText: 'd',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (_) => _changed(),
+                ),
+              ),
+            ),
+        ],
+      ),
+  ];
 
   Widget _input(
     TextEditingController controller,
@@ -141,23 +339,56 @@ class _PartsEditorState extends State<PartsEditor> {
   );
 }
 
-/// A part as it's being edited: its kind, and a field for each of its
-/// settings, kept across changes of kind.
+/// One of a judgment's ratings as it's being edited.
+class _RatingDraft {
+  _RatingDraft(int score, String label)
+    : score = TextEditingController(text: '$score'),
+      label = TextEditingController(text: label);
+
+  final TextEditingController score;
+  final TextEditingController label;
+
+  void dispose() {
+    score.dispose();
+    label.dispose();
+  }
+}
+
+/// A part as it's being edited: its kind, its engagement type, and a
+/// field for each of its settings, kept across changes of kind; and a
+/// judgment's ratings and facts (each history's lookback in a field).
 class _PartDraft {
   _PartDraft.from(Part part) : kind = '${part['kind']}' {
     for (final MapEntry(:key, :value) in part.entries) {
-      if (key != 'kind' && value != null) controller(key).text = '$value';
+      if (value == null || value is List || value is Map) continue;
+      if (key == 'kind' || key == 'engagement_type') continue;
+      controller(key).text = '$value';
+    }
+    engagement = part['engagement_type'] as String? ?? 'with';
+    // Ready, should it become a judgment.
+    final judgment = part['kind'] == 'judgment' ? part : newJudgment;
+    ratings.addAll([
+      for (final r in judgmentRatings(judgment)) _RatingDraft(r.score, r.label),
+    ]);
+    for (final MapEntry(:key, :value) in judgmentFactsOf(judgment).entries) {
+      facts[key] = value == null ? null : TextEditingController(text: '$value');
     }
   }
 
   String kind;
+  late String engagement;
+  final ratings = <_RatingDraft>[];
+
+  /// The facts picked, each history with its lookback's field.
+  final facts = <String, TextEditingController?>{};
   final _controllers = <String, TextEditingController>{};
 
   TextEditingController controller(String field) =>
       _controllers.putIfAbsent(field, TextEditingController.new);
 
   /// The part as its fields have it: only its kind's, and the weight; a
-  /// number that doesn't parse is kept as typed, for [partProblem].
+  /// number that doesn't parse is kept as typed, for [partProblem]. With
+  /// "with", the default, its engagement type is left out.
   Part get part {
     final fields = {
       'weight',
@@ -166,19 +397,47 @@ class _PartDraft {
     Object? value(String field) {
       final text = _controllers[field]?.text.trim() ?? '';
       if (text.isEmpty) return null;
-      if (textFields.contains(field)) {
-        // Activities are kept as facets keep them, so they match.
-        return field == 'activity' ? activityLabel(text) : text;
-      }
+      if (textFields.contains(field)) return text;
       return num.tryParse(text) ?? text;
     }
 
-    return {'kind': kind, for (final field in fields) field: ?value(field)};
+    final scores = [for (final r in ratings) r.score.text.trim()];
+    return {
+      'kind': kind,
+      if (engagement != 'with') 'engagement_type': engagement,
+      for (final field in fields) field: ?value(field),
+      if (kind == 'judgment') ...{
+        // Two sharing a score can't be a map: partProblem says so.
+        'ratings': scores.toSet().length == scores.length
+            ? {
+                for (final r in ratings)
+                  r.score.text.trim(): r.label.text.trim(),
+              }
+            : [for (final r in ratings) r.label.text.trim()],
+        'facts': [
+          for (final MapEntry(:key, :value) in facts.entries)
+            if (value == null)
+              key
+            else
+              {
+                'fact': key,
+                'lookback_days':
+                    int.tryParse(value.text.trim()) ?? value.text.trim(),
+              },
+        ],
+      },
+    };
   }
 
   void dispose() {
     for (final c in _controllers.values) {
       c.dispose();
+    }
+    for (final r in ratings) {
+      r.dispose();
+    }
+    for (final c in facts.values) {
+      c?.dispose();
     }
   }
 }
@@ -191,10 +450,15 @@ Future<List<Part>?> showPartsDialog(
   required String title,
   String? explanation,
   required List<Part> parts,
+  Map<String, String> actions = const {},
 }) => showDialog<List<Part>>(
   context: context,
-  builder: (_) =>
-      _PartsDialog(title: title, explanation: explanation, parts: parts),
+  builder: (_) => _PartsDialog(
+    title: title,
+    explanation: explanation,
+    parts: parts,
+    actions: actions,
+  ),
 );
 
 class _PartsDialog extends StatefulWidget {
@@ -202,11 +466,13 @@ class _PartsDialog extends StatefulWidget {
     required this.title,
     required this.explanation,
     required this.parts,
+    required this.actions,
   });
 
   final String title;
   final String? explanation;
   final List<Part> parts;
+  final Map<String, String> actions;
 
   @override
   State<_PartsDialog> createState() => _PartsDialogState();
@@ -215,20 +481,12 @@ class _PartsDialog extends StatefulWidget {
 class _PartsDialogState extends State<_PartsDialog> {
   late List<Part> _parts = widget.parts;
 
-  String? get _problem {
-    if (_parts.isEmpty) return 'Give it at least one part.';
-    for (final (i, part) in _parts.indexed) {
-      if (partProblem(part) case final problem?) {
-        return 'Part ${i + 1}: $problem';
-      }
-    }
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final problem = _problem;
+    final problem = _parts.isEmpty
+        ? 'Give it at least one part.'
+        : partsProblem(_parts);
     return AlertDialog(
       title: Text(widget.title),
       content: SizedBox(
@@ -242,6 +500,7 @@ class _PartsDialogState extends State<_PartsDialog> {
                 Text(explanation, style: theme.textTheme.bodySmall),
               PartsEditor(
                 parts: widget.parts,
+                actions: widget.actions,
                 onChanged: (parts) => setState(() => _parts = parts),
               ),
               if (problem != null)

@@ -30,14 +30,14 @@ class Event {
       properties['effective_priority'] as int? ??
       properties['priority'] as int?;
 
-  /// The ids of the goals it serves, primary goal first.
+  /// The ids of its actions, the first setting its color.
   List<String> get goalIds => [
-    for (final id in properties['goal_ids'] as List? ?? const []) '$id',
+    for (final id in properties['action_ids'] as List? ?? const []) '$id',
   ];
 
   /// The names of [goalIds], in the same order, if the server sent them.
   List<String?> get goalNames => [
-    for (final name in properties['goal_names'] as List? ?? const [])
+    for (final name in properties['action_names'] as List? ?? const [])
       name as String?,
   ];
 

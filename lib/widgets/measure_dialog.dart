@@ -29,7 +29,7 @@ const _kindIcons = {
 /// What [goal] is rated by without a measure of its own.
 String _average(Goal goal) => goal.isOverall
     ? "the average of the top-level goals' ratings"
-    : "the average of its sub-goals' ratings";
+    : "the average of the ratings of what's in it";
 
 /// How [goal]'s health is rated: its measure in words and its settings,
 /// with a button to edit it (or add one) when there's [onEdit].
@@ -75,7 +75,7 @@ class MeasureCard extends StatelessWidget {
                     measureKinds[kind] ??
                         (goal.isOverall
                             ? 'Average of the top-level goals'
-                            : 'Average of its sub-goals'),
+                            : "Average of what's in it"),
                     style: text.labelLarge?.copyWith(color: colors.primary),
                   ),
                 ),
@@ -177,7 +177,7 @@ class HowItsDoing extends StatelessWidget {
         if (!goal.active)
           line(
             Icon(Icons.pause_circle_outline, size: 18, color: theme.hintColor),
-            'Only active goals are rated.',
+            'Only active actions are rated.',
           )
         else ...[
           line(HealthDot(rating: health), switch ((health, goal.healthPeriod)) {

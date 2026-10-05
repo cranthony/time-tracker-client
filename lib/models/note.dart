@@ -40,11 +40,19 @@ class Note {
 /// When notes were last compacted into the calendar, and the latest note
 /// compacted, mirroring the server's `get_compaction_status`.
 class CompactionStatus {
-  const CompactionStatus({this.lastCompaction, this.latestCompacted});
+  const CompactionStatus({
+    this.lastCompaction,
+    this.latestCompacted,
+    this.judgmentsPending,
+  });
 
   /// Null if notes have never been compacted.
   final DateTime? lastCompaction;
   final Note? latestCompacted;
+
+  /// The last compaction's id, if the assistant hasn't yet judged all its
+  /// events against people's traits: it isn't complete until then.
+  final String? judgmentsPending;
 
   factory CompactionStatus.fromJson(Map<String, dynamic> json) =>
       CompactionStatus(
@@ -56,6 +64,7 @@ class CompactionStatus {
           final Map note => Note.fromJson(note.cast<String, dynamic>()),
           _ => null,
         },
+        judgmentsPending: json['judgments_pending'] as String?,
       );
 }
 

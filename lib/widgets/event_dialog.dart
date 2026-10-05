@@ -48,11 +48,11 @@ Future<List<Event>?> showEventDialog(
     // Every event has one; the rest can be cleared (see clearableFields).
     required: const {'summary'},
     inferred: {
-      if (event.properties['goals_from_label'] == true)
-        'goal_ids': 'from its label',
+      if (event.properties['actions_from_label'] == true)
+        'action_ids': 'from its label',
     },
     hints: const {
-      'goal_ids':
+      'action_ids':
           'Goals shown "from its label" were never set: they come from the '
           "event's label. Keep or change them to set them.",
     },
@@ -110,7 +110,7 @@ const _kinds = {
   'description': PropertyKind.multiline,
   'location': PropertyKind.text,
   // Its label follows its goals, so it isn't edited itself.
-  'goal_ids': PropertyKind.goals,
+  'action_ids': PropertyKind.goals,
   'priority': PropertyKind.integer,
   'is_fixed_time': PropertyKind.flag,
   'is_fixed_duration': PropertyKind.flag,

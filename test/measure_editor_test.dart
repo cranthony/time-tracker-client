@@ -9,8 +9,8 @@ void main() {
     const goals = [
       Goal(id: 'cook', name: 'Cooking'),
       Goal(id: 'tofu', name: 'Tofu', parentId: 'cook'),
-      Goal(id: 'soup', name: 'Soup', parentId: 'cook', status: 'inactive'),
-      Goal(id: 'cake', name: 'Cake', parentId: 'cook', status: 'completed'),
+      Goal(id: 'soup', name: 'Soup', parentId: 'cook'),
+      Goal(id: 'cake', name: 'Cake', parentId: 'cook', status: 'archived'),
       Goal(id: 'stew', name: 'Stew', parentId: 'cook', status: 'deleted'),
       Goal(id: 'pie', name: 'Pie', parentId: 'cook', status: 'proposed'),
       Goal(id: 'jam', name: 'Jam', parentId: 'cook', status: 'archived'),
@@ -40,8 +40,7 @@ void main() {
       return changes;
     }
 
-    testWidgets('hides proposed, completed, archived and deleted '
-        'sub-goals', (tester) async {
+    testWidgets('hides proposed, archived and deleted actions', (tester) async {
       await pump(tester);
 
       expect(find.widgetWithText(TextField, 'Tofu'), findsOneWidget);
@@ -50,19 +49,6 @@ void main() {
       expect(find.widgetWithText(TextField, 'Stew'), findsNothing);
       expect(find.widgetWithText(TextField, 'Pie'), findsNothing);
       expect(find.widgetWithText(TextField, 'Jam'), findsNothing);
-    });
-
-    testWidgets('greys an inactive sub-goal, saying why', (tester) async {
-      await pump(tester);
-
-      expect(
-        find.text("Inactive: not rated, so it doesn't count"),
-        findsOneWidget,
-      );
-      final tofu = tester.widget<TextField>(
-        find.widgetWithText(TextField, 'Tofu'),
-      );
-      expect(tofu.decoration?.helperText, isNull);
     });
 
     testWidgets('keeps a hidden sub-goal\'s weight', (tester) async {

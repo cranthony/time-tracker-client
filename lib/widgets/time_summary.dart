@@ -39,7 +39,11 @@ List<SummarySlice> topShares<K>(
   return [
     for (final key in ranked.take(top)) slice(key, time[key]!),
     if (rest > Duration.zero)
-      SummarySlice('${ranked.length - top} other goals', otherGoalsColor, rest),
+      SummarySlice(
+        '${ranked.length - top} other actions',
+        otherGoalsColor,
+        rest,
+      ),
   ];
 }
 

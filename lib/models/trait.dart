@@ -1,10 +1,9 @@
-import 'facets.dart';
+import 'facts.dart';
 
-/// A trait goals can be rated by -- Thoughtful, Reliable, Creative,
-/// Adventurous, Generous to start with -- mirroring the Time Tracker MCP
-/// server's `Trait` (its utilities/traits.py). Its score of a goal's day is
-/// the weighted mean of its [parts]' scores, each computed over the goal's
-/// events and their facets, or (a judgment) made in the reflection.
+/// A trait: how the user wants to be -- adventurous, thoughtful, present
+/// -- each rated for each person (Self included) from its [parts]. None
+/// is built in: every trait, and every part, is the user's to define.
+/// Its score of a person's day is the weighted mean of its parts' scores.
 class Trait {
   const Trait({
     this.id,
@@ -62,55 +61,93 @@ const traitStatuses = {
   'archived': 'Archived',
 };
 
-/// A part kind's name, what it rates, and its fields: (field, label,
-/// whether it's required, its default as shown).
+/// A part kind's name, what it rates, and its plain fields: (field,
+/// label, whether it's required, its default as shown). A judgment's
+/// ratings and facts, and every part's engagement type, are edited apart
+/// from these.
 typedef PartKind = ({
   String label,
   String hint,
   List<({String field, String label, bool required, String? hint})> fields,
 });
 
-const _window = (
-  field: 'window_days',
-  label: 'Window, in days',
+/// The action (or action group) a part counts, if it names one.
+const _action = (
+  field: 'action',
+  label: 'Action',
   required: false,
-  hint: "the measure's",
-);
-const _target = (field: 'target', label: 'Target', required: false, hint: '1');
-const _activity = (
-  field: 'activity',
-  label: 'Activity',
-  required: false,
-  hint: 'any event with them',
+  hint: 'any',
 );
 
 /// The part fields that are text, not numbers.
-const textFields = {'rubric', 'noun', 'activity'};
-
-/// An activity as events' facets keep it: trimmed, single-spaced and
-/// lowercase, so a part's matches theirs.
-String activityLabel(String text) =>
-    text.trim().split(RegExp(r'\s+')).join(' ').toLowerCase();
+const textFields = {'rubric', 'noun', 'action'};
 
 /// The kinds of part, as the server names them (its utilities/traits.py's
 /// PART_KINDS), each with the fields the app edits.
 const partKinds = <String, PartKind>{
-  'prep': (
-    label: 'Preparation',
-    hint: 'Events done for them while they weren\'t there, in the window.',
-    fields: [_target, _window],
+  'judgment': (
+    label: 'Judgment',
+    hint:
+        'Claude rates each event against a rubric, on a scale you define, '
+        'from the facts it names; the part scores the mean rating as a '
+        'share of the top one.',
+    fields: [(field: 'rubric', label: 'Rubric', required: true, hint: null)],
   ),
-  'prep_regularity': (
-    label: 'Regular preparation',
-    hint: 'The share of recent weeks with something done for them.',
-    fields: [(field: 'weeks', label: 'Weeks', required: false, hint: '4')],
+  'count': (
+    label: 'Number of events',
+    hint:
+        'How many events there were, against a target: with an action, '
+        'only events of it -- a cadence, like a call every week.',
+    fields: [
+      _action,
+      (field: 'target', label: 'Target', required: true, hint: null),
+      (
+        field: 'interval_days',
+        label: 'Over, in days',
+        required: false,
+        hint: '30',
+      ),
+      (
+        field: 'zero_at_days',
+        label: 'Zero at, in days',
+        required: false,
+        hint: null,
+      ),
+      (field: 'noun', label: "What's counted", required: false, hint: 'events'),
+    ],
+  ),
+  'duration': (
+    label: 'Time spent',
+    hint: 'Minutes of events, against a target: with an action, only its.',
+    fields: [
+      _action,
+      (
+        field: 'target_min',
+        label: 'Target, minutes',
+        required: true,
+        hint: null,
+      ),
+      (
+        field: 'interval_days',
+        label: 'Over, in days',
+        required: false,
+        hint: '30',
+      ),
+      (
+        field: 'zero_at_days',
+        label: 'Zero at, in days',
+        required: false,
+        hint: null,
+      ),
+    ],
   ),
   'continuity': (
     label: 'Continuity',
     hint:
-        'The last event with them was recent, and the next is planned soon: '
-        '100 for both, 50 for one, 0 for neither.',
+        'The last event was recent, and the next is planned soon: 100 for '
+        'both, 50 for one, 0 for neither.',
     fields: [
+      _action,
       (
         field: 'last_within_days',
         label: 'Last within, days',
@@ -125,103 +162,11 @@ const partKinds = <String, PartKind>{
       ),
     ],
   ),
-  'together_creative': (
-    label: 'Made something together',
-    hint: 'Events with them that were creative enough, in the window.',
-    fields: [
-      _target,
-      (
-        field: 'min_creative',
-        label: 'At least creative',
-        required: false,
-        hint: '2',
-      ),
-      _window,
-    ],
-  ),
-  'novelty': (
-    label: 'Something new',
-    hint: 'Events with them where something was new, in the window.',
-    fields: [_target, _window],
-  ),
-  'effort_paid': (
-    label: 'Effort paid',
-    hint: 'Minutes × (1 + effort) of events with and for them, in the window.',
-    fields: [
-      (
-        field: 'target',
-        label: 'Target, effort-minutes',
-        required: true,
-        hint: null,
-      ),
-      _window,
-    ],
-  ),
-  'attention': (
-    label: 'Attention',
-    hint: 'The mean attention (0-3) of events with them, in the window.',
-    fields: [_window],
-  ),
-  'judgment': (
-    label: 'Judgment',
-    hint: 'Judged against a rubric in the reflection.',
-    fields: [(field: 'rubric', label: 'Rubric', required: true, hint: null)],
-  ),
-  'count': (
-    label: 'Number of events',
-    hint:
-        "How many of the goal's events, against a target: with an activity, "
-        "only events with them of that activity -- a cadence, like a visit "
-        'every 21 days.',
-    fields: [
-      _activity,
-      (field: 'target', label: 'Target', required: true, hint: null),
-      (
-        field: 'interval_days',
-        label: 'Over, in days',
-        required: false,
-        hint: 'the window',
-      ),
-      (
-        field: 'zero_at_days',
-        label: 'Zero at, in days',
-        required: false,
-        hint: null,
-      ),
-      (field: 'noun', label: "What's counted", required: false, hint: 'events'),
-    ],
-  ),
-  'duration': (
-    label: 'Time spent',
-    hint:
-        "Minutes of the goal's events, against a target: with an activity, "
-        'only events with them of that activity.',
-    fields: [
-      _activity,
-      (
-        field: 'target_min',
-        label: 'Target, minutes',
-        required: true,
-        hint: null,
-      ),
-      (
-        field: 'interval_days',
-        label: 'Over, in days',
-        required: false,
-        hint: 'the window',
-      ),
-      (
-        field: 'zero_at_days',
-        label: 'Zero at, in days',
-        required: false,
-        hint: null,
-      ),
-    ],
-  ),
   'follow_through': (
     label: 'Follow-through',
-    hint: "The goal's cancelled events cost points; kept ones win them back.",
+    hint: 'Cancelled events cost points; kept ones win them back.',
     fields: [
+      _action,
       (
         field: 'penalty',
         label: 'Lost per cancellation',
@@ -244,6 +189,98 @@ const partKinds = <String, PartKind>{
   ),
 };
 
+/// A part's `engagement_type`, as the server names them, and as the app
+/// shows them: the events a person was at with the user (the default), or
+/// those the user did for them while they weren't there.
+const engagementTypes = {'with': 'With them', 'for': 'For them'};
+
+/// What a judgment fact shows Claude about an event: its label, what it
+/// is, and whether it looks back over a number of days.
+typedef JudgmentFact = ({String label, String hint, bool lookback});
+
+/// The facts a judgment can be made from, as the server names them (its
+/// utilities/traits.py's FACTS).
+const judgmentFacts = <String, JudgmentFact>{
+  'action': (
+    label: 'Action',
+    hint: 'What was done at the event',
+    lookback: false,
+  ),
+  'action_history': (
+    label: 'Action history',
+    hint: "What's been done with them before",
+    lookback: true,
+  ),
+  'location': (label: 'Location', hint: 'Where the event was', lookback: false),
+  'location_history': (
+    label: 'Location history',
+    hint: "Where you've been with them before",
+    lookback: true,
+  ),
+  'general_notes': (
+    label: 'General notes',
+    hint: "The event's own notes",
+    lookback: false,
+  ),
+  'person_notes': (
+    label: 'Person notes',
+    hint:
+        'The notes on the person: yours for a "for" part, theirs for a '
+        '"with" one',
+    lookback: false,
+  ),
+};
+
+/// How far a history fact looks back unless it says.
+const defaultLookbackDays = 30;
+
+/// A judgment's rating scale: each rating, lowest first, and what it
+/// means.
+typedef JudgmentRating = ({int score, String label});
+
+/// [part]'s rating scale, lowest first: its `ratings`, {"0": "...", ...}.
+List<JudgmentRating> judgmentRatings(Part part) => [
+  if (part['ratings'] case final Map ratings)
+    for (final MapEntry(:key, :value) in ratings.entries)
+      if (value is String && int.tryParse('$key') != null)
+        (score: int.parse('$key'), label: value),
+]..sort((a, b) => a.score.compareTo(b.score));
+
+/// [part]'s facts, as `{name: lookback days}`: null for one that doesn't
+/// look back.
+Map<String, int?> judgmentFactsOf(Part part) {
+  final facts = <String, int?>{};
+  for (final fact in part['facts'] as List? ?? const []) {
+    final name = _factName(fact);
+    if (name == null) continue;
+    facts[name] = judgmentFacts[name]?.lookback ?? false
+        ? switch (fact) {
+            {'lookback_days': final num days} => days.round(),
+            _ => defaultLookbackDays,
+          }
+        : null;
+  }
+  return facts;
+}
+
+/// A fact's name: it's given as one, or as {"fact": name, ...}.
+String? _factName(Object? fact) => switch (fact) {
+  final String name => name,
+  {'fact': final String name} => name,
+  _ => null,
+};
+
+/// [ratings] as a judgment keeps them.
+Map<String, String> judgmentRatingsJson(List<JudgmentRating> ratings) => {
+  for (final r in ratings) '${r.score}': r.label,
+};
+
+/// [facts] as a judgment keeps them: a name, or with its lookback.
+List<Object> judgmentFactsJson(Map<String, int?> facts) => [
+  for (final MapEntry(:key, :value) in facts.entries)
+    value == null ? key : {'fact': key, 'lookback_days': value},
+];
+
 /// What's wrong with [trait], in a sentence, or null if it's fine: the
 /// checks the server's `trait_problems` makes, so the editor can say so
 /// before saving (the server refuses it anyway, saying why).
@@ -252,13 +289,20 @@ String? traitProblem(Trait trait) {
   if (trait.name.length > 50) return 'Its name can be at most 50 characters.';
   if (!traitStatuses.containsKey(trait.status)) return 'Pick a status.';
   if (trait.parts.isEmpty) return 'Give it at least one part.';
-  for (final (i, part) in trait.parts.indexed) {
+  return partsProblem(trait.parts);
+}
+
+/// What's wrong with the first bad part of [parts], or null if they're
+/// fine.
+String? partsProblem(List<Part> parts) {
+  for (final (i, part) in parts.indexed) {
     if (partProblem(part) case final problem?) return 'Part ${i + 1}: $problem';
   }
   return null;
 }
 
-/// What's wrong with [part], in a sentence, or null if it's fine.
+/// What's wrong with [part], in a sentence, or null if it's fine: the
+/// checks the server's `part_problems` makes.
 String? partProblem(Part part) {
   final kind = partKinds[part['kind']];
   if (kind == null) return 'pick a kind.';
@@ -267,6 +311,10 @@ String? partProblem(Part part) {
   if (weight != null && (weight is! num || weight < 0)) {
     return 'the weight must be 0 or more.';
   }
+  final engagement = part['engagement_type'];
+  if (engagement != null && !engagementTypes.containsKey(engagement)) {
+    return 'pick whether it reads events with them or for them.';
+  }
   for (final field in kind.fields) {
     final value = part[field.field];
     if (value == null) {
@@ -274,17 +322,13 @@ String? partProblem(Part part) {
       continue;
     }
     switch (field.field) {
-      case 'rubric' || 'noun' || 'activity':
+      case 'rubric' || 'noun' || 'action':
         if (value is! String || value.trim().isEmpty) {
           return '${field.label.toLowerCase()} must be some text.';
         }
-      case 'weeks' || 'look_back_days':
-        if (value is! int || value < 1) {
-          return '${field.label.toLowerCase()} must be a whole number, 1 or more.';
-        }
-      case 'min_creative':
-        if (value is! int || value < 1 || value > 3) {
-          return 'at least creative must be 1, 2 or 3.';
+      case 'penalty' || 'recovery':
+        if (value is! num || value < 0 || value > 100) {
+          return '${field.label.toLowerCase()} must be from 0 to 100.';
         }
       default:
         if (!positive(value)) {
@@ -292,45 +336,87 @@ String? partProblem(Part part) {
         }
     }
   }
+  if (part['kind'] == 'judgment') {
+    // The editor sends its ratings as a list when two share a score.
+    final raw = part['ratings'];
+    if (raw is List) return 'each rating needs a score of its own.';
+    if (raw is! Map || raw.keys.any((k) => int.tryParse('$k') == null)) {
+      return 'each rating needs a whole-number score, from 0.';
+    }
+    final ratings = judgmentRatings(part);
+    if (ratings.any((r) => r.score < 0)) {
+      return 'each rating needs a whole-number score, from 0.';
+    }
+    if (ratings.length < 2) return 'give it at least two ratings.';
+    if (ratings.any((r) => r.label.trim().isEmpty)) {
+      return 'say what each rating means.';
+    }
+    final facts = part['facts'] as List? ?? const [];
+    if (facts.isEmpty) return 'pick at least one fact to judge by.';
+    final names = judgmentFactsOf(part);
+    if (names.keys.any((f) => !judgmentFacts.containsKey(f))) {
+      return "it has a fact the app doesn't know.";
+    }
+    for (final fact in facts) {
+      final days = fact is Map ? fact['lookback_days'] : null;
+      if (days != null && (days is! int || days < 1)) {
+        return 'a lookback must be a whole number of days, 1 or more.';
+      }
+    }
+  }
   final zeroAt = part['zero_at_days'];
-  if (zeroAt is num && zeroAt <= ((part['interval_days'] as num?) ?? 0)) {
+  if (zeroAt is num && zeroAt <= ((part['interval_days'] as num?) ?? 30)) {
     return '"zero at" must be more days than it looks back.';
   }
   return null;
 }
 
-/// [part] in a line: "Visit every 21 days", "Continuity: last within 7
-/// days, next within 7", "Follow-through".
-String describePart(Part part) {
+/// [part] in a line: "Judgment: Was this activity or place new? (0-3,
+/// with them)", "Call every 7 days", "Continuity: last within 7 days,
+/// next within 7". [actionNames] names the action a part counts.
+String describePart(Part part, [Map<String?, String> actionNames = const {}]) {
   String days(Object? n) => n == 1 ? 'day' : '$n days';
   final target = part['target'] ?? 1;
+  final action = switch (part['action']) {
+    final String id => (actionNames[id] ?? id).toLowerCase(),
+    _ => null,
+  };
+  final engagement = part['engagement_type'] == 'for'
+      ? 'for them'
+      : 'with them';
   return switch (part['kind']) {
+    'judgment' => () {
+      final ratings = judgmentRatings(part);
+      final scale = ratings.isEmpty
+          ? ''
+          : '${ratings.first.score}-${ratings.last.score}, ';
+      return 'Judgment: ${part['rubric'] ?? ''} ($scale$engagement)';
+    }(),
     'count' => [
-      '${target == 1 ? '' : '$target × '}'
-          '${part['activity'] ?? 'any event with them'}',
-      'every ${days(part['interval_days'] ?? 'window')}',
+      '${target == 1 ? '' : '$target × '}${action ?? 'any event'}',
+      'every ${days(part['interval_days'] ?? 30)}',
       if (part['zero_at_days'] case final zero?) '(0 at $zero days)',
     ].join(' '),
     'duration' =>
-      '${part['target_min']} min of ${part['activity'] ?? 'events'} '
-          'every ${days(part['interval_days'] ?? 'window')}',
+      '${part['target_min']} min of ${action ?? 'events'} '
+          'every ${days(part['interval_days'] ?? 30)}',
     'continuity' =>
-      'Continuity: last within ${days(part['last_within_days'] ?? 14)}, '
-          'next within ${days(part['next_within_days'] ?? 14)}',
-    'judgment' => 'Judgment: ${part['rubric'] ?? ''}',
+      'Continuity${action == null ? '' : ' of $action'}: last within '
+          '${days(part['last_within_days'] ?? 14)}, next within '
+          '${days(part['next_within_days'] ?? 14)}',
     final kind => partKinds[kind]?.label ?? '$kind',
   };
 }
 
-/// One trait's score of one day: the mean of its scores across the goals
-/// rated by it, mirroring the server's `TraitDay`.
+/// One trait's score of one day: the mean of its scores across the people
+/// rated by it.
 class TraitDay {
   const TraitDay({
     required this.traitId,
     required this.name,
     required this.day,
     required this.score,
-    this.goals = const {},
+    this.people = const {},
   });
 
   final String traitId;
@@ -340,22 +426,22 @@ class TraitDay {
   final String day;
   final int score;
 
-  /// Each goal's score of it, by goal id.
-  final Map<String, int> goals;
+  /// Each person's score of it, by person id.
+  final Map<String, int> people;
 
   factory TraitDay.fromJson(Map<String, dynamic> json) => TraitDay(
     traitId: json['trait_id'] as String,
     name: json['name'] as String? ?? json['trait_id'] as String,
     day: json['day'] as String,
     score: (json['score'] as num).round(),
-    goals: {
-      for (final g in json['goals'] as List? ?? const [])
-        if (g is Map) '${g['goal_id']}': (g['score'] as num).round(),
+    people: {
+      for (final p in json['people'] as List? ?? const [])
+        if (p is Map) '${p['person_id']}': (p['score'] as num).round(),
     },
   );
 }
 
-/// How a goal's traits measure rates one day, part by part: the server's
+/// How a person's traits rate one day, part by part: the server's
 /// `explain_traits`.
 class TraitsRating {
   const TraitsRating({
@@ -371,7 +457,7 @@ class TraitsRating {
   final String? explanation;
   final List<TraitScore> traits;
 
-  /// Traits its measure names that aren't rated: off, archived or unknown.
+  /// Traits that aren't rated for them: off, archived, or weighed 0.
   final List<String> leftOut;
   final String? day;
 
@@ -425,6 +511,7 @@ class PartScore {
     this.said = '',
     this.eventIds = const [],
     this.rubric,
+    this.judgments = const [],
   });
 
   /// Its name within its trait: its kind, or "kind#2".
@@ -432,7 +519,7 @@ class PartScore {
   final String kind;
   final num weight;
 
-  /// Null when there's nothing to rate it by, or for a judgment not made.
+  /// Null when there's nothing to rate it by.
   final int? score;
 
   /// How it was reached, in a line.
@@ -440,7 +527,12 @@ class PartScore {
 
   /// The events behind it.
   final List<String> eventIds;
+
+  /// A judgment's rubric.
   final String? rubric;
+
+  /// A judgment's ratings of each event behind it, as Claude made them.
+  final List<Judgment> judgments;
 
   factory PartScore.fromJson(Map<String, dynamic> json) => PartScore(
     key: json['key'] as String,
@@ -450,10 +542,11 @@ class PartScore {
     said: json['said'] as String? ?? '',
     eventIds: [for (final id in json['event_ids'] as List? ?? const []) '$id'],
     rubric: json['rubric'] as String?,
+    judgments: const [],
   );
 }
 
-/// One activity or place in a goal's history digest.
+/// One action or location in a person's history digest.
 class DigestEntry {
   const DigestEntry({
     required this.label,
@@ -477,99 +570,49 @@ class DigestEntry {
   );
 }
 
-/// A goal's history: its events' activities and places, with how often
-/// and when, what matters to them, and its events with their facets --
-/// the server's `get_goal_digest`.
-class GoalDigest {
-  const GoalDigest({
-    required this.goalId,
+/// A person's history: the actions done and locations of the events
+/// with or for them, with how often and when, and the events themselves
+/// -- the server's `get_person_digest`.
+class PersonDigest {
+  const PersonDigest({
+    required this.personId,
     this.windowDays = 180,
     this.eventsCounted = 0,
-    this.withFacets = 0,
-    this.activities = const [],
-    this.places = const [],
-    this.whatMatters,
+    this.actions = const [],
+    this.locations = const [],
     this.events = const [],
   });
 
-  final String goalId;
+  final String personId;
   final int windowDays;
   final int eventsCounted;
-  final int withFacets;
-  final List<DigestEntry> activities;
-  final List<DigestEntry> places;
-
-  /// Its description's "What matters to them" section, if it has one.
-  final String? whatMatters;
+  final List<DigestEntry> actions;
+  final List<DigestEntry> locations;
 
   /// Its events, oldest first, as the server sent them (each a
-  /// `PublicEvent`, with `facets`).
+  /// `PublicEvent`, with its `facts` and `judgments`).
   final List<Map<String, dynamic>> events;
 
-  factory GoalDigest.fromJson(Map<String, dynamic> json) => GoalDigest(
-    goalId: json['goal_id'] as String,
+  factory PersonDigest.fromJson(Map<String, dynamic> json) => PersonDigest(
+    personId: json['person_id'] as String,
     windowDays: (json['window_days'] as num?)?.round() ?? 180,
     eventsCounted: (json['events_counted'] as num?)?.round() ?? 0,
-    withFacets: (json['with_facets'] as num?)?.round() ?? 0,
-    activities: [
-      for (final e in json['activities'] as List? ?? const [])
+    actions: [
+      for (final e in json['actions'] as List? ?? const [])
         if (e is Map) DigestEntry.fromJson(e.cast()),
     ],
-    places: [
-      for (final e in json['places'] as List? ?? const [])
+    locations: [
+      for (final e in json['locations'] as List? ?? const [])
         if (e is Map) DigestEntry.fromJson(e.cast()),
     ],
-    whatMatters: json['what_matters'] as String?,
     events: [
       for (final e in json['events'] as List? ?? const [])
         if (e is Map) e.cast<String, dynamic>(),
     ],
   );
 
-  /// Facets of each of [events], by event id.
-  Map<String, Facets> get facetsByEvent => {
-    for (final e in events) '${e['id']}': ?Facets.fromJson(e['facets']),
+  /// Facts of each of [events], by event id.
+  Map<String, Facts> get factsByEvent => {
+    for (final e in events) '${e['id']}': ?Facts.fromJson(e['facts']),
   };
-}
-
-/// The heading of a person goal's section of what matters to them, in its
-/// description.
-const whatMattersHeading = 'What matters to them';
-
-/// [description] with its "What matters to them" section's text replaced
-/// by [section] -- added at the end, under a level-2 heading, if it had
-/// none.
-String withWhatMatters(String description, String section) {
-  final lines = description.split('\n');
-  final heading = RegExp(r'^(#{1,6})\s+(.*?)\s*#*\s*$');
-  for (var i = 0; i < lines.length; i++) {
-    final match = heading.firstMatch(lines[i]);
-    if (match == null ||
-        match.group(2)!.toLowerCase() != whatMattersHeading.toLowerCase()) {
-      continue;
-    }
-    final level = match.group(1)!.length;
-    var end = lines.length;
-    for (var j = i + 1; j < lines.length; j++) {
-      final other = heading.firstMatch(lines[j]);
-      if (other != null && other.group(1)!.length <= level) {
-        end = j;
-        break;
-      }
-    }
-    return [
-      ...lines.sublist(0, i + 1),
-      '',
-      section.trim(),
-      if (end < lines.length) '',
-      ...lines.sublist(end),
-    ].join('\n').trimRight();
-  }
-  final before = description.trimRight();
-  return [
-    if (before.isNotEmpty) ...[before, ''],
-    '## $whatMattersHeading',
-    '',
-    section.trim(),
-  ].join('\n');
 }
