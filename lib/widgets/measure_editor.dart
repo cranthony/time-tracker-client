@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
 import '../models/measure.dart';
+import '../models/trait.dart';
+import '../services/traits_repository.dart';
 import 'color_picker.dart';
 import 'durations.dart';
 import 'goals_picker.dart';
@@ -18,8 +20,9 @@ const _hiddenFromWeights = {'proposed', 'completed', 'archived', 'deleted'};
 /// A time-spent, number-of-events, time-of-day, time-window or
 /// follow-through measure looks at the events of its own goal, or of a goal chosen from [goals]; with or
 /// without their sub-goals. A weighted rollup weighs each of [goalId]'s
-/// sub-goals, from [goals]. Any measure can be rated only on days with
-/// events of its goal, or of another.
+/// sub-goals, from [goals]. A traits measure picks its traits, and their
+/// weights, from the [TraitsScope]'s. Any measure can be rated only on
+/// days with events of its goal, or of another.
 class MeasureEditor extends StatefulWidget {
   const MeasureEditor({
     super.key,
@@ -67,6 +70,22 @@ class _MeasureEditorState extends State<MeasureEditor> {
 
   /// A weighted rollup's weight for each sub-goal, by id.
   final _weights = <String, TextEditingController>{};
+
+  /// A traits measure's: every active trait, or those picked, in order;
+  /// each one's weight, by id; and its window.
+  bool _allTraits = true;
+  final _traitIds = <String>[];
+  final _traitWeights = <String, TextEditingController>{};
+  final _window = TextEditingController();
+
+  /// The traits to pick from, once asked for.
+  Future<List<Trait>>? _traitList;
+
+  /// For a sub-goal set aside for a while: the day ("YYYY-MM-DD") its
+  /// weight changes, and what it weighs from then on. Its weight until
+  /// then is in [_weights].
+  final _until = <String, String>{};
+  final _then = <String, TextEditingController>{};
 
   /// The goal's sub-goals, once [MeasureEditor.goals] has them: a weight
   /// for any other goal, one that's since moved, isn't kept.
@@ -147,10 +166,34 @@ class _MeasureEditorState extends State<MeasureEditor> {
         _percentile.text = m['agg'] == 'min' ? '0' : text(m['percentile']);
         if (m['weights'] case final Map weights) {
           for (final MapEntry(:key, :value) in weights.entries) {
-            _weights[key as String] = TextEditingController(text: text(value));
+            final id = key as String;
+            if (value case {'until': final String until}) {
+              _weights[id] = TextEditingController(text: text(value['weight']));
+              _until[id] = until;
+              _then[id] = TextEditingController(text: text(value['then']));
+            } else {
+              _weights[id] = TextEditingController(text: text(value));
+            }
           }
         }
+      case 'traits':
+        if (m['traits'] case final List ids) {
+          _allTraits = false;
+          _traitIds.addAll(ids.map((id) => '$id'));
+        }
+        if (m['weights'] case final Map weights) {
+          for (final MapEntry(:key, :value) in weights.entries) {
+            _traitWeights['$key'] = TextEditingController(text: text(value));
+          }
+        }
+        _window.text = text(m['window_days']);
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _traitList ??= TraitsScope.of(context)?.traits();
   }
 
   @override
@@ -168,7 +211,10 @@ class _MeasureEditorState extends State<MeasureEditor> {
       _penalty,
       _recovery,
       _lookBack,
+      _window,
       ..._weights.values,
+      ..._traitWeights.values,
+      ..._then.values,
     ]) {
       c.dispose();
     }
@@ -265,9 +311,30 @@ class _MeasureEditorState extends State<MeasureEditor> {
         if (_agg == 'weighted')
           'weights': {
             for (final MapEntry(:key, :value) in _weights.entries)
-              if (_subGoalIds?.contains(key) ?? true) key: ?number(value),
+              if (_subGoalIds?.contains(key) ?? true)
+                key: ?switch (_until[key]) {
+                  // Set aside: a field left empty is null, for
+                  // measureProblem to ask for.
+                  final until? => {
+                    'weight': number(value),
+                    'until': until,
+                    'then': number(_then[key]!),
+                  },
+                  null => number(value),
+                },
           },
         if (_agg == 'percentile') 'percentile': number(_percentile),
+      },
+      'traits' => {
+        'kind': 'traits',
+        'traits': _allTraits ? 'all' : _traitIds,
+        if ({
+              for (final MapEntry(:key, :value) in _traitWeights.entries)
+                if (_allTraits || _traitIds.contains(key)) key: ?number(value),
+            }
+            case final weights when weights.isNotEmpty)
+          'weights': weights,
+        'window_days': ?number(_window),
       },
       final kind => {'kind': kind},
     };
@@ -448,22 +515,13 @@ class _MeasureEditorState extends State<MeasureEditor> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (final goal in shown)
-            _field(
-              _weights.putIfAbsent(goal.id!, TextEditingController.new),
-              goalName(goal),
-              hint: '0',
-              number: true,
-              muted: goal.active
-                  ? null
-                  : '${goalStatuses[goal.status] ?? goal.status}: '
-                        "not rated, so it doesn't count",
-            ),
+          for (final goal in shown) ..._weightField(goal),
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               'A sub-goal with no weight, or one added later, counts for '
-              'nothing.',
+              'nothing. One set aside weighs its weight until the day '
+              'picked, then the other.',
               style: theme.textTheme.bodySmall,
             ),
           ),
@@ -471,6 +529,178 @@ class _MeasureEditorState extends State<MeasureEditor> {
       );
     },
   );
+
+  /// A traits measure's traits -- every active one, or those picked --
+  /// each with its weight, and the window they're scored over.
+  List<Widget> _traitFields(ThemeData theme) => [
+    SwitchListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: const Text('Every active trait'),
+      subtitle: const Text('Including any added later.'),
+      value: _allTraits,
+      onChanged: (on) {
+        setState(() => _allTraits = on);
+        _changed();
+      },
+    ),
+    FutureBuilder(
+      future: _traitList,
+      builder: (context, snapshot) {
+        if (_traitList == null) return const Text('No traits to choose from.');
+        final traits = snapshot.data;
+        if (traits == null) {
+          return snapshot.hasError
+              ? const Text("Couldn't load the traits.")
+              : const LinearProgressIndicator();
+        }
+        final shown = [
+          for (final trait in traits)
+            if (trait.id != null &&
+                (trait.status == 'active' || _traitIds.contains(trait.id)))
+              trait,
+        ];
+        final weighed = _allTraits
+            ? [
+                for (final t in shown)
+                  if (t.status == 'active') t,
+              ]
+            : [
+                for (final id in _traitIds)
+                  ?shown.where((t) => t.id == id).firstOrNull,
+              ];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!_allTraits)
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final trait in shown)
+                    FilterChip(
+                      label: Text(trait.name),
+                      selected: _traitIds.contains(trait.id),
+                      onSelected: (on) {
+                        setState(
+                          () => on
+                              ? _traitIds.add(trait.id!)
+                              : _traitIds.remove(trait.id),
+                        );
+                        _changed();
+                      },
+                    ),
+                ],
+              ),
+            for (final trait in weighed)
+              _field(
+                _traitWeights.putIfAbsent(trait.id!, TextEditingController.new),
+                '${trait.name} weight',
+                hint: '1',
+                number: true,
+              ),
+          ],
+        );
+      },
+    ),
+    _field(_window, 'Over the last', hint: '30', suffix: 'days', number: true),
+    Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        "Each trait's parts are scored over that many days before the day "
+        'rated. A trait with no weight weighs 1.',
+        style: theme.textTheme.bodySmall,
+      ),
+    ),
+  ];
+
+  /// A sub-goal's weight, and whether it's set aside until a day, with
+  /// what it weighs from then on.
+  List<Widget> _weightField(Goal goal) {
+    final id = goal.id!;
+    final until = _until[id];
+    final localizations = MaterialLocalizations.of(context);
+    return [
+      _field(
+        _weights.putIfAbsent(id, TextEditingController.new),
+        until == null ? goalName(goal) : '${goalName(goal)}, until then',
+        hint: '0',
+        number: true,
+        muted: goal.active
+            ? null
+            : '${goalStatuses[goal.status] ?? goal.status}: '
+                  "not rated, so it doesn't count",
+      ),
+      if (until == null)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            icon: const Icon(Icons.event),
+            label: const Text('Set aside until…'),
+            onPressed: () => _pickUntil(id),
+          ),
+        )
+      else
+        Row(
+          children: [
+            ActionChip(
+              avatar: const Icon(Icons.event),
+              label: Text(
+                'From ${localizations.formatMediumDate(DateTime.parse(until))}',
+              ),
+              onPressed: () => _pickUntil(id),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _field(
+                _then.putIfAbsent(id, TextEditingController.new),
+                'Then',
+                hint: '1',
+                number: true,
+              ),
+            ),
+            IconButton(
+              tooltip: "Don't set it aside",
+              icon: const Icon(Icons.close),
+              onPressed: () {
+                setState(() {
+                  _until.remove(id);
+                  _then.remove(id)?.dispose();
+                });
+                _changed();
+              },
+            ),
+          ],
+        ),
+    ];
+  }
+
+  /// Asks for the day sub-goal [id]'s weight changes: from then on it
+  /// weighs what's in [_then] (1, unless something's there already).
+  Future<void> _pickUntil(String id) async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final current = switch (_until[id]) {
+      final until? => DateTime.parse(until),
+      null => DateTime(today.year, today.month + 1, today.day),
+    };
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current.isBefore(today) ? today : current,
+      firstDate: today,
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _until[id] =
+          '${picked.year.toString().padLeft(4, '0')}-'
+          '${picked.month.toString().padLeft(2, '0')}-'
+          '${picked.day.toString().padLeft(2, '0')}';
+      final then = _then.putIfAbsent(id, TextEditingController.new);
+      if (then.text.trim().isEmpty) then.text = '1';
+    });
+    _changed();
+  }
 
   Widget _field(
     TextEditingController controller,
@@ -713,6 +943,7 @@ class _MeasureEditorState extends State<MeasureEditor> {
               ),
             if (_agg == 'weighted') _weightFields(theme),
           ],
+          'traits' => _traitFields(theme),
           _ => const <Widget>[],
         },
         if (kind != null) ..._onlyIfDays(theme),

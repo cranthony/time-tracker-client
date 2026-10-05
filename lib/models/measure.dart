@@ -27,7 +27,12 @@
 /// |              | (default 1), carried over from the day before between  |
 /// | `llm`        | `rubric` Claude rates the day against                  |
 /// | `rollup`     | optional `agg`: "mean" (default), "weighted" (with     |
-/// |              | `weights`) or "percentile" (with `percentile`)         |
+/// |              | `weights`) or "percentile" (with `percentile`); a      |
+/// |              | weight is a number or a temporary one (see             |
+/// |              | [isTemporaryWeight])                                   |
+/// | `traits`     | `traits`: trait ids, or "all" active ones; optional    |
+/// |              | `weights` ({trait id: weight}, default 1) and          |
+/// |              | `window_days` (default 30)                             |
 /// | (any)        | optional `only_if`: {`events_of`, `include_sub_goals`},|
 /// |              | both optional ({} is the goal itself): rated only on   |
 /// |              | days with such an event, and skipped on the rest       |
@@ -44,6 +49,7 @@ const measureKinds = {
   'subjective': 'Your rating',
   'llm': "Claude's judgement",
   'rollup': 'From sub-goals',
+  'traits': 'Traits',
 };
 
 /// What each kind of measure rates, said under its picker.
@@ -75,7 +81,21 @@ const measureKindHints = {
       'Claude rates the day against your rubric, reading its events, notes '
       "and sub-goals' ratings, for you to confirm in a reflection.",
   'rollup': "Its sub-goals' ratings that day, combined.",
+  'traits':
+      'Its traits -- Thoughtful, Reliable, Creative... -- each scored from '
+      "parts computed over its events (and its sub-goals') and what "
+      'happened at them, over a window of days, then combined. You confirm '
+      'it in a reflection. For people, and for keeping your word to '
+      'yourself.',
 };
+
+/// A trait's id as a name, until the trait's own is known: "reliable" as
+/// "Reliable".
+String traitLabel(String id, [Map<String, String> traitNames = const {}]) =>
+    traitNames[id] ??
+    (id.isEmpty
+        ? id
+        : '${id[0].toUpperCase()}${id.substring(1)}'.replaceAll('-', ' '));
 
 /// How a rollup combines its sub-goals' ratings, as the server names them,
 /// and as the app shows them.
@@ -233,6 +253,19 @@ String _describe(
         'min' => 'Lowest sub-goal rating',
         _ => 'Average sub-goal rating',
       };
+    case 'traits':
+      final weights = measure['weights'] is Map
+          ? (measure['weights'] as Map).cast<String, Object?>()
+          : const <String, Object?>{};
+      String weighed(String id) => switch (_number(weights[id])) {
+        final w? when w != 1 => '${traitLabel(id)} ×$w',
+        _ => traitLabel(id),
+      };
+      return switch (measure['traits']) {
+        'all' => 'All traits',
+        final List ids => ids.map((id) => weighed('$id')).join(', '),
+        _ => 'Traits',
+      };
     default:
       return '$measure';
   }
@@ -332,8 +365,11 @@ String? measureProblem(Measure measure) {
           final weights = measure['weights'];
           if (weights is! Map ||
               weights.isEmpty ||
-              weights.values.any((w) => w is! num || w < 0)) {
-            return 'Give at least one sub-goal a weight, 0 or more.';
+              weights.values.any(
+                (w) => !isTemporaryWeight(w) && (w is! num || w < 0),
+              )) {
+            return 'Give at least one sub-goal a weight, 0 or more; one set '
+                'aside needs a day, and a weight, 0 or more, for after it.';
           }
         case 'percentile':
           final p = measure['percentile'];
@@ -342,6 +378,18 @@ String? measureProblem(Measure measure) {
           }
         default:
           return 'Pick average, weighted or percentile.';
+      }
+    case 'traits':
+      final traits = measure['traits'];
+      if (traits != 'all' && (traits is! List || traits.isEmpty)) {
+        return 'Pick the traits it rates by, or all of them.';
+      }
+      if (!positive(measure['window_days'] ?? 30)) {
+        return 'The window must be 1 day or more.';
+      }
+      final weights = measure['weights'] ?? const {};
+      if (weights is! Map || weights.values.any((w) => w is! num || w < 0)) {
+        return "Each trait's weight must be 0 or more.";
       }
     default:
       return 'Pick a kind of measure.';
@@ -458,9 +506,46 @@ List<(String, String)> _settings(
         if (agg == 'weighted')
           if (measure['weights'] case final Map weights)
             for (final MapEntry(:key, :value) in weights.entries)
-              (goalNames[key] ?? '$key', 'weight $value'),
+              (
+                goalNames[key] ?? '$key',
+                switch (value) {
+                  {'weight': final w, 'until': final until, 'then': final t} =>
+                    'weight $w until $until, then $t',
+                  _ => 'weight $value',
+                },
+              ),
+      ];
+    case 'traits':
+      return [
+        (
+          'Traits',
+          switch (measure['traits']) {
+            'all' => 'All active traits',
+            final List ids => ids.map((id) => traitLabel('$id')).join(', '),
+            _ => '?',
+          },
+        ),
+        if (measure['weights'] case final Map weights)
+          for (final MapEntry(:key, :value) in weights.entries)
+            (traitLabel('$key'), 'weight $value'),
+        ('Over', days(_number(measure['window_days']) ?? 30)),
       ];
     default:
       return [];
   }
 }
+
+/// Whether [weight] is a weighted rollup's temporary weight,
+/// `{"weight": 0, "until": "2026-11-05", "then": 1}`: it weighs `weight` on
+/// days before `until` and `then` from it on -- a sub-goal set aside for a
+/// while.
+bool isTemporaryWeight(Object? weight) =>
+    weight is Map &&
+    weight.length == 3 &&
+    weight['weight'] is num &&
+    (weight['weight'] as num) >= 0 &&
+    weight['then'] is num &&
+    (weight['then'] as num) >= 0 &&
+    weight['until'] is String &&
+    RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(weight['until'] as String) &&
+    DateTime.tryParse(weight['until'] as String) != null;

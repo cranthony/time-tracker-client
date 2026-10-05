@@ -14,10 +14,11 @@ proposed, active, inactive, completed, archived or deleted. Only active
 goals take up one of the calendar's event labels; the rest keep their
 history. Proposed, active and inactive goals are shown to start with,
 and the filter at the top right picks others. The menu beside it picks what
-each goal shows under its name: its time spent, its measure, its time
-as a percentage, or its events' priority. A summary under the heading
-splits the last 24 hours and 7 days by the goals shown, or by priority.
-Each active goal shows its health — its latest confirmed rating, a small chart of recent ones, and how many periods have gone unassessed — and its menu opens its history. Later it will show the summaries the server
+each goal shows under its name: its time spent, its measure, or its
+events' priority. A summary under the heading splits the last 24 hours
+and 7 days by the goals shown, or by priority, and its toggle shows
+time, there and under each goal, as percentages or durations.
+The Goals page's app bar opens the **Traits** goals can be rated by (Thoughtful, Reliable, Creative, Adventurous, Generous to start with): each one's latest score and recent trend, editable, with what's behind a score a tap away. A goal rated by traits has a page of its own, from its menu, with its traits' scores, what matters to them, its history of activities and places, and its events with what happened at each, which an event's details also show and edit. Each active goal shows its health — its latest confirmed rating, a small chart of recent ones, and how many periods have gone unassessed — and its menu opens its history. Later it will show the summaries the server
 generates.
 
 It is built for Android and also runs on Windows and in Chrome. Chrome

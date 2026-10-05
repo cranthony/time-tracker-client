@@ -216,6 +216,33 @@ void main() {
     expect(
       measureProblem({
         'kind': 'rollup',
+        'agg': 'weighted',
+        'weights': {
+          'a': 2,
+          'b': {'weight': 0, 'until': '2026-11-05', 'then': 1},
+        },
+      }),
+      isNull,
+    );
+    for (final setAside in [
+      {'weight': 0, 'until': '2026-11-05', 'then': null},
+      {'weight': 0, 'until': 'Nov 5', 'then': 1},
+      {'weight': -1, 'until': '2026-11-05', 'then': 1},
+      {'weight': 0, 'then': 1},
+    ]) {
+      expect(
+        measureProblem({
+          'kind': 'rollup',
+          'agg': 'weighted',
+          'weights': {'a': setAside},
+        }),
+        contains('set'),
+        reason: '$setAside',
+      );
+    }
+    expect(
+      measureProblem({
+        'kind': 'rollup',
         'agg': 'percentile',
         'percentile': 120,
       }),
@@ -291,6 +318,19 @@ void main() {
         goalNames: {'a': 'Tofu'},
       ),
       [('Combines', 'Weighted'), ('Tofu', 'weight 2')],
+    );
+    expect(
+      describeMeasureSettings(
+        {
+          'kind': 'rollup',
+          'agg': 'weighted',
+          'weights': {
+            'a': {'weight': 0, 'until': '2026-11-05', 'then': 1},
+          },
+        },
+        goalNames: {'a': 'Tofu'},
+      ),
+      [('Combines', 'Weighted'), ('Tofu', 'weight 0 until 2026-11-05, then 1')],
     );
     expect(
       describeMeasureSettings({

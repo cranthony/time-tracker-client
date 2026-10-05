@@ -102,8 +102,9 @@ List<SummarySlice> windowPriorityShares(
 
 /// The last 24 hours and 7 days at a glance, under the Goals heading:
 /// each window's bar, one over the other, split by the goals shown, or by
-/// priority. Swiping it, or tapping a title, turns between the two, and
-/// its chevron folds it away.
+/// priority. Swiping it, or tapping a title, turns between the two, its
+/// chevron folds it away, and the button by that turns its percentages
+/// into durations and back.
 class GoalsTimeSummary extends StatelessWidget {
   const GoalsTimeSummary({
     super.key,
@@ -115,6 +116,8 @@ class GoalsTimeSummary extends StatelessWidget {
     this.initialPage = 0,
     this.collapsed = false,
     this.onCollapsed,
+    this.durations = false,
+    this.onDurations,
   });
 
   /// The goals shown, as the page shows them: by status, and not under
@@ -139,6 +142,11 @@ class GoalsTimeSummary extends StatelessWidget {
   final bool collapsed;
   final ValueChanged<bool>? onCollapsed;
 
+  /// Whether it shows durations, rather than percentages; with no
+  /// [onDurations], there's no button to change it.
+  final bool durations;
+  final ValueChanged<bool>? onDurations;
+
   @override
   Widget build(BuildContext context) {
     final (day, week) = onGoals;
@@ -155,6 +163,8 @@ class GoalsTimeSummary extends StatelessWidget {
       initialPage: initialPage,
       collapsed: collapsed,
       onCollapsed: onCollapsed,
+      durations: durations,
+      onDurations: onDurations,
       pages: [
         SummaryBar(
           rows: [('24h', goals(false, day)), ('7d', goals(true, week))],

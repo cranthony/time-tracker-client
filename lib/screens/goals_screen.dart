@@ -12,7 +12,10 @@ import '../outbox/pending_goal_save.dart';
 import '../outbox/save_error.dart';
 import '../services/goals_repository.dart';
 import '../services/mcp_client.dart';
+import '../services/traits_repository.dart';
 import 'goal_history_screen.dart';
+import 'goal_traits_screen.dart';
+import 'traits_screen.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/goal_summary_dialog.dart';
@@ -36,15 +39,18 @@ import '../widgets/status_message.dart';
 /// going with it, until "Done". The filter at the top right picks which
 /// statuses are shown: proposed, active and inactive goals to start with.
 /// The menu beside it picks what each goal shows under its name: its
-/// time spent, its measure, or its time as a share of each window
-/// ([GoalSummary]), kept on the device.
+/// time spent or its measure ([GoalSummary]), kept on the device. Its
+/// time spent is in durations or as a share of each window, as the time
+/// summary's toggle says.
 /// Only active goals take up a calendar label; the others keep their
 /// history. Tapping a goal shows its priority, its measure and how it's
 /// doing by it, and its color, from which each can be edited
 /// ([showGoalSummaryDialog]); tapping its ratings shows its
 /// history; its menu adds a sub-goal, or shows its measure, history or
-/// details: all its properties, which can be changed, its status included.
-/// "+" adds a top-level goal.
+/// details: all its properties, which can be changed, its status included
+/// -- and, for a goal rated by traits, its traits page
+/// ([GoalTraitsScreen]). "+" adds a top-level goal. With a [TraitsScope],
+/// the app bar opens the traits ([TraitsScreen]).
 class GoalsScreen extends StatefulWidget {
   const GoalsScreen({
     super.key,
@@ -115,6 +121,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
   /// Whether the time summary under the heading is folded away.
   bool _timeSummaryCollapsed = false;
 
+  /// Whether time is shown as durations, rather than as percentages:
+  /// in the time summary, and under each goal.
+  bool _durations = true;
+
   @override
   void initState() {
     super.initState();
@@ -126,16 +136,33 @@ class _GoalsScreenState extends State<GoalsScreen> {
     _loadTimeSummaryCollapsed();
   }
 
-  /// The [GoalSummary] picked last time, if one was. Best effort, like
-  /// the response cache: without one, it's [GoalSummary.time].
+  /// The [GoalSummary] picked last time, if one was, and whether time
+  /// was in durations. Best effort, like the response cache: without
+  /// them, it's [GoalSummary.time], in durations. Time picked as a
+  /// percentage, when that was a [GoalSummary] of its own, is still.
   Future<void> _loadSummary() async {
     try {
-      final name = await SharedPreferencesAsync().getString(_summaryKey);
-      final summary = GoalSummary.values.asNameMap()[name];
-      if (!mounted || summary == null) return;
-      setState(() => _summary = summary);
+      final preferences = SharedPreferencesAsync();
+      final name = await preferences.getString(_summaryKey);
+      final durations = await preferences.getBool(_durationsKey);
+      if (!mounted) return;
+      setState(() {
+        _summary = GoalSummary.values.asNameMap()[name] ?? _summary;
+        _durations = durations ?? name != _percentSummary;
+      });
     } catch (_) {
       // Nowhere to keep it: the default it is.
+    }
+  }
+
+  void _setDurations(bool durations) {
+    setState(() => _durations = durations);
+    try {
+      SharedPreferencesAsync()
+          .setBool(_durationsKey, durations)
+          .catchError((_) {});
+    } catch (_) {
+      // Nowhere to keep it: it lasts until the app closes.
     }
   }
 
@@ -393,6 +420,36 @@ class _GoalsScreenState extends State<GoalsScreen> {
     ),
   );
 
+  Map<String?, String> get _goalNames => {
+    for (final goal in _goals?.goals ?? const <Goal>[]) goal.id: goalName(goal),
+  };
+
+  /// [goal]'s traits page, for a goal rated by traits; null without a
+  /// [TraitsScope], or for any other goal.
+  VoidCallback? _traitsOf(Goal goal) {
+    final traits = TraitsScope.of(context);
+    if (traits == null ||
+        goal.measure?['kind'] != 'traits' ||
+        goal.id == null) {
+      return null;
+    }
+    return () => Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => GoalTraitsScreen(
+          goal: goal,
+          repository: traits,
+          goalNames: _goalNames,
+        ),
+      ),
+    );
+  }
+
+  void _openTraits(TraitsRepository traits) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => TraitsScreen(repository: traits, goalNames: _goalNames),
+    ),
+  );
+
   Future<void> _add({String? parentId}) async {
     // So the new sub-goal can be seen.
     if (parentId != null) setState(() => _expanded.add(parentId));
@@ -498,6 +555,12 @@ class _GoalsScreenState extends State<GoalsScreen> {
                     ),
                   if (ready)
                     _SummaryPicker(summary: _summary, onChanged: _setSummary),
+                  if (TraitsScope.of(context) case final traits? when ready)
+                    IconButton(
+                      tooltip: 'Traits',
+                      icon: const Icon(Icons.psychology_outlined),
+                      onPressed: () => _openTraits(traits),
+                    ),
                   AppMenu(
                     serverLabel: widget.serverLabel,
                     version: widget.version,
@@ -705,6 +768,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
           goal: overall,
           time: overall?.timeFor(_shown) ?? goals.timeFor(_shown),
           summary: _summary,
+          durations: _durations,
           goalNames: names,
           onTap: overall == null ? null : () => _show(overall),
           onHistory: overall == null ? null : () => _history(overall),
@@ -723,6 +787,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
             goalNames: names,
             shownStatuses: _shown,
             summary: _summary,
+            durations: _durations,
             subGoals: subGoals[goal.id] ?? 0,
             expanded: _expanded.contains(goal.id),
             onToggle: () => setState(() {
@@ -749,6 +814,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
                 : () => setState(() => _reordering = true),
             onAddSubGoal: () => _add(parentId: goal.id),
             onHistory: () => _history(goal),
+            onTraits: _traitsOf(goal),
           ),
         ],
       ],
@@ -766,6 +832,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
           byPriority: goals.minutesByPriority,
           collapsed: _timeSummaryCollapsed,
           onCollapsed: _setTimeSummaryCollapsed,
+          durations: _durations,
+          onDurations: _setDurations,
         ),
         Expanded(child: list),
       ],
@@ -813,11 +881,9 @@ class _StatusFilter extends StatelessWidget {
 /// What each goal on the Goals page shows under its name.
 enum GoalSummary {
   /// The time spent on it and its sub-goals in the last 24 hours and 7
-  /// days: "9h in 24h · 10h in 7d".
+  /// days: "9h in 24h · 10h in 7d", or as shares of each window, "37.5%
+  /// of 24h · 6% of 7d", as the time summary's toggle says.
   time('Time spent'),
-
-  /// Its time as a share of each window: "37.5% of 24h · 6% of 7d".
-  percent('Time as a percentage'),
 
   /// What its measure rates: "10h per 7 days".
   measure('Measure');
@@ -830,6 +896,13 @@ enum GoalSummary {
 
 /// Where the [GoalSummary] picked is kept.
 const _summaryKey = 'goal_summary';
+
+/// What [_summaryKey] held for time as a percentage, before that was the
+/// time summary's toggle.
+const _percentSummary = 'percent';
+
+/// Where whether time is shown as durations is kept.
+const _durationsKey = 'goal_time_durations';
 
 /// Where whether the time summary is folded away is kept.
 const _timeSummaryCollapsedKey = 'goal_time_summary_collapsed';
@@ -884,6 +957,7 @@ class _GoalTile extends StatelessWidget {
     this.goalNames = const {},
     this.shownStatuses,
     this.summary = GoalSummary.time,
+    this.durations = true,
     required this.subGoals,
     required this.expanded,
     required this.onToggle,
@@ -893,6 +967,7 @@ class _GoalTile extends StatelessWidget {
     this.dragIndex,
     required this.onAddSubGoal,
     required this.onHistory,
+    this.onTraits,
     this.saving = false,
     this.failed,
     this.onRetry,
@@ -929,6 +1004,9 @@ class _GoalTile extends StatelessWidget {
   /// What it shows under its name, above its other details.
   final GoalSummary summary;
 
+  /// Whether its time is in durations, rather than percentages.
+  final bool durations;
+
   /// How many sub-goals it has (of those shown); none, and it has no arrow.
   final int subGoals;
 
@@ -953,6 +1031,10 @@ class _GoalTile extends StatelessWidget {
 
   /// Shows its history: tapping its ratings, or "History" in its menu.
   final VoidCallback onHistory;
+
+  /// Shows its traits page, for a goal rated by traits: "Traits" in its
+  /// menu. Null for any other goal.
+  final VoidCallback? onTraits;
 
   @override
   Widget build(BuildContext context) {
@@ -984,7 +1066,7 @@ class _GoalTile extends StatelessWidget {
           day,
           week,
           skipZero: true,
-          asPercent: summary == GoalSummary.percent,
+          asPercent: !durations,
         ),
         _ => null,
       },
@@ -1105,14 +1187,17 @@ class _GoalTile extends StatelessWidget {
               onSelected: (choice) => switch (choice) {
                 'sub' => onAddSubGoal(),
                 'history' => onHistory(),
+                'traits' => onTraits?.call(),
                 'measure' => onTap?.call(),
                 _ => onDetails(),
               },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'sub', child: Text('Add sub-goal')),
-                PopupMenuItem(value: 'measure', child: Text('Edit')),
-                PopupMenuItem(value: 'history', child: Text('History')),
-                PopupMenuItem(value: 'details', child: Text('Details')),
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'sub', child: Text('Add sub-goal')),
+                const PopupMenuItem(value: 'measure', child: Text('Edit')),
+                const PopupMenuItem(value: 'history', child: Text('History')),
+                if (onTraits != null)
+                  const PopupMenuItem(value: 'traits', child: Text('Traits')),
+                const PopupMenuItem(value: 'details', child: Text('Details')),
               ],
             ),
         ],
@@ -1559,6 +1644,7 @@ class _OverallCard extends StatelessWidget {
     required this.goal,
     required this.time,
     this.summary = GoalSummary.time,
+    this.durations = true,
     required this.goalNames,
     required this.onTap,
     required this.onHistory,
@@ -1573,6 +1659,9 @@ class _OverallCard extends StatelessWidget {
   /// time is shown even when there's none, and its measure, when it has
   /// none, is the average of the top-level goals'.
   final GoalSummary summary;
+
+  /// Whether its time is in durations, rather than percentages.
+  final bool durations;
   final Map<String?, String> goalNames;
   final VoidCallback? onTap;
   final VoidCallback? onHistory;
@@ -1590,7 +1679,7 @@ class _OverallCard extends StatelessWidget {
     final shown = switch ((summary, time)) {
       (GoalSummary.measure, _) => measure,
       (_, (final day, final week)) =>
-        '${describeTime(day, week, asPercent: summary == GoalSummary.percent)!} '
+        '${describeTime(day, week, asPercent: !durations)!} '
             'on the goals shown',
       _ => null,
     };

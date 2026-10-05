@@ -6,12 +6,53 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
-## 5.12.1
+## 5.15.1
 
 - On the Goals page, a goal with sub-goals and a color of its own shows
   that color only on its arrow; its band beneath is dashed in the color
   it'd inherit, so the color no longer runs on down beside its
   sub-goals.
+
+## 5.15.0
+
+- Traits. The Goals page's app bar opens the **Traits** list: each trait's
+  name, definition, status, latest score (the mean across the goals rated
+  by it) and its last days' scores. Tap a trait to rename it, reword it,
+  change its status or edit its parts (each part's kind, settings and
+  weight, and a judgment's rubric), checked before saving as the server
+  checks it; "+" adds one, and its menu turns it on or off or archives it.
+  Tapping a score shows each goal's score behind it, and each of those the
+  parts and events behind it.
+- A goal's measure can be **Traits**: every active trait, or the ones
+  picked, each with a weight, over a window of days.
+- A goal rated by traits has **Traits** in its menu: a page with its
+  traits' latest scores (tap one for the parts and events behind it),
+  what matters to them (editable), its history of activities and places,
+  and its events with what happened at each.
+- An event's details show **what happened** at it: who it was with and
+  for, its activity and place, how creative, how much effort and how much
+  attention (0-3 each), what was new, and why. Tap to edit them.
+
+## 5.14.0
+
+- In a weighted measure's editor, a sub-goal's weight can be set aside
+  until a day: "Set aside until…" picks the day, and "Then" is what it
+  weighs from that day on. Its settings show it as "weight 0 until
+  2026-11-05, then 1". The close button makes it a plain weight again.
+
+## 5.13.0
+
+- The Events page's day summary and the Goals page's summary each have
+  a toggle by their chevron, % on one half and a clock on the other,
+  the one shown filled in. Tapping it anywhere turns each share's
+  percentage into its time, such as "1h 30m", and back. Each page keeps
+  it as it was left next time.
+- On the Goals page, the toggle also decides how "Time spent" shows
+  under each goal and on the overall card: "9h in 24h", or "37.5% of
+  24h". "Time as a percentage" is gone from the menu; if it was picked,
+  "Time spent" shows percentages instead.
+- When a summary's titles don't fit beside the toggle and chevron on a
+  narrow screen, they shrink to fit.
 
 ## 5.12.0
 
