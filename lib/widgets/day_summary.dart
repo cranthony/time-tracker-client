@@ -139,7 +139,8 @@ List<SummarySlice> goalShares(
 /// A day's time at a glance, above its timeline: its share for each
 /// priority, for the top goals, and for the top-level goals they're
 /// under, and the time with nothing scheduled. Swiping it, or tapping a
-/// title, turns between them, and its chevron folds it away.
+/// title, turns between them, its chevron folds it away, and the button
+/// by that turns its percentages into durations and back.
 class DaySummary extends StatelessWidget {
   const DaySummary({
     super.key,
@@ -149,6 +150,8 @@ class DaySummary extends StatelessWidget {
     this.initialPage = 0,
     this.collapsed = false,
     this.onCollapsed,
+    this.durations = false,
+    this.onDurations,
   });
 
   final List<Event> events;
@@ -161,12 +164,19 @@ class DaySummary extends StatelessWidget {
   final bool collapsed;
   final ValueChanged<bool>? onCollapsed;
 
+  /// Whether it shows durations, rather than percentages; with no
+  /// [onDurations], there's no button to change it.
+  final bool durations;
+  final ValueChanged<bool>? onDurations;
+
   @override
   Widget build(BuildContext context) => TimeSummary(
     titles: const ['Priorities', 'Goals', 'Top-level goals'],
     initialPage: initialPage,
     collapsed: collapsed,
     onCollapsed: onCollapsed,
+    durations: durations,
+    onDurations: onDurations,
     pages: [
       for (final slices in [
         priorityShares(events, day),

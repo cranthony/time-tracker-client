@@ -3,6 +3,8 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import 'durations.dart';
+
 /// One share of some time: by priority or goal.
 class SummarySlice {
   const SummarySlice(this.label, this.color, this.time);
@@ -45,7 +47,9 @@ List<SummarySlice> topShares<K>(
 /// [SummaryBar]s, under their [titles]. Swiping, or tapping a title,
 /// turns between them, and it grows or shrinks between their heights as
 /// it's swiped. With [onCollapsed], a chevron folds it away, leaving
-/// only a quiet "Show summary" to bring it back.
+/// only a quiet "Show summary" to bring it back. With [onDurations], a
+/// button by it turns its [SummaryBar]s between percentages and
+/// durations.
 class TimeSummary extends StatefulWidget {
   const TimeSummary({
     super.key,
@@ -54,6 +58,8 @@ class TimeSummary extends StatefulWidget {
     this.initialPage = 0,
     this.collapsed = false,
     this.onCollapsed,
+    this.durations = false,
+    this.onDurations,
   });
 
   final List<String> titles;
@@ -66,6 +72,13 @@ class TimeSummary extends StatefulWidget {
 
   /// Called with whether it's to be [collapsed]; null for no chevron.
   final ValueChanged<bool>? onCollapsed;
+
+  /// Whether its [SummaryBar]s show each share's duration, rather than
+  /// its percentage.
+  final bool durations;
+
+  /// Called with whether to show [durations]; null for no button.
+  final ValueChanged<bool>? onDurations;
 
   @override
   State<TimeSummary> createState() => _TimeSummaryState();
@@ -105,7 +118,10 @@ class _TimeSummaryState extends State<TimeSummary> {
             alignment: Alignment.topCenter,
             child: Offstage(
               offstage: widget.collapsed,
-              child: TickerMode(enabled: !widget.collapsed, child: _body()),
+              child: TickerMode(
+                enabled: !widget.collapsed,
+                child: SummaryUnit(durations: widget.durations, child: _body()),
+              ),
             ),
           ),
           Divider(height: 1, color: theme.colorScheme.outlineVariant),
@@ -203,6 +219,15 @@ class _TimeSummaryState extends State<TimeSummary> {
           ),
         ],
         const Spacer(),
+        if (widget.onDurations case final onDurations?)
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: widget.durations ? 'Show percentages' : 'Show durations',
+            isSelected: widget.durations,
+            icon: const Icon(Icons.percent),
+            selectedIcon: const Icon(Icons.schedule),
+            onPressed: () => onDurations(!widget.durations),
+          ),
         if (onCollapsed != null)
           IconButton(
             visualDensity: VisualDensity.compact,
@@ -215,8 +240,27 @@ class _TimeSummaryState extends State<TimeSummary> {
   }
 }
 
+/// Whether the [SummaryBar]s under it show durations, rather than
+/// percentages.
+class SummaryUnit extends InheritedWidget {
+  const SummaryUnit({super.key, required this.durations, required super.child});
+
+  final bool durations;
+
+  /// Whether [context]'s bars show durations; percentages, with no
+  /// [SummaryUnit] over it.
+  static bool durationsOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<SummaryUnit>()?.durations ??
+      false;
+
+  @override
+  bool updateShouldNotify(SummaryUnit oldWidget) =>
+      durations != oldWidget.durations;
+}
+
 /// [rows] as bars split by share, one over another, with one legend
-/// under them: each share's percentage of each row's whole. A row's
+/// under them: each share's percentage of each row's whole, or, under a
+/// [SummaryUnit] with durations, its time, to the minute. A row's
 /// label, if it has one, goes before its bar. Time on nothing in
 /// particular is left empty.
 class SummaryBar extends StatelessWidget {
@@ -247,9 +291,15 @@ class SummaryBar extends StatelessWidget {
       ...labels.where((label) => colors[label] != null),
       ...labels.where((label) => colors[label] == null),
     ];
-    String percent(List<SummarySlice> slices, String label) {
+    final durations = SummaryUnit.durationsOf(context);
+    String amount(List<SummarySlice> slices, String label) {
       final slice = slices.where((s) => s.label == label).firstOrNull;
       if (slice == null) return '–';
+      if (durations) {
+        return formatDuration(
+          Duration(minutes: (slice.time.inSeconds / 60).round()),
+        )!;
+      }
       final total = slices.fold(0, (sum, s) => sum + s.time.inSeconds);
       return '${(100 * slice.time.inSeconds / total).round()}%';
     }
@@ -309,7 +359,7 @@ class SummaryBar extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    [for (final (_, slices) in rows) percent(slices, label)]
+                    [for (final (_, slices) in rows) amount(slices, label)]
                         .join(' · '),
                     style: small?.copyWith(fontWeight: FontWeight.w700),
                   ),

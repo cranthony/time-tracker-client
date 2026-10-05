@@ -114,4 +114,47 @@ void main() {
       expect(slices[1].color, const Color(0xFF33B679));
     });
   });
+
+  testWidgets('its button turns percentages into durations and back', (
+    tester,
+  ) async {
+    var durations = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => DaySummary(
+              events: [
+                event(at(9), at(10, 30), priority: 1),
+                // A third of a minute each: rounded to whole minutes.
+                event(at(11), at(11, 1), priority: 2),
+                event(at(11), at(11, 1), priority: 2),
+                event(at(11), at(11, 1), priority: 3),
+              ],
+              day: day,
+              goals: const {},
+              durations: durations,
+              onDurations: (value) => setState(() => durations = value),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('6%'), findsOneWidget);
+    expect(find.text('1h 30m'), findsNothing);
+
+    await tester.tap(find.byTooltip('Show durations'));
+    await tester.pumpAndSettle();
+    expect(durations, isTrue);
+    expect(find.text('1h 30m'), findsOneWidget);
+    expect(find.text('1m'), findsOneWidget);
+    expect(find.text('0m'), findsOneWidget);
+    expect(find.text('22h 29m'), findsOneWidget);
+    expect(find.text('6%'), findsNothing);
+
+    await tester.tap(find.byTooltip('Show percentages'));
+    await tester.pumpAndSettle();
+    expect(find.text('6%'), findsOneWidget);
+  });
 }

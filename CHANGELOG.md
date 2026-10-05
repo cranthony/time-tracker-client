@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.13.0
+
+- The Events page's day summary has a button by its chevron that turns
+  each share's percentage into its time, such as "1h 30m", and back. It
+  stays as it was left next time.
+
 ## 5.12.0
 
 - On the Events page, the strip down an event's left edge is solid all

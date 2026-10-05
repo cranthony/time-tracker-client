@@ -153,6 +153,9 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Whether the day's summary is folded away.
   bool _summaryCollapsed = false;
 
+  /// Whether the day's summary shows durations, rather than percentages.
+  bool _summaryDurations = false;
+
   /// The timeline's zoom: logical pixels per minute, from the first of
   /// [timelineScales] to the last; the buttons step between them, and
   /// pinching goes anywhere between.
@@ -210,6 +213,7 @@ class _EventsScreenState extends State<EventsScreen> {
     widget.outbox?.addListener(_outboxChanged);
     _loadNotes(cached: true);
     _loadSummaryCollapsed();
+    _loadSummaryDurations();
   }
 
   /// When each note not yet compacted was taken: those saved, and those
@@ -313,6 +317,31 @@ class _EventsScreenState extends State<EventsScreen> {
     try {
       SharedPreferencesAsync()
           .setBool(_summaryCollapsedKey, collapsed)
+          .catchError((_) {});
+    } catch (_) {
+      // Nowhere to keep it: it lasts until the app closes.
+    }
+  }
+
+  /// Whether the day's summary showed durations last time. Best effort:
+  /// without it, it shows percentages.
+  Future<void> _loadSummaryDurations() async {
+    try {
+      final durations = await SharedPreferencesAsync().getBool(
+        _summaryDurationsKey,
+      );
+      if (!mounted || durations == null) return;
+      setState(() => _summaryDurations = durations);
+    } catch (_) {
+      // Nowhere to keep it: percentages.
+    }
+  }
+
+  void _setSummaryDurations(bool durations) {
+    setState(() => _summaryDurations = durations);
+    try {
+      SharedPreferencesAsync()
+          .setBool(_summaryDurationsKey, durations)
           .catchError((_) {});
     } catch (_) {
       // Nowhere to keep it: it lasts until the app closes.
@@ -956,6 +985,8 @@ class _EventsScreenState extends State<EventsScreen> {
             goals: _goalsById,
             collapsed: _summaryCollapsed,
             onCollapsed: _setSummaryCollapsed,
+            durations: _summaryDurations,
+            onDurations: _setSummaryDurations,
           ),
         Expanded(
           child: LayoutBuilder(
@@ -1096,3 +1127,6 @@ class _EventsScreenState extends State<EventsScreen> {
 
 /// Where whether the day's summary is folded away is kept.
 const _summaryCollapsedKey = 'day_summary_collapsed';
+
+/// Where whether the day's summary shows durations is kept.
+const _summaryDurationsKey = 'day_summary_durations';
