@@ -144,7 +144,11 @@ class _NotesScreenState extends State<NotesScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e);
+      setState(() {
+        _error = e;
+        // Signed in: without that it's SignInRequiredException.
+        _needsSignIn = false;
+      });
     }
   }
 

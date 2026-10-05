@@ -22,13 +22,18 @@ import 'package:time_tracker_client/widgets/properties_dialog.dart';
 void main() {
   /// The Goals page over [repo], saving through [outbox], or an outbox of
   /// its own.
-  Widget app(GoalsRepository repo, {GoalOutbox? outbox}) => MaterialApp(
+  Widget app(
+    GoalsRepository repo, {
+    GoalOutbox? outbox,
+    Future<void> Function()? onSignIn,
+  }) => MaterialApp(
     home: GoalsScreen(
       repository: repo,
       outbox:
           outbox ??
           (GoalOutbox(store: InMemoryOutboxStore(), repository: repo)..start()),
       serverLabel: 'offline demo',
+      onSignIn: onSignIn,
     ),
   );
 
@@ -163,6 +168,23 @@ void main() {
         isNull,
       );
     });
+  });
+
+  testWidgets('a server error after sign-in is shown, not the sign-in '
+      'prompt', (tester) async {
+    final repo = _SignInGoalsRepository(tree())
+      ..failure = McpException('Tool get_goals failed: token revoked');
+    await tester.pumpWidget(
+      app(repo, onSignIn: () async => repo.signedIn = true),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Sign in to see your goals.'), findsOneWidget);
+
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sign in to see your goals.'), findsNothing);
+    expect(find.textContaining('Could not load goals.'), findsOneWidget);
+    expect(find.textContaining('token revoked'), findsOneWidget);
   });
 
   testWidgets(
@@ -2046,4 +2068,21 @@ class _GatedGoalsRepository implements GoalsRepository {
 
   @override
   Future<List<Assessment>> history(Goal goal) => _inner.history(goal);
+}
+
+/// Needs sign-in until [signedIn], then answers with [inner]'s goals, or
+/// throws [failure], as a server that can't answer would.
+class _SignInGoalsRepository extends InMemoryGoalsRepository {
+  _SignInGoalsRepository(this._inner) : super(const []);
+
+  final InMemoryGoalsRepository _inner;
+  bool signedIn = false;
+  Exception? failure;
+
+  @override
+  Future<GoalList> goals() async {
+    if (!signedIn) throw SignInRequiredException();
+    if (failure case final failure?) throw failure;
+    return _inner.goals();
+  }
 }
