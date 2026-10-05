@@ -431,7 +431,7 @@ void main() {
               await tester.pumpAndSettle();
             }
             if (zoom > 0) {
-              await tester.ensureVisible(find.text('Lunch'));
+              await tester.ensureVisible(find.text('Lunch with Sam'));
               await tester.pumpAndSettle();
             }
           },

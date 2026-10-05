@@ -439,6 +439,15 @@ class _GoalsScreenState extends State<GoalsScreen> {
           goal: goal,
           repository: traits,
           goalNames: _goalNames,
+          onEditMeasure: (goal) async {
+            final saved = await showEditMeasureDialog(
+              context,
+              goal,
+              save: _update,
+              goals: _allGoals,
+            );
+            return saved?.goals.where((g) => g.id == goal.id).firstOrNull;
+          },
         ),
       ),
     );

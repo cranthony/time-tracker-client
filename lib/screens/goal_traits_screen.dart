@@ -10,18 +10,25 @@ import 'trait_breakdown.dart';
 
 /// A goal rated by traits -- usually a person -- on one page: its traits'
 /// scores of the last day that's over (tapping one shows the parts and
-/// events behind it), what matters to them (from its description, edited
-/// here), its history digest (activities and places, with how often and
-/// when), and a timeline of its events with what happened at each.
+/// events behind it), how it's rated (its traits, their weights, and its
+/// own parts, such as its cadences -- edited with [onEditMeasure]), what
+/// matters to them (from its description, edited here), its history
+/// digest (activities and places, with how often and when), and a
+/// timeline of its events with what happened at each.
 class GoalTraitsScreen extends StatefulWidget {
   const GoalTraitsScreen({
     super.key,
     required this.goal,
     required this.repository,
     this.goalNames = const {},
+    this.onEditMeasure,
   });
 
   final Goal goal;
+
+  /// Edits the goal's measure, returning the goal as saved, or null if
+  /// nothing was; without it, the measure can't be edited here.
+  final Future<Goal?> Function(Goal goal)? onEditMeasure;
   final TraitsRepository repository;
 
   /// Names goals by id, for who events were with and for.
@@ -37,7 +44,32 @@ class _GoalTraitsScreenState extends State<GoalTraitsScreen> {
   GoalDigest? _digest;
   Object? _digestError;
 
+  late Goal _goal = widget.goal;
+
   String get _goalId => widget.goal.id!;
+
+  /// [part]'s name: a cadence's activity ("Visit"), from the goal's own
+  /// parts for the trait, which the rating's parts follow in order; else
+  /// its kind's.
+  String _partLabel(String traitId, int index, PartScore part) {
+    final own = switch (_goal.measure?['parts']) {
+      final Map parts => parts[traitId],
+      _ => null,
+    };
+    if (own is List && index < own.length) {
+      if (own[index] case {'activity': final String activity}) {
+        return '${activity[0].toUpperCase()}${activity.substring(1)}';
+      }
+    }
+    return partKinds[part.kind]?.label ?? part.key;
+  }
+
+  Future<void> _editMeasure() async {
+    final saved = await widget.onEditMeasure!(_goal);
+    if (saved == null || !mounted) return;
+    setState(() => _goal = saved);
+    await _loadRating();
+  }
 
   @override
   void initState() {
@@ -121,6 +153,22 @@ class _GoalTraitsScreenState extends State<GoalTraitsScreen> {
             ..._traits(context),
             _heading(
               theme,
+              "How it's rated",
+              action: widget.onEditMeasure == null
+                  ? null
+                  : IconButton(
+                      tooltip: 'Edit how it is rated',
+                      icon: const Icon(Icons.tune),
+                      onPressed: _editMeasure,
+                    ),
+            ),
+            for (final (label, value) in describeMeasureSettings(
+              _goal.measure ?? const {},
+              goalNames: widget.goalNames,
+            ))
+              ListTile(dense: true, title: Text(label), subtitle: Text(value)),
+            _heading(
+              theme,
               whatMattersHeading,
               action: IconButton(
                 tooltip: 'Edit what matters to them',
@@ -166,9 +214,8 @@ class _GoalTraitsScreenState extends State<GoalTraitsScreen> {
           title: Text(score.name),
           subtitle: Text(
             [
-              for (final part in score.parts)
-                '${partKinds[part.kind]?.label ?? part.key} '
-                    '${part.score ?? '–'}',
+              for (final (i, part) in score.parts.indexed)
+                '${_partLabel(score.traitId, i, part)} ${part.score ?? '–'}',
             ].join(' · '),
           ),
           trailing: Text(
@@ -178,6 +225,10 @@ class _GoalTraitsScreenState extends State<GoalTraitsScreen> {
           onTap: () => showTraitParts(
             context,
             score,
+            labels: [
+              for (final (i, part) in score.parts.indexed)
+                _partLabel(score.traitId, i, part),
+            ],
             title: rating.day,
             events: _eventsById,
             goalNames: widget.goalNames,

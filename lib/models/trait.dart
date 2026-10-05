@@ -77,6 +77,20 @@ const _window = (
   hint: "the measure's",
 );
 const _target = (field: 'target', label: 'Target', required: false, hint: '1');
+const _activity = (
+  field: 'activity',
+  label: 'Activity',
+  required: false,
+  hint: 'any event with them',
+);
+
+/// The part fields that are text, not numbers.
+const textFields = {'rubric', 'noun', 'activity'};
+
+/// An activity as events' facets keep it: trimmed, single-spaced and
+/// lowercase, so a part's matches theirs.
+String activityLabel(String text) =>
+    text.trim().split(RegExp(r'\s+')).join(' ').toLowerCase();
 
 /// The kinds of part, as the server names them (its utilities/traits.py's
 /// PART_KINDS), each with the fields the app edits.
@@ -155,8 +169,12 @@ const partKinds = <String, PartKind>{
   ),
   'count': (
     label: 'Number of events',
-    hint: "How many of the goal's events, against a target.",
+    hint:
+        "How many of the goal's events, against a target: with an activity, "
+        "only events with them of that activity -- a cadence, like a visit "
+        'every 21 days.',
     fields: [
+      _activity,
       (field: 'target', label: 'Target', required: true, hint: null),
       (
         field: 'interval_days',
@@ -175,8 +193,11 @@ const partKinds = <String, PartKind>{
   ),
   'duration': (
     label: 'Time spent',
-    hint: "Minutes of the goal's events, against a target.",
+    hint:
+        "Minutes of the goal's events, against a target: with an activity, "
+        'only events with them of that activity.',
     fields: [
+      _activity,
       (
         field: 'target_min',
         label: 'Target, minutes',
@@ -253,7 +274,7 @@ String? partProblem(Part part) {
       continue;
     }
     switch (field.field) {
-      case 'rubric' || 'noun':
+      case 'rubric' || 'noun' || 'activity':
         if (value is! String || value.trim().isEmpty) {
           return '${field.label.toLowerCase()} must be some text.';
         }
@@ -276,6 +297,29 @@ String? partProblem(Part part) {
     return '"zero at" must be more days than it looks back.';
   }
   return null;
+}
+
+/// [part] in a line: "Visit every 21 days", "Continuity: last within 7
+/// days, next within 7", "Follow-through".
+String describePart(Part part) {
+  String days(Object? n) => n == 1 ? 'day' : '$n days';
+  final target = part['target'] ?? 1;
+  return switch (part['kind']) {
+    'count' => [
+      '${target == 1 ? '' : '$target × '}'
+          '${part['activity'] ?? 'any event with them'}',
+      'every ${days(part['interval_days'] ?? 'window')}',
+      if (part['zero_at_days'] case final zero?) '(0 at $zero days)',
+    ].join(' '),
+    'duration' =>
+      '${part['target_min']} min of ${part['activity'] ?? 'events'} '
+          'every ${days(part['interval_days'] ?? 'window')}',
+    'continuity' =>
+      'Continuity: last within ${days(part['last_within_days'] ?? 14)}, '
+          'next within ${days(part['next_within_days'] ?? 14)}',
+    'judgment' => 'Judgment: ${part['rubric'] ?? ''}',
+    final kind => partKinds[kind]?.label ?? '$kind',
+  };
 }
 
 /// One trait's score of one day: the mean of its scores across the goals

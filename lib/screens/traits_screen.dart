@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/trait.dart';
 import '../services/mcp_client.dart';
 import '../services/traits_repository.dart';
+import '../widgets/health.dart';
 import '../widgets/trait_dialog.dart';
 import 'trait_breakdown.dart';
 
@@ -181,18 +182,16 @@ class _TraitsScreenState extends State<TraitsScreen> {
                 repository: widget.repository,
                 goalNames: widget.goalNames,
               ),
+              // On one line, as the Goals page shows a goal's health:
+              // a column would overflow a list tile's height.
               child: Padding(
                 padding: const EdgeInsets.all(8),
-                child: Column(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      '${latest.score}',
-                      style: theme.textTheme.titleMedium,
-                      semanticsLabel: '${trait.name}: ${latest.score}',
-                    ),
-                    Text(_trend(days), style: theme.textTheme.bodySmall),
+                    TrendSparkline(trend: _trend(days)),
+                    const SizedBox(width: 6),
+                    HealthDot(rating: latest.score),
                   ],
                 ),
               ),
@@ -218,12 +217,9 @@ class _TraitsScreenState extends State<TraitsScreen> {
     );
   }
 
-  /// The last 8 days' scores as a row of bars.
-  static String _trend(List<TraitDay> days) {
-    const bars = '▁▂▃▄▅▆▇█';
-    return [
-      for (final day in days.skip(days.length > 8 ? days.length - 8 : 0))
-        bars[(day.score.clamp(0, 100) * 7 / 100).round()],
-    ].join();
-  }
+  /// The last 8 days' scores, oldest first, for a [TrendSparkline].
+  static List<int?> _trend(List<TraitDay> days) => [
+    for (final day in days.skip(days.length > 8 ? days.length - 8 : 0))
+      day.score,
+  ];
 }
