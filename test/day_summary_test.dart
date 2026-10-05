@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/widgets/day_summary.dart';
+import 'package:time_tracker_client/widgets/time_summary.dart';
 
 void main() {
   final day = DateTime(2026, 9, 30);

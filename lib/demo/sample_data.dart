@@ -39,6 +39,7 @@ class SampleData {
     assessments,
     lastCompaction,
     minutesByStatuses,
+    minutesByPriority,
   );
 
   /// The time on goals by the statuses of the goals each event served:
@@ -46,6 +47,16 @@ class SampleData {
   List<StatusMinutes> get minutesByStatuses => const [
     StatusMinutes(statuses: {'active'}, minutes24h: 420, minutes7d: 2610),
     StatusMinutes(statuses: {'inactive'}, minutes24h: 0, minutes7d: 90),
+  ];
+
+  /// The last 24 hours and 7 days by priority: sleep's P3 the most, then
+  /// the time with no event, or none with a priority.
+  List<PriorityMinutes> get minutesByPriority => const [
+    PriorityMinutes(priority: 0, minutes24h: 30, minutes7d: 300),
+    PriorityMinutes(priority: 1, minutes24h: 240, minutes7d: 1500),
+    PriorityMinutes(priority: 2, minutes24h: 225, minutes7d: 1100),
+    PriorityMinutes(priority: 3, minutes24h: 480, minutes7d: 3360),
+    PriorityMinutes(priority: null, minutes24h: 465, minutes7d: 3820),
   ];
 
   List<Note> get notes => [

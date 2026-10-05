@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
 import 'color_picker.dart';
-import 'day_summary.dart';
+import 'time_summary.dart';
 
 /// A goal's minutes in the last 24 hours, or 7 days with [week], through
-/// goals with [statuses].
+/// goals with [statuses]: its own and its sub-goals'.
 int _minutes(Goal goal, Set<String> statuses, bool week) {
   final (day, days) =
       goal.timeFor(statuses) ?? (goal.minutes24h ?? 0, goal.minutes7d ?? 0);
@@ -15,10 +15,51 @@ int _minutes(Goal goal, Set<String> statuses, bool week) {
 /// A window's minutes: the last 24 hours, or 7 days with [week].
 int _window(bool week) => week ? 7 * 24 * 60 : 24 * 60;
 
-/// [shares] of the time on goals, [onGoals] minutes, scaled down to it if
-/// they come to more (an event with goals in more than one tree counts in
-/// each), then the rest of the window, not on goals.
-List<SummarySlice> _fill(List<SummarySlice> shares, int onGoals, bool week) {
+/// The last 24 hours', or 7 days' with [week], time by the goals shown,
+/// [visible]: the [top] with the most, the rest together, then the rest
+/// of the window, not on goals. A goal's time goes to the deepest of it
+/// and its ancestors that's shown, so a collapsed goal has its sub-goals'
+/// and an expanded one only its own. [onGoals] is the time on any goal
+/// shown, each event once: the shares are scaled down to it if they come
+/// to more, as an event with goals in more than one place counts in each.
+List<SummarySlice> visibleGoalShares(
+  List<Goal> visible,
+  Map<String?, Goal> byId,
+  Set<String> statuses, {
+  required bool week,
+  required int onGoals,
+  int top = 3,
+}) {
+  final shown = {for (final goal in visible) goal.id};
+  final time = <Goal, int>{
+    for (final goal in visible) goal: _minutes(goal, statuses, week),
+  };
+  // Each goal's time, taken from the nearest ancestor shown, which keeps
+  // only the rest.
+  for (final goal in visible) {
+    final seen = {goal.id};
+    var parent = byId[goal.parentId];
+    while (parent != null &&
+        !shown.contains(parent.id) &&
+        seen.add(parent.id)) {
+      parent = byId[parent.parentId];
+    }
+    if (parent != null && time.containsKey(parent)) {
+      time[parent] = time[parent]! - _minutes(goal, statuses, week);
+    }
+  }
+  final shares = topShares(
+    {
+      for (final MapEntry(:key, :value) in time.entries)
+        if (value > 0) key: Duration(minutes: value),
+    },
+    (goal, time) => SummarySlice(
+      goalName(goal),
+      parseColor(goal.effectiveColor) ?? priorityColor(goal.effectivePriority),
+      time,
+    ),
+    top: top,
+  );
   final sum = shares.fold(0, (sum, s) => sum + s.time.inMinutes);
   final scale = sum > onGoals && sum > 0 ? onGoals / sum : 1.0;
   final rest = _window(week) - onGoals;
@@ -33,96 +74,55 @@ List<SummarySlice> _fill(List<SummarySlice> shares, int onGoals, bool week) {
   ];
 }
 
-/// The last 24 hours', or 7 days' with [week], time by top-level goal:
-/// the [top] with the most, the rest together, then the time not on
-/// goals. [onGoals] is the time on any goal, each event once.
-List<SummarySlice> topLevelShares(
-  List<Goal> goals,
-  Set<String> statuses, {
+/// The last 24 hours', or 7 days' with [week], time by priority, as the
+/// server splits it ([split]): highest first, then the rest, with no
+/// priority.
+List<SummarySlice> windowPriorityShares(
+  List<PriorityMinutes> split, {
   required bool week,
-  required int onGoals,
-  int top = 3,
 }) {
-  final ranked = [
-    for (final goal in goals)
-      if (!goal.isOverall &&
-          (goal.parentId == null || goal.parentId == overallGoalId) &&
-          _minutes(goal, statuses, week) > 0)
-        goal,
-  ]..sort((a, b) => _minutes(b, statuses, week) - _minutes(a, statuses, week));
-  final rest = ranked
-      .skip(top)
-      .fold(0, (sum, goal) => sum + _minutes(goal, statuses, week));
-  return _fill(
-    [
-      for (final goal in ranked.take(top))
-        SummarySlice(
-          goalName(goal),
-          parseColor(goal.effectiveColor) ??
-              priorityColor(goal.effectivePriority),
-          Duration(minutes: _minutes(goal, statuses, week)),
-        ),
-      if (rest > 0)
-        SummarySlice(
-          '${ranked.length - top} other goals',
-          otherGoalsColor,
-          Duration(minutes: rest),
-        ),
-    ],
-    onGoals,
-    week,
-  );
+  int minutes(PriorityMinutes part) => week ? part.minutes7d : part.minutes24h;
+  final prioritized = [
+    for (final part in split)
+      if (part.priority != null && minutes(part) > 0) part,
+  ]..sort((a, b) => a.priority!.compareTo(b.priority!));
+  final none = split
+      .where((part) => part.priority == null)
+      .fold(0, (sum, part) => sum + minutes(part));
+  return [
+    for (final part in prioritized)
+      SummarySlice(
+        'P${part.priority}',
+        priorityColor(part.priority),
+        Duration(minutes: minutes(part)),
+      ),
+    if (none > 0) SummarySlice('No priority', null, Duration(minutes: none)),
+  ];
 }
 
-/// The same by goal priority: each goal's own time, apart from its
-/// sub-goals', counted toward the goal's priority, whatever its events'
-/// own priorities.
-List<SummarySlice> goalPriorityShares(
-  List<Goal> goals,
-  Set<String> statuses, {
-  required bool week,
-  required int onGoals,
-}) {
-  final byPriority = <int, int>{};
-  for (final goal in goals) {
-    if (goal.isOverall) continue;
-    final own =
-        _minutes(goal, statuses, week) -
-        goals
-            .where((sub) => sub.parentId == goal.id)
-            .fold<int>(0, (sum, sub) => sum + _minutes(sub, statuses, week));
-    if (own <= 0) continue;
-    final p = goal.effectivePriority ?? defaultPriority;
-    byPriority[p] = (byPriority[p] ?? 0) + own;
-  }
-  return _fill(
-    [
-      for (final p in byPriority.keys.toList()..sort())
-        SummarySlice(
-          'P$p goals',
-          priorityColor(p),
-          Duration(minutes: byPriority[p]!),
-        ),
-    ],
-    onGoals,
-    week,
-  );
-}
-
-/// The time on goals in the last 24 hours and 7 days, as the Goals page
-/// counts it, at a glance: each window's bar, one over the other, split
-/// by top-level goal, or by goal priority, and the rest of the window,
-/// not on goals. Swiping it, or tapping a title, turns between the two.
+/// The last 24 hours and 7 days at a glance, under the Goals heading:
+/// each window's bar, one over the other, split by the goals shown, or by
+/// priority. Swiping it, or tapping a title, turns between the two, and
+/// its chevron folds it away.
 class GoalsTimeSummary extends StatelessWidget {
   const GoalsTimeSummary({
     super.key,
-    required this.goals,
+    required this.visible,
+    required this.byId,
     required this.statuses,
     required this.onGoals,
+    this.byPriority,
     this.initialPage = 0,
+    this.collapsed = false,
+    this.onCollapsed,
   });
 
-  final List<Goal> goals;
+  /// The goals shown, as the page shows them: by status, and not under
+  /// a collapsed goal.
+  final List<Goal> visible;
+
+  /// Every goal, by id, for the ancestors of [visible].
+  final Map<String?, Goal> byId;
 
   /// The statuses the Goals page shows: time through other goals isn't
   /// counted, as the page doesn't count it.
@@ -131,156 +131,49 @@ class GoalsTimeSummary extends StatelessWidget {
   /// The minutes on goals shown, each event once, in the last 24 hours
   /// and 7 days.
   final (int, int) onGoals;
+
+  /// The windows by priority, as [GoalList.minutesByPriority] gives
+  /// them; null leaves that page out.
+  final List<PriorityMinutes>? byPriority;
   final int initialPage;
+  final bool collapsed;
+  final ValueChanged<bool>? onCollapsed;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final (day, week) = onGoals;
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      color: theme.colorScheme.surfaceContainerLow,
-      clipBehavior: Clip.antiAlias,
-      child: SummaryPages(
-        titles: const ['Top-level goals', 'Goal priorities'],
-        initialPage: initialPage,
-        trailing: Text(
-          '24h · 7d',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+    final byPriority = this.byPriority;
+    List<SummarySlice> goals(bool week, int onGoals) => visibleGoalShares(
+      visible,
+      byId,
+      statuses,
+      week: week,
+      onGoals: onGoals,
+    );
+    return TimeSummary(
+      titles: ['Visible goals', if (byPriority != null) 'By priority'],
+      initialPage: initialPage,
+      collapsed: collapsed,
+      onCollapsed: onCollapsed,
+      trailing: Text(
+        '24h · 7d',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
         ),
-        pages: [
-          _Stacked(
-            day: topLevelShares(goals, statuses, week: false, onGoals: day),
-            week: topLevelShares(goals, statuses, week: true, onGoals: week),
-          ),
-          _Stacked(
-            day: goalPriorityShares(goals, statuses, week: false, onGoals: day),
-            week: goalPriorityShares(
-              goals,
-              statuses,
-              week: true,
-              onGoals: week,
-            ),
-          ),
-        ],
       ),
-    );
-  }
-}
-
-/// The last 24 hours' bar over the last 7 days', and one legend for both:
-/// each share's percentage of each.
-class _Stacked extends StatelessWidget {
-  const _Stacked({required this.day, required this.week});
-
-  final List<SummarySlice> day;
-  final List<SummarySlice> week;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final outline = theme.colorScheme.outlineVariant;
-    final small = theme.textTheme.bodySmall;
-    final faint = small?.copyWith(color: theme.colorScheme.onSurfaceVariant);
-    int total(List<SummarySlice> slices) =>
-        slices.fold(0, (sum, s) => sum + s.time.inSeconds);
-    String percent(List<SummarySlice> slices, String label) {
-      final slice = slices.where((s) => s.label == label).firstOrNull;
-      if (slice == null) return '–';
-      return '${(100 * slice.time.inSeconds / total(slices)).round()}%';
-    }
-
-    Widget bar(String label, List<SummarySlice> slices) => Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Row(
-        children: [
-          SizedBox(width: 30, child: Text(label, style: faint)),
-          Expanded(
-            child: Container(
-              height: 14,
-              decoration: BoxDecoration(
-                border: Border.all(color: outline),
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: Row(
-                  children: [
-                    for (final (i, slice) in slices.indexed)
-                      Expanded(
-                        flex: slice.time.inMinutes,
-                        child: Container(
-                          margin: EdgeInsets.only(left: i == 0 ? 0 : 1),
-                          color: slice.color,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    // The week's shares, then any only the day has.
-    final labels = [
-      for (final slice in week) slice.label,
-      for (final slice in day)
-        if (!week.any((s) => s.label == slice.label)) slice.label,
-    ];
-    final colors = {
-      for (final slice in [...day, ...week]) slice.label: slice.color,
-    };
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          bar('24h', day),
-          bar('7d', week),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 14,
-            runSpacing: 4,
-            children: [
-              for (final label in labels)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: colors[label],
-                        border: colors[label] == null
-                            ? Border.all(color: outline, width: 1.5)
-                            : null,
-                        borderRadius: BorderRadius.circular(2.5),
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 110),
-                      child: Text(
-                        label,
-                        overflow: TextOverflow.ellipsis,
-                        style: small,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${percent(day, label)} · ${percent(week, label)}',
-                      style: small?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                  ],
-                ),
+      pages: [
+        SummaryBar(
+          rows: [('24h', goals(false, day)), ('7d', goals(true, week))],
+        ),
+        if (byPriority != null)
+          SummaryBar(
+            rows: [
+              ('24h', windowPriorityShares(byPriority, week: false)),
+              ('7d', windowPriorityShares(byPriority, week: true)),
             ],
           ),
-        ],
-      ),
+      ],
     );
   }
 }

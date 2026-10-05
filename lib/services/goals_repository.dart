@@ -124,6 +124,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
     this.assessments = const {},
     this.asOf,
     this.minutesByStatuses,
+    this.minutesByPriority,
   ]) : _goals = [...goals];
 
   /// Each goal's history, by goal id.
@@ -134,6 +135,9 @@ class InMemoryGoalsRepository implements GoalsRepository {
 
   /// The time on goals by status, as [GoalList.minutesByStatuses] gives it.
   final List<StatusMinutes>? minutesByStatuses;
+
+  /// The time by priority, as [GoalList.minutesByPriority] gives it.
+  final List<PriorityMinutes>? minutesByPriority;
 
   @override
   Future<List<Assessment>> history(Goal goal) async =>
@@ -170,6 +174,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
       labelSlotsUsed: _goals.where((g) => g.active && !g.isOverall).length,
       asOf: asOf,
       minutesByStatuses: minutesByStatuses,
+      minutesByPriority: minutesByPriority,
     );
   }
 

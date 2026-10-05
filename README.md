@@ -15,7 +15,9 @@ goals take up one of the calendar's event labels; the rest keep their
 history. Proposed, active and inactive goals are shown to start with,
 and the filter at the top right picks others. The menu beside it picks what
 each goal shows under its name: its time spent, its measure, its time
-as a percentage, or its events' priority. Each active goal shows its health — its latest confirmed rating, a small chart of recent ones, and how many periods have gone unassessed — and its menu opens its history. Later it will show the summaries the server
+as a percentage, or its events' priority. A summary under the heading
+splits the last 24 hours and 7 days by the goals shown, or by priority.
+Each active goal shows its health — its latest confirmed rating, a small chart of recent ones, and how many periods have gone unassessed — and its menu opens its history. Later it will show the summaries the server
 generates.
 
 It is built for Android and also runs on Windows and in Chrome. Chrome
@@ -360,11 +362,12 @@ see [Try it with sample data](#try-it-with-sample-data).
 ### Visual tests
 
 `test/visual` renders the main screens with the sample data, at a phone's
-size, in light and dark: Goals (with the status filter closed and open), a
-goal's history, Events (with each page of its day summary) and Notes. It
-writes them, at 2x and with the real fonts (Roboto and Material Icons,
-from the Flutter SDK), to `build/screenshots/`. This is the quick way to see a UI change without
-running the app:
+size, in light and dark: Goals (with the status filter closed and open,
+and its time summary on each page and folded away), a goal's history,
+Events (with each page of its day summary) and Notes. It writes them, at
+2x and with the real fonts (Roboto and Material Icons, from the Flutter
+SDK), to `build/screenshots/`. This is the quick way to see a UI change
+without running the app:
 
 ```sh
 flutter test test/visual

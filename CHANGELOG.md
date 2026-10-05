@@ -6,6 +6,20 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.9.0
+
+- The Goals page has a summary of the last 24 hours and 7 days under its
+  heading: a bar for each, one over the other, with each share's
+  percentage of each window. One page splits them by the goals shown,
+  so with every goal collapsed it's the top-level goals; expanding a
+  goal gives its sub-goals their time, and it keeps only its own. The
+  rest of each window is "Not on goals". Swiping it, or tapping a title,
+  turns to the windows split by priority, as the server counts it: the
+  highest priority among the events at each moment, and the rest with
+  no priority. Its chevron folds it away, and it stays folded next time.
+- The Events page's day summary and the Goals page's share their look
+  and code.
+
 ## 5.8.0
 
 - The Events page opens with a summary of the day above the timeline: a
