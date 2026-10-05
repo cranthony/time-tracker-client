@@ -15,13 +15,8 @@ class Goal {
     this.status = 'active',
     this.backgroundColor,
     this.priority,
-    this.measure,
     this.effectiveColor,
     this.effectivePriority,
-    this.health,
-    this.healthPeriod,
-    this.healthTrend = const [],
-    this.staleDays,
     this.minutes24h,
     this.minutes7d,
     this.minutesByStatuses,
@@ -50,18 +45,9 @@ class Goal {
   /// Whether Claude made it, and the user hasn't looked at it yet.
   bool get proposed => status == 'proposed';
 
-  /// Whether it's the overall goal, above every other: see
-  /// [overallGoalId].
-  bool get isOverall => id == overallGoalId;
-
   /// Its label's color, e.g. "#a4bdfc"; null to follow its priority.
   final String? backgroundColor;
   final int? priority;
-
-  /// How its health is rated in each day's reflection, e.g. {"kind":
-  /// "duration", "target_min": 600}; null if it isn't measured (then it's
-  /// rated by its sub-goals', if any are). See measure.dart.
-  final Map<String, Object?>? measure;
 
   /// The color its label is shown in: [backgroundColor], or the one it
   /// inherits from its priority or its parent. Null from a server too old
@@ -75,19 +61,6 @@ class Goal {
 
   /// Whether [effectivePriority] comes from an ancestor, not its own.
   bool get inheritsPriority => priority == null && effectivePriority != null;
-
-  /// Its latest confirmed rating (0-100), if it's had one.
-  final int? health;
-
-  /// The latest day it was rated for, e.g. "2026-09-30".
-  final String? healthPeriod;
-
-  /// Its last 8 days' ratings, oldest first; null for a day with none.
-  final List<int?> healthTrend;
-
-  /// How many days have ended unrated since it was last rated; null unless
-  /// it's rated (it's active, with a measure or rated sub-goals).
-  final int? staleDays;
 
   /// Minutes spent on it and its sub-goals in the 24 hours up to
   /// [GoalList.asOf]; null without one.
@@ -126,23 +99,9 @@ class Goal {
         (json['active'] == false ? 'archived' : 'active'),
     backgroundColor: json['background_color'] as String?,
     priority: json['priority'] as int?,
-    measure: switch (json['measure']) {
-      final Map measure => Map.unmodifiable(measure.cast<String, Object?>()),
-      _ => null,
-    },
     effectiveColor: json['effective_color'] as String?,
     effectivePriority:
         json['effective_priority'] as int? ?? json['priority'] as int?,
-    health: json['health'] as int?,
-    healthPeriod: json['health_period'] as String?,
-    healthTrend: [
-      for (final cell
-          in ((json['health_trend'] as String?) ?? '')
-              .split(',')
-              .where((c) => c.isNotEmpty))
-        int.tryParse(cell),
-    ],
-    staleDays: json['stale_days'] as int?,
     minutes24h: json['minutes_24h'] as int?,
     minutes7d: json['minutes_7d'] as int?,
     minutesByStatuses: _statusMinutes(json['minutes_by_statuses']),
@@ -160,23 +119,13 @@ class Goal {
     'status': status,
     'background_color': backgroundColor,
     'priority': priority,
-    'measure': measure,
     'effective_color': effectiveColor,
     'effective_priority': effectivePriority,
-    'health': health,
-    'health_period': healthPeriod,
-    'health_trend': healthTrend.map((r) => r?.toString() ?? '-').join(','),
-    'stale_days': staleDays,
     'minutes_24h': minutes24h,
     'minutes_7d': minutes7d,
     'minutes_by_statuses': minutesByStatuses?.map((m) => m.toJson()).toList(),
   };
 }
-
-/// The overall goal's id: the goal above every other, whose sub-goals are
-/// implied to be every top-level goal. It's rated like any goal, holds no
-/// label, and can't be given to an event.
-const overallGoalId = 'overall';
 
 /// The time spent on events whose goals have exactly these [statuses]
 /// between them, as the server splits it: see [GoalList.timeFor].
@@ -277,17 +226,13 @@ class GoalList {
   final DateTime? asOf;
 
   /// The time spent on any goal up to [asOf], split by the statuses of
-  /// the goals each event was given: the overall goal's
-  /// [Goal.minutesByStatuses]. Null from a server too old to say, or
+  /// the goals each event was given. Null from a server too old to say, or
   /// without an [asOf].
   final List<StatusMinutes>? minutesByStatuses;
 
   /// The last 24 hours and 7 days up to [asOf], split by priority. Null
   /// from a server too old to say, or without an [asOf].
   final List<PriorityMinutes>? minutesByPriority;
-
-  /// The overall goal, if the server has one.
-  Goal? get overall => goals.where((g) => g.isOverall).firstOrNull;
 
   /// The minutes spent on goals with any of [statuses] in the last 24
   /// hours and 7 days, each event once; null if it isn't known.

@@ -100,10 +100,7 @@ List<SummarySlice> goalShares(
     var at = id;
     for (
       var parent = goals[at]?.parentId;
-      parent != null &&
-          parent != overallGoalId &&
-          goals.containsKey(parent) &&
-          seen.add(parent);
+      parent != null && goals.containsKey(parent) && seen.add(parent);
       parent = goals[at]?.parentId
     ) {
       at = parent;

@@ -4,43 +4,42 @@ import '../models/trait.dart';
 import '../services/mcp_client.dart';
 import '../services/traits_repository.dart';
 import '../widgets/health.dart';
-import '../widgets/plan_section.dart';
+import '../widgets/plan_pane.dart';
 import '../widgets/trait_dialog.dart';
 import 'trait_breakdown.dart';
 
-/// The Plan page's Traits section -- how the user wants to be: each
+/// The Plan page's Traits pane -- how the user wants to be: each
 /// trait's name, definition, status, latest score (the mean across the
 /// people rated by it) and its last 8 days' scores, and anything wrong
 /// with it. Tapping a trait edits it, parts and all; tapping its score
 /// shows the people and parts behind it; its menu turns it on or off, or
 /// archives it. "+" adds one. Archived traits are shown only when asked
-/// for. [personNames] names the people behind a score; [actions] the
+/// for. The search finds them by name, definition and parts. [personNames] names the people behind a score; [actions] the
 /// actions a cadence part can count.
-class TraitsSection extends StatefulWidget {
-  const TraitsSection({
+class TraitsPane extends StatefulWidget {
+  const TraitsPane({
     super.key,
     required this.repository,
-    required this.expanded,
-    required this.onExpanded,
     this.personNames = const {},
     this.actions = const {},
   });
 
   final TraitsRepository repository;
-  final bool expanded;
-  final ValueChanged<bool> onExpanded;
   final Map<String?, String> personNames;
   final Map<String, String> actions;
 
   @override
-  State<TraitsSection> createState() => TraitsSectionState();
+  State<TraitsPane> createState() => TraitsPaneState();
 }
 
-class TraitsSectionState extends State<TraitsSection> {
+class TraitsPaneState extends State<TraitsPane> {
   List<Trait>? _traits;
   Map<String, List<TraitDay>> _history = const {};
   Object? _error;
   bool _archived = false;
+
+  /// What the search has in it.
+  String _query = '';
 
   @override
   void initState() {
@@ -106,15 +105,22 @@ class TraitsSectionState extends State<TraitsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final traits = [
+    final unsearched = [
       for (final trait in _traits ?? const <Trait>[])
         if (_archived || trait.status != 'archived') trait,
     ];
-    return PlanSection(
-      title: 'Traits',
-      annotation: 'how to be',
-      expanded: widget.expanded,
-      onExpanded: widget.onExpanded,
+    final traits = [
+      for (final trait in unsearched)
+        if (matchesSearch(_query, [
+          trait.name,
+          trait.definition,
+          for (final part in trait.parts) describePart(part, widget.actions),
+        ]))
+          trait,
+    ];
+    return PlanPane(
+      searchHint: 'Search traits',
+      onSearch: (query) => setState(() => _query = query),
       actions: [
         IconButton(
           tooltip: _archived ? 'Hide archived traits' : 'Show archived traits',
@@ -123,7 +129,6 @@ class TraitsSectionState extends State<TraitsSection> {
           ),
           onPressed: () {
             setState(() => _archived = !_archived);
-            widget.onExpanded(true);
           },
         ),
         IconButton(
@@ -132,28 +137,37 @@ class TraitsSectionState extends State<TraitsSection> {
           onPressed: _traits == null ? null : () => _edit(null),
         ),
       ],
-      children: switch ((_traits, _error)) {
-        (null, final error?) => [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              "Couldn't load the traits. ${switch (error) {
-                McpException(:final message) => message,
-                _ => '$error',
-              }}",
-            ),
-          ),
-        ],
-        (null, _) => const [LinearProgressIndicator()],
-        _ => [
-          for (final trait in traits) _tile(context, trait),
-          if (traits.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('No traits yet. Tap + to define one.'),
-            ),
-        ],
-      },
+      child: RefreshIndicator(
+        onRefresh: reload,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(bottom: 24),
+          children: switch ((_traits, _error)) {
+            (null, final error?) => [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  "Couldn't load the traits. ${switch (error) {
+                    McpException(:final message) => message,
+                    _ => '$error',
+                  }}",
+                ),
+              ),
+            ],
+            (null, _) => const [LinearProgressIndicator()],
+            _ => [
+              for (final trait in traits) _tile(context, trait),
+              if (unsearched.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('No traits yet. Tap + to define one.'),
+                )
+              else if (traits.isEmpty)
+                NoMatches(query: _query),
+            ],
+          },
+        ),
+      ),
     );
   }
 

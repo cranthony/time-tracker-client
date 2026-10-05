@@ -67,7 +67,6 @@ class _GoalsPickerState extends State<GoalsPicker> {
   List<Goal> get _shown => [
     for (final goal in widget.goals)
       if (goal.id != null &&
-          !goal.isOverall &&
           !widget.exclude.contains(goal.id) &&
           (widget.inactive || goal.active || widget.picked.contains(goal.id)))
         goal,

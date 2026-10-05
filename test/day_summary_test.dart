@@ -68,14 +68,13 @@ void main() {
   group('goalShares', () {
     final goals = {
       for (final goal in [
-        const Goal(id: overallGoalId, name: 'Overall'),
         const Goal(id: 'cook', name: 'Cook', effectiveColor: '#33b679'),
         const Goal(id: 'tofu', parentId: 'cook', name: 'Tofu'),
         const Goal(id: 'curry', parentId: 'cook', name: 'Curry'),
         const Goal(id: 'work', name: 'Work'),
         const Goal(id: 'run', name: 'Run'),
         const Goal(id: 'read', name: 'Read'),
-        const Goal(id: 'top', parentId: overallGoalId, name: 'Top'),
+        const Goal(id: 'top', name: 'Top'),
       ])
         goal.id!: goal,
     };
@@ -105,7 +104,6 @@ void main() {
       expect(hours(slices), {
         'Work': 4,
         'Cook': 3,
-        // Under the overall goal, which is above every goal: top-level.
         'Top': 1.5,
         '2 other actions': 1.5,
         'No goal': 2,

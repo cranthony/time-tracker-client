@@ -1,4 +1,3 @@
-import '../models/assessment.dart';
 import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/goal.dart';
@@ -20,10 +19,8 @@ import '../services/traits_repository.dart';
 ///
 /// The actions are a tree of groups (Sleep-related, Food-related, Social,
 /// Creative › Guitar...) with actions as its leaves: own and inherited
-/// colors and priorities, targets with health and a sparkline, days gone
-/// unrated, a skipped day, a proposed rating not yet confirmed, actions
-/// Claude proposed and an archived one, and the time spent on each up to
-/// the last compaction. The people are Self and six others in five
+/// colors and priorities, actions Claude proposed and an archived one, and
+/// the time spent on each up to the last compaction. The people are Self and six others in five
 /// circles, from healthy to disconnected (and one archived), each rated by
 /// five traits made of judgments and cadences -- Self by four, Sam with a
 /// cadence of their own -- with Claude's judgments of their recent events
@@ -48,7 +45,6 @@ class SampleData {
       InMemoryEventsRepository(events, recurrences);
   GoalsRepository goalsRepository() => InMemoryGoalsRepository(
     goals,
-    assessments,
     lastCompaction,
     minutesByStatuses,
     minutesByPriority,
@@ -1022,54 +1018,19 @@ class SampleData {
     ),
     ('get_ready_for_bed', 'Get ready for bed', 'sleep_related', false, {}),
     ('sleep', 'Sleep', 'sleep_related', false, {}),
-    (
-      'get_up',
-      'Get up and get ready',
-      'sleep_related',
-      false,
-      {
-        'priority': 0,
-        'measure': {
-          'kind': 'time_constraint',
-          'edge': 'start',
-          'target': '07:00',
-          'grace_min': 10,
-        },
-      },
-    ),
+    ('get_up', 'Get up and get ready', 'sleep_related', false, {'priority': 0}),
     (
       'work',
       'Work',
       null,
       false,
-      {
-        'background_color': '#8e24aa',
-        'priority': 1,
-        'measure': {'kind': 'duration', 'target_min': 2400, 'interval_days': 7},
-      },
+      {'background_color': '#8e24aa', 'priority': 1},
     ),
     ('food', 'Food-related', null, true, {'background_color': '#33b679'}),
     ('eat_meal', 'Eat a meal', 'food', false, {}),
     ('eat_snack', 'Eat a snack', 'food', false, {}),
-    (
-      'drink_water',
-      'Drink water',
-      'food',
-      false,
-      {
-        'measure': {'kind': 'count', 'target': 6, 'noun': 'glasses'},
-      },
-    ),
-    (
-      'walk',
-      'Walk',
-      null,
-      false,
-      {
-        'background_color': '#0b8043',
-        'measure': {'kind': 'duration', 'target_min': 30},
-      },
-    ),
+    ('drink_water', 'Drink water', 'food', false, {}),
+    ('walk', 'Walk', null, false, {'background_color': '#0b8043'}),
     (
       'screens',
       'Screen logistics',
@@ -1088,21 +1049,7 @@ class SampleData {
       {'background_color': '#7986cb', 'priority': 2},
     ),
     ('shallow_talk', 'Shallow talk', 'social', false, {}),
-    (
-      'deep_talk',
-      'Deep talk',
-      'social',
-      false,
-      {
-        'measure': {
-          'kind': 'count',
-          'target': 3,
-          'noun': 'deep talks',
-          'interval_days': 7,
-          'zero_at_days': 14,
-        },
-      },
-    ),
+    ('deep_talk', 'Deep talk', 'social', false, {}),
     ('call', 'Call', 'social', false, {}),
     ('video_call', 'Video call', 'social', false, {}),
     ('dance_class', 'Take a dance class', 'social', false, {}),
@@ -1111,41 +1058,17 @@ class SampleData {
       'Creative',
       null,
       true,
-      {
-        'background_color': '#f4511e',
-        'priority': 2,
-        'measure': {'kind': 'rollup', 'agg': 'mean'},
-      },
+      {'background_color': '#f4511e', 'priority': 2},
     ),
     ('guitar', 'Guitar', 'creative', true, {}),
     ('play_guitar', 'Play guitar', 'guitar', false, {}),
-    (
-      'practice_guitar',
-      'Practice guitar',
-      'guitar',
-      false,
-      {
-        'measure': {'kind': 'duration', 'target_min': 180, 'interval_days': 7},
-      },
-    ),
+    ('practice_guitar', 'Practice guitar', 'guitar', false, {}),
     ('singing', 'Singing', 'creative', true, {}),
     ('sing_for_fun', 'Sing for fun', 'singing', false, {}),
     ('practice_singing', 'Practice singing', 'singing', false, {}),
     ('cooking', 'Cooking', 'creative', true, {}),
     ('cook_breakfast', 'Cook breakfast', 'cooking', false, {}),
-    (
-      'cook_lunch_dinner',
-      'Cook lunch or dinner',
-      'cooking',
-      false,
-      {
-        'measure': {
-          'kind': 'subjective',
-          'prompt': 'How did it turn out?',
-          'interval_days': 7,
-        },
-      },
-    ),
+    ('cook_lunch_dinner', 'Cook lunch or dinner', 'cooking', false, {}),
     ('cooking_class', 'Take a cooking class', 'cooking', false, {}),
     (
       'entertainment',
@@ -1219,16 +1142,6 @@ class SampleData {
     }
 
     return [
-      Goal.fromJson({
-        'id': overallGoalId,
-        'name': 'Overall',
-        'status': 'active',
-        ..._health('overall'),
-        'minutes_24h': _minutes.values.fold(0, (sum, m) => sum + m.$1),
-        'minutes_7d': _minutes.values.fold(0, (sum, m) => sum + m.$2),
-        // Every action's: see [minutesByStatuses].
-        'minutes_by_statuses': [for (final m in minutesByStatuses) m.toJson()],
-      }),
       for (final (id, name, parent, group, fields) in _tree)
         Goal.fromJson({
           'id': id,
@@ -1242,96 +1155,11 @@ class SampleData {
             final p? => int.parse(p),
             null => null,
           },
-          if (_ratings.containsKey(id))
-            ..._health(id, stale: id == 'get_up' ? 2 : 0),
           'minutes_24h': minutesOf(id).$1,
           'minutes_7d': minutesOf(id).$2,
         }),
     ];
   }
-
-  /// Each rated action's ratings over its last 8 days, oldest first; null
-  /// is a skipped day. The last is proposed, not yet confirmed.
-  static const _ratings = {
-    'overall': [70, 75, 66, 62, 70, 82, 80, 82],
-    'sleep_related': [100, 92, 60, 30, 100, 84, 64, 50],
-    'get_up': [100, 92, 60, 30, 100, 84, 64, 50],
-    'work': [55, 62, null, 70, 78, 74, 88, 82],
-    'drink_water': [50, 67, 83, 67, 50, 83, 67, 33],
-    'walk': [100, 100, 0, 100, 50, 100, 0, 100],
-    'social': [70, 72, 68, 75, 74, 77, 76, 79],
-    'deep_talk': [70, 72, 68, 75, 74, 77, 76, 79],
-    'creative': [20, 35, 45, 45, 60, 60, 65, 80],
-    'guitar': [10, 30, 40, 40, 60, 55, 67, 100],
-    'practice_guitar': [10, 30, 40, 40, 60, 55, 67, 100],
-    'cooking': [20, 35, 50, 45, 60, 70, 65, 80],
-    'cook_lunch_dinner': [20, 35, 50, 45, 60, 70, 65, 80],
-  };
-
-  /// The cache columns the server keeps: the latest confirmed rating, its
-  /// day, and the trend.
-  Map<String, Object?> _health(String id, {int stale = 0}) {
-    final ratings = _ratings[id]!;
-    final days = _days(ratings.length);
-    final confirmed = ratings.sublist(0, ratings.length - 1); // last: proposed
-    return {
-      'health': confirmed.lastWhere((r) => r != null),
-      'health_period': days[confirmed.length - 1],
-      'health_trend': [
-        ...confirmed.map((r) => r?.toString() ?? '-'),
-        '-',
-      ].join(','),
-      'stale_days': stale,
-    };
-  }
-
-  Map<String, List<Assessment>> get assessments => {
-    for (final MapEntry(key: id, value: ratings) in _ratings.entries)
-      id: [
-        for (final (i, day) in _days(ratings.length).indexed)
-          Assessment(
-            goalId: id,
-            day: day,
-            rating: ratings[i],
-            method: switch (id) {
-              'cook_lunch_dinner' => 'subjective',
-              'overall' ||
-              'sleep_related' ||
-              'social' ||
-              'creative' ||
-              'guitar' ||
-              'cooking' => 'rollup',
-              _ => 'metric',
-            },
-            status: i == ratings.length - 1 ? 'proposed' : 'confirmed',
-            explanation: ratings[i] == null || id == 'cook_lunch_dinner'
-                ? null
-                : _explanation(id, ratings[i]!),
-            rationale: ratings[i] == null ? 'Away at a conference' : null,
-          ),
-      ],
-  };
-
-  String _explanation(String id, int rating) => switch (id) {
-    'work' => '${rating * 40 ~/ 100}h of 40h in the last 7 days → $rating',
-    'practice_guitar' =>
-      '${rating * 180 ~/ 100}m of 3h in the last 7 days → $rating',
-    'walk' => '${rating * 30 ~/ 100}m of 30m that day → $rating',
-    'get_up' =>
-      rating == 100
-          ? 'Started 06:55; by 07:00 with 10 min grace → 100'
-          : 'Started later than 07:10 → $rating',
-    'drink_water' => '${rating * 6 ~/ 100} of 6 glasses → $rating',
-    'deep_talk' => '${rating * 3 ~/ 100} of 3 in the last 7 days → $rating',
-    'overall' => 'Mean of the top level → $rating',
-    _ => 'Mean of what it holds → $rating',
-  };
-
-  /// The [count] days that ended most recently, oldest first.
-  List<String> _days(int count) => [
-    for (var back = count; back >= 1; back--)
-      _day(_today.subtract(Duration(days: back))),
-  ];
 }
 
 /// A past event in someone's history: what was done (action ids), who

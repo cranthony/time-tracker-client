@@ -8,8 +8,15 @@ events from your calendar; tap one to see or edit it, including the actions
 done at it and what happened: who it was with and for, where, and notes.
 Above them, a summary shows how the day's time is split by priority;
 swipe it to see the top actions, or the top-level groups. A **Plan** page
-has four sections, each folded away or opened from its heading:
+has four panes, swiped between or picked from its tabs, each with a search
+of its own:
 
+- **Actions** (do), leftmost: what you do with your time, as a tree of
+  groups -- names that roll up the actions in them -- with actions, the
+  only thing events are given, as its leaves. Swipe a group right to open
+  it. Only active actions take up one of the calendar's event labels. An
+  action Claude made is *proposed* until you approve it. The search finds
+  actions by name, path and note, in their groups.
 - **Traits** (how to be): each trait you define -- none is built in. A
   trait is made of parts: chiefly *judgments*, which Claude makes of each
   event, each with a rubric, a rating scale of your own, and the facts
@@ -25,16 +32,11 @@ has four sections, each folded away or opened from its heading:
   picked, with their own parts for any) and what matters to them.
 - **Locations** (where): the places events happen, each with a hint the
   assistant recognizes it by.
-- **Actions** (do): what you do with your time, as a tree of groups --
-  names that roll up the actions in them -- with actions, the only thing
-  events are given, as its leaves. Only active actions take up one of the
-  calendar's event labels. An action Claude made is *proposed* until you
-  approve it.
 
-The sample data goes further than the server does so far: each action's
-target, health, history and time spent, and each person's relationship
-health (gray, disconnected, to green, healthy), trait scores, with
-Claude's judgments behind each, and history.
+The sample data goes further than the server does so far: the time spent
+on each action, and each person's relationship health (gray,
+disconnected, to green, healthy), trait scores, with Claude's judgments
+behind each, and history.
 
 Later it will show the summaries the server
 generates.
@@ -417,10 +419,10 @@ see [Try it with sample data](#try-it-with-sample-data).
 ### Visual tests
 
 `test/visual` renders the main screens with the sample data, at a phone's
-size, in light and dark: Plan (its traits, people and a circle,
-locations, a trait being edited, and its actions, with the status filter closed and open,
-and the time summary on each page and folded away), a person's page, an
-action's history, Events (with each page of its day summary, folded away,
+size, in light and dark: Plan (each pane, a circle's people, searches
+of people and actions, a trait and an action being edited, and its
+actions with every status, and the time summary on each page and folded
+away), a person's page, Events (with each page of its day summary, folded away,
 and what happened at an event) and Notes.
 It writes them, at 2x and with the real fonts (Roboto and Material
 Icons, from the Flutter SDK), to `build/screenshots/`. This is the quick

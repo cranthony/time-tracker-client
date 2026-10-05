@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 6.1.0
+
+- The Plan page swipes between panes -- Actions, Traits, People and
+  Locations, in that order -- or picks one from its tabs, and each has a
+  search. Searching actions shows those found in their groups.
+- On the Actions pane, only a swipe right opens or closes a group: a
+  swipe left goes on to the next pane.
+- Actions have no targets, health or history: those are gone from their
+  dialog and their rows, as is the Overall goal. Tapping one opens its
+  details. Only people have health.
+
 ## 6.0.0
 
 Needs a server with actions, people, circles, locations and judgments

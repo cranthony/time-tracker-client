@@ -5,7 +5,7 @@ import 'package:time_tracker_client/models/facts.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/trait.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
-import 'package:time_tracker_client/screens/traits_section.dart';
+import 'package:time_tracker_client/screens/traits_pane.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
@@ -287,7 +287,7 @@ void main() {
     expect(client.calls, hasLength(1));
   });
 
-  group('TraitsSection', () {
+  group('TraitsPane', () {
     Future<InMemoryTraitsRepository> pump(WidgetTester tester) async {
       final repository = InMemoryTraitsRepository(
         traits: [_adventurous, _reliable],
@@ -304,15 +304,9 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: SingleChildScrollView(
-              child: _Open(
-                (expanded, onExpanded) => TraitsSection(
-                  repository: repository,
-                  expanded: expanded,
-                  onExpanded: onExpanded,
-                  actions: const {'call': 'Social › Call', 'social': 'Social'},
-                ),
-              ),
+            body: TraitsPane(
+              repository: repository,
+              actions: const {'call': 'Social › Call', 'social': 'Social'},
             ),
           ),
         ),
@@ -331,13 +325,23 @@ void main() {
       expect(find.text('Reliable'), findsOneWidget);
     });
 
-    testWidgets('folds away from its heading', (tester) async {
+    testWidgets('searches them by name, definition and parts', (tester) async {
       await pump(tester);
 
-      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.enterText(find.byType(TextField), 'new together');
       await tester.pumpAndSettle();
+      expect(find.text('Adventurous'), findsOneWidget);
+      expect(find.text('Reliable'), findsNothing);
 
+      // A part's action, by its path.
+      await tester.enterText(find.byType(TextField), 'social call');
+      await tester.pumpAndSettle();
       expect(find.text('Adventurous'), findsNothing);
+      expect(find.text('Reliable'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'kindness');
+      await tester.pumpAndSettle();
+      expect(find.text('Nothing matches “kindness”.'), findsOneWidget);
     });
 
     testWidgets('creates a trait from a judgment, checking it first', (
@@ -780,22 +784,4 @@ class _RecordingClient extends McpClient {
     calls.add((name, arguments));
     return answer(name, arguments);
   }
-}
-
-/// A section, opened and folded as its heading's tapped.
-class _Open extends StatefulWidget {
-  const _Open(this.builder);
-
-  final Widget Function(bool expanded, ValueChanged<bool> onExpanded) builder;
-
-  @override
-  State<_Open> createState() => _OpenState();
-}
-
-class _OpenState extends State<_Open> {
-  bool _expanded = true;
-
-  @override
-  Widget build(BuildContext context) =>
-      widget.builder(_expanded, (open) => setState(() => _expanded = open));
 }
