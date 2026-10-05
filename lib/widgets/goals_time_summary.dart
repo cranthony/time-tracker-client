@@ -141,7 +141,6 @@ class GoalsTimeSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final (day, week) = onGoals;
     final byPriority = this.byPriority;
     List<SummarySlice> goals(bool week, int onGoals) => visibleGoalShares(
@@ -156,12 +155,6 @@ class GoalsTimeSummary extends StatelessWidget {
       initialPage: initialPage,
       collapsed: collapsed,
       onCollapsed: onCollapsed,
-      trailing: Text(
-        '24h · 7d',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
       pages: [
         SummaryBar(
           rows: [('24h', goals(false, day)), ('7d', goals(true, week))],

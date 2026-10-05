@@ -51,7 +51,6 @@ class TimeSummary extends StatefulWidget {
     super.key,
     required this.titles,
     required this.pages,
-    this.trailing,
     this.initialPage = 0,
     this.collapsed = false,
     this.onCollapsed,
@@ -60,8 +59,6 @@ class TimeSummary extends StatefulWidget {
   final List<String> titles;
   final List<Widget> pages;
 
-  /// At the end of the titles' row, before the chevron.
-  final Widget? trailing;
   final int initialPage;
 
   /// Whether it's folded away.
@@ -154,8 +151,8 @@ class _TimeSummaryState extends State<TimeSummary> {
     ),
   );
 
-  /// The titles, the current one bold and underlined, then [trailing]
-  /// and the chevron; folded away, only a quiet "Show summary" by the
+  /// The titles, the current one bold and underlined, then the
+  /// chevron; folded away, only a quiet "Show summary" by the
   /// chevron.
   Widget _header(BuildContext context) {
     final theme = Theme.of(context);
@@ -206,7 +203,6 @@ class _TimeSummaryState extends State<TimeSummary> {
           ),
         ],
         const Spacer(),
-        ?widget.trailing,
         if (onCollapsed != null)
           IconButton(
             visualDensity: VisualDensity.compact,
