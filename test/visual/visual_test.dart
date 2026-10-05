@@ -16,6 +16,7 @@ import 'package:time_tracker_client/screens/goals_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
 import 'package:time_tracker_client/theme.dart';
 import 'package:time_tracker_client/widgets/day_summary.dart';
+import 'package:time_tracker_client/widgets/time_summary.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/goals_picker.dart';
 import 'package:time_tracker_client/widgets/priority_chip.dart';
@@ -75,6 +76,36 @@ void main() {
       );
     });
 
+    // The time summary swiped to its priorities, and folded away.
+    for (final (name, step) in [
+      ('goals_summary_priorities', null),
+      ('goals_summary_collapsed', 'Hide summary'),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          GoalsScreen(
+            outbox: _idleGoalOutbox(),
+            repository: sample.goalsRepository(),
+            serverLabel: 'sample',
+          ),
+          then: () async {
+            if (step != null) {
+              await tester.tap(find.byTooltip(step));
+            } else {
+              await tester.fling(
+                find.byType(TimeSummary),
+                const Offset(-300, 0),
+                1000,
+              );
+            }
+            await tester.pumpAndSettle();
+          },
+        );
+      });
+    }
+
     // Every goal expanded, by swiping right: three levels of bands.
     testWidgets('goals expanded ($mode)', (tester) async {
       await render(
@@ -91,7 +122,7 @@ void main() {
             'Be a good neighbor',
             'Visit parents every 2 months',
           ]) {
-            final goal = find.textContaining(name, findRichText: true);
+            final goal = _tile(name);
             await tester.ensureVisible(goal);
             await tester.pumpAndSettle();
             await tester.drag(goal, const Offset(100, 0));
@@ -117,7 +148,7 @@ void main() {
         then: () async {
           // Its sub-goal shows the band of a goal that inherits its color.
           await tester.drag(
-            find.textContaining('Learn vegetarian cooking', findRichText: true),
+            _tile('Learn vegetarian cooking'),
             const Offset(100, 0),
           );
           await tester.pumpAndSettle();
@@ -172,9 +203,7 @@ void main() {
             serverLabel: 'sample',
           ),
           then: () async {
-            await tester.tap(
-              find.textContaining('Wake up at 7am', findRichText: true),
-            );
+            await tester.tap(_tile('Wake up at 7am'));
             await tester.pumpAndSettle();
             if (!editing) return;
             await tester.tap(find.text('Edit measure'));
@@ -199,16 +228,11 @@ void main() {
           ),
           then: () async {
             await tester.drag(
-              find.textContaining(
-                'Learn vegetarian cooking',
-                findRichText: true,
-              ),
+              _tile('Learn vegetarian cooking'),
               const Offset(100, 0),
             );
             await tester.pumpAndSettle();
-            await tester.tap(
-              find.textContaining('Tofu tikka masala', findRichText: true),
-            );
+            await tester.tap(_tile('Tofu tikka masala'));
             await tester.pumpAndSettle();
             if (!editing) return;
             await tester.tap(
@@ -252,7 +276,7 @@ void main() {
         ),
         then: () async {
           await tester.drag(
-            find.textContaining('Learn vegetarian cooking', findRichText: true),
+            _tile('Learn vegetarian cooking'),
             const Offset(100, 0),
           );
           await tester.pumpAndSettle();
@@ -273,7 +297,7 @@ void main() {
         ),
         then: () async {
           await tester.drag(
-            find.textContaining('Learn vegetarian cooking', findRichText: true),
+            _tile('Learn vegetarian cooking'),
             const Offset(100, 0),
           );
           await tester.pumpAndSettle();
@@ -318,6 +342,8 @@ void main() {
     for (final (name, swipes) in [
       ('events_summary_goals', 1),
       ('events_summary_top_level', 2),
+      // Folded away.
+      ('events_summary_collapsed', 0),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
         await render(
@@ -330,6 +356,10 @@ void main() {
             clock: () => _now,
           ),
           then: () async {
+            if (swipes == 0) {
+              await tester.tap(find.byTooltip('Hide summary'));
+              await tester.pumpAndSettle();
+            }
             for (var i = 0; i < swipes; i++) {
               await tester.fling(
                 find.byType(DaySummary),
@@ -504,6 +534,10 @@ void main() {
     });
   }
 }
+
+/// A goal's tile, by [name]: after the time summary's legend, which may
+/// name it too.
+Finder _tile(String name) => find.textContaining(name, findRichText: true).last;
 
 /// For a Goals page that saves nothing.
 GoalOutbox _idleGoalOutbox() => GoalOutbox(

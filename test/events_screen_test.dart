@@ -110,6 +110,27 @@ void main() {
     expect(find.text('Today'), findsWidgets);
   });
 
+  testWidgets("the day's summary folds away to \"Show summary\", and back", (
+    tester,
+  ) async {
+    final repo = InMemoryEventsRepository([
+      Event(start: at(30, 11), end: at(30, 13), summary: 'Today'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+    expect(find.text('Priorities'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Hide summary'));
+    await tester.pumpAndSettle();
+    expect(find.text('Priorities'), findsNothing);
+    expect(find.text('Show summary'), findsOneWidget);
+
+    await tester.tap(find.text('Show summary'));
+    await tester.pumpAndSettle();
+    expect(find.text('Priorities'), findsOneWidget);
+    expect(find.text('Show summary'), findsNothing);
+  });
+
   testWidgets('the days either side are loaded, and slide in with a drag', (
     tester,
   ) async {
@@ -189,7 +210,13 @@ void main() {
     ]);
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
-    double height() => tester.getSize(find.byType(InkWell).first).height;
+    double height() => tester
+        .getSize(
+          find
+              .ancestor(of: find.text('Work'), matching: find.byType(InkWell))
+              .first,
+        )
+        .height;
     final before = height();
 
     final center = tester.getCenter(find.byType(ListView));

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/event.dart';
 import '../models/goal.dart';
@@ -112,6 +113,9 @@ class _EventsScreenState extends State<EventsScreen> {
   /// they're loaded.
   DateTime? _lastCompaction;
 
+  /// Whether the day's summary is folded away.
+  bool _summaryCollapsed = false;
+
   /// The timeline's zoom: logical pixels per minute, from the first of
   /// [timelineScales] to the last; the buttons step between them, and
   /// pinching goes anywhere between.
@@ -154,6 +158,32 @@ class _EventsScreenState extends State<EventsScreen> {
     _showCached();
     _refresh();
     _loadGoals();
+    _loadSummaryCollapsed();
+  }
+
+  /// Whether the day's summary was folded away last time. Best effort:
+  /// without it, it's open.
+  Future<void> _loadSummaryCollapsed() async {
+    try {
+      final collapsed = await SharedPreferencesAsync().getBool(
+        _summaryCollapsedKey,
+      );
+      if (!mounted || collapsed == null) return;
+      setState(() => _summaryCollapsed = collapsed);
+    } catch (_) {
+      // Nowhere to keep it: it's open.
+    }
+  }
+
+  void _setSummaryCollapsed(bool collapsed) {
+    setState(() => _summaryCollapsed = collapsed);
+    try {
+      SharedPreferencesAsync()
+          .setBool(_summaryCollapsedKey, collapsed)
+          .catchError((_) {});
+    } catch (_) {
+      // Nowhere to keep it: it lasts until the app closes.
+    }
   }
 
   @override
@@ -733,7 +763,13 @@ class _EventsScreenState extends State<EventsScreen> {
             text: 'Could not load events. These may be out of date.\n$_error',
           ),
         if (events != null)
-          DaySummary(events: events, day: _day, goals: _goalsById),
+          DaySummary(
+            events: events,
+            day: _day,
+            goals: _goalsById,
+            collapsed: _summaryCollapsed,
+            onCollapsed: _setSummaryCollapsed,
+          ),
         Expanded(
           child: LayoutBuilder(
             builder: (context, view) => RefreshIndicator(
@@ -866,3 +902,6 @@ class _EventsScreenState extends State<EventsScreen> {
     child: Card(child: child),
   );
 }
+
+/// Where whether the day's summary is folded away is kept.
+const _summaryCollapsedKey = 'day_summary_collapsed';

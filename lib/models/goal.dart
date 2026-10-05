@@ -201,6 +201,36 @@ List<StatusMinutes>? _statusMinutes(Object? json) => switch (json) {
   _ => null,
 };
 
+/// The time in the last 24 hours and 7 days that went to a [priority], as
+/// the server splits it: each moment goes to the highest priority among
+/// the events then, each event's own or else its goals'. Null [priority]
+/// is the rest: no event, or none with a priority. A window's parts add
+/// up to the whole window.
+class PriorityMinutes {
+  const PriorityMinutes({
+    required this.priority,
+    required this.minutes24h,
+    required this.minutes7d,
+  });
+
+  final int? priority;
+  final int minutes24h;
+  final int minutes7d;
+
+  factory PriorityMinutes.fromJson(Map<String, dynamic> json) =>
+      PriorityMinutes(
+        priority: json['priority'] as int?,
+        minutes24h: json['minutes_24h'] as int? ?? 0,
+        minutes7d: json['minutes_7d'] as int? ?? 0,
+      );
+
+  Map<String, Object?> toJson() => {
+    'priority': priority,
+    'minutes_24h': minutes24h,
+    'minutes_7d': minutes7d,
+  };
+}
+
 /// The minutes in [split] whose statuses include any of [statuses]; null
 /// without a [split].
 (int, int)? _timeFor(List<StatusMinutes>? split, Set<String> statuses) {
@@ -223,6 +253,7 @@ class GoalList {
     this.labelSlotsTotal = 200,
     this.asOf,
     this.minutesByStatuses,
+    this.minutesByPriority,
   });
 
   /// Parents before their children.
@@ -239,6 +270,10 @@ class GoalList {
   /// [Goal.minutesByStatuses]. Null from a server too old to say, or
   /// without an [asOf].
   final List<StatusMinutes>? minutesByStatuses;
+
+  /// The last 24 hours and 7 days up to [asOf], split by priority. Null
+  /// from a server too old to say, or without an [asOf].
+  final List<PriorityMinutes>? minutesByPriority;
 
   /// The overall goal, if the server has one.
   Goal? get overall => goals.where((g) => g.isOverall).firstOrNull;
@@ -260,6 +295,13 @@ class GoalList {
       _ => null,
     },
     minutesByStatuses: _statusMinutes(json['minutes_by_statuses']),
+    minutesByPriority: switch (json['minutes_by_priority']) {
+      final List split => [
+        for (final part in split)
+          PriorityMinutes.fromJson((part as Map).cast<String, dynamic>()),
+      ],
+      _ => null,
+    },
   );
 }
 

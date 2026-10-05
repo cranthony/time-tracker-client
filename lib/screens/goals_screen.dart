@@ -16,6 +16,7 @@ import 'goal_history_screen.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/goal_summary_dialog.dart';
+import '../widgets/goals_time_summary.dart';
 import '../widgets/priority_chip.dart';
 import '../widgets/goal_dialog.dart';
 import '../widgets/health.dart';
@@ -111,6 +112,9 @@ class _GoalsScreenState extends State<GoalsScreen> {
   /// What each goal shows under its name.
   GoalSummary _summary = GoalSummary.time;
 
+  /// Whether the time summary under the heading is folded away.
+  bool _timeSummaryCollapsed = false;
+
   @override
   void initState() {
     super.initState();
@@ -119,6 +123,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
     _showCached();
     _load();
     _loadSummary();
+    _loadTimeSummaryCollapsed();
   }
 
   /// The [GoalSummary] picked last time, if one was. Best effort, like
@@ -131,6 +136,31 @@ class _GoalsScreenState extends State<GoalsScreen> {
       setState(() => _summary = summary);
     } catch (_) {
       // Nowhere to keep it: the default it is.
+    }
+  }
+
+  /// Whether the time summary was folded away last time. Best effort,
+  /// as [_loadSummary].
+  Future<void> _loadTimeSummaryCollapsed() async {
+    try {
+      final collapsed = await SharedPreferencesAsync().getBool(
+        _timeSummaryCollapsedKey,
+      );
+      if (!mounted || collapsed == null) return;
+      setState(() => _timeSummaryCollapsed = collapsed);
+    } catch (_) {
+      // Nowhere to keep it: it's open.
+    }
+  }
+
+  void _setTimeSummaryCollapsed(bool collapsed) {
+    setState(() => _timeSummaryCollapsed = collapsed);
+    try {
+      SharedPreferencesAsync()
+          .setBool(_timeSummaryCollapsedKey, collapsed)
+          .catchError((_) {});
+    } catch (_) {
+      // Nowhere to keep it: it lasts until the app closes.
     }
   }
 
@@ -628,7 +658,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
         ),
       );
     }
-    return ListView(
+    final list = ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 88), // Clear of the "+".
       children: [
@@ -719,6 +749,23 @@ class _GoalsScreenState extends State<GoalsScreen> {
         ],
       ],
     );
+    final onGoals = overall?.timeFor(_shown) ?? goals.timeFor(_shown);
+    if (onGoals == null) return list;
+    // Under the heading, still as the goals scroll.
+    return Column(
+      children: [
+        GoalsTimeSummary(
+          visible: shown,
+          byId: byId,
+          statuses: _shown,
+          onGoals: onGoals,
+          byPriority: goals.minutesByPriority,
+          collapsed: _timeSummaryCollapsed,
+          onCollapsed: _setTimeSummaryCollapsed,
+        ),
+        Expanded(child: list),
+      ],
+    );
   }
 }
 
@@ -779,6 +826,9 @@ enum GoalSummary {
 
 /// Where the [GoalSummary] picked is kept.
 const _summaryKey = 'goal_summary';
+
+/// Where whether the time summary is folded away is kept.
+const _timeSummaryCollapsedKey = 'goal_time_summary_collapsed';
 
 /// The app bar's pick of what each goal shows under its name: a drop-down
 /// of every [GoalSummary], the one shown ticked.
@@ -1426,6 +1476,7 @@ GoalList _inTree(GoalList list, List<Goal> goals) {
     labelSlotsTotal: list.labelSlotsTotal,
     asOf: list.asOf,
     minutesByStatuses: list.minutesByStatuses,
+    minutesByPriority: list.minutesByPriority,
   );
 }
 
@@ -1460,6 +1511,7 @@ GoalList _withSiblingOrder(GoalList goals, List<String> ids) {
     labelSlotsTotal: goals.labelSlotsTotal,
     asOf: goals.asOf,
     minutesByStatuses: goals.minutesByStatuses,
+    minutesByPriority: goals.minutesByPriority,
   );
 }
 
