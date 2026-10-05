@@ -1083,16 +1083,8 @@ class _GoalTile extends StatelessWidget {
     // Its own priority, filled; else the one it inherits, outlined. Only
     // an active goal's events take one.
     final priority = goal.active ? goal.effectivePriority : null;
-    final line = [...ancestors, goal];
     final bands = [
-      for (final (i, goal) in line.indexed)
-        _bandOf(
-          context,
-          goal,
-          parent: i > 0 ? line[i - 1] : null,
-          // Each ancestor has sub-goals: the next one down.
-          hasSubGoals: i < line.length - 1 || subGoals > 0,
-        ),
+      for (final goal in [...ancestors, goal]) _bandOf(context, goal),
     ];
     final listTile = ListTile(
       contentPadding: const EdgeInsetsDirectional.only(start: 8, end: 4),
@@ -1257,31 +1249,14 @@ class _GoalTile extends StatelessWidget {
   }
 
   /// [goal]'s band: its own color, solid, or the one it inherits, dashed.
-  /// With sub-goals, its own color is its tip's alone, on the dashes of
-  /// the color it'd inherit from [parent], so it doesn't run on down
-  /// beside its sub-goals as if it were their parent's. Only an active
-  /// goal's is in color.
-  static GoalBand _bandOf(
-    BuildContext context,
-    Goal goal, {
-    Goal? parent,
-    required bool hasSubGoals,
-  }) {
-    final none = Theme.of(context).colorScheme.outlineVariant;
-    if (!goal.active) return GoalBand(color: none, dashed: true);
+  /// Only an active goal's is in color.
+  static GoalBand _bandOf(BuildContext context, Goal goal) {
     final own = parseColor(goal.backgroundColor);
-    if (own == null) {
-      return GoalBand(
-        color: parseColor(goal.effectiveColor) ?? none,
-        dashed: true,
-      );
-    }
-    if (!hasSubGoals) return GoalBand(color: own, dashed: false);
-    final inherited = parent == null
-        ? null
-        : parseColor(parent.backgroundColor) ??
-              parseColor(parent.effectiveColor);
-    return GoalBand(color: inherited ?? none, dashed: true, tip: own);
+    final color = goal.active ? own ?? parseColor(goal.effectiveColor) : null;
+    return GoalBand(
+      color: color ?? Theme.of(context).colorScheme.outlineVariant,
+      dashed: own == null || !goal.active,
+    );
   }
 }
 
@@ -1323,24 +1298,19 @@ class _SwipeRightState extends State<_SwipeRight> {
   );
 }
 
-/// One goal's band: its color, and whether it's dashed, for one inherited;
-/// and its [tip]'s color, solid, if not the band's.
+/// One goal's band: its color, and whether it's dashed, for one inherited.
 class GoalBand {
-  const GoalBand({required this.color, required this.dashed, this.tip});
+  const GoalBand({required this.color, required this.dashed});
 
   final Color color;
   final bool dashed;
-  final Color? tip;
 
   @override
   bool operator ==(Object other) =>
-      other is GoalBand &&
-      other.color == color &&
-      other.dashed == dashed &&
-      other.tip == tip;
+      other is GoalBand && other.color == color && other.dashed == dashed;
 
   @override
-  int get hashCode => Object.hash(color, dashed, tip);
+  int get hashCode => Object.hash(color, dashed);
 }
 
 /// How a goal's own band ends: plainly, with no sub-goals; as an arrow
@@ -1470,7 +1440,6 @@ class RenderGoalBands extends RenderBox {
       } else {
         canvas.drawRect(Rect.fromLTRB(x0, y0, x1, h), paint);
       }
-      final tip = band.tip == null ? paint : (Paint()..color = band.tip!);
       switch (shape) {
         case GoalBandShape.plain:
           break;
@@ -1484,7 +1453,7 @@ class RenderGoalBands extends RenderBox {
               ..lineTo(x1 + _bandTip, mid)
               ..lineTo(x1, h)
               ..close(),
-            tip,
+            paint,
           );
         case GoalBandShape.expanded:
           // Widening down over where its sub-goals' bands start, dashed as
@@ -1494,8 +1463,8 @@ class RenderGoalBands extends RenderBox {
             ..lineTo(x1 + goalBandWidth, h)
             ..lineTo(x1, h)
             ..close();
-          if (!band.dashed || band.tip != null) {
-            canvas.drawPath(slant, tip);
+          if (!band.dashed) {
+            canvas.drawPath(slant, paint);
           } else {
             canvas.save();
             canvas.clipPath(slant);

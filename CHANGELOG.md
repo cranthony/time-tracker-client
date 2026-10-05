@@ -6,6 +6,11 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.16.1
+
+- On the Goals page, a goal with sub-goals and a color of its own again
+  shows that color down its whole band, as before 5.15.1.
+
 ## 5.16.0
 
 - Cadences. A trait's "Number of events" and "Time spent" parts take an
