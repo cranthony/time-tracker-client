@@ -8,24 +8,23 @@ import '../services/traits_repository.dart';
 import '../widgets/color_picker.dart' show contrastingColor;
 import '../widgets/health.dart';
 import '../widgets/person_dialog.dart';
-import '../widgets/plan_section.dart';
+import '../widgets/plan_pane.dart';
 import 'person_screen.dart';
 
-/// The Plan page's People section -- who the user wants to be with: Self,
+/// The Plan page's People pane -- who the user wants to be with: Self,
 /// always first, then everyone else, each with the circles they're in
 /// and their relationship health, gray (disconnected) to green (healthy),
 /// with its last 8 days. Above them, the circles, each with its own
 /// health: tapping one shows only the people in it, and "Edit" beside it
 /// edits it. Tapping a person opens their page ([PersonScreen]); their
 /// menu edits or archives them. "+" adds a person or a circle. Archived
-/// people are shown only when asked for. [onPeople] is told who's there
-/// each time they load.
-class PeopleSection extends StatefulWidget {
-  const PeopleSection({
+/// people are shown only when asked for. The search finds people by
+/// name, context, circle and what matters to them. [onPeople] is told
+/// who's there each time they load.
+class PeoplePane extends StatefulWidget {
+  const PeoplePane({
     super.key,
     required this.repository,
-    required this.expanded,
-    required this.onExpanded,
     this.traits,
     this.onPeople,
     this.actionNames = const {},
@@ -37,8 +36,6 @@ class PeopleSection extends StatefulWidget {
 
   /// For each person's traits, and those their dialog offers.
   final TraitsRepository? traits;
-  final bool expanded;
-  final ValueChanged<bool> onExpanded;
   final ValueChanged<PeopleList>? onPeople;
 
   /// Names actions by id, for a person's history.
@@ -51,13 +48,16 @@ class PeopleSection extends StatefulWidget {
   final Map<String?, String> locationNames;
 
   @override
-  State<PeopleSection> createState() => PeopleSectionState();
+  State<PeoplePane> createState() => PeoplePaneState();
 }
 
-class PeopleSectionState extends State<PeopleSection> {
+class PeoplePaneState extends State<PeoplePane> {
   PeopleList? _people;
   Object? _error;
   bool _archived = false;
+
+  /// What the search has in it.
+  String _query = '';
 
   /// The circle whose people alone are shown, if one's picked.
   String? _circle;
@@ -174,11 +174,9 @@ class PeopleSectionState extends State<PeopleSection> {
   @override
   Widget build(BuildContext context) {
     final people = _people;
-    return PlanSection(
-      title: 'People',
-      annotation: 'who',
-      expanded: widget.expanded,
-      onExpanded: widget.onExpanded,
+    return PlanPane(
+      searchHint: 'Search people',
+      onSearch: (query) => setState(() => _query = query),
       actions: [
         IconButton(
           tooltip: _archived ? 'Hide archived people' : 'Show archived people',
@@ -187,7 +185,6 @@ class PeopleSectionState extends State<PeopleSection> {
           ),
           onPressed: () {
             setState(() => _archived = !_archived);
-            widget.onExpanded(true);
           },
         ),
         PopupMenuButton<String>(
@@ -202,33 +199,53 @@ class PeopleSectionState extends State<PeopleSection> {
           ],
         ),
       ],
-      children: switch ((people, _error)) {
-        (null, final error?) => [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              "Couldn't load people. ${switch (error) {
-                McpException(:final message) => message,
-                _ => '$error',
-              }}",
-            ),
-          ),
-          // Self is there regardless.
-          _tile(context, defaultSelf, const []),
-        ],
-        (null, _) => const [LinearProgressIndicator()],
-        (final people?, _) => _list(context, people),
-      },
+      child: RefreshIndicator(
+        onRefresh: reload,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(bottom: 24),
+          children: switch ((people, _error)) {
+            (null, final error?) => [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  "Couldn't load people. ${switch (error) {
+                    McpException(:final message) => message,
+                    _ => '$error',
+                  }}",
+                ),
+              ),
+              // Self is there regardless.
+              _tile(context, defaultSelf, const []),
+            ],
+            (null, _) => const [LinearProgressIndicator()],
+            (final people?, _) => _list(context, people),
+          },
+        ),
+      ),
     );
   }
 
   List<Widget> _list(BuildContext context, PeopleList people) {
     final theme = Theme.of(context);
     final circle = people.circles.where((c) => c.id == _circle).firstOrNull;
-    final shown = [
+    String? circleName(String id) =>
+        people.circles.where((c) => c.id == id).firstOrNull?.name;
+    final inCircle = [
       for (final person in people.withSelf)
         if ((_archived || person.active) &&
             (circle == null || person.circleIds.contains(circle.id)))
+          person,
+    ];
+    final shown = [
+      for (final person in inCircle)
+        if (matchesSearch(_query, [
+          person.name,
+          person.context,
+          person.whatMatters,
+          if (person.isSelf) 'you',
+          for (final id in person.circleIds) circleName(id),
+        ]))
           person,
     ];
     return [
@@ -293,11 +310,13 @@ class PeopleSectionState extends State<PeopleSection> {
           ),
         ),
       for (final person in shown) _tile(context, person, people.circles),
-      if (shown.isEmpty)
+      if (inCircle.isEmpty)
         const Padding(
           padding: EdgeInsets.all(16),
           child: Text('No one in this circle yet.'),
-        ),
+        )
+      else if (shown.isEmpty)
+        NoMatches(query: _query),
       if (people.people.where((p) => !p.isSelf).isEmpty)
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),

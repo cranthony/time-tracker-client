@@ -60,3 +60,11 @@ Duration? parseDuration(String text) {
     minutes: int.parse(match[2] ?? '0'),
   );
 }
+
+/// [minutes] as "10h", "45m" or "1h 30m".
+String formatMinutes(num minutes) {
+  final total = minutes.round();
+  final (hours, rest) = (total ~/ 60, total % 60);
+  if (hours == 0) return '${rest}m';
+  return rest == 0 ? '${hours}h' : '${hours}h ${rest}m';
+}

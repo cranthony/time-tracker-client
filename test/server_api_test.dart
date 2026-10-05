@@ -139,13 +139,11 @@ void main() {
       ));
     });
 
-    test("isn't rated or ordered, and has no history", () async {
+    test("isn't kept in an order of its own", () async {
       final client = _Client((_, _) => null);
       final repository = McpGoalsRepository(client);
 
-      expect(repository.rated, isFalse);
       expect(repository.reorderable, isFalse);
-      expect(await repository.history(const Goal(id: 'a1')), isEmpty);
       expect(client.calls, isEmpty);
     });
   });

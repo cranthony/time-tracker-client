@@ -1,4 +1,3 @@
-import '../models/assessment.dart';
 import '../models/goal.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
@@ -7,11 +6,6 @@ import 'response_cache.dart';
 /// group's [Goal.isGroup] set. The app talks to this rather than to MCP
 /// directly so screens can be exercised without a server.
 abstract class GoalsRepository {
-  /// Whether they're rated: their measures (targets), health, history
-  /// and time spent. The server doesn't rate actions yet; the sample data
-  /// does.
-  bool get rated;
-
   /// Whether siblings can be put in an order of their own.
   bool get reorderable;
 
@@ -35,17 +29,13 @@ abstract class GoalsRepository {
   /// Puts sibling goals (sharing a parent), by id, in this order, among
   /// the places they hold. Returns every goal, as [goals] does.
   Future<GoalList> reorderGoals(List<String> ids);
-
-  /// [goal]'s recent assessments (its last 12 days and today), proposed
-  /// and confirmed, oldest first.
-  Future<List<Assessment>> history(Goal goal);
 }
 
 /// Reads and writes actions and their groups via the Time Tracker MCP
 /// server's action tools: `get_actions` and `get_action_groups`, listed
 /// together as one tree, and `create_`/`update_action` or
-/// `create_`/`update_action_group` for a group. Neither is rated or
-/// ordered there yet.
+/// `create_`/`update_action_group` for a group. They aren't kept in an
+/// order of their own there yet.
 class McpGoalsRepository implements GoalsRepository {
   McpGoalsRepository(this._client, {this._cache});
 
@@ -53,9 +43,6 @@ class McpGoalsRepository implements GoalsRepository {
   final ResponseCache? _cache;
 
   static const _cacheKey = 'actions';
-
-  @override
-  bool get rated => false;
 
   @override
   bool get reorderable => false;
@@ -147,9 +134,6 @@ class McpGoalsRepository implements GoalsRepository {
   @override
   Future<GoalList> reorderGoals(List<String> ids) =>
       throw UnsupportedError("The server doesn't keep an order of its own.");
-
-  @override
-  Future<List<Assessment>> history(Goal goal) async => const [];
 }
 
 /// What `get_actions` and `get_action_groups` answered, as [result]'s
@@ -192,22 +176,15 @@ GoalList actionTree(Object? result) {
   );
 }
 
-/// Keeps actions in memory, rated as the sample data has them. Used when
-/// no server is configured, and in tests.
+/// Keeps actions in memory, with the time spent on them, as the sample
+/// data has it. Used when no server is configured, and in tests.
 class InMemoryGoalsRepository implements GoalsRepository {
   InMemoryGoalsRepository([
     List<Goal> goals = const [],
-    this.assessments = const {},
     this.asOf,
     this.minutesByStatuses,
     this.minutesByPriority,
   ]) : _goals = [...goals];
-
-  /// Each goal's history, by goal id.
-  final Map<String, List<Assessment>> assessments;
-
-  @override
-  bool get rated => true;
 
   @override
   bool get reorderable => true;
@@ -220,10 +197,6 @@ class InMemoryGoalsRepository implements GoalsRepository {
 
   /// The time by priority, as [GoalList.minutesByPriority] gives it.
   final List<PriorityMinutes>? minutesByPriority;
-
-  @override
-  Future<List<Assessment>> history(Goal goal) async =>
-      assessments[goal.id] ?? const [];
 
   final List<Goal> _goals;
   int _nextId = 1;
@@ -253,7 +226,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
     }
     return GoalList(
       goals: ordered,
-      labelSlotsUsed: _goals.where((g) => g.active && !g.isOverall).length,
+      labelSlotsUsed: _goals.where((g) => g.active && !g.isGroup).length,
       asOf: asOf,
       minutesByStatuses: minutesByStatuses,
       minutesByPriority: minutesByPriority,

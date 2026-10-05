@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/trait.dart';
-import 'package:time_tracker_client/screens/locations_section.dart';
-import 'package:time_tracker_client/screens/people_section.dart';
+import 'package:time_tracker_client/screens/locations_pane.dart';
+import 'package:time_tracker_client/screens/people_pane.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/widgets/health.dart';
@@ -122,7 +122,7 @@ void main() {
     });
   });
 
-  group('PeopleSection', () {
+  group('PeoplePane', () {
     Future<InMemoryPeopleRepository> pump(
       WidgetTester tester, {
       List<Person> people = _people,
@@ -138,12 +138,10 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: SingleChildScrollView(
-              child: PeopleSection(
+            body: _Fill(
+              child: PeoplePane(
                 repository: repository,
                 traits: InMemoryTraitsRepository(traits: _traits),
-                expanded: true,
-                onExpanded: (_) {},
                 actions: const {'call': 'Call'},
               ),
             ),
@@ -312,7 +310,7 @@ void main() {
     });
   });
 
-  group('LocationsSection', () {
+  group('LocationsPane', () {
     Future<InMemoryPeopleRepository> pump(WidgetTester tester) async {
       final repository = InMemoryPeopleRepository(
         locations: const [
@@ -322,13 +320,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: SingleChildScrollView(
-              child: LocationsSection(
-                repository: repository,
-                expanded: true,
-                onExpanded: (_) {},
-              ),
-            ),
+            body: _Fill(child: LocationsPane(repository: repository)),
           ),
         ),
       );
@@ -379,4 +371,14 @@ void main() {
       expect(locations.map((l) => (l.name, l.hint)), [('The hall', null)]);
     });
   });
+}
+
+/// [child], as tall as the screen: a pane fills what it's given.
+class _Fill extends StatelessWidget {
+  const _Fill({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.expand(child: child);
 }

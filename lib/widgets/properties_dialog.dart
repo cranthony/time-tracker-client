@@ -3,13 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/goal.dart';
-import '../models/measure.dart';
 import '../models/note.dart';
 import '../services/mcp_client.dart';
 import 'color_picker.dart';
 import 'durations.dart';
 import 'goals_picker.dart';
-import 'measure_editor.dart';
 
 /// How a property is shown and edited.
 enum PropertyKind {
@@ -41,10 +39,6 @@ enum PropertyKind {
 
   /// "#rrggbb".
   color,
-
-  /// A goal's measure (see models/measure.dart); a weighted rollup weighs
-  /// the sub-goals of the goal with the dialog's "id".
-  measure,
 
   /// A list of text lines, edited one per line.
   lines,
@@ -234,10 +228,6 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         PropertyKind.flag => value == true,
         PropertyKind.color => parseColor(value as String?),
         PropertyKind.goals => [...(value as List? ?? const []).cast<String>()],
-        PropertyKind.measure => switch (value) {
-          final Map measure => Map<String, Object?>.of(measure.cast()),
-          _ => null,
-        },
         PropertyKind.date => switch (value) {
           final String iso => DateTime.tryParse(iso),
           _ => null,
@@ -272,10 +262,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     _changes.addAll(widget.changes);
     // Goals are shown by name, so they're needed before anything opens.
     if (widget.kinds.values.any(
-      (kind) =>
-          kind == PropertyKind.goal ||
-          kind == PropertyKind.goals ||
-          kind == PropertyKind.measure,
+      (kind) => kind == PropertyKind.goal || kind == PropertyKind.goals,
     )) {
       _goals = widget.goals?.call()
         ?..then((goals) {
@@ -336,13 +323,6 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
           setState(() => _draftError = 'Enter a whole number.');
           return false;
         }
-      case PropertyKind.measure:
-        value = _draft;
-        final problem = value is Measure ? measureProblem(value) : null;
-        if (problem != null) {
-          setState(() => _draftError = problem);
-          return false;
-        }
       case PropertyKind.duration:
         final duration = text.isEmpty ? null : parseDuration(text);
         if (text.isNotEmpty && duration == null) {
@@ -377,10 +357,6 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       parseIsoDuration(a) != null && parseIsoDuration(a) == parseIsoDuration(b),
     PropertyKind.color when a is String && b is String =>
       a.toLowerCase() == b.toLowerCase(),
-    PropertyKind.measure when a is Map && b is Map => mapEquals(
-      a.cast<String, Object?>(),
-      b.cast<String, Object?>(),
-    ),
     PropertyKind.lines => listEquals(
       (a as List? ?? const []).cast<String>(),
       (b as List? ?? const []).cast<String>(),
@@ -809,25 +785,6 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
             ),
         ],
       ),
-      PropertyKind.measure => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          MeasureEditor(
-            measure: _draft as Measure?,
-            goalId: _values['id'] as String?,
-            goals: _goals,
-            onChanged: (measure) => _draft = measure,
-          ),
-          if (_draftError case final error?)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                error,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ),
-        ],
-      ),
       PropertyKind.color => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -867,12 +824,11 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       ),
       null => null,
     };
-    // The color picker, the three-way choice, the goals list and the
-    // measure's fields need the dialog's whole width.
+    // The color picker, the three-way choice and the goals list need the
+    // dialog's whole width.
     if (kind == PropertyKind.color ||
         kind == PropertyKind.optionalFlag ||
-        kind == PropertyKind.goals ||
-        kind == PropertyKind.measure) {
+        kind == PropertyKind.goals) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -917,11 +873,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       }
       final list = snapshot.data;
       if (list == null) return const LinearProgressIndicator();
-      // Not a goal that can be a parent, or be given to an event.
-      return build([
-        for (final goal in list)
-          if (!goal.isOverall) goal,
-      ]);
+      return build(list);
     },
   );
 
@@ -1068,8 +1020,6 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         return [for (final id in value) _goalNames[id] ?? '$id'].join(', ');
       case PropertyKind.choice:
         return widget.choices[key]?[value] ?? '$value';
-      case PropertyKind.measure when value is Map:
-        return describeMeasure(value.cast(), full: true, goalNames: _goalNames);
       case PropertyKind.date when value is String:
         return switch (DateTime.tryParse(value)) {
           final day? => MaterialLocalizations.of(context).formatMediumDate(day),

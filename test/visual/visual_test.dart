@@ -7,12 +7,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/outbox/goal_outbox.dart';
 import 'package:time_tracker_client/demo/sample_data.dart';
-import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
-import 'package:time_tracker_client/screens/goal_history_screen.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
 import 'package:time_tracker_client/screens/plan_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
@@ -23,7 +21,6 @@ import 'package:time_tracker_client/widgets/day_summary.dart';
 import 'package:time_tracker_client/widgets/time_summary.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/goals_picker.dart';
-import 'package:time_tracker_client/widgets/priority_chip.dart';
 
 /// A fixed moment, so every run renders the same thing.
 final _now = DateTime(2026, 10, 2, 13, 30);
@@ -86,48 +83,34 @@ void main() {
       serverLabel: 'sample',
     );
 
-    // The whole page: traits, then people, then actions.
+    /// Swipes the Plan page to its [pane], by tapping its tab.
+    Future<void> openPane(WidgetTester tester, String pane) async {
+      await tester.tap(find.widgetWithText(Tab, pane));
+      await tester.pumpAndSettle();
+    }
+
+    // The page as it opens: its tabs, over the Actions pane.
     testWidgets('plan ($mode)', (tester) async {
       await render(tester, 'plan', plan(), scoped: true);
     });
 
-    // Scrolled down to the people, Self first.
-    testWidgets('plan people ($mode)', (tester) async {
-      await render(
-        tester,
-        'plan_people',
-        plan(),
-        scoped: true,
-        then: () async {
-          await tester.scrollUntilVisible(
-            find.text('Jordan'),
-            200,
-            scrollable: find.byType(Scrollable).first,
-          );
-          await tester.pumpAndSettle();
-        },
-      );
-    });
+    for (final (name, pane) in [
+      ('plan_traits', 'Traits'),
+      ('plan_people', 'People'),
+      ('plan_locations', 'Locations'),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          plan(),
+          scoped: true,
+          then: () => openPane(tester, pane),
+        );
+      });
+    }
 
-    // Scrolled down to the locations.
-    testWidgets('plan locations ($mode)', (tester) async {
-      await render(
-        tester,
-        'plan_locations',
-        plan(),
-        scoped: true,
-        then: () async {
-          await tester.scrollUntilVisible(
-            find.text('The river trail'),
-            200,
-            scrollable: find.byType(Scrollable).first,
-          );
-          await tester.pumpAndSettle();
-        },
-      );
-    });
-
-    // Traits folded away, and one circle's people.
+    // One circle's people.
     testWidgets('plan circle ($mode)', (tester) async {
       await render(
         tester,
@@ -135,13 +118,35 @@ void main() {
         plan(),
         scoped: true,
         then: () async {
-          await tester.tap(find.byIcon(Icons.expand_more).first);
-          await tester.pumpAndSettle();
+          await openPane(tester, 'People');
           await tester.tap(find.widgetWithText(FilterChip, 'Dance friends'));
           await tester.pumpAndSettle();
         },
       );
     });
+
+    // Searching people, and actions.
+    for (final (name, pane, query) in [
+      ('plan_people_search', 'People', 'salsa'),
+      ('actions_search', null, 'guitar'),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          plan(),
+          scoped: true,
+          then: () async {
+            if (pane != null) await openPane(tester, pane);
+            await tester.enterText(
+              find.byType(TextField).hitTestable().first,
+              query,
+            );
+            await tester.pumpAndSettle();
+          },
+        );
+      });
+    }
 
     // A trait open for editing: its judgment's rubric, ratings and facts.
     testWidgets('trait dialog ($mode)', (tester) async {
@@ -151,6 +156,7 @@ void main() {
         plan(),
         scoped: true,
         then: () async {
+          await openPane(tester, 'Traits');
           await tester.tap(find.text('Adventurous'));
           await tester.pumpAndSettle();
         },
@@ -218,7 +224,11 @@ void main() {
             await tester.drag(group, const Offset(100, 0));
             await tester.pumpAndSettle();
           }
-          await tester.ensureVisible(_tile('Practice guitar'));
+          await tester.scrollUntilVisible(
+            find.textContaining('Practice guitar', findRichText: true),
+            200,
+            scrollable: _list,
+          );
           await tester.pumpAndSettle();
         },
       );
@@ -238,85 +248,36 @@ void main() {
           }
           await tester.tapAt(Offset.zero);
           await tester.pumpAndSettle();
-          await tester.ensureVisible(_tile('Tpyo'));
+          await tester.scrollUntilVisible(
+            find.textContaining('Tpyo', findRichText: true),
+            200,
+            scrollable: _list,
+          );
           await tester.pumpAndSettle();
         },
       );
     });
 
-    for (final summary in [null, ...GoalSummary.values.skip(1)]) {
-      // Null: the menu open, picking one.
-      final name = switch (summary) {
-        null => 'actions_summary_menu',
-        _ => 'actions_summary_${summary.name}',
-      };
-      testWidgets('$name ($mode)', (tester) async {
-        await render(
-          tester,
-          name,
-          plan(),
-          then: () async {
-            await tester.tap(find.byTooltip('Show under each action…'));
-            await tester.pumpAndSettle();
-            if (summary == null) return;
-            await tester.tap(
-              find.widgetWithText(RadioMenuButton<GoalSummary>, summary.label),
-            );
-            await tester.pumpAndSettle();
-          },
-        );
-      });
-    }
-
-    // An action's target, as tapping it shows it; then being edited.
-    for (final editing in [false, true]) {
-      final name = editing ? 'action_measure_edit' : 'action_measure';
-      testWidgets('$name ($mode)', (tester) async {
-        await render(
-          tester,
-          name,
-          plan(),
-          then: () async {
-            await tester.tap(_tile('Work'));
-            await tester.pumpAndSettle();
-            if (!editing) return;
-            await tester.tap(find.text('Edit measure'));
-            await tester.pumpAndSettle();
-          },
-        );
-      });
-    }
-
-    // A group in a group, as tapping it shows it, its priority inherited;
-    // then its priority being picked.
-    for (final editing in [false, true]) {
-      final name = editing ? 'action_dialog_priority' : 'action_dialog';
-      testWidgets('$name ($mode)', (tester) async {
-        await render(
-          tester,
-          name,
-          plan(),
-          then: () async {
-            await tester.drag(_tile('Creative'), const Offset(100, 0));
-            await tester.pumpAndSettle();
-            await tester.ensureVisible(_tile('Guitar'));
-            await tester.pumpAndSettle();
-            await tester.tap(_tile('Guitar'));
-            await tester.pumpAndSettle();
-            if (!editing) return;
-            await tester.tap(
-              find.descendant(
-                of: find.byType(AlertDialog),
-                matching: find.byType(PriorityChip),
-              ),
-            );
-            await tester.pumpAndSettle();
-            await tester.tap(find.widgetWithText(ChoiceChip, 'P1'));
-            await tester.pumpAndSettle();
-          },
-        );
-      });
-    }
+    // A group in a group, as tapping it shows it, its priority inherited.
+    testWidgets('action dialog ($mode)', (tester) async {
+      await render(
+        tester,
+        'action_dialog',
+        plan(),
+        then: () async {
+          await tester.drag(_tile('Creative'), const Offset(100, 0));
+          await tester.pumpAndSettle();
+          await tester.scrollUntilVisible(
+            find.textContaining('Guitar', findRichText: true),
+            200,
+            scrollable: _list,
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(_tile('Guitar'));
+          await tester.pumpAndSettle();
+        },
+      );
+    });
 
     testWidgets('actions reorder ($mode)', (tester) async {
       await render(
@@ -338,28 +299,21 @@ void main() {
         then: () async {
           await tester.drag(_tile('Creative'), const Offset(100, 0));
           await tester.pumpAndSettle();
-          await tester.ensureVisible(_tile('Guitar'));
+          await tester.scrollUntilVisible(
+            find.textContaining('Guitar', findRichText: true),
+            200,
+            scrollable: _list,
+          );
           await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('More for Guitar'));
           await tester.pumpAndSettle();
-          await tester.tap(find.text('Details'));
+          await tester.tap(find.text('Edit'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('Creative').last);
           await tester.pumpAndSettle();
           await tester.tap(find.byType(GoalField));
           await tester.pumpAndSettle();
         },
-      );
-    });
-
-    testWidgets('action history ($mode)', (tester) async {
-      final goals = sample.goalsRepository();
-      final work = (await tester.runAsync(goals.goals))!.goals
-          .firstWhere((Goal g) => g.id == 'work');
-      await render(
-        tester,
-        'action_history',
-        GoalHistoryScreen(goal: work, repository: goals),
       );
     });
 
@@ -580,3 +534,8 @@ GoalOutbox _idleGoalOutbox() => GoalOutbox(
   store: InMemoryOutboxStore(),
   repository: InMemoryGoalsRepository(),
 );
+
+/// The list a pane scrolls: not its search field, which scrolls too.
+final _list = find
+    .descendant(of: find.byType(ListView), matching: find.byType(Scrollable))
+    .first;

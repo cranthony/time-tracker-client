@@ -4,7 +4,6 @@ import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/widgets/goals_picker.dart';
 
 const _goals = [
-  Goal(id: overallGoalId, name: 'Overall', path: 'Overall'),
   Goal(id: 'cook', name: 'Cooking', path: 'Cooking'),
   Goal(id: 'tofu', parentId: 'cook', name: 'Tofu', path: 'Cooking › Tofu'),
   Goal(id: 'dal', parentId: 'cook', name: 'Dal', path: 'Cooking › Dal'),
@@ -40,8 +39,7 @@ Future<List<String>> _pump(WidgetTester tester, List<String> picked) async {
 void main() {
   testWidgets('opens only the branches holding a picked goal', (tester) async {
     await _pump(tester, ['10k']);
-    // Not the overall goal, nor an inactive one not picked.
-    expect(find.text('Overall'), findsNothing);
+    // Not one put away, not picked.
     expect(find.text('Old'), findsNothing);
     expect(find.text('Cooking'), findsOneWidget);
     expect(find.text('Tofu'), findsNothing);
