@@ -1450,6 +1450,22 @@ void main() {
     expect(find.text('Work'), findsOneWidget);
   });
 
+  testWidgets('a server error after sign-in is shown, not the sign-in '
+      'prompt', (tester) async {
+    var signedIn = false;
+    final repo = _SignInRepository(() => signedIn, [])
+      ..failure = McpException('Tool list_events failed: token revoked');
+    await tester.pumpWidget(app(repo, onSignIn: () async => signedIn = true));
+    await tester.pumpAndSettle();
+    expect(find.text('Sign in to see your events.'), findsOneWidget);
+
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sign in to see your events.'), findsNothing);
+    expect(find.textContaining('Could not load events.'), findsOneWidget);
+    expect(find.textContaining('token revoked'), findsOneWidget);
+  });
+
   testWidgets('"Go to now" shows today, with now a third of the way down', (
     tester,
   ) async {
@@ -1593,9 +1609,13 @@ class _SignInRepository extends InMemoryEventsRepository {
 
   final bool Function() signedIn;
 
+  /// Thrown once signed in, as a server that can't answer would.
+  Exception? failure;
+
   @override
   Future<List<Event>> events(DateTime from, DateTime to, {bool keep = false}) {
     if (!signedIn()) throw SignInRequiredException();
+    if (failure case final failure?) throw failure;
     return super.events(from, to);
   }
 }

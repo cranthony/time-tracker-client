@@ -552,7 +552,11 @@ class _EventsScreenState extends State<EventsScreen> {
       });
     } catch (e) {
       if (!mounted || which != _day) return;
-      setState(() => _error = e);
+      setState(() {
+        _error = e;
+        // Signed in: without that it's SignInRequiredException.
+        _needsSignIn = false;
+      });
     }
   }
 
