@@ -16,6 +16,8 @@ on. Add the new version's section here at the same time; CI checks both.
 - The web app keeps its sign-in only in memory, never in the browser's
   storage, so reloading the page or opening it again means signing in
   again.
+- The web app won't run inside another site's page, where that site
+  could trick you into clicking it.
 
 ## 5.11.0
 

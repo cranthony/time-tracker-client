@@ -167,7 +167,15 @@ Content-Security-Policy to `index.html` that:
   Google's font server, which supplies fonts for emoji and other scripts.
 
 `web/callback.html` has its own fixed policy, and its script is in
-`web/callback.js`. To try the published setup locally:
+`web/callback.js`.
+
+The app also refuses to run inside a frame, where another site could hide
+it under its own page so that your clicks land on the app
+("clickjacking"). Pages can't send the header that forbids framing, so
+`web/start.js` checks instead, and only loads the app in a window or tab
+of its own.
+
+To try the published setup locally:
 
 ```powershell
 flutter build web --csp --no-web-resources-cdn --dart-define-from-file=config.json

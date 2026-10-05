@@ -41,6 +41,10 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
-  <script src="flutter_bootstrap.js" async></script>
+  <!--
+    start.js loads flutter_bootstrap.js, unless another site has put the
+    app in a frame, to trick you into clicking it.
+  -->
+  <script src="start.js"></script>
 </body>
 </html>
