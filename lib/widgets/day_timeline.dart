@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
@@ -272,10 +273,11 @@ List<T> placeLabels<T>(
 /// strip down its edge is solid only as far as it lasts, dashed below,
 /// and it says how long it is. One pushed down by the event above it is
 /// joined to where it truly is by that fill from the band.
-/// [now] and the [lastCompaction], if they're in the day, are marked
-/// with lines across, under the events; zoomed in past the
-/// [defaultTimelineScale], they're labeled "now" and "last compacted"
-/// in place of the times beside them.
+/// [now], the [lastCompaction] and each of the [pendingNotes], if
+/// they're in the day, are marked with lines across, under the events;
+/// zoomed in past the [defaultTimelineScale], they're labeled "now",
+/// "last compacted" and "pending note" in place of the times beside
+/// them. A note's label gives way to any it would overlap.
 ///
 /// Under it all is its [TimelineAxis], unless not to draw its [axis]:
 /// then it's drawn over one drawn apart, and covers the axis' times its
@@ -292,6 +294,7 @@ class DayTimeline extends StatelessWidget {
     this.scale = defaultTimelineScale,
     this.now,
     this.lastCompaction,
+    this.pendingNotes = const [],
     this.onTap,
     this.onTapTime,
     this.axis = true,
@@ -310,6 +313,9 @@ class DayTimeline extends StatelessWidget {
   /// When notes were last compacted into the calendar: what's before it
   /// is as the notes had it.
   final DateTime? lastCompaction;
+
+  /// When each note not yet compacted into the calendar was taken.
+  final List<DateTime> pendingNotes;
   final ValueChanged<Event>? onTap;
 
   /// Called with the time at a tap that isn't on an event.
@@ -372,6 +378,7 @@ class DayTimeline extends StatelessWidget {
     };
     final nowY = yIfToday(now);
     final compactionY = yIfToday(lastCompaction);
+    final noteYs = [for (final t in pendingNotes) ?yIfToday(t)]..sort();
     final colors = theme.colorScheme;
     // The lines' labels, in place of the times beside them, only when
     // zoomed in: each centered on its line, unless that's too close to the
@@ -402,6 +409,24 @@ class DayTimeline extends StatelessWidget {
           color: color,
         ));
       }
+      // Each note's, where it's clear of every other label, so many
+      // together don't push each other down the timeline.
+      const noteLabel = 'pending\nnote';
+      final painter = _markerText(noteLabel, markerStyle, scaler);
+      final noteHeight = painter.height;
+      painter.dispose();
+      for (final y in noteYs) {
+        if (markers.every(
+          (m) => (m.y - y).abs() >= (m.height + noteHeight) / 2 + 1,
+        )) {
+          markers.add((
+            y: y,
+            height: noteHeight,
+            label: noteLabel,
+            color: _noteColor(colors),
+          ));
+        }
+      }
     }
     final rail = _RailPainter(
       day: day,
@@ -420,6 +445,8 @@ class DayTimeline extends StatelessWidget {
       nowColor: colors.error,
       compactionY: compactionY,
       compactionColor: colors.tertiary,
+      noteYs: noteYs,
+      noteColor: _noteColor(colors),
       markers: markers,
       edgeColor: colors.onSurface,
       coverColor: theme.scaffoldBackgroundColor,
@@ -491,6 +518,10 @@ class DayTimeline extends StatelessWidget {
     );
   }
 }
+
+/// The color of a note not yet compacted, and its label: the last
+/// compaction's, fainter, as it's only a hint.
+Color _noteColor(ColorScheme colors) => colors.tertiary.withValues(alpha: 0.6);
 
 /// What's the same on every [DayTimeline] for [day] at [scale], so it
 /// can be drawn apart, kept still while the days slide over it: a line
@@ -1098,6 +1129,8 @@ class _RailPainter extends CustomPainter {
     required this.nowColor,
     required this.compactionY,
     required this.compactionColor,
+    required this.noteYs,
+    required this.noteColor,
     required this.markers,
     required this.edgeColor,
     required this.coverColor,
@@ -1124,6 +1157,12 @@ class _RailPainter extends CustomPainter {
   /// across, under the events.
   final double? compactionY;
   final Color compactionColor;
+
+  /// Where each note not yet compacted is, if it's in the day: a dashed
+  /// line across, under the events, like the last compaction's but
+  /// thinner and fainter.
+  final List<double> noteYs;
+  final Color noteColor;
 
   /// The lines' labels, which the times give way to, and how tall each
   /// is.
@@ -1170,6 +1209,20 @@ class _RailPainter extends CustomPainter {
           Offset(math.min(x + 4, size.width), y),
           paint,
         );
+      }
+    }
+    if (noteYs.isNotEmpty) {
+      final paint = Paint()
+        ..color = noteColor
+        ..strokeWidth = 1;
+      for (final y in noteYs) {
+        for (var x = _timeWidth; x < size.width; x += 8) {
+          canvas.drawLine(
+            Offset(x, y),
+            Offset(math.min(x + 4, size.width), y),
+            paint,
+          );
+        }
       }
     }
     if (nowY case final y?) {
@@ -1343,5 +1396,6 @@ class _RailPainter extends CustomPainter {
       old.coverColor != coverColor ||
       old.nowY != nowY ||
       old.compactionY != compactionY ||
+      !listEquals(old.noteYs, noteYs) ||
       old.scaler != scaler;
 }

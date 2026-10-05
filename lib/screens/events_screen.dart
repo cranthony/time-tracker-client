@@ -6,10 +6,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/event.dart';
 import '../models/goal.dart';
+import '../models/note.dart';
 import '../models/recurrence.dart';
+import '../outbox/note_outbox.dart';
 import '../services/goals_repository.dart';
 import '../services/events_repository.dart';
 import '../services/mcp_client.dart';
+import '../services/events_place.dart';
+import '../services/notes_repository.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
 import '../widgets/day_summary.dart';
@@ -23,35 +27,53 @@ import '../widgets/status_message.dart';
 
 /// One day's events on a timeline ([DayTimeline]), from midnight to
 /// midnight, with buttons to step to the day before or after and to zoom
-/// in or out. Swiping left or right slides to the day after or before,
-/// which are loaded in the background to be ready, and pinching zooms
+/// in or out, and one to go to now. Swiping left or right slides to the
+/// day after or before, which are loaded in the background to be ready, and pinching zooms
 /// around the fingers. The days slide over a [TimelineAxis] that stays
 /// still, scrolled up and down with them, so every day is at the same
 /// time of day. Tapping the date picks another; tapping an event
 /// shows all its properties, and lets one change them; tapping between
 /// events creates one there. It opens scrolled
 /// to now, on today, or else to the day's first event. The last
-/// compaction, from the goals, is marked on it.
+/// compaction, from the goals, is marked on it, and so is each note not
+/// yet compacted, saved or not.
 ///
-/// The day it opens on, today, is kept for next time, so it shows at once
-/// while it refreshes. Other days load afresh, and are loaded again when
-/// shown after an event was changed.
+/// Today's events are kept for next time, so they show at once while
+/// they refresh. Other days load afresh, and are loaded again when shown
+/// after an event was changed.
+///
+/// Where it was left, the day, time and zoom, is kept in its
+/// [placeStore], and it opens there again if it's back within
+/// [EventsPlace.keptFor]; otherwise on today.
 class EventsScreen extends StatefulWidget {
   const EventsScreen({
     super.key,
     required this.repository,
     required this.serverLabel,
     this.goalsRepository,
+    this.notesRepository,
+    this.outbox,
     this.onSignIn,
     this.onSignOut,
     this.version,
+    this.placeStore,
     DateTime Function()? clock,
   }) : clock = clock ?? DateTime.now;
 
   final EventsRepository repository;
 
+  /// Where to keep where it was left; null always to open on today.
+  final EventsPlaceStore? placeStore;
+
   /// Where to list goals from, to pick an event's; null to type their ids.
   final GoalsRepository? goalsRepository;
+
+  /// Where to load the notes not yet compacted from, to mark them; null
+  /// not to.
+  final NotesRepository? notesRepository;
+
+  /// The notes not saved yet, to mark them too.
+  final NoteOutbox? outbox;
 
   /// Which server this build talks to, for the About dialog.
   final String serverLabel;
@@ -81,10 +103,21 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Midnight, local time, at the start of the day shown.
   late DateTime _day;
 
-  /// The day shown first; its events are kept for next time.
+  /// Today, when it opened: the day [_firstPage] is, and the one whose
+  /// events are kept for next time.
   late final DateTime _firstDay;
 
-  final _pages = PageController(initialPage: _firstPage);
+  late final PageController _pages;
+
+  /// Whether it's still finding out where it was left, so not to scroll
+  /// to the start yet.
+  bool _placePending = false;
+
+  /// The time to scroll to the top, where it was left, in place of now
+  /// or the first event.
+  DateTime? _restoreTop;
+
+  late final AppLifecycleListener _lifecycle;
 
   /// The page the arrows last sent it sliding to, until it gets there, so
   /// a second tap goes on from there.
@@ -113,6 +146,10 @@ class _EventsScreenState extends State<EventsScreen> {
   /// they're loaded.
   DateTime? _lastCompaction;
 
+  /// When each saved note not yet compacted was taken; empty until
+  /// they're loaded.
+  List<DateTime> _savedNotes = const [];
+
   /// Whether the day's summary is folded away.
   bool _summaryCollapsed = false;
 
@@ -140,9 +177,9 @@ class _EventsScreenState extends State<EventsScreen> {
   /// first event, or now: once its events are shown.
   bool _scrollPending = true;
 
-  /// How tall the timeline is, with the days on it: clear of the zoom
-  /// buttons at the foot, with room for an event drawn past midnight.
-  double get _height => timelineHeight(_day, _scale) + 120;
+  /// How tall the timeline is, with the days on it: clear of the now and
+  /// zoom buttons at the foot, with room for an event drawn past midnight.
+  double get _height => timelineHeight(_day, _scale) + 170;
 
   /// The day shown's events, if they're loaded.
   List<Event>? get _shown => _events[_day];
@@ -155,10 +192,106 @@ class _EventsScreenState extends State<EventsScreen> {
   void initState() {
     super.initState();
     _day = _firstDay = _midnight(widget.clock());
+    _lifecycle = AppLifecycleListener(onHide: _savePlace);
+    final store = widget.placeStore;
+    // Back from another tab: there at once.
+    if (store?.remembered case final place? when place.keptAt(widget.clock())) {
+      _day = place.day;
+      _scale = place.scale;
+      _restoreTop = place.top;
+    } else if (store != null) {
+      _placePending = true;
+      unawaited(_loadPlace(store));
+    }
+    _pages = PageController(initialPage: _pageOf(_day));
     _showCached();
     _refresh();
     _loadGoals();
+    widget.outbox?.addListener(_outboxChanged);
+    _loadNotes(cached: true);
     _loadSummaryCollapsed();
+  }
+
+  /// When each note not yet compacted was taken: those saved, and those
+  /// still to be.
+  List<DateTime> get _pendingNotes => {
+    ..._savedNotes,
+    ...?widget.outbox?.items.map((p) => p.note.timestamp),
+    ...?widget.outbox?.justSaved.map((s) => s.item.note.timestamp),
+  }.toList();
+
+  /// Shows the notes still to be saved as they change, and loads the
+  /// saved ones again once more are saved.
+  void _outboxChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (widget.outbox!.wantsFetch) _loadNotes();
+  }
+
+  /// Loads the saved notes not yet compacted, after those kept from last
+  /// time if [cached]. Best effort: without them, they aren't marked.
+  Future<void> _loadNotes({bool cached = false}) async {
+    final repository = widget.notesRepository;
+    if (repository == null) return;
+    void show(List<Note> notes) {
+      if (!mounted) return;
+      setState(() => _savedNotes = [for (final n in notes) n.timestamp]);
+    }
+
+    final fetched = widget.outbox?.fetching();
+    try {
+      if (cached) {
+        if (await repository.cachedUncompactedNotes() case final notes?) {
+          show(notes);
+        }
+      }
+      show(await repository.uncompactedNotes());
+      fetched?.call();
+    } catch (_) {
+      // Shown as they were.
+    }
+  }
+
+  /// Goes back to where it was left, when the app was last open, if
+  /// that's to be kept.
+  Future<void> _loadPlace(EventsPlaceStore store) async {
+    final place = await store.load();
+    if (!mounted) return;
+    final kept = place != null && place.keptAt(widget.clock());
+    setState(() {
+      _placePending = false;
+      if (!kept) return;
+      _scale = place.scale;
+      _restoreTop = place.top;
+    });
+    if (kept && _pages.hasClients) _pages.jumpToPage(_pageOf(place.day));
+  }
+
+  /// Keeps where it is, for [EventsPlaceStore], while the timeline's
+  /// still laid out to say.
+  void _savePlace() {
+    final store = widget.placeStore;
+    if (store == null || _placePending || !_scroll.hasClients) return;
+    store.save(
+      EventsPlace(
+        day: _day,
+        top: timelineTime(
+          _scroll.position.pixels,
+          day: _day,
+          dayEnd: _dayEnd,
+          scale: _scale,
+        ),
+        scale: _scale,
+        leftAt: widget.clock(),
+      ),
+    );
+  }
+
+  @override
+  void deactivate() {
+    // Before the timeline under it goes.
+    _savePlace();
+    super.deactivate();
   }
 
   /// Whether the day's summary was folded away last time. Best effort:
@@ -188,6 +321,8 @@ class _EventsScreenState extends State<EventsScreen> {
 
   @override
   void dispose() {
+    _lifecycle.dispose();
+    widget.outbox?.removeListener(_outboxChanged);
     _pages.dispose();
     _scroll.dispose();
     super.dispose();
@@ -234,11 +369,27 @@ class _EventsScreenState extends State<EventsScreen> {
 
   DateTime get _dayEnd => _dayAfter(_day);
 
-  /// Scrolls the timeline to now, on today, or else to the first event,
-  /// once it's laid out.
+  /// Scrolls the timeline to where it was left, if it's going back
+  /// there, or else to now, on today, or else to the first event, once
+  /// it's laid out.
   void _scrollToStart() {
     final events = _shown;
-    if (!_scrollPending || events == null) return;
+    if (!_scrollPending || _placePending) return;
+    if (_restoreTop case final top?) {
+      _scrollPending = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_scroll.hasClients) return;
+        final y = timelineOffset(
+          top,
+          day: _day,
+          dayEnd: _dayEnd,
+          scale: _scale,
+        );
+        _scroll.jumpTo(y.clamp(0, _scroll.position.maxScrollExtent));
+      });
+      return;
+    }
+    if (events == null) return;
     _scrollPending = false;
     final now = widget.clock();
     final starts = [
@@ -254,6 +405,30 @@ class _EventsScreenState extends State<EventsScreen> {
           (today ? 120 : 24);
       _scroll.jumpTo(y.clamp(0, _scroll.position.maxScrollExtent));
     });
+  }
+
+  /// Shows today, scrolled so now is about a third of the way down.
+  void _goToNow() {
+    final now = widget.clock();
+    final today = _midnight(now);
+    if (_pages.hasClients && today != _day) {
+      _pages.jumpToPage(_pageOf(today));
+    }
+    // Once it's laid out on today.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      final position = _scroll.position;
+      final y =
+          timelineOffset(
+            now,
+            day: today,
+            dayEnd: _dayAfter(today),
+            scale: _scale,
+          ) -
+          position.viewportDimension / 3;
+      _scroll.jumpTo(y.clamp(0, position.maxScrollExtent));
+    });
+    setState(() {});
   }
 
   /// The zoom level the zoom-in button goes to, or zoom-out with
@@ -651,6 +826,7 @@ class _EventsScreenState extends State<EventsScreen> {
     setState(() => _signingIn = true);
     try {
       await widget.onSignIn!();
+      unawaited(_loadNotes());
       await _refresh();
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Sign-in failed: $e')));
@@ -711,6 +887,13 @@ class _EventsScreenState extends State<EventsScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 FloatingActionButton.small(
+                  heroTag: 'now',
+                  tooltip: 'Go to now',
+                  onPressed: _goToNow,
+                  child: const Icon(Icons.my_location),
+                ),
+                const SizedBox(height: 8),
+                FloatingActionButton.small(
                   heroTag: 'zoom-in',
                   tooltip: 'Zoom in',
                   onPressed: switch (_nextScale(1)) {
@@ -751,7 +934,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// down at once.
   Widget _buildTimeline() {
     final events = _shown;
-    if (events != null) _scrollToStart();
+    _scrollToStart();
     final noDrag = _pinch == null ? null : const NeverScrollableScrollPhysics();
     return Column(
       children: [
@@ -773,7 +956,10 @@ class _EventsScreenState extends State<EventsScreen> {
         Expanded(
           child: LayoutBuilder(
             builder: (context, view) => RefreshIndicator(
-              onRefresh: _refresh,
+              onRefresh: () {
+                unawaited(_loadNotes());
+                return _refresh();
+              },
               child: NotificationListener<ScrollEndNotification>(
                 // The days' sliding, not the timeline's scrolling.
                 onNotification: (notification) {
@@ -859,6 +1045,7 @@ class _EventsScreenState extends State<EventsScreen> {
         scale: _scale,
         now: widget.clock(),
         lastCompaction: _lastCompaction,
+        pendingNotes: _pendingNotes,
         onTap: _openEvent,
         onTapTime: (time) => _createAt(day, time),
         axis: false,

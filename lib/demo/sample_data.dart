@@ -60,7 +60,7 @@ class SampleData {
   ];
 
   List<Note> get notes => [
-    Note(timestamp: _at(7, 5), description: 'Up, a little late'),
+    Note(timestamp: _at(7, 50), description: 'Running a little late'),
     Note(timestamp: _at(9, 40), description: 'Started on the goals page'),
     Note(timestamp: _at(12, 15), description: 'Lunch, finally'),
   ];

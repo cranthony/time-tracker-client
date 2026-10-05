@@ -330,6 +330,7 @@ void main() {
         'events',
         EventsScreen(
           repository: sample.eventsRepository(),
+          notesRepository: sample.notesRepository(),
           goalsRepository: sample.goalsRepository(),
           serverLabel: 'sample',
           clock: () => _now,
@@ -351,6 +352,7 @@ void main() {
           name,
           EventsScreen(
             repository: sample.eventsRepository(),
+            notesRepository: sample.notesRepository(),
             goalsRepository: sample.goalsRepository(),
             serverLabel: 'sample',
             clock: () => _now,
@@ -380,6 +382,7 @@ void main() {
         'event_new',
         EventsScreen(
           repository: sample.eventsRepository(),
+          notesRepository: sample.notesRepository(),
           goalsRepository: sample.goalsRepository(),
           serverLabel: 'sample',
           clock: () => _now,
@@ -403,7 +406,7 @@ void main() {
     });
 
     // Zoomed all the way out, the whole day; zoomed in, around the
-    // events too short for their text.
+    // events too short for their text and a note not yet compacted.
     for (final (name, zoom) in [
       ('events_zoomed_out', -3),
       ('events_zoomed_in', 2),
@@ -414,6 +417,7 @@ void main() {
           name,
           EventsScreen(
             repository: sample.eventsRepository(),
+            notesRepository: sample.notesRepository(),
             goalsRepository: sample.goalsRepository(),
             serverLabel: 'sample',
             clock: () => _now,
@@ -425,7 +429,7 @@ void main() {
               await tester.pumpAndSettle();
             }
             if (zoom > 0) {
-              await tester.ensureVisible(find.text('Call Mom'));
+              await tester.ensureVisible(find.text('Lunch'));
               await tester.pumpAndSettle();
             }
           },
@@ -450,6 +454,7 @@ void main() {
           name,
           EventsScreen(
             repository: sample.eventsRepository(),
+            notesRepository: sample.notesRepository(),
             goalsRepository: sample.goalsRepository(),
             serverLabel: 'sample',
             clock: () => _now,
@@ -482,6 +487,7 @@ void main() {
           name,
           EventsScreen(
             repository: sample.eventsRepository(),
+            notesRepository: sample.notesRepository(),
             goalsRepository: sample.goalsRepository(),
             serverLabel: 'sample',
             clock: () => _now,
