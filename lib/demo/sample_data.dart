@@ -102,6 +102,8 @@ class SampleData {
       priority: 1,
     ),
     _event('plants', 'Water the plants', _at(13, 5), _at(13, 15)),
+    // In the same color as the one before: a seam divides them.
+    _event('cat', 'Feed the cat', _at(13, 15), _at(13, 20)),
     // Never given goals: Tofu's is inferred from its label.
     _event(
       'class',
