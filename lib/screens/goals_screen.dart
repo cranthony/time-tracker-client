@@ -16,6 +16,7 @@ import 'goal_history_screen.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/goal_summary_dialog.dart';
+import '../widgets/goals_time_summary.dart';
 import '../widgets/priority_chip.dart';
 import '../widgets/goal_dialog.dart';
 import '../widgets/health.dart';
@@ -675,6 +676,13 @@ class _GoalsScreenState extends State<GoalsScreen> {
           onTap: overall == null ? null : () => _show(overall),
           onHistory: overall == null ? null : () => _history(overall),
         ),
+        if (overall?.timeFor(_shown) ?? goals.timeFor(_shown)
+            case final onGoals?)
+          GoalsTimeSummary(
+            goals: goals.goals,
+            statuses: _shown,
+            onGoals: onGoals,
+          ),
         if (shown.isEmpty)
           const StatusMessage(
             icon: Icons.flag_outlined,

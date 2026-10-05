@@ -147,20 +147,22 @@ List<SummarySlice> goalShares(
         time[id]!,
       ),
     if (rest > Duration.zero)
-      SummarySlice('${ranked.length - top} other goals', _other, rest),
-    if (noGoal != null) SummarySlice('No goal', _none, noGoal),
+      SummarySlice('${ranked.length - top} other goals', otherGoalsColor, rest),
+    if (noGoal != null) SummarySlice('No goal', noGoalColor, noGoal),
     if (unscheduled != null) SummarySlice('Unscheduled', null, unscheduled),
   ];
 }
 
-const _none = Color(0xFFD0D0D0);
-const _other = Color(0xFF8A8A8A);
+/// The colors of the shares of events with no goal, and of the goals
+/// past the top few together.
+const noGoalColor = Color(0xFFD0D0D0);
+const otherGoalsColor = Color(0xFF8A8A8A);
 
 /// A day's time at a glance, above its timeline: its share for each
 /// priority, for the top goals, and for the top-level goals they're
 /// under, and the time with nothing scheduled. Swiping it, or tapping a
 /// title, turns between them.
-class DaySummary extends StatefulWidget {
+class DaySummary extends StatelessWidget {
   const DaySummary({
     super.key,
     required this.events,
@@ -175,18 +177,58 @@ class DaySummary extends StatefulWidget {
   final int initialPage;
 
   @override
-  State<DaySummary> createState() => _DaySummaryState();
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerLow,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SummaryPages(
+            titles: const ['Priorities', 'Goals', 'Top-level goals'],
+            initialPage: initialPage,
+            pages: [
+              priorityShares(events, day),
+              goalShares(events, day, goals),
+              goalShares(events, day, goals, topLevel: true),
+            ],
+          ),
+          Divider(height: 1, color: theme.colorScheme.outlineVariant),
+        ],
+      ),
+    );
+  }
 }
 
-class _DaySummaryState extends State<DaySummary> {
+/// [pages] of shares, each a [SummaryBar], under their [titles]: swiping,
+/// or tapping a title, turns between them. It grows or shrinks between
+/// their heights as it's swiped.
+class SummaryPages extends StatefulWidget {
+  const SummaryPages({
+    super.key,
+    required this.titles,
+    required this.pages,
+    this.trailing,
+    this.initialPage = 0,
+  });
+
+  final List<String> titles;
+  final List<List<SummarySlice>> pages;
+
+  /// At the end of the titles' row.
+  final Widget? trailing;
+  final int initialPage;
+
+  @override
+  State<SummaryPages> createState() => _SummaryPagesState();
+}
+
+class _SummaryPagesState extends State<SummaryPages> {
   late final _pages = PageController(initialPage: widget.initialPage);
   late int _page = widget.initialPage;
 
-  /// Each page's height, once it's laid out: the summary grows or shrinks
-  /// between them as it's swiped.
+  /// Each page's height, once it's laid out.
   final _heights = <int, double>{};
-
-  static const _titles = ['Priorities', 'Goals', 'Top-level goals'];
 
   @override
   void dispose() {
@@ -195,71 +237,59 @@ class _DaySummaryState extends State<DaySummary> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final shares = [
-      priorityShares(widget.events, widget.day),
-      goalShares(widget.events, widget.day, widget.goals),
-      goalShares(widget.events, widget.day, widget.goals, topLevel: true),
-    ];
-    return Material(
-      color: theme.colorScheme.surfaceContainerLow,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: _header(context),
-          ),
-          ListenableBuilder(
-            listenable: _pages,
-            builder: (context, pages) {
-              final at = _pages.hasClients && _pages.position.haveDimensions
-                  ? _pages.page!
-                  : _page.toDouble();
-              final from = _heights[at.floor()] ?? _heights[at.ceil()];
-              final to = _heights[at.ceil()] ?? from;
-              return SizedBox(
-                height: lerpDouble(from, to, at - at.floor()) ?? 0,
-                child: pages,
-              );
-            },
-            child: PageView(
-              controller: _pages,
-              onPageChanged: (page) => setState(() => _page = page),
-              children: [
-                for (final (i, slices) in shares.indexed)
-                  // As tall as it needs, whatever the summary's height
-                  // this frame.
-                  OverflowBox(
-                    alignment: Alignment.topCenter,
-                    minHeight: 0,
-                    maxHeight: double.infinity,
-                    child: _Measured(
-                      onHeight: (height) {
-                        if (mounted) setState(() => _heights[i] = height);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                        child: _Bar(slices: slices),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Divider(height: 1, color: theme.colorScheme.outlineVariant),
-        ],
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: _header(context),
       ),
-    );
-  }
+      ListenableBuilder(
+        listenable: _pages,
+        builder: (context, pages) {
+          final at = _pages.hasClients && _pages.position.haveDimensions
+              ? _pages.page!
+              : _page.toDouble();
+          final from = _heights[at.floor()] ?? _heights[at.ceil()];
+          final to = _heights[at.ceil()] ?? from;
+          return SizedBox(
+            height: lerpDouble(from, to, at - at.floor()) ?? 0,
+            child: pages,
+          );
+        },
+        child: PageView(
+          controller: _pages,
+          onPageChanged: (page) => setState(() => _page = page),
+          children: [
+            for (final (i, slices) in widget.pages.indexed)
+              // As tall as it needs, whatever the summary's height this
+              // frame.
+              OverflowBox(
+                alignment: Alignment.topCenter,
+                minHeight: 0,
+                maxHeight: double.infinity,
+                child: _Measured(
+                  onHeight: (height) {
+                    if (mounted) setState(() => _heights[i] = height);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: SummaryBar(slices: slices),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ],
+  );
 
   /// The titles, the current one bold and underlined.
   Widget _header(BuildContext context) {
     final theme = Theme.of(context);
     return Row(
       children: [
-        for (final (i, title) in _titles.indexed) ...[
+        for (final (i, title) in widget.titles.indexed) ...[
           if (i > 0) const SizedBox(width: 14),
           GestureDetector(
             onTap: () => _pages.animateToPage(
@@ -280,6 +310,8 @@ class _DaySummaryState extends State<DaySummary> {
             ),
           ),
         ],
+        const Spacer(),
+        ?widget.trailing,
       ],
     );
   }
@@ -287,8 +319,8 @@ class _DaySummaryState extends State<DaySummary> {
 
 /// [slices] as one bar split by share, with a legend under it. The time
 /// with nothing scheduled is left empty.
-class _Bar extends StatelessWidget {
-  const _Bar({required this.slices});
+class SummaryBar extends StatelessWidget {
+  const SummaryBar({super.key, required this.slices});
 
   final List<SummarySlice> slices;
 
