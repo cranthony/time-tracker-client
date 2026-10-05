@@ -105,7 +105,6 @@ class SampleData {
 
   TraitsRating _traitsRating(String id) {
     final scores = _traitScores[id]!;
-    final rated = scores.reduce((a, b) => a + b) ~/ scores.length;
     final parts = <String, List<PartScore>>{
       'thoughtful': [
         PartScore(
@@ -136,6 +135,22 @@ class SampleData {
           score: 100,
           said: 'Nothing cancelled or kept that day, from 100',
         ),
+        // Sam's own cadences: see _samsReliable.
+        if (id == 'sam') ...[
+          PartScore(
+            key: 'count',
+            kind: 'count',
+            score: 0,
+            said: '0 of 1 visit in the last 14 days',
+          ),
+          PartScore(
+            key: 'count#2',
+            kind: 'count',
+            score: 100,
+            said: '1 of 1 dance in the last 7 days',
+            eventIds: ['$id-dance'],
+          ),
+        ],
       ],
       'creative': [
         PartScore(
@@ -173,20 +188,31 @@ class SampleData {
         ),
       ],
     };
+    // Each trait the mean of its parts that have a score, and the rating
+    // the mean of the traits', as the server works them out.
+    int? mean(Iterable<int?> values) {
+      final scored = values.nonNulls.toList();
+      return scored.isEmpty
+          ? null
+          : (scored.reduce((a, b) => a + b) / scored.length).round();
+    }
+
+    final traitScores = [
+      for (final trait in traits)
+        TraitScore(
+          traitId: trait.id!,
+          name: trait.name,
+          score: mean(parts[trait.id]!.map((p) => p.score)),
+          parts: parts[trait.id]!,
+        ),
+    ];
+    final rated = mean(traitScores.map((t) => t.score));
     return TraitsRating(
       rating: rated,
       day: _day(_today.subtract(const Duration(days: 1))),
       explanation:
-          'Traits (${[for (final (i, t) in traits.indexed) '${t.name} ${scores[i]}'].join(', ')}) → $rated',
-      traits: [
-        for (final (i, trait) in traits.indexed)
-          TraitScore(
-            traitId: trait.id!,
-            name: trait.name,
-            score: scores[i],
-            parts: parts[trait.id]!,
-          ),
-      ],
+          'Traits (${traitScores.map((t) => '${t.name} ${t.score}').join(', ')}) → $rated',
+      traits: traitScores,
     );
   }
 
