@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.9.1
+
+- Saving or creating an event no longer moves, shrinks, splits or
+  cancels other events to make room. If the new times would need that,
+  nothing is saved, and the server's message says what would have had
+  to change.
+
 ## 5.9.0
 
 - An event's times stay clear of the events either side when you change

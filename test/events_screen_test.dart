@@ -858,6 +858,8 @@ void main() {
       });
       expect(client.name, 'update_event');
       expect(client.arguments!['clear_fields'], ['priority', 'location']);
+      // Never moving other events to make room.
+      expect(client.arguments!['reallocate'], isFalse);
       expect((client.arguments!['event'] as Map)['summary'], 'Admin');
 
       await McpEventsRepository(client).updateEvent(work(), {'summary': 'x'});
@@ -1060,6 +1062,8 @@ void main() {
           'summary': 'Gym',
           'goal_ids': ['g1'],
         },
+        // Never moving other events to make room.
+        'reallocate': false,
       });
     });
   });
