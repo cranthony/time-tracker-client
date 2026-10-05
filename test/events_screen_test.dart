@@ -697,6 +697,78 @@ void main() {
       ]);
     });
 
+    testWidgets('− and + move the times a quarter hour, up to the events '
+        'either side', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 'b', start: at(30, 8), end: at(30, 8, 50), summary: 'Run'),
+        work(),
+        Event(id: 'l', start: at(30, 11), end: at(30, 12), summary: 'Lunch'),
+      ]);
+      await open(tester, repo);
+      await tester.tap(inDialog(find.textContaining('Sep 30 ·')));
+      await tester.pumpAndSettle();
+      expect(
+        inDialog(find.textContaining('Free from 8:50 AM to 11:00 AM')),
+        findsOneWidget,
+      );
+
+      IconButton button(String tooltip) => tester.widget<IconButton>(
+        find.ancestor(
+          of: find.byTooltip(tooltip),
+          matching: find.byType(IconButton),
+        ),
+      );
+      Future<void> press(String tooltip) async {
+        await tester.tap(find.byTooltip(tooltip));
+        await tester.pumpAndSettle();
+      }
+
+      await press('Start 15 min earlier');
+      expect(button('Start 15 min earlier').onPressed, isNull);
+      await press('End 15 min later');
+      await press('End 15 min later');
+      expect(button('End 15 min later').onPressed, isNull);
+      await press('End 15 min earlier');
+      expect(
+        inDialog(find.text('Wed, Sep 30 · 8:50 AM – 10:45 AM')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {
+          'start': localIsoTimestamp(at(30, 8, 50)),
+          'end': localIsoTimestamp(at(30, 10, 45)),
+        },
+      ]);
+    });
+
+    testWidgets('a start picked inside the next event moves to its end', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([
+        work(),
+        Event(id: 'l', start: at(30, 11), end: at(30, 12), summary: 'Lunch'),
+        Event(id: 'm', start: at(30, 13), end: at(30, 14), summary: 'Call'),
+      ]);
+      await open(tester, repo);
+      await tester.tap(inDialog(find.textContaining('Sep 30 ·')));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('9:00 AM')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.keyboard_outlined));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(0), '11');
+      await tester.enterText(find.byType(TextField).at(1), '30');
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      // After Lunch, kept an hour and a half until Call cuts it short.
+      expect(
+        inDialog(find.text('Wed, Sep 30 · 12:00 PM – 1:00 PM')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('picks goals, shown with their diamonds', (tester) async {
       final repo = _RecordingRepository([work()]);
       await open(tester, repo);
@@ -869,6 +941,43 @@ void main() {
       expect(find.byType(AlertDialog), findsNothing);
       expect(find.text('Event created.'), findsOneWidget);
       expect(find.text('Admin'), findsOneWidget);
+    });
+
+    testWidgets('starts after the event before, and + stops at the next', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([
+        Event(id: 'w', start: at(30, 9), end: at(30, 10, 35), summary: 'Work'),
+        Event(id: 'l', start: at(30, 12), end: at(30, 13), summary: 'Lunch'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tapAt(tester, at(30, 10, 44));
+      // Not from 10:30, inside Work.
+      expect(
+        inDialog(find.text('Wed, Sep 30 · 10:35 AM – 11:35 AM')),
+        findsOneWidget,
+      );
+      await tester.enterText(inDialog(find.byType(TextField)), 'Admin');
+      await tester.tap(inDialog(find.textContaining('Sep 30 ·')));
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 4; i++) {
+        await tester.tap(find.byTooltip('End 15 min later'));
+        await tester.pumpAndSettle();
+      }
+      expect(
+        inDialog(find.text('Wed, Sep 30 · 10:35 AM – 12:00 PM')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+      expect(repo.created, [
+        {
+          'start': localIsoTimestamp(at(30, 10, 35)),
+          'end': localIsoTimestamp(at(30, 12)),
+          'summary': 'Admin',
+        },
+      ]);
     });
 
     testWidgets('on an empty day, lasts an hour; Cancel makes nothing', (
