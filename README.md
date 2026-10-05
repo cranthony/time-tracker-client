@@ -364,10 +364,10 @@ see [Try it with sample data](#try-it-with-sample-data).
 `test/visual` renders the main screens with the sample data, at a phone's
 size, in light and dark: Goals (with the status filter closed and open,
 and its time summary on each page and folded away), a goal's history,
-Events (with each page of its day summary) and Notes. It writes them, at
-2x and with the real fonts (Roboto and Material Icons, from the Flutter
-SDK), to `build/screenshots/`. This is the quick way to see a UI change
-without running the app:
+Events (with each page of its day summary, and folded away) and Notes.
+It writes them, at 2x and with the real fonts (Roboto and Material
+Icons, from the Flutter SDK), to `build/screenshots/`. This is the quick
+way to see a UI change without running the app:
 
 ```sh
 flutter test test/visual

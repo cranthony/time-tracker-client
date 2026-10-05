@@ -139,7 +139,7 @@ List<SummarySlice> goalShares(
 /// A day's time at a glance, above its timeline: its share for each
 /// priority, for the top goals, and for the top-level goals they're
 /// under, and the time with nothing scheduled. Swiping it, or tapping a
-/// title, turns between them.
+/// title, turns between them, and its chevron folds it away.
 class DaySummary extends StatelessWidget {
   const DaySummary({
     super.key,
@@ -147,6 +147,8 @@ class DaySummary extends StatelessWidget {
     required this.day,
     required this.goals,
     this.initialPage = 0,
+    this.collapsed = false,
+    this.onCollapsed,
   });
 
   final List<Event> events;
@@ -154,10 +156,17 @@ class DaySummary extends StatelessWidget {
   final Map<String, Goal> goals;
   final int initialPage;
 
+  /// Whether it's folded away, by its chevron; with no [onCollapsed],
+  /// there's no chevron.
+  final bool collapsed;
+  final ValueChanged<bool>? onCollapsed;
+
   @override
   Widget build(BuildContext context) => TimeSummary(
     titles: const ['Priorities', 'Goals', 'Top-level goals'],
     initialPage: initialPage,
+    collapsed: collapsed,
+    onCollapsed: onCollapsed,
     pages: [
       for (final slices in [
         priorityShares(events, day),

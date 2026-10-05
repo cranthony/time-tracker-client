@@ -342,6 +342,8 @@ void main() {
     for (final (name, swipes) in [
       ('events_summary_goals', 1),
       ('events_summary_top_level', 2),
+      // Folded away.
+      ('events_summary_collapsed', 0),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
         await render(
@@ -354,6 +356,10 @@ void main() {
             clock: () => _now,
           ),
           then: () async {
+            if (swipes == 0) {
+              await tester.tap(find.byTooltip('Hide summary'));
+              await tester.pumpAndSettle();
+            }
             for (var i = 0; i < swipes; i++) {
               await tester.fling(
                 find.byType(DaySummary),

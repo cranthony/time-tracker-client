@@ -18,7 +18,8 @@ on. Add the new version's section here at the same time; CI checks both.
   highest priority among the events at each moment, and the rest with
   no priority. Its chevron folds it away to a quiet "Show summary", and
   it stays folded next time.
-- The Events page's day summary and the Goals page's share their look
+- The Events page's day summary folds away the same way, and stays
+  folded next time too. It and the Goals page's summary share their look
   and code.
 
 ## 5.8.0
