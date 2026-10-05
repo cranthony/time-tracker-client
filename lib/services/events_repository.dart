@@ -10,7 +10,9 @@ import 'response_cache.dart';
 /// Sent as null, any other field is kept as it was, so a change to null
 /// clears one of these and is ignored for the rest. Not summary, start or
 /// end, which every event has, nor goal_ids, whose [] means no goals.
+/// facets are what happened at it, for its goals' traits.
 const clearableFields = {
+  'facets',
   'priority',
   'description',
   'location',

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
+import '../models/facets.dart';
 import '../models/goal.dart';
 import '../models/note.dart';
 import '../models/recurrence.dart';
@@ -11,6 +12,7 @@ import '../models/repeat.dart';
 import '../services/mcp_client.dart';
 import 'color_picker.dart';
 import 'event_room.dart';
+import 'facets_dialog.dart';
 import 'goals_picker.dart';
 import 'recurrence_dialog.dart';
 import 'repeat_editor.dart';
@@ -34,7 +36,9 @@ final class SummaryDetails<T> extends SummaryOutcome<T> {
 
 /// Shows the properties of [event] one edits most: its priority, summary,
 /// times, whether it's part of a series, location, description, whether
-/// it's at a fixed time, and its goals.
+/// it's at a fixed time, its goals, and its facets -- what happened at it,
+/// for its goals' traits -- edited in a dialog of their own
+/// ([showFacetsDialog]).
 ///
 /// Tapping one opens it for editing, in place; "Save" sends every change
 /// with [save], as `update_event` takes them. The trash can cancels the
@@ -74,6 +78,7 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
       goals: goals,
       loadGoals: loadGoals,
       room: room,
+      facets: true,
       save: save == null || event.id == null
           ? null
           : (changes) async =>
@@ -239,6 +244,7 @@ class _SummaryDialog<T> extends StatefulWidget {
     this.creating = false,
     this.room = const EventRoom.none(),
     this.openSeries,
+    this.facets = false,
   });
 
   /// As the server sent them, with times in local time, and a series'
@@ -263,6 +269,9 @@ class _SummaryDialog<T> extends StatefulWidget {
   /// The other events its times are kept clear of.
   final EventRoom room;
   final Future<bool> Function()? openSeries;
+
+  /// Whether it shows its facets: an event's, not a series'.
+  final bool facets;
 
   @override
   State<_SummaryDialog<T>> createState() => _SummaryDialogState<T>();
@@ -457,6 +466,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               ),
               _fixedTimeRow(context),
               _goalsRow(context),
+              if (widget.facets) _facetsRow(context),
             ],
           ),
         ),
@@ -1214,6 +1224,62 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           if (editing) _goalsPicker(context, ids),
         ],
       ),
+    );
+  }
+
+  /// Its facets in a line, and the evidence under them; tapped to edit
+  /// them in [showFacetsDialog].
+  Widget _facetsRow(BuildContext context) {
+    final theme = Theme.of(context);
+    final facets = Facets.fromJson(_value('facets'));
+    final empty = facets == null || facets.isEmpty;
+    final names = <String?, String>{
+      for (final MapEntry(:key, :value) in widget.goals.entries)
+        key: goalName(value),
+    };
+    return _row(
+      context,
+      icon: Icons.auto_awesome_outlined,
+      changedKey: 'facets',
+      onTap: () async {
+        setState(() => _editing = null);
+        final edited = await showFacetsDialog(
+          context,
+          facets,
+          goals: widget.goals,
+          loadGoals: widget.loadGoals,
+        );
+        if (edited == null || !mounted) return;
+        final was = Facets.fromJson(widget.values['facets']) ?? const Facets();
+        setState(() {
+          if (edited == was) {
+            _changes.remove('facets');
+          } else {
+            // Null removes them: see clearableFields.
+            _changes['facets'] = edited.isEmpty ? null : edited.toJson();
+          }
+        });
+      },
+      child: empty
+          ? Text(
+              'Add what happened',
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: theme.hintColor,
+              ),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(facets.describe(names), style: theme.textTheme.bodyLarge),
+                if (facets.why case final why?)
+                  Text(
+                    '“$why”',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+              ],
+            ),
     );
   }
 

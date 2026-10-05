@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
 import '../models/measure.dart';
+import '../models/trait.dart';
+import '../services/traits_repository.dart';
 import 'color_picker.dart';
 import 'durations.dart';
 import 'goals_picker.dart';
@@ -18,8 +20,9 @@ const _hiddenFromWeights = {'proposed', 'completed', 'archived', 'deleted'};
 /// A time-spent, number-of-events, time-of-day, time-window or
 /// follow-through measure looks at the events of its own goal, or of a goal chosen from [goals]; with or
 /// without their sub-goals. A weighted rollup weighs each of [goalId]'s
-/// sub-goals, from [goals]. Any measure can be rated only on days with
-/// events of its goal, or of another.
+/// sub-goals, from [goals]. A traits measure picks its traits, and their
+/// weights, from the [TraitsScope]'s. Any measure can be rated only on
+/// days with events of its goal, or of another.
 class MeasureEditor extends StatefulWidget {
   const MeasureEditor({
     super.key,
@@ -67,6 +70,16 @@ class _MeasureEditorState extends State<MeasureEditor> {
 
   /// A weighted rollup's weight for each sub-goal, by id.
   final _weights = <String, TextEditingController>{};
+
+  /// A traits measure's: every active trait, or those picked, in order;
+  /// each one's weight, by id; and its window.
+  bool _allTraits = true;
+  final _traitIds = <String>[];
+  final _traitWeights = <String, TextEditingController>{};
+  final _window = TextEditingController();
+
+  /// The traits to pick from, once asked for.
+  Future<List<Trait>>? _traitList;
 
   /// The goal's sub-goals, once [MeasureEditor.goals] has them: a weight
   /// for any other goal, one that's since moved, isn't kept.
@@ -150,7 +163,24 @@ class _MeasureEditorState extends State<MeasureEditor> {
             _weights[key as String] = TextEditingController(text: text(value));
           }
         }
+      case 'traits':
+        if (m['traits'] case final List ids) {
+          _allTraits = false;
+          _traitIds.addAll(ids.map((id) => '$id'));
+        }
+        if (m['weights'] case final Map weights) {
+          for (final MapEntry(:key, :value) in weights.entries) {
+            _traitWeights['$key'] = TextEditingController(text: text(value));
+          }
+        }
+        _window.text = text(m['window_days']);
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _traitList ??= TraitsScope.of(context)?.traits();
   }
 
   @override
@@ -168,7 +198,9 @@ class _MeasureEditorState extends State<MeasureEditor> {
       _penalty,
       _recovery,
       _lookBack,
+      _window,
       ..._weights.values,
+      ..._traitWeights.values,
     ]) {
       c.dispose();
     }
@@ -268,6 +300,17 @@ class _MeasureEditorState extends State<MeasureEditor> {
               if (_subGoalIds?.contains(key) ?? true) key: ?number(value),
           },
         if (_agg == 'percentile') 'percentile': number(_percentile),
+      },
+      'traits' => {
+        'kind': 'traits',
+        'traits': _allTraits ? 'all' : _traitIds,
+        if ({
+              for (final MapEntry(:key, :value) in _traitWeights.entries)
+                if (_allTraits || _traitIds.contains(key)) key: ?number(value),
+            }
+            case final weights when weights.isNotEmpty)
+          'weights': weights,
+        'window_days': ?number(_window),
       },
       final kind => {'kind': kind},
     };
@@ -471,6 +514,91 @@ class _MeasureEditorState extends State<MeasureEditor> {
       );
     },
   );
+
+  /// A traits measure's traits -- every active one, or those picked --
+  /// each with its weight, and the window they're scored over.
+  List<Widget> _traitFields(ThemeData theme) => [
+    SwitchListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: const Text('Every active trait'),
+      subtitle: const Text('Including any added later.'),
+      value: _allTraits,
+      onChanged: (on) {
+        setState(() => _allTraits = on);
+        _changed();
+      },
+    ),
+    FutureBuilder(
+      future: _traitList,
+      builder: (context, snapshot) {
+        if (_traitList == null) return const Text('No traits to choose from.');
+        final traits = snapshot.data;
+        if (traits == null) {
+          return snapshot.hasError
+              ? const Text("Couldn't load the traits.")
+              : const LinearProgressIndicator();
+        }
+        final shown = [
+          for (final trait in traits)
+            if (trait.id != null &&
+                (trait.status == 'active' || _traitIds.contains(trait.id)))
+              trait,
+        ];
+        final weighed = _allTraits
+            ? [
+                for (final t in shown)
+                  if (t.status == 'active') t,
+              ]
+            : [
+                for (final id in _traitIds)
+                  ?shown.where((t) => t.id == id).firstOrNull,
+              ];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!_allTraits)
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final trait in shown)
+                    FilterChip(
+                      label: Text(trait.name),
+                      selected: _traitIds.contains(trait.id),
+                      onSelected: (on) {
+                        setState(
+                          () => on
+                              ? _traitIds.add(trait.id!)
+                              : _traitIds.remove(trait.id),
+                        );
+                        _changed();
+                      },
+                    ),
+                ],
+              ),
+            for (final trait in weighed)
+              _field(
+                _traitWeights.putIfAbsent(trait.id!, TextEditingController.new),
+                '${trait.name} weight',
+                hint: '1',
+                number: true,
+              ),
+          ],
+        );
+      },
+    ),
+    _field(_window, 'Over the last', hint: '30', suffix: 'days', number: true),
+    Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        "Each trait's parts are scored over that many days before the day "
+        'rated. A trait with no weight weighs 1.',
+        style: theme.textTheme.bodySmall,
+      ),
+    ),
+  ];
 
   Widget _field(
     TextEditingController controller,
@@ -713,6 +841,7 @@ class _MeasureEditorState extends State<MeasureEditor> {
               ),
             if (_agg == 'weighted') _weightFields(theme),
           ],
+          'traits' => _traitFields(theme),
           _ => const <Widget>[],
         },
         if (kind != null) ..._onlyIfDays(theme),

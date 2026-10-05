@@ -19,6 +19,7 @@ import 'services/events_repository.dart';
 import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
 import 'services/response_cache.dart';
+import 'services/traits_repository.dart';
 import 'theme.dart';
 
 /// The Time Tracker MCP server's endpoint, passed at build time, e.g.
@@ -49,6 +50,8 @@ Future<void> main() async {
           repository: repository,
         ),
         goalOutbox: GoalOutbox(store: InMemoryOutboxStore(), repository: goals),
+        traitsRepository:
+            sample?.traitsRepository() ?? InMemoryTraitsRepository(),
       ),
     );
     return;
@@ -75,6 +78,7 @@ Future<void> main() async {
       ),
       auth: auth,
       cache: cache,
+      traitsRepository: McpTraitsRepository(client),
     ),
   );
 }
@@ -125,9 +129,14 @@ class TimeTrackerApp extends StatefulWidget {
     required this.goalOutbox,
     this.auth,
     this.cache,
+    this.traitsRepository,
   });
 
   final NotesRepository repository;
+
+  /// Traits, and goals' descriptions and histories, for every screen
+  /// below (see [TraitsScope]); without it, they aren't offered.
+  final TraitsRepository? traitsRepository;
   final EventsRepository eventsRepository;
   final GoalsRepository goalsRepository;
   final NoteOutbox outbox;
@@ -213,6 +222,11 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       title: 'Time Tracker',
       theme: appTheme(Brightness.light),
       darkTheme: appTheme(Brightness.dark),
+      // Above the navigator, so every route and dialog finds it.
+      builder: (context, child) => switch (widget.traitsRepository) {
+        final traits? => TraitsScope(repository: traits, child: child!),
+        null => child!,
+      },
       home: HomeScreen(
         notesRepository: widget.repository,
         eventsRepository: widget.eventsRepository,

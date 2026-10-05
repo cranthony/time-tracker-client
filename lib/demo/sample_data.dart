@@ -3,9 +3,11 @@ import '../models/event.dart';
 import '../models/goal.dart';
 import '../models/note.dart';
 import '../models/recurrence.dart';
+import '../models/trait.dart';
 import '../services/events_repository.dart';
 import '../services/goals_repository.dart';
 import '../services/notes_repository.dart';
+import '../services/traits_repository.dart';
 
 /// A realistic day of notes, events and goals, for trying the app's
 /// features without a server -- `flutter run --dart-define=SAMPLE_DATA=true`
@@ -41,6 +43,75 @@ class SampleData {
     minutesByStatuses,
     minutesByPriority,
   );
+
+  /// The five starting traits, as a new calendar's Traits tab has them,
+  /// and a week of one's scores.
+  TraitsRepository traitsRepository() => InMemoryTraitsRepository(
+    traits: traits,
+    history: [
+      for (var back = 7; back >= 1; back--)
+        TraitDay(
+          traitId: 'reliable',
+          name: 'Reliable',
+          day: _day(_today.subtract(Duration(days: back))),
+          score: 60 + back * 4,
+        ),
+    ],
+  );
+
+  static String _day(DateTime day) =>
+      '${day.year}-${day.month.toString().padLeft(2, '0')}-'
+      '${day.day.toString().padLeft(2, '0')}';
+
+  List<Trait> get traits => const [
+    Trait(
+      id: 'thoughtful',
+      name: 'Thoughtful',
+      definition: 'Remember what matters to them, and prepare for it.',
+      parts: [
+        {'kind': 'prep', 'target': 2},
+        {'kind': 'prep_regularity', 'weeks': 4},
+        {
+          'kind': 'judgment',
+          'rubric': 'Did the events and notes reflect what matters to them?',
+        },
+      ],
+    ),
+    Trait(
+      id: 'reliable',
+      name: 'Reliable',
+      definition: 'Do what I said I would, and keep contact going.',
+      parts: [
+        {'kind': 'continuity', 'last_within_days': 14, 'next_within_days': 14},
+        {'kind': 'follow_through'},
+      ],
+    ),
+    Trait(
+      id: 'creative',
+      name: 'Creative',
+      definition: 'Make something together with them.',
+      parts: [
+        {'kind': 'together_creative', 'target': 1, 'min_creative': 2},
+      ],
+    ),
+    Trait(
+      id: 'adventurous',
+      name: 'Adventurous',
+      definition: 'Share new experiences with them.',
+      parts: [
+        {'kind': 'novelty', 'target': 1},
+      ],
+    ),
+    Trait(
+      id: 'generous',
+      name: 'Generous',
+      definition: 'Make an effort for them, attention included.',
+      parts: [
+        {'kind': 'effort_paid', 'target': 600},
+        {'kind': 'attention'},
+      ],
+    ),
+  ];
 
   /// The time on goals by the statuses of the goals each event served:
   /// most on active goals, a little on the guitar, which is paused.

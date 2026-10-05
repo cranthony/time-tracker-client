@@ -18,7 +18,7 @@ each goal shows under its name: its time spent, its measure, or its
 events' priority. A summary under the heading splits the last 24 hours
 and 7 days by the goals shown, or by priority, and its toggle shows
 time, there and under each goal, as percentages or durations.
-Each active goal shows its health — its latest confirmed rating, a small chart of recent ones, and how many periods have gone unassessed — and its menu opens its history. Later it will show the summaries the server
+The Goals page's app bar opens the **Traits** goals can be rated by (Thoughtful, Reliable, Creative, Adventurous, Generous to start with): each one's latest score and recent trend, editable, with what's behind a score a tap away. A goal rated by traits has a page of its own, from its menu, with its traits' scores, what matters to them, its history of activities and places, and its events with what happened at each, which an event's details also show and edit. Each active goal shows its health — its latest confirmed rating, a small chart of recent ones, and how many periods have gone unassessed — and its menu opens its history. Later it will show the summaries the server
 generates.
 
 It is built for Android and also runs on Windows and in Chrome. Chrome
