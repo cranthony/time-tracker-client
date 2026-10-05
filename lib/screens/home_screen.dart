@@ -25,6 +25,7 @@ class HomeScreen extends StatefulWidget {
     this.onSignIn,
     this.onSignOut,
     this.addNoteRequests,
+    this.onAddNoteFieldFocused,
     this.version,
   });
 
@@ -39,6 +40,10 @@ class HomeScreen extends StatefulWidget {
   /// Taps on the home screen "+": each switches to Notes and opens the New
   /// note dialog there.
   final Stream<DateTime>? addNoteRequests;
+
+  /// Called when the New note dialog opened for one of [addNoteRequests]
+  /// has its field focused.
+  final VoidCallback? onAddNoteFieldFocused;
   final String? version;
 
   @override
@@ -80,6 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onSignIn: widget.onSignIn,
           onSignOut: widget.onSignOut,
           addNoteRequests: _toNotes.stream,
+          onAddNoteFieldFocused: widget.onAddNoteFieldFocused,
           version: widget.version,
         ),
         _Tab.events => EventsScreen(

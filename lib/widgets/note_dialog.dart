@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -6,9 +7,17 @@ import '../models/note.dart';
 
 /// Asks for a new note's description and time (defaulting to [time], or
 /// now), in a sheet over the bottom of the screen. Returns the note, or
-/// null if dismissed.
-Future<Note?> showAddNoteDialog(BuildContext context, {DateTime? time}) async {
-  final result = await _showSheet(context, _NoteDialog(time: time));
+/// null if dismissed. Calls [onFieldFocused] once its field has focus and
+/// has asked for the keyboard.
+Future<Note?> showAddNoteDialog(
+  BuildContext context, {
+  DateTime? time,
+  VoidCallback? onFieldFocused,
+}) async {
+  final result = await _showSheet(
+    context,
+    _NoteDialog(time: time, onFieldFocused: onFieldFocused),
+  );
   return result is SaveNote ? result.note : null;
 }
 
@@ -38,11 +47,12 @@ final class SaveNote extends NoteDialogResult {
 final class DeleteNote extends NoteDialogResult {}
 
 class _NoteDialog extends StatefulWidget {
-  const _NoteDialog({this.note, this.time});
+  const _NoteDialog({this.note, this.time, this.onFieldFocused});
 
   /// The note being edited; null for a new one.
   final Note? note;
   final DateTime? time;
+  final VoidCallback? onFieldFocused;
 
   @override
   State<_NoteDialog> createState() => _NoteDialogState();
@@ -55,10 +65,26 @@ class _NoteDialogState extends State<_NoteDialog> {
   late DateTime _time =
       widget.note?.timestamp.toLocal() ?? widget.time ?? DateTime.now();
 
+  final _focus = FocusNode();
+
   bool get _editing => widget.note != null;
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.onFieldFocused != null) _focus.addListener(_focusChanged);
+  }
+
+  void _focusChanged() {
+    if (!_focus.hasFocus) return;
+    _focus.removeListener(_focusChanged);
+    // After the field's own listener has asked for the keyboard.
+    scheduleMicrotask(widget.onFieldFocused!);
+  }
+
+  @override
   void dispose() {
+    _focus.dispose();
     _description.dispose();
     super.dispose();
   }
@@ -134,6 +160,7 @@ class _NoteDialogState extends State<_NoteDialog> {
           const SizedBox(height: 12),
           TextField(
             controller: _description,
+            focusNode: _focus,
             // Only for a new note: an edit may be just to the time.
             autofocus: !_editing,
             minLines: 4,

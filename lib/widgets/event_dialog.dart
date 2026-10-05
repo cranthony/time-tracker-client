@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/goal.dart';
+import 'event_room.dart';
 import 'properties_dialog.dart';
 
 /// Shows every property of [event], as the server sent it, under its
@@ -16,14 +17,20 @@ import 'properties_dialog.dart';
 /// its recurring_event_id calls [openSeries] with the series' id, and if
 /// that saved a change to the series (returning true), this closes,
 /// returning null.
+///
+/// New times that would overlap an event in [room] can't be saved.
 Future<List<Event>?> showEventDialog(
   BuildContext context,
   Event event, {
   Future<List<Event>> Function(Event event, Map<String, Object?> changes)? save,
+  EventRoom room = const EventRoom.none(),
   Future<List<Goal>> Function()? goals,
   Future<bool> Function(String seriesId)? openSeries,
 }) {
   final typed = event.toJson();
+  final strings = MaterialLocalizations.of(context);
+  String time(DateTime t) =>
+      strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()));
   return showPropertiesDialog<List<Event>>(
     context,
     title: (values) => switch (values['summary']) {
@@ -65,7 +72,20 @@ Future<List<Event>?> showEventDialog(
     validate: (values) {
       final start = DateTime.parse(values['start'] as String);
       final end = DateTime.parse(values['end'] as String);
-      return end.isAfter(start) ? null : 'The end has to be after the start.';
+      if (!end.isAfter(start)) return 'The end has to be after the start.';
+      // Overlaps it had already are left alone.
+      if (start.isAtSameMomentAs(event.start) &&
+          end.isAtSameMomentAs(event.end)) {
+        return null;
+      }
+      return switch (room.overlapping(start, end)) {
+        final other? =>
+          'It would overlap ${switch (other.summary) {
+            final s? when s.isNotEmpty => '"$s"',
+            _ => 'another event',
+          }}, ${time(other.start)} – ${time(other.end)}.',
+        null => null,
+      };
     },
     goals: goals,
     oneWayAction: event.isCancelled

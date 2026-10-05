@@ -52,6 +52,18 @@ void main() {
     shortcut.dispose();
   });
 
+  test('tells Android when the dialog\'s field is ready', () async {
+    final calls = <String>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call.method);
+      return null;
+    });
+    final shortcut = AddNoteShortcut(channel: channel, enabled: true);
+    await shortcut.fieldReady();
+    expect(calls, ['fieldReady']);
+    shortcut.dispose();
+  });
+
   test('does nothing off Android', () async {
     var called = false;
     messenger.setMockMethodCallHandler(channel, (call) async {
@@ -60,6 +72,7 @@ void main() {
     });
     final shortcut = AddNoteShortcut(channel: channel, enabled: false);
     await shortcut.start();
+    await shortcut.fieldReady();
     expect(called, isFalse);
     shortcut.dispose();
   });

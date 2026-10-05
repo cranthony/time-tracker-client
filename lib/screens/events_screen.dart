@@ -15,6 +15,7 @@ import '../widgets/day_header.dart';
 import '../widgets/day_summary.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/event_dialog.dart';
+import '../widgets/event_room.dart';
 import '../widgets/event_summary_dialog.dart';
 import '../widgets/recurrence_dialog.dart';
 import '../widgets/refreshing_bar.dart';
@@ -414,6 +415,7 @@ class _EventsScreenState extends State<EventsScreen> {
       context,
       event,
       save: (changes) => widget.repository.updateEvent(event, changes),
+      room: _roomFor(event),
       goals: _goalsById,
       loadGoals: _goals,
       openSeries: (seriesId) => _openSeries(seriesId, event),
@@ -428,30 +430,39 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
+  /// Every event loaded, but [event], for keeping its times clear of.
+  EventRoom _roomFor(Event? event) => EventRoom(
+    {
+      for (final events in _events.values)
+        for (final e in events) e.id ?? e: e,
+    }.values,
+    except: event?.id,
+  );
+
   /// The new event's length, unless the next event starts sooner.
   static const _newEventLength = Duration(hours: 1);
 
   /// Opens a new, blank event at [time], tapped on [day]'s timeline: from
-  /// the quarter hour it's in, for [_newEventLength] or up to the next
-  /// event, whichever is sooner.
+  /// the quarter hour it's in, or the end of the event before if that's
+  /// later, for [_newEventLength] or up to the next event, whichever is
+  /// sooner.
   Future<void> _createAt(DateTime day, DateTime time) async {
-    final start = DateTime(
-      time.year,
-      time.month,
-      time.day,
-      time.hour,
-      time.minute - time.minute % 15,
+    final room = _roomFor(null);
+    final (start, end) = room.moveStart(
+      DateTime(
+        time.year,
+        time.month,
+        time.day,
+        time.hour,
+        time.minute - time.minute % 15,
+      ),
+      _newEventLength,
     );
-    var end = start.add(_newEventLength);
-    for (final event in _events[day] ?? const <Event>[]) {
-      if (event.start.isAfter(start) && event.start.isBefore(end)) {
-        end = event.start;
-      }
-    }
     final created = await showNewEventDialog(
       context,
       start: start,
       end: end,
+      room: room,
       create: widget.repository.createEvent,
       goals: _goalsById,
       loadGoals: _goals,
@@ -479,6 +490,7 @@ class _EventsScreenState extends State<EventsScreen> {
       context,
       event,
       save: widget.repository.updateEvent,
+      room: _roomFor(event),
       goals: _goals,
       openSeries: (seriesId) => _openSeries(seriesId, event),
     );

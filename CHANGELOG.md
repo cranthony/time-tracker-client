@@ -6,7 +6,7 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
-## 5.9.0
+## 5.10.0
 
 - The Goals page has a summary of the last 24 hours and 7 days under its
   heading: a bar for each, one over the other, with each share's
@@ -21,6 +21,32 @@ on. Add the new version's section here at the same time; CI checks both.
 - The Events page's day summary folds away the same way, and stays
   folded next time too. It and the Goals page's summary share their look
   and code.
+
+## 5.9.0
+
+- An event's times stay clear of the events either side when you change
+  them, and when you make one by tapping the timeline. A start picked
+  inside another event moves to that event's end, and an end picked past
+  the next event's start comes back to it. A new event tapped just after
+  another starts when that one ends, not inside it.
+- Start and end each have − and + buttons, either side of the time, that
+  take a quarter hour off or add one, up to the events either side, and
+  never leaving the event shorter than 15 minutes. Under them, the
+  dialog says how much free time there is between the events either
+  side.
+- In an event's Details, new times that would overlap another event
+  can't be saved; it says which event is in the way.
+- Saving or creating an event no longer moves, shrinks, splits or
+  cancels other events to make room. If the new times would need that,
+  nothing is saved, and the server's message says what would have had
+  to change.
+
+## 5.8.1
+
+- The home screen "+" brings up the keyboard with the New note dialog
+  reliably. It used to miss now and then, when the app's window was
+  ready before the dialog's text box: the app asked for the keyboard
+  too early and didn't ask again. Now it waits until both are ready.
 
 ## 5.8.0
 
