@@ -197,37 +197,51 @@ class _TimeSummaryState extends State<TimeSummary> {
     }
     return Row(
       children: [
-        for (final (i, title) in widget.titles.indexed) ...[
-          if (i > 0) const SizedBox(width: 14),
-          GestureDetector(
-            onTap: () => _pages.animateToPage(
-              i,
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOut,
-            ),
-            child: Text(
-              title,
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: i == _page
-                    ? theme.colorScheme.onSurface
-                    : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                fontWeight: i == _page ? FontWeight.w700 : FontWeight.w500,
-                decoration: i == _page ? TextDecoration.underline : null,
-                decorationThickness: 2,
+        // Shrunk to fit, if they must, by what's after them.
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final (i, title) in widget.titles.indexed) ...[
+                    if (i > 0) const SizedBox(width: 14),
+                    GestureDetector(
+                      onTap: () => _pages.animateToPage(
+                        i,
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOut,
+                      ),
+                      child: Text(
+                        title,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: i == _page
+                              ? theme.colorScheme.onSurface
+                              : theme.colorScheme.onSurfaceVariant.withValues(
+                                  alpha: 0.6,
+                                ),
+                          fontWeight: i == _page
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          decoration: i == _page
+                              ? TextDecoration.underline
+                              : null,
+                          decorationThickness: 2,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
+        ),
+        if (widget.onDurations case final onDurations?) ...[
+          const SizedBox(width: 8),
+          _UnitSwitch(durations: widget.durations, onChanged: onDurations),
         ],
-        const Spacer(),
-        if (widget.onDurations case final onDurations?)
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: widget.durations ? 'Show percentages' : 'Show durations',
-            isSelected: widget.durations,
-            icon: const Icon(Icons.percent),
-            selectedIcon: const Icon(Icons.schedule),
-            onPressed: () => onDurations(!widget.durations),
-          ),
         if (onCollapsed != null)
           IconButton(
             visualDensity: VisualDensity.compact,
@@ -236,6 +250,68 @@ class _TimeSummaryState extends State<TimeSummary> {
             onPressed: () => onCollapsed(true),
           ),
       ],
+    );
+  }
+}
+
+/// Two halves, percentages and durations, split by a line, the one
+/// shown filled in. A tap anywhere on it turns to the other.
+class _UnitSwitch extends StatelessWidget {
+  const _UnitSwitch({required this.durations, required this.onChanged});
+
+  final bool durations;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    const radius = Radius.circular(11);
+    // Inside its border.
+    const inner = Radius.circular(10);
+    Widget half(IconData icon, bool on) {
+      final chosen = durations == on;
+      return Container(
+        width: 26,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: chosen ? colors.secondaryContainer : null,
+          borderRadius: on
+              ? const BorderRadius.horizontal(right: inner)
+              : const BorderRadius.horizontal(left: inner),
+        ),
+        child: Icon(
+          icon,
+          size: 14,
+          color: chosen ? colors.onSecondaryContainer : colors.onSurfaceVariant,
+        ),
+      );
+    }
+
+    return Tooltip(
+      message: durations ? 'Show percentages' : 'Show durations',
+      child: InkWell(
+        onTap: () => onChanged(!durations),
+        borderRadius: const BorderRadius.all(radius),
+        // Taller to tap than it looks.
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          child: Container(
+            height: 22,
+            decoration: BoxDecoration(
+              border: Border.all(color: colors.outline),
+              borderRadius: const BorderRadius.all(radius),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                half(Icons.percent, false),
+                Container(width: 1, color: colors.outline),
+                half(Icons.schedule, true),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

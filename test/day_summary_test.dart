@@ -115,46 +115,85 @@ void main() {
     });
   });
 
-  testWidgets('its button turns percentages into durations and back', (
+  testWidgets(
+    'a tap anywhere on its toggle turns percentages into durations and back',
+    (tester) async {
+      var durations = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) => DaySummary(
+                events: [
+                  event(at(9), at(10, 30), priority: 1),
+                  // A third of a minute each: rounded to whole minutes.
+                  event(at(11), at(11, 1), priority: 2),
+                  event(at(11), at(11, 1), priority: 2),
+                  event(at(11), at(11, 1), priority: 3),
+                ],
+                day: day,
+                goals: const {},
+                durations: durations,
+                onDurations: (value) => setState(() => durations = value),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('6%'), findsOneWidget);
+      expect(find.text('1h 30m'), findsNothing);
+
+      await tester.tap(find.byTooltip('Show durations'));
+      await tester.pumpAndSettle();
+      expect(durations, isTrue);
+      expect(find.text('1h 30m'), findsOneWidget);
+      expect(find.text('1m'), findsOneWidget);
+      expect(find.text('0m'), findsOneWidget);
+      expect(find.text('22h 29m'), findsOneWidget);
+      expect(find.text('6%'), findsNothing);
+
+      await tester.tap(find.byTooltip('Show percentages'));
+      await tester.pumpAndSettle();
+      expect(find.text('6%'), findsOneWidget);
+
+      // Either half turns it, even the one already shown.
+      await tester.tap(find.byIcon(Icons.percent));
+      await tester.pumpAndSettle();
+      expect(durations, isTrue);
+      await tester.tap(find.byIcon(Icons.percent));
+      await tester.pumpAndSettle();
+      expect(durations, isFalse);
+    },
+  );
+
+  testWidgets('its header fits a narrow screen, titles shrunk to fit', (
     tester,
   ) async {
-    var durations = false;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: StatefulBuilder(
-            builder: (context, setState) => DaySummary(
-              events: [
-                event(at(9), at(10, 30), priority: 1),
-                // A third of a minute each: rounded to whole minutes.
-                event(at(11), at(11, 1), priority: 2),
-                event(at(11), at(11, 1), priority: 2),
-                event(at(11), at(11, 1), priority: 3),
-              ],
-              day: day,
-              goals: const {},
-              durations: durations,
-              onDurations: (value) => setState(() => durations = value),
+          body: Center(
+            child: SizedBox(
+              width: 300,
+              child: DaySummary(
+                events: const [],
+                day: day,
+                goals: const {},
+                onCollapsed: (_) {},
+                onDurations: (_) {},
+              ),
             ),
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('6%'), findsOneWidget);
-    expect(find.text('1h 30m'), findsNothing);
-
-    await tester.tap(find.byTooltip('Show durations'));
-    await tester.pumpAndSettle();
-    expect(durations, isTrue);
-    expect(find.text('1h 30m'), findsOneWidget);
-    expect(find.text('1m'), findsOneWidget);
-    expect(find.text('0m'), findsOneWidget);
-    expect(find.text('22h 29m'), findsOneWidget);
-    expect(find.text('6%'), findsNothing);
-
-    await tester.tap(find.byTooltip('Show percentages'));
-    await tester.pumpAndSettle();
-    expect(find.text('6%'), findsOneWidget);
+    // An overflow would have thrown.
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getTopRight(find.byTooltip('Hide summary')).dx,
+      lessThanOrEqualTo(tester.getTopRight(find.byType(DaySummary)).dx),
+    );
   });
 }
