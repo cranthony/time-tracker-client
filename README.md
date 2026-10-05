@@ -5,7 +5,8 @@ For now it shows your **uncompacted notes**, by day, and has a **+** button to
 record a new one; tap a note to change its description or time, or to
 delete it. An **Events** page, from the bar at the bottom, shows a day's
 events from your calendar; tap one to see or edit it, including the goals
-it serves. A **Goals** page lists your goals as a tree: tap one to see
+it serves. Above them, a summary shows how the day's time is split by
+priority; swipe it to see the top goals, or the top-level goals. A **Goals** page lists your goals as a tree: tap one to see
 its measure and how it's doing by it, and to edit the measure; its menu
 adds a sub-goal, or opens its details to change anything else, or move
 it to another status:
@@ -360,9 +361,9 @@ see [Try it with sample data](#try-it-with-sample-data).
 
 `test/visual` renders the main screens with the sample data, at a phone's
 size, in light and dark: Goals (with the status filter closed and open), a
-goal's history, Events and Notes. It writes them, at 2x and with the real
-fonts (Roboto and Material Icons, from the Flutter SDK), to
-`build/screenshots/`. This is the quick way to see a UI change without
+goal's history, Events (with each page of its day summary) and Notes. It
+writes them, at 2x and with the real fonts (Roboto and Material Icons,
+from the Flutter SDK), to `build/screenshots/`. This is the quick way to see a UI change without
 running the app:
 
 ```sh

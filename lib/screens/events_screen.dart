@@ -11,6 +11,7 @@ import '../services/events_repository.dart';
 import '../services/mcp_client.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
+import '../widgets/day_summary.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/event_dialog.dart';
 import '../widgets/event_summary_dialog.dart';
@@ -719,6 +720,8 @@ class _EventsScreenState extends State<EventsScreen> {
             icon: Icons.cloud_off,
             text: 'Could not load events. These may be out of date.\n$_error',
           ),
+        if (events != null)
+          DaySummary(events: events, day: _day, goals: _goalsById),
         Expanded(
           child: LayoutBuilder(
             builder: (context, view) => RefreshIndicator(

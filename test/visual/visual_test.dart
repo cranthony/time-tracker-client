@@ -15,6 +15,7 @@ import 'package:time_tracker_client/screens/goal_history_screen.dart';
 import 'package:time_tracker_client/screens/goals_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
 import 'package:time_tracker_client/theme.dart';
+import 'package:time_tracker_client/widgets/day_summary.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/goals_picker.dart';
 import 'package:time_tracker_client/widgets/priority_chip.dart';
@@ -311,6 +312,36 @@ void main() {
         ),
       );
     });
+
+    // The day's summary swiped once, to its goals, and twice, to its
+    // top-level goals.
+    for (final (name, swipes) in [
+      ('events_summary_goals', 1),
+      ('events_summary_top_level', 2),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          EventsScreen(
+            repository: sample.eventsRepository(),
+            goalsRepository: sample.goalsRepository(),
+            serverLabel: 'sample',
+            clock: () => _now,
+          ),
+          then: () async {
+            for (var i = 0; i < swipes; i++) {
+              await tester.fling(
+                find.byType(DaySummary),
+                const Offset(-300, 0),
+                1000,
+              );
+              await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
 
     // A new event, from tapping the gap before dinner.
     testWidgets('event_new ($mode)', (tester) async {

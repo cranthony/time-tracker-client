@@ -1346,7 +1346,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('No events.\nTap a time to add one.'), findsOneWidget);
 
-      await tester.tap(find.text('Goals'));
+      // The bar's, not the day summary's.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text('Goals'),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.text('No goals yet.\nTap + to add one.'), findsOneWidget);
       outbox.stop();
