@@ -264,6 +264,10 @@ void main() {
   group('GoalTraitsScreen', () {
     testWidgets('shows its traits, what matters, history and events, and '
         'what is behind a score', (tester) async {
+      // Tall enough to show the whole page at once.
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final repository = InMemoryTraitsRepository(
         ratings: {
           'p1': const TraitsRating(

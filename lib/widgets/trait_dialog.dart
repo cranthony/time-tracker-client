@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/trait.dart';
 import '../services/mcp_client.dart';
+import 'parts_editor.dart';
 
 /// Creates a trait (with no [trait]) or edits one -- its name, definition,
 /// status and parts -- checking it as the server does ([traitProblem]),
@@ -33,11 +34,7 @@ class _TraitDialogState extends State<_TraitDialog> {
   );
   late String _status = widget.trait?.status ?? 'active';
 
-  /// Each part's kind, and its fields as typed, by field name.
-  late final List<_PartDraft> _parts = [
-    for (final part in widget.trait?.parts ?? const <Part>[])
-      _PartDraft.from(part),
-  ];
+  late List<Part> _parts = [...?widget.trait?.parts];
 
   bool _saving = false;
   String? _error;
@@ -46,9 +43,6 @@ class _TraitDialogState extends State<_TraitDialog> {
   void dispose() {
     _name.dispose();
     _definition.dispose();
-    for (final part in _parts) {
-      part.dispose();
-    }
     super.dispose();
   }
 
@@ -59,7 +53,7 @@ class _TraitDialogState extends State<_TraitDialog> {
     definition: _definition.text.trim().isEmpty
         ? null
         : _definition.text.trim(),
-    parts: [for (final part in _parts) part.part],
+    parts: _parts,
   );
 
   Future<void> _save() async {
@@ -155,16 +149,9 @@ class _TraitDialogState extends State<_TraitDialog> {
                 'with nothing to score it by.',
                 style: theme.textTheme.bodySmall,
               ),
-              for (final (i, part) in _parts.indexed) _partCard(theme, i, part),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton.icon(
-                  onPressed: () => setState(
-                    () => _parts.add(_PartDraft.from(const {'kind': 'prep'})),
-                  ),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add part'),
-                ),
+              PartsEditor(
+                parts: _parts,
+                onChanged: (parts) => setState(() => _parts = parts),
               ),
               if (problem != null)
                 Text(problem, style: TextStyle(color: theme.colorScheme.error)),
@@ -188,124 +175,5 @@ class _TraitDialogState extends State<_TraitDialog> {
         ),
       ],
     );
-  }
-
-  Widget _partCard(ThemeData theme, int index, _PartDraft part) {
-    final kind = partKinds[part.kind];
-    return Card(
-      margin: const EdgeInsets.only(top: 8),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 4, 4, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    value: kind == null ? null : part.kind,
-                    hint: Text(part.kind),
-                    items: [
-                      for (final MapEntry(:key, :value) in partKinds.entries)
-                        DropdownMenuItem(value: key, child: Text(value.label)),
-                    ],
-                    onChanged: (picked) =>
-                        setState(() => part.kind = picked ?? part.kind),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Remove part ${index + 1}',
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () => setState(() {
-                    _parts.removeAt(index).dispose();
-                  }),
-                ),
-              ],
-            ),
-            if (kind != null) Text(kind.hint, style: theme.textTheme.bodySmall),
-            _input(
-              part.controller('weight'),
-              'Weight',
-              hint: '1',
-              number: true,
-            ),
-            for (final field in kind?.fields ?? const [])
-              _input(
-                part.controller(field.field),
-                field.label + (field.required ? '' : ' (optional)'),
-                hint: field.hint,
-                number: field.field != 'rubric' && field.field != 'noun',
-                maxLines: field.field == 'rubric' ? 4 : 1,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _input(
-    TextEditingController controller,
-    String label, {
-    String? hint,
-    bool number = false,
-    int maxLines = 1,
-  }) => Padding(
-    padding: const EdgeInsets.only(top: 8, right: 8),
-    child: TextField(
-      controller: controller,
-      minLines: 1,
-      maxLines: maxLines,
-      keyboardType: number
-          ? const TextInputType.numberWithOptions(decimal: true)
-          : TextInputType.text,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        isDense: true,
-        border: const OutlineInputBorder(),
-        floatingLabelBehavior: FloatingLabelBehavior.always,
-      ),
-      onChanged: (_) => setState(() {}),
-    ),
-  );
-}
-
-/// A part as it's being edited: its kind, and a field for each of its
-/// settings, kept across changes of kind.
-class _PartDraft {
-  _PartDraft.from(Part part) : kind = '${part['kind']}' {
-    for (final MapEntry(:key, :value) in part.entries) {
-      if (key != 'kind' && value != null) controller(key).text = '$value';
-    }
-  }
-
-  String kind;
-  final _controllers = <String, TextEditingController>{};
-
-  TextEditingController controller(String field) =>
-      _controllers.putIfAbsent(field, TextEditingController.new);
-
-  /// The part as its fields have it: only its kind's, and the weight; a
-  /// number that doesn't parse is kept as typed, for [partProblem].
-  Part get part {
-    final fields = {
-      'weight',
-      for (final f in partKinds[kind]?.fields ?? const []) f.field,
-    };
-    Object? value(String field) {
-      final text = _controllers[field]?.text.trim() ?? '';
-      if (text.isEmpty) return null;
-      if (field == 'rubric' || field == 'noun') return text;
-      return num.tryParse(text) ?? text;
-    }
-
-    return {'kind': kind, for (final field in fields) field: ?value(field)};
-  }
-
-  void dispose() {
-    for (final c in _controllers.values) {
-      c.dispose();
-    }
   }
 }

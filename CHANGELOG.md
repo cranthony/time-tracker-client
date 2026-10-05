@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.16.0
+
+- Cadences. A trait's "Number of events" and "Time spent" parts take an
+  activity: they then count only events with them of that activity, such
+  as a visit every 21 days or a call every week.
+- A goal rated by traits can have its own parts for a trait: in its
+  measure, "Customize for this goal" under a trait edits that goal's own
+  parts (its cadences, say), starting from the trait's, and "Use the
+  trait's" goes back. Its settings list them.
+- A goal's traits page shows how it's rated: its traits, their weights,
+  and its own parts. The tune button edits them there.
+
 ## 5.15.1
 
 - On the Goals page, a goal with sub-goals and a color of its own shows

@@ -1,3 +1,5 @@
+import 'trait.dart';
+
 /// How a goal's health is rated in each day's reflection, mirroring the
 /// MCP server's measure specs (its utilities/goal_measures.py): a JSON
 /// object with a "kind" and that kind's fields. Every active goal is
@@ -32,7 +34,8 @@
 /// |              | [isTemporaryWeight])                                   |
 /// | `traits`     | `traits`: trait ids, or "all" active ones; optional    |
 /// |              | `weights` ({trait id: weight}, default 1) and          |
-/// |              | `window_days` (default 30)                             |
+/// |              | `window_days` (default 30), and `parts` ({trait id:    |
+/// |              | [parts]}: the goal's own parts for a trait)            |
 /// | (any)        | optional `only_if`: {`events_of`, `include_sub_goals`},|
 /// |              | both optional ({} is the goal itself): rated only on   |
 /// |              | days with such an event, and skipped on the rest       |
@@ -391,6 +394,21 @@ String? measureProblem(Measure measure) {
       if (weights is! Map || weights.values.any((w) => w is! num || w < 0)) {
         return "Each trait's weight must be 0 or more.";
       }
+      final own = measure['parts'] ?? const {};
+      if (own is! Map) return 'Give its own parts by trait.';
+      for (final MapEntry(:key, :value) in own.entries) {
+        if (value is! List || value.isEmpty) {
+          return 'Give ${traitLabel('$key')} at least one part for this goal.';
+        }
+        for (final (i, part) in value.indexed) {
+          if (part is! Map) {
+            return '${traitLabel('$key')} part ${i + 1}: pick a kind.';
+          }
+          if (partProblem(part.cast()) case final problem?) {
+            return '${traitLabel('$key')} part ${i + 1}: $problem';
+          }
+        }
+      }
     default:
       return 'Pick a kind of measure.';
   }
@@ -528,6 +546,16 @@ List<(String, String)> _settings(
         if (measure['weights'] case final Map weights)
           for (final MapEntry(:key, :value) in weights.entries)
             (traitLabel('$key'), 'weight $value'),
+        if (measure['parts'] case final Map own)
+          for (final MapEntry(:key, :value) in own.entries)
+            if (value is List)
+              (
+                '${traitLabel('$key')}, for this goal',
+                [
+                  for (final part in value)
+                    if (part is Map) describePart(part.cast()),
+                ].join('\n'),
+              ),
         ('Over', days(_number(measure['window_days']) ?? 30)),
       ];
     default:
