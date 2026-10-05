@@ -42,6 +42,9 @@ const _cancelledAlpha = 0.4;
 /// The colored strip down an event's left edge.
 const _stripWidth = 4.0;
 
+/// How thick the hairline is between events that meet in one color.
+const _seamWidth = 1.0;
+
 /// How round an event's corners on the right are, where it meets no
 /// other.
 const _cardRadius = 8.0;
@@ -238,6 +241,33 @@ Color eventColor(Event event, Map<String, Goal> goals) {
       priorityColor(event.effectivePriority);
 }
 
+/// [event]'s [eventColor] as it's drawn: fainter if it's cancelled.
+Color _shownColor(Event event, Map<String, Goal> goals) {
+  final color = eventColor(event, goals);
+  return event.isCancelled ? color.withValues(alpha: _cancelledAlpha) : color;
+}
+
+/// How far apart two events' colors can be, in any channel, and still
+/// run together where they meet.
+const _seamTolerance = 0.1;
+
+/// Whether the [i]th of [placements] meets the one before it in a color
+/// so close to its own that they'd run together, so a seam is drawn
+/// between them: across their band, their fill from it and their strips.
+bool _seamAbove(
+  List<TimelinePlacement> placements,
+  int i,
+  Map<String, Goal> goals,
+) {
+  if (i == 0 || placements[i - 1].bottom < placements[i].top) return false;
+  final a = _shownColor(placements[i - 1].event, goals);
+  final b = _shownColor(placements[i].event, goals);
+  return (a.r - b.r).abs() <= _seamTolerance &&
+      (a.g - b.g).abs() <= _seamTolerance &&
+      (a.b - b.b).abs() <= _seamTolerance &&
+      (a.a - b.a).abs() <= _seamTolerance;
+}
+
 /// Picks which of [candidates] to show, [height] tall at [top]: each in
 /// turn, unless it'd overlap one already picked. So the ones first win.
 List<T> placeLabels<T>(
@@ -269,10 +299,11 @@ List<T> placeLabels<T>(
 /// gets an outline). Its color fills the gutter from its piece of the
 /// band to it, and a thin line of it runs round it.
 ///
-/// An event too short for that is drawn as tall as its text needs: the
-/// strip down its edge is solid only as far as it lasts, dashed below,
-/// and it says how long it is. One pushed down by the event above it is
-/// joined to where it truly is by that fill from the band.
+/// An event too short for that is drawn as tall as its text needs, and
+/// says how long it is. One pushed down by the event above it is joined
+/// to where it truly is by that fill from the band. Where an event meets
+/// the one before it in the same color, or one too close to tell apart,
+/// a hairline of the background divides them.
 /// [now], the [lastCompaction] and each of the [pendingNotes], if
 /// they're in the day, are marked with lines across, under the events;
 /// zoomed in past the [defaultTimelineScale], they're labeled "now",
@@ -497,6 +528,9 @@ class DayTimeline extends StatelessWidget {
                           joinedBelow:
                               i + 1 < placements.length &&
                               placements[i + 1].top <= placement.bottom,
+                          seamColor: _seamAbove(placements, i, goals)
+                              ? theme.scaffoldBackgroundColor
+                              : null,
                           goals: goals,
                           styles: styles,
                           onTap: onTap == null
@@ -574,6 +608,7 @@ class _EventCard extends StatelessWidget {
     required this.placement,
     required this.joinedAbove,
     required this.joinedBelow,
+    required this.seamColor,
     required this.goals,
     required this.styles,
     required this.onTap,
@@ -588,6 +623,10 @@ class _EventCard extends StatelessWidget {
   /// no thicker than the rest.
   final bool joinedAbove;
   final bool joinedBelow;
+
+  /// The color of the hairline across the top of its strip, dividing it
+  /// from the one above's, if they're too alike to tell apart.
+  final Color? seamColor;
   final Map<String, Goal> goals;
   final _CardStyles styles;
   final VoidCallback? onTap;
@@ -610,10 +649,7 @@ class _EventCard extends StatelessWidget {
     };
     final ids = event.goalIds;
     final names = event.goalNames;
-    final color = eventColor(event, goals);
-    final outline = cancelled
-        ? color.withValues(alpha: _cancelledAlpha)
-        : color;
+    final outline = _shownColor(event, goals);
     final muted = colors.onSurfaceVariant;
     final strike = cancelled ? TextDecoration.lineThrough : null;
     final duration = formatDuration(event.end.difference(event.start));
@@ -641,19 +677,16 @@ class _EventCard extends StatelessWidget {
             topRadius: joinedAbove ? 0 : _cardRadius,
             bottomRadius: joinedBelow ? 0 : _cardRadius,
             bottom: !joinedBelow,
+            seamColor: seamColor,
           ),
           child: InkWell(
             onTap: onTap,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                CustomPaint(
-                  size: const Size(_stripWidth, double.infinity),
-                  painter: _StripPainter(
-                    solidFrom: placement.trueTop - placement.top,
-                    solidTo: placement.trueBottom - placement.top,
-                    color: outline,
-                  ),
+                SizedBox(
+                  width: _stripWidth,
+                  child: ColoredBox(color: outline),
                 ),
                 Expanded(
                   child: Padding(
@@ -739,19 +772,23 @@ class _EventCard extends StatelessWidget {
 /// taller than its piece of the band: square on the left, where the fill
 /// from the band meets it, its top right corner [topRadius] round and
 /// its bottom right [bottomRadius]; and with no [bottom] edge where the
-/// event after it starts, whose top edge is drawn there instead.
+/// event after it starts, whose top edge is drawn there instead. Over
+/// the top of the strip down its edge, a hairline in [seamColor], if
+/// it has one.
 class _OutlinePainter extends CustomPainter {
   _OutlinePainter({
     required this.color,
     required this.topRadius,
     required this.bottomRadius,
     required this.bottom,
+    this.seamColor,
   });
 
   final Color color;
   final double topRadius;
   final double bottomRadius;
   final bool bottom;
+  final Color? seamColor;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -776,10 +813,17 @@ class _OutlinePainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = _outlineWidth,
     );
+    if (seamColor case final seam?) {
+      canvas.drawRect(
+        const Rect.fromLTWH(0, 0, _stripWidth, _seamWidth),
+        Paint()..color = seam,
+      );
+    }
   }
 
   @override
   bool shouldRepaint(_OutlinePainter old) =>
+      old.seamColor != seamColor ||
       old.color != color ||
       old.topRadius != topRadius ||
       old.bottomRadius != bottomRadius ||
@@ -898,47 +942,6 @@ class _Diamond extends StatelessWidget {
       ),
     ),
   );
-}
-
-/// The strip down an event's edge: solid from [solidFrom] to [solidTo],
-/// the part of it its times cover, and dashed elsewhere.
-class _StripPainter extends CustomPainter {
-  _StripPainter({
-    required this.solidFrom,
-    required this.solidTo,
-    required this.color,
-  });
-
-  final double solidFrom;
-  final double solidTo;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
-    final from = solidFrom.clamp(0.0, size.height);
-    final to = solidTo.clamp(0.0, size.height);
-    if (to > from) {
-      canvas.drawRect(Rect.fromLTRB(0, from, size.width, to), paint);
-    }
-    void dashed(double a, double b) {
-      for (var y = a; y < b; y += 6) {
-        canvas.drawRect(
-          Rect.fromLTRB(0, y, size.width, math.min(y + 3, b)),
-          paint,
-        );
-      }
-    }
-
-    dashed(0, from);
-    dashed(math.max(to, from), size.height);
-  }
-
-  @override
-  bool shouldRepaint(_StripPainter old) =>
-      old.solidFrom != solidFrom ||
-      old.solidTo != solidTo ||
-      old.color != color;
 }
 
 /// A line across the timeline to label: [label], [height] tall, centered
@@ -1362,10 +1365,7 @@ class _RailPainter extends CustomPainter {
     const left = _eventBandLeft;
     const right = _eventBandLeft + _eventBandWidth;
     for (final p in placements) {
-      var color = eventColor(p.event, goals);
-      if (p.event.isCancelled) {
-        color = color.withValues(alpha: _cancelledAlpha);
-      }
+      final color = _shownColor(p.event, goals);
       // Exactly where its card is, if it's drawn at its times; and no
       // thinner than a line, if it has none.
       final top = p.trueTop;
@@ -1382,6 +1382,26 @@ class _RailPainter extends CustomPainter {
           ..lineTo(left, bottom)
           ..close(),
         Paint()..color = color,
+      );
+    }
+    // Then a hairline of the background along the top of each that meets
+    // the one before it in a color too like its own to tell them apart:
+    // across the band, then along the fill to the event, whose strip
+    // carries it on.
+    final seam = Paint()
+      ..color = coverColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _seamWidth;
+    for (final (i, p) in placements.indexed) {
+      if (!_seamAbove(placements, i, goals)) continue;
+      // Just below its top, as the strip's is.
+      const down = _seamWidth / 2;
+      canvas.drawPath(
+        Path()
+          ..moveTo(left, p.trueTop + down)
+          ..lineTo(right, p.trueTop + down)
+          ..lineTo(_cardsLeft, p.top + down),
+        seam,
       );
     }
   }
