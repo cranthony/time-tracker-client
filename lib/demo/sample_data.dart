@@ -1,6 +1,6 @@
 import '../models/assessment.dart';
 import '../models/event.dart';
-import '../models/facets.dart';
+import '../models/facts.dart';
 import '../models/goal.dart';
 import '../models/note.dart';
 import '../models/person.dart';
@@ -25,8 +25,9 @@ import '../services/traits_repository.dart';
 /// Claude proposed and an archived one, and the time spent on each up to
 /// the last compaction. The people are Self and six others in five
 /// circles, from healthy to disconnected (and one archived), each rated by
-/// five traits made of facets and cadences, with Claude's judgments of
-/// their recent events behind each score.
+/// five traits made of judgments and cadences -- Self by four, Sam with a
+/// cadence of their own -- with Claude's judgments of their recent events
+/// behind each score; and the locations those events were at.
 class SampleData {
   SampleData(this.now);
 
@@ -52,8 +53,11 @@ class SampleData {
     minutesByStatuses,
     minutesByPriority,
   );
-  PeopleRepository peopleRepository() =>
-      InMemoryPeopleRepository(people: people, circles: circles);
+  PeopleRepository peopleRepository() => InMemoryPeopleRepository(
+    people: people,
+    circles: circles,
+    locations: locations,
+  );
 
   /// The traits; a week of their scores across everyone; and each
   /// person's latest rating, part by part, and their history.
@@ -90,8 +94,18 @@ class SampleData {
 
   // ---------------------------------------------------------------- Traits
 
-  /// The traits: four made of facets Claude judges -- one of them with a
-  /// cadence beside it -- one of cadences alone, and one turned off.
+  /// The ratings of Adventurous's judgment, as the server seeds it.
+  static const _novelty = {
+    '0': 'The activity and place were routine',
+    '1': 'There was a twist on the activity or place',
+    '2': 'The activity or the place were new',
+    '3':
+        'Both the activity and place were new, or the event was otherwise '
+        'adventurous',
+  };
+
+  /// The traits: four made of judgments -- one with continuity beside
+  /// it -- one of a cadence and follow-through, and one turned off.
   List<Trait> get traits => const [
     Trait(
       id: 'adventurous',
@@ -99,25 +113,14 @@ class SampleData {
       definition: 'Try new things and new places, together.',
       parts: [
         {
-          'kind': 'facet',
+          'kind': 'judgment',
           'rubric': 'Was this activity or place new?',
-          'engagement': 'with',
-          'ratings': [
-            {'score': 0, 'label': 'The activity and place were routine'},
-            {'score': 1, 'label': 'There was a twist on the activity or place'},
-            {'score': 2, 'label': 'The activity or the place were new'},
-            {
-              'score': 3,
-              'label':
-                  'Both the activity and place were new, or the event was '
-                  'otherwise adventurous',
-            },
-          ],
-          'primitives': [
-            {'name': 'action'},
-            {'name': 'action_history', 'lookback_days': 90},
-            {'name': 'location'},
-            {'name': 'location_history', 'lookback_days': 180},
+          'ratings': _novelty,
+          'facts': [
+            'action',
+            {'fact': 'action_history', 'lookback_days': 90},
+            'location',
+            {'fact': 'location_history', 'lookback_days': 180},
           ],
         },
       ],
@@ -128,26 +131,16 @@ class SampleData {
       definition: 'Remember what matters to them, and act on it.',
       parts: [
         {
-          'kind': 'facet',
+          'kind': 'judgment',
+          'engagement_type': 'for',
           'rubric': 'Did this reflect what matters to them?',
-          'engagement': 'for',
-          'ratings': [
-            {
-              'score': 0,
-              'label': 'Nothing about it was for them in particular',
-            },
-            {'score': 1, 'label': 'It took them into account'},
-            {'score': 2, 'label': 'It was shaped around what matters to them'},
-            {
-              'score': 3,
-              'label': 'It showed specific, remembered care for them',
-            },
-          ],
-          'primitives': [
-            {'name': 'action'},
-            {'name': 'general_notes'},
-            {'name': 'person_notes'},
-          ],
+          'ratings': {
+            '0': 'Nothing about it was for them in particular',
+            '1': 'It took them into account',
+            '2': 'It was shaped around what matters to them',
+            '3': 'It showed specific, remembered care for them',
+          },
+          'facts': ['action', 'general_notes', 'person_notes'],
         },
         {'kind': 'continuity', 'last_within_days': 14, 'next_within_days': 14},
       ],
@@ -158,26 +151,15 @@ class SampleData {
       definition: 'Make things, alone and together.',
       parts: [
         {
-          'kind': 'facet',
+          'kind': 'judgment',
           'rubric': 'Was something made?',
-          'engagement': 'with',
-          'ratings': [
-            {'score': 0, 'label': 'Nothing was made'},
-            {
-              'score': 1,
-              'label': 'We riffed on something that already existed',
-            },
-            {'score': 2, 'label': 'We made something'},
-            {
-              'score': 3,
-              'label': "We made something new, that neither could've alone",
-            },
-          ],
-          'primitives': [
-            {'name': 'action'},
-            {'name': 'general_notes'},
-          ],
-          'window_days': 30,
+          'ratings': {
+            '0': 'Nothing was made',
+            '1': 'We riffed on something that already existed',
+            '2': 'We made something',
+            '3': "We made something new, that neither could've alone",
+          },
+          'facts': ['action', 'general_notes'],
         },
       ],
     ),
@@ -187,19 +169,15 @@ class SampleData {
       definition: 'Give them my full attention.',
       parts: [
         {
-          'kind': 'facet',
+          'kind': 'judgment',
           'rubric': 'How present was I?',
-          'engagement': 'with',
-          'ratings': [
-            {'score': 0, 'label': 'Distracted, or on my phone'},
-            {'score': 1, 'label': 'Partly there'},
-            {'score': 2, 'label': 'Mostly attentive'},
-            {'score': 3, 'label': 'Fully present, listening closely'},
-          ],
-          'primitives': [
-            {'name': 'general_notes'},
-            {'name': 'person_notes'},
-          ],
+          'ratings': {
+            '0': 'Distracted, or on my phone',
+            '1': 'Partly there',
+            '2': 'Mostly attentive',
+            '3': 'Fully present, listening closely',
+          },
+          'facts': ['general_notes', 'person_notes'],
         },
       ],
     ),
@@ -208,7 +186,7 @@ class SampleData {
       name: 'Reliable',
       definition: 'Keep in touch, and do what I said I would.',
       parts: [
-        {'kind': 'count', 'action_id': 'call', 'target': 1, 'interval_days': 7},
+        {'kind': 'count', 'action': 'social', 'target': 1, 'interval_days': 7},
         {'kind': 'follow_through'},
       ],
     ),
@@ -219,18 +197,15 @@ class SampleData {
       definition: 'Make an effort for them beyond showing up.',
       parts: [
         {
-          'kind': 'facet',
+          'kind': 'judgment',
+          'engagement_type': 'for',
           'rubric': 'How much effort did I make for them?',
-          'engagement': 'for',
-          'ratings': [
-            {'score': 0, 'label': 'Showed up'},
-            {'score': 1, 'label': 'Some effort'},
-            {'score': 2, 'label': 'Prepared, cooked, hosted or traveled'},
-          ],
-          'primitives': [
-            {'name': 'action'},
-            {'name': 'general_notes'},
-          ],
+          'ratings': {
+            '0': 'Showed up',
+            '1': 'Some effort',
+            '2': 'Prepared, cooked, hosted or traveled',
+          },
+          'facts': ['action', 'general_notes'],
         },
       ],
     ),
@@ -239,17 +214,17 @@ class SampleData {
   // ---------------------------------------------------------------- People
 
   List<Circle> get circles => [
-    for (final (id, name, color) in const [
-      ('family', 'Family', '#f6bf26'),
-      ('close', 'Close friends', '#7986cb'),
-      ('dance', 'Dance friends', '#f4511e'),
-      ('college', 'College', '#039be5'),
-      ('work', 'Work', '#8e24aa'),
+    for (final (id, name, note) in const [
+      ('family', 'Family', null),
+      ('close', 'Close friends', 'The ones I call first'),
+      ('dance', 'Dance friends', 'From the Thursday salsa class'),
+      ('college', 'College', null),
+      ('work', 'Work', null),
     ])
       Circle.fromJson({
         'id': id,
         'name': name,
-        'color': color,
+        'note': note,
         ..._healthOf([
           for (final p in _peopleSpec)
             if (p.circles.contains(id) && p.status == 'active') p.id,
@@ -257,60 +232,87 @@ class SampleData {
       }),
   ];
 
+  /// Where events happen.
+  List<Location> get locations => const [
+    Location(id: 'home', name: 'Home', hint: "the apartment; 'my place'"),
+    Location(id: 'hall', name: 'The hall', hint: 'the salsa social, Thursdays'),
+    Location(id: 'noodles', name: 'The noodle bar', hint: 'on Fifth'),
+    Location(id: 'cellar', name: 'The Cellar', hint: 'the jazz club'),
+    Location(id: 'school', name: 'The culinary school'),
+    Location(id: 'ramen', name: 'Ramen Ya'),
+    Location(id: 'trail', name: 'The river trail'),
+    Location(id: 'cafe', name: 'The café', hint: 'by the office'),
+    Location(id: 'jordans', name: "Jordan's place"),
+  ];
+
   static const _peopleSpec = [
     (
       id: selfPersonId,
       name: 'Self',
+      context: null,
       circles: <String>[],
       status: 'active',
-      notes:
+      whatMatters:
           '- Wants more time making things, and less on screens\n'
           '- Learning to sing harmonies',
     ),
     (
       id: 'sam',
       name: 'Sam',
+      context: 'from salsa',
       circles: ['close', 'dance'],
       status: 'active',
-      notes:
+      whatMatters:
           '- Training for a half marathon in the spring\n'
           '- Starts a new job next month',
     ),
     (
       id: 'priya',
       name: 'Priya',
+      context: null,
       circles: ['close', 'college'],
       status: 'active',
-      notes: '- Loves jazz, and trying new restaurants',
+      whatMatters: '- Loves jazz, and trying new restaurants',
     ),
     (
       id: 'mom',
       name: 'Mom',
+      context: null,
       circles: ['family'],
       status: 'active',
-      notes: '- Knee surgery on the 20th: call after',
+      whatMatters: '- Knee surgery on the 20th: call after',
     ),
     (
       id: 'dad',
       name: 'Dad',
+      context: null,
       circles: ['family'],
       status: 'active',
-      notes: '- Restoring an old sailboat',
+      whatMatters: '- Restoring an old sailboat',
     ),
-    (id: 'alex', name: 'Alex', circles: ['work'], status: 'active', notes: ''),
+    (
+      id: 'alex',
+      name: 'Alex',
+      context: 'design team',
+      circles: ['work'],
+      status: 'active',
+      whatMatters: '',
+    ),
     (
       id: 'jordan',
       name: 'Jordan',
+      context: null,
       circles: ['dance'],
       status: 'active',
-      notes: '- Moved across town in the summer',
+      whatMatters: '- Moved across town in the summer',
     ),
     (
       id: 'casey',
       name: 'Casey',
+      context: 'old roommate',
       circles: ['college'],
       status: 'archived',
-      notes: '- Old roommate',
+      whatMatters: '',
     ),
   ];
 
@@ -320,26 +322,45 @@ class SampleData {
       if (p.status == 'active') p.id,
   ];
 
+  /// Which traits apply to each person who isn't rated as everyone is:
+  /// Self isn't held to Reliable, and Sam has a cadence of their own -- a
+  /// call or more every two weeks.
+  static const _personTraits = {
+    selfPersonId: PersonTraits(
+      select: ['adventurous', 'thoughtful', 'creative', 'present'],
+    ),
+    'sam': PersonTraits(
+      parts: {
+        'reliable': [
+          {
+            'kind': 'count',
+            'action': 'call',
+            'target': 1,
+            'interval_days': 14,
+            'noun': 'calls',
+          },
+          {'kind': 'follow_through'},
+        ],
+      },
+    ),
+  };
+
   List<Person> get people => [
     for (final p in _peopleSpec)
       Person.fromJson({
         'id': p.id,
         'name': p.name,
+        'context': p.context,
         'status': p.status,
-        'circle_ids': p.circles,
-        if (p.notes.isNotEmpty) 'notes': p.notes,
-        // Sam's Adventurous counts double; Self's Reliable not at all.
-        'trait_weights': switch (p.id) {
-          'sam' => {'adventurous': 2},
-          selfPersonId => {'reliable': 0},
-          _ => const <String, num>{},
-        },
+        'circles': p.circles,
+        'what_matters': p.whatMatters,
+        'traits': _personTraits[p.id]?.toJson(),
         if (p.status == 'active') ..._healthOf([p.id]),
       }),
   ];
 
-  /// The health of [ids] together, as a person's or a circle's cache
-  /// columns: their mean rating, and their last 8 days.
+  /// The health of [ids] together, as a person's or a circle's: their
+  /// mean rating, and their last 8 days.
   Map<String, Object?> _healthOf(List<String> ids) {
     final rated = [
       for (final id in ids)
@@ -371,8 +392,9 @@ class SampleData {
 
   // ------------------------------------------------------- Ratings, digests
 
-  /// The past events with or for each person: what was done (action ids),
-  /// where, the notes, and Claude's judgments by trait id.
+  /// The past events: what was done (action ids), who was there and who
+  /// it was for, where, the notes on each person, and Claude's judgments
+  /// by trait id, of everyone it judged.
   late final List<_PastEvent> _past = [
     _PastEvent(
       'jazz',
@@ -381,9 +403,11 @@ class SampleData {
       20,
       actions: ['listen_music'],
       withIds: ['sam', 'priya'],
-      location: 'the cellar',
-      notes: 'First time at a jazz club, for all three of us',
-      personNotes: {'priya': 'Lit up at the trumpet solo'},
+      location: 'cellar',
+      notes: {
+        selfPersonId: 'First time at a jazz club, for all three of us',
+        'priya': 'Lit up at the trumpet solo',
+      },
       judgments: {
         'adventurous': (3, 'A new kind of night out, somewhere new'),
         'present': (3, 'Phones away all night'),
@@ -397,7 +421,7 @@ class SampleData {
       actions: ['wrap_gift'],
       forIds: ['sam'],
       location: 'home',
-      notes: 'The running watch Sam mentioned in the spring',
+      notes: {selfPersonId: 'The running watch Sam mentioned in the spring'},
       judgments: {
         'thoughtful': (3, 'Remembered the half marathon, months later'),
       },
@@ -409,13 +433,13 @@ class SampleData {
       18,
       actions: ['cook_lunch_dinner', 'deep_talk'],
       withIds: ['sam'],
-      forIds: ['sam'],
       location: 'home',
-      notes: 'Folded them together; talked about the new job',
-      personNotes: {'sam': 'Nervous about the new team'},
+      notes: {
+        selfPersonId: 'Folded them together; talked about the new job',
+        'sam': 'Nervous about the new team',
+      },
       judgments: {
         'creative': (2, 'Made dinner together from scratch'),
-        'thoughtful': (2, 'Made time to talk the new job through'),
         'present': (3, 'Long, unhurried talk'),
         'adventurous': (1, 'A new recipe, in the usual kitchen'),
       },
@@ -427,7 +451,7 @@ class SampleData {
       20,
       actions: ['dance_class', 'shallow_talk'],
       withIds: ['sam'],
-      location: 'the hall',
+      location: 'hall',
       judgments: {
         'adventurous': (0, 'The usual social, at the usual hall'),
         'present': (2, 'Danced with everyone, chatted between'),
@@ -440,8 +464,8 @@ class SampleData {
       14,
       actions: ['cooking_class'],
       withIds: ['priya'],
-      location: 'the culinary school',
-      notes: 'Knife skills; the first class there for both of us',
+      location: 'school',
+      notes: {selfPersonId: 'Knife skills; the first class there for both'},
       judgments: {
         'adventurous': (2, 'A new place for both'),
         'creative': (1, "Followed the chef's recipe"),
@@ -455,12 +479,11 @@ class SampleData {
       19,
       actions: ['eat_meal', 'shallow_talk'],
       withIds: ['priya'],
-      location: 'ramen ya',
-      personNotes: {selfPersonId: 'Checked my phone a few times'},
+      location: 'ramen',
+      notes: {selfPersonId: 'Checked my phone a few times'},
       judgments: {
         'adventurous': (1, 'A new restaurant, but a usual dinner'),
         'present': (1, 'Checked phone a few times'),
-        'thoughtful': (2, 'Picked it because Priya loves new restaurants'),
       },
     ),
     _PastEvent(
@@ -470,11 +493,8 @@ class SampleData {
       13,
       actions: ['call'],
       withIds: ['mom'],
-      personNotes: {'mom': 'Worried about the knee surgery'},
-      judgments: {
-        'present': (2, 'Listened, while making lunch'),
-        'thoughtful': (2, 'Asked about the surgery'),
-      },
+      notes: {'mom': 'Worried about the knee surgery'},
+      judgments: {'present': (2, 'Listened, while making lunch')},
     ),
     _PastEvent(
       'parents_video',
@@ -483,11 +503,8 @@ class SampleData {
       19,
       actions: ['video_call'],
       withIds: ['mom', 'dad'],
-      notes: 'Dad showed the sailboat',
-      judgments: {
-        'present': (3, 'Gave the whole hour'),
-        'thoughtful': (1, 'Mostly caught up on news'),
-      },
+      notes: {'dad': 'Showed the sailboat'},
+      judgments: {'present': (3, 'Gave the whole hour')},
     ),
     _PastEvent(
       'guitar',
@@ -495,9 +512,8 @@ class SampleData {
       1,
       21,
       actions: ['practice_guitar'],
-      forIds: [selfPersonId],
       location: 'home',
-      notes: 'Wrote a new chord progression',
+      notes: {selfPersonId: 'Wrote a new chord progression'},
       judgments: {
         'creative': (3, 'Something new of my own'),
         'present': (3, 'An hour without the phone'),
@@ -509,8 +525,7 @@ class SampleData {
       2,
       7,
       actions: ['walk'],
-      forIds: [selfPersonId],
-      location: 'the river trail',
+      location: 'trail',
       judgments: {
         'adventurous': (2, 'A trail never walked before'),
         'present': (2, 'Listened to a podcast half the way'),
@@ -522,21 +537,11 @@ class SampleData {
       5,
       20,
       actions: ['sing_for_fun'],
-      forIds: [selfPersonId],
       location: 'home',
       judgments: {
         'creative': (1, 'Sang along to old favorites'),
         'adventurous': (0, 'Routine'),
       },
-    ),
-    _PastEvent(
-      'scroll',
-      'Doomscroll',
-      0,
-      13,
-      actions: ['doomscroll'],
-      forIds: [selfPersonId],
-      judgments: {'present': (0, 'Lost twenty minutes to the feed')},
     ),
     _PastEvent(
       'party',
@@ -545,8 +550,8 @@ class SampleData {
       19,
       actions: ['shallow_talk'],
       withIds: ['jordan'],
-      location: "jordan's new place",
-      personNotes: {'jordan': 'Hard to talk; left early'},
+      location: 'jordans',
+      notes: {'jordan': 'Hard to talk; left early'},
       judgments: {
         'present': (1, 'Small talk across a crowded room'),
         'adventurous': (0, 'A party like any other'),
@@ -559,7 +564,7 @@ class SampleData {
       10,
       actions: ['shallow_talk'],
       withIds: ['alex'],
-      location: 'the cafe',
+      location: 'cafe',
       judgments: {
         'present': (2, 'A good chat'),
         'adventurous': (0, 'The usual cafe'),
@@ -567,42 +572,48 @@ class SampleData {
     ),
   ];
 
-  /// [id]'s events, oldest first.
+  /// [id]'s events, oldest first: Self is at every one.
   List<_PastEvent> _eventsOf(String id) => [
     for (final e in _past)
-      if (e.withIds.contains(id) || e.forIds.contains(id)) e,
+      if (id == selfPersonId || e.withIds.contains(id) || e.forIds.contains(id))
+        e,
   ]..sort((a, b) => b.daysAgo.compareTo(a.daysAgo));
 
-  /// [id]'s score of [traitId], part by part, as the server works it out;
-  /// null if no part has anything to rate it by.
+  /// [id]'s parts for [trait]: their own, or the trait's.
+  List<Part> _partsOf(String id, Trait trait) =>
+      _personTraits[id]?.parts[trait.id] ?? trait.parts;
+
+  /// [id]'s score of [trait], part by part, as the server would work it
+  /// out; null if no part has anything to rate it by.
   TraitScore? _traitScoreOf(String id, Trait trait) {
     final events = _eventsOf(id);
     final parts = <PartScore>[];
     final keys = <String, int>{};
-    for (final part in trait.parts) {
+    for (final part in _partsOf(id, trait)) {
       final kind = part['kind'] as String;
       final n = keys.update(kind, (n) => n + 1, ifAbsent: () => 1);
       final key = n == 1 ? kind : '$kind#$n';
       switch (kind) {
-        case 'facet':
-          final top = facetRatings(part).last.score;
-          final window = (part['window_days'] as num?) ?? 30;
+        case 'judgment':
+          final top = judgmentRatings(part).last.score;
+          // Self is judged for everything they're at; others by whether
+          // they were there, or had it done for them.
+          final engaged = part['engagement_type'] == 'for'
+              ? (_PastEvent e) => e.forIds.contains(id)
+              : (_PastEvent e) => id == selfPersonId || e.withIds.contains(id);
           final judged = [
             for (final e in events)
-              if (e.daysAgo <= window)
+              if (e.daysAgo <= 30 && engaged(e))
                 if (e.judgments[trait.id] case (final rating, final why))
-                  if ((part['engagement'] == 'for'
-                          ? e.forIds
-                          : [...e.withIds, ...e.forIds])
-                      .contains(id))
-                    FacetJudgment(
-                      eventId: '$id-${e.key}',
-                      traitId: trait.id,
-                      part: key,
-                      personId: id,
-                      rating: rating,
-                      why: why,
-                    ),
+                  Judgment(
+                    eventId: '$id-${e.key}',
+                    personId: id,
+                    traitId: trait.id!,
+                    part: key,
+                    rating: rating,
+                    scale: top,
+                    reasoning: why,
+                  ),
           ];
           final mean = judged.isEmpty
               ? null
@@ -615,21 +626,29 @@ class SampleData {
               rubric: part['rubric'] as String?,
               score: mean == null ? null : (mean / top * 100).round(),
               said: mean == null
-                  ? 'Nothing to rate in the last $window days'
+                  ? 'Nothing to rate in the last 30 days'
                   : 'Mean rating ${mean.toStringAsFixed(1)} of $top over '
                         '${judged.length} event${judged.length == 1 ? '' : 's'} '
-                        'in the last $window days',
+                        'in the last 30 days',
               eventIds: [for (final j in judged) j.eventId!],
               judgments: judged,
             ),
           );
         case 'count':
           final days = (part['interval_days'] as num?) ?? 30;
-          final action = part['action_id'];
+          final action = part['action'];
+          // A group counts the actions in it.
+          final counts = action == null
+              ? null
+              : {
+                  action,
+                  for (final row in _tree)
+                    if (row.$3 == action) row.$1,
+                };
           final counted = [
             for (final e in events)
               if (e.daysAgo < days &&
-                  (action == null || e.actions.contains(action)))
+                  (counts == null || e.actions.any(counts.contains)))
                 e,
           ];
           final target = part['target'] as num;
@@ -639,7 +658,8 @@ class SampleData {
               kind: kind,
               score: (counted.length / target * 100).clamp(0, 100).round(),
               said:
-                  '${counted.length} of $target ${_names[action] ?? 'event'} '
+                  '${counted.length} of $target '
+                  '${part['noun'] ?? (_names[action] ?? 'event').toLowerCase()} '
                   'in the last $days days',
               eventIds: [for (final e in counted) '$id-${e.key}'],
             ),
@@ -681,7 +701,6 @@ class SampleData {
     return TraitScore(
       traitId: trait.id!,
       name: trait.name,
-      weight: _weightOf(id, trait.id!),
       score: scored.isEmpty
           ? null
           : (scored.map((p) => p.score!).reduce((a, b) => a + b) /
@@ -691,41 +710,37 @@ class SampleData {
     );
   }
 
-  static num _weightOf(String id, String traitId) => switch ((id, traitId)) {
-    ('sam', 'adventurous') => 2,
-    (selfPersonId, 'reliable') => 0,
-    _ => 1,
-  };
+  /// Whether [traitId] applies to [id].
+  static bool _applies(String id, String traitId) =>
+      _personTraits[id]?.applies(traitId) ?? true;
 
-  int? _traitScore(String id, String traitId) =>
-      _traitScoreOf(id, traits.firstWhere((t) => t.id == traitId))?.score;
+  int? _traitScore(String id, String traitId) => _applies(id, traitId)
+      ? _traitScoreOf(id, traits.firstWhere((t) => t.id == traitId))?.score
+      : null;
 
   TraitsRating _rating(String id) {
     final scores = [
       for (final trait in traits)
-        if (trait.status == 'active' && _weightOf(id, trait.id!) > 0)
+        if (trait.status == 'active' && _applies(id, trait.id!))
           ?_traitScoreOf(id, trait),
     ];
-    final weighed = [
+    final rated = [
       for (final s in scores)
-        if (s.score != null) s,
+        if (s.score != null) s.score!,
     ];
-    final total = weighed.fold<num>(0, (sum, s) => sum + s.weight);
-    final rated = total == 0
+    final mean = rated.isEmpty
         ? null
-        : (weighed.fold<num>(0, (sum, s) => sum + s.score! * s.weight) / total)
-              .round();
+        : (rated.reduce((a, b) => a + b) / rated.length).round();
     return TraitsRating(
-      rating: rated,
+      rating: mean,
       day: _day(_today.subtract(const Duration(days: 1))),
       explanation:
-          'Traits (${weighed.map((t) => '${t.name} ${t.score}').join(', ')}) '
-          '→ $rated',
+          'Traits (${scores.map((t) => '${t.name} ${t.score}').join(', ')}) '
+          '→ $mean',
       traits: scores,
       leftOut: [
         for (final trait in traits)
-          if (trait.status != 'active' || _weightOf(id, trait.id!) == 0)
-            trait.name,
+          if (trait.status != 'active' || !_applies(id, trait.id!)) trait.name,
       ],
     );
   }
@@ -766,8 +781,8 @@ class SampleData {
             'summary': e.summary,
             'start': localIsoTimestamp(_at(e.hour, 0, -e.daysAgo)),
             'end': localIsoTimestamp(_at(e.hour + 1, 0, -e.daysAgo)),
-            'goal_ids': e.actions,
-            'facets': e.facets.toJson(),
+            'action_ids': e.actions,
+            'facts': e.facts.toJson(),
           },
       ],
     );
@@ -869,11 +884,13 @@ class SampleData {
       _at(13, 0),
       actions: ['eat_meal', 'deep_talk'],
       priority: 2,
-      facets: const Facets(
-        withPersonIds: ['sam'],
-        location: 'the noodle bar',
-        notes: 'Talked through the job offer; phones away',
-        personNotes: {'sam': 'Excited, and a little anxious'},
+      facts: const Facts(
+        withIds: ['sam'],
+        locationId: 'noodles',
+        notes: {
+          selfPersonId: 'Talked through the job offer; phones away',
+          'sam': 'Excited, and a little anxious',
+        },
       ),
     ),
     // Too short for their text: drawn taller, and pushed down.
@@ -884,7 +901,7 @@ class SampleData {
       _at(13, 5),
       actions: ['call'],
       priority: 2,
-      facets: const Facets(withPersonIds: ['mom']),
+      facts: const Facts(withIds: ['mom']),
     ),
     _event('texts', 'Texts', _at(13, 5), _at(13, 15), actions: ['text']),
     // In the same color as the one before: a seam divides them.
@@ -912,11 +929,10 @@ class SampleData {
       _at(21, 0),
       actions: ['cook_lunch_dinner', 'eat_meal', 'deep_talk'],
       priority: 2,
-      facets: const Facets(
-        withPersonIds: ['sam', 'priya'],
-        forPersonIds: ['sam', 'priya'],
-        location: 'home',
-        notes: 'Made dal and naan from scratch',
+      facts: const Facts(
+        withIds: ['sam', 'priya'],
+        locationId: 'home',
+        notes: {selfPersonId: 'Made dal and naan from scratch'},
       ),
     ),
     _event(
@@ -925,7 +941,7 @@ class SampleData {
       _at(21, 0),
       _at(22, 0),
       actions: ['practice_guitar'],
-      facets: const Facets(forPersonIds: [selfPersonId]),
+      facts: const Facts(locationId: 'home'),
     ),
     _event(
       'bed',
@@ -946,20 +962,20 @@ class SampleData {
     String? series,
     bool fromLabel = false,
     int? priority,
-    Facets? facets,
+    Facts? facts,
   }) => Event.fromJson({
     'id': id,
     'summary': summary,
     'start': localIsoTimestamp(start),
     'end': localIsoTimestamp(end),
     'is_cancelled': false,
-    'goal_ids': actions,
-    'goal_names': [for (final a in actions) _names[a]],
+    'action_ids': actions,
+    'action_names': [for (final a in actions) _names[a]],
     if (sleep) 'is_end_of_day_sleep': true,
     'recurring_event_id': ?series,
-    if (fromLabel) 'goals_from_label': true,
+    if (fromLabel) 'actions_from_label': true,
     'effective_priority': ?priority,
-    'facets': ?facets?.toJson(),
+    'facts': ?facts?.toJson(),
   });
 
   /// The series "Get up and get ready" is part of: every weekday since a
@@ -976,8 +992,8 @@ class SampleData {
         'weekdays': ['mon', 'tue', 'wed', 'thu', 'fri'],
       },
       'schedule': 'Every week on Mon, Tue, Wed, Thu, Fri',
-      'goal_ids': ['get_up'],
-      'goal_names': [_names['get_up']],
+      'action_ids': ['get_up'],
+      'action_names': [_names['get_up']],
       'is_fixed_time': true,
     }),
   ];
@@ -1318,9 +1334,9 @@ class SampleData {
   ];
 }
 
-/// A past event in someone's history: what was done (action ids), who it
-/// was with and for, where, the notes, and Claude's judgments of it by
-/// trait id.
+/// A past event in someone's history: what was done (action ids), who
+/// was there and who it was for, where, the notes on each person, and
+/// Claude's judgments of it by trait id.
 class _PastEvent {
   _PastEvent(
     this.key,
@@ -1331,8 +1347,7 @@ class _PastEvent {
     this.withIds = const [],
     this.forIds = const [],
     this.location,
-    this.notes,
-    this.personNotes = const {},
+    this.notes = const {},
     this.judgments = const {},
   });
 
@@ -1343,16 +1358,16 @@ class _PastEvent {
   final List<String> actions;
   final List<String> withIds;
   final List<String> forIds;
+
+  /// A location's id.
   final String? location;
-  final String? notes;
-  final Map<String, String> personNotes;
+  final Map<String, String> notes;
   final Map<String, (int, String)> judgments;
 
-  Facets get facets => Facets(
-    withPersonIds: withIds,
-    forPersonIds: forIds,
-    location: location,
+  Facts get facts => Facts(
+    locationId: location,
+    withIds: withIds,
+    forIds: forIds,
     notes: notes,
-    personNotes: personNotes,
   );
 }

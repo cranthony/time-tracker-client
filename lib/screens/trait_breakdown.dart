@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/facets.dart';
+import '../models/facts.dart';
 import '../models/trait.dart';
 import '../services/mcp_client.dart';
 import '../services/traits_repository.dart';
@@ -81,8 +81,8 @@ Future<void> showTraitHistory(
 
 /// Shows how [score] was reached: each of its parts' score, weight and how
 /// it was reached, and the events behind it -- named from [events] (by id,
-/// each as the server sent it, with its facets) where they're there, each
-/// with Claude's rating of it for a facet. Each part is titled from
+/// each as the server sent it, with its facts) where they're there, each
+/// with Claude's rating of it for a judgment. Each part is titled from
 /// [labels], in order, where it has one.
 Future<void> showTraitParts(
   BuildContext context,
@@ -90,6 +90,7 @@ Future<void> showTraitParts(
   String? title,
   Map<String, Map<String, dynamic>> events = const {},
   Map<String?, String> personNames = const {},
+  Map<String?, String> locationNames = const {},
   List<String> labels = const [],
 }) => showModalBottomSheet<void>(
   context: context,
@@ -152,6 +153,7 @@ Future<void> showTraitParts(
                         id,
                         events[id],
                         personNames,
+                        locationNames,
                         part.judgments
                             .where((j) => j.eventId == id)
                             .firstOrNull,
@@ -172,19 +174,20 @@ Widget _event(
   String id,
   Map<String, dynamic>? event,
   Map<String?, String> personNames,
-  FacetJudgment? judgment,
+  Map<String?, String> locationNames,
+  Judgment? judgment,
 ) {
   final rated = switch (judgment) {
-    FacetJudgment(:final rating, :final why) =>
-      '\n   Rated $rating${why == null ? '' : ': $why'}',
+    Judgment(:final rating, :final reasoning) =>
+      '\n   Rated $rating${reasoning == null ? '' : ': $reasoning'}',
     null => '',
   };
   if (event == null) {
     return Text('• Event $id$rated', style: theme.textTheme.bodySmall);
   }
   final start = DateTime.tryParse('${event['start']}')?.toLocal();
-  final facets = Facets.fromJson(event['facets']);
-  final described = facets?.describe(personNames) ?? '';
+  final facts = Facts.fromJson(event['facts']);
+  final described = facts?.describe(personNames, locationNames) ?? '';
   return Padding(
     padding: const EdgeInsets.only(top: 4),
     child: Text(

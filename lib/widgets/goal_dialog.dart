@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../models/goal.dart';
 import 'properties_dialog.dart';
 
-/// What an action's or group's properties are edited as: everything
-/// `update_goal` can change.
+/// What an action's or group's properties are edited as, where they're
+/// rated: everything the sample data keeps.
 const _kinds = {
   'name': PropertyKind.text,
   'status': PropertyKind.choice,
@@ -47,6 +47,23 @@ const _overallHints = {
       'top-level goals\'.',
 };
 
+/// What they're edited as where they aren't rated, as the server's
+/// `update_action` and `update_action_group` take them: a group has no
+/// status.
+Map<String, PropertyKind> _serverKinds({required bool group}) => {
+  for (final MapEntry(:key, :value) in _kinds.entries)
+    if (const {
+          'name',
+          'status',
+          'parent_id',
+          'background_color',
+          'priority',
+          'note',
+        }.contains(key) &&
+        !(group && key == 'status'))
+      key: value,
+};
+
 String? _needsName(Map<String, Object?> values) => switch (values['name']) {
   final String name when name.trim().isNotEmpty => null,
   _ => 'It needs a name.',
@@ -69,6 +86,7 @@ Future<GoalList?> showGoalDialog(
   Future<GoalList> Function(Goal goal, Map<String, Object?> changes)? save,
   Future<bool> Function(Map<String, Object?> changes)? confirmSave,
   Future<List<Goal>> Function()? goals,
+  bool rated = true,
 }) => showPropertiesDialog<GoalList>(
   context,
   title: (values) => switch (values['name']) {
@@ -86,7 +104,11 @@ Future<GoalList?> showGoalDialog(
     'measure': goal.measure,
     ...goal.properties,
   },
-  kinds: goal.isOverall ? _overallKinds : _kinds,
+  kinds: goal.isOverall
+      ? _overallKinds
+      : rated
+      ? _kinds
+      : _serverKinds(group: goal.isGroup),
   choices: const {'status': goalStatuses},
   required: const {'name', 'status'},
   hints: goal.isOverall ? {..._hints, ..._overallHints} : _hints,
@@ -113,6 +135,7 @@ Future<GoalList?> showNewGoalDialog(
   bool group = false,
   Map<String, Object?> fields = const {},
   Future<List<Goal>> Function()? goals,
+  bool rated = true,
 }) => showPropertiesDialog<GoalList>(
   context,
   title: (values) => switch (values['name']) {
@@ -123,10 +146,12 @@ Future<GoalList?> showNewGoalDialog(
     'name': null,
     'parent_id': parentId,
     'priority': null,
-    'measure': null,
+    if (rated) 'measure': null,
     'note': null,
   },
-  kinds: _kinds,
+  kinds: rated
+      ? _kinds
+      : _serverKinds(group: group || fields['kind'] == 'group'),
   hints: _hints,
   goals: goals,
   validate: _needsName,

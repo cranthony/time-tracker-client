@@ -8,27 +8,35 @@ on. Add the new version's section here at the same time; CI checks both.
 
 ## 6.0.0
 
-- The Goals tab is now **Plan**, in three sections, each folded away or
-  opened from its heading: Traits (how to be), People (who) and Actions
-  (do). Goals are now made of these. This needs a server that knows
-  people and actions; until then, try it with sample data.
-- Traits are wholly yours: their parts are now *facets* -- a rubric, a
-  rating scale, whether it rates events with someone or for them, and the
-  primitives Claude judges it from, histories with a lookback -- plus
-  cadences, continuity and follow-through. The built-in kinds (making
-  something together, something new, effort, attention, judgment and
-  preparation) are gone. Traits rate people, not goals.
-- People: Self, always, and everyone else, in any number of circles, each
-  with a relationship health from gray (disconnected) to green (healthy).
-  A person's page shows their traits' scores, with Claude's judgments of
-  the events behind them, what matters to them, and their history.
+Needs a server with actions, people, circles, locations and judgments
+(time-tracking-google-calendar-mcp#130 to #136).
+
+- The Goals tab is now **Plan**, in four sections, each folded away or
+  opened from its heading: Traits (how to be), People (who), Locations
+  (where) and Actions (do).
+- Traits are wholly yours: their parts are now *judgments* -- a rubric, a
+  rating scale, and the facts Claude judges each event from (actions,
+  locations and the notes, histories with a lookback) -- plus counts,
+  time spent, continuity and follow-through, which can count one action or
+  group. Every part reads events with someone, or done for them. The
+  built-in kinds are gone. Traits rate people, not goals.
+- People: Self, always, and everyone else, each with a context to tell
+  people of the same name apart, in any number of circles, with what
+  matters to them, and which traits apply to them -- every active one, or
+  those picked, with their own parts for any. A person's page shows them.
+- Locations, each with a hint for recognizing it, added, edited and
+  deleted from the Plan page, or added from an event.
 - Actions are what goals were: a tree, but of groups -- which can't be
-  given to an event -- with actions as its leaves. They're never inactive
-  or completed; a proposed one is one Claude made, to approve from its
-  menu.
-- What happened at an event is now who it was with and for (people),
-  where, notes on it, and notes on each person there, with Claude's
-  ratings of it shown.
+  given to an event -- with actions as its leaves. They're proposed (made
+  by Claude, to approve from its menu), active, archived or deleted. An
+  action's target, health and history, and reordering, are only in the
+  sample data for now: the server doesn't keep them.
+- What happened at an event is now its facts: who was there with you, who
+  it was done for, where, and a note on you and each person there, with
+  Claude's judgments of it shown. Relationship health, from gray
+  (disconnected) to green (healthy), and people's trait scores and
+  histories are sample data only, until the server rates people.
+- The Notes page says when a compaction's judgments are still pending.
 
 ## 5.16.1
 

@@ -3,19 +3,29 @@ import 'package:flutter/material.dart';
 import '../models/person.dart';
 import '../models/trait.dart';
 import '../services/mcp_client.dart';
-import 'color_picker.dart';
+import 'parts_editor.dart';
 
-/// Adds a person (with no [person]) or edits one: their name, the
-/// [circles] they're in, what matters to them, how much each of [traits]
-/// counts toward their relationship health, and their status. Self keeps
-/// their name, and is in no circle and never archived. Saves with [save],
-/// which gets the fields as `create_person` or `update_person` takes them,
-/// and returns what it returned, or null if it was called off.
+/// What an [McpException], or anything else thrown, says, for a dialog.
+String _describe(Object e) => switch (e) {
+  McpException(:final message) => message,
+  _ => '$e',
+};
+
+/// Adds a person (with no [person]) or edits one: their name, a context
+/// that tells them apart from others of the same name, the [circles]
+/// they're in, what matters to them, which of [traits] apply to them --
+/// every active one, or those picked -- with their own parts for any, and
+/// their status. Self is in no circle and always active. Saves with
+/// [save], which gets the fields as `create_person` or `update_person`
+/// takes them (null to clear one), and returns what it returned, or null
+/// if it was called off. [actions] names the actions and groups a part
+/// can count.
 Future<Person?> showPersonDialog(
   BuildContext context, {
   Person? person,
   List<Circle> circles = const [],
   List<Trait> traits = const [],
+  Map<String, String> actions = const {},
   required Future<Person> Function(Map<String, Object?> fields) save,
 }) => showDialog<Person>(
   context: context,
@@ -23,6 +33,7 @@ Future<Person?> showPersonDialog(
     person: person,
     circles: circles,
     traits: traits,
+    actions: actions,
     save: save,
   ),
 );
@@ -32,12 +43,14 @@ class _PersonDialog extends StatefulWidget {
     required this.person,
     required this.circles,
     required this.traits,
+    required this.actions,
     required this.save,
   });
 
   final Person? person;
   final List<Circle> circles;
   final List<Trait> traits;
+  final Map<String, String> actions;
   final Future<Person> Function(Map<String, Object?> fields) save;
 
   @override
@@ -46,19 +59,21 @@ class _PersonDialog extends StatefulWidget {
 
 class _PersonDialogState extends State<_PersonDialog> {
   late final _name = TextEditingController(text: widget.person?.name);
-  late final _notes = TextEditingController(text: widget.person?.notes);
+  late final _context = TextEditingController(text: widget.person?.context);
+  late final _whatMatters = TextEditingController(
+    text: widget.person?.whatMatters,
+  );
   late final _circleIds = {...?widget.person?.circleIds};
   late String _status = widget.person?.status ?? 'active';
-  late final _weights = {
-    for (final trait in widget.traits)
-      if (trait.id != null)
-        trait.id!: TextEditingController(
-          text: switch (widget.person?.traitWeights[trait.id]) {
-            final w? => '${w == w.roundToDouble() ? w.round() : w}',
-            null => '',
-          },
-        ),
+
+  /// The traits picked; null for every active one.
+  late List<String>? _select = switch (widget.person?.traits.select) {
+    final ids? => [...ids],
+    null => null,
   };
+
+  /// Their own parts, by trait id.
+  late final _parts = <String, List<Part>>{...?widget.person?.traits.parts};
   bool _saving = false;
   String? _error;
 
@@ -67,38 +82,29 @@ class _PersonDialogState extends State<_PersonDialog> {
   @override
   void dispose() {
     _name.dispose();
-    _notes.dispose();
-    for (final c in _weights.values) {
-      c.dispose();
-    }
+    _context.dispose();
+    _whatMatters.dispose();
     super.dispose();
   }
 
-  String? get _problem {
-    if (_name.text.trim().isEmpty) return 'Give them a name.';
-    for (final MapEntry(:key, :value) in _weights.entries) {
-      final text = value.text.trim();
-      if (text.isEmpty) continue;
-      final weight = num.tryParse(text);
-      if (weight == null || weight < 0) {
-        final name = widget.traits.firstWhere((t) => t.id == key).name;
-        return "$name's weight must be a number, 0 or more.";
-      }
-    }
-    return null;
-  }
+  String? _text(TextEditingController c) =>
+      c.text.trim().isEmpty ? null : c.text.trim();
+
+  PersonTraits get _traits => PersonTraits(
+    select: _select,
+    parts: {
+      for (final MapEntry(:key, :value) in _parts.entries)
+        if (_select?.contains(key) ?? true) key: value,
+    },
+  );
 
   Map<String, Object?> get _fields => {
     'name': _name.text.trim(),
-    'notes': _notes.text.trim().isEmpty ? null : _notes.text.trim(),
-    'trait_weights': {
-      // Kept for traits not offered (off or archived).
-      ...?widget.person?.traitWeights,
-      for (final MapEntry(:key, :value) in _weights.entries)
-        key: ?num.tryParse(value.text.trim()),
-    }..removeWhere((key, _) => _weights[key]?.text.trim().isEmpty ?? false),
+    'context': _text(_context),
+    'what_matters': _text(_whatMatters),
+    'traits': _traits.isDefault ? null : _traits.toJson(),
     if (!_isSelf) ...{
-      'circle_ids': [..._circleIds],
+      'circles': [..._circleIds],
       'status': _status,
     },
   };
@@ -115,18 +121,28 @@ class _PersonDialogState extends State<_PersonDialog> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = switch (e) {
-          McpException(:final message) => message,
-          _ => '$e',
-        };
+        _error = _describe(e);
       });
     }
+  }
+
+  Future<void> _editParts(Trait trait) async {
+    final edited = await showPartsDialog(
+      context,
+      title: '${trait.name} for ${_text(_name) ?? 'them'}',
+      explanation:
+          "Their own parts for ${trait.name}, in place of the trait's: "
+          'their own cadence, say.',
+      parts: _parts[trait.id] ?? trait.parts,
+      actions: widget.actions,
+    );
+    if (edited != null) setState(() => _parts[trait.id!] = edited);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final problem = _problem;
+    final problem = _name.text.trim().isEmpty ? 'Give them a name.' : null;
     return AlertDialog(
       title: Text(switch (widget.person) {
         null => 'New person',
@@ -159,6 +175,22 @@ class _PersonDialogState extends State<_PersonDialog> {
                 ),
                 onChanged: (_) => setState(() {}),
               ),
+              if (!_isSelf)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: TextField(
+                    controller: _context,
+                    decoration: const InputDecoration(
+                      labelText: 'Context (optional)',
+                      hintText: 'e.g. met at salsa',
+                      helperText:
+                          'What tells them apart from others of the same '
+                          'name.',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
               if (!_isSelf) ...[
                 Padding(
                   padding: const EdgeInsets.only(top: 16, bottom: 4),
@@ -176,10 +208,6 @@ class _PersonDialogState extends State<_PersonDialog> {
                     children: [
                       for (final circle in widget.circles)
                         FilterChip(
-                          avatar: switch (parseColor(circle.color)) {
-                            final c? => ColorDot(color: c, size: 12),
-                            null => null,
-                          },
                           label: Text(circle.name),
                           selected: _circleIds.contains(circle.id),
                           onSelected: (on) => setState(
@@ -194,13 +222,13 @@ class _PersonDialogState extends State<_PersonDialog> {
               Padding(
                 padding: const EdgeInsets.only(top: 16),
                 child: TextField(
-                  controller: _notes,
+                  controller: _whatMatters,
                   minLines: 3,
                   maxLines: 10,
                   textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
                     labelText: _isSelf
-                        ? 'Notes on you'
+                        ? 'What matters to you'
                         : 'What matters to them',
                     hintText: '- 2026-10-05: starts a new job in November',
                     helperText:
@@ -211,39 +239,7 @@ class _PersonDialogState extends State<_PersonDialog> {
                   ),
                 ),
               ),
-              if (widget.traits.isNotEmpty) ...[
-                Padding(
-                  padding: const EdgeInsets.only(top: 16, bottom: 4),
-                  child: Text(
-                    'Relationship health',
-                    style: theme.textTheme.titleSmall,
-                  ),
-                ),
-                Text(
-                  "The weighted mean of their traits' scores. A trait with "
-                  'no weight weighs 1; 0 leaves it out.',
-                  style: theme.textTheme.bodySmall,
-                ),
-                for (final trait in widget.traits)
-                  if (_weights[trait.id] case final controller?)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: TextField(
-                        controller: controller,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: '${trait.name} weight',
-                          hintText: '1',
-                          isDense: true,
-                          border: const OutlineInputBorder(),
-                          floatingLabelBehavior: FloatingLabelBehavior.always,
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ),
-              ],
+              ..._traitFields(theme),
               if (!_isSelf && widget.person != null) ...[
                 const SizedBox(height: 16),
                 SegmentedButton<String>(
@@ -255,6 +251,14 @@ class _PersonDialogState extends State<_PersonDialog> {
                   selected: {_status},
                   onSelectionChanged: (picked) =>
                       setState(() => _status = picked.single),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(switch (_status) {
+                    'archived' => 'Out of touch: kept, out of the way.',
+                    'deleted' => "Shouldn't have existed.",
+                    _ => 'Someone you spend time with.',
+                  }, style: theme.textTheme.bodySmall),
                 ),
               ],
               if (problem != null)
@@ -281,9 +285,81 @@ class _PersonDialogState extends State<_PersonDialog> {
       ],
     );
   }
+
+  /// Which traits apply to them, each with their own parts, if any.
+  List<Widget> _traitFields(ThemeData theme) {
+    if (widget.traits.isEmpty) return const [];
+    final all = _select == null;
+    final shown = [
+      for (final t in widget.traits)
+        if (t.id != null &&
+            (t.status == 'active' || (_select?.contains(t.id) ?? false)))
+          t,
+    ];
+    return [
+      Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Text('Traits', style: theme.textTheme.titleSmall),
+      ),
+      SwitchListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Every active trait'),
+        subtitle: const Text('Including any added later.'),
+        value: all,
+        onChanged: (on) => setState(
+          () => _select = on ? null : [for (final t in shown) t.id!],
+        ),
+      ),
+      for (final trait in shown)
+        if (all || _select!.contains(trait.id))
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: all
+                ? null
+                : Checkbox(
+                    value: true,
+                    onChanged: (_) => setState(() => _select!.remove(trait.id)),
+                  ),
+            title: Text(trait.name),
+            subtitle: Text(switch (_parts[trait.id]) {
+              final own? =>
+                'Their own: '
+                    '${own.map((p) => describePart(p, widget.actions)).join('; ')}',
+              null => "The trait's parts",
+            }),
+            trailing: Wrap(
+              children: [
+                if (_parts.containsKey(trait.id))
+                  IconButton(
+                    tooltip: "Use ${trait.name}'s parts",
+                    icon: const Icon(Icons.undo),
+                    onPressed: () => setState(() => _parts.remove(trait.id)),
+                  ),
+                IconButton(
+                  tooltip: 'Their own ${trait.name} parts',
+                  icon: const Icon(Icons.tune),
+                  onPressed: () => _editParts(trait),
+                ),
+              ],
+            ),
+          )
+        else
+          ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Checkbox(
+              value: false,
+              onChanged: (_) => setState(() => _select!.add(trait.id!)),
+            ),
+            title: Text(trait.name, style: TextStyle(color: theme.hintColor)),
+          ),
+    ];
+  }
 }
 
-/// Adds a circle (with no [circle]) or edits one: its name and color.
+/// Adds a circle (with no [circle]) or edits one: its name and note.
 /// Saves with [save]; "Delete", asked first, calls [delete]. Returns true
 /// if anything was saved or deleted.
 Future<bool> showCircleDialog(
@@ -294,33 +370,90 @@ Future<bool> showCircleDialog(
 }) async =>
     await showDialog<bool>(
       context: context,
-      builder: (_) => _CircleDialog(circle: circle, save: save, delete: delete),
+      builder: (_) => _NamedDialog(
+        noun: 'circle',
+        name: circle?.name,
+        detail: circle?.note,
+        detailField: 'note',
+        detailLabel: 'Note (optional)',
+        detailHint: 'Who they are to you',
+        nameHint: 'e.g. Family',
+        deleteExplanation: 'Everyone in it stays; they just leave the circle.',
+        save: save,
+        delete: delete,
+      ),
     ) ??
     false;
 
-class _CircleDialog extends StatefulWidget {
-  const _CircleDialog({
-    required this.circle,
+/// Adds a location (with no [location]) or edits one: its name and a hint
+/// for recognizing it. Saves with [save], returning what it returned, or
+/// null if it was called off. "Delete", asked first, calls [delete]: then
+/// [location] is returned.
+Future<Location?> showLocationDialog(
+  BuildContext context, {
+  Location? location,
+  required Future<Location> Function(Map<String, Object?> fields) save,
+  Future<void> Function()? delete,
+}) async {
+  Location? saved;
+  final done = await showDialog<bool>(
+    context: context,
+    builder: (_) => _NamedDialog(
+      noun: 'location',
+      name: location?.name,
+      detail: location?.hint,
+      detailField: 'hint',
+      detailLabel: 'Hint (optional)',
+      detailHint: "Other names, an address: \"the apartment; 'my place'\"",
+      nameHint: 'e.g. Home',
+      deleteExplanation:
+          "Events there keep its id, but won't say where they were.",
+      save: (fields) async => saved = await save(fields),
+      delete: delete,
+    ),
+  );
+  return done == true ? saved ?? location : null;
+}
+
+/// A name, and one more line of text, to save or delete.
+class _NamedDialog extends StatefulWidget {
+  const _NamedDialog({
+    required this.noun,
+    required this.name,
+    required this.detail,
+    required this.detailField,
+    required this.detailLabel,
+    required this.detailHint,
+    required this.nameHint,
+    required this.deleteExplanation,
     required this.save,
     required this.delete,
   });
 
-  final Circle? circle;
+  final String noun;
+  final String? name;
+  final String? detail;
+  final String detailField;
+  final String detailLabel;
+  final String detailHint;
+  final String nameHint;
+  final String deleteExplanation;
   final Future<void> Function(Map<String, Object?> fields) save;
   final Future<void> Function()? delete;
 
   @override
-  State<_CircleDialog> createState() => _CircleDialogState();
+  State<_NamedDialog> createState() => _NamedDialogState();
 }
 
-class _CircleDialogState extends State<_CircleDialog> {
-  late final _name = TextEditingController(text: widget.circle?.name);
-  late Color? _color = parseColor(widget.circle?.color);
+class _NamedDialogState extends State<_NamedDialog> {
+  late final _name = TextEditingController(text: widget.name);
+  late final _detail = TextEditingController(text: widget.detail);
   String? _error;
 
   @override
   void dispose() {
     _name.dispose();
+    _detail.dispose();
     super.dispose();
   }
 
@@ -330,25 +463,17 @@ class _CircleDialogState extends State<_CircleDialog> {
       await action();
       navigator.pop(true);
     } catch (e) {
-      if (!mounted) return;
-      setState(
-        () => _error = switch (e) {
-          McpException(:final message) => message,
-          _ => '$e',
-        },
-      );
+      if (mounted) setState(() => _error = _describe(e));
     }
   }
 
   Future<void> _delete() async {
-    final name = widget.circle?.name ?? 'this circle';
+    final name = widget.name ?? 'this ${widget.noun}';
     final sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Delete $name?'),
-        content: const Text(
-          'Everyone in it stays; they just leave the circle.',
-        ),
+        content: Text(widget.deleteExplanation),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -369,45 +494,52 @@ class _CircleDialogState extends State<_CircleDialog> {
     final theme = Theme.of(context);
     final named = _name.text.trim().isNotEmpty;
     return AlertDialog(
-      title: Text(widget.circle == null ? 'New circle' : 'Edit circle'),
+      title: Text(
+        widget.name == null ? 'New ${widget.noun}' : 'Edit ${widget.noun}',
+      ),
       content: SizedBox(
         width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_error case final error?)
-                Text(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_error case final error?)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
                   "Couldn't save. $error",
                   style: TextStyle(color: theme.colorScheme.error),
                 ),
-              TextField(
-                controller: _name,
-                autofocus: widget.circle == null,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  hintText: 'e.g. Family',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (_) => setState(() {}),
               ),
-              Padding(
-                padding: const EdgeInsets.only(top: 16, bottom: 4),
-                child: Text('Color', style: theme.textTheme.titleSmall),
+            TextField(
+              controller: _name,
+              autofocus: widget.name == null,
+              maxLength: 50,
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                labelText: 'Name',
+                hintText: widget.nameHint,
+                border: const OutlineInputBorder(),
+                isDense: true,
               ),
-              ColorPicker(
-                color: _color,
-                onChanged: (color) => setState(() => _color = color),
+              onChanged: (_) => setState(() {}),
+            ),
+            TextField(
+              controller: _detail,
+              minLines: 1,
+              maxLines: 3,
+              decoration: InputDecoration(
+                labelText: widget.detailLabel,
+                hintText: widget.detailHint,
+                border: const OutlineInputBorder(),
+                isDense: true,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       actions: [
-        if (widget.circle != null && widget.delete != null)
+        if (widget.name != null && widget.delete != null)
           TextButton(onPressed: _delete, child: const Text('Delete')),
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
@@ -418,10 +550,9 @@ class _CircleDialogState extends State<_CircleDialog> {
               ? () => _run(
                   () => widget.save({
                     'name': _name.text.trim(),
-                    'color': switch (_color) {
-                      final c? => colorToHex(c),
-                      null => null,
-                    },
+                    widget.detailField: _detail.text.trim().isEmpty
+                        ? null
+                        : _detail.text.trim(),
                   }),
                 )
               : null,

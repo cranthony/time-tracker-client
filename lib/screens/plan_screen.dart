@@ -16,6 +16,7 @@ import '../services/mcp_client.dart';
 import '../services/people_repository.dart';
 import '../services/traits_repository.dart';
 import 'goal_history_screen.dart';
+import 'locations_section.dart';
 import 'people_section.dart';
 import 'traits_section.dart';
 import '../widgets/app_menu.dart';
@@ -30,14 +31,18 @@ import '../widgets/plan_section.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
-/// The Plan page: three sections, each folded away or opened by tapping
+/// The Plan page: four sections, each folded away or opened by tapping
 /// its heading, which is kept on the device --
 ///
 /// * **Traits**, how to be ([TraitsSection]), from the [TraitsScope];
 /// * **People**, who to be with, Self always among them
 ///   ([PeopleSection]), from the [PeopleScope];
+/// * **Locations**, where ([LocationsSection]), from the [PeopleScope];
 /// * **Actions**, what to do: the actions, kept as goals, and the groups
-///   they're in, as a tree.
+///   they're in, as a tree. Where the repository rates them
+///   ([GoalsRepository.rated]: the sample data, not yet the server), each
+///   has a target, health and history; where it's
+///   [GoalsRepository.reorderable], they can be put in order.
 ///
 /// Under the Actions heading, the time spent on the actions of the
 /// statuses shown in the last 24 hours and 7 days, each event once, then
@@ -136,6 +141,11 @@ class _PlanScreenState extends State<PlanScreen> {
 
   final _traitsKey = GlobalKey<TraitsSectionState>();
   final _peopleKey = GlobalKey<PeopleSectionState>();
+  final _locationsKey = GlobalKey<LocationsSectionState>();
+
+  /// Each location's name, by id, as the Locations section last loaded
+  /// them, for where people's events were.
+  Map<String?, String> _locationNames = const {};
 
   /// Everyone, as the People section last loaded them, to name them in
   /// the Traits section.
@@ -181,6 +191,7 @@ class _PlanScreenState extends State<PlanScreen> {
     _load(),
     ?_traitsKey.currentState?.reload(),
     ?_peopleKey.currentState?.reload(),
+    ?_locationsKey.currentState?.reload(),
   ]);
 
   /// The [GoalSummary] picked last time, if one was, and whether time
@@ -414,6 +425,7 @@ class _PlanScreenState extends State<PlanScreen> {
           parentId: changes['parent_id'] as String?,
           fields: changes,
           goals: _allGoals,
+          rated: widget.repository.rated,
         );
       case final failed:
         // As the server has it, with what wasn't saved as changes.
@@ -439,6 +451,7 @@ class _PlanScreenState extends State<PlanScreen> {
             _ => Future.value(true),
           },
           goals: _allGoals,
+          rated: widget.repository.rated,
         );
     }
   }
@@ -471,11 +484,12 @@ class _PlanScreenState extends State<PlanScreen> {
     for (final goal in _goals?.goals ?? const <Goal>[]) goal.id: goalName(goal),
   };
 
-  /// The actions a trait's cadence can count -- not groups -- by id.
+  /// The actions and groups a trait's part can count, by id, each by its
+  /// path.
   Map<String, String> get _actionChoices => {
     for (final goal in _goals?.goals ?? const <Goal>[])
-      if (goal.id != null && !goal.isGroup && !goal.isOverall)
-        goal.id!: goalName(goal),
+      if (goal.id != null && !goal.isOverall && goal.status != 'deleted')
+        goal.id!: goal.path ?? goalName(goal),
   };
 
   /// Approves [goal], one Claude proposed: it becomes active.
@@ -494,6 +508,7 @@ class _PlanScreenState extends State<PlanScreen> {
       parentId: parentId,
       group: group,
       goals: _allGoals,
+      rated: widget.repository.rated,
     );
   }
 
@@ -647,6 +662,18 @@ class _PlanScreenState extends State<PlanScreen> {
             onExpanded: (open) => _setOpen(_Section.people, open),
             onPeople: (people) => setState(() => _people = people),
             actionNames: _goalNames,
+            actions: _actionChoices,
+            locationNames: _locationNames,
+          ),
+        if (people != null)
+          LocationsSection(
+            key: _locationsKey,
+            repository: people,
+            expanded: _openSections[_Section.locations]!,
+            onExpanded: (open) => _setOpen(_Section.locations, open),
+            onLocations: (locations) => setState(
+              () => _locationNames = {for (final l in locations) l.id: l.name},
+            ),
           ),
         PlanSection(
           title: 'Actions',
@@ -662,7 +689,8 @@ class _PlanScreenState extends State<PlanScreen> {
                   _openSections[_Section.actions] = true;
                 }),
               ),
-              _SummaryPicker(summary: _summary, onChanged: _setSummary),
+              if (widget.repository.rated)
+                _SummaryPicker(summary: _summary, onChanged: _setSummary),
               PopupMenuButton<bool>(
                 tooltip: 'Add an action or group',
                 icon: const Icon(Icons.add),
@@ -718,16 +746,18 @@ class _PlanScreenState extends State<PlanScreen> {
           spacing: 16,
           runSpacing: 4,
           children: [
-            Tooltip(
-              message:
-                  'Time spent is counted up to when notes were last '
-                  'compacted into the calendar.',
-              child: Text(switch (goals.asOf) {
-                final asOf? =>
-                  'Last compacted ${formatTimestamp(context, asOf)}',
-                null => 'Notes not compacted yet',
-              }, style: Theme.of(context).textTheme.bodySmall),
-            ),
+            // Time spent is only counted where actions are rated.
+            if (widget.repository.rated)
+              Tooltip(
+                message:
+                    'Time spent is counted up to when notes were last '
+                    'compacted into the calendar.',
+                child: Text(switch (goals.asOf) {
+                  final asOf? =>
+                    'Last compacted ${formatTimestamp(context, asOf)}',
+                  null => 'Notes not compacted yet',
+                }, style: Theme.of(context).textTheme.bodySmall),
+              ),
             Tooltip(
               message:
                   "Each active action takes one of the calendar's event "
@@ -782,20 +812,23 @@ class _PlanScreenState extends State<PlanScreen> {
             final save when save.refused => save.lastError,
             final save => '${save.lastError}. Trying again soon',
           },
-          onTap: _failed(goal.id) == null
+          onTap: _failed(goal.id) == null && widget.repository.rated
               ? () => _show(goal)
               : () => _open(goal),
           onDetails: () => _open(goal),
           onRetry: () => widget.outbox.retry(goal.id!),
           onDiscard: () => _discard(goal.id!),
           onLongPress:
-              widget.outbox.busy || widget.outbox.saves.any((s) => s.isNew)
+              !widget.repository.reorderable ||
+                  widget.outbox.busy ||
+                  widget.outbox.saves.any((s) => s.isNew)
               ? null
               : () => setState(() => _reordering = true),
           onAddAction: () => _add(parentId: goal.id),
           onAddGroup: () => _add(parentId: goal.id, group: true),
           onApprove: goal.proposed ? () => _approve(goal) : null,
           onHistory: () => _history(goal),
+          rated: widget.repository.rated,
         ),
       ],
     ];
@@ -848,6 +881,7 @@ class _PlanScreenState extends State<PlanScreen> {
 enum _Section {
   traits('plan_traits_open'),
   people('plan_people_open'),
+  locations('plan_locations_open'),
   actions('plan_actions_open');
 
   const _Section(this.key);
@@ -1063,6 +1097,7 @@ class _GoalTile extends StatelessWidget {
     this.onAddGroup,
     this.onApprove,
     required this.onHistory,
+    this.rated = true,
     this.saving = false,
     this.failed,
     this.onRetry,
@@ -1131,6 +1166,10 @@ class _GoalTile extends StatelessWidget {
   /// Makes a proposed action active: "Approve" in its menu.
   final VoidCallback? onApprove;
 
+  /// Whether it's rated: without, its menu has no "Edit" (its target) or
+  /// "History".
+  final bool rated;
+
   /// Shows its history: tapping its ratings, or "History" in its menu.
   final VoidCallback onHistory;
 
@@ -1147,7 +1186,7 @@ class _GoalTile extends StatelessWidget {
       if (goal.staleDays case final stale? when stale > 0)
         '$stale day${stale == 1 ? '' : 's'} unrated',
     ].nonNulls.join(' · ');
-    final rated =
+    final hasHealth =
         goal.active &&
         (goal.staleDays != null ||
             goal.health != null ||
@@ -1210,7 +1249,7 @@ class _GoalTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (rated)
+          if (hasHealth)
             Tooltip(
               message: 'History of ${goalName(goal)}',
               child: InkWell(
@@ -1301,8 +1340,10 @@ class _GoalTile extends StatelessWidget {
                       child: Text('Add group'),
                     ),
                 ],
-                const PopupMenuItem(value: 'measure', child: Text('Edit')),
-                const PopupMenuItem(value: 'history', child: Text('History')),
+                if (rated) ...[
+                  const PopupMenuItem(value: 'measure', child: Text('Edit')),
+                  const PopupMenuItem(value: 'history', child: Text('History')),
+                ],
                 const PopupMenuItem(value: 'details', child: Text('Details')),
               ],
             ),

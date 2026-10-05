@@ -5,7 +5,7 @@ import '../models/trait.dart';
 import '../services/mcp_client.dart';
 import '../services/people_repository.dart';
 import '../services/traits_repository.dart';
-import '../widgets/color_picker.dart';
+import '../widgets/color_picker.dart' show contrastingColor;
 import '../widgets/health.dart';
 import '../widgets/person_dialog.dart';
 import '../widgets/plan_section.dart';
@@ -29,11 +29,13 @@ class PeopleSection extends StatefulWidget {
     this.traits,
     this.onPeople,
     this.actionNames = const {},
+    this.actions = const {},
+    this.locationNames = const {},
   });
 
   final PeopleRepository repository;
 
-  /// For each person's traits, and the weights their dialog offers.
+  /// For each person's traits, and those their dialog offers.
   final TraitsRepository? traits;
   final bool expanded;
   final ValueChanged<bool> onExpanded;
@@ -41,6 +43,12 @@ class PeopleSection extends StatefulWidget {
 
   /// Names actions by id, for a person's history.
   final Map<String?, String> actionNames;
+
+  /// The actions and groups a person's own parts can count, by id.
+  final Map<String, String> actions;
+
+  /// Names locations by id, for where a person's events were.
+  final Map<String?, String> locationNames;
 
   @override
   State<PeopleSection> createState() => PeopleSectionState();
@@ -76,17 +84,17 @@ class PeopleSectionState extends State<PeopleSection> {
     }
   }
 
-  Future<List<Trait>> _activeTraits() async {
+  /// The traits that could apply to someone: active, and off.
+  Future<List<Trait>> _traits() async {
     try {
-      return await widget.traits?.traits(statuses: const ['active']) ??
-          const [];
+      return await widget.traits?.traits() ?? const [];
     } catch (_) {
-      return const []; // Weights can wait.
+      return const []; // Which apply can wait.
     }
   }
 
   Future<void> _editPerson(Person? person) async {
-    final traits = await _activeTraits();
+    final traits = await _traits();
     if (!mounted) return;
     final repository = widget.repository;
     final saved = await showPersonDialog(
@@ -94,6 +102,7 @@ class PeopleSectionState extends State<PeopleSection> {
       person: person,
       circles: _people?.circles ?? const [],
       traits: traits,
+      actions: widget.actions,
       save: (fields) => person == null
           ? repository.createPerson(Person.fromJson({'id': '', ...fields}))
           : repository.updatePerson(person.id, fields),
@@ -108,7 +117,11 @@ class PeopleSectionState extends State<PeopleSection> {
       circle: circle,
       save: (fields) async => circle == null
           ? await repository.createCircle(
-              Circle.fromJson({'id': '', ...fields}),
+              Circle(
+                id: '',
+                name: fields['name'] as String,
+                note: fields['note'] as String?,
+              ),
             )
           : await repository.updateCircle(circle.id, fields),
       delete: circle == null ? null : () => repository.deleteCircle(circle.id),
@@ -146,6 +159,7 @@ class PeopleSectionState extends State<PeopleSection> {
               p.id: personName(p),
           },
           actionNames: widget.actionNames,
+          locationNames: widget.locationNames,
           onEdit: () async {
             await _editPerson(person);
             return _people?.withSelf
@@ -228,11 +242,14 @@ class PeopleSectionState extends State<PeopleSection> {
             children: [
               for (final c in people.circles)
                 FilterChip(
-                  avatar: _CircleAvatar(circle: c),
+                  avatar: switch (c.health) {
+                    final h? => _HealthRing(health: h),
+                    null => null,
+                  },
                   label: Text(c.name),
                   tooltip: switch (c.health) {
                     final h? => '${c.name}: health $h, ${relationshipBand(h)}',
-                    null => '${c.name}: not rated yet',
+                    null => c.note ?? c.name,
                   },
                   selected: _circle == c.id,
                   showCheckmark: false,
@@ -267,7 +284,11 @@ class PeopleSectionState extends State<PeopleSection> {
                 ),
                 const SizedBox(width: 8),
               ],
-              HealthDot(rating: circle.health, scale: HealthScale.relationship),
+              if (circle.health != null)
+                HealthDot(
+                  rating: circle.health,
+                  scale: HealthScale.relationship,
+                ),
             ],
           ),
         ),
@@ -316,6 +337,7 @@ class PeopleSectionState extends State<PeopleSection> {
       ),
       subtitle: switch ([
         if (person.isSelf) 'You',
+        ?person.context,
         if (names.isNotEmpty) names.join(', '),
         if (muted) personStatuses[person.status] ?? person.status,
       ]) {
@@ -332,7 +354,8 @@ class PeopleSectionState extends State<PeopleSection> {
             ),
             const SizedBox(width: 8),
           ],
-          HealthDot(rating: person.health, scale: HealthScale.relationship),
+          if (person.health != null)
+            HealthDot(rating: person.health, scale: HealthScale.relationship),
           PopupMenuButton<String>(
             tooltip: 'More for ${personName(person)}',
             onSelected: (choice) => switch (choice) {
@@ -359,30 +382,19 @@ class PeopleSectionState extends State<PeopleSection> {
   }
 }
 
-/// A circle's color, as a dot, ringed in its relationship health's.
-class _CircleAvatar extends StatelessWidget {
-  const _CircleAvatar({required this.circle});
+/// A circle's relationship health, as a ring in its color.
+class _HealthRing extends StatelessWidget {
+  const _HealthRing({required this.health});
 
-  final Circle circle;
+  final int health;
 
   @override
-  Widget build(BuildContext context) {
-    final health = circle.health;
-    return Container(
-      width: 16,
-      height: 16,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color:
-            parseColor(circle.color) ??
-            Theme.of(context).colorScheme.outlineVariant,
-        border: Border.all(
-          color: health == null
-              ? Theme.of(context).hintColor
-              : relationshipColor(health),
-          width: 3,
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+    width: 14,
+    height: 14,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.all(color: relationshipColor(health), width: 3),
+    ),
+  );
 }

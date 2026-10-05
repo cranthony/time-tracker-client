@@ -8,29 +8,33 @@ events from your calendar; tap one to see or edit it, including the actions
 done at it and what happened: who it was with and for, where, and notes.
 Above them, a summary shows how the day's time is split by priority;
 swipe it to see the top actions, or the top-level groups. A **Plan** page
-has three sections, each folded away or opened from its heading:
+has four sections, each folded away or opened from its heading:
 
-- **Traits** (how to be): each trait you define -- none is built in --
-  with its latest score and recent trend. A trait is made of parts: chiefly
-  *facets*, which Claude rates each event against during reflection,
-  each with a rubric, a rating scale of your own, whether it rates events
-  *with* someone or *for* them, and the primitives it's judged from
-  (actions, action history and location history, each with a lookback,
-  location, general notes, person notes); and cadences and the like,
-  which count events. Tap one to edit it; tap its score for who and what
-  is behind it.
-- **People** (who): Self, always, then everyone else, in any number of
-  circles. Each person and circle has a relationship health that runs from
-  gray (disconnected) to green (healthy). Tap a circle to see only its
-  people; tap a person for their page: their traits' scores, with
-  Claude's judgments behind each, what matters to them, and their history.
+- **Traits** (how to be): each trait you define -- none is built in. A
+  trait is made of parts: chiefly *judgments*, which Claude makes of each
+  event, each with a rubric, a rating scale of your own, and the facts
+  it's judged from (actions, action history and location history, each
+  with a lookback, location, general notes, person notes); and counts,
+  time spent, continuity and follow-through, which can count one action
+  or group. Every part reads the events with someone, or those done for
+  them. Tap one to edit it.
+- **People** (who): Self, always, then everyone else, each with a context
+  that tells people of the same name apart, in any number of circles.
+  Tap a circle to see only its people; tap a person for their page: who
+  they are, which traits apply to them (every active one, or those
+  picked, with their own parts for any) and what matters to them.
+- **Locations** (where): the places events happen, each with a hint the
+  assistant recognizes it by.
 - **Actions** (do): what you do with your time, as a tree of groups --
-  names that roll up the actions in them, for targets -- with actions,
-  the only thing events are given, as its leaves. Only active actions take
-  up one of the calendar's event labels. An action Claude made is
-  *proposed* until you approve it. Each shows its time spent, or its
-  target, and its health; a summary splits the last 24 hours and 7 days by
-  the actions shown, or by priority.
+  names that roll up the actions in them -- with actions, the only thing
+  events are given, as its leaves. Only active actions take up one of the
+  calendar's event labels. An action Claude made is *proposed* until you
+  approve it.
+
+The sample data goes further than the server does so far: each action's
+target, health, history and time spent, and each person's relationship
+health (gray, disconnected, to green, healthy), trait scores, with
+Claude's judgments behind each, and history.
 
 Later it will show the summaries the server
 generates.
@@ -413,8 +417,8 @@ see [Try it with sample data](#try-it-with-sample-data).
 ### Visual tests
 
 `test/visual` renders the main screens with the sample data, at a phone's
-size, in light and dark: Plan (its traits, people and a circle, a trait
-being edited, and its actions, with the status filter closed and open,
+size, in light and dark: Plan (its traits, people and a circle,
+locations, a trait being edited, and its actions, with the status filter closed and open,
 and the time summary on each page and folded away), a person's page, an
 action's history, Events (with each page of its day summary, folded away,
 and what happened at an event) and Notes.

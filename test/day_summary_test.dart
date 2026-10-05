@@ -20,7 +20,7 @@ void main() {
     start: start,
     end: end,
     isCancelled: cancelled,
-    properties: {'effective_priority': ?priority, 'goal_ids': goals},
+    properties: {'effective_priority': ?priority, 'action_ids': goals},
   );
 
   /// Each share's label and hours.

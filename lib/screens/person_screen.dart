@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/facets.dart';
+import '../models/facts.dart';
 import '../models/person.dart';
 import '../models/trait.dart';
 import '../services/mcp_client.dart';
@@ -8,10 +8,12 @@ import '../services/traits_repository.dart';
 import '../widgets/health.dart';
 import 'trait_breakdown.dart';
 
-/// A person -- Self included -- on one page: their relationship health,
-/// the circles they're in, their traits' scores of the last day that's
-/// over (tapping one shows the parts, events and Claude's judgments behind
-/// it), how much each trait counts for them, what matters to them, their
+/// A person -- Self included -- on one page: who they are (their context
+/// and circles), which traits apply to them and their own parts for any,
+/// and what matters to them. Where people are scored ([TraitsRepository.
+/// scored]: the sample data, not yet the server), also their relationship
+/// health, their traits' scores of the last day that's over (tapping one
+/// shows the parts, events and Claude's judgments behind it), their
 /// history (the actions done and locations of their events, with how
 /// often and when), and a timeline of those events with what happened at
 /// each. [onEdit] edits them, returning them as saved.
@@ -23,6 +25,7 @@ class PersonScreen extends StatefulWidget {
     this.circles = const [],
     this.personNames = const {},
     this.actionNames = const {},
+    this.locationNames = const {},
     this.onEdit,
   });
 
@@ -35,6 +38,9 @@ class PersonScreen extends StatefulWidget {
 
   /// Names actions by id, for what was done at their events.
   final Map<String?, String> actionNames;
+
+  /// Names locations by id, for where their events were.
+  final Map<String?, String> locationNames;
   final Future<Person?> Function()? onEdit;
 
   @override
@@ -49,6 +55,11 @@ class _PersonScreenState extends State<PersonScreen> {
 
   late Person _person = widget.person;
 
+  /// Every trait, by id, to name those that apply to them.
+  Map<String, Trait> _traitList = const {};
+
+  bool get _scored => widget.traits?.scored ?? false;
+
   @override
   void initState() {
     super.initState();
@@ -56,12 +67,29 @@ class _PersonScreenState extends State<PersonScreen> {
   }
 
   Future<void> _load() async {
-    await Future.wait([_loadRating(), _loadDigest()]);
+    await Future.wait([_loadTraitList(), _loadRating(), _loadDigest()]);
+  }
+
+  Future<void> _loadTraitList() async {
+    try {
+      final traits = await widget.traits?.traits(
+        statuses: [...traitStatuses.keys],
+      );
+      if (!mounted || traits == null) return;
+      setState(
+        () => _traitList = {
+          for (final t in traits)
+            if (t.id != null) t.id!: t,
+        },
+      );
+    } catch (_) {
+      // Named by id, then.
+    }
   }
 
   Future<void> _loadRating() async {
     final traits = widget.traits;
-    if (traits == null) return;
+    if (traits == null || !traits.scored) return;
     try {
       final rating = await traits.explainTraits(_person.id);
       if (!mounted) return;
@@ -76,7 +104,7 @@ class _PersonScreenState extends State<PersonScreen> {
 
   Future<void> _loadDigest() async {
     final traits = widget.traits;
-    if (traits == null) return;
+    if (traits == null || !traits.scored) return;
     try {
       final digest = await traits.personDigest(_person.id);
       if (!mounted) return;
@@ -125,29 +153,36 @@ class _PersonScreenState extends State<PersonScreen> {
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
-            ListTile(
-              title: const Text('Relationship health'),
-              subtitle: Text(switch (_person.health) {
-                final h? => relationshipBand(h),
-                null => 'Not rated yet',
-              }),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_person.healthTrend.isNotEmpty) ...[
-                    TrendSparkline(
-                      trend: _person.healthTrend,
+            if (_scored || _person.health != null)
+              ListTile(
+                title: const Text('Relationship health'),
+                subtitle: Text(switch (_person.health) {
+                  final h? => relationshipBand(h),
+                  null => 'Not rated yet',
+                }),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_person.healthTrend.isNotEmpty) ...[
+                      TrendSparkline(
+                        trend: _person.healthTrend,
+                        scale: HealthScale.relationship,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    HealthDot(
+                      rating: _person.health,
                       scale: HealthScale.relationship,
                     ),
-                    const SizedBox(width: 8),
                   ],
-                  HealthDot(
-                    rating: _person.health,
-                    scale: HealthScale.relationship,
-                  ),
-                ],
+                ),
               ),
-            ),
+            if (_person.context case final context?)
+              ListTile(
+                dense: true,
+                title: const Text('Context'),
+                subtitle: Text(context),
+              ),
             if (circles.isNotEmpty)
               ListTile(
                 dense: true,
@@ -155,33 +190,63 @@ class _PersonScreenState extends State<PersonScreen> {
                 subtitle: Text(circles.map((c) => c.name).join(', ')),
               ),
             _heading(theme, 'Traits'),
-            ..._traits(context),
+            ..._applies(theme),
+            if (_scored) ..._traits(context),
             _heading(
               theme,
-              _person.isSelf ? 'Notes on you' : 'What matters to them',
+              _person.isSelf ? 'What matters to you' : 'What matters to them',
             ),
-            _padded(switch (_person.notes) {
+            _padded(switch (_person.whatMatters) {
               final text? when text.trim().isNotEmpty => Text(text),
               _ => Text(
                 'Nothing yet. Compaction adds to it as notes reveal things.',
                 style: TextStyle(color: theme.hintColor),
               ),
             }),
-            _heading(theme, 'History'),
-            ..._history(theme),
-            _heading(theme, 'Events'),
-            ..._timeline(theme),
+            if (_scored) ...[
+              _heading(theme, 'History'),
+              ..._history(theme),
+              _heading(theme, 'Events'),
+              ..._timeline(theme),
+            ],
           ],
         ),
       ),
     );
   }
 
+  /// Which traits apply to them, and their own parts for any.
+  List<Widget> _applies(ThemeData theme) {
+    final traits = _person.traits;
+    String name(String id) => _traitList[id]?.name ?? id;
+    return [
+      _padded(
+        Text(switch (traits.select) {
+          null => 'Every active trait',
+          final ids when ids.isEmpty => 'None',
+          final ids => ids.map(name).join(', '),
+        }, style: theme.textTheme.bodyMedium),
+      ),
+      for (final MapEntry(:key, :value) in traits.parts.entries)
+        ListTile(
+          dense: true,
+          title: Text('${name(key)}, their own'),
+          subtitle: Text(
+            [
+              for (final part in value)
+                describePart(part, {
+                  for (final MapEntry(:key, :value)
+                      in widget.actionNames.entries)
+                    key: value,
+                }),
+            ].join('\n'),
+          ),
+        ),
+    ];
+  }
+
   List<Widget> _traits(BuildContext context) {
     final theme = Theme.of(context);
-    if (widget.traits == null) {
-      return [_padded(const Text('Traits aren\'t available here.'))];
-    }
     final rating = _rating;
     if (rating == null) return [_padded(_loading(_ratingError))];
     if (rating.traits.isEmpty) {
@@ -224,32 +289,32 @@ class _PersonScreenState extends State<PersonScreen> {
             title: rating.day,
             events: _eventsById,
             personNames: widget.personNames,
+            locationNames: widget.locationNames,
           ),
         ),
       if (rating.leftOut.isNotEmpty)
         _padded(
           Text(
-            'Not rated: ${rating.leftOut.join(', ')} (off, archived, or '
-            'weighed 0).',
+            'Not rated: ${rating.leftOut.join(', ')} (off, archived, or not '
+            'theirs).',
             style: theme.textTheme.bodySmall,
           ),
         ),
     ];
   }
 
-  /// A part's name: a facet's rubric, else its kind's.
+  /// A part's name: a judgment's rubric, else its kind's.
   static String _partLabel(PartScore part) =>
       part.rubric ?? partKinds[part.kind]?.label ?? part.key;
 
   List<Widget> _history(ThemeData theme) {
-    if (widget.traits == null) return const [];
     final digest = _digest;
     if (digest == null) return [_padded(_loading(_digestError))];
     String entries(List<DigestEntry> list) => list.isEmpty
         ? 'None recorded'
         : [
             for (final e in list)
-              '${widget.actionNames[e.label] ?? e.label} ×${e.count} '
+              '${widget.actionNames[e.label] ?? widget.locationNames[e.label] ?? e.label} ×${e.count} '
                   '(${e.first == e.last ? e.first : '${e.first} – ${e.last}'})',
           ].join('\n');
     return [
@@ -274,7 +339,6 @@ class _PersonScreenState extends State<PersonScreen> {
   }
 
   List<Widget> _timeline(ThemeData theme) {
-    if (widget.traits == null) return const [];
     final digest = _digest;
     if (digest == null) return [_padded(_loading(_digestError))];
     if (digest.events.isEmpty) {
@@ -288,15 +352,15 @@ class _PersonScreenState extends State<PersonScreen> {
           subtitle: Text(
             [
               _when(event),
-              if ((event['goal_ids'] as List?)?.isNotEmpty ?? false)
+              if ((event['action_ids'] as List?)?.isNotEmpty ?? false)
                 [
-                  for (final id in event['goal_ids'] as List)
+                  for (final id in event['action_ids'] as List)
                     widget.actionNames['$id'] ?? '$id',
                 ].join(', '),
-              if (Facets.fromJson(event['facets']) case final facets?
-                  when !facets.isEmpty) ...[
-                facets.describe(widget.personNames),
-                if (facets.personNotes[_person.id] case final note?) '“$note”',
+              if (Facts.fromJson(event['facts']) case final facts?
+                  when !facts.isEmpty) ...[
+                facts.describe(widget.personNames, widget.locationNames),
+                if (facts.notes[_person.id] case final note?) '“$note”',
               ],
             ].where((line) => line.isNotEmpty).join('\n'),
           ),

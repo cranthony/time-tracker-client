@@ -3,9 +3,18 @@ import '../models/goal.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
-/// Where goals come from. The app talks to this rather than to MCP directly
-/// so screens can be exercised without a server.
+/// Where actions, and the groups they're in, come from: each a [Goal], a
+/// group's [Goal.isGroup] set. The app talks to this rather than to MCP
+/// directly so screens can be exercised without a server.
 abstract class GoalsRepository {
+  /// Whether they're rated: their measures (targets), health, history
+  /// and time spent. The server doesn't rate actions yet; the sample data
+  /// does.
+  bool get rated;
+
+  /// Whether siblings can be put in an order of their own.
+  bool get reorderable;
+
   /// Every goal, whatever its status, parents before their children.
   Future<GoalList> goals();
 
@@ -32,92 +41,159 @@ abstract class GoalsRepository {
   Future<List<Assessment>> history(Goal goal);
 }
 
-/// Reads and writes goals via the Time Tracker MCP server.
+/// Reads and writes actions and their groups via the Time Tracker MCP
+/// server's action tools: `get_actions` and `get_action_groups`, listed
+/// together as one tree, and `create_`/`update_action` or
+/// `create_`/`update_action_group` for a group. Neither is rated or
+/// ordered there yet.
 class McpGoalsRepository implements GoalsRepository {
   McpGoalsRepository(this._client, {this._cache});
 
   final McpClient _client;
   final ResponseCache? _cache;
 
-  static const _cacheKey = 'goals';
+  static const _cacheKey = 'actions';
+
+  @override
+  bool get rated => false;
+
+  @override
+  bool get reorderable => false;
 
   @override
   Future<GoalList> goals() async {
-    final result = await _client.callTool('get_goals', {
+    final actions = await _client.callTool('get_actions', {
       'statuses': goalStatuses.keys.toList(),
     });
+    final groups = await _client.callTool('get_action_groups', {});
+    final result = {'actions': actions, 'groups': groups};
     await _cache?.write(_cacheKey, result);
-    return _decode(result);
+    return actionTree(result);
   }
 
   @override
   Future<GoalList?> cachedGoals() async {
     try {
       final result = await _cache?.read(_cacheKey);
-      return result == null ? null : _decode(result);
+      return result == null ? null : actionTree(result);
     } catch (_) {
       return null; // From an older version of the app, perhaps.
     }
   }
 
+  /// [fields], keyed as the Plan page edits them, as the server's tools
+  /// take them: a parent is a group_id, and only what an action (or a
+  /// group, with [group]) has is sent.
+  static Map<String, Object?> _fields(
+    Map<String, Object?> fields, {
+    required bool group,
+  }) => {
+    for (final MapEntry(:key, :value) in fields.entries)
+      if (key == 'parent_id')
+        'group_id': value
+      else if (_actionFields.contains(key) && !(group && key == 'status'))
+        key: value,
+  };
+
+  static const _actionFields = {
+    'name',
+    'status',
+    'background_color',
+    'priority',
+    'note',
+  };
+
   @override
   Future<String?> createGoal(Map<String, Object?> fields) async {
-    final result = await _client.callTool('create_goal', {
-      'goal': {
-        for (final MapEntry(:key, :value) in fields.entries) key: ?value,
+    final group = fields['kind'] == 'group';
+    final result = await _client.callTool(
+      group ? 'create_action_group' : 'create_action',
+      {
+        group ? 'group' : 'action': {
+          for (final MapEntry(:key, :value) in _fields(
+            fields,
+            group: group,
+          ).entries)
+            key: ?value,
+          // Made by the user, so not waiting for their review.
+          if (!group) 'status': fields['status'] ?? 'active',
+        },
       },
-    });
-    if ((result as Map)['created_id'] case final String id) return id;
-    // From a server too old to say which is new: a name is only used once
-    // among siblings.
-    return _decode(result).goals
-        .where(
-          (g) => g.parentId == fields['parent_id'] && g.name == fields['name'],
-        )
-        .firstOrNull
-        ?.id;
+    );
+    return (result as Map)['created_id'] as String?;
   }
 
   @override
   Future<void> updateGoal(Goal goal, Map<String, Object?> changes) async {
     // The server keeps whatever is left out or null, and clears what
     // clear_fields names.
+    final fields = _fields(changes, group: goal.isGroup);
     final clear = [
-      for (final MapEntry(:key, :value) in changes.entries)
+      for (final MapEntry(:key, :value) in fields.entries)
         if (value == null) key,
     ];
-    await _client.callTool('update_goal', {
-      'goal': {
-        'id': goal.id,
-        for (final MapEntry(:key, :value) in changes.entries) key: ?value,
+    await _client.callTool(
+      goal.isGroup ? 'update_action_group' : 'update_action',
+      {
+        goal.isGroup ? 'group' : 'action': {
+          'id': goal.id,
+          for (final MapEntry(:key, :value) in fields.entries) key: ?value,
+        },
+        if (clear.isNotEmpty) 'clear_fields': clear,
       },
-      if (clear.isNotEmpty) 'clear_fields': clear,
-    });
+    );
   }
 
   @override
-  Future<GoalList> reorderGoals(List<String> ids) async {
-    await _client.callTool('reorder_goals', {'goal_ids': ids});
-    // reorder_goals answers with only some of them.
-    return goals();
-  }
+  Future<GoalList> reorderGoals(List<String> ids) =>
+      throw UnsupportedError("The server doesn't keep an order of its own.");
 
   @override
-  Future<List<Assessment>> history(Goal goal) async {
-    final result = await _client.callTool('get_goal_history', {
-      'goal_ids': [goal.id],
-    });
-    return [
-      for (final item in result as List)
-        Assessment.fromJson((item as Map).cast<String, dynamic>()),
-    ];
-  }
-
-  static GoalList _decode(Object? result) =>
-      GoalList.fromJson((result as Map).cast<String, dynamic>());
+  Future<List<Assessment>> history(Goal goal) async => const [];
 }
 
-/// Keeps goals in memory. Used when no server is configured, and in tests.
+/// What `get_actions` and `get_action_groups` answered, as [result]'s
+/// "actions" and "groups", as one tree: each group, then what's in it,
+/// groups before actions.
+GoalList actionTree(Object? result) {
+  final json = (result as Map).cast<String, dynamic>();
+  final list = (json['actions'] as Map).cast<String, dynamic>();
+  final nodes = [
+    for (final group in json['groups'] as List? ?? const [])
+      Goal.fromJson({
+        ...(group as Map).cast<String, dynamic>(),
+        'parent_id': group['group_id'],
+        'status': 'active',
+        'kind': 'group',
+      }),
+    for (final action in list['actions'] as List? ?? const [])
+      Goal.fromJson({
+        ...(action as Map).cast<String, dynamic>(),
+        'parent_id': action['group_id'],
+      }),
+  ];
+  final ids = {for (final node in nodes) node.id};
+  final children = <String?, List<Goal>>{};
+  for (final node in nodes) {
+    final parent = ids.contains(node.parentId) ? node.parentId : null;
+    children.putIfAbsent(parent, () => []).add(node);
+  }
+  final ordered = <Goal>[];
+  void visit(Goal node) {
+    ordered.add(node);
+    children[node.id]?.forEach(visit);
+  }
+
+  children[null]?.forEach(visit);
+  return GoalList(
+    goals: ordered,
+    labelSlotsUsed: list['label_slots_used'] as int? ?? 0,
+    labelSlotsTotal: list['label_slots_total'] as int? ?? 200,
+  );
+}
+
+/// Keeps actions in memory, rated as the sample data has them. Used when
+/// no server is configured, and in tests.
 class InMemoryGoalsRepository implements GoalsRepository {
   InMemoryGoalsRepository([
     List<Goal> goals = const [],
@@ -129,6 +205,12 @@ class InMemoryGoalsRepository implements GoalsRepository {
 
   /// Each goal's history, by goal id.
   final Map<String, List<Assessment>> assessments;
+
+  @override
+  bool get rated => true;
+
+  @override
+  bool get reorderable => true;
 
   /// The last compaction, as [GoalList.asOf] gives it.
   final DateTime? asOf;

@@ -162,8 +162,8 @@ class TraitsSectionState extends State<TraitsSection> {
     final days = _history[trait.id] ?? const <TraitDay>[];
     final latest = days.isEmpty ? null : days.last;
     final muted = trait.status != 'active';
-    final facets = trait.parts.where((p) => p['kind'] == 'facet').length;
-    final others = trait.parts.length - facets;
+    final judgments = trait.parts.where((p) => p['kind'] == 'judgment').length;
+    final others = trait.parts.length - judgments;
     return ListTile(
       onTap: () => _edit(trait),
       title: Text(
@@ -176,7 +176,8 @@ class TraitsSectionState extends State<TraitsSection> {
           if (trait.definition case final definition?) Text(definition),
           Text(
             [
-              if (facets > 0) '$facets facet${facets == 1 ? '' : 's'}',
+              if (judgments > 0)
+                '$judgments judgment${judgments == 1 ? '' : 's'}',
               if (others > 0) '$others other part${others == 1 ? '' : 's'}',
               if (trait.status != 'active')
                 traitStatuses[trait.status] ?? trait.status,

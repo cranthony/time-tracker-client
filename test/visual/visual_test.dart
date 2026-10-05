@@ -109,6 +109,24 @@ void main() {
       );
     });
 
+    // Scrolled down to the locations.
+    testWidgets('plan locations ($mode)', (tester) async {
+      await render(
+        tester,
+        'plan_locations',
+        plan(),
+        scoped: true,
+        then: () async {
+          await tester.scrollUntilVisible(
+            find.text('The river trail'),
+            200,
+            scrollable: find.byType(Scrollable).first,
+          );
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
     // Traits folded away, and one circle's people.
     testWidgets('plan circle ($mode)', (tester) async {
       await render(
@@ -125,8 +143,7 @@ void main() {
       );
     });
 
-    // A trait open for editing: its facet's rubric, ratings and
-    // primitives.
+    // A trait open for editing: its judgment's rubric, ratings and facts.
     testWidgets('trait dialog ($mode)', (tester) async {
       await render(
         tester,
@@ -475,10 +492,10 @@ void main() {
     }
 
     // What happened at lunch: who it was with, where, and the notes.
-    testWidgets('event facets ($mode)', (tester) async {
+    testWidgets('event facts ($mode)', (tester) async {
       await render(
         tester,
-        'event_facets',
+        'event_facts',
         events(),
         scoped: true,
         then: () async {
@@ -486,10 +503,10 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.text('Lunch with Sam'));
           await tester.pumpAndSettle();
-          final facets = find.text('With Sam · @ the noodle bar');
-          await tester.ensureVisible(facets);
+          final facts = find.text('With Sam · @ The noodle bar');
+          await tester.ensureVisible(facts);
           await tester.pumpAndSettle();
-          await tester.tap(facets);
+          await tester.tap(facts);
           await tester.pumpAndSettle();
         },
       );

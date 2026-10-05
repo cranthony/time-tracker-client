@@ -1,6 +1,5 @@
 import 'package:flutter/widgets.dart';
 
-import '../models/note.dart';
 import '../models/trait.dart';
 import 'mcp_client.dart';
 
@@ -9,6 +8,11 @@ import 'mcp_client.dart';
 /// rather than to MCP directly, so screens can be exercised without a
 /// server. See [TraitsScope] for how screens find it.
 abstract class TraitsRepository {
+  /// Whether people are scored by them: [traitHistory], [explainTraits]
+  /// and [personDigest]. The server doesn't score them yet; the sample
+  /// data does.
+  bool get scored;
+
   /// The traits with any of [statuses] (by default active and off).
   Future<List<Trait>> traits({List<String>? statuses});
 
@@ -36,8 +40,6 @@ abstract class TraitsRepository {
   /// [personId]'s history over the last [windowDays], with their events.
   Future<PersonDigest> personDigest(String personId, {int windowDays = 180});
 }
-
-String _day(DateTime day) => localIsoTimestamp(day).substring(0, 10);
 
 /// Reaches traits via the Time Tracker MCP server.
 class McpTraitsRepository implements TraitsRepository {
@@ -81,45 +83,25 @@ class McpTraitsRepository implements TraitsRepository {
   }
 
   @override
+  bool get scored => false;
+
+  @override
   Future<List<TraitDay>> traitHistory({
     List<String>? traitIds,
     List<String>? personIds,
     DateTime? start,
     DateTime? end,
-  }) async {
-    final result = await _client.callTool('get_trait_history', {
-      'trait_ids': ?traitIds,
-      'person_ids': ?personIds,
-      if (start != null) 'start': _day(start),
-      if (end != null) 'end': _day(end),
-    });
-    return [
-      for (final d in result as List)
-        TraitDay.fromJson((d as Map).cast<String, dynamic>()),
-    ];
-  }
+  }) async => const [];
 
   @override
-  Future<TraitsRating> explainTraits(String personId, {DateTime? day}) async {
-    final result = await _client.callTool('explain_traits', {
-      'person_id': personId,
-      if (day != null) 'day': _day(day),
-    });
-    return TraitsRating.fromJson((result as Map).cast<String, dynamic>());
-  }
+  Future<TraitsRating> explainTraits(String personId, {DateTime? day}) async =>
+      const TraitsRating();
 
   @override
   Future<PersonDigest> personDigest(
     String personId, {
     int windowDays = 180,
-  }) async {
-    final result = await _client.callTool('get_person_digest', {
-      'person_id': personId,
-      'window_days': windowDays,
-      'include_events': true,
-    });
-    return PersonDigest.fromJson((result as Map).cast<String, dynamic>());
-  }
+  }) async => PersonDigest(personId: personId, windowDays: windowDays);
 }
 
 /// Keeps traits in memory. Used when no server is configured, and in
@@ -140,6 +122,9 @@ class InMemoryTraitsRepository implements TraitsRepository {
 
   /// [personDigest]'s answer, by person id.
   final Map<String, PersonDigest> digests;
+
+  @override
+  bool get scored => true;
 
   @override
   Future<List<Trait>> traits({List<String>? statuses}) async => [

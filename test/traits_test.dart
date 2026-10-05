@@ -1,28 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
-import 'package:time_tracker_client/models/facets.dart';
+import 'package:time_tracker_client/models/facts.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/trait.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
 import 'package:time_tracker_client/screens/traits_section.dart';
+import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
+import 'package:time_tracker_client/widgets/facts_dialog.dart';
 
 const Part _novelty = {
-  'kind': 'facet',
+  'kind': 'judgment',
   'rubric': 'Was this activity or place new?',
-  'engagement': 'with',
-  'ratings': [
-    {'score': 0, 'label': 'Routine'},
-    {'score': 1, 'label': 'A twist'},
-    {'score': 2, 'label': 'New activity or place'},
-    {'score': 3, 'label': 'Both new'},
-  ],
-  'primitives': [
-    {'name': 'action'},
-    {'name': 'location_history', 'lookback_days': 180},
+  'ratings': {
+    '0': 'Routine',
+    '1': 'A twist',
+    '2': 'New activity or place',
+    '3': 'Both new',
+  },
+  'facts': [
+    'action',
+    {'fact': 'location_history', 'lookback_days': 180},
   ],
 };
 
@@ -36,67 +37,85 @@ const _reliable = Trait(
   id: 'reliable',
   name: 'Reliable',
   parts: [
-    {'kind': 'count', 'action_id': 'call', 'target': 1, 'interval_days': 7},
+    {'kind': 'count', 'action': 'call', 'target': 1, 'interval_days': 7},
   ],
 );
 
 void main() {
-  group('Facets', () {
+  group('Facts', () {
     test('read from the server and written back without what is unset', () {
-      final facets = Facets.fromJson({
-        'with_person_ids': ['sam'],
-        'location': 'the hall',
-        'notes': null,
-        'person_notes': {'sam': 'Tired', 'priya': ' '},
-        'judgments': [
-          {'trait_id': 'adventurous', 'person_id': 'sam', 'rating': 2},
-          {'trait_id': 'broken'},
-        ],
+      final facts = Facts.fromJson({
+        'location_id': 'hall',
+        'with_ids': ['sam'],
+        'for_ids': null,
+        'notes': {'sam': 'Tired', selfPersonId: ' '},
       })!;
 
-      expect(facets.toJson(), {
-        'with_person_ids': ['sam'],
-        'location': 'the hall',
-        'person_notes': {'sam': 'Tired'},
-        'judgments': [
-          {'trait_id': 'adventurous', 'person_id': 'sam', 'rating': 2},
-        ],
+      expect(facts.toJson(), {
+        'location_id': 'hall',
+        'with_ids': ['sam'],
+        'notes': {'sam': 'Tired'},
       });
-      expect(Facets.fromJson(null), isNull);
+      expect(Facts.fromJson(null), isNull);
     });
 
-    test('described in a line, naming people', () {
-      const facets = Facets(
-        withPersonIds: ['sam'],
-        forPersonIds: [selfPersonId],
-        location: 'home',
+    test('described in a line, naming people and the location', () {
+      const facts = Facts(
+        withIds: ['sam'],
+        forIds: ['priya'],
+        locationId: 'home',
       );
 
       expect(
-        facets.describe({'sam': 'Sam', selfPersonId: 'Self'}),
-        'With Sam · For Self · @ home',
+        facts.describe({'sam': 'Sam', 'priya': 'Priya'}, {'home': 'Home'}),
+        'With Sam · For Priya · @ Home',
       );
     });
 
-    test("keep Claude's judgments only for the people still there", () {
-      const facets = Facets(
-        withPersonIds: ['sam', 'priya'],
-        judgments: [
-          FacetJudgment(personId: 'sam', rating: 1),
-          FacetJudgment(personId: 'priya', rating: 2),
-        ],
+    test('are checked as the server checks them', () {
+      expect(const Facts(withIds: [selfPersonId]).problem, isNotNull);
+      expect(const Facts(withIds: ['sam'], forIds: ['sam']).problem, isNotNull);
+      expect(
+        const Facts(forIds: ['sam'], notes: {'sam': 'Happy'}).problem,
+        'Notes are only for those who were there.',
       );
-
-      final edited = facets.edited(
-        withPersonIds: ['sam'],
-        forPersonIds: const [],
-        personNotes: {'sam': 'Happy', 'priya': 'Gone'},
+      expect(
+        const Facts(
+          withIds: ['sam'],
+          notes: {'sam': 'Happy', selfPersonId: 'Tired'},
+        ).problem,
+        isNull,
       );
+    });
+  });
 
-      expect(edited.judgments, [
-        const FacetJudgment(personId: 'sam', rating: 1),
-      ]);
-      expect(edited.personNotes, {'sam': 'Happy'});
+  test("an event's judgments are read by person, trait and part", () {
+    final judgments = judgmentsFromJson({
+      'sam': {
+        'adventurous': {
+          'judgment': {'rating': 2, 'scale': 3, 'reasoning': 'A new club'},
+          'broken': {'scale': 3},
+        },
+      },
+    }, eventId: 'e1');
+
+    expect(judgments, [
+      const Judgment(
+        eventId: 'e1',
+        personId: 'sam',
+        traitId: 'adventurous',
+        part: 'judgment',
+        rating: 2,
+        scale: 3,
+        reasoning: 'A new club',
+      ),
+    ]);
+    expect(judgmentsToJson(judgments), {
+      'sam': {
+        'adventurous': {
+          'judgment': {'rating': 2, 'scale': 3, 'reasoning': 'A new club'},
+        },
+      },
     });
   });
 
@@ -124,73 +143,70 @@ void main() {
         ),
         'Part 2: target, minutes is needed.',
       );
-      expect(partProblem(const {'kind': 'nope'}), 'pick a kind.');
+      expect(partProblem(const {'kind': 'facet'}), 'pick a kind.');
       expect(
         partProblem(const {'kind': 'count', 'target': 1, 'weight': -1}),
         'the weight must be 0 or more.',
       );
-    });
-
-    test('checks a facet whole', () {
-      Part facet(Map<String, Object?> changes) => {..._novelty, ...changes};
-
-      expect(partProblem(facet({'rubric': null})), 'rubric is needed.');
       expect(
-        partProblem(facet({'engagement': 'near'})),
-        'pick whether it rates events with them or for them.',
+        partProblem(const {
+          'kind': 'count',
+          'target': 1,
+          'engagement_type': 'near',
+        }),
+        'pick whether it reads events with them or for them.',
       );
       expect(
+        partProblem(const {'kind': 'follow_through', 'penalty': 120}),
+        'lost per cancellation must be from 0 to 100.',
+      );
+    });
+
+    test('checks a judgment whole', () {
+      Part judgment(Map<String, Object?> changes) => {..._novelty, ...changes};
+
+      expect(partProblem(judgment({'rubric': null})), 'rubric is needed.');
+      expect(
         partProblem(
-          facet({
-            'ratings': [
-              {'score': 0, 'label': 'None'},
-            ],
+          judgment({
+            'ratings': {'0': 'None'},
           }),
         ),
         'give it at least two ratings.',
       );
       expect(
         partProblem(
-          facet({
-            'ratings': [
-              {'score': 0, 'label': 'None'},
-              {'score': 0, 'label': 'Also none'},
-            ],
+          judgment({
+            'ratings': ['None', 'Also none'],
           }),
         ),
         'each rating needs a score of its own.',
       );
       expect(
         partProblem(
-          facet({
-            'ratings': [
-              {'score': 0, 'label': 'None'},
-              {'score': 'x', 'label': 'Some'},
-            ],
+          judgment({
+            'ratings': {'0': 'None', 'x': 'Some'},
           }),
         ),
-        'each rating needs a whole-number score.',
+        'each rating needs a whole-number score, from 0.',
       );
       expect(
         partProblem(
-          facet({
-            'ratings': [
-              {'score': 0, 'label': 'None'},
-              {'score': 1, 'label': ' '},
-            ],
+          judgment({
+            'ratings': {'0': 'None', '1': ' '},
           }),
         ),
         'say what each rating means.',
       );
       expect(
-        partProblem(facet({'primitives': const []})),
-        'pick at least one primitive.',
+        partProblem(judgment({'facts': const []})),
+        'pick at least one fact to judge by.',
       );
       expect(
         partProblem(
-          facet({
-            'primitives': [
-              {'name': 'action_history', 'lookback_days': 0},
+          judgment({
+            'facts': [
+              {'fact': 'action_history', 'lookback_days': 0},
             ],
           }),
         ),
@@ -203,7 +219,7 @@ void main() {
     test('are described in a line', () {
       expect(
         describePart(_novelty),
-        'Facet: Was this activity or place new? (0-3, with them)',
+        'Judgment: Was this activity or place new? (0-3, with them)',
       );
       expect(
         describePart(_reliable.parts.single, {'call': 'Call'}),
@@ -219,21 +235,56 @@ void main() {
       );
     });
 
-    test("a facet's ratings and primitives are read in order", () {
-      expect(facetRatings(_novelty).map((r) => r.score), [0, 1, 2, 3]);
-      expect(facetPrimitivesOf(_novelty), {
+    test("a judgment's ratings and facts are read in order", () {
+      expect(judgmentRatings(_novelty).map((r) => r.score), [0, 1, 2, 3]);
+      expect(judgmentFactsOf(_novelty), {
         'action': null,
         'location_history': 180,
       });
       expect(
-        facetPrimitivesOf(const {
-          'primitives': [
-            {'name': 'action_history'},
-          ],
+        judgmentFactsOf(const {
+          'facts': ['action_history'],
         }),
         {'action_history': defaultLookbackDays},
       );
+      expect(judgmentFactsJson({'action': null, 'action_history': 90}), [
+        'action',
+        {'fact': 'action_history', 'lookback_days': 90},
+      ]);
     });
+  });
+
+  test('McpTraitsRepository sends the server what it takes, and scores no '
+      'one', () async {
+    final client = _RecordingClient(
+      (name, _) => {
+        'id': 'kind',
+        'name': 'Kind',
+        'parts': [_novelty],
+      },
+    );
+    final repository = McpTraitsRepository(client);
+
+    await repository.updateTrait('kind', {
+      'name': 'Kind',
+      'definition': null,
+      'parts': [_novelty],
+    });
+
+    expect(client.calls.single.$1, 'update_trait');
+    expect(client.calls.single.$2, ({
+      'trait': {
+        'id': 'kind',
+        'name': 'Kind',
+        'parts': [_novelty],
+      },
+      'clear_fields': ['definition'],
+    }));
+    expect(repository.scored, isFalse);
+    expect(await repository.traitHistory(), isEmpty);
+    expect((await repository.explainTraits('sam')).traits, isEmpty);
+    // None of those asked the server, which has no such tools.
+    expect(client.calls, hasLength(1));
   });
 
   group('TraitsSection', () {
@@ -259,7 +310,7 @@ void main() {
                   repository: repository,
                   expanded: expanded,
                   onExpanded: onExpanded,
-                  actions: const {'call': 'Call'},
+                  actions: const {'call': 'Social › Call', 'social': 'Social'},
                 ),
               ),
             ),
@@ -275,7 +326,7 @@ void main() {
 
       expect(find.text('Adventurous'), findsOneWidget);
       expect(find.text('Try new things together.'), findsOneWidget);
-      expect(find.text('1 facet'), findsOneWidget);
+      expect(find.text('1 judgment'), findsOneWidget);
       expect(find.text('70'), findsOneWidget);
       expect(find.text('Reliable'), findsOneWidget);
     });
@@ -289,10 +340,10 @@ void main() {
       expect(find.text('Adventurous'), findsNothing);
     });
 
-    testWidgets('creates a trait from a facet, checking it first', (
+    testWidgets('creates a trait from a judgment, checking it first', (
       tester,
     ) async {
-      tester.view.physicalSize = const Size(800, 3000);
+      tester.view.physicalSize = const Size(800, 3200);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final repository = await pump(tester);
@@ -318,12 +369,12 @@ void main() {
           means,
         );
       }
-      // Rated for them, from their notes too, looking back a month.
+      // Read for them, from their notes too, looking back a fortnight.
       await tester.tap(find.text('For them'));
       await tester.tap(find.text('Person notes'));
       await tester.tap(find.text('Location history'));
       await tester.pump();
-      await tester.enterText(find.widgetWithText(TextField, 'Lookback'), '30');
+      await tester.enterText(find.widgetWithText(TextField, 'Lookback'), '14');
       await tester.pump();
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
@@ -331,25 +382,20 @@ void main() {
       final created = (await repository.traits()).last;
       expect(created.id, 'kind');
       expect(created.parts.single, {
-        'kind': 'facet',
+        'kind': 'judgment',
+        'engagement_type': 'for',
         'rubric': 'Was I kind?',
-        'engagement': 'for',
-        'ratings': [
-          {'score': 0, 'label': 'No'},
-          {'score': 1, 'label': 'A little'},
-          {'score': 2, 'label': 'Yes'},
-          {'score': 3, 'label': 'Very'},
-        ],
-        'primitives': [
-          {'name': 'action'},
-          {'name': 'general_notes'},
-          {'name': 'person_notes'},
-          {'name': 'location_history', 'lookback_days': 30},
+        'ratings': {'0': 'No', '1': 'A little', '2': 'Yes', '3': 'Very'},
+        'facts': [
+          'action',
+          'general_notes',
+          'person_notes',
+          {'fact': 'location_history', 'lookback_days': 14},
         ],
       });
     });
 
-    testWidgets('picks the action a cadence counts', (tester) async {
+    testWidgets('picks the action or group a cadence counts', (tester) async {
       tester.view.physicalSize = const Size(800, 2400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -357,10 +403,9 @@ void main() {
 
       await tester.tap(find.text('Reliable'));
       await tester.pumpAndSettle();
-      expect(find.text('Call'), findsOneWidget);
-      await tester.tap(find.text('Call'));
+      await tester.tap(find.text('Social › Call'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Any action').last);
+      await tester.tap(find.text('Social').last);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
@@ -368,7 +413,12 @@ void main() {
       expect(
         (await repository.traits()).firstWhere((t) => t.id == 'reliable').parts,
         [
-          {'kind': 'count', 'target': 1, 'interval_days': 7},
+          {
+            'kind': 'count',
+            'action': 'social',
+            'target': 1,
+            'interval_days': 7,
+          },
         ],
       );
     });
@@ -390,13 +440,9 @@ void main() {
     });
   });
 
-  testWidgets("a person's page shows their traits, notes, history and "
-      "events, and Claude's judgments behind a score", (tester) async {
-    // Tall enough to show the whole page at once.
-    tester.view.physicalSize = const Size(800, 2400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final repository = InMemoryTraitsRepository(
+  group("a person's page", () {
+    final scored = InMemoryTraitsRepository(
+      traits: [_adventurous, _reliable],
       ratings: {
         'sam': const TraitsRating(
           rating: 67,
@@ -405,18 +451,24 @@ void main() {
             TraitScore(
               traitId: 'adventurous',
               name: 'Adventurous',
-              weight: 2,
               score: 67,
               parts: [
                 PartScore(
-                  key: 'facet',
-                  kind: 'facet',
+                  key: 'judgment',
+                  kind: 'judgment',
                   score: 67,
                   rubric: 'Was this activity or place new?',
                   said: 'Mean rating 2.0 of 3 over 1 event',
                   eventIds: ['e1'],
                   judgments: [
-                    FacetJudgment(eventId: 'e1', rating: 2, why: 'A new club'),
+                    Judgment(
+                      eventId: 'e1',
+                      personId: 'sam',
+                      traitId: 'adventurous',
+                      part: 'judgment',
+                      rating: 2,
+                      reasoning: 'A new club',
+                    ),
                   ],
                 ),
               ],
@@ -442,58 +494,103 @@ void main() {
               'summary': 'Jazz night',
               'start': '2026-10-01T18:00:00',
               'end': '2026-10-01T20:00:00',
-              'goal_ids': ['listen_music'],
-              'facets': {
-                'with_person_ids': ['sam'],
-                'location': 'the cellar',
-                'person_notes': {'sam': 'Loved the trumpet'},
+              'action_ids': ['listen_music'],
+              'facts': {
+                'with_ids': ['sam'],
+                'location_id': 'cellar',
+                'notes': {'sam': 'Loved the trumpet'},
               },
             },
           ],
         ),
       },
     );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: PersonScreen(
-          person: const Person(
-            id: 'sam',
-            name: 'Sam',
-            circleIds: ['close'],
-            notes: '- loves jazz',
-            health: 67,
-          ),
-          traits: repository,
-          circles: const [Circle(id: 'close', name: 'Close friends')],
-          personNames: const {'sam': 'Sam'},
-          actionNames: const {'listen_music': 'Listen to music'},
-        ),
+    const sam = Person(
+      id: 'sam',
+      name: 'Sam',
+      context: 'from salsa',
+      circleIds: ['close'],
+      whatMatters: '- loves jazz',
+      traits: PersonTraits(
+        parts: {
+          'reliable': [
+            {
+              'kind': 'count',
+              'action': 'call',
+              'target': 1,
+              'interval_days': 14,
+            },
+          ],
+        },
       ),
+      health: 67,
     );
-    await tester.pumpAndSettle();
 
-    expect(find.text('Close friends'), findsOneWidget);
-    expect(find.text('67 · 2026-10-01'), findsOneWidget);
-    expect(find.text('Adventurous ×2'), findsOneWidget);
-    expect(find.text('- loves jazz'), findsOneWidget);
-    expect(find.textContaining('Listen to music ×1'), findsOneWidget);
-    expect(find.text('Jazz night'), findsOneWidget);
-    expect(find.textContaining('“Loved the trumpet”'), findsOneWidget);
+    Future<void> pump(WidgetTester tester, TraitsRepository traits) async {
+      // Tall enough to show the whole page at once.
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PersonScreen(
+            person: sam,
+            traits: traits,
+            circles: const [Circle(id: 'close', name: 'Close friends')],
+            personNames: const {'sam': 'Sam'},
+            actionNames: const {
+              'listen_music': 'Listen to music',
+              'call': 'Call',
+            },
+            locationNames: const {'cellar': 'The Cellar'},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
 
-    await tester.tap(find.text('Adventurous ×2'));
-    await tester.pumpAndSettle();
+    testWidgets("shows who they are, their traits and own parts, scores, "
+        "history and events, and Claude's judgments behind a score", (
+      tester,
+    ) async {
+      await pump(tester, scored);
 
-    expect(find.text('Mean rating 2.0 of 3 over 1 event'), findsOneWidget);
-    expect(
-      find.textContaining('Jazz night — With Sam · @ the cellar'),
-      findsOneWidget,
-    );
-    expect(find.textContaining('Rated 2: A new club'), findsOneWidget);
+      expect(find.text('from salsa'), findsOneWidget);
+      expect(find.text('Close friends'), findsOneWidget);
+      expect(find.text('Every active trait'), findsOneWidget);
+      expect(find.text('Reliable, their own'), findsOneWidget);
+      expect(find.text('call every 14 days'), findsOneWidget);
+      expect(find.text('67 · 2026-10-01'), findsOneWidget);
+      expect(find.text('- loves jazz'), findsOneWidget);
+      expect(find.textContaining('Listen to music ×1'), findsOneWidget);
+      expect(find.text('Jazz night'), findsOneWidget);
+      expect(find.textContaining('“Loved the trumpet”'), findsOneWidget);
+
+      await tester.tap(find.text('Adventurous'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Mean rating 2.0 of 3 over 1 event'), findsOneWidget);
+      expect(
+        find.textContaining('Jazz night — With Sam · @ The Cellar'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Rated 2: A new club'), findsOneWidget);
+    });
+
+    testWidgets("leaves out scores and history where they aren't kept", (
+      tester,
+    ) async {
+      await pump(tester, McpTraitsRepository(_RecordingClient((_, _) => [])));
+
+      expect(find.text('Every active trait'), findsOneWidget);
+      expect(find.text('- loves jazz'), findsOneWidget);
+      expect(find.text('History'), findsNothing);
+      expect(find.text('Events'), findsNothing);
+    });
   });
 
-  testWidgets("what happened at an event is edited and saved with it", (
-    tester,
-  ) async {
+  testWidgets('what happened at an event is edited and saved with it, '
+      'with its judgments shown', (tester) async {
     tester.view.physicalSize = const Size(800, 2400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -504,14 +601,128 @@ void main() {
       start: DateTime(2026, 10, 1, 18),
       end: DateTime(2026, 10, 1, 20),
       properties: const {
-        'facets': {'location': 'home'},
+        'facts': {'location_id': 'home'},
+        'judgments': {
+          selfPersonId: {
+            'adventurous': {
+              'judgment': {'rating': 1, 'scale': 3, 'reasoning': 'Usual'},
+            },
+          },
+        },
       },
     );
+    final people = InMemoryPeopleRepository(
+      people: const [
+        Person(id: 'sam', name: 'Sam'),
+        Person(id: 'priya', name: 'Priya'),
+      ],
+      locations: const [Location(id: 'home', name: 'Home')],
+    );
+    await tester.pumpWidget(
+      TraitsScope(
+        repository: InMemoryTraitsRepository(traits: [_adventurous]),
+        child: PeopleScope(
+          repository: people,
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showEventSummaryDialog(
+                  context,
+                  event,
+                  save: (changes) async {
+                    saved = changes;
+                    return [event];
+                  },
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('@ Home'), findsOneWidget);
+    expect(find.text('1 judgment by Claude'), findsOneWidget);
+    await tester.tap(find.text('@ Home'));
+    await tester.pumpAndSettle();
+    // Self is at every event: not to pick.
+    expect(find.widgetWithText(FilterChip, 'Self'), findsNothing);
+    expect(
+      find.textContaining('Self · Adventurous: 1 of 3 — Usual'),
+      findsOneWidget,
+    );
+    await tester.tap(find.widgetWithText(FilterChip, 'Sam').first);
+    await tester.tap(find.widgetWithText(FilterChip, 'Priya').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Notes on Sam'),
+      'Glad to be out',
+    );
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(find.text('With Sam · For Priya · @ Home'), findsOneWidget);
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(saved, {
+      'facts': {
+        'location_id': 'home',
+        'with_ids': ['sam'],
+        'for_ids': ['priya'],
+        'notes': {'sam': 'Glad to be out'},
+      },
+    });
+  });
+
+  testWidgets('someone picked as there is taken off those it was for', (
+    tester,
+  ) async {
+    Facts? edited;
     await tester.pumpWidget(
       PeopleScope(
         repository: InMemoryPeopleRepository(
           people: const [Person(id: 'sam', name: 'Sam')],
         ),
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async => edited = await showFactsDialog(
+                context,
+                const Facts(forIds: ['sam']),
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilterChip, 'Sam').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    expect(edited?.withIds, ['sam']);
+    expect(edited?.forIds, isEmpty);
+  });
+
+  testWidgets('a new location is added from what happened', (tester) async {
+    final people = InMemoryPeopleRepository();
+    Map<String, Object?>? saved;
+    final event = Event(
+      id: 'e1',
+      summary: 'Dinner',
+      start: DateTime(2026, 10, 1, 18),
+      end: DateTime(2026, 10, 1, 20),
+    );
+    await tester.pumpWidget(
+      PeopleScope(
+        repository: people,
         child: MaterialApp(
           home: Builder(
             builder: (context) => TextButton(
@@ -531,32 +742,44 @@ void main() {
     );
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Add what happened'));
+    await tester.pumpAndSettle();
 
-    expect(find.text('@ home'), findsOneWidget);
-    await tester.tap(find.text('@ home'));
+    await tester.tap(find.text('Not said'));
     await tester.pumpAndSettle();
-    // Self is always there to pick.
-    expect(find.widgetWithText(FilterChip, 'Self'), findsNWidgets(2));
-    await tester.tap(find.widgetWithText(FilterChip, 'Sam').first);
+    await tester.tap(find.text('New location…').last);
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Notes on Sam'),
-      'Glad to be out',
-    );
+    await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Home');
+    await tester.pump();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
-    expect(find.text('With Sam · @ home'), findsOneWidget);
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
+    expect((await people.locations()).single.name, 'Home');
     expect(saved, {
-      'facets': {
-        'with_person_ids': ['sam'],
-        'location': 'home',
-        'person_notes': {'sam': 'Glad to be out'},
-      },
+      'facts': {'location_id': 'home'},
     });
   });
+}
+
+/// Records each tool call, and answers with [answer].
+class _RecordingClient extends McpClient {
+  _RecordingClient(this.answer) : super(endpoint: Uri.parse('http://test'));
+
+  final Object? Function(String name, Map<String, Object?> arguments) answer;
+  final calls = <(String, Map<String, Object?>)>[];
+
+  @override
+  Future<Object?> callTool(
+    String name, [
+    Map<String, Object?> arguments = const {},
+  ]) async {
+    calls.add((name, arguments));
+    return answer(name, arguments);
+  }
 }
 
 /// A section, opened and folded as its heading's tapped.

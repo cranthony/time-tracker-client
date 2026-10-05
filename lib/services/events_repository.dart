@@ -9,10 +9,12 @@ import 'response_cache.dart';
 /// listing them in `clear_fields` (time-tracking-google-calendar-mcp#119).
 /// Sent as null, any other field is kept as it was, so a change to null
 /// clears one of these and is ignored for the rest. Not summary, start or
-/// end, which every event has, nor goal_ids, whose [] means no goals.
-/// facets are what happened at it, for its goals' traits.
+/// end, which every event has, nor action_ids, whose [] means no
+/// actions. facts are what compaction established about it, and judgments
+/// the assistant's ratings of it against people's traits.
 const clearableFields = {
-  'facets',
+  'facts',
+  'judgments',
   'priority',
   'description',
   'location',
@@ -153,7 +155,7 @@ class McpEventsRepository implements EventsRepository {
         'id': recurrence.id,
         for (final MapEntry(:key, :value) in changes.entries) key: ?value,
         // Goals sent are set, not inferred from a label.
-        if (changes.containsKey('goal_ids')) 'goals_from_label': false,
+        if (changes.containsKey('action_ids')) 'actions_from_label': false,
       },
       'starting_at_event_id': ?startingAt,
       if (cleared.isNotEmpty) 'clear_fields': cleared,
@@ -205,7 +207,7 @@ class McpEventsRepository implements EventsRepository {
         ...changes,
         // Goals sent are set, not inferred from a label; left alone, the
         // server keeps inferred ones inferred.
-        if (changes.containsKey('goal_ids')) 'goals_from_label': false,
+        if (changes.containsKey('action_ids')) 'actions_from_label': false,
       },
       // The event's fields sent as null are kept; these are removed.
       if (_cleared(changes) case final cleared when cleared.isNotEmpty)
@@ -323,7 +325,7 @@ class InMemoryEventsRepository implements EventsRepository {
     final updated = Event.fromJson({
       ..._events[i].toJson(),
       ...changes,
-      if (changes.containsKey('goal_ids')) 'goals_from_label': false,
+      if (changes.containsKey('action_ids')) 'actions_from_label': false,
     });
     _events[i] = updated;
     return [updated];
