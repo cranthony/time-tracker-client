@@ -80,13 +80,15 @@ Future<void> showTraitHistory(
 
 /// Shows how [score] was reached: each of its parts' score, weight and how
 /// it was reached, and the events behind it -- named from [events] (by id,
-/// each as the server sent it, with its facets) where they're there.
+/// each as the server sent it, with its facets) where they're there. Each
+/// part is titled from [labels], in order, where it has one.
 Future<void> showTraitParts(
   BuildContext context,
   TraitScore score, {
   String? title,
   Map<String, Map<String, dynamic>> events = const {},
   Map<String?, String> goalNames = const {},
+  List<String> labels = const [],
 }) => showModalBottomSheet<void>(
   context: context,
   isScrollControlled: true,
@@ -106,7 +108,7 @@ Future<void> showTraitParts(
           ),
           if (title != null) Text(title, style: theme.textTheme.bodySmall),
           const SizedBox(height: 8),
-          for (final part in score.parts)
+          for (final (i, part) in score.parts.indexed)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -117,7 +119,9 @@ Future<void> showTraitParts(
                       children: [
                         Expanded(
                           child: Text(
-                            partKinds[part.kind]?.label ?? part.key,
+                            i < labels.length
+                                ? labels[i]
+                                : partKinds[part.kind]?.label ?? part.key,
                             style: theme.textTheme.titleSmall,
                           ),
                         ),

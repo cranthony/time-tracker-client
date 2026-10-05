@@ -48,6 +48,22 @@ class _GoalTraitsScreenState extends State<GoalTraitsScreen> {
 
   String get _goalId => widget.goal.id!;
 
+  /// [part]'s name: a cadence's activity ("Visit"), from the goal's own
+  /// parts for the trait, which the rating's parts follow in order; else
+  /// its kind's.
+  String _partLabel(String traitId, int index, PartScore part) {
+    final own = switch (_goal.measure?['parts']) {
+      final Map parts => parts[traitId],
+      _ => null,
+    };
+    if (own is List && index < own.length) {
+      if (own[index] case {'activity': final String activity}) {
+        return '${activity[0].toUpperCase()}${activity.substring(1)}';
+      }
+    }
+    return partKinds[part.kind]?.label ?? part.key;
+  }
+
   Future<void> _editMeasure() async {
     final saved = await widget.onEditMeasure!(_goal);
     if (saved == null || !mounted) return;
@@ -198,9 +214,8 @@ class _GoalTraitsScreenState extends State<GoalTraitsScreen> {
           title: Text(score.name),
           subtitle: Text(
             [
-              for (final part in score.parts)
-                '${partKinds[part.kind]?.label ?? part.key} '
-                    '${part.score ?? '–'}',
+              for (final (i, part) in score.parts.indexed)
+                '${_partLabel(score.traitId, i, part)} ${part.score ?? '–'}',
             ].join(' · '),
           ),
           trailing: Text(
@@ -210,6 +225,10 @@ class _GoalTraitsScreenState extends State<GoalTraitsScreen> {
           onTap: () => showTraitParts(
             context,
             score,
+            labels: [
+              for (final (i, part) in score.parts.indexed)
+                _partLabel(score.traitId, i, part),
+            ],
             title: rating.day,
             events: _eventsById,
             goalNames: widget.goalNames,
