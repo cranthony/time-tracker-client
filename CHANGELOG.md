@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.15.1
+
+- On the Goals page, a goal with sub-goals and a color of its own shows
+  that color only on its arrow; its band beneath is dashed in the color
+  it'd inherit, so the color no longer runs on down beside its
+  sub-goals.
+
 ## 5.15.0
 
 - Traits. The Goals page's app bar opens the **Traits** list: each trait's

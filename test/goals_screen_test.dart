@@ -1603,14 +1603,21 @@ void main() {
 
   testWidgets(
     "a goal's band is its own color, or the one it inherits, dashed, beside "
-    "its ancestors'",
+    "its ancestors'; a parent's own color is its tip's alone",
     (tester) async {
       await tester.pumpWidget(
         app(
           InMemoryGoalsRepository([
             Goal.fromJson({
+              'id': 'base',
+              'name': 'Base',
+              'background_color': '#654321',
+              'effective_color': '#654321',
+            }),
+            Goal.fromJson({
               'id': 'own',
               'name': 'Own',
+              'parent_id': 'base',
               'background_color': '#123456',
               'effective_color': '#123456',
             }),
@@ -1619,6 +1626,13 @@ void main() {
               'name': 'Kid',
               'parent_id': 'own',
               'effective_color': '#123456',
+            }),
+            Goal.fromJson({
+              'id': 'leaf',
+              'name': 'Leaf',
+              'parent_id': 'kid',
+              'background_color': '#abcabc',
+              'effective_color': '#abcabc',
             }),
             Goal.fromJson({
               'id': 'idle',
@@ -1630,13 +1644,29 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await swipe(tester, 'Base');
       await swipe(tester, 'Own');
+      await swipe(tester, 'Kid');
 
-      const own = GoalBand(color: Color(0xFF123456), dashed: false);
-      expect(bandsOf(tester, 'Own').bands, [own]);
-      expect(bandsOf(tester, 'Kid').bands, [
+      // With nothing to inherit, Base's band is grey dashes; its color is
+      // only its tip's.
+      final base = bandsOf(tester, 'Base').bands.single;
+      expect((base.dashed, base.tip), (true, const Color(0xFF654321)));
+      // Own's band is Base's color, dashed, under its own tip.
+      const own = GoalBand(
+        color: Color(0xFF654321),
+        dashed: true,
+        tip: Color(0xFF123456),
+      );
+      expect(bandsOf(tester, 'Own').bands, [base, own]);
+      const kid = GoalBand(color: Color(0xFF123456), dashed: true);
+      expect(bandsOf(tester, 'Kid').bands, [base, own, kid]);
+      // With no sub-goals, its own color is its band's, solid.
+      expect(bandsOf(tester, 'Leaf').bands, [
+        base,
         own,
-        const GoalBand(color: Color(0xFF123456), dashed: true),
+        kid,
+        const GoalBand(color: Color(0xFFABCABC), dashed: false),
       ]);
       // An inactive goal's is grey, and dashed.
       final idle = bandsOf(tester, 'Idle').bands.single;
