@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -101,9 +102,11 @@ AuthSession _authSession({required bool interactive}) => AuthSession(
     clientName: 'Time Tracker ($platformName)',
     viaResourceServer: oauthViaResourceServer,
   ),
-  // On the web, tokens last only as long as the tab; see SecureTokenStore.
-  store: const SecureTokenStore.forSession(),
-  registrationStore: const SecureTokenStore.persistent(),
+  // The web has no secure storage (see SecureTokenStore), so there the
+  // tokens are only ever in memory: reloading the page means signing in
+  // again.
+  store: kIsWeb ? InMemoryTokenStore() : const SecureTokenStore(),
+  registrationStore: const SecureTokenStore(),
   // The background task can't sign in, and mustn't take over the app's
   // sign-in redirect handling if WorkManager runs it in the app's process.
   receiver: interactive ? platformRedirectReceiver() : null,

@@ -10,22 +10,13 @@ abstract class TokenStore {
 /// flutter_secure_storage: the Android Keystore on Android, and
 /// DPAPI-encrypted storage on Windows.
 ///
-/// On the web there is no equivalent. The package encrypts each value with
-/// AES-GCM, but keeps the key unprotected beside it in the same browser
-/// storage, so that protects nothing: anything that can read the storage
-/// can decrypt it. What storage is used is what matters there, so pick it
-/// with [SecureTokenStore.forSession] or [SecureTokenStore.persistent].
+/// On the web there is no equivalent. The package uses localStorage, and
+/// encrypts each value with AES-GCM, but keeps the key unprotected beside
+/// it, so that protects nothing: anything that can read the storage can
+/// decrypt it. So on the web this holds only the client registration,
+/// which isn't a secret, and the tokens stay in an [InMemoryTokenStore].
 class SecureTokenStore implements TokenStore {
-  /// On the web, sessionStorage: gone when the tab closes, and never
-  /// shared with other tabs. Elsewhere the platform's secure storage.
-  const SecureTokenStore.forSession()
-    : _storage = const FlutterSecureStorage(
-        webOptions: WebOptions(useSessionStorage: true),
-      );
-
-  /// On the web, localStorage: kept until cleared. Elsewhere the
-  /// platform's secure storage.
-  const SecureTokenStore.persistent() : _storage = const FlutterSecureStorage();
+  const SecureTokenStore() : _storage = const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
 
@@ -40,6 +31,8 @@ class SecureTokenStore implements TokenStore {
   Future<void> delete(String key) => _storage.delete(key: key);
 }
 
+/// Keeps values only while the app runs: the web's token store, and
+/// tests'.
 class InMemoryTokenStore implements TokenStore {
   final values = <String, String>{};
 

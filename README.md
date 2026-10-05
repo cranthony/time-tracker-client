@@ -298,17 +298,16 @@ Specifically:
    DPAPI) and refreshes them automatically. Use **⋮ → Sign out** to
    forget them.
 
-   Browsers have no such storage, so on the web the tokens go in the
-   tab's `sessionStorage`. They're gone when you close the tab, so you
-   sign in again each session. They aren't really protected while the
-   tab is open: flutter_secure_storage does encrypt them, but keeps the
-   key right beside them, so any script running on the page could read
-   them. The published app's
+   Browsers have no such storage, so on the web the tokens are only
+   ever in the page's memory, never in browser storage or on disk.
+   Reloading the page or opening it again means signing in again,
+   usually just a popup that closes itself, since AuthKit remembers
+   you. While the page is open, its
    [Content-Security-Policy](#content-security-policy) keeps other
-   sites' scripts off the page. Browser extensions allowed to read the
-   site, and programs running as you, can still read them. The client
-   registration (not a secret) stays in `localStorage`, so a new session
-   reuses it instead of registering another client.
+   sites' scripts off it, but browser extensions allowed to read the
+   site, and programs running as you, could still reach the tokens. The
+   client registration (not a secret) stays in `localStorage`, so the
+   app reuses it instead of registering another client each time.
 
 Redirect URIs it registers:
 

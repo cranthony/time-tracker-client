@@ -13,6 +13,9 @@ on. Add the new version's section here at the same time; CI checks both.
   Content-Security-Policy: no scripts from other sites, and connections
   only to the server, the sign-in service and Google's fonts. The
   sign-in page's script moved to its own file for that.
+- The web app keeps its sign-in only in memory, never in the browser's
+  storage, so reloading the page or opening it again means signing in
+  again.
 
 ## 5.11.0
 
