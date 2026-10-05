@@ -1559,7 +1559,7 @@ void main() {
       );
     }
 
-    testWidgets('opens on Notes, and switches to Events and Goals', (
+    testWidgets('opens on Notes, and switches to Events and Plan', (
       tester,
     ) async {
       await tester.pumpWidget(home());
@@ -1577,11 +1577,11 @@ void main() {
       await tester.tap(
         find.descendant(
           of: find.byType(NavigationBar),
-          matching: find.text('Goals'),
+          matching: find.text('Plan'),
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('No goals yet.\nTap + to add one.'), findsOneWidget);
+      expect(find.text('No actions yet.\nTap + to add one.'), findsOneWidget);
       outbox.stop();
     });
 

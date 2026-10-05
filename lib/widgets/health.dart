@@ -17,12 +17,49 @@ String healthBand(int rating) => rating >= 70
     ? 'needs attention'
     : 'off track';
 
-/// A goal's latest confirmed rating: a dot in its band's color beside the
+/// The color for a 0-100 relationship health rating: from gray, for a
+/// relationship gone disconnected, to green, for a healthy one -- there's
+/// no red, since drifting apart isn't a failure. Never shown alone.
+Color relationshipColor(int rating) => Color.lerp(
+  _disconnected,
+  _connected,
+  // Gray up to 15, green from 85, so the bands between read apart.
+  ((rating - 15) / 70).clamp(0.0, 1.0),
+)!;
+
+const _disconnected = Color(0xFF9E9E9E);
+const _connected = Color(0xFF0CA30C);
+
+/// What a relationship health rating's band is called.
+String relationshipBand(int rating) => rating >= 70
+    ? 'healthy'
+    : rating >= 40
+    ? 'drifting'
+    : 'disconnected';
+
+/// Which scale a rating is shown on: a goal's (red, yellow, green) or a
+/// relationship's (gray to green).
+enum HealthScale {
+  goal(healthColor, healthBand),
+  relationship(relationshipColor, relationshipBand);
+
+  const HealthScale(this.color, this.band);
+
+  final Color Function(int rating) color;
+  final String Function(int rating) band;
+}
+
+/// A latest confirmed rating: a dot in its band's color beside the
 /// number, or a muted dash when it has none.
 class HealthDot extends StatelessWidget {
-  const HealthDot({super.key, required this.rating});
+  const HealthDot({
+    super.key,
+    required this.rating,
+    this.scale = HealthScale.goal,
+  });
 
   final int? rating;
+  final HealthScale scale;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +72,7 @@ class HealthDot extends StatelessWidget {
       );
     }
     return Tooltip(
-      message: 'Health $rating: ${healthBand(rating)}',
+      message: 'Health $rating: ${scale.band(rating)}',
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -43,7 +80,7 @@ class HealthDot extends StatelessWidget {
             width: 10,
             height: 10,
             decoration: BoxDecoration(
-              color: healthColor(rating),
+              color: scale.color(rating),
               shape: BoxShape.circle,
             ),
           ),
@@ -59,9 +96,14 @@ class HealthDot extends StatelessWidget {
 /// its rating and in its band's color; a day with none is a short muted
 /// tick.
 class TrendSparkline extends StatelessWidget {
-  const TrendSparkline({super.key, required this.trend});
+  const TrendSparkline({
+    super.key,
+    required this.trend,
+    this.scale = HealthScale.goal,
+  });
 
   final List<int?> trend;
+  final HealthScale scale;
 
   @override
   Widget build(BuildContext context) {
@@ -73,17 +115,22 @@ class TrendSparkline extends StatelessWidget {
                 '${trend.map((r) => r?.toString() ?? '–').join(', ')}',
       child: CustomPaint(
         size: Size(trend.length * 6.0, 18),
-        painter: _SparklinePainter(trend, Theme.of(context).hintColor),
+        painter: _SparklinePainter(
+          trend,
+          Theme.of(context).hintColor,
+          scale.color,
+        ),
       ),
     );
   }
 }
 
 class _SparklinePainter extends CustomPainter {
-  _SparklinePainter(this.trend, this.muted);
+  _SparklinePainter(this.trend, this.muted, this.color);
 
   final List<int?> trend;
   final Color muted;
+  final Color Function(int rating) color;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -104,14 +151,16 @@ class _SparklinePainter extends CustomPainter {
           topLeft: const Radius.circular(2),
           topRight: const Radius.circular(2),
         ),
-        Paint()..color = healthColor(rating),
+        Paint()..color = color(rating),
       );
     }
   }
 
   @override
   bool shouldRepaint(_SparklinePainter old) =>
-      old.muted != muted || old.trend.join(',') != trend.join(',');
+      old.muted != muted ||
+      old.color != color ||
+      old.trend.join(',') != trend.join(',');
 }
 
 /// A goal's assessments, oldest first, as bars on a 0-100 scale with the

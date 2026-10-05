@@ -2,16 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
 import '../models/measure.dart';
-import '../models/trait.dart';
-import '../services/traits_repository.dart';
 import 'color_picker.dart';
 import 'durations.dart';
 import 'goals_picker.dart';
-import 'parts_editor.dart';
 
 /// The statuses of sub-goals a weighted rollup's weights leave out: not
 /// yet taken up, or done with.
-const _hiddenFromWeights = {'proposed', 'completed', 'archived', 'deleted'};
+const _hiddenFromWeights = {'proposed', 'archived', 'deleted'};
 
 /// Edits a goal's measure: a kind picked from [measureKinds] (or none),
 /// then that kind's fields. Calls [onChanged] with the measure as it
@@ -21,8 +18,7 @@ const _hiddenFromWeights = {'proposed', 'completed', 'archived', 'deleted'};
 /// A time-spent, number-of-events, time-of-day, time-window or
 /// follow-through measure looks at the events of its own goal, or of a goal chosen from [goals]; with or
 /// without their sub-goals. A weighted rollup weighs each of [goalId]'s
-/// sub-goals, from [goals]. A traits measure picks its traits, and their
-/// weights, from the [TraitsScope]'s. Any measure can be rated only on
+/// sub-goals, from [goals]. Any measure can be rated only on
 /// days with events of its goal, or of another.
 class MeasureEditor extends StatefulWidget {
   const MeasureEditor({
@@ -71,20 +67,6 @@ class _MeasureEditorState extends State<MeasureEditor> {
 
   /// A weighted rollup's weight for each sub-goal, by id.
   final _weights = <String, TextEditingController>{};
-
-  /// A traits measure's: every active trait, or those picked, in order;
-  /// each one's weight, by id; and its window.
-  bool _allTraits = true;
-  final _traitIds = <String>[];
-  final _traitWeights = <String, TextEditingController>{};
-  final _window = TextEditingController();
-
-  /// This goal's own parts for a trait, by trait id, instead of the
-  /// trait's: a person's own cadences, say.
-  final _ownParts = <String, List<Part>>{};
-
-  /// The traits to pick from, once asked for.
-  Future<List<Trait>>? _traitList;
 
   /// For a sub-goal set aside for a while: the day ("YYYY-MM-DD") its
   /// weight changes, and what it weighs from then on. Its weight until
@@ -181,34 +163,7 @@ class _MeasureEditorState extends State<MeasureEditor> {
             }
           }
         }
-      case 'traits':
-        if (m['traits'] case final List ids) {
-          _allTraits = false;
-          _traitIds.addAll(ids.map((id) => '$id'));
-        }
-        if (m['weights'] case final Map weights) {
-          for (final MapEntry(:key, :value) in weights.entries) {
-            _traitWeights['$key'] = TextEditingController(text: text(value));
-          }
-        }
-        _window.text = text(m['window_days']);
-        if (m['parts'] case final Map own) {
-          for (final MapEntry(:key, :value) in own.entries) {
-            if (value is List) {
-              _ownParts['$key'] = [
-                for (final part in value)
-                  if (part is Map) Map<String, Object?>.of(part.cast()),
-              ];
-            }
-          }
-        }
     }
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _traitList ??= TraitsScope.of(context)?.traits();
   }
 
   @override
@@ -226,9 +181,7 @@ class _MeasureEditorState extends State<MeasureEditor> {
       _penalty,
       _recovery,
       _lookBack,
-      _window,
       ..._weights.values,
-      ..._traitWeights.values,
       ..._then.values,
     ]) {
       c.dispose();
@@ -339,23 +292,6 @@ class _MeasureEditorState extends State<MeasureEditor> {
                 },
           },
         if (_agg == 'percentile') 'percentile': number(_percentile),
-      },
-      'traits' => {
-        'kind': 'traits',
-        'traits': _allTraits ? 'all' : _traitIds,
-        if ({
-              for (final MapEntry(:key, :value) in _traitWeights.entries)
-                if (_allTraits || _traitIds.contains(key)) key: ?number(value),
-            }
-            case final weights when weights.isNotEmpty)
-          'weights': weights,
-        'window_days': ?number(_window),
-        if ({
-              for (final MapEntry(:key, :value) in _ownParts.entries)
-                if (_allTraits || _traitIds.contains(key)) key: value,
-            }
-            case final own when own.isNotEmpty)
-          'parts': own,
       },
       final kind => {'kind': kind},
     };
@@ -551,93 +487,6 @@ class _MeasureEditorState extends State<MeasureEditor> {
     },
   );
 
-  /// A traits measure's traits -- every active one, or those picked --
-  /// each with its weight, and the window they're scored over.
-  List<Widget> _traitFields(ThemeData theme) => [
-    SwitchListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      title: const Text('Every active trait'),
-      subtitle: const Text('Including any added later.'),
-      value: _allTraits,
-      onChanged: (on) {
-        setState(() => _allTraits = on);
-        _changed();
-      },
-    ),
-    FutureBuilder(
-      future: _traitList,
-      builder: (context, snapshot) {
-        if (_traitList == null) return const Text('No traits to choose from.');
-        final traits = snapshot.data;
-        if (traits == null) {
-          return snapshot.hasError
-              ? const Text("Couldn't load the traits.")
-              : const LinearProgressIndicator();
-        }
-        final shown = [
-          for (final trait in traits)
-            if (trait.id != null &&
-                (trait.status == 'active' || _traitIds.contains(trait.id)))
-              trait,
-        ];
-        final weighed = _allTraits
-            ? [
-                for (final t in shown)
-                  if (t.status == 'active') t,
-              ]
-            : [
-                for (final id in _traitIds)
-                  ?shown.where((t) => t.id == id).firstOrNull,
-              ];
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!_allTraits)
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final trait in shown)
-                    FilterChip(
-                      label: Text(trait.name),
-                      selected: _traitIds.contains(trait.id),
-                      onSelected: (on) {
-                        setState(
-                          () => on
-                              ? _traitIds.add(trait.id!)
-                              : _traitIds.remove(trait.id),
-                        );
-                        _changed();
-                      },
-                    ),
-                ],
-              ),
-            for (final trait in weighed) ...[
-              _field(
-                _traitWeights.putIfAbsent(trait.id!, TextEditingController.new),
-                '${trait.name} weight',
-                hint: '1',
-                number: true,
-              ),
-              _ownPartsRow(theme, trait),
-            ],
-          ],
-        );
-      },
-    ),
-    _field(_window, 'Over the last', hint: '30', suffix: 'days', number: true),
-    Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Text(
-        "Each trait's parts are scored over that many days before the day "
-        'rated. A trait with no weight weighs 1.',
-        style: theme.textTheme.bodySmall,
-      ),
-    ),
-  ];
-
   /// A sub-goal's weight, and whether it's set aside until a day, with
   /// what it weighs from then on.
   List<Widget> _weightField(Goal goal) {
@@ -723,57 +572,6 @@ class _MeasureEditorState extends State<MeasureEditor> {
       if (then.text.trim().isEmpty) then.text = '1';
     });
     _changed();
-  }
-
-  /// Whether this goal has its own parts for [trait] -- listed, if it
-  /// has -- with buttons to edit them, or to go back to the trait's.
-  Widget _ownPartsRow(ThemeData theme, Trait trait) {
-    final own = _ownParts[trait.id];
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            own == null
-                ? "${trait.name}'s own parts"
-                : 'Parts for this goal: ${own.map(describePart).join('; ')}',
-            style: theme.textTheme.bodySmall,
-          ),
-          Wrap(
-            spacing: 8,
-            children: [
-              TextButton(
-                onPressed: () async {
-                  final edited = await showPartsDialog(
-                    context,
-                    title: '${trait.name} for this goal',
-                    explanation:
-                        "This goal's own parts for ${trait.name}, instead of "
-                        "the trait's: its own cadences, say. A count with an "
-                        'activity counts only events with them of that '
-                        'activity.',
-                    parts: own ?? trait.parts,
-                  );
-                  if (edited == null) return;
-                  setState(() => _ownParts[trait.id!] = edited);
-                  _changed();
-                },
-                child: Text(own == null ? 'Customize for this goal' : 'Edit'),
-              ),
-              if (own != null)
-                TextButton(
-                  onPressed: () {
-                    setState(() => _ownParts.remove(trait.id));
-                    _changed();
-                  },
-                  child: Text("Use ${trait.name}'s"),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _field(
@@ -1017,7 +815,6 @@ class _MeasureEditorState extends State<MeasureEditor> {
               ),
             if (_agg == 'weighted') _weightFields(theme),
           ],
-          'traits' => _traitFields(theme),
           _ => const <Widget>[],
         },
         if (kind != null) ..._onlyIfDays(theme),

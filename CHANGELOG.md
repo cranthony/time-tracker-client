@@ -6,6 +6,30 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 6.0.0
+
+- The Goals tab is now **Plan**, in three sections, each folded away or
+  opened from its heading: Traits (how to be), People (who) and Actions
+  (do). Goals are now made of these. This needs a server that knows
+  people and actions; until then, try it with sample data.
+- Traits are wholly yours: their parts are now *facets* -- a rubric, a
+  rating scale, whether it rates events with someone or for them, and the
+  primitives Claude judges it from, histories with a lookback -- plus
+  cadences, continuity and follow-through. The built-in kinds (making
+  something together, something new, effort, attention, judgment and
+  preparation) are gone. Traits rate people, not goals.
+- People: Self, always, and everyone else, in any number of circles, each
+  with a relationship health from gray (disconnected) to green (healthy).
+  A person's page shows their traits' scores, with Claude's judgments of
+  the events behind them, what matters to them, and their history.
+- Actions are what goals were: a tree, but of groups -- which can't be
+  given to an event -- with actions as its leaves. They're never inactive
+  or completed; a proposed one is one Claude made, to approve from its
+  menu.
+- What happened at an event is now who it was with and for (people),
+  where, notes on it, and notes on each person there, with Claude's
+  ratings of it shown.
+
 ## 5.16.1
 
 - On the Goals page, a goal with sub-goals and a color of its own again

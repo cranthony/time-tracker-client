@@ -18,6 +18,7 @@ import 'services/goals_repository.dart';
 import 'services/events_repository.dart';
 import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
+import 'services/people_repository.dart';
 import 'services/response_cache.dart';
 import 'services/traits_repository.dart';
 import 'theme.dart';
@@ -52,6 +53,8 @@ Future<void> main() async {
         goalOutbox: GoalOutbox(store: InMemoryOutboxStore(), repository: goals),
         traitsRepository:
             sample?.traitsRepository() ?? InMemoryTraitsRepository(),
+        peopleRepository:
+            sample?.peopleRepository() ?? InMemoryPeopleRepository(),
       ),
     );
     return;
@@ -79,6 +82,7 @@ Future<void> main() async {
       auth: auth,
       cache: cache,
       traitsRepository: McpTraitsRepository(client),
+      peopleRepository: McpPeopleRepository(client),
     ),
   );
 }
@@ -130,13 +134,18 @@ class TimeTrackerApp extends StatefulWidget {
     this.auth,
     this.cache,
     this.traitsRepository,
+    this.peopleRepository,
   });
 
   final NotesRepository repository;
 
-  /// Traits, and goals' descriptions and histories, for every screen
+  /// Traits, and how each person is rated by them, for every screen
   /// below (see [TraitsScope]); without it, they aren't offered.
   final TraitsRepository? traitsRepository;
+
+  /// People and their circles, for every screen below (see
+  /// [PeopleScope]); without it, they aren't offered.
+  final PeopleRepository? peopleRepository;
   final EventsRepository eventsRepository;
   final GoalsRepository goalsRepository;
   final NoteOutbox outbox;
@@ -223,9 +232,15 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       theme: appTheme(Brightness.light),
       darkTheme: appTheme(Brightness.dark),
       // Above the navigator, so every route and dialog finds it.
-      builder: (context, child) => switch (widget.traitsRepository) {
-        final traits? => TraitsScope(repository: traits, child: child!),
-        null => child!,
+      builder: (context, child) {
+        var scoped = child!;
+        if (widget.peopleRepository case final people?) {
+          scoped = PeopleScope(repository: people, child: scoped);
+        }
+        if (widget.traitsRepository case final traits?) {
+          scoped = TraitsScope(repository: traits, child: scoped);
+        }
+        return scoped;
       },
       home: HomeScreen(
         notesRepository: widget.repository,

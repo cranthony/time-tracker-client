@@ -1,6 +1,9 @@
-/// A goal: something the user is working toward, mirroring the Time Tracker
-/// MCP server's `Goal`. Goals form a tree through [parentId], and each
-/// active goal colors its events through a calendar label.
+/// An action -- a verb for what the user is doing in a given moment -- or
+/// a group of them, mirroring the Time Tracker MCP server's `Goal`, which
+/// actions are kept as. They form a tree through [parentId]: groups are
+/// names that roll up the actions under them, for targets, and actions are
+/// always its leaves. Only an active action colors its events through a
+/// calendar label; a group can't be given to an event.
 ///
 /// Only the fields the app uses so far are typed; everything the server
 /// sent stays in [properties].
@@ -36,8 +39,16 @@ class Goal {
   /// calendar label.
   final String status;
 
-  /// Whether it's being worked on, and so holds a calendar label.
+  /// Whether it's in use, and so (unless it's a group) holds a calendar
+  /// label.
   bool get active => status == 'active';
+
+  /// Whether it's a group of actions, not an action: it can't be given to
+  /// an event, and has no label of its own.
+  bool get isGroup => properties['kind'] == 'group';
+
+  /// Whether Claude made it, and the user hasn't looked at it yet.
+  bool get proposed => status == 'proposed';
 
   /// Whether it's the overall goal, above every other: see
   /// [overallGoalId].
@@ -112,7 +123,7 @@ class Goal {
     status:
         json['status'] as String? ??
         // A server from before statuses.
-        (json['active'] == false ? 'inactive' : 'active'),
+        (json['active'] == false ? 'archived' : 'active'),
     backgroundColor: json['background_color'] as String?,
     priority: json['priority'] as int?,
     measure: switch (json['measure']) {
@@ -311,17 +322,15 @@ String goalName(Goal goal) {
   return name == null || name.isEmpty ? '(no name)' : name;
 }
 
-/// The statuses a goal can have, as the server names them, and as the app
-/// shows them.
+/// The statuses an action can have, as the server names them, and as the
+/// app shows them. Proposed is one Claude made, for the user to review.
 const goalStatuses = {
   'proposed': 'Proposed',
   'active': 'Active',
-  'inactive': 'Inactive',
-  'completed': 'Completed',
   'archived': 'Archived',
   'deleted': 'Deleted',
 };
 
-/// The statuses the Goals page shows until told otherwise: the goals still
-/// in play.
-const defaultGoalStatuses = {'proposed', 'active', 'inactive'};
+/// The statuses the Plan page shows until told otherwise: the actions in
+/// play.
+const defaultGoalStatuses = {'proposed', 'active'};

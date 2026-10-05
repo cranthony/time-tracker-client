@@ -1,60 +1,50 @@
-/// What happened at an event, for its goals' traits, mirroring the Time
-/// Tracker MCP server's `Facets` (its utilities/facets.py): who it was
-/// with and who it was for (goal ids), its activity and place, three 0-3
-/// judgments, what was new, and a line of evidence. Every field is
-/// optional. Compaction writes them on past events; they can be edited
-/// here, and are saved whole through `update_event`.
+/// What happened at an event, kept in its private properties: who it was
+/// with and who it was for (person ids), where it was, notes on it and on
+/// each person, and Claude's ratings of it against the traits' facets.
+/// Every field is optional. What was done at it isn't here: that's its
+/// actions, which are its calendar labels. Compaction gathers these on
+/// past events; they can be edited here, and are saved whole through
+/// `update_event`.
 class Facets {
   const Facets({
-    this.withGoalIds = const [],
-    this.forGoalIds = const [],
-    this.activity,
-    this.place,
-    this.creative,
-    this.newness,
-    this.effort,
-    this.attention,
-    this.why,
+    this.withPersonIds = const [],
+    this.forPersonIds = const [],
+    this.location,
+    this.notes,
+    this.personNotes = const {},
+    this.judgments = const [],
   });
 
-  /// The goals of the people present.
-  final List<String> withGoalIds;
+  /// The people who were there.
+  final List<String> withPersonIds;
 
-  /// The goals of the people it was done for, while they weren't there
-  /// (preparing a gift, say).
-  final List<String> forGoalIds;
+  /// The people it was done for, whether or not they were there (a gift,
+  /// say, or Self's own practice).
+  final List<String> forPersonIds;
 
-  /// What it was, a short label, e.g. "salsa social".
-  final String? activity;
+  /// Where, a short label, e.g. "the hall".
+  final String? location;
 
-  /// Where, a short label.
-  final String? place;
+  /// What was noted about it in general.
+  final String? notes;
 
-  /// 0-3: how much they made something together.
-  final int? creative;
+  /// Subjective notes on each person there, by person id.
+  final Map<String, String> personNotes;
 
-  /// What was new to them: one of [newKinds]' keys.
-  final String? newness;
-
-  /// 0-3: effort beyond showing up (prepared, cooked, hosted, traveled).
-  final int? effort;
-
-  /// 0-3: the quality of attention given.
-  final int? attention;
-
-  /// One line of evidence for the judgments.
-  final String? why;
+  /// Claude's ratings of it against the traits' facets, for each person;
+  /// made in the reflection, never by hand.
+  final List<FacetJudgment> judgments;
 
   bool get isEmpty =>
-      withGoalIds.isEmpty &&
-      forGoalIds.isEmpty &&
-      activity == null &&
-      place == null &&
-      creative == null &&
-      newness == null &&
-      effort == null &&
-      attention == null &&
-      why == null;
+      withPersonIds.isEmpty &&
+      forPersonIds.isEmpty &&
+      location == null &&
+      notes == null &&
+      personNotes.isEmpty &&
+      judgments.isEmpty;
+
+  /// Everyone it involves, with them or for them, each once.
+  List<String> get personIds => {...withPersonIds, ...forPersonIds}.toList();
 
   /// From a `PublicEvent`'s `facets`; null for none.
   static Facets? fromJson(Object? json) {
@@ -64,97 +54,159 @@ class Facets {
     ];
     String? text(Object? value) =>
         value is String && value.trim().isNotEmpty ? value : null;
-    int? score(Object? value) => value is num ? value.round() : null;
     return Facets(
-      withGoalIds: ids(json['with_goal_ids']),
-      forGoalIds: ids(json['for_goal_ids']),
-      activity: text(json['activity']),
-      place: text(json['place']),
-      creative: score(json['creative']),
-      newness: text(json['new']),
-      effort: score(json['effort']),
-      attention: score(json['attention']),
-      why: text(json['why']),
+      withPersonIds: ids(json['with_person_ids']),
+      forPersonIds: ids(json['for_person_ids']),
+      location: text(json['location']),
+      notes: text(json['notes']),
+      personNotes: {
+        for (final MapEntry(:key, :value)
+            in (json['person_notes'] as Map? ?? const {}).entries)
+          '$key': ?text(value),
+      },
+      judgments: [
+        for (final j in json['judgments'] as List? ?? const [])
+          if (j is Map) ?FacetJudgment.fromJson(j.cast()),
+      ],
     );
   }
 
   /// As `update_event` takes them, leaving out what's unset.
   Map<String, Object?> toJson() => {
-    if (withGoalIds.isNotEmpty) 'with_goal_ids': withGoalIds,
-    if (forGoalIds.isNotEmpty) 'for_goal_ids': forGoalIds,
-    'activity': ?activity,
-    'place': ?place,
-    'creative': ?creative,
-    'new': ?newness,
-    'effort': ?effort,
-    'attention': ?attention,
-    'why': ?why,
+    if (withPersonIds.isNotEmpty) 'with_person_ids': withPersonIds,
+    if (forPersonIds.isNotEmpty) 'for_person_ids': forPersonIds,
+    'location': ?location,
+    'notes': ?notes,
+    if (personNotes.isNotEmpty) 'person_notes': personNotes,
+    if (judgments.isNotEmpty)
+      'judgments': [for (final j in judgments) j.toJson()],
   };
 
-  /// In a line, e.g. "With Sam · salsa social @ the hall · new place ·
-  /// creative 2, effort 1, attention 3"; goals named from [goalNames].
-  String describe([Map<String?, String> goalNames = const {}]) {
+  /// [this] with who, where and the notes replaced: Claude's judgments
+  /// are kept, but only for the people still there.
+  Facets edited({
+    required List<String> withPersonIds,
+    required List<String> forPersonIds,
+    String? location,
+    String? notes,
+    Map<String, String> personNotes = const {},
+  }) {
+    final everyone = {...withPersonIds, ...forPersonIds};
+    return Facets(
+      withPersonIds: withPersonIds,
+      forPersonIds: forPersonIds,
+      location: location,
+      notes: notes,
+      personNotes: {
+        for (final MapEntry(:key, :value) in personNotes.entries)
+          if (everyone.contains(key)) key: value,
+      },
+      judgments: [
+        for (final j in judgments)
+          if (j.personId == null || everyone.contains(j.personId)) j,
+      ],
+    );
+  }
+
+  /// In a line, e.g. "With Sam · For Self · @ the hall"; people named
+  /// from [personNames].
+  String describe([Map<String?, String> personNames = const {}]) {
     String names(List<String> ids) =>
-        ids.map((id) => goalNames[id] ?? id).join(', ');
-    final what = [?activity, ?place].join(' @ ');
-    final scores = [
-      if (creative case final c?) 'creative $c',
-      if (effort case final e?) 'effort $e',
-      if (attention case final a?) 'attention $a',
-    ].join(', ');
+        ids.map((id) => personNames[id] ?? id).join(', ');
     return [
-      if (withGoalIds.isNotEmpty) 'With ${names(withGoalIds)}',
-      if (forGoalIds.isNotEmpty) 'For ${names(forGoalIds)}',
-      if (what.isNotEmpty) what,
-      if (newness case final n? when n != 'none') 'new $n',
-      if (scores.isNotEmpty) scores,
+      if (withPersonIds.isNotEmpty) 'With ${names(withPersonIds)}',
+      if (forPersonIds.isNotEmpty) 'For ${names(forPersonIds)}',
+      if (location case final where?) '@ $where',
     ].join(' · ');
   }
 
   @override
   bool operator ==(Object other) =>
       other is Facets &&
-      _sameList(withGoalIds, other.withGoalIds) &&
-      _sameList(forGoalIds, other.forGoalIds) &&
-      activity == other.activity &&
-      place == other.place &&
-      creative == other.creative &&
-      newness == other.newness &&
-      effort == other.effort &&
-      attention == other.attention &&
-      why == other.why;
+      _sameList(withPersonIds, other.withPersonIds) &&
+      _sameList(forPersonIds, other.forPersonIds) &&
+      location == other.location &&
+      notes == other.notes &&
+      _sameMap(personNotes, other.personNotes) &&
+      _sameList(judgments, other.judgments);
 
   @override
   int get hashCode => Object.hash(
-    Object.hashAll(withGoalIds),
-    Object.hashAll(forGoalIds),
-    activity,
-    place,
-    creative,
-    newness,
-    effort,
-    attention,
-    why,
+    Object.hashAll(withPersonIds),
+    Object.hashAll(forPersonIds),
+    location,
+    notes,
+    Object.hashAllUnordered(personNotes.entries.map((e) => (e.key, e.value))),
+    Object.hashAll(judgments),
   );
 }
 
-bool _sameList(List<String> a, List<String> b) =>
+/// Claude's rating of one event against one trait's facet, for one person
+/// (or a named group of them).
+class FacetJudgment {
+  const FacetJudgment({
+    this.eventId,
+    this.traitId,
+    this.part,
+    this.personId,
+    required this.rating,
+    this.why,
+  });
+
+  /// The event judged; in an event's own facets, left out.
+  final String? eventId;
+  final String? traitId;
+
+  /// The facet's key within its trait: "facet", or "facet#2".
+  final String? part;
+
+  /// Who it was judged for: a person or a circle.
+  final String? personId;
+  final int rating;
+
+  /// Claude's reason, in a line.
+  final String? why;
+
+  static FacetJudgment? fromJson(Map<String, dynamic> json) {
+    final rating = json['rating'];
+    if (rating is! num) return null;
+    return FacetJudgment(
+      eventId: json['event_id'] as String?,
+      traitId: json['trait_id'] as String?,
+      part: json['part'] as String?,
+      personId: json['person_id'] as String?,
+      rating: rating.round(),
+      why: json['why'] as String?,
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+    'event_id': ?eventId,
+    'trait_id': ?traitId,
+    'part': ?part,
+    'person_id': ?personId,
+    'rating': rating,
+    'why': ?why,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is FacetJudgment &&
+      eventId == other.eventId &&
+      traitId == other.traitId &&
+      part == other.part &&
+      personId == other.personId &&
+      rating == other.rating &&
+      why == other.why;
+
+  @override
+  int get hashCode =>
+      Object.hash(eventId, traitId, part, personId, rating, why);
+}
+
+bool _sameList<T>(List<T> a, List<T> b) =>
     a.length == b.length &&
     [for (var i = 0; i < a.length; i++) a[i] == b[i]].every((same) => same);
 
-/// What can be new to them at an event, as the server names it, and as
-/// the app shows it.
-const newKinds = {
-  'none': 'Nothing new',
-  'activity': 'New activity',
-  'place': 'New place',
-  'both': 'New activity and place',
-};
-
-/// The 0-3 judgments, as the server names them, and as the app shows them
-/// with what they rate.
-const facetScores = {
-  'creative': ('Creative', 'Made something together'),
-  'effort': ('Effort', 'Beyond showing up: prepared, cooked, hosted, traveled'),
-  'attention': ('Attention', 'The quality of attention given'),
-};
+bool _sameMap(Map<String, String> a, Map<String, String> b) =>
+    a.length == b.length && a.entries.every((e) => b[e.key] == e.value);

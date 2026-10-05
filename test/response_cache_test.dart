@@ -11,7 +11,7 @@ import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
-import 'package:time_tracker_client/screens/goals_screen.dart';
+import 'package:time_tracker_client/screens/plan_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
@@ -243,7 +243,7 @@ void main() {
       expect(repo.kept, [day]);
     });
 
-    testWidgets('Goals asks to sign in, rather than show kept goals', (
+    testWidgets('Plan asks to sign in, rather than show kept actions', (
       tester,
     ) async {
       final repo = _GatedGoalsRepository(
@@ -253,7 +253,7 @@ void main() {
       );
       await tester.pumpWidget(
         MaterialApp(
-          home: GoalsScreen(
+          home: PlanScreen(
             outbox: _idleGoalOutbox(),
             repository: repo,
             serverLabel: 'test',
@@ -267,7 +267,7 @@ void main() {
       repo.gate.completeError(SignInRequiredException());
       await tester.pumpAndSettle();
       expect(find.text('Old'), findsNothing);
-      expect(find.text('Sign in to see your goals.'), findsOneWidget);
+      expect(find.text('Sign in to see your plan.'), findsOneWidget);
       expect(refreshing(), findsNothing);
     });
 

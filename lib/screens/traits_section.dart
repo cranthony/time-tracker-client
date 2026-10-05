@@ -4,30 +4,39 @@ import '../models/trait.dart';
 import '../services/mcp_client.dart';
 import '../services/traits_repository.dart';
 import '../widgets/health.dart';
+import '../widgets/plan_section.dart';
 import '../widgets/trait_dialog.dart';
 import 'trait_breakdown.dart';
 
-/// The traits goals are rated by: each one's name, status, latest score
-/// (the mean across the goals rated by it) and its last 8 days' scores,
-/// and anything wrong with it. Tapping a trait edits it; tapping its score
-/// shows the goals and parts behind it; its menu turns it on or off, or
+/// The Plan page's Traits section -- how the user wants to be: each
+/// trait's name, definition, status, latest score (the mean across the
+/// people rated by it) and its last 8 days' scores, and anything wrong
+/// with it. Tapping a trait edits it, parts and all; tapping its score
+/// shows the people and parts behind it; its menu turns it on or off, or
 /// archives it. "+" adds one. Archived traits are shown only when asked
-/// for. [goalNames] names the goals behind a score.
-class TraitsScreen extends StatefulWidget {
-  const TraitsScreen({
+/// for. [personNames] names the people behind a score; [actions] the
+/// actions a cadence part can count.
+class TraitsSection extends StatefulWidget {
+  const TraitsSection({
     super.key,
     required this.repository,
-    this.goalNames = const {},
+    required this.expanded,
+    required this.onExpanded,
+    this.personNames = const {},
+    this.actions = const {},
   });
 
   final TraitsRepository repository;
-  final Map<String?, String> goalNames;
+  final bool expanded;
+  final ValueChanged<bool> onExpanded;
+  final Map<String?, String> personNames;
+  final Map<String, String> actions;
 
   @override
-  State<TraitsScreen> createState() => _TraitsScreenState();
+  State<TraitsSection> createState() => TraitsSectionState();
 }
 
-class _TraitsScreenState extends State<TraitsScreen> {
+class TraitsSectionState extends State<TraitsSection> {
   List<Trait>? _traits;
   Map<String, List<TraitDay>> _history = const {};
   Object? _error;
@@ -36,10 +45,11 @@ class _TraitsScreenState extends State<TraitsScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    reload();
   }
 
-  Future<void> _load() async {
+  /// Loads the traits and their scores afresh.
+  Future<void> reload() async {
     try {
       final traits = await widget.repository.traits(
         statuses: [...traitStatuses.keys],
@@ -64,6 +74,7 @@ class _TraitsScreenState extends State<TraitsScreen> {
     final saved = await showTraitDialog(
       context,
       trait: trait,
+      actions: widget.actions,
       save: (edited) => trait?.id == null
           ? repository.createTrait(edited)
           : repository.updateTrait(trait!.id!, {
@@ -73,14 +84,14 @@ class _TraitsScreenState extends State<TraitsScreen> {
               'parts': edited.parts,
             }),
     );
-    if (saved != null) await _load();
+    if (saved != null) await reload();
   }
 
   Future<void> _setStatus(Trait trait, String status) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await widget.repository.updateTrait(trait.id!, {'status': status});
-      await _load();
+      await reload();
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(
@@ -99,30 +110,32 @@ class _TraitsScreenState extends State<TraitsScreen> {
       for (final trait in _traits ?? const <Trait>[])
         if (_archived || trait.status != 'archived') trait,
     ];
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Traits'),
-        actions: [
-          IconButton(
-            tooltip: _archived
-                ? 'Hide archived traits'
-                : 'Show archived traits',
-            icon: Icon(
-              _archived ? Icons.inventory_2 : Icons.inventory_2_outlined,
-            ),
-            onPressed: () => setState(() => _archived = !_archived),
+    return PlanSection(
+      title: 'Traits',
+      annotation: 'how to be',
+      expanded: widget.expanded,
+      onExpanded: widget.onExpanded,
+      actions: [
+        IconButton(
+          tooltip: _archived ? 'Hide archived traits' : 'Show archived traits',
+          icon: Icon(
+            _archived ? Icons.inventory_2 : Icons.inventory_2_outlined,
           ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        tooltip: 'New trait',
-        onPressed: _traits == null ? null : () => _edit(null),
-        child: const Icon(Icons.add),
-      ),
-      body: switch ((_traits, _error)) {
-        (null, final error?) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
+          onPressed: () {
+            setState(() => _archived = !_archived);
+            widget.onExpanded(true);
+          },
+        ),
+        IconButton(
+          tooltip: 'New trait',
+          icon: const Icon(Icons.add),
+          onPressed: _traits == null ? null : () => _edit(null),
+        ),
+      ],
+      children: switch ((_traits, _error)) {
+        (null, final error?) => [
+          Padding(
+            padding: const EdgeInsets.all(16),
             child: Text(
               "Couldn't load the traits. ${switch (error) {
                 McpException(:final message) => message,
@@ -130,21 +143,16 @@ class _TraitsScreenState extends State<TraitsScreen> {
               }}",
             ),
           ),
-        ),
-        (null, _) => const Center(child: CircularProgressIndicator()),
-        _ => RefreshIndicator(
-          onRefresh: _load,
-          child: ListView(
-            children: [
-              for (final trait in traits) _tile(context, trait),
-              if (traits.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text('No traits yet.'),
-                ),
-            ],
-          ),
-        ),
+        ],
+        (null, _) => const [LinearProgressIndicator()],
+        _ => [
+          for (final trait in traits) _tile(context, trait),
+          if (traits.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('No traits yet. Tap + to define one.'),
+            ),
+        ],
       },
     );
   }
@@ -154,6 +162,8 @@ class _TraitsScreenState extends State<TraitsScreen> {
     final days = _history[trait.id] ?? const <TraitDay>[];
     final latest = days.isEmpty ? null : days.last;
     final muted = trait.status != 'active';
+    final facets = trait.parts.where((p) => p['kind'] == 'facet').length;
+    final others = trait.parts.length - facets;
     return ListTile(
       onTap: () => _edit(trait),
       title: Text(
@@ -164,8 +174,15 @@ class _TraitsScreenState extends State<TraitsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (trait.definition case final definition?) Text(definition),
-          if (trait.status != 'active')
-            Text(traitStatuses[trait.status] ?? trait.status),
+          Text(
+            [
+              if (facets > 0) '$facets facet${facets == 1 ? '' : 's'}',
+              if (others > 0) '$others other part${others == 1 ? '' : 's'}',
+              if (trait.status != 'active')
+                traitStatuses[trait.status] ?? trait.status,
+            ].join(' · '),
+            style: theme.textTheme.bodySmall,
+          ),
           for (final problem in trait.problems)
             Text(problem, style: TextStyle(color: theme.colorScheme.error)),
         ],
@@ -180,10 +197,9 @@ class _TraitsScreenState extends State<TraitsScreen> {
                 trait: trait,
                 days: days,
                 repository: widget.repository,
-                goalNames: widget.goalNames,
+                personNames: widget.personNames,
               ),
-              // On one line, as the Goals page shows a goal's health:
-              // a column would overflow a list tile's height.
+              // On one line: a column would overflow a list tile's height.
               child: Padding(
                 padding: const EdgeInsets.all(8),
                 child: Row(

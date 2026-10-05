@@ -43,7 +43,7 @@ void main() {
         'work': 240,
         'cook': 120,
         'wake': 60,
-        'Not on goals': 1020,
+        'Not on actions': 1020,
       });
     });
 
@@ -53,8 +53,8 @@ void main() {
         'work': 240,
         'tofu': 90,
         'wake': 60,
-        '2 other goals': 30, // Curry's 20, and Cook's own 10.
-        'Not on goals': 1020,
+        '2 other actions': 30, // Curry's 20, and Cook's own 10.
+        'Not on actions': 1020,
       });
     });
 
@@ -64,7 +64,7 @@ void main() {
       expect(shares([cook, pickle], onGoals: 120), {
         'cook': 110,
         'pickle': 10,
-        'Not on goals': 1320,
+        'Not on actions': 1320,
       });
     });
 
@@ -73,7 +73,7 @@ void main() {
         'work': 120,
         'cook': 60,
         'wake': 30,
-        'Not on goals': 1230,
+        'Not on actions': 1230,
       });
     });
   });

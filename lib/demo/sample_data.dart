@@ -1,25 +1,32 @@
 import '../models/assessment.dart';
 import '../models/event.dart';
+import '../models/facets.dart';
 import '../models/goal.dart';
 import '../models/note.dart';
+import '../models/person.dart';
 import '../models/recurrence.dart';
 import '../models/trait.dart';
 import '../services/events_repository.dart';
 import '../services/goals_repository.dart';
 import '../services/notes_repository.dart';
+import '../services/people_repository.dart';
 import '../services/traits_repository.dart';
 
-/// A realistic day of notes, events and goals, for trying the app's
-/// features without a server -- `flutter run --dart-define=SAMPLE_DATA=true`
-/// -- and for the visual tests in test/visual. Everything is dated relative
-/// to [now], so the sample never goes stale.
+/// A realistic day of notes, events and a plan -- traits, people and
+/// actions -- for trying the app's features without a server (`flutter
+/// run --dart-define=SAMPLE_DATA=true`) and for the visual tests in
+/// test/visual. Everything is dated relative to [now], so the sample never
+/// goes stale.
 ///
-/// The goals cover what the Goals page can show: every status, sub-goals,
-/// own and inherited colors, health with a sparkline, days gone unrated,
-/// a skipped day, a proposed rating not yet confirmed, and the time spent
-/// on each up to the last compaction. Two friends are rated by traits --
-/// one with cadences of their own -- with what happened at their events,
-/// their histories, what matters to them, and a week of trait scores.
+/// The actions are a tree of groups (Sleep-related, Food-related, Social,
+/// Creative › Guitar...) with actions as its leaves: own and inherited
+/// colors and priorities, targets with health and a sparkline, days gone
+/// unrated, a skipped day, a proposed rating not yet confirmed, actions
+/// Claude proposed and an archived one, and the time spent on each up to
+/// the last compaction. The people are Self and six others in five
+/// circles, from healthy to disconnected (and one archived), each rated by
+/// five traits made of facets and cadences, with Claude's judgments of
+/// their recent events behind each score.
 class SampleData {
   SampleData(this.now);
 
@@ -45,378 +52,779 @@ class SampleData {
     minutesByStatuses,
     minutesByPriority,
   );
+  PeopleRepository peopleRepository() =>
+      InMemoryPeopleRepository(people: people, circles: circles);
 
-  /// The five starting traits, as a new calendar's Traits tab has them; a
-  /// week of their scores across the two friends; and each friend's
-  /// latest rating, part by part, history and what matters to them.
+  /// The traits; a week of their scores across everyone; and each
+  /// person's latest rating, part by part, and their history.
   TraitsRepository traitsRepository() => InMemoryTraitsRepository(
     traits: traits,
     history: [
-      for (final (i, trait) in traits.indexed)
-        for (var back = 7; back >= 1; back--)
-          TraitDay(
-            traitId: trait.id!,
-            name: trait.name,
-            day: _day(_today.subtract(Duration(days: back))),
-            score:
-                ((_traitScores['sam']![i] + _traitScores['priya']![i]) / 2 -
-                        back * (i + 1))
-                    .round()
-                    .clamp(0, 100),
-            goals: {
-              'sam': (_traitScores['sam']![i] - back * (i + 1)).clamp(0, 100),
-              'priya': (_traitScores['priya']![i] - back).clamp(0, 100),
-            },
-          ),
+      for (final trait in traits)
+        if (trait.status == 'active')
+          for (var back = 7; back >= 1; back--)
+            () {
+              final scores = {
+                for (final id in _ratedPeople)
+                  if (_traitScore(id, trait.id!) case final score?)
+                    id: (score - (back - 1) * _drift(id, trait.id!)).clamp(
+                      0,
+                      100,
+                    ),
+              };
+              return TraitDay(
+                traitId: trait.id!,
+                name: trait.name,
+                day: _day(_today.subtract(Duration(days: back))),
+                score: scores.isEmpty
+                    ? 0
+                    : (scores.values.reduce((a, b) => a + b) / scores.length)
+                          .round(),
+                people: scores,
+              );
+            }(),
     ],
-    ratings: {
-      for (final id in ['sam', 'priya']) id: _traitsRating(id),
-    },
-    digests: {
-      for (final id in ['sam', 'priya']) id: _digest(id),
-    },
-    descriptions: {
-      'sam':
-          'Friend from the dance class.\n\n## What matters to them\n\n'
-          '- ${_day(_today.subtract(const Duration(days: 40)))}: training '
-          'for a half marathon in the spring\n'
-          '- ${_day(_today.subtract(const Duration(days: 12)))}: starts a new '
-          'job next month',
-      'priya':
-          '## What matters to them\n\n'
-          '- ${_day(_today.subtract(const Duration(days: 20)))}: loves jazz, '
-          'and trying new restaurants',
-    },
+    ratings: {for (final id in _ratedPeople) id: _rating(id)},
+    digests: {for (final id in _ratedPeople) id: _digest(id)},
   );
 
-  /// Each friend's latest score for each of [traits], in order.
-  static const _traitScores = {
-    'sam': [50, 95, 70, 100, 85],
-    'priya': [80, 60, 0, 50, 75],
-  };
+  // ---------------------------------------------------------------- Traits
 
-  /// Sam's own Reliable parts: a cadence of visits, and of dance.
-  static const _samsReliable = [
-    {'kind': 'continuity', 'last_within_days': 7, 'next_within_days': 7},
-    {'kind': 'follow_through'},
-    {'kind': 'count', 'target': 1, 'interval_days': 14, 'activity': 'visit'},
-    {'kind': 'count', 'target': 1, 'interval_days': 7, 'activity': 'dance'},
-  ];
-
-  TraitsRating _traitsRating(String id) {
-    final scores = _traitScores[id]!;
-    final parts = <String, List<PartScore>>{
-      'thoughtful': [
-        PartScore(
-          key: 'prep',
-          kind: 'prep',
-          score: scores[0],
-          said: '1 of 2 prep events in the last 30 days',
-          eventIds: ['$id-gift'],
-        ),
-        const PartScore(
-          key: 'judgment',
-          kind: 'judgment',
-          said: 'To be judged in the reflection',
-          rubric: 'Did the events and notes reflect what matters to them?',
-        ),
-      ],
-      'reliable': [
-        PartScore(
-          key: 'continuity',
-          kind: 'continuity',
-          score: scores[1],
-          said: 'Last 1 day ago; next in 5 days (within 7 and 7 days)',
-          eventIds: ['$id-dance'],
-        ),
-        const PartScore(
-          key: 'follow_through',
-          kind: 'follow_through',
-          score: 100,
-          said: 'Nothing cancelled or kept that day, from 100',
-        ),
-        // Sam's own cadences: see _samsReliable.
-        if (id == 'sam') ...[
-          PartScore(
-            key: 'count',
-            kind: 'count',
-            score: 0,
-            said: '0 of 1 visit in the last 14 days',
-          ),
-          PartScore(
-            key: 'count#2',
-            kind: 'count',
-            score: 100,
-            said: '1 of 1 dance in the last 7 days',
-            eventIds: ['$id-dance'],
-          ),
-        ],
-      ],
-      'creative': [
-        PartScore(
-          key: 'together_creative',
-          kind: 'together_creative',
-          score: scores[2],
-          said:
-              '${scores[2] == 0 ? 0 : 1} of 1 events making something '
-              'together in the last 30 days',
-          eventIds: [if (scores[2] > 0) '$id-cook'],
-        ),
-      ],
-      'adventurous': [
-        PartScore(
-          key: 'novelty',
-          kind: 'novelty',
-          score: scores[3],
-          said: '${scores[3] ~/ 50} of 2 new experiences in the last 30 days',
-          eventIds: ['$id-jazz'],
-        ),
-      ],
-      'generous': [
-        PartScore(
-          key: 'effort_paid',
-          kind: 'effort_paid',
-          score: scores[4],
-          said: '${scores[4] * 6} of 600 effort-minutes in the last 30 days',
-          eventIds: ['$id-cook', '$id-gift'],
-        ),
-        const PartScore(
-          key: 'attention',
-          kind: 'attention',
-          score: 100,
-          said: 'Mean attention 3.0 of 3 over 2 events in the last 30 days',
-        ),
-      ],
-    };
-    // Each trait the mean of its parts that have a score, and the rating
-    // the mean of the traits', as the server works them out.
-    int? mean(Iterable<int?> values) {
-      final scored = values.nonNulls.toList();
-      return scored.isEmpty
-          ? null
-          : (scored.reduce((a, b) => a + b) / scored.length).round();
-    }
-
-    final traitScores = [
-      for (final trait in traits)
-        TraitScore(
-          traitId: trait.id!,
-          name: trait.name,
-          score: mean(parts[trait.id]!.map((p) => p.score)),
-          parts: parts[trait.id]!,
-        ),
-    ];
-    final rated = mean(traitScores.map((t) => t.score));
-    return TraitsRating(
-      rating: rated,
-      day: _day(_today.subtract(const Duration(days: 1))),
-      explanation:
-          'Traits (${traitScores.map((t) => '${t.name} ${t.score}').join(', ')}) → $rated',
-      traits: traitScores,
-    );
-  }
-
-  GoalDigest _digest(String id) {
-    final events = [
-      _past(
-        id,
-        'jazz',
-        'Jazz night',
-        9,
-        20,
-        facets: {
-          'with_goal_ids': [id],
-          'activity': 'jazz club',
-          'place': 'the cellar',
-          'new': 'both',
-          'attention': 3,
-          'why': 'first time at a jazz club together',
-        },
-      ),
-      _past(
-        id,
-        'gift',
-        'Wrap a birthday present',
-        6,
-        18,
-        goal: 'neighbor',
-        facets: {
-          'for_goal_ids': [id],
-          'activity': 'gift',
-          'effort': 2,
-        },
-      ),
-      _past(
-        id,
-        'cook',
-        'Cook dumplings',
-        4,
-        18,
-        facets: {
-          'with_goal_ids': [id],
-          'activity': 'cook',
-          'place': 'home',
-          'creative': 2,
-          'effort': 2,
-          'attention': 3,
-          'why': 'folded them together; talked about the new job',
-        },
-      ),
-      _past(
-        id,
-        'dance',
-        'Salsa social',
-        1,
-        20,
-        facets: {
-          'with_goal_ids': [id],
-          'activity': 'dance',
-          'place': 'the hall',
-          'new': 'none',
-          'attention': 2,
-        },
-      ),
-    ];
-    return GoalDigest(
-      goalId: id,
-      // Older events than [events], which are only the latest few.
-      eventsCounted: 10,
-      withFacets: 10,
-      activities: [
-        for (final (label, count, back) in [
-          ('dance', 6, 1),
-          ('cook', 2, 4),
-          ('gift', 1, 6),
-          ('jazz club', 1, 9),
-        ])
-          DigestEntry(
-            label: label,
-            count: count,
-            first: _day(
-              _today.subtract(Duration(days: back + 20 * (count - 1))),
-            ),
-            last: _day(_today.subtract(Duration(days: back))),
-          ),
-      ],
-      places: [
-        DigestEntry(
-          label: 'the hall',
-          count: 6,
-          first: _day(_today.subtract(const Duration(days: 101))),
-          last: _day(_today.subtract(const Duration(days: 1))),
-        ),
-        DigestEntry(
-          label: 'home',
-          count: 2,
-          first: _day(_today.subtract(const Duration(days: 24))),
-          last: _day(_today.subtract(const Duration(days: 4))),
-        ),
-      ],
-      whatMatters: id == 'sam'
-          ? '- ${_day(_today.subtract(const Duration(days: 40)))}: training '
-                'for a half marathon in the spring\n'
-                '- ${_day(_today.subtract(const Duration(days: 12)))}: starts '
-                'a new job next month'
-          : '- ${_day(_today.subtract(const Duration(days: 20)))}: loves '
-                'jazz, and trying new restaurants',
-      events: events,
-    );
-  }
-
-  /// A past event of [id]'s, [daysAgo] days back at [hour], as the server
-  /// sends it, with [facets].
-  Map<String, dynamic> _past(
-    String id,
-    String key,
-    String summary,
-    int daysAgo,
-    int hour, {
-    String? goal,
-    Map<String, Object?> facets = const {},
-  }) => {
-    'id': '$id-$key',
-    'summary': summary,
-    'start': localIsoTimestamp(_at(hour, 0, -daysAgo)),
-    'end': localIsoTimestamp(_at(hour + 2, 0, -daysAgo)),
-    'goal_ids': [goal ?? id],
-    'facets': facets,
-  };
-
-  static String _day(DateTime day) =>
-      '${day.year}-${day.month.toString().padLeft(2, '0')}-'
-      '${day.day.toString().padLeft(2, '0')}';
-
+  /// The traits: four made of facets Claude judges -- one of them with a
+  /// cadence beside it -- one of cadences alone, and one turned off.
   List<Trait> get traits => const [
+    Trait(
+      id: 'adventurous',
+      name: 'Adventurous',
+      definition: 'Try new things and new places, together.',
+      parts: [
+        {
+          'kind': 'facet',
+          'rubric': 'Was this activity or place new?',
+          'engagement': 'with',
+          'ratings': [
+            {'score': 0, 'label': 'The activity and place were routine'},
+            {'score': 1, 'label': 'There was a twist on the activity or place'},
+            {'score': 2, 'label': 'The activity or the place were new'},
+            {
+              'score': 3,
+              'label':
+                  'Both the activity and place were new, or the event was '
+                  'otherwise adventurous',
+            },
+          ],
+          'primitives': [
+            {'name': 'action'},
+            {'name': 'action_history', 'lookback_days': 90},
+            {'name': 'location'},
+            {'name': 'location_history', 'lookback_days': 180},
+          ],
+        },
+      ],
+    ),
     Trait(
       id: 'thoughtful',
       name: 'Thoughtful',
-      definition: 'Remember what matters to them, and prepare for it.',
+      definition: 'Remember what matters to them, and act on it.',
       parts: [
-        {'kind': 'prep', 'target': 2},
-        {'kind': 'prep_regularity', 'weeks': 4},
         {
-          'kind': 'judgment',
-          'rubric': 'Did the events and notes reflect what matters to them?',
+          'kind': 'facet',
+          'rubric': 'Did this reflect what matters to them?',
+          'engagement': 'for',
+          'ratings': [
+            {
+              'score': 0,
+              'label': 'Nothing about it was for them in particular',
+            },
+            {'score': 1, 'label': 'It took them into account'},
+            {'score': 2, 'label': 'It was shaped around what matters to them'},
+            {
+              'score': 3,
+              'label': 'It showed specific, remembered care for them',
+            },
+          ],
+          'primitives': [
+            {'name': 'action'},
+            {'name': 'general_notes'},
+            {'name': 'person_notes'},
+          ],
+        },
+        {'kind': 'continuity', 'last_within_days': 14, 'next_within_days': 14},
+      ],
+    ),
+    Trait(
+      id: 'creative',
+      name: 'Creative',
+      definition: 'Make things, alone and together.',
+      parts: [
+        {
+          'kind': 'facet',
+          'rubric': 'Was something made?',
+          'engagement': 'with',
+          'ratings': [
+            {'score': 0, 'label': 'Nothing was made'},
+            {
+              'score': 1,
+              'label': 'We riffed on something that already existed',
+            },
+            {'score': 2, 'label': 'We made something'},
+            {
+              'score': 3,
+              'label': "We made something new, that neither could've alone",
+            },
+          ],
+          'primitives': [
+            {'name': 'action'},
+            {'name': 'general_notes'},
+          ],
+          'window_days': 30,
+        },
+      ],
+    ),
+    Trait(
+      id: 'present',
+      name: 'Present',
+      definition: 'Give them my full attention.',
+      parts: [
+        {
+          'kind': 'facet',
+          'rubric': 'How present was I?',
+          'engagement': 'with',
+          'ratings': [
+            {'score': 0, 'label': 'Distracted, or on my phone'},
+            {'score': 1, 'label': 'Partly there'},
+            {'score': 2, 'label': 'Mostly attentive'},
+            {'score': 3, 'label': 'Fully present, listening closely'},
+          ],
+          'primitives': [
+            {'name': 'general_notes'},
+            {'name': 'person_notes'},
+          ],
         },
       ],
     ),
     Trait(
       id: 'reliable',
       name: 'Reliable',
-      definition: 'Do what I said I would, and keep contact going.',
+      definition: 'Keep in touch, and do what I said I would.',
       parts: [
-        {'kind': 'continuity', 'last_within_days': 14, 'next_within_days': 14},
+        {'kind': 'count', 'action_id': 'call', 'target': 1, 'interval_days': 7},
         {'kind': 'follow_through'},
-      ],
-    ),
-    Trait(
-      id: 'creative',
-      name: 'Creative',
-      definition: 'Make something together with them.',
-      parts: [
-        {'kind': 'together_creative', 'target': 1, 'min_creative': 2},
-      ],
-    ),
-    Trait(
-      id: 'adventurous',
-      name: 'Adventurous',
-      definition: 'Share new experiences with them.',
-      parts: [
-        {'kind': 'novelty', 'target': 1},
       ],
     ),
     Trait(
       id: 'generous',
       name: 'Generous',
-      definition: 'Make an effort for them, attention included.',
+      status: 'off',
+      definition: 'Make an effort for them beyond showing up.',
       parts: [
-        {'kind': 'effort_paid', 'target': 600},
-        {'kind': 'attention'},
+        {
+          'kind': 'facet',
+          'rubric': 'How much effort did I make for them?',
+          'engagement': 'for',
+          'ratings': [
+            {'score': 0, 'label': 'Showed up'},
+            {'score': 1, 'label': 'Some effort'},
+            {'score': 2, 'label': 'Prepared, cooked, hosted or traveled'},
+          ],
+          'primitives': [
+            {'name': 'action'},
+            {'name': 'general_notes'},
+          ],
+        },
       ],
     ),
   ];
 
-  /// The time on goals by the statuses of the goals each event served:
-  /// most on active goals, a little on the guitar, which is paused.
-  List<StatusMinutes> get minutesByStatuses => const [
-    StatusMinutes(statuses: {'active'}, minutes24h: 420, minutes7d: 2610),
-    StatusMinutes(statuses: {'inactive'}, minutes24h: 0, minutes7d: 90),
+  // ---------------------------------------------------------------- People
+
+  List<Circle> get circles => [
+    for (final (id, name, color) in const [
+      ('family', 'Family', '#f6bf26'),
+      ('close', 'Close friends', '#7986cb'),
+      ('dance', 'Dance friends', '#f4511e'),
+      ('college', 'College', '#039be5'),
+      ('work', 'Work', '#8e24aa'),
+    ])
+      Circle.fromJson({
+        'id': id,
+        'name': name,
+        'color': color,
+        ..._healthOf([
+          for (final p in _peopleSpec)
+            if (p.circles.contains(id) && p.status == 'active') p.id,
+        ]),
+      }),
   ];
 
-  /// The last 24 hours and 7 days by priority: sleep's P3 the most, then
-  /// the time with no event, or none with a priority.
-  List<PriorityMinutes> get minutesByPriority => const [
-    PriorityMinutes(priority: 0, minutes24h: 30, minutes7d: 300),
-    PriorityMinutes(priority: 1, minutes24h: 240, minutes7d: 1500),
-    PriorityMinutes(priority: 2, minutes24h: 225, minutes7d: 1100),
-    PriorityMinutes(priority: 3, minutes24h: 480, minutes7d: 3360),
-    PriorityMinutes(priority: null, minutes24h: 465, minutes7d: 3820),
+  static const _peopleSpec = [
+    (
+      id: selfPersonId,
+      name: 'Self',
+      circles: <String>[],
+      status: 'active',
+      notes:
+          '- Wants more time making things, and less on screens\n'
+          '- Learning to sing harmonies',
+    ),
+    (
+      id: 'sam',
+      name: 'Sam',
+      circles: ['close', 'dance'],
+      status: 'active',
+      notes:
+          '- Training for a half marathon in the spring\n'
+          '- Starts a new job next month',
+    ),
+    (
+      id: 'priya',
+      name: 'Priya',
+      circles: ['close', 'college'],
+      status: 'active',
+      notes: '- Loves jazz, and trying new restaurants',
+    ),
+    (
+      id: 'mom',
+      name: 'Mom',
+      circles: ['family'],
+      status: 'active',
+      notes: '- Knee surgery on the 20th: call after',
+    ),
+    (
+      id: 'dad',
+      name: 'Dad',
+      circles: ['family'],
+      status: 'active',
+      notes: '- Restoring an old sailboat',
+    ),
+    (id: 'alex', name: 'Alex', circles: ['work'], status: 'active', notes: ''),
+    (
+      id: 'jordan',
+      name: 'Jordan',
+      circles: ['dance'],
+      status: 'active',
+      notes: '- Moved across town in the summer',
+    ),
+    (
+      id: 'casey',
+      name: 'Casey',
+      circles: ['college'],
+      status: 'archived',
+      notes: '- Old roommate',
+    ),
   ];
+
+  /// Everyone rated by the traits: the active people.
+  static final _ratedPeople = [
+    for (final p in _peopleSpec)
+      if (p.status == 'active') p.id,
+  ];
+
+  List<Person> get people => [
+    for (final p in _peopleSpec)
+      Person.fromJson({
+        'id': p.id,
+        'name': p.name,
+        'status': p.status,
+        'circle_ids': p.circles,
+        if (p.notes.isNotEmpty) 'notes': p.notes,
+        // Sam's Adventurous counts double; Self's Reliable not at all.
+        'trait_weights': switch (p.id) {
+          'sam' => {'adventurous': 2},
+          selfPersonId => {'reliable': 0},
+          _ => const <String, num>{},
+        },
+        if (p.status == 'active') ..._healthOf([p.id]),
+      }),
+  ];
+
+  /// The health of [ids] together, as a person's or a circle's cache
+  /// columns: their mean rating, and their last 8 days.
+  Map<String, Object?> _healthOf(List<String> ids) {
+    final rated = [
+      for (final id in ids)
+        if (_rating(id).rating case final r?) (id, r),
+    ];
+    if (rated.isEmpty) return const {};
+    final health =
+        (rated.map((r) => r.$2).reduce((a, b) => a + b) / rated.length).round();
+    // Drifting toward today: up for those doing better, down for the rest.
+    final slope = rated.length == 1 ? _drift(rated.single.$1, 'present') : 1;
+    return {
+      'health': health,
+      'health_trend': [
+        for (var back = 7; back >= 0; back--)
+          back == 4 && ids.length == 1 && ids.single == 'dad'
+              ? '-'
+              : '${(health - back * slope).clamp(0, 100)}',
+      ].join(','),
+    };
+  }
+
+  /// How fast [id]'s score of [traitId] has been changing, a day: those
+  /// drifting apart, down.
+  static int _drift(String id, String traitId) => switch (id) {
+    'jordan' || 'dad' => -3,
+    'alex' => -1,
+    _ => (traitId.length % 3) + 1,
+  };
+
+  // ------------------------------------------------------- Ratings, digests
+
+  /// The past events with or for each person: what was done (action ids),
+  /// where, the notes, and Claude's judgments by trait id.
+  late final List<_PastEvent> _past = [
+    _PastEvent(
+      'jazz',
+      'Jazz night',
+      9,
+      20,
+      actions: ['listen_music'],
+      withIds: ['sam', 'priya'],
+      location: 'the cellar',
+      notes: 'First time at a jazz club, for all three of us',
+      personNotes: {'priya': 'Lit up at the trumpet solo'},
+      judgments: {
+        'adventurous': (3, 'A new kind of night out, somewhere new'),
+        'present': (3, 'Phones away all night'),
+      },
+    ),
+    _PastEvent(
+      'gift',
+      'Wrap a birthday present',
+      6,
+      18,
+      actions: ['wrap_gift'],
+      forIds: ['sam'],
+      location: 'home',
+      notes: 'The running watch Sam mentioned in the spring',
+      judgments: {
+        'thoughtful': (3, 'Remembered the half marathon, months later'),
+      },
+    ),
+    _PastEvent(
+      'dumplings',
+      'Cook dumplings',
+      4,
+      18,
+      actions: ['cook_lunch_dinner', 'deep_talk'],
+      withIds: ['sam'],
+      forIds: ['sam'],
+      location: 'home',
+      notes: 'Folded them together; talked about the new job',
+      personNotes: {'sam': 'Nervous about the new team'},
+      judgments: {
+        'creative': (2, 'Made dinner together from scratch'),
+        'thoughtful': (2, 'Made time to talk the new job through'),
+        'present': (3, 'Long, unhurried talk'),
+        'adventurous': (1, 'A new recipe, in the usual kitchen'),
+      },
+    ),
+    _PastEvent(
+      'salsa',
+      'Salsa social',
+      1,
+      20,
+      actions: ['dance_class', 'shallow_talk'],
+      withIds: ['sam'],
+      location: 'the hall',
+      judgments: {
+        'adventurous': (0, 'The usual social, at the usual hall'),
+        'present': (2, 'Danced with everyone, chatted between'),
+      },
+    ),
+    _PastEvent(
+      'class',
+      'Cooking class',
+      2,
+      14,
+      actions: ['cooking_class'],
+      withIds: ['priya'],
+      location: 'the culinary school',
+      notes: 'Knife skills; the first class there for both of us',
+      judgments: {
+        'adventurous': (2, 'A new place for both'),
+        'creative': (1, "Followed the chef's recipe"),
+        'present': (2, 'Mostly focused on the onions'),
+      },
+    ),
+    _PastEvent(
+      'ramen',
+      'Ramen at the new place',
+      11,
+      19,
+      actions: ['eat_meal', 'shallow_talk'],
+      withIds: ['priya'],
+      location: 'ramen ya',
+      personNotes: {selfPersonId: 'Checked my phone a few times'},
+      judgments: {
+        'adventurous': (1, 'A new restaurant, but a usual dinner'),
+        'present': (1, 'Checked phone a few times'),
+        'thoughtful': (2, 'Picked it because Priya loves new restaurants'),
+      },
+    ),
+    _PastEvent(
+      'mom_call',
+      'Call Mom',
+      3,
+      13,
+      actions: ['call'],
+      withIds: ['mom'],
+      personNotes: {'mom': 'Worried about the knee surgery'},
+      judgments: {
+        'present': (2, 'Listened, while making lunch'),
+        'thoughtful': (2, 'Asked about the surgery'),
+      },
+    ),
+    _PastEvent(
+      'parents_video',
+      'Video call with Mom and Dad',
+      12,
+      19,
+      actions: ['video_call'],
+      withIds: ['mom', 'dad'],
+      notes: 'Dad showed the sailboat',
+      judgments: {
+        'present': (3, 'Gave the whole hour'),
+        'thoughtful': (1, 'Mostly caught up on news'),
+      },
+    ),
+    _PastEvent(
+      'guitar',
+      'Practice guitar',
+      1,
+      21,
+      actions: ['practice_guitar'],
+      forIds: [selfPersonId],
+      location: 'home',
+      notes: 'Wrote a new chord progression',
+      judgments: {
+        'creative': (3, 'Something new of my own'),
+        'present': (3, 'An hour without the phone'),
+      },
+    ),
+    _PastEvent(
+      'trail',
+      'Walk a new trail',
+      2,
+      7,
+      actions: ['walk'],
+      forIds: [selfPersonId],
+      location: 'the river trail',
+      judgments: {
+        'adventurous': (2, 'A trail never walked before'),
+        'present': (2, 'Listened to a podcast half the way'),
+      },
+    ),
+    _PastEvent(
+      'singing',
+      'Sing for fun',
+      5,
+      20,
+      actions: ['sing_for_fun'],
+      forIds: [selfPersonId],
+      location: 'home',
+      judgments: {
+        'creative': (1, 'Sang along to old favorites'),
+        'adventurous': (0, 'Routine'),
+      },
+    ),
+    _PastEvent(
+      'scroll',
+      'Doomscroll',
+      0,
+      13,
+      actions: ['doomscroll'],
+      forIds: [selfPersonId],
+      judgments: {'present': (0, 'Lost twenty minutes to the feed')},
+    ),
+    _PastEvent(
+      'party',
+      "Jordan's housewarming",
+      28,
+      19,
+      actions: ['shallow_talk'],
+      withIds: ['jordan'],
+      location: "jordan's new place",
+      personNotes: {'jordan': 'Hard to talk; left early'},
+      judgments: {
+        'present': (1, 'Small talk across a crowded room'),
+        'adventurous': (0, 'A party like any other'),
+      },
+    ),
+    _PastEvent(
+      'coffee',
+      'Coffee with Alex',
+      25,
+      10,
+      actions: ['shallow_talk'],
+      withIds: ['alex'],
+      location: 'the cafe',
+      judgments: {
+        'present': (2, 'A good chat'),
+        'adventurous': (0, 'The usual cafe'),
+      },
+    ),
+  ];
+
+  /// [id]'s events, oldest first.
+  List<_PastEvent> _eventsOf(String id) => [
+    for (final e in _past)
+      if (e.withIds.contains(id) || e.forIds.contains(id)) e,
+  ]..sort((a, b) => b.daysAgo.compareTo(a.daysAgo));
+
+  /// [id]'s score of [traitId], part by part, as the server works it out;
+  /// null if no part has anything to rate it by.
+  TraitScore? _traitScoreOf(String id, Trait trait) {
+    final events = _eventsOf(id);
+    final parts = <PartScore>[];
+    final keys = <String, int>{};
+    for (final part in trait.parts) {
+      final kind = part['kind'] as String;
+      final n = keys.update(kind, (n) => n + 1, ifAbsent: () => 1);
+      final key = n == 1 ? kind : '$kind#$n';
+      switch (kind) {
+        case 'facet':
+          final top = facetRatings(part).last.score;
+          final window = (part['window_days'] as num?) ?? 30;
+          final judged = [
+            for (final e in events)
+              if (e.daysAgo <= window)
+                if (e.judgments[trait.id] case (final rating, final why))
+                  if ((part['engagement'] == 'for'
+                          ? e.forIds
+                          : [...e.withIds, ...e.forIds])
+                      .contains(id))
+                    FacetJudgment(
+                      eventId: '$id-${e.key}',
+                      traitId: trait.id,
+                      part: key,
+                      personId: id,
+                      rating: rating,
+                      why: why,
+                    ),
+          ];
+          final mean = judged.isEmpty
+              ? null
+              : judged.map((j) => j.rating).reduce((a, b) => a + b) /
+                    judged.length;
+          parts.add(
+            PartScore(
+              key: key,
+              kind: kind,
+              rubric: part['rubric'] as String?,
+              score: mean == null ? null : (mean / top * 100).round(),
+              said: mean == null
+                  ? 'Nothing to rate in the last $window days'
+                  : 'Mean rating ${mean.toStringAsFixed(1)} of $top over '
+                        '${judged.length} event${judged.length == 1 ? '' : 's'} '
+                        'in the last $window days',
+              eventIds: [for (final j in judged) j.eventId!],
+              judgments: judged,
+            ),
+          );
+        case 'count':
+          final days = (part['interval_days'] as num?) ?? 30;
+          final action = part['action_id'];
+          final counted = [
+            for (final e in events)
+              if (e.daysAgo < days &&
+                  (action == null || e.actions.contains(action)))
+                e,
+          ];
+          final target = part['target'] as num;
+          parts.add(
+            PartScore(
+              key: key,
+              kind: kind,
+              score: (counted.length / target * 100).clamp(0, 100).round(),
+              said:
+                  '${counted.length} of $target ${_names[action] ?? 'event'} '
+                  'in the last $days days',
+              eventIds: [for (final e in counted) '$id-${e.key}'],
+            ),
+          );
+        case 'continuity':
+          final last = events.isEmpty ? null : events.last.daysAgo;
+          final within = (part['last_within_days'] as num?) ?? 14;
+          final recent = last != null && last <= within;
+          parts.add(
+            PartScore(
+              key: key,
+              kind: kind,
+              score: recent ? 50 : 0,
+              said: [
+                last == null ? 'No event yet' : 'Last $last days ago',
+                'nothing planned',
+                '(within $within days)',
+              ].join('; '),
+              eventIds: [if (recent) '$id-${events.last.key}'],
+            ),
+          );
+        case 'follow_through':
+          parts.add(
+            PartScore(
+              key: key,
+              kind: kind,
+              score: id == 'dad' ? 75 : 100,
+              said: id == 'dad'
+                  ? '1 cancelled in the last 30 days, from 100'
+                  : 'Nothing cancelled in the last 30 days',
+            ),
+          );
+      }
+    }
+    final scored = [
+      for (final p in parts)
+        if (p.score != null) p,
+    ];
+    return TraitScore(
+      traitId: trait.id!,
+      name: trait.name,
+      weight: _weightOf(id, trait.id!),
+      score: scored.isEmpty
+          ? null
+          : (scored.map((p) => p.score!).reduce((a, b) => a + b) /
+                    scored.length)
+                .round(),
+      parts: parts,
+    );
+  }
+
+  static num _weightOf(String id, String traitId) => switch ((id, traitId)) {
+    ('sam', 'adventurous') => 2,
+    (selfPersonId, 'reliable') => 0,
+    _ => 1,
+  };
+
+  int? _traitScore(String id, String traitId) =>
+      _traitScoreOf(id, traits.firstWhere((t) => t.id == traitId))?.score;
+
+  TraitsRating _rating(String id) {
+    final scores = [
+      for (final trait in traits)
+        if (trait.status == 'active' && _weightOf(id, trait.id!) > 0)
+          ?_traitScoreOf(id, trait),
+    ];
+    final weighed = [
+      for (final s in scores)
+        if (s.score != null) s,
+    ];
+    final total = weighed.fold<num>(0, (sum, s) => sum + s.weight);
+    final rated = total == 0
+        ? null
+        : (weighed.fold<num>(0, (sum, s) => sum + s.score! * s.weight) / total)
+              .round();
+    return TraitsRating(
+      rating: rated,
+      day: _day(_today.subtract(const Duration(days: 1))),
+      explanation:
+          'Traits (${weighed.map((t) => '${t.name} ${t.score}').join(', ')}) '
+          '→ $rated',
+      traits: scores,
+      leftOut: [
+        for (final trait in traits)
+          if (trait.status != 'active' || _weightOf(id, trait.id!) == 0)
+            trait.name,
+      ],
+    );
+  }
+
+  PersonDigest _digest(String id) {
+    final events = _eventsOf(id);
+    List<DigestEntry> entries(Iterable<(String, int)> seen) {
+      final byLabel = <String, List<int>>{};
+      for (final (label, daysAgo) in seen) {
+        (byLabel[label] ??= []).add(daysAgo);
+      }
+      return [
+        for (final MapEntry(key: label, value: days) in byLabel.entries)
+          DigestEntry(
+            label: label,
+            count: days.length,
+            first: _day(_today.subtract(Duration(days: days.reduce(_max)))),
+            last: _day(_today.subtract(Duration(days: days.reduce(_min)))),
+          ),
+      ]..sort((a, b) => b.count.compareTo(a.count));
+    }
+
+    return PersonDigest(
+      personId: id,
+      eventsCounted: events.length,
+      actions: entries([
+        for (final e in events)
+          for (final a in e.actions) (a, e.daysAgo),
+      ]),
+      locations: entries([
+        for (final e in events)
+          if (e.location case final where?) (where, e.daysAgo),
+      ]),
+      events: [
+        for (final e in events)
+          {
+            'id': '$id-${e.key}',
+            'summary': e.summary,
+            'start': localIsoTimestamp(_at(e.hour, 0, -e.daysAgo)),
+            'end': localIsoTimestamp(_at(e.hour + 1, 0, -e.daysAgo)),
+            'goal_ids': e.actions,
+            'facets': e.facets.toJson(),
+          },
+      ],
+    );
+  }
+
+  static int _max(int a, int b) => a > b ? a : b;
+  static int _min(int a, int b) => a < b ? a : b;
+
+  static String _day(DateTime day) =>
+      '${day.year}-${day.month.toString().padLeft(2, '0')}-'
+      '${day.day.toString().padLeft(2, '0')}';
+
+  // ---------------------------------------------------------------- Actions
+
+  /// The time on actions by the statuses of the actions each event
+  /// served: [_minutes], each action's own, added up by its status.
+  List<StatusMinutes> get minutesByStatuses {
+    final byStatus = <String, (int, int)>{};
+    for (final (id, _, _, _, fields) in _tree) {
+      if (_minutes[id] case (final day, final week)) {
+        final status = fields['status'] as String? ?? 'active';
+        final (d, w) = byStatus[status] ?? (0, 0);
+        byStatus[status] = (d + day, w + week);
+      }
+    }
+    return [
+      for (final MapEntry(key: status, value: (day, week)) in byStatus.entries)
+        StatusMinutes(statuses: {status}, minutes24h: day, minutes7d: week),
+    ];
+  }
+
+  /// The last 24 hours and 7 days by priority: each action's time to the
+  /// priority it takes, then the rest of each window, with none.
+  List<PriorityMinutes> get minutesByPriority {
+    final byPriority = <int?, (int, int)>{};
+    var (onDay, onWeek) = (0, 0);
+    for (final goal in goals) {
+      if (_minutes[goal.id] case (final day, final week)) {
+        final (d, w) = byPriority[goal.effectivePriority] ?? (0, 0);
+        byPriority[goal.effectivePriority] = (d + day, w + week);
+        onDay += day;
+        onWeek += week;
+      }
+    }
+    final (d, w) = byPriority[null] ?? (0, 0);
+    byPriority[null] = (d + 24 * 60 - onDay, w + 7 * 24 * 60 - onWeek);
+    return [
+      for (final MapEntry(key: priority, value: (day, week))
+          in byPriority.entries)
+        PriorityMinutes(priority: priority, minutes24h: day, minutes7d: week),
+    ]..sort((a, b) => (a.priority ?? 9).compareTo(b.priority ?? 9));
+  }
 
   List<Note> get notes => [
     Note(timestamp: _at(7, 50), description: 'Running a little late'),
-    Note(timestamp: _at(9, 40), description: 'Started on the goals page'),
-    Note(timestamp: _at(12, 15), description: 'Lunch, finally'),
+    Note(timestamp: _at(9, 40), description: 'Started on the plan page'),
+    Note(timestamp: _at(12, 15), description: 'Lunch with Sam, finally'),
   ];
 
   List<Event> get events => [
@@ -425,24 +833,33 @@ class SampleData {
       'Sleep',
       _at(23, 0, -1),
       _at(7, 0),
+      actions: ['sleep'],
       sleep: true,
       priority: 3,
     ),
     _event(
       'morning_today',
-      'Morning routine',
+      'Get up and get ready',
       _at(7, 0),
-      _at(8, 0),
-      goals: ['wake'],
+      _at(7, 45),
+      actions: ['get_up'],
       series: 'morning',
       priority: 0,
     ),
     _event(
+      'breakfast',
+      'Breakfast',
+      _at(7, 45),
+      _at(8, 15),
+      actions: ['cook_breakfast', 'eat_meal'],
+      priority: 2,
+    ),
+    _event(
       'work',
-      'Time Tracker: goals page',
-      _at(8, 0),
+      'Time Tracker: plan page',
+      _at(8, 15),
       _at(12, 0),
-      goals: ['tracker'],
+      actions: ['work'],
       priority: 1,
     ),
     _event(
@@ -450,15 +867,14 @@ class SampleData {
       'Lunch with Sam',
       _at(12, 0),
       _at(13, 0),
-      goals: ['sam'],
-      facets: {
-        'with_goal_ids': ['sam'],
-        'activity': 'lunch',
-        'place': 'the noodle bar',
-        'new': 'place',
-        'attention': 3,
-        'why': 'talked through the job offer; phones away',
-      },
+      actions: ['eat_meal', 'deep_talk'],
+      priority: 2,
+      facets: const Facets(
+        withPersonIds: ['sam'],
+        location: 'the noodle bar',
+        notes: 'Talked through the job offer; phones away',
+        personNotes: {'sam': 'Excited, and a little anxious'},
+      ),
     ),
     // Too short for their text: drawn taller, and pushed down.
     _event(
@@ -466,19 +882,26 @@ class SampleData {
       'Call Mom',
       _at(13, 0),
       _at(13, 5),
-      goals: ['parents', 'neighbor'],
-      priority: 1,
+      actions: ['call'],
+      priority: 2,
+      facets: const Facets(withPersonIds: ['mom']),
     ),
-    _event('plants', 'Water the plants', _at(13, 5), _at(13, 15)),
+    _event('texts', 'Texts', _at(13, 5), _at(13, 15), actions: ['text']),
     // In the same color as the one before: a seam divides them.
-    _event('cat', 'Feed the cat', _at(13, 15), _at(13, 20)),
-    // Never given goals: Tofu's is inferred from its label.
+    _event(
+      'scroll',
+      'Doomscroll',
+      _at(13, 15),
+      _at(13, 35),
+      actions: ['doomscroll'],
+    ),
+    // Never given actions: its action is inferred from its label.
     _event(
       'class',
       'Cooking class',
       _at(14, 0),
       _at(16, 0),
-      goals: ['tofu'],
+      actions: ['cooking_class'],
       fromLabel: true,
       priority: 2,
     ),
@@ -487,11 +910,30 @@ class SampleData {
       'Dinner with Sam & Priya',
       _at(18, 30),
       _at(21, 0),
-      goals: ['host', 'tofu'],
-      // Tofu's, inherited from Cooking: Hosting has none.
+      actions: ['cook_lunch_dinner', 'eat_meal', 'deep_talk'],
       priority: 2,
+      facets: const Facets(
+        withPersonIds: ['sam', 'priya'],
+        forPersonIds: ['sam', 'priya'],
+        location: 'home',
+        notes: 'Made dal and naan from scratch',
+      ),
     ),
-    _event('read', 'Reading', _at(21, 0), _at(22, 30)),
+    _event(
+      'guitar',
+      'Guitar',
+      _at(21, 0),
+      _at(22, 0),
+      actions: ['practice_guitar'],
+      facets: const Facets(forPersonIds: [selfPersonId]),
+    ),
+    _event(
+      'bed',
+      'Get ready for bed',
+      _at(22, 0),
+      _at(22, 30),
+      actions: ['get_ready_for_bed'],
+    ),
   ];
 
   Event _event(
@@ -499,64 +941,49 @@ class SampleData {
     String summary,
     DateTime start,
     DateTime end, {
-    List<String> goals = const [],
+    List<String> actions = const [],
     bool sleep = false,
     String? series,
     bool fromLabel = false,
     int? priority,
-    Map<String, Object?>? facets,
+    Facets? facets,
   }) => Event.fromJson({
     'id': id,
     'summary': summary,
     'start': localIsoTimestamp(start),
     'end': localIsoTimestamp(end),
     'is_cancelled': false,
-    'goal_ids': goals,
-    'goal_names': [for (final g in goals) _names[g]],
+    'goal_ids': actions,
+    'goal_names': [for (final a in actions) _names[a]],
     if (sleep) 'is_end_of_day_sleep': true,
     'recurring_event_id': ?series,
     if (fromLabel) 'goals_from_label': true,
     'effective_priority': ?priority,
-    'facets': ?facets,
+    'facets': ?facets?.toJson(),
   });
 
-  /// The series "Morning routine" is part of: every weekday since a month
-  /// ago.
+  /// The series "Get up and get ready" is part of: every weekday since a
+  /// month ago.
   List<Recurrence> get recurrences => [
     Recurrence.fromJson({
       'id': 'morning',
-      'summary': 'Morning routine',
+      'summary': 'Get up and get ready',
       'start': localIsoTimestamp(_at(7, 0, -28)),
-      'end': localIsoTimestamp(_at(8, 0, -28)),
+      'end': localIsoTimestamp(_at(7, 45, -28)),
       'time_zone': 'America/New_York',
       'repeat': {
         'every': 'week',
         'weekdays': ['mon', 'tue', 'wed', 'thu', 'fri'],
       },
       'schedule': 'Every week on Mon, Tue, Wed, Thu, Fri',
-      'goal_ids': ['wake'],
-      'goal_names': [_names['wake']],
+      'goal_ids': ['get_up'],
+      'goal_names': [_names['get_up']],
       'is_fixed_time': true,
     }),
   ];
 
-  static const _names = {
-    'tracker': 'Make a Time Tracker app',
-    'wake': 'Wake up at 7am',
-    'host': 'Host friends weekly',
-    'cook': 'Learn vegetarian cooking',
-    'tofu': 'Tofu tikka masala',
-    'neighbor': 'Be a good neighbor',
-    'parents': 'Visit parents every 2 months',
-    'trains': 'Book the train a month ahead',
-    'cousins': 'Visit cousins every week',
-    'friends': 'Keep up with friends',
-    'sam': 'Sam',
-    'priya': 'Priya',
-  };
-
-  /// When notes were last compacted, which goals' recent time is counted
-  /// up to.
+  /// When notes were last compacted, which actions' recent time is
+  /// counted up to.
   DateTime get lastCompaction => _at(7, 30);
 
   /// The last compacted note: before [notes], which aren't yet.
@@ -566,206 +993,263 @@ class SampleData {
     compactionId: 'sample',
   );
 
-  List<Goal> get goals => [
-    Goal.fromJson({
-      'id': overallGoalId,
-      'name': 'Overall',
-      'status': 'active',
-      ..._health('overall'),
-      ..._time(420, 2610),
-    }),
-    Goal.fromJson({
-      'id': 'tracker',
-      'name': _names['tracker'],
-      'status': 'active',
-      'background_color': '#8e24aa',
-      'effective_color': '#8e24aa',
-      'priority': 1,
-      'measure': {'kind': 'duration', 'target_min': 600, 'interval_days': 7},
-      ..._health('tracker'),
-      ..._time(240, 1500),
-    }),
-    Goal.fromJson({
-      'id': 'wake',
-      'name': _names['wake'],
-      'status': 'active',
-      'effective_color': '#039be5',
-      'priority': 0,
-      'measure': {
-        'kind': 'time_constraint',
-        'edge': 'start',
-        'target': '07:00',
-        'grace_min': 10,
+  /// The tree: (id, name, parent, whether it's a group, and the rest of
+  /// its fields), parents first. Groups are names that roll up what's in
+  /// them; actions, its leaves, are what events are given.
+  static const _tree = <(String, String, String?, bool, Map<String, Object?>)>[
+    (
+      'sleep_related',
+      'Sleep-related',
+      null,
+      true,
+      {'background_color': '#3f51b5', 'priority': 3},
+    ),
+    ('get_ready_for_bed', 'Get ready for bed', 'sleep_related', false, {}),
+    ('sleep', 'Sleep', 'sleep_related', false, {}),
+    (
+      'get_up',
+      'Get up and get ready',
+      'sleep_related',
+      false,
+      {
+        'priority': 0,
+        'measure': {
+          'kind': 'time_constraint',
+          'edge': 'start',
+          'target': '07:00',
+          'grace_min': 10,
+        },
       },
-      ..._health('wake', stale: 2),
-      ..._time(60, 420),
-    }),
-    Goal.fromJson({
-      'id': 'host',
-      'name': _names['host'],
-      'status': 'active',
-      'background_color': '#f4511e',
-      'effective_color': '#f4511e',
-      'measure': {
-        'kind': 'count',
-        'target': 1,
-        'noun': 'dinners',
-        'interval_days': 7,
-        'zero_at_days': 14,
+    ),
+    (
+      'work',
+      'Work',
+      null,
+      false,
+      {
+        'background_color': '#8e24aa',
+        'priority': 1,
+        'measure': {'kind': 'duration', 'target_min': 2400, 'interval_days': 7},
       },
-      ..._health('host'),
-      ..._time(0, 150),
-    }),
-    Goal.fromJson({
-      'id': 'cook',
-      'name': _names['cook'],
-      'status': 'active',
-      'background_color': '#33b679',
-      'effective_color': '#33b679',
-      'priority': 2,
-      'measure': {'kind': 'rollup', 'agg': 'percentile', 'percentile': 0},
-      ..._health('cook'),
-      ..._time(120, 270),
-    }),
-    Goal.fromJson({
-      'id': 'tofu',
-      'parent_id': 'cook',
-      'name': _names['tofu'],
-      'status': 'active',
-      'effective_color': '#33b679',
-      'measure': {
-        'kind': 'subjective',
-        'prompt': 'How did it turn out?',
-        'interval_days': 7,
+    ),
+    ('food', 'Food-related', null, true, {'background_color': '#33b679'}),
+    ('eat_meal', 'Eat a meal', 'food', false, {}),
+    ('eat_snack', 'Eat a snack', 'food', false, {}),
+    (
+      'drink_water',
+      'Drink water',
+      'food',
+      false,
+      {
+        'measure': {'kind': 'count', 'target': 6, 'noun': 'glasses'},
       },
-      ..._health('tofu'),
-      ..._time(120, 270),
-    }),
-    Goal.fromJson({
-      'id': 'neighbor',
-      'name': _names['neighbor'],
-      'status': 'active',
-      'background_color': '#f6bf26',
-      'effective_color': '#f6bf26',
-      ..._health('neighbor'),
-      ..._time(0, 180),
-    }),
-    Goal.fromJson({
-      'id': 'parents',
-      'parent_id': 'neighbor',
-      'name': _names['parents'],
-      'status': 'active',
-      'effective_color': '#f6bf26',
-      'measure': {
-        'kind': 'count',
-        'target': 1,
-        'noun': 'visits',
-        'interval_days': 60,
-        'zero_at_days': 90,
+    ),
+    (
+      'walk',
+      'Walk',
+      null,
+      false,
+      {
+        'background_color': '#0b8043',
+        'measure': {'kind': 'duration', 'target_min': 30},
       },
-      ..._health('parents'),
-      ..._time(0, 0),
-    }),
-    // A third level down, its color inherited like its parent's.
-    Goal.fromJson({
-      'id': 'trains',
-      'parent_id': 'parents',
-      'name': _names['trains'],
-      'status': 'active',
-      'effective_color': '#f6bf26',
-      'priority': 3,
-      ..._time(0, 0),
-    }),
-    Goal.fromJson({
-      'id': 'cousins',
-      'parent_id': 'neighbor',
-      'name': _names['cousins'],
-      'status': 'active',
-      'effective_color': '#f6bf26',
-      'measure': {
-        'kind': 'count',
-        'target': 1,
-        'noun': 'visits',
-        'interval_days': 7,
-        'zero_at_days': 14,
+    ),
+    (
+      'screens',
+      'Screen logistics',
+      null,
+      true,
+      {'background_color': '#616161'},
+    ),
+    ('text', 'Text', 'screens', false, {}),
+    ('email', 'Email', 'screens', false, {}),
+    ('doomscroll', 'Doomscroll', 'screens', false, {}),
+    (
+      'social',
+      'Social',
+      null,
+      true,
+      {'background_color': '#7986cb', 'priority': 2},
+    ),
+    ('shallow_talk', 'Shallow talk', 'social', false, {}),
+    (
+      'deep_talk',
+      'Deep talk',
+      'social',
+      false,
+      {
+        'measure': {
+          'kind': 'count',
+          'target': 3,
+          'noun': 'deep talks',
+          'interval_days': 7,
+          'zero_at_days': 14,
+        },
       },
-      ..._health('cousins'),
-      ..._time(0, 180),
-    }),
-    Goal.fromJson({
-      'id': 'friends',
-      'name': _names['friends'],
-      'status': 'active',
-      'background_color': '#7986cb',
-      'effective_color': '#7986cb',
-      'priority': 2,
-      ..._health('friends'),
-      ..._time(60, 420),
-    }),
-    // Rated by traits, with cadences of its own.
-    Goal.fromJson({
-      'id': 'sam',
-      'parent_id': 'friends',
-      'name': _names['sam'],
-      'status': 'active',
-      'effective_color': '#7986cb',
-      'measure': {
-        'kind': 'traits',
-        'traits': 'all',
-        'parts': {'reliable': _samsReliable},
+    ),
+    ('call', 'Call', 'social', false, {}),
+    ('video_call', 'Video call', 'social', false, {}),
+    ('dance_class', 'Take a dance class', 'social', false, {}),
+    (
+      'creative',
+      'Creative',
+      null,
+      true,
+      {
+        'background_color': '#f4511e',
+        'priority': 2,
+        'measure': {'kind': 'rollup', 'agg': 'mean'},
       },
-      ..._health('sam'),
-      ..._time(60, 300),
-    }),
-    // Rated by traits, as the Traits tab has them.
-    Goal.fromJson({
-      'id': 'priya',
-      'parent_id': 'friends',
-      'name': _names['priya'],
-      'status': 'active',
-      'effective_color': '#7986cb',
-      'measure': {
-        'kind': 'traits',
-        'traits': 'all',
-        'weights': {'creative': 2},
+    ),
+    ('guitar', 'Guitar', 'creative', true, {}),
+    ('play_guitar', 'Play guitar', 'guitar', false, {}),
+    (
+      'practice_guitar',
+      'Practice guitar',
+      'guitar',
+      false,
+      {
+        'measure': {'kind': 'duration', 'target_min': 180, 'interval_days': 7},
       },
-      ..._health('priya'),
-      ..._time(0, 120),
-    }),
-    Goal.fromJson({
-      'id': 'book',
-      'name': 'Write a book about time',
-      'status': 'proposed',
-    }),
-    Goal.fromJson({
-      'id': 'guitar',
-      'name': 'Learn the guitar',
-      'status': 'inactive',
-    }),
-    Goal.fromJson({'id': '10k', 'name': 'Run a 10k', 'status': 'completed'}),
-    Goal.fromJson({
-      'id': 'old',
-      'name': 'Old side project',
-      'status': 'archived',
-    }),
-    Goal.fromJson({'id': 'typo', 'name': 'Typo goal', 'status': 'deleted'}),
+    ),
+    ('singing', 'Singing', 'creative', true, {}),
+    ('sing_for_fun', 'Sing for fun', 'singing', false, {}),
+    ('practice_singing', 'Practice singing', 'singing', false, {}),
+    ('cooking', 'Cooking', 'creative', true, {}),
+    ('cook_breakfast', 'Cook breakfast', 'cooking', false, {}),
+    (
+      'cook_lunch_dinner',
+      'Cook lunch or dinner',
+      'cooking',
+      false,
+      {
+        'measure': {
+          'kind': 'subjective',
+          'prompt': 'How did it turn out?',
+          'interval_days': 7,
+        },
+      },
+    ),
+    ('cooking_class', 'Take a cooking class', 'cooking', false, {}),
+    (
+      'entertainment',
+      'Entertainment',
+      null,
+      true,
+      {'background_color': '#e67c73', 'priority': 3},
+    ),
+    ('watch_tv', 'Watch TV', 'entertainment', false, {}),
+    ('watch_movies', 'Watch movies', 'entertainment', false, {}),
+    ('listen_music', 'Listen to music', 'entertainment', false, {}),
+    // Made by Claude, for a gift it couldn't match: not reviewed yet.
+    ('wrap_gift', 'Wrap a gift', null, false, {'status': 'proposed'}),
+    ('read', 'Read a book', 'entertainment', false, {'status': 'proposed'}),
+    ('commute', 'Commute', null, false, {'status': 'archived'}),
+    ('typo', 'Tpyo', null, false, {'status': 'deleted'}),
   ];
 
-  /// Each rated goal's ratings over its last 8 days, oldest first; null is
-  /// a skipped day. The last is proposed, not yet confirmed.
+  static final _names = {for (final (id, name, _, _, _) in _tree) id: name};
+
+  /// Each action's minutes in the last 24 hours and 7 days, up to
+  /// [lastCompaction]: a group's are its actions'.
+  static const _minutes = {
+    'get_ready_for_bed': (30, 210),
+    'sleep': (480, 3360),
+    'get_up': (30, 225),
+    'work': (210, 1500),
+    'eat_meal': (60, 420),
+    'eat_snack': (0, 45),
+    'drink_water': (0, 0),
+    'walk': (0, 90),
+    'text': (15, 120),
+    'email': (0, 60),
+    'doomscroll': (25, 240),
+    'shallow_talk': (0, 60),
+    'deep_talk': (0, 60),
+    'call': (5, 35),
+    'video_call': (0, 0),
+    'dance_class': (0, 120),
+    'practice_guitar': (60, 120),
+    'play_guitar': (0, 30),
+    'sing_for_fun': (0, 45),
+    'cook_lunch_dinner': (0, 90),
+    'cook_breakfast': (0, 60),
+    'cooking_class': (0, 0),
+    'listen_music': (0, 120),
+    'watch_tv': (60, 300),
+    'wrap_gift': (0, 30),
+  };
+
+  List<Goal> get goals {
+    final byId = {for (final row in _tree) row.$1: row};
+    String? inherited(String? id, String field) {
+      for (var at = id; at != null; at = byId[at]!.$3) {
+        if (byId[at]!.$5[field] case final value?) return '$value';
+      }
+      return null;
+    }
+
+    (int, int) minutesOf(String id) {
+      if (_minutes[id] case final own?) return own;
+      var (day, week) = (0, 0);
+      for (final row in _tree) {
+        if (row.$3 == id) {
+          final (d, w) = minutesOf(row.$1);
+          day += d;
+          week += w;
+        }
+      }
+      return (day, week);
+    }
+
+    return [
+      Goal.fromJson({
+        'id': overallGoalId,
+        'name': 'Overall',
+        'status': 'active',
+        ..._health('overall'),
+        'minutes_24h': _minutes.values.fold(0, (sum, m) => sum + m.$1),
+        'minutes_7d': _minutes.values.fold(0, (sum, m) => sum + m.$2),
+        // Every action's: see [minutesByStatuses].
+        'minutes_by_statuses': [for (final m in minutesByStatuses) m.toJson()],
+      }),
+      for (final (id, name, parent, group, fields) in _tree)
+        Goal.fromJson({
+          'id': id,
+          'name': name,
+          'parent_id': parent,
+          'status': 'active',
+          if (group) 'kind': 'group',
+          ...fields,
+          'effective_color': inherited(id, 'background_color'),
+          'effective_priority': switch (inherited(id, 'priority')) {
+            final p? => int.parse(p),
+            null => null,
+          },
+          if (_ratings.containsKey(id))
+            ..._health(id, stale: id == 'get_up' ? 2 : 0),
+          'minutes_24h': minutesOf(id).$1,
+          'minutes_7d': minutesOf(id).$2,
+        }),
+    ];
+  }
+
+  /// Each rated action's ratings over its last 8 days, oldest first; null
+  /// is a skipped day. The last is proposed, not yet confirmed.
   static const _ratings = {
-    'tracker': [55, 62, null, 70, 78, 74, 88, 82],
-    'wake': [100, 92, 60, 30, 100, 84, 64, 50],
-    'host': [100, 93, 86, 79, 71, 100, 100, 100],
-    'cook': [20, 35, 45, 45, 60, 60, 65, 80],
-    'tofu': [20, 35, 50, 45, 60, 70, 65, 80],
-    'neighbor': [100, 100, 96, 89, 82, 100, 100, 100],
     'overall': [70, 75, 66, 62, 70, 82, 80, 82],
-    'parents': [100, 100, 100, 100, 100, 100, 100, 100],
-    'cousins': [100, 100, 93, 79, 64, 100, 100, 100],
-    'friends': [70, 72, 68, 75, 74, 77, 76, 79],
-    'sam': [72, 75, 70, 78, 76, 80, 79, 80],
-    'priya': [55, 58, 60, 62, 60, 64, 63, 52],
+    'sleep_related': [100, 92, 60, 30, 100, 84, 64, 50],
+    'get_up': [100, 92, 60, 30, 100, 84, 64, 50],
+    'work': [55, 62, null, 70, 78, 74, 88, 82],
+    'drink_water': [50, 67, 83, 67, 50, 83, 67, 33],
+    'walk': [100, 100, 0, 100, 50, 100, 0, 100],
+    'social': [70, 72, 68, 75, 74, 77, 76, 79],
+    'deep_talk': [70, 72, 68, 75, 74, 77, 76, 79],
+    'creative': [20, 35, 45, 45, 60, 60, 65, 80],
+    'guitar': [10, 30, 40, 40, 60, 55, 67, 100],
+    'practice_guitar': [10, 30, 40, 40, 60, 55, 67, 100],
+    'cooking': [20, 35, 50, 45, 60, 70, 65, 80],
+    'cook_lunch_dinner': [20, 35, 50, 45, 60, 70, 65, 80],
   };
 
   /// The cache columns the server keeps: the latest confirmed rating, its
@@ -785,12 +1269,6 @@ class SampleData {
     };
   }
 
-  /// Minutes in the last 24 hours and 7 days, up to [lastCompaction].
-  Map<String, Object?> _time(int day, int week) => {
-    'minutes_24h': day,
-    'minutes_7d': week,
-  };
-
   Map<String, List<Assessment>> get assessments => {
     for (final MapEntry(key: id, value: ratings) in _ratings.entries)
       id: [
@@ -800,12 +1278,17 @@ class SampleData {
             day: day,
             rating: ratings[i],
             method: switch (id) {
-              'tofu' => 'subjective',
-              'cook' || 'neighbor' || 'overall' || 'friends' => 'rollup',
+              'cook_lunch_dinner' => 'subjective',
+              'overall' ||
+              'sleep_related' ||
+              'social' ||
+              'creative' ||
+              'guitar' ||
+              'cooking' => 'rollup',
               _ => 'metric',
             },
             status: i == ratings.length - 1 ? 'proposed' : 'confirmed',
-            explanation: ratings[i] == null || id == 'tofu'
+            explanation: ratings[i] == null || id == 'cook_lunch_dinner'
                 ? null
                 : _explanation(id, ratings[i]!),
             rationale: ratings[i] == null ? 'Away at a conference' : null,
@@ -814,28 +1297,62 @@ class SampleData {
   };
 
   String _explanation(String id, int rating) => switch (id) {
-    'tracker' => '${rating * 6 ~/ 60}h of 10h in the last 7 days → $rating',
-    'wake' =>
+    'work' => '${rating * 40 ~/ 100}h of 40h in the last 7 days → $rating',
+    'practice_guitar' =>
+      '${rating * 180 ~/ 100}m of 3h in the last 7 days → $rating',
+    'walk' => '${rating * 30 ~/ 100}m of 30m that day → $rating',
+    'get_up' =>
       rating == 100
           ? 'Started 06:55; by 07:00 with 10 min grace → 100'
           : 'Started later than 07:10 → $rating',
-    'host' || 'parents' || 'cousins' =>
-      rating == 100
-          ? '1 of 1 in the last ${id == 'parents' ? 60 : 7} days → 100'
-          : '0 of 1 in the last 7 days; met until a few days ago → $rating',
-    'cook' => 'Lowest of 1 sub-goal → $rating',
-    'sam' || 'priya' => 'Traits, part by part, over the last 30 days → $rating',
-    _ => 'Mean of 2 sub-goals → $rating',
+    'drink_water' => '${rating * 6 ~/ 100} of 6 glasses → $rating',
+    'deep_talk' => '${rating * 3 ~/ 100} of 3 in the last 7 days → $rating',
+    'overall' => 'Mean of the top level → $rating',
+    _ => 'Mean of what it holds → $rating',
   };
 
   /// The [count] days that ended most recently, oldest first.
   List<String> _days(int count) => [
     for (var back = count; back >= 1; back--)
-      () {
-        final d = _today.subtract(Duration(days: back));
-        return '${d.year.toString().padLeft(4, '0')}-'
-            '${d.month.toString().padLeft(2, '0')}-'
-            '${d.day.toString().padLeft(2, '0')}';
-      }(),
+      _day(_today.subtract(Duration(days: back))),
   ];
+}
+
+/// A past event in someone's history: what was done (action ids), who it
+/// was with and for, where, the notes, and Claude's judgments of it by
+/// trait id.
+class _PastEvent {
+  _PastEvent(
+    this.key,
+    this.summary,
+    this.daysAgo,
+    this.hour, {
+    required this.actions,
+    this.withIds = const [],
+    this.forIds = const [],
+    this.location,
+    this.notes,
+    this.personNotes = const {},
+    this.judgments = const {},
+  });
+
+  final String key;
+  final String summary;
+  final int daysAgo;
+  final int hour;
+  final List<String> actions;
+  final List<String> withIds;
+  final List<String> forIds;
+  final String? location;
+  final String? notes;
+  final Map<String, String> personNotes;
+  final Map<String, (int, String)> judgments;
+
+  Facets get facets => Facets(
+    withPersonIds: withIds,
+    forPersonIds: forIds,
+    location: location,
+    notes: notes,
+    personNotes: personNotes,
+  );
 }

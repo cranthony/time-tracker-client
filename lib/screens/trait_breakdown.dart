@@ -6,14 +6,14 @@ import '../services/mcp_client.dart';
 import '../services/traits_repository.dart';
 
 /// Shows [trait]'s daily scores, [days], newest first, each the mean
-/// across the goals rated by it; tapping a goal's score shows the parts and
-/// events behind it ([showTraitParts]).
+/// across the people rated by it; tapping a person's score shows the parts
+/// and events behind it ([showTraitParts]).
 Future<void> showTraitHistory(
   BuildContext context, {
   required Trait trait,
   required List<TraitDay> days,
   required TraitsRepository repository,
-  Map<String?, String> goalNames = const {},
+  Map<String?, String> personNames = const {},
 }) => showModalBottomSheet<void>(
   context: context,
   isScrollControlled: true,
@@ -36,16 +36,16 @@ Future<void> showTraitHistory(
             title: Text(day.day),
             trailing: Text('${day.score}'),
             children: [
-              for (final MapEntry(key: goalId, value: score)
-                  in day.goals.entries)
+              for (final MapEntry(key: personId, value: score)
+                  in day.people.entries)
                 ListTile(
                   dense: true,
-                  title: Text(goalNames[goalId] ?? goalId),
+                  title: Text(personNames[personId] ?? personId),
                   trailing: Text('$score'),
                   onTap: () async {
                     try {
                       final rating = await repository.explainTraits(
-                        goalId,
+                        personId,
                         day: DateTime.parse(day.day),
                       );
                       final score = rating.traits
@@ -55,7 +55,8 @@ Future<void> showTraitHistory(
                         await showTraitParts(
                           context,
                           score,
-                          title: '${goalNames[goalId] ?? goalId} · ${day.day}',
+                          title:
+                              '${personNames[personId] ?? personId} · ${day.day}',
                         );
                       }
                     } catch (e) {
@@ -80,14 +81,15 @@ Future<void> showTraitHistory(
 
 /// Shows how [score] was reached: each of its parts' score, weight and how
 /// it was reached, and the events behind it -- named from [events] (by id,
-/// each as the server sent it, with its facets) where they're there. Each
-/// part is titled from [labels], in order, where it has one.
+/// each as the server sent it, with its facets) where they're there, each
+/// with Claude's rating of it for a facet. Each part is titled from
+/// [labels], in order, where it has one.
 Future<void> showTraitParts(
   BuildContext context,
   TraitScore score, {
   String? title,
   Map<String, Map<String, dynamic>> events = const {},
-  Map<String?, String> goalNames = const {},
+  Map<String?, String> personNames = const {},
   List<String> labels = const [],
 }) => showModalBottomSheet<void>(
   context: context,
@@ -145,7 +147,15 @@ Future<void> showTraitParts(
                         ),
                       ),
                     for (final id in part.eventIds)
-                      _event(theme, id, events[id], goalNames),
+                      _event(
+                        theme,
+                        id,
+                        events[id],
+                        personNames,
+                        part.judgments
+                            .where((j) => j.eventId == id)
+                            .firstOrNull,
+                      ),
                   ],
                 ),
               ),
@@ -161,19 +171,26 @@ Widget _event(
   ThemeData theme,
   String id,
   Map<String, dynamic>? event,
-  Map<String?, String> goalNames,
+  Map<String?, String> personNames,
+  FacetJudgment? judgment,
 ) {
+  final rated = switch (judgment) {
+    FacetJudgment(:final rating, :final why) =>
+      '\n   Rated $rating${why == null ? '' : ': $why'}',
+    null => '',
+  };
   if (event == null) {
-    return Text('• Event $id', style: theme.textTheme.bodySmall);
+    return Text('• Event $id$rated', style: theme.textTheme.bodySmall);
   }
   final start = DateTime.tryParse('${event['start']}')?.toLocal();
   final facets = Facets.fromJson(event['facets']);
+  final described = facets?.describe(personNames) ?? '';
   return Padding(
     padding: const EdgeInsets.only(top: 4),
     child: Text(
       '• ${start == null ? '' : '${start.year}-${_two(start.month)}-${_two(start.day)} '}'
       '${event['summary'] ?? '(no title)'}'
-      '${facets == null || facets.isEmpty ? '' : ' — ${facets.describe(goalNames)}'}',
+      '${described.isEmpty ? '' : ' — $described'}$rated',
       style: theme.textTheme.bodySmall,
     ),
   );

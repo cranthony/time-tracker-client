@@ -8,12 +8,16 @@ import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/outbox/goal_outbox.dart';
 import 'package:time_tracker_client/demo/sample_data.dart';
 import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/goal_history_screen.dart';
-import 'package:time_tracker_client/screens/goals_screen.dart';
+import 'package:time_tracker_client/screens/person_screen.dart';
+import 'package:time_tracker_client/screens/plan_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
+import 'package:time_tracker_client/services/people_repository.dart';
+import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/theme.dart';
 import 'package:time_tracker_client/widgets/day_summary.dart';
 import 'package:time_tracker_client/widgets/time_summary.dart';
@@ -33,11 +37,14 @@ void main() {
   for (final brightness in Brightness.values) {
     final mode = brightness.name;
 
+    /// Renders [screen], with the sample's traits and people when
+    /// [scoped], after [then].
     Future<void> render(
       WidgetTester tester,
       String name,
       Widget screen, {
       Future<void> Function()? then,
+      bool scoped = false,
     }) async {
       tester.view.physicalSize = _phone * 2;
       tester.view.devicePixelRatio = 2;
@@ -46,12 +53,21 @@ void main() {
       // It must be put back before the test ends.
       debugDisableShadows = false;
       try {
+        final app = MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: appTheme(brightness),
+          home: screen,
+        );
         await tester.pumpWidget(
-          MaterialApp(
-            debugShowCheckedModeBanner: false,
-            theme: appTheme(brightness),
-            home: screen,
-          ),
+          scoped
+              ? TraitsScope(
+                  repository: sample.traitsRepository(),
+                  child: PeopleScope(
+                    repository: sample.peopleRepository(),
+                    child: app,
+                  ),
+                )
+              : app,
         );
         await tester.pumpAndSettle();
         await then?.call();
@@ -64,34 +80,97 @@ void main() {
       }
     }
 
-    testWidgets('goals ($mode)', (tester) async {
+    Widget plan() => PlanScreen(
+      outbox: _idleGoalOutbox(),
+      repository: sample.goalsRepository(),
+      serverLabel: 'sample',
+    );
+
+    // The whole page: traits, then people, then actions.
+    testWidgets('plan ($mode)', (tester) async {
+      await render(tester, 'plan', plan(), scoped: true);
+    });
+
+    // Scrolled down to the people, Self first.
+    testWidgets('plan people ($mode)', (tester) async {
       await render(
         tester,
-        'goals',
-        GoalsScreen(
-          outbox: _idleGoalOutbox(),
-          repository: sample.goalsRepository(),
-          serverLabel: 'sample',
+        'plan_people',
+        plan(),
+        scoped: true,
+        then: () async {
+          await tester.scrollUntilVisible(
+            find.text('Jordan'),
+            200,
+            scrollable: find.byType(Scrollable).first,
+          );
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
+    // Traits folded away, and one circle's people.
+    testWidgets('plan circle ($mode)', (tester) async {
+      await render(
+        tester,
+        'plan_circle',
+        plan(),
+        scoped: true,
+        then: () async {
+          await tester.tap(find.byIcon(Icons.expand_more).first);
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(FilterChip, 'Dance friends'));
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
+    // A trait open for editing: its facet's rubric, ratings and
+    // primitives.
+    testWidgets('trait dialog ($mode)', (tester) async {
+      await render(
+        tester,
+        'trait_dialog',
+        plan(),
+        scoped: true,
+        then: () async {
+          await tester.tap(find.text('Adventurous'));
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
+    testWidgets('person ($mode)', (tester) async {
+      final people = (await tester.runAsync(sample.peopleRepository().people))!;
+      await render(
+        tester,
+        'person',
+        PersonScreen(
+          person: people.people.firstWhere((p) => p.id == 'sam'),
+          traits: sample.traitsRepository(),
+          circles: people.circles,
+          personNames: {for (final p in people.withSelf) p.id: personName(p)},
         ),
       );
+    });
+
+    // The Actions section alone, as the rest are when folded away.
+    testWidgets('actions ($mode)', (tester) async {
+      await render(tester, 'actions', plan());
     });
 
     // The time summary swiped to its priorities, folded away, and
     // turned to percentages.
     for (final (name, step) in [
-      ('goals_summary_priorities', null),
-      ('goals_summary_collapsed', 'Hide summary'),
-      ('goals_percentages', 'Show percentages'),
+      ('actions_summary_priorities', null),
+      ('actions_summary_collapsed', 'Hide summary'),
+      ('actions_percentages', 'Show percentages'),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
         await render(
           tester,
           name,
-          GoalsScreen(
-            outbox: _idleGoalOutbox(),
-            repository: sample.goalsRepository(),
-            serverLabel: 'sample',
-          ),
+          plan(),
           then: () async {
             if (step != null) {
               await tester.tap(find.byTooltip(step));
@@ -108,58 +187,42 @@ void main() {
       });
     }
 
-    // Every goal expanded, by swiping right: three levels of bands.
-    testWidgets('goals expanded ($mode)', (tester) async {
+    // Groups expanded, by swiping right: three levels of bands.
+    testWidgets('actions expanded ($mode)', (tester) async {
       await render(
         tester,
-        'goals_expanded',
-        GoalsScreen(
-          outbox: _idleGoalOutbox(),
-          repository: sample.goalsRepository(),
-          serverLabel: 'sample',
-        ),
+        'actions_expanded',
+        plan(),
         then: () async {
-          for (final name in [
-            'Learn vegetarian cooking',
-            'Be a good neighbor',
-            'Visit parents every 2 months',
-          ]) {
-            final goal = _tile(name);
-            await tester.ensureVisible(goal);
+          for (final name in ['Creative', 'Guitar', 'Cooking']) {
+            final group = _tile(name);
+            await tester.ensureVisible(group);
             await tester.pumpAndSettle();
-            await tester.drag(goal, const Offset(100, 0));
+            await tester.drag(group, const Offset(100, 0));
             await tester.pumpAndSettle();
           }
-          await tester.ensureVisible(
-            find.textContaining('Book the train', findRichText: true),
-          );
+          await tester.ensureVisible(_tile('Practice guitar'));
           await tester.pumpAndSettle();
         },
       );
     });
 
-    testWidgets('goals with every status ($mode)', (tester) async {
+    testWidgets('actions with every status ($mode)', (tester) async {
       await render(
         tester,
-        'goals_every_status',
-        GoalsScreen(
-          outbox: _idleGoalOutbox(),
-          repository: sample.goalsRepository(),
-          serverLabel: 'sample',
-        ),
+        'actions_every_status',
+        plan(),
         then: () async {
-          // Its sub-goal shows the band of a goal that inherits its color.
-          await tester.drag(
-            _tile('Learn vegetarian cooking'),
-            const Offset(100, 0),
-          );
+          await tester.tap(find.byTooltip('Show actions that are…'));
           await tester.pumpAndSettle();
-          await tester.tap(find.byTooltip('Show goals that are…'));
-          await tester.pumpAndSettle();
-          for (final status in ['Completed', 'Archived', 'Deleted']) {
+          for (final status in ['Archived', 'Deleted']) {
             await tester.tap(find.widgetWithText(CheckboxMenuButton, status));
             await tester.pumpAndSettle();
           }
+          await tester.tapAt(Offset.zero);
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(_tile('Tpyo'));
+          await tester.pumpAndSettle();
         },
       );
     });
@@ -167,20 +230,16 @@ void main() {
     for (final summary in [null, ...GoalSummary.values.skip(1)]) {
       // Null: the menu open, picking one.
       final name = switch (summary) {
-        null => 'goals_summary_menu',
-        _ => 'goals_summary_${summary.name}',
+        null => 'actions_summary_menu',
+        _ => 'actions_summary_${summary.name}',
       };
       testWidgets('$name ($mode)', (tester) async {
         await render(
           tester,
           name,
-          GoalsScreen(
-            outbox: _idleGoalOutbox(),
-            repository: sample.goalsRepository(),
-            serverLabel: 'sample',
-          ),
+          plan(),
           then: () async {
-            await tester.tap(find.byTooltip('Show under each goal…'));
+            await tester.tap(find.byTooltip('Show under each action…'));
             await tester.pumpAndSettle();
             if (summary == null) return;
             await tester.tap(
@@ -192,20 +251,16 @@ void main() {
       });
     }
 
-    // A goal's measure, as tapping it shows it; then being edited.
+    // An action's target, as tapping it shows it; then being edited.
     for (final editing in [false, true]) {
-      final name = editing ? 'goal_measure_edit' : 'goal_measure';
+      final name = editing ? 'action_measure_edit' : 'action_measure';
       testWidgets('$name ($mode)', (tester) async {
         await render(
           tester,
           name,
-          GoalsScreen(
-            outbox: _idleGoalOutbox(),
-            repository: sample.goalsRepository(),
-            serverLabel: 'sample',
-          ),
+          plan(),
           then: () async {
-            await tester.tap(_tile('Wake up at 7am'));
+            await tester.tap(_tile('Work'));
             await tester.pumpAndSettle();
             if (!editing) return;
             await tester.tap(find.text('Edit measure'));
@@ -215,26 +270,21 @@ void main() {
       });
     }
 
-    // A sub-goal, as tapping it shows it, its priority inherited; then its
-    // priority being picked.
+    // A group in a group, as tapping it shows it, its priority inherited;
+    // then its priority being picked.
     for (final editing in [false, true]) {
-      final name = editing ? 'goal_dialog_priority' : 'goal_dialog';
+      final name = editing ? 'action_dialog_priority' : 'action_dialog';
       testWidgets('$name ($mode)', (tester) async {
         await render(
           tester,
           name,
-          GoalsScreen(
-            outbox: _idleGoalOutbox(),
-            repository: sample.goalsRepository(),
-            serverLabel: 'sample',
-          ),
+          plan(),
           then: () async {
-            await tester.drag(
-              _tile('Learn vegetarian cooking'),
-              const Offset(100, 0),
-            );
+            await tester.drag(_tile('Creative'), const Offset(100, 0));
             await tester.pumpAndSettle();
-            await tester.tap(_tile('Tofu tikka masala'));
+            await tester.ensureVisible(_tile('Guitar'));
+            await tester.pumpAndSettle();
+            await tester.tap(_tile('Guitar'));
             await tester.pumpAndSettle();
             if (!editing) return;
             await tester.tap(
@@ -251,63 +301,33 @@ void main() {
       });
     }
 
-    testWidgets('goal measure overall ($mode)', (tester) async {
+    testWidgets('actions reorder ($mode)', (tester) async {
       await render(
         tester,
-        'goal_measure_overall',
-        GoalsScreen(
-          outbox: _idleGoalOutbox(),
-          repository: sample.goalsRepository(),
-          serverLabel: 'sample',
-        ),
+        'actions_reorder',
+        plan(),
         then: () async {
-          await tester.tap(find.text('Overall'));
+          await tester.longPress(_tile('Work'));
           await tester.pumpAndSettle();
         },
       );
     });
 
-    testWidgets('goals reorder ($mode)', (tester) async {
+    testWidgets('action parent ($mode)', (tester) async {
       await render(
         tester,
-        'goals_reorder',
-        GoalsScreen(
-          outbox: _idleGoalOutbox(),
-          repository: sample.goalsRepository(),
-          serverLabel: 'sample',
-        ),
+        'action_parent',
+        plan(),
         then: () async {
-          await tester.drag(
-            _tile('Learn vegetarian cooking'),
-            const Offset(100, 0),
-          );
+          await tester.drag(_tile('Creative'), const Offset(100, 0));
           await tester.pumpAndSettle();
-          await tester.longPress(find.text('Host friends weekly'));
+          await tester.ensureVisible(_tile('Guitar'));
           await tester.pumpAndSettle();
-        },
-      );
-    });
-
-    testWidgets('goal parent ($mode)', (tester) async {
-      await render(
-        tester,
-        'goal_parent',
-        GoalsScreen(
-          outbox: _idleGoalOutbox(),
-          repository: sample.goalsRepository(),
-          serverLabel: 'sample',
-        ),
-        then: () async {
-          await tester.drag(
-            _tile('Learn vegetarian cooking'),
-            const Offset(100, 0),
-          );
-          await tester.pumpAndSettle();
-          await tester.tap(find.byTooltip('More for Tofu tikka masala'));
+          await tester.tap(find.byTooltip('More for Guitar'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('Details'));
           await tester.pumpAndSettle();
-          await tester.tap(find.text('Learn vegetarian cooking').last);
+          await tester.tap(find.text('Creative').last);
           await tester.pumpAndSettle();
           await tester.tap(find.byType(GoalField));
           await tester.pumpAndSettle();
@@ -315,33 +335,31 @@ void main() {
       );
     });
 
-    testWidgets('goal history ($mode)', (tester) async {
+    testWidgets('action history ($mode)', (tester) async {
       final goals = sample.goalsRepository();
-      final tracker = (await tester.runAsync(goals.goals))!.goals
-          .firstWhere((Goal g) => g.id == 'tracker');
+      final work = (await tester.runAsync(goals.goals))!.goals
+          .firstWhere((Goal g) => g.id == 'work');
       await render(
         tester,
-        'goal_history',
-        GoalHistoryScreen(goal: tracker, repository: goals),
+        'action_history',
+        GoalHistoryScreen(goal: work, repository: goals),
       );
     });
+
+    Widget events() => EventsScreen(
+      repository: sample.eventsRepository(),
+      notesRepository: sample.notesRepository(),
+      goalsRepository: sample.goalsRepository(),
+      serverLabel: 'sample',
+      clock: () => _now,
+    );
 
     testWidgets('events ($mode)', (tester) async {
-      await render(
-        tester,
-        'events',
-        EventsScreen(
-          repository: sample.eventsRepository(),
-          notesRepository: sample.notesRepository(),
-          goalsRepository: sample.goalsRepository(),
-          serverLabel: 'sample',
-          clock: () => _now,
-        ),
-      );
+      await render(tester, 'events', events());
     });
 
-    // The day's summary swiped once, to its goals, and twice, to its
-    // top-level goals.
+    // The day's summary swiped once, to its actions, and twice, to its
+    // top-level ones.
     for (final (name, swipes) in [
       ('events_summary_goals', 1),
       ('events_summary_top_level', 2),
@@ -352,13 +370,7 @@ void main() {
         await render(
           tester,
           name,
-          EventsScreen(
-            repository: sample.eventsRepository(),
-            notesRepository: sample.notesRepository(),
-            goalsRepository: sample.goalsRepository(),
-            serverLabel: 'sample',
-            clock: () => _now,
-          ),
+          events(),
           then: () async {
             if (swipes == 0) {
               await tester.tap(find.byTooltip('Hide summary'));
@@ -382,13 +394,7 @@ void main() {
       await render(
         tester,
         'event_new',
-        EventsScreen(
-          repository: sample.eventsRepository(),
-          notesRepository: sample.notesRepository(),
-          goalsRepository: sample.goalsRepository(),
-          serverLabel: 'sample',
-          clock: () => _now,
-        ),
+        events(),
         then: () async {
           final timeline = find.byType(DayTimeline);
           final day = DateTime(_now.year, _now.month, _now.day);
@@ -417,13 +423,7 @@ void main() {
         await render(
           tester,
           name,
-          EventsScreen(
-            repository: sample.eventsRepository(),
-            notesRepository: sample.notesRepository(),
-            goalsRepository: sample.goalsRepository(),
-            serverLabel: 'sample',
-            clock: () => _now,
-          ),
+          events(),
           then: () async {
             final button = find.byTooltip(zoom < 0 ? 'Zoom out' : 'Zoom in');
             for (var i = 0; i < zoom.abs(); i++) {
@@ -454,17 +454,13 @@ void main() {
         await render(
           tester,
           name,
-          EventsScreen(
-            repository: sample.eventsRepository(),
-            notesRepository: sample.notesRepository(),
-            goalsRepository: sample.goalsRepository(),
-            serverLabel: 'sample',
-            clock: () => _now,
-          ),
+          events(),
           then: () async {
-            await tester.ensureVisible(find.text('Morning routine'));
+            // The event, not its action, named the same.
+            final event = find.text('Get up and get ready').first;
+            await tester.ensureVisible(event);
             await tester.pumpAndSettle();
-            await tester.tap(find.text('Morning routine'));
+            await tester.tap(event);
             await tester.pumpAndSettle();
             for (final step in steps) {
               final tapped = find.text(step).last;
@@ -478,31 +474,46 @@ void main() {
       });
     }
 
-    // An event's goals open for editing: the tree, then a search.
+    // What happened at lunch: who it was with, where, and the notes.
+    testWidgets('event facets ($mode)', (tester) async {
+      await render(
+        tester,
+        'event_facets',
+        events(),
+        scoped: true,
+        then: () async {
+          await tester.ensureVisible(find.text('Lunch with Sam'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Lunch with Sam'));
+          await tester.pumpAndSettle();
+          final facets = find.text('With Sam · @ the noodle bar');
+          await tester.ensureVisible(facets);
+          await tester.pumpAndSettle();
+          await tester.tap(facets);
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
+    // An event's actions open for editing: the tree, then a search.
     for (final (name, search) in [
       ('event_goals', null),
-      ('event_goals_search', 'neigh vis'),
+      ('event_goals_search', 'soc call'),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
         await render(
           tester,
           name,
-          EventsScreen(
-            repository: sample.eventsRepository(),
-            notesRepository: sample.notesRepository(),
-            goalsRepository: sample.goalsRepository(),
-            serverLabel: 'sample',
-            clock: () => _now,
-          ),
+          events(),
           then: () async {
-            await tester.ensureVisible(find.text('Morning routine'));
+            await tester.ensureVisible(find.text('Lunch with Sam'));
             await tester.pumpAndSettle();
-            await tester.tap(find.text('Morning routine'));
+            await tester.tap(find.text('Lunch with Sam'));
             await tester.pumpAndSettle();
-            final goals = find.text('Wake up at 7am').last;
-            await tester.ensureVisible(goals);
+            final actions = find.text('Eat a meal').last;
+            await tester.ensureVisible(actions);
             await tester.pumpAndSettle();
-            await tester.tap(goals);
+            await tester.tap(actions);
             await tester.pumpAndSettle();
             if (search != null) {
               await tester.enterText(find.byType(TextField), search);
@@ -535,7 +546,7 @@ void main() {
         'note_sheet',
         NotesScreen(repository: notes, outbox: outbox, clock: () => _now),
         then: () async {
-          await tester.tap(find.text('Lunch, finally'));
+          await tester.tap(find.text('Lunch with Sam, finally'));
           await tester.pumpAndSettle();
         },
       );
@@ -543,11 +554,11 @@ void main() {
   }
 }
 
-/// A goal's tile, by [name]: after the time summary's legend, which may
+/// An action's tile, by [name]: after the time summary's legend, which may
 /// name it too.
 Finder _tile(String name) => find.textContaining(name, findRichText: true).last;
 
-/// For a Goals page that saves nothing.
+/// For a Plan page that saves nothing.
 GoalOutbox _idleGoalOutbox() => GoalOutbox(
   store: InMemoryOutboxStore(),
   repository: InMemoryGoalsRepository(),

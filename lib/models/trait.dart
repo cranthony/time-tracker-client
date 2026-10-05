@@ -1,10 +1,9 @@
 import 'facets.dart';
 
-/// A trait goals can be rated by -- Thoughtful, Reliable, Creative,
-/// Adventurous, Generous to start with -- mirroring the Time Tracker MCP
-/// server's `Trait` (its utilities/traits.py). Its score of a goal's day is
-/// the weighted mean of its [parts]' scores, each computed over the goal's
-/// events and their facets, or (a judgment) made in the reflection.
+/// A trait: how the user wants to be -- adventurous, thoughtful, present
+/// -- each rated for each person (Self included) from its [parts]. None
+/// is built in: every trait, and every part, is the user's to define.
+/// Its score of a person's day is the weighted mean of its parts' scores.
 class Trait {
   const Trait({
     this.id,
@@ -62,8 +61,9 @@ const traitStatuses = {
   'archived': 'Archived',
 };
 
-/// A part kind's name, what it rates, and its fields: (field, label,
-/// whether it's required, its default as shown).
+/// A part kind's name, what it rates, and its plain fields: (field,
+/// label, whether it's required, its default as shown). A facet's
+/// ratings, engagement and primitives are edited apart from these.
 typedef PartKind = ({
   String label,
   String hint,
@@ -74,36 +74,76 @@ const _window = (
   field: 'window_days',
   label: 'Window, in days',
   required: false,
-  hint: "the measure's",
-);
-const _target = (field: 'target', label: 'Target', required: false, hint: '1');
-const _activity = (
-  field: 'activity',
-  label: 'Activity',
-  required: false,
-  hint: 'any event with them',
+  hint: '30',
 );
 
 /// The part fields that are text, not numbers.
-const textFields = {'rubric', 'noun', 'activity'};
+const textFields = {'rubric', 'noun', 'action_id'};
 
-/// An activity as events' facets keep it: trimmed, single-spaced and
-/// lowercase, so a part's matches theirs.
-String activityLabel(String text) =>
-    text.trim().split(RegExp(r'\s+')).join(' ').toLowerCase();
-
-/// The kinds of part, as the server names them (its utilities/traits.py's
-/// PART_KINDS), each with the fields the app edits.
+/// The kinds of part, as the server names them, each with the fields the
+/// app edits.
 const partKinds = <String, PartKind>{
-  'prep': (
-    label: 'Preparation',
-    hint: 'Events done for them while they weren\'t there, in the window.',
-    fields: [_target, _window],
+  'facet': (
+    label: 'Facet',
+    hint:
+        'Claude rates each event with them against a rubric during '
+        'reflection, on a scale you define; the part scores the mean '
+        'rating over the window, as a share of the top rating.',
+    fields: [
+      (field: 'rubric', label: 'Rubric', required: true, hint: null),
+      _window,
+    ],
   ),
-  'prep_regularity': (
-    label: 'Regular preparation',
-    hint: 'The share of recent weeks with something done for them.',
-    fields: [(field: 'weeks', label: 'Weeks', required: false, hint: '4')],
+  'count': (
+    label: 'Number of events',
+    hint:
+        'How many events with them there were, against a target: with an '
+        'action, only events of that action -- a cadence, like a call every '
+        'week.',
+    fields: [
+      (field: 'action_id', label: 'Action', required: false, hint: 'any'),
+      (field: 'target', label: 'Target', required: true, hint: null),
+      (
+        field: 'interval_days',
+        label: 'Over, in days',
+        required: false,
+        hint: 'the window',
+      ),
+      (
+        field: 'zero_at_days',
+        label: 'Zero at, in days',
+        required: false,
+        hint: null,
+      ),
+      (field: 'noun', label: "What's counted", required: false, hint: 'events'),
+    ],
+  ),
+  'duration': (
+    label: 'Time spent',
+    hint:
+        'Minutes of events with them, against a target: with an action, '
+        'only events of that action.',
+    fields: [
+      (field: 'action_id', label: 'Action', required: false, hint: 'any'),
+      (
+        field: 'target_min',
+        label: 'Target, minutes',
+        required: true,
+        hint: null,
+      ),
+      (
+        field: 'interval_days',
+        label: 'Over, in days',
+        required: false,
+        hint: 'the window',
+      ),
+      (
+        field: 'zero_at_days',
+        label: 'Zero at, in days',
+        required: false,
+        hint: null,
+      ),
+    ],
   ),
   'continuity': (
     label: 'Continuity',
@@ -125,102 +165,9 @@ const partKinds = <String, PartKind>{
       ),
     ],
   ),
-  'together_creative': (
-    label: 'Made something together',
-    hint: 'Events with them that were creative enough, in the window.',
-    fields: [
-      _target,
-      (
-        field: 'min_creative',
-        label: 'At least creative',
-        required: false,
-        hint: '2',
-      ),
-      _window,
-    ],
-  ),
-  'novelty': (
-    label: 'Something new',
-    hint: 'Events with them where something was new, in the window.',
-    fields: [_target, _window],
-  ),
-  'effort_paid': (
-    label: 'Effort paid',
-    hint: 'Minutes × (1 + effort) of events with and for them, in the window.',
-    fields: [
-      (
-        field: 'target',
-        label: 'Target, effort-minutes',
-        required: true,
-        hint: null,
-      ),
-      _window,
-    ],
-  ),
-  'attention': (
-    label: 'Attention',
-    hint: 'The mean attention (0-3) of events with them, in the window.',
-    fields: [_window],
-  ),
-  'judgment': (
-    label: 'Judgment',
-    hint: 'Judged against a rubric in the reflection.',
-    fields: [(field: 'rubric', label: 'Rubric', required: true, hint: null)],
-  ),
-  'count': (
-    label: 'Number of events',
-    hint:
-        "How many of the goal's events, against a target: with an activity, "
-        "only events with them of that activity -- a cadence, like a visit "
-        'every 21 days.',
-    fields: [
-      _activity,
-      (field: 'target', label: 'Target', required: true, hint: null),
-      (
-        field: 'interval_days',
-        label: 'Over, in days',
-        required: false,
-        hint: 'the window',
-      ),
-      (
-        field: 'zero_at_days',
-        label: 'Zero at, in days',
-        required: false,
-        hint: null,
-      ),
-      (field: 'noun', label: "What's counted", required: false, hint: 'events'),
-    ],
-  ),
-  'duration': (
-    label: 'Time spent',
-    hint:
-        "Minutes of the goal's events, against a target: with an activity, "
-        'only events with them of that activity.',
-    fields: [
-      _activity,
-      (
-        field: 'target_min',
-        label: 'Target, minutes',
-        required: true,
-        hint: null,
-      ),
-      (
-        field: 'interval_days',
-        label: 'Over, in days',
-        required: false,
-        hint: 'the window',
-      ),
-      (
-        field: 'zero_at_days',
-        label: 'Zero at, in days',
-        required: false,
-        hint: null,
-      ),
-    ],
-  ),
   'follow_through': (
     label: 'Follow-through',
-    hint: "The goal's cancelled events cost points; kept ones win them back.",
+    hint: 'Cancelled events with them cost points; kept ones win them back.',
     fields: [
       (
         field: 'penalty',
@@ -243,6 +190,81 @@ const partKinds = <String, PartKind>{
     ],
   ),
 };
+
+/// How a facet is engaged: the events done with a person (they were
+/// there), or for them (they may not have been).
+const facetEngagements = {'with': 'With them', 'for': 'For them'};
+
+/// What a facet primitive gives Claude to judge an event by: its label,
+/// what it is, and whether it looks back over a number of days.
+typedef FacetPrimitive = ({String label, String hint, bool lookback});
+
+/// The primitives a facet can be judged from, as the server names them.
+const facetPrimitives = <String, FacetPrimitive>{
+  'action': (
+    label: 'Action',
+    hint: 'What was done at the event',
+    lookback: false,
+  ),
+  'action_history': (
+    label: 'Action history',
+    hint: 'What was done at earlier events with them',
+    lookback: true,
+  ),
+  'location': (label: 'Location', hint: 'Where the event was', lookback: false),
+  'location_history': (
+    label: 'Location history',
+    hint: 'Where earlier events with them were',
+    lookback: true,
+  ),
+  'general_notes': (
+    label: 'General notes',
+    hint: 'What was noted about the event',
+    lookback: false,
+  ),
+  'person_notes': (
+    label: 'Person notes',
+    hint:
+        "Notes on the person: on you for a \"for\" facet, on them for a "
+        '"with" one',
+    lookback: false,
+  ),
+};
+
+/// How far a history primitive looks back unless it says.
+const defaultLookbackDays = 90;
+
+/// A facet's rating scale: each score, lowest first, and what it means.
+typedef FacetRating = ({int score, String label});
+
+/// [part]'s rating scale, lowest first, if it's a facet with one.
+List<FacetRating> facetRatings(Part part) => [
+  for (final r in part['ratings'] as List? ?? const [])
+    if (r case {'score': final num score, 'label': final String label})
+      (score: score.round(), label: label),
+]..sort((a, b) => a.score.compareTo(b.score));
+
+/// [part]'s primitives, as `{name: lookback days}`: null for one that
+/// doesn't look back.
+Map<String, int?> facetPrimitivesOf(Part part) => {
+  for (final p in part['primitives'] as List? ?? const [])
+    if (p case {'name': final String name})
+      name: facetPrimitives[name]?.lookback ?? false
+          ? ((p['lookback_days'] as num?)?.round() ?? defaultLookbackDays)
+          : null,
+};
+
+/// [ratings] as a facet part keeps them.
+List<Map<String, Object?>> facetRatingsJson(List<FacetRating> ratings) => [
+  for (final r in ratings) {'score': r.score, 'label': r.label},
+];
+
+/// [primitives] as a facet part keeps them.
+List<Map<String, Object?>> facetPrimitivesJson(Map<String, int?> primitives) =>
+    [
+      for (final MapEntry(:key, :value) in primitives.entries)
+        {'name': key, 'lookback_days': ?value},
+    ];
 
 /// What's wrong with [trait], in a sentence, or null if it's fine: the
 /// checks the server's `trait_problems` makes, so the editor can say so
@@ -274,22 +296,49 @@ String? partProblem(Part part) {
       continue;
     }
     switch (field.field) {
-      case 'rubric' || 'noun' || 'activity':
+      case 'rubric' || 'noun' || 'action_id':
         if (value is! String || value.trim().isEmpty) {
           return '${field.label.toLowerCase()} must be some text.';
         }
-      case 'weeks' || 'look_back_days':
+      case 'look_back_days':
         if (value is! int || value < 1) {
           return '${field.label.toLowerCase()} must be a whole number, 1 or more.';
-        }
-      case 'min_creative':
-        if (value is! int || value < 1 || value > 3) {
-          return 'at least creative must be 1, 2 or 3.';
         }
       default:
         if (!positive(value)) {
           return '${field.label.toLowerCase()} must be above 0.';
         }
+    }
+  }
+  if (part['kind'] == 'facet') {
+    if (!facetEngagements.containsKey(part['engagement'])) {
+      return 'pick whether it rates events with them or for them.';
+    }
+    final raw = part['ratings'] as List? ?? const [];
+    if (raw.any((r) => r is! Map || r['score'] is! int)) {
+      return 'each rating needs a whole-number score.';
+    }
+    final ratings = facetRatings(part);
+    if (ratings.length < 2) return 'give it at least two ratings.';
+    if (ratings.map((r) => r.score).toSet().length != ratings.length) {
+      return 'each rating needs a score of its own.';
+    }
+    if (ratings.any((r) => r.label.trim().isEmpty)) {
+      return 'say what each rating means.';
+    }
+    if (ratings.first.score < 0) return 'ratings start at 0 or more.';
+    final primitives = facetPrimitivesOf(part);
+    if (primitives.isEmpty) return 'pick at least one primitive.';
+    if (primitives.keys.any((p) => !facetPrimitives.containsKey(p))) {
+      return 'it has a primitive the app doesn\'t know.';
+    }
+    for (final p in part['primitives'] as List? ?? const []) {
+      final days = p is Map ? p['lookback_days'] : null;
+      if (days != null) {
+        if (days is! int || days < 1) {
+          return 'a lookback must be a whole number of days, 1 or more.';
+        }
+      }
     }
   }
   final zeroAt = part['zero_at_days'];
@@ -299,38 +348,49 @@ String? partProblem(Part part) {
   return null;
 }
 
-/// [part] in a line: "Visit every 21 days", "Continuity: last within 7
-/// days, next within 7", "Follow-through".
-String describePart(Part part) {
+/// [part] in a line: "Facet: Was this activity or place new? (0-3, with
+/// them)", "Call every 7 days", "Continuity: last within 7 days, next
+/// within 7". [actionNames] names the actions a cadence counts.
+String describePart(Part part, [Map<String?, String> actionNames = const {}]) {
   String days(Object? n) => n == 1 ? 'day' : '$n days';
   final target = part['target'] ?? 1;
+  final action = switch (part['action_id']) {
+    final String id => (actionNames[id] ?? id).toLowerCase(),
+    _ => null,
+  };
   return switch (part['kind']) {
+    'facet' => () {
+      final ratings = facetRatings(part);
+      final scale = ratings.isEmpty
+          ? ''
+          : '${ratings.first.score}-${ratings.last.score}, ';
+      final engagement = part['engagement'] == 'for' ? 'for them' : 'with them';
+      return 'Facet: ${part['rubric'] ?? ''} ($scale$engagement)';
+    }(),
     'count' => [
-      '${target == 1 ? '' : '$target × '}'
-          '${part['activity'] ?? 'any event with them'}',
+      '${target == 1 ? '' : '$target × '}${action ?? 'any event with them'}',
       'every ${days(part['interval_days'] ?? 'window')}',
       if (part['zero_at_days'] case final zero?) '(0 at $zero days)',
     ].join(' '),
     'duration' =>
-      '${part['target_min']} min of ${part['activity'] ?? 'events'} '
+      '${part['target_min']} min of ${action ?? 'events'} '
           'every ${days(part['interval_days'] ?? 'window')}',
     'continuity' =>
       'Continuity: last within ${days(part['last_within_days'] ?? 14)}, '
           'next within ${days(part['next_within_days'] ?? 14)}',
-    'judgment' => 'Judgment: ${part['rubric'] ?? ''}',
     final kind => partKinds[kind]?.label ?? '$kind',
   };
 }
 
-/// One trait's score of one day: the mean of its scores across the goals
-/// rated by it, mirroring the server's `TraitDay`.
+/// One trait's score of one day: the mean of its scores across the people
+/// rated by it.
 class TraitDay {
   const TraitDay({
     required this.traitId,
     required this.name,
     required this.day,
     required this.score,
-    this.goals = const {},
+    this.people = const {},
   });
 
   final String traitId;
@@ -340,22 +400,22 @@ class TraitDay {
   final String day;
   final int score;
 
-  /// Each goal's score of it, by goal id.
-  final Map<String, int> goals;
+  /// Each person's score of it, by person id.
+  final Map<String, int> people;
 
   factory TraitDay.fromJson(Map<String, dynamic> json) => TraitDay(
     traitId: json['trait_id'] as String,
     name: json['name'] as String? ?? json['trait_id'] as String,
     day: json['day'] as String,
     score: (json['score'] as num).round(),
-    goals: {
-      for (final g in json['goals'] as List? ?? const [])
-        if (g is Map) '${g['goal_id']}': (g['score'] as num).round(),
+    people: {
+      for (final p in json['people'] as List? ?? const [])
+        if (p is Map) '${p['person_id']}': (p['score'] as num).round(),
     },
   );
 }
 
-/// How a goal's traits measure rates one day, part by part: the server's
+/// How a person's traits rate one day, part by part: the server's
 /// `explain_traits`.
 class TraitsRating {
   const TraitsRating({
@@ -371,7 +431,7 @@ class TraitsRating {
   final String? explanation;
   final List<TraitScore> traits;
 
-  /// Traits its measure names that aren't rated: off, archived or unknown.
+  /// Traits that aren't rated for them: off, archived, or weighed 0.
   final List<String> leftOut;
   final String? day;
 
@@ -425,6 +485,7 @@ class PartScore {
     this.said = '',
     this.eventIds = const [],
     this.rubric,
+    this.judgments = const [],
   });
 
   /// Its name within its trait: its kind, or "kind#2".
@@ -432,7 +493,7 @@ class PartScore {
   final String kind;
   final num weight;
 
-  /// Null when there's nothing to rate it by, or for a judgment not made.
+  /// Null when there's nothing to rate it by.
   final int? score;
 
   /// How it was reached, in a line.
@@ -440,7 +501,12 @@ class PartScore {
 
   /// The events behind it.
   final List<String> eventIds;
+
+  /// A facet's rubric.
   final String? rubric;
+
+  /// A facet's ratings of each event behind it, as Claude judged them.
+  final List<FacetJudgment> judgments;
 
   factory PartScore.fromJson(Map<String, dynamic> json) => PartScore(
     key: json['key'] as String,
@@ -450,10 +516,14 @@ class PartScore {
     said: json['said'] as String? ?? '',
     eventIds: [for (final id in json['event_ids'] as List? ?? const []) '$id'],
     rubric: json['rubric'] as String?,
+    judgments: [
+      for (final j in json['judgments'] as List? ?? const [])
+        if (j is Map) ?FacetJudgment.fromJson(j.cast()),
+    ],
   );
 }
 
-/// One activity or place in a goal's history digest.
+/// One action or location in a person's history digest.
 class DigestEntry {
   const DigestEntry({
     required this.label,
@@ -477,49 +547,41 @@ class DigestEntry {
   );
 }
 
-/// A goal's history: its events' activities and places, with how often
-/// and when, what matters to them, and its events with their facets --
-/// the server's `get_goal_digest`.
-class GoalDigest {
-  const GoalDigest({
-    required this.goalId,
+/// A person's history: the actions done and locations of the events
+/// with or for them, with how often and when, and the events themselves
+/// -- the server's `get_person_digest`.
+class PersonDigest {
+  const PersonDigest({
+    required this.personId,
     this.windowDays = 180,
     this.eventsCounted = 0,
-    this.withFacets = 0,
-    this.activities = const [],
-    this.places = const [],
-    this.whatMatters,
+    this.actions = const [],
+    this.locations = const [],
     this.events = const [],
   });
 
-  final String goalId;
+  final String personId;
   final int windowDays;
   final int eventsCounted;
-  final int withFacets;
-  final List<DigestEntry> activities;
-  final List<DigestEntry> places;
-
-  /// Its description's "What matters to them" section, if it has one.
-  final String? whatMatters;
+  final List<DigestEntry> actions;
+  final List<DigestEntry> locations;
 
   /// Its events, oldest first, as the server sent them (each a
   /// `PublicEvent`, with `facets`).
   final List<Map<String, dynamic>> events;
 
-  factory GoalDigest.fromJson(Map<String, dynamic> json) => GoalDigest(
-    goalId: json['goal_id'] as String,
+  factory PersonDigest.fromJson(Map<String, dynamic> json) => PersonDigest(
+    personId: json['person_id'] as String,
     windowDays: (json['window_days'] as num?)?.round() ?? 180,
     eventsCounted: (json['events_counted'] as num?)?.round() ?? 0,
-    withFacets: (json['with_facets'] as num?)?.round() ?? 0,
-    activities: [
-      for (final e in json['activities'] as List? ?? const [])
+    actions: [
+      for (final e in json['actions'] as List? ?? const [])
         if (e is Map) DigestEntry.fromJson(e.cast()),
     ],
-    places: [
-      for (final e in json['places'] as List? ?? const [])
+    locations: [
+      for (final e in json['locations'] as List? ?? const [])
         if (e is Map) DigestEntry.fromJson(e.cast()),
     ],
-    whatMatters: json['what_matters'] as String?,
     events: [
       for (final e in json['events'] as List? ?? const [])
         if (e is Map) e.cast<String, dynamic>(),
@@ -530,46 +592,4 @@ class GoalDigest {
   Map<String, Facets> get facetsByEvent => {
     for (final e in events) '${e['id']}': ?Facets.fromJson(e['facets']),
   };
-}
-
-/// The heading of a person goal's section of what matters to them, in its
-/// description.
-const whatMattersHeading = 'What matters to them';
-
-/// [description] with its "What matters to them" section's text replaced
-/// by [section] -- added at the end, under a level-2 heading, if it had
-/// none.
-String withWhatMatters(String description, String section) {
-  final lines = description.split('\n');
-  final heading = RegExp(r'^(#{1,6})\s+(.*?)\s*#*\s*$');
-  for (var i = 0; i < lines.length; i++) {
-    final match = heading.firstMatch(lines[i]);
-    if (match == null ||
-        match.group(2)!.toLowerCase() != whatMattersHeading.toLowerCase()) {
-      continue;
-    }
-    final level = match.group(1)!.length;
-    var end = lines.length;
-    for (var j = i + 1; j < lines.length; j++) {
-      final other = heading.firstMatch(lines[j]);
-      if (other != null && other.group(1)!.length <= level) {
-        end = j;
-        break;
-      }
-    }
-    return [
-      ...lines.sublist(0, i + 1),
-      '',
-      section.trim(),
-      if (end < lines.length) '',
-      ...lines.sublist(end),
-    ].join('\n').trimRight();
-  }
-  final before = description.trimRight();
-  return [
-    if (before.isNotEmpty) ...[before, ''],
-    '## $whatMattersHeading',
-    '',
-    section.trim(),
-  ].join('\n');
 }

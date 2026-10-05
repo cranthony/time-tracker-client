@@ -7,9 +7,11 @@ import '../models/event.dart';
 import '../models/facets.dart';
 import '../models/goal.dart';
 import '../models/note.dart';
+import '../models/person.dart';
 import '../models/recurrence.dart';
 import '../models/repeat.dart';
 import '../services/mcp_client.dart';
+import '../services/people_repository.dart';
 import 'color_picker.dart';
 import 'event_room.dart';
 import 'facets_dialog.dart';
@@ -289,6 +291,34 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   bool _otherPriority = false;
 
   late final Future<List<Goal>>? _goalList = widget.loadGoals?.call();
+
+  /// Everyone's names, once the [PeopleScope] has them, for who it was
+  /// with and for.
+  Map<String?, String> _personNames = {selfPersonId: defaultSelf.name};
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadPeople();
+  }
+
+  bool _peopleAsked = false;
+
+  Future<void> _loadPeople() async {
+    if (_peopleAsked) return;
+    _peopleAsked = true;
+    try {
+      final people = await PeopleScope.of(context)?.people();
+      if (people == null || !mounted) return;
+      setState(
+        () => _personNames = {
+          for (final p in people.withSelf) p.id: personName(p),
+        },
+      );
+    } catch (_) {
+      // Named by id, then.
+    }
+  }
 
   bool _saving = false;
   String? _error;
@@ -1227,28 +1257,20 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     );
   }
 
-  /// Its facets in a line, and the evidence under them; tapped to edit
-  /// them in [showFacetsDialog].
+  /// Who it was with and for, and where, in a line, and its notes under
+  /// them; tapped to edit them in [showFacetsDialog].
   Widget _facetsRow(BuildContext context) {
     final theme = Theme.of(context);
     final facets = Facets.fromJson(_value('facets'));
     final empty = facets == null || facets.isEmpty;
-    final names = <String?, String>{
-      for (final MapEntry(:key, :value) in widget.goals.entries)
-        key: goalName(value),
-    };
+    final names = _personNames;
     return _row(
       context,
       icon: Icons.auto_awesome_outlined,
       changedKey: 'facets',
       onTap: () async {
         setState(() => _editing = null);
-        final edited = await showFacetsDialog(
-          context,
-          facets,
-          goals: widget.goals,
-          loadGoals: widget.loadGoals,
-        );
+        final edited = await showFacetsDialog(context, facets);
         if (edited == null || !mounted) return;
         final was = Facets.fromJson(widget.values['facets']) ?? const Facets();
         setState(() {
@@ -1270,10 +1292,11 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(facets.describe(names), style: theme.textTheme.bodyLarge),
-                if (facets.why case final why?)
+                if (facets.describe(names) case final line when line.isNotEmpty)
+                  Text(line, style: theme.textTheme.bodyLarge),
+                if (facets.notes case final notes?)
                   Text(
-                    '“$why”',
+                    notes,
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontStyle: FontStyle.italic,
                     ),
@@ -1306,6 +1329,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               GoalsPicker(
                 goals: list,
                 picked: picked,
+                leavesOnly: true,
                 onChanged: (ids) => _set('goal_ids', ids),
                 marker: (goal) => GoalDiamond(
                   color: parseColor(
