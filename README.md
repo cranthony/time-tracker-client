@@ -153,6 +153,36 @@ Every push to `main` builds the web app and publishes it to
 - The server's **`MCP_CORS_ALLOWED_ORIGINS`** set to
   `https://cranthony.github.io` (on Render: the service's Environment tab).
 
+#### Content-Security-Policy
+
+The published app runs only its own code. The build serves CanvasKit (the
+WebAssembly graphics engine) from the app's own site rather than Google's
+CDN (`--no-web-resources-cdn`), and `tool/web_csp.dart` then adds a
+Content-Security-Policy to `index.html` that:
+
+- runs scripts and WebAssembly only from the app's own site: no inline
+  scripts, no `eval`, nothing from other sites;
+- lets the page connect only to its own site, the MCP server, AuthKit
+  (which the tool reads from the server's metadata during the build) and
+  Google's font server, which supplies fonts for emoji and other scripts.
+
+`web/callback.html` has its own fixed policy, and its script is in
+`web/callback.js`.
+
+The app also refuses to run inside a frame, where another site could hide
+it under its own page so that your clicks land on the app
+("clickjacking"). Pages can't send the header that forbids framing, so
+`web/start.js` checks instead, and only loads the app in a window or tab
+of its own.
+
+To try the published setup locally:
+
+```powershell
+flutter build web --csp --no-web-resources-cdn --dart-define-from-file=config.json
+dart run tool/web_csp.dart build/web https://your-service.onrender.com/mcp
+python -m http.server 8765 --directory build/web
+```
+
 ## Run on Android
 
 ### Install from Google Play (internal testing)
@@ -276,13 +306,16 @@ Specifically:
    DPAPI) and refreshes them automatically. Use **⋮ → Sign out** to
    forget them.
 
-   Browsers have no such storage, so on the web the tokens go in the
-   tab's `sessionStorage`. They're gone when you close the tab, so you
-   sign in again each session. They aren't really protected while the
-   tab is open: flutter_secure_storage does encrypt them, but keeps the
-   key right beside them, so any script running on the page could read
-   them. The client registration (not a secret) stays in `localStorage`,
-   so a new session reuses it instead of registering another client.
+   Browsers have no such storage, so on the web the tokens are only
+   ever in the page's memory, never in browser storage or on disk.
+   Reloading the page or opening it again means signing in again,
+   usually just a popup that closes itself, since AuthKit remembers
+   you. While the page is open, its
+   [Content-Security-Policy](#content-security-policy) keeps other
+   sites' scripts off it, but browser extensions allowed to read the
+   site, and programs running as you, could still reach the tokens. The
+   client registration (not a secret) stays in `localStorage`, so the
+   app reuses it instead of registering another client each time.
 
 Redirect URIs it registers:
 

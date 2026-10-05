@@ -34,10 +34,15 @@ jobs:
       - name: Build
         # Pages serves a project site under /<repo>/, so the app's base
         # href (and with it the sign-in redirect URI) must match.
+        # --no-web-resources-cdn serves CanvasKit from the app's own site
+        # instead of Google's, and --csp avoids generating code at run
+        # time; both are needed for the Content-Security-Policy below.
         run: >
-          flutter build web --release
+          flutter build web --release --csp --no-web-resources-cdn
           --base-href "/${{ github.event.repository.name }}/"
           --dart-define=MCP_URL=${{ vars.MCP_URL }}
+      - name: Add the Content-Security-Policy
+        run: dart run tool/web_csp.dart build/web "${{ vars.MCP_URL }}"
       - uses: actions/upload-pages-artifact@v4
         with:
           path: build/web
