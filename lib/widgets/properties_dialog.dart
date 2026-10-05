@@ -925,35 +925,6 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     },
   );
 
-  /// [goal] by name, after its color, indented under its parent -- or,
-  /// with [path], by its whole path from the top, wrapping as it needs to,
-  /// for a goal shown out of its tree. Without [indent], for a list that
-  /// indents it already.
-  Widget _goalLabel(Goal goal, {bool path = false, bool indent = true}) =>
-      Padding(
-        padding: EdgeInsetsDirectional.only(
-          start: path || !indent ? 0 : 16.0 * goal.depth,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (parseColor(goal.backgroundColor ?? goal.effectiveColor)
-                case final c?) ...[
-              ColorDot(color: c, size: 12),
-              const SizedBox(width: 8),
-            ],
-            Flexible(
-              child: Text(
-                path ? goal.path ?? goalName(goal) : goalName(goal),
-                style: goal.active
-                    ? null
-                    : TextStyle(color: Theme.of(context).hintColor),
-              ),
-            ),
-          ],
-        ),
-      );
-
   Widget _goalPicker(BuildContext context) {
     if (_goals == null) {
       // Nowhere to list goals from: take an id.
@@ -967,39 +938,35 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         onChanged: (text) => _draft = text.trim().isEmpty ? null : text.trim(),
       );
     }
-    return _withGoals(context, (goals) {
-      final ids = {for (final goal in goals) goal.id};
-      final picked = [
-        null,
-        for (final goal in goals)
-          if (goal.id != null) goal,
-      ];
-      return DropdownButton<String?>(
-        isExpanded: true,
-        // Tall enough for a long path, which wraps.
-        itemHeight: null,
-        value: ids.contains(_draft) ? _draft as String? : null,
-        // The list shows the tree, by name; the pick, its whole path.
-        items: [
-          for (final goal in picked)
-            DropdownMenuItem(
-              value: goal?.id,
-              child: goal == null ? const Text('(none)') : _goalLabel(goal),
-            ),
-        ],
-        selectedItemBuilder: (context) => [
-          for (final goal in picked)
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: goal == null
-                  ? const Text('(none)')
-                  : _goalLabel(goal, path: true),
-            ),
-        ],
+    final id = _values['id'];
+    return _withGoals(
+      context,
+      (goals) => GoalField(
+        goals: goals,
+        value: _draft as String?,
+        title: 'Pick its parent goal',
+        noneLabel: 'None (top-level)',
+        exclude: {
+          // Not under itself,
+          if (id is String) ...goalAndSubGoals(goals, id),
+          // nor under a goal put away, unless it's there already.
+          for (final goal in goals)
+            if (const {'archived', 'deleted'}.contains(goal.status) &&
+                goal.id != _draft)
+              ?goal.id,
+        },
+        marker: _goalDot,
         onChanged: (id) => setState(() => _draft = id),
-      );
-    });
+      ),
+    );
   }
+
+  /// A dot in [goal]'s color, if it has one.
+  Widget _goalDot(Goal goal) =>
+      switch (parseColor(goal.backgroundColor ?? goal.effectiveColor)) {
+        final c? => ColorDot(color: c, size: 12),
+        null => const SizedBox(width: 12),
+      };
 
   /// Its goals, searched for or picked from the tree; see [GoalsPicker].
   Widget _goalsPicker(BuildContext context) {
@@ -1026,11 +993,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         goals: goals,
         picked: picked,
         onChanged: (ids) => setState(() => _draft = ids),
-        marker: (goal) =>
-            switch (parseColor(goal.backgroundColor ?? goal.effectiveColor)) {
-              final c? => ColorDot(color: c, size: 12),
-              null => const SizedBox(width: 12),
-            },
+        marker: _goalDot,
       ),
     );
   }

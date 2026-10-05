@@ -100,4 +100,69 @@ void main() {
     await _pump(tester, ['old']);
     expect(find.text('Old'), findsNWidgets(2));
   });
+
+  test('goalAndSubGoals is a goal and everything under it', () {
+    expect(goalAndSubGoals(_goals, 'cook'), {'cook', 'tofu', 'dal'});
+    expect(goalAndSubGoals(_goals, 'tofu'), {'tofu'});
+  });
+
+  testWidgets('a GoalField picks one goal in a dialog, or none', (
+    tester,
+  ) async {
+    String? value = 'tofu';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => GoalField(
+              goals: _goals,
+              value: value,
+              noneLabel: 'None',
+              exclude: goalAndSubGoals(_goals, 'run'),
+              marker: (_) => const SizedBox(width: 8),
+              onChanged: (id) => setState(() => value = id),
+            ),
+          ),
+        ),
+      ),
+    );
+    // Its whole path.
+    expect(find.text('Cooking › Tofu'), findsOneWidget);
+
+    await tester.tap(find.byType(GoalField));
+    await tester.pumpAndSettle();
+    // Opened down to the goal picked; not those excluded; inactive ones
+    // too.
+    expect(find.text('Dal'), findsOneWidget);
+    expect(find.text('Running'), findsNothing);
+    expect(find.text('10k'), findsNothing);
+    expect(find.text('Old'), findsOneWidget);
+    // Picked on a tap, which closes it.
+    await tester.tap(find.text('Dal'));
+    await tester.pumpAndSettle();
+    expect(value, 'dal');
+    expect(find.byType(GoalsPicker), findsNothing);
+    expect(find.text('Cooking › Dal'), findsOneWidget);
+
+    // Searched, and picked with Enter.
+    await tester.tap(find.byType(GoalField));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'old');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(value, 'old');
+
+    // Cancel keeps it; None clears it.
+    await tester.tap(find.byType(GoalField));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(value, 'old');
+    await tester.tap(find.byType(GoalField));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('None'));
+    await tester.pumpAndSettle();
+    expect(value, isNull);
+    expect(find.text('None'), findsOneWidget);
+  });
 }

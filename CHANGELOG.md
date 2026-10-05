@@ -6,6 +6,19 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 5.7.0
+
+- A goal's parent, in its Details, and the goal a measure counts the
+  events of ("Another goal") are now picked from the same searchable
+  tree as an event's goals, in a dialog that opens on a tap: search by
+  any words of a goal's path, or browse the tree, opened down to the
+  goal picked now. Tapping a goal picks it; Enter picks the top match.
+  The field shows the goal's whole path.
+- A goal's parent can no longer be the goal itself or one of its own
+  sub-goals, nor an archived or deleted goal, unless it's already the
+  parent. "None (top-level)" makes it a top-level goal.
+- Enter in a goal search picks what was just typed, even typed fast.
+
 ## 5.6.0
 
 - On the Events page, a band beside the priority band, and as wide,

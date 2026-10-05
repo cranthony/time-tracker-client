@@ -16,6 +16,7 @@ import 'package:time_tracker_client/screens/goals_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
 import 'package:time_tracker_client/theme.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
+import 'package:time_tracker_client/widgets/goals_picker.dart';
 import 'package:time_tracker_client/widgets/priority_chip.dart';
 
 /// A fixed moment, so every run renders the same thing.
@@ -281,7 +282,7 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.text('Learn vegetarian cooking').last);
           await tester.pumpAndSettle();
-          await tester.tap(find.byType(DropdownButton<String?>));
+          await tester.tap(find.byType(GoalField));
           await tester.pumpAndSettle();
         },
       );
