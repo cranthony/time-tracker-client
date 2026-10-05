@@ -782,9 +782,7 @@ void main() {
       expect(find.textContaining('per 7 days'), findsNothing);
     });
 
-    testWidgets('can be its measure, or its time as percentages', (
-      tester,
-    ) async {
+    testWidgets('can be its measure', (tester) async {
       await tester.pumpWidget(app(goals()));
       await tester.pumpAndSettle();
 
@@ -802,7 +800,17 @@ void main() {
         findsNothing,
       );
 
-      await pick(tester, 'Time as a percentage');
+      expect(find.text("Average of the top-level goals'"), findsOneWidget);
+    });
+
+    testWidgets("is in percentages, as the time summary's toggle says", (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(goals()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Show percentages'));
+      await tester.pumpAndSettle();
       expect(find.text('37.5% of 24h · 16.7% of 7d'), findsOneWidget);
       expect(find.text('6% of 7d'), findsOneWidget);
       // The Overall card's too, without its measure.
@@ -811,18 +819,42 @@ void main() {
         findsOneWidget,
       );
       expect(find.text("Average of the top-level goals'"), findsNothing);
+
+      // Under "Measure", the toggle changes only the summary.
+      await pick(tester, 'Measure');
+      expect(find.textContaining('of 24h'), findsNothing);
+      expect(find.text('10h per 7 days'), findsOneWidget);
+
+      await pick(tester, 'Time spent');
+      await tester.tap(find.byTooltip('Show durations'));
+      await tester.pumpAndSettle();
+      expect(find.text('9h in 24h · 28h in 7d'), findsOneWidget);
     });
 
     testWidgets('is kept for next time', (tester) async {
       await tester.pumpWidget(app(goals()));
       await tester.pumpAndSettle();
-      await pick(tester, 'Time as a percentage');
+      await pick(tester, 'Measure');
+      await tester.tap(find.byTooltip('Show percentages'));
+      await tester.pumpAndSettle();
 
       await tester.pumpWidget(const SizedBox());
       await tester.pumpWidget(app(goals()));
       await tester.pumpAndSettle();
 
+      expect(find.text('10h per 7 days'), findsOneWidget);
+      await pick(tester, 'Time spent');
       expect(find.text('6% of 7d'), findsOneWidget);
+    });
+
+    testWidgets('picked as a percentage before, is still', (tester) async {
+      SharedPreferencesAsyncPlatform.instance =
+          InMemorySharedPreferencesAsync.withData({'goal_summary': 'percent'});
+      await tester.pumpWidget(app(goals()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('6% of 7d'), findsOneWidget);
+      expect(find.byTooltip('Show durations'), findsOneWidget);
     });
   });
 

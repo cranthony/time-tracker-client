@@ -36,8 +36,9 @@ import '../widgets/status_message.dart';
 /// going with it, until "Done". The filter at the top right picks which
 /// statuses are shown: proposed, active and inactive goals to start with.
 /// The menu beside it picks what each goal shows under its name: its
-/// time spent, its measure, or its time as a share of each window
-/// ([GoalSummary]), kept on the device.
+/// time spent or its measure ([GoalSummary]), kept on the device. Its
+/// time spent is in durations or as a share of each window, as the time
+/// summary's toggle says.
 /// Only active goals take up a calendar label; the others keep their
 /// history. Tapping a goal shows its priority, its measure and how it's
 /// doing by it, and its color, from which each can be edited
@@ -115,6 +116,10 @@ class _GoalsScreenState extends State<GoalsScreen> {
   /// Whether the time summary under the heading is folded away.
   bool _timeSummaryCollapsed = false;
 
+  /// Whether time is shown as durations, rather than as percentages:
+  /// in the time summary, and under each goal.
+  bool _durations = true;
+
   @override
   void initState() {
     super.initState();
@@ -126,16 +131,33 @@ class _GoalsScreenState extends State<GoalsScreen> {
     _loadTimeSummaryCollapsed();
   }
 
-  /// The [GoalSummary] picked last time, if one was. Best effort, like
-  /// the response cache: without one, it's [GoalSummary.time].
+  /// The [GoalSummary] picked last time, if one was, and whether time
+  /// was in durations. Best effort, like the response cache: without
+  /// them, it's [GoalSummary.time], in durations. Time picked as a
+  /// percentage, when that was a [GoalSummary] of its own, is still.
   Future<void> _loadSummary() async {
     try {
-      final name = await SharedPreferencesAsync().getString(_summaryKey);
-      final summary = GoalSummary.values.asNameMap()[name];
-      if (!mounted || summary == null) return;
-      setState(() => _summary = summary);
+      final preferences = SharedPreferencesAsync();
+      final name = await preferences.getString(_summaryKey);
+      final durations = await preferences.getBool(_durationsKey);
+      if (!mounted) return;
+      setState(() {
+        _summary = GoalSummary.values.asNameMap()[name] ?? _summary;
+        _durations = durations ?? name != _percentSummary;
+      });
     } catch (_) {
       // Nowhere to keep it: the default it is.
+    }
+  }
+
+  void _setDurations(bool durations) {
+    setState(() => _durations = durations);
+    try {
+      SharedPreferencesAsync()
+          .setBool(_durationsKey, durations)
+          .catchError((_) {});
+    } catch (_) {
+      // Nowhere to keep it: it lasts until the app closes.
     }
   }
 
@@ -705,6 +727,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
           goal: overall,
           time: overall?.timeFor(_shown) ?? goals.timeFor(_shown),
           summary: _summary,
+          durations: _durations,
           goalNames: names,
           onTap: overall == null ? null : () => _show(overall),
           onHistory: overall == null ? null : () => _history(overall),
@@ -723,6 +746,7 @@ class _GoalsScreenState extends State<GoalsScreen> {
             goalNames: names,
             shownStatuses: _shown,
             summary: _summary,
+            durations: _durations,
             subGoals: subGoals[goal.id] ?? 0,
             expanded: _expanded.contains(goal.id),
             onToggle: () => setState(() {
@@ -766,6 +790,8 @@ class _GoalsScreenState extends State<GoalsScreen> {
           byPriority: goals.minutesByPriority,
           collapsed: _timeSummaryCollapsed,
           onCollapsed: _setTimeSummaryCollapsed,
+          durations: _durations,
+          onDurations: _setDurations,
         ),
         Expanded(child: list),
       ],
@@ -813,11 +839,9 @@ class _StatusFilter extends StatelessWidget {
 /// What each goal on the Goals page shows under its name.
 enum GoalSummary {
   /// The time spent on it and its sub-goals in the last 24 hours and 7
-  /// days: "9h in 24h · 10h in 7d".
+  /// days: "9h in 24h · 10h in 7d", or as shares of each window, "37.5%
+  /// of 24h · 6% of 7d", as the time summary's toggle says.
   time('Time spent'),
-
-  /// Its time as a share of each window: "37.5% of 24h · 6% of 7d".
-  percent('Time as a percentage'),
 
   /// What its measure rates: "10h per 7 days".
   measure('Measure');
@@ -830,6 +854,13 @@ enum GoalSummary {
 
 /// Where the [GoalSummary] picked is kept.
 const _summaryKey = 'goal_summary';
+
+/// What [_summaryKey] held for time as a percentage, before that was the
+/// time summary's toggle.
+const _percentSummary = 'percent';
+
+/// Where whether time is shown as durations is kept.
+const _durationsKey = 'goal_time_durations';
 
 /// Where whether the time summary is folded away is kept.
 const _timeSummaryCollapsedKey = 'goal_time_summary_collapsed';
@@ -884,6 +915,7 @@ class _GoalTile extends StatelessWidget {
     this.goalNames = const {},
     this.shownStatuses,
     this.summary = GoalSummary.time,
+    this.durations = true,
     required this.subGoals,
     required this.expanded,
     required this.onToggle,
@@ -928,6 +960,9 @@ class _GoalTile extends StatelessWidget {
 
   /// What it shows under its name, above its other details.
   final GoalSummary summary;
+
+  /// Whether its time is in durations, rather than percentages.
+  final bool durations;
 
   /// How many sub-goals it has (of those shown); none, and it has no arrow.
   final int subGoals;
@@ -984,7 +1019,7 @@ class _GoalTile extends StatelessWidget {
           day,
           week,
           skipZero: true,
-          asPercent: summary == GoalSummary.percent,
+          asPercent: !durations,
         ),
         _ => null,
       },
@@ -1528,6 +1563,7 @@ class _OverallCard extends StatelessWidget {
     required this.goal,
     required this.time,
     this.summary = GoalSummary.time,
+    this.durations = true,
     required this.goalNames,
     required this.onTap,
     required this.onHistory,
@@ -1542,6 +1578,9 @@ class _OverallCard extends StatelessWidget {
   /// time is shown even when there's none, and its measure, when it has
   /// none, is the average of the top-level goals'.
   final GoalSummary summary;
+
+  /// Whether its time is in durations, rather than percentages.
+  final bool durations;
   final Map<String?, String> goalNames;
   final VoidCallback? onTap;
   final VoidCallback? onHistory;
@@ -1559,7 +1598,7 @@ class _OverallCard extends StatelessWidget {
     final shown = switch ((summary, time)) {
       (GoalSummary.measure, _) => measure,
       (_, (final day, final week)) =>
-        '${describeTime(day, week, asPercent: summary == GoalSummary.percent)!} '
+        '${describeTime(day, week, asPercent: !durations)!} '
             'on the goals shown',
       _ => null,
     };
