@@ -686,6 +686,10 @@ class _EventsScreenState extends State<EventsScreen> {
       context,
       event,
       save: (changes) => widget.repository.updateEvent(event, changes),
+      cancel: (counts) => widget.repository.deleteEvent(
+        event,
+        countsAgainstFollowThrough: counts,
+      ),
       room: _roomFor(event),
       goals: _goalsById,
       loadGoals: _goals,
@@ -761,6 +765,10 @@ class _EventsScreenState extends State<EventsScreen> {
       context,
       event,
       save: widget.repository.updateEvent,
+      cancel: (event, counts) => widget.repository.deleteEvent(
+        event,
+        countsAgainstFollowThrough: counts,
+      ),
       room: _roomFor(event),
       goals: _goals,
       openSeries: (seriesId) => _openSeries(seriesId, event),

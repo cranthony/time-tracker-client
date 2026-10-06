@@ -618,12 +618,29 @@ void main() {
       expect(find.text('Cancel this event?'), findsOneWidget);
       await tester.tap(find.text('Cancel event').last);
       await tester.pumpAndSettle();
-      expect(repo.saved, [
-        {'is_cancelled': true},
-      ]);
+      // Cancelled with delete_event, not saved -- counting against
+      // follow-through, as the switch starts.
+      expect(repo.saved, isEmpty);
+      expect(repo.deleted, [('e1', true)]);
       // The server doesn't list cancelled events, so it leaves the list.
       expect(find.text('Event cancelled.'), findsOneWidget);
       expect(find.text('9:00 AM – 10:30 AM'), findsNothing);
+    });
+
+    testWidgets('cancelling it can be just a change of plan', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([work()]);
+      await openWork(tester, repo);
+      await tester.tap(find.text('Cancel event'));
+      await tester.pumpAndSettle();
+      expect(find.text('Count against follow-through'), findsOneWidget);
+      await tester.tap(find.text('Count against follow-through'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel event').last);
+      await tester.pumpAndSettle();
+      expect(repo.deleted, [('e1', false)]);
+      expect(find.text('Event cancelled.'), findsOneWidget);
     });
 
     test('durations read as typed and as the server sends them', () {
@@ -894,10 +911,23 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Cancel event'));
       await tester.pumpAndSettle();
-      expect(repo.saved, [
-        {'is_cancelled': true},
-      ]);
+      expect(repo.saved, isEmpty);
+      expect(repo.deleted, [('e1', true)]);
       expect(find.text('Event cancelled.'), findsOneWidget);
+    });
+
+    testWidgets('the trash can can make it just a change of plan', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([work()]);
+      await open(tester, repo);
+      await tester.tap(find.byTooltip('Cancel event'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Count against follow-through'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel event'));
+      await tester.pumpAndSettle();
+      expect(repo.deleted, [('e1', false)]);
     });
 
     testWidgets('clears its priority and description', (tester) async {

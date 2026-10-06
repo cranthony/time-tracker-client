@@ -6,7 +6,7 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
-## 6.5.0
+## 6.7.0
 
 No longer needs the server's daily trait scores.
 
@@ -21,6 +21,22 @@ No longer needs the server's daily trait scores.
   earlier run. The Events page shows those days at once, and what's saved
   there changes the scores straight away.
 - The sample data's scores are worked out from its events the same way.
+
+## 6.6.0
+
+- "Count against follow-through" starts on when confirming a
+  cancellation: turn it off when the plan merely changed.
+
+## 6.5.0
+
+Needs a server whose delete_event takes counts_against_follow_through
+(time-tracking-google-calendar-mcp#148).
+
+- Cancelling an event goes through the server's delete_event, the one
+  way it cancels events now, rather than saving it as cancelled.
+- Confirming a cancellation offers "Count against follow-through": on,
+  it lowers the follow-through of whoever a trait tracks the event for --
+  a commitment dropped. Off, as it starts, it's just a change of plan.
 
 ## 6.4.0
 

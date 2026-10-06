@@ -51,6 +51,17 @@ abstract class EventsRepository {
   /// server changed to make room, the new one included.
   Future<List<Event>> createEvent(Map<String, Object?> fields);
 
+  /// Cancels [event], with `delete_event` -- the one way the server
+  /// cancels an event (`update_event` won't). With
+  /// [countsAgainstFollowThrough], the server records it against the
+  /// follow-through of everyone a follow-through trait tracks it for: a
+  /// commitment dropped, not just a change of plan. Returns the events the
+  /// server changed, [event] (cancelled) included.
+  Future<List<Event>> deleteEvent(
+    Event event, {
+    bool countsAgainstFollowThrough = false,
+  });
+
   /// The recurring series [id] is, or is one of the events of.
   Future<Recurrence> recurrence(String id);
 
@@ -197,6 +208,20 @@ class McpEventsRepository implements EventsRepository {
   }
 
   @override
+  Future<List<Event>> deleteEvent(
+    Event event, {
+    bool countsAgainstFollowThrough = false,
+  }) async {
+    final result = await _client.callTool('delete_event', {
+      'id': event.id,
+      'counts_against_follow_through': countsAgainstFollowThrough,
+    });
+    return (result as List)
+        .map((e) => Event.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  @override
   Future<List<Event>> updateEvent(
     Event event,
     Map<String, Object?> changes,
@@ -313,6 +338,26 @@ class InMemoryEventsRepository implements EventsRepository {
     });
     _events.add(created);
     return [created];
+  }
+
+  /// Each event [deleteEvent] cancelled, by id, with whether it counted
+  /// against follow-through.
+  final deleted = <(String?, bool)>[];
+
+  @override
+  Future<List<Event>> deleteEvent(
+    Event event, {
+    bool countsAgainstFollowThrough = false,
+  }) async {
+    final i = _events.indexWhere((e) => e.id == event.id);
+    if (i < 0) throw StateError('No event ${event.id}');
+    deleted.add((event.id, countsAgainstFollowThrough));
+    final cancelled = Event.fromJson({
+      ..._events[i].toJson(),
+      'is_cancelled': true,
+    });
+    _events[i] = cancelled;
+    return [cancelled];
   }
 
   @override
