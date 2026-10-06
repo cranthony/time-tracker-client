@@ -375,7 +375,6 @@ void main() {
         'end': localIsoTimestamp(at(30, 10, 30)),
         'description': 'Deep work\nNo email',
         'location': null,
-        'min_duration': 'PT1H',
         'priority': 1,
         'is_cancelled': false,
         'is_end_of_day_sleep': true,
@@ -414,7 +413,6 @@ void main() {
     expect(valueOf('end'), 'Wednesday, September 30, 2026, 10:30 AM');
     expect(valueOf('description'), 'Deep work\nNo email');
     expect(valueOf('location'), '(none)');
-    expect(valueOf('min_duration'), '1h');
     expect(valueOf('priority'), '1');
     expect(valueOf('is_cancelled'), 'false');
     // Ones the app doesn't know about yet too.
@@ -550,32 +548,6 @@ void main() {
       expect(find.textContaining('Sign in again'), findsOneWidget);
     });
 
-    testWidgets('says how many other events moved', (tester) async {
-      final repo = _RecordingRepository([work()])
-        ..alsoMoved = [
-          Event(id: 'e2', start: at(30, 11), end: at(30, 12)),
-          Event(id: 'e3', start: at(30, 12), end: at(30, 13)),
-        ];
-      await openWork(tester, repo);
-      await edit(tester, inDialog(find.text('1h')));
-      await tester.enterText(find.byType(TextField), 'soon');
-      await tester.tap(find.byTooltip('Keep edit'));
-      await tester.pumpAndSettle();
-      expect(find.text('Enter a duration, like 1h 30m.'), findsOneWidget);
-
-      await tester.enterText(find.byType(TextField), '1h 30m');
-      await tester.tap(find.byTooltip('Keep edit'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Save 1 change'));
-      await tester.pumpAndSettle();
-      expect(repo.saved, [
-        {'min_duration': 'PT1H30M'},
-      ]);
-      expect(
-        find.text('Saved. 2 other events moved to make room.'),
-        findsOneWidget,
-      );
-    });
 
     testWidgets('picks goals by name, the first kept as primary', (
       tester,
@@ -647,20 +619,18 @@ void main() {
           'actions_from_label': true,
         });
 
+        Map sent() =>
+            ((client.arguments!['updates'] as List).single as Map)['event']
+                as Map;
+
         await McpEventsRepository(client)
             .updateEvent(event, {'summary': 'Focus'});
-        expect(
-          (client.arguments!['event'] as Map)['actions_from_label'],
-          isTrue,
-        );
+        expect(sent()['actions_from_label'], isTrue);
 
         await McpEventsRepository(client).updateEvent(event, {
           'action_ids': ['g1'],
         });
-        expect(
-          (client.arguments!['event'] as Map)['actions_from_label'],
-          isFalse,
-        );
+        expect(sent()['actions_from_label'], isFalse);
       },
     );
 
@@ -790,7 +760,6 @@ void main() {
       );
       expect(inDialog(find.text('Add location')), findsOneWidget);
       expect(inDialog(find.text('Deep work')), findsOneWidget);
-      expect(inDialog(find.text('Flexible time')), findsOneWidget);
       expect(inDialog(find.text('Deep focus')), findsOneWidget);
       // Not in a series, so no link to one.
       expect(inDialog(find.text('Repeats · see series')), findsNothing);
@@ -823,11 +792,6 @@ void main() {
       await tester.enterText(inDialog(find.byType(TextField)), 'Office');
       await tester.pumpAndSettle();
 
-      await tester.ensureVisible(inDialog(find.text('Flexible time')));
-      await tester.tap(inDialog(find.text('Flexible time')));
-      await tester.pumpAndSettle();
-      expect(inDialog(find.text('Fixed time')), findsOneWidget);
-
       // With changes, Details gives way to Cancel and Save.
       expect(find.text('Details'), findsNothing);
       await tester.tap(find.text('Save'));
@@ -837,11 +801,51 @@ void main() {
           'priority': 0,
           'summary': 'Admin',
           'location': 'Office',
-          'is_fixed_time': true,
         },
       ]);
       expect(find.byType(AlertDialog), findsNothing);
       expect(find.text('Saved.'), findsOneWidget);
+    });
+
+    testWidgets('changing history asks first, and goes through once agreed', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([work()])..history = true;
+      await open(tester, repo);
+      await tester.tap(inDialog(find.text('Work')));
+      await tester.pumpAndSettle();
+      await tester.enterText(inDialog(find.byType(TextField)), 'Admin');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      // Saving shows a spinner while it asks, so it never settles.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Change history?'), findsOneWidget);
+      await tester.tap(find.text('Change it'));
+      await tester.pumpAndSettle();
+      expect(repo.allowed, [false, true]);
+      expect(repo.saved, [
+        {'summary': 'Admin'},
+      ]);
+      expect(find.text('Saved.'), findsOneWidget);
+    });
+
+    testWidgets('keeping history saves nothing', (tester) async {
+      final repo = _RecordingRepository([work()])..history = true;
+      await open(tester, repo);
+      await tester.tap(inDialog(find.text('Work')));
+      await tester.pumpAndSettle();
+      await tester.enterText(inDialog(find.byType(TextField)), 'Admin');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.tap(find.text('Keep history'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, isEmpty);
+      expect(find.textContaining('is history'), findsOneWidget);
     });
 
     testWidgets('changing the start keeps its length', (tester) async {
@@ -1044,14 +1048,19 @@ void main() {
         'location': null,
         'summary': 'Admin',
       });
+      Map update() => (client.arguments!['updates'] as List).single as Map;
       expect(client.name, 'update_event');
-      expect(client.arguments!['clear_fields'], ['priority', 'location']);
-      // Never moving other events to make room.
-      expect(client.arguments!['reallocate'], isFalse);
-      expect((client.arguments!['event'] as Map)['summary'], 'Admin');
+      expect(update()['clear_fields'], ['priority', 'location']);
+      expect((update()['event'] as Map)['summary'], 'Admin');
+      expect(client.arguments!.containsKey('allow_compacted_changes'), isFalse);
 
       await McpEventsRepository(client).updateEvent(work(), {'summary': 'x'});
-      expect(client.arguments!.containsKey('clear_fields'), isFalse);
+      expect(update().containsKey('clear_fields'), isFalse);
+
+      await McpEventsRepository(
+        client,
+      ).updateEvent(work(), {'summary': 'y'}, allowCompactedChanges: true);
+      expect(client.arguments!['allow_compacted_changes'], isTrue);
     });
 
     testWidgets("shows the server's error and keeps the edits", (tester) async {
@@ -1244,14 +1253,34 @@ void main() {
       });
       expect(client.name, 'create_event');
       expect(client.arguments, {
-        'event': {
-          'start': localIsoTimestamp(at(30, 14)),
-          'end': localIsoTimestamp(at(30, 15)),
-          'summary': 'Gym',
-          'action_ids': ['g1'],
-        },
-        // Never moving other events to make room.
-        'reallocate': false,
+        'events': [
+          {
+            'start': localIsoTimestamp(at(30, 14)),
+            'end': localIsoTimestamp(at(30, 15)),
+            'summary': 'Gym',
+            'action_ids': ['g1'],
+          },
+        ],
+      });
+    });
+
+    test('McpEventsRepository cancels with delete_event', () async {
+      final client = _RecurrenceClient();
+      await McpEventsRepository(
+        client,
+      ).deleteEvent(
+        Event.fromJson({
+          'id': 'e1',
+          'start': localIsoTimestamp(at(30, 9)),
+          'end': localIsoTimestamp(at(30, 10)),
+        }),
+        countsAgainstFollowThrough: true,
+      );
+      expect(client.name, 'delete_event');
+      expect(client.arguments, {
+        'cancels': [
+          {'event_id': 'e1', 'counts_against_follow_through': true},
+        ],
       });
     });
   });
@@ -1804,12 +1833,26 @@ class _RecordingRepository extends InMemoryEventsRepository {
   /// Returned as moved by every save.
   List<Event> alsoMoved = const [];
 
+  /// Whether each save allowed changing history.
+  final allowed = <bool>[];
+
+  /// Refuses saves as history until one allows changing it.
+  bool history = false;
+
   @override
   Future<List<Event>> updateEvent(
     Event event,
-    Map<String, Object?> changes,
-  ) async {
+    Map<String, Object?> changes, {
+    bool allowCompactedChanges = false,
+  }) async {
     if (error case final error?) throw error;
+    allowed.add(allowCompactedChanges);
+    if (history && !allowCompactedChanges) {
+      throw McpException(
+        "'Work' (e1) is history -- so it can't be changed unless the user has explicitly approved "
+        'changing history (allow_compacted_changes).',
+      );
+    }
     saved.add(changes);
     return [...await super.updateEvent(event, changes), ...alsoMoved];
   }
@@ -1838,12 +1881,14 @@ class _RecurrenceClient extends McpClient {
   ]) async {
     this.name = name;
     this.arguments = arguments;
-    return [
+    final events = [
       {
         'id': 'standup_new',
         'start': '2026-09-30T09:00:00Z',
         'end': '2026-09-30T10:00:00Z',
       },
     ];
+    // A batch of event changes answers with its events; the rest, a list.
+    return name.endsWith('_event') ? {'events': events} : events;
   }
 }

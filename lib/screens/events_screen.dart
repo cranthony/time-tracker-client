@@ -645,10 +645,19 @@ class _EventsScreenState extends State<EventsScreen> {
     final outcome = await showEventSummaryDialog(
       context,
       event,
-      save: (changes) => widget.repository.updateEvent(event, changes),
-      cancel: (counts) => widget.repository.deleteEvent(
-        event,
-        countsAgainstFollowThrough: counts,
+      save: (changes) => _approvingHistory(
+        (allow) => widget.repository.updateEvent(
+          event,
+          changes,
+          allowCompactedChanges: allow,
+        ),
+      ),
+      cancel: (counts) => _approvingHistory(
+        (allow) => widget.repository.deleteEvent(
+          event,
+          countsAgainstFollowThrough: counts,
+          allowCompactedChanges: allow,
+        ),
       ),
       room: _roomFor(event),
       goals: _goalsById,
@@ -722,15 +731,59 @@ class _EventsScreenState extends State<EventsScreen> {
     await _loadGoals();
   }
 
+  /// Runs [change] -- and if the server refuses it because it changes
+  /// history (an event compaction settled), asks the user, and runs it
+  /// again allowing that if they agree. Otherwise rethrows the refusal.
+  Future<List<Event>> _approvingHistory(
+    Future<List<Event>> Function(bool allowCompactedChanges) change,
+  ) async {
+    try {
+      return await change(false);
+    } catch (e) {
+      if (!isHistoryRefusal(e) || !mounted) rethrow;
+      final approved = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Change history?'),
+          content: const Text(
+            'Compaction has already recorded this event as what happened. '
+            'Changing it rewrites that record.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Keep history'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Change it'),
+            ),
+          ],
+        ),
+      );
+      if (approved != true) rethrow;
+      return change(true);
+    }
+  }
+
   /// Opens every one of [event]'s properties.
   Future<void> _openEventDetails(Event event) async {
     final updated = await showEventDialog(
       context,
       event,
-      save: widget.repository.updateEvent,
-      cancel: (event, counts) => widget.repository.deleteEvent(
-        event,
-        countsAgainstFollowThrough: counts,
+      save: (event, changes) => _approvingHistory(
+        (allow) => widget.repository.updateEvent(
+          event,
+          changes,
+          allowCompactedChanges: allow,
+        ),
+      ),
+      cancel: (event, counts) => _approvingHistory(
+        (allow) => widget.repository.deleteEvent(
+          event,
+          countsAgainstFollowThrough: counts,
+          allowCompactedChanges: allow,
+        ),
       ),
       room: _roomFor(event),
       goals: _goals,
