@@ -6,6 +6,11 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 6.6.0
+
+- "Count against follow-through" starts on when confirming a
+  cancellation: turn it off when the plan merely changed.
+
 ## 6.5.0
 
 Needs a server whose delete_event takes counts_against_follow_through

@@ -472,7 +472,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   }
 
   Future<void> _confirmRemove(_Removal removal) async {
-    var on = false;
+    var on = removal.option?.initial ?? false;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
