@@ -8,6 +8,7 @@ import '../outbox/note_outbox.dart';
 import '../outbox/pending_note.dart';
 import '../services/mcp_client.dart';
 import '../services/notes_repository.dart';
+import '../services/plan_memory.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
 import '../widgets/note_dialog.dart';
@@ -28,6 +29,7 @@ class NotesScreen extends StatefulWidget {
     this.addNoteRequests,
     this.onAddNoteFieldFocused,
     this.version,
+    this.memory,
     DateTime Function()? clock,
   }) : clock = clock ?? DateTime.now;
 
@@ -51,6 +53,10 @@ class NotesScreen extends StatefulWidget {
   /// The app's version, for the About dialog; null until it's known.
   final String? version;
 
+  /// What the app has loaded, the notes among it, for every page to
+  /// share: by default, the [PlanMemoryScope]'s.
+  final PlanMemory? memory;
+
   /// Now, for the "Today" and "Yesterday" headings.
   final DateTime Function() clock;
 
@@ -59,11 +65,18 @@ class NotesScreen extends StatefulWidget {
 }
 
 class _NotesScreenState extends State<NotesScreen> {
-  List<Note>? _notes;
+  /// What the app has loaded, for every page: here, the notes not yet
+  /// compacted and when notes were last compacted. The app's, or else one
+  /// of its own.
+  late final PlanMemory _memory =
+      widget.memory ?? PlanMemoryScope.of(context) ?? PlanMemory();
+
+  List<Note>? get _notes => _memory.notes;
+  set _notes(List<Note>? notes) => _memory.notes = notes;
 
   /// When notes were last compacted; null until known, or from a server
   /// too old to say.
-  CompactionStatus? _status;
+  CompactionStatus? get _status => _memory.compaction;
 
   /// [_notes] are the ones kept from last time; the server hasn't
   /// answered since.
@@ -90,24 +103,19 @@ class _NotesScreenState extends State<NotesScreen> {
     _load();
   }
 
-  /// Shows the notes and compaction status kept from last time, unless
-  /// the server answered first.
+  /// Shows the notes and compaction status the app has -- loaded on
+  /// another page, or kept from last time -- unless the server answered
+  /// first.
   Future<void> _showCached() async {
-    unawaited(_showCachedStatus());
-    final notes = await widget.repository.cachedUncompactedNotes();
-    if (!mounted || notes == null) return;
-    if (_notes != null || _needsSignIn || _error != null) return;
-    setState(() {
-      _notes = notes;
-      _stale = true;
-    });
+    final answered = _answered;
+    await _memory.loadKept(notes: widget.repository);
+    if (!mounted || _answered != answered || _notes == null) return;
+    if (_needsSignIn || _error != null) return;
+    setState(() => _stale = true);
   }
 
-  Future<void> _showCachedStatus() async {
-    final status = await widget.repository.cachedCompactionStatus();
-    if (!mounted || status == null || _status != null) return;
-    setState(() => _status = status);
-  }
+  /// How many times the server has answered for the notes here.
+  int _answered = 0;
 
   @override
   void dispose() {
@@ -126,10 +134,10 @@ class _NotesScreenState extends State<NotesScreen> {
     unawaited(_loadStatus());
     final fetched = widget.outbox.fetching();
     try {
-      final notes = await widget.repository.uncompactedNotes();
+      await _memory.loadNotes(widget.repository, again: true);
+      _answered++;
       if (!mounted) return;
       setState(() {
-        _notes = notes;
         _stale = false;
         _error = null;
         _needsSignIn = false;
@@ -155,8 +163,8 @@ class _NotesScreenState extends State<NotesScreen> {
   /// Loads [_status]; a failure just leaves the last one shown.
   Future<void> _loadStatus() async {
     try {
-      final status = await widget.repository.compactionStatus();
-      if (mounted) setState(() => _status = status);
+      await _memory.loadCompaction(widget.repository, again: true);
+      if (mounted) setState(() {});
     } catch (_) {}
   }
 

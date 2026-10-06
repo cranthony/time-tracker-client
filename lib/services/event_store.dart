@@ -95,6 +95,22 @@ class EventStore extends ChangeNotifier {
     return (DateTime.parse(keys.first), DateTime.parse(keys.last));
   }
 
+  /// Whether every day from [from]'s to the one [to] falls in is here.
+  bool hasAll(DateTime from, DateTime to) {
+    for (var d = _midnight(from); d.isBefore(to); d = _plusDays(d, 1)) {
+      if (!has(d)) return false;
+    }
+    return true;
+  }
+
+  /// Asks for every day from [from]'s to the one [to] falls in again.
+  Future<void> refresh(DateTime from, DateTime to) async {
+    await _restored;
+    final last = _midnight(to) == to ? to : _plusDays(_midnight(to), 1);
+    await _fetch(_midnight(from), last);
+    _changed();
+  }
+
   /// Keeps [events] as [day]'s, as just asked for.
   void putDay(DateTime day, List<Event> events) {
     _put(_midnight(day), _plusDays(_midnight(day), 1), events);

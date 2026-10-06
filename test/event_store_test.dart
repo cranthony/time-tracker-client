@@ -31,12 +31,12 @@ class _CountingEvents extends InMemoryEventsRepository {
   final asked = <(int, int)>[];
 
   @override
-  Future<List<Event>> events(DateTime from, DateTime to, {bool keep = false}) {
+  Future<List<Event>> events(DateTime from, DateTime to) {
     asked.add((
       from.difference(_day(0)).inDays,
       to.difference(_day(0)).inDays - 1,
     ));
-    return super.events(from, to, keep: keep);
+    return super.events(from, to);
   }
 }
 

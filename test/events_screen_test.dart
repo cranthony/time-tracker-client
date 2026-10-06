@@ -1774,7 +1774,7 @@ class _SignInRepository extends InMemoryEventsRepository {
   Exception? failure;
 
   @override
-  Future<List<Event>> events(DateTime from, DateTime to, {bool keep = false}) {
+  Future<List<Event>> events(DateTime from, DateTime to) {
     if (!signedIn()) throw SignInRequiredException();
     if (failure case final failure?) throw failure;
     return super.events(from, to);
@@ -1788,11 +1788,7 @@ class _SlowRepository extends InMemoryEventsRepository {
   final Set<DateTime> slow;
 
   @override
-  Future<List<Event>> events(
-    DateTime from,
-    DateTime to, {
-    bool keep = false,
-  }) async {
+  Future<List<Event>> events(DateTime from, DateTime to) async {
     if (slow.contains(from)) await Future.delayed(const Duration(seconds: 1));
     return super.events(from, to);
   }
