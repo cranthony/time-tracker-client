@@ -172,6 +172,11 @@ class _PlanScreenState extends State<PlanScreen> {
   void initState() {
     super.initState();
     _memory.newVisit();
+    // On its own, without the app's: the summaries' events go in one of
+    // its own.
+    if (widget.eventsRepository case final events?) {
+      _memory.useEvents(EventStore(repository: events));
+    }
     _fromServer = _memory.actions;
     widget.outbox.addListener(_outboxChanged);
     _saveEvents = widget.outbox.events.listen(_onSaveEvent);
@@ -199,8 +204,7 @@ class _PlanScreenState extends State<PlanScreen> {
     final people = PeopleScope.of(context);
     // On its own, without the home screen to load the events the traits
     // are scored from as the app opens: loads them here.
-    if (_memory.eventStore == null && widget.eventsRepository != null) {
-      _memory.useEvents(EventStore(repository: widget.eventsRepository!));
+    if (!_memory.warmed && widget.eventsRepository != null) {
       unawaited(
         _memory.warmScores(
           traits: traits,
@@ -233,14 +237,10 @@ class _PlanScreenState extends State<PlanScreen> {
   Future<void> _loadCompaction() async {
     final notes = widget.notesRepository;
     try {
-      if (notes != null && _memory.lastCompaction == null) {
-        if (await notes.cachedCompactionStatus() case final status?) {
-          _memory.lastCompaction = status.lastCompaction;
-        }
-      }
       if (notes != null) {
-        _memory.lastCompaction =
-            (await notes.compactionStatus()).lastCompaction;
+        await _memory.loadKept(notes: notes);
+        if (mounted) setState(() {});
+        await _memory.loadCompaction(notes);
       }
     } catch (_) {
       // Measured from what's known.
@@ -252,14 +252,9 @@ class _PlanScreenState extends State<PlanScreen> {
   /// Loads the events in the summaries' window, unless they're loaded
   /// already this visit; with [again], afresh.
   Future<void> _loadEvents({bool again = false}) async {
-    final events = widget.eventsRepository;
-    if (events == null) return;
+    if (widget.eventsRepository == null) return;
     try {
-      await _memory.loadEvents(
-        events,
-        _memory.window(DateTime.now()),
-        again: again,
-      );
+      await _memory.loadEvents(_memory.window(DateTime.now()), again: again);
       if (mounted) setState(() => _eventsError = null);
     } catch (e) {
       if (mounted) setState(() => _eventsError = e);
@@ -292,7 +287,7 @@ class _PlanScreenState extends State<PlanScreen> {
       onForward: (forward) => _moveWindow(forward: forward),
       onCollapsed: _setTimeSummaryCollapsed,
       onDurations: _setDurations,
-      events: _memory.events[PlanMemory.eventsKey(window)],
+      events: _memory.windowEvents(window),
       error: _eventsError,
     );
   }
@@ -348,7 +343,8 @@ class _PlanScreenState extends State<PlanScreen> {
   /// Shows the goals kept from last time, unless the server answered
   /// first.
   Future<void> _showCached() async {
-    final goals = await widget.repository.cachedGoals();
+    await _memory.loadKept(goals: widget.repository);
+    final goals = _memory.actions;
     if (!mounted || goals == null) return;
     if (_fromServer != null || _needsSignIn || _error != null) return;
     setState(() {

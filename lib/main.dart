@@ -71,7 +71,7 @@ Future<void> main() async {
   runApp(
     TimeTrackerApp(
       repository: repository,
-      eventsRepository: McpEventsRepository(client, cache: cache),
+      eventsRepository: McpEventsRepository(client),
       goalsRepository: goals,
       outbox: NoteOutbox(
         store: PrefsOutboxStore.notes(),

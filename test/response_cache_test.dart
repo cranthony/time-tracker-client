@@ -13,7 +13,10 @@ import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/plan_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
+import 'package:time_tracker_client/services/event_store.dart';
+import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
@@ -87,30 +90,6 @@ void main() {
       expect(cached.latestCompacted?.description, 'Done with dinner');
     });
 
-    test('keep list_events only when asked, for one day', () async {
-      final cache = InMemoryResponseCache();
-      final day = DateTime(2026, 9, 30);
-      final next = DateTime(2026, 10, 1);
-      final event = Event(
-        start: DateTime(2026, 9, 30, 9),
-        end: DateTime(2026, 9, 30, 10),
-        summary: 'Work',
-      );
-      final repo = McpEventsRepository(
-        _FakeClient([event.toJson()]),
-        cache: cache,
-      );
-      await repo.events(day, next);
-      expect(await repo.cachedEvents(day, next), isNull);
-
-      await repo.events(day, next, keep: true);
-      expect((await repo.cachedEvents(day, next))!.single.summary, 'Work');
-      // Another day isn't kept, and doesn't replace the one that is.
-      await repo.events(next, DateTime(2026, 10, 2));
-      expect(await repo.cachedEvents(next, DateTime(2026, 10, 2)), isNull);
-      expect(await repo.cachedEvents(day, next), isNotNull);
-    });
-
     test('ignore a cached value they can\'t read', () async {
       final cache = InMemoryResponseCache();
       await cache.write('get_notes', 'not a list');
@@ -124,6 +103,28 @@ void main() {
   group('screens', () {
     final now = DateTime(2026, 9, 30, 12);
     Finder refreshing() => find.bySemanticsLabel('Refreshing');
+
+    /// The app's memory as it opens, with the days [kept] from its last
+    /// run, events from [repo], kept in [cache].
+    Future<PlanMemory> keptMemory(
+      EventsRepository repo,
+      Map<DateTime, List<Event>> kept, {
+      ResponseCache? cache,
+    }) async {
+      cache ??= InMemoryResponseCache();
+      final last = EventStore(repository: repo, cache: cache, clock: () => now);
+      for (final MapEntry(:key, :value) in kept.entries) {
+        last.putDay(key, value);
+      }
+      await last.save();
+      return PlanMemory(
+        eventStore: EventStore(
+          repository: repo,
+          cache: cache,
+          clock: () => now,
+        ),
+      );
+    }
 
     testWidgets('Notes shows kept notes while it refreshes', (tester) async {
       final repo = _GatedNotesRepository(
@@ -152,22 +153,22 @@ void main() {
       tester,
     ) async {
       final day = DateTime(2026, 9, 30);
-      final repo = _GatedEventsRepository(
-        cached: {
-          day: [
-            Event(
-              start: DateTime(2026, 9, 30, 9),
-              end: DateTime(2026, 9, 30, 10),
-              summary: 'Old',
-            ),
-          ],
-        },
-      );
+      final repo = _GatedEventsRepository();
+      final memory = await keptMemory(repo, {
+        day: [
+          Event(
+            start: DateTime(2026, 9, 30, 9),
+            end: DateTime(2026, 9, 30, 10),
+            summary: 'Old',
+          ),
+        ],
+      });
       await tester.pumpWidget(
         MaterialApp(
           home: EventsScreen(
             repository: repo,
             serverLabel: 'test',
+            memory: memory,
             clock: () => now,
           ),
         ),
@@ -189,7 +190,7 @@ void main() {
     testWidgets('Events shows the spinner for a day with nothing kept', (
       tester,
     ) async {
-      final repo = _GatedEventsRepository(cached: {});
+      final repo = _GatedEventsRepository();
       await tester.pumpWidget(
         MaterialApp(
           home: EventsScreen(
@@ -209,38 +210,88 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
-    testWidgets('Events shows kept events only for the first day', (
-      tester,
-    ) async {
-      final day = DateTime(2026, 9, 30);
-      final kept = [
-        Event(
-          start: DateTime(2026, 9, 30, 9),
-          end: DateTime(2026, 9, 30, 10),
-          summary: 'Old',
-        ),
-      ];
-      final repo = _GatedEventsRepository(
-        cached: {day: kept, DateTime(2026, 10, 1): kept},
-      );
+    testWidgets('Events keeps each day it loads for next time', (tester) async {
+      final cache = InMemoryResponseCache();
+      final repo = _GatedEventsRepository();
+      final memory = await keptMemory(repo, {}, cache: cache);
       await tester.pumpWidget(
         MaterialApp(
           home: EventsScreen(
             repository: repo,
             serverLabel: 'test',
+            memory: memory,
             clock: () => now,
           ),
         ),
       );
       repo.gate.complete();
       await tester.pumpAndSettle();
-      expect(repo.kept, [day]);
+      await memory.eventStore!.save();
 
-      await tester.tap(find.byTooltip('Next day'));
-      await tester.pump();
-      expect(find.text('Old'), findsNothing);
+      // The day shown, and those either side, ready to slide in.
+      expect((await cache.read('event_days') as Map).keys, {
+        '2026-09-29',
+        '2026-09-30',
+        '2026-10-01',
+      });
+    });
+
+    test(
+      'what two pages keep at once is kept, not lost to the other',
+      () async {
+        final memory = PlanMemory();
+        final goals = _GatedGoalsRepository(
+          cached: const GoalList(
+            goals: [Goal(id: '1', name: 'Old')],
+          ),
+        );
+        // One page asks for what's kept of the goals, another not, at once.
+        await Future.wait([memory.loadKept(), memory.loadKept(goals: goals)]);
+        expect(memory.actions?.goals.single.name, 'Old');
+      },
+    );
+
+    testWidgets('Events shows when notes were last compacted from the '
+        'Notes page, without asking again first', (tester) async {
+      final memory = PlanMemory();
+      final compacted = DateTime(2026, 9, 30, 9);
+      final notes = InMemoryNotesRepository(
+        [],
+        CompactionStatus(lastCompaction: compacted),
+      );
+      final outbox = NoteOutbox(
+        store: InMemoryOutboxStore(),
+        repository: notes,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: NotesScreen(repository: notes, outbox: outbox, memory: memory),
+        ),
+      );
       await tester.pumpAndSettle();
-      expect(repo.kept, [day]);
+      expect(memory.lastCompaction, compacted);
+
+      // The Events page, while the server's slow to say.
+      final slow = _GatedNotesRepository(cached: const [], fresh: const []);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EventsScreen(
+            repository: InMemoryEventsRepository(),
+            notesRepository: slow,
+            serverLabel: 'test',
+            memory: memory,
+            clock: () => now,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(
+        tester.widget<DayTimeline>(find.byType(DayTimeline)).lastCompaction,
+        compacted,
+      );
+      slow.gate.complete();
+      await tester.pumpAndSettle();
+      outbox.stop();
     });
 
     testWidgets('Plan asks to sign in, rather than show kept actions', (
@@ -358,28 +409,13 @@ class _GatedNotesRepository extends InMemoryNotesRepository {
   }
 }
 
-/// Has [cached] events kept, by day, and answers once [gate] opens.
+/// Answers once [gate] opens.
 class _GatedEventsRepository extends InMemoryEventsRepository {
-  _GatedEventsRepository({required this.cached});
-
-  final Map<DateTime, List<Event>> cached;
   final gate = Completer<void>();
 
   @override
-  Future<List<Event>?> cachedEvents(DateTime from, DateTime to) async =>
-      cached[from];
-
-  /// The days [events] was asked to keep.
-  final kept = <DateTime>[];
-
-  @override
-  Future<List<Event>> events(
-    DateTime from,
-    DateTime to, {
-    bool keep = false,
-  }) async {
+  Future<List<Event>> events(DateTime from, DateTime to) async {
     await gate.future;
-    if (keep) kept.add(from);
     return super.events(from, to);
   }
 }

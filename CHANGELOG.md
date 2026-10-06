@@ -6,6 +6,19 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 6.9.0
+
+- What the app loads is kept once, for every page: the events, day by
+  day, in the store the traits are scored from -- the Events page's days
+  and the Plan summaries' windows among them -- and the actions, the
+  notes not yet compacted and when notes were last compacted, which the
+  Notes, Events and Plan pages each used to load and keep apart. A page
+  shows what another loaded at once, while it asks the server again.
+- The events are no longer kept apart for the first day the Events page
+  shows: every day the app has is kept from run to run.
+- Fixes what was kept from the last run sometimes being lost when two
+  pages asked for it at once.
+
 ## 6.8.1
 
 - Sliding between days on the Events page draws a day the app already

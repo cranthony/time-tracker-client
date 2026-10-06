@@ -114,6 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
           addNoteRequests: _toNotes.stream,
           onAddNoteFieldFocused: widget.onAddNoteFieldFocused,
           version: widget.version,
+          memory: _planMemory,
         ),
         _Tab.events => EventsScreen(
           repository: widget.eventsRepository,
