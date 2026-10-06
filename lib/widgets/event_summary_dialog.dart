@@ -16,9 +16,11 @@ import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import 'color_picker.dart';
+import 'event_dialog.dart' show followThroughOption;
 import 'event_room.dart';
 import 'facts_dialog.dart';
 import 'goals_picker.dart';
+import 'properties_dialog.dart' show ConfirmOption, confirmationContent;
 import 'recurrence_dialog.dart';
 import 'repeat_editor.dart';
 
@@ -60,6 +62,7 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
   BuildContext context,
   Event event, {
   Future<List<Event>> Function(Map<String, Object?> changes)? save,
+  Future<List<Event>> Function(bool countsAgainstFollowThrough)? cancel,
   EventRoom room = const EventRoom.none(),
   Map<String, Goal> goals = const {},
   Future<List<Goal>> Function()? loadGoals,
@@ -88,7 +91,7 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
           ? null
           : (changes) async =>
                 () => save(changes),
-      remove: save == null || event.id == null || event.isCancelled
+      remove: cancel == null || event.id == null || event.isCancelled
           ? null
           : _Removal(
               tooltip: 'Cancel event',
@@ -99,7 +102,8 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
                   " This can't be undone.",
               keepLabel: 'Keep event',
               label: 'Cancel event',
-              run: () => save({'is_cancelled': true}),
+              option: followThroughOption,
+              run: cancel,
             ),
       openSeries: switch ((openSeries, seriesId)) {
         (final open?, final id?) => () => open(id),
@@ -205,7 +209,7 @@ Future<SummaryOutcome<List<Recurrence>>?> showSeriesSummaryDialog(
               "deleted. Earlier ones stay as they are. This can't be undone.",
           keepLabel: 'Keep events',
           label: 'Delete events',
-          run: delete,
+          run: (_) => delete(),
         ),
         null => null,
       },
@@ -213,7 +217,8 @@ Future<SummaryOutcome<List<Recurrence>>?> showSeriesSummaryDialog(
   );
 }
 
-/// The trash can's action: what it asks, and [run]s once confirmed.
+/// The trash can's action: what it asks, and [run]s once confirmed --
+/// with whether [option], if it offers one, was switched on.
 class _Removal {
   const _Removal({
     required this.tooltip,
@@ -222,6 +227,7 @@ class _Removal {
     required this.keepLabel,
     required this.label,
     required this.run,
+    this.option,
   });
 
   final String tooltip;
@@ -229,7 +235,8 @@ class _Removal {
   final String explanation;
   final String keepLabel;
   final String label;
-  final Future<Object?> Function() run;
+  final ConfirmOption? option;
+  final Future<Object?> Function(bool option) run;
 }
 
 /// The properties the dialog edits, one at a time.
@@ -465,28 +472,36 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   }
 
   Future<void> _confirmRemove(_Removal removal) async {
+    var on = false;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(removal.question),
-        content: Text(removal.explanation),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(removal.keepLabel),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(removal.question),
+          content: confirmationContent(
+            removal.explanation,
+            removal.option,
+            on: on,
+            toggle: (value) => setState(() => on = value),
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(removal.keepLabel),
             ),
-            child: Text(removal.label),
-          ),
-        ],
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+                foregroundColor: Theme.of(context).colorScheme.onError,
+              ),
+              child: Text(removal.label),
+            ),
+          ],
+        ),
       ),
     );
-    if (confirmed == true && mounted) await _run(removal.run);
+    if (confirmed == true && mounted) await _run(() => removal.run(on));
   }
 
   @override
