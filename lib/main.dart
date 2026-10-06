@@ -19,6 +19,7 @@ import 'services/events_repository.dart';
 import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
 import 'services/people_repository.dart';
+import 'services/plan_memory.dart';
 import 'services/response_cache.dart';
 import 'services/traits_repository.dart';
 import 'theme.dart';
@@ -167,6 +168,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
   final _addNoteShortcut = AddNoteShortcut();
   String? _version;
 
+  /// What's been loaded of the plan, for every page to share.
+  final _planMemory = PlanMemory();
+
   @override
   void initState() {
     super.initState();
@@ -233,7 +237,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       darkTheme: appTheme(Brightness.dark),
       // Above the navigator, so every route and dialog finds it.
       builder: (context, child) {
-        var scoped = child!;
+        Widget scoped = PlanMemoryScope(memory: _planMemory, child: child!);
         if (widget.peopleRepository case final people?) {
           scoped = PeopleScope(repository: people, child: scoped);
         }

@@ -10,8 +10,10 @@ import '../models/note.dart';
 import '../models/person.dart';
 import '../models/recurrence.dart';
 import '../models/repeat.dart';
+import '../models/trait.dart';
 import '../services/mcp_client.dart';
 import '../services/people_repository.dart';
+import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import 'color_picker.dart';
 import 'event_room.dart';
@@ -313,6 +315,23 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     _peopleAsked = true;
     final repository = PeopleScope.of(context);
     final traits = TraitsScope.of(context);
+    // What the Events page loaded already, at once; then what's loading,
+    // or else afresh.
+    if (PlanMemoryScope.of(context) case final memory?) {
+      _named(memory.people, memory.locations, memory.traits);
+      await memory.prefetchNames(
+        traits: traits,
+        people: repository,
+        onLoaded: () {
+          if (mounted) {
+            setState(
+              () => _named(memory.people, memory.locations, memory.traits),
+            );
+          }
+        },
+      );
+      return;
+    }
     try {
       final people = await repository?.people();
       final locations = await repository?.locations();
@@ -320,19 +339,27 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         statuses: const ['active', 'off', 'archived'],
       );
       if (!mounted) return;
-      setState(() {
-        if (people != null) {
-          _personNames = {for (final p in people.withSelf) p.id: personName(p)};
-        }
-        if (locations != null) {
-          _locationNames = {for (final l in locations) l.id: l.name};
-        }
-        if (traitList != null) {
-          _traitNames = {for (final t in traitList) t.id: t.name};
-        }
-      });
+      setState(() => _named(people, locations, traitList));
     } catch (_) {
       // Named by id, then.
+    }
+  }
+
+  /// Names everyone, every location and every trait in [people],
+  /// [locations] and [traits], where they're known.
+  void _named(
+    PeopleList? people,
+    List<Location>? locations,
+    List<Trait>? traits,
+  ) {
+    if (people != null) {
+      _personNames = {for (final p in people.withSelf) p.id: personName(p)};
+    }
+    if (locations != null) {
+      _locationNames = {for (final l in locations) l.id: l.name};
+    }
+    if (traits != null) {
+      _traitNames = {for (final t in traits) t.id: t.name};
     }
   }
 

@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 6.4.0
+
+- The Events page loads everyone, every location and every trait as it
+  opens -- shared with the Plan page, and kept from the last run -- so an
+  event's details name who it was with, where, and its judgments at once,
+  and its "What happened" dialog lists them without waiting.
+
 ## 6.3.0
 
 Needs a server with daily trait scores

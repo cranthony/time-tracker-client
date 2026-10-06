@@ -14,6 +14,9 @@ import '../services/events_repository.dart';
 import '../services/mcp_client.dart';
 import '../services/events_place.dart';
 import '../services/notes_repository.dart';
+import '../services/people_repository.dart';
+import '../services/plan_memory.dart';
+import '../services/traits_repository.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
 import '../widgets/day_summary.dart';
@@ -57,6 +60,7 @@ class EventsScreen extends StatefulWidget {
     this.onSignOut,
     this.version,
     this.placeStore,
+    this.memory,
     DateTime Function()? clock,
   }) : clock = clock ?? DateTime.now;
 
@@ -64,6 +68,11 @@ class EventsScreen extends StatefulWidget {
 
   /// Where to keep where it was left; null always to open on today.
   final EventsPlaceStore? placeStore;
+
+  /// Where to load everyone, every location and every trait into as the
+  /// page opens, so an event's dialogs name them at once: by default, the
+  /// [PlanMemoryScope]'s.
+  final PlanMemory? memory;
 
   /// Where to list goals from, to pick an event's; null to type their ids.
   final GoalsRepository? goalsRepository;
@@ -191,6 +200,20 @@ class _EventsScreenState extends State<EventsScreen> {
   /// and is being loaded again.
   bool get _stale => _events.containsKey(_day) && !_fresh.contains(_day);
 
+  /// Loads everyone, every location and every trait, for an event's
+  /// dialogs to name at once. Best effort.
+  Future<void> _prefetchNames() async {
+    if (!mounted) return;
+    final memory = widget.memory ?? PlanMemoryScope.of(context);
+    if (memory == null) return;
+    // Asked afresh each time the page opens.
+    memory.newVisit();
+    await memory.prefetchNames(
+      traits: TraitsScope.of(context),
+      people: PeopleScope.of(context),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -213,6 +236,9 @@ class _EventsScreenState extends State<EventsScreen> {
     widget.outbox?.addListener(_outboxChanged);
     _loadNotes(cached: true);
     _loadSummaryCollapsed();
+    // Once the scopes can be read: everyone, every location and every
+    // trait, for an event's dialogs.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchNames());
     _loadSummaryDurations();
   }
 

@@ -4,8 +4,13 @@ import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/facts.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/trait.dart';
+
+import 'dart:async';
+
+import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
 import 'package:time_tracker_client/screens/traits_pane.dart';
+import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
@@ -768,6 +773,89 @@ void main() {
     });
   });
 
+  testWidgets('the Events page loads everyone, every location and every '
+      'trait as it opens, for an event to name them', (tester) async {
+    final people = _CountingPeopleRepository();
+    final memory = PlanMemory();
+    await tester.pumpWidget(
+      TraitsScope(
+        repository: InMemoryTraitsRepository(traits: [_adventurous]),
+        child: PeopleScope(
+          repository: people,
+          child: MaterialApp(
+            builder: (context, child) =>
+                PlanMemoryScope(memory: memory, child: child!),
+            home: EventsScreen(
+              repository: InMemoryEventsRepository(),
+              serverLabel: 'test',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(people.calls, ['people', 'locations']);
+    expect([for (final p in memory.people!.people) p.id], ['sam']);
+    expect([for (final l in memory.locations!) l.id], ['home']);
+    expect([for (final t in memory.traits!) t.id], ['adventurous']);
+  });
+
+  testWidgets("an event's dialogs name its people and location at once, "
+      "from what's loaded, while they're asked for again", (tester) async {
+    final people = _CountingPeopleRepository()..gate = Completer<void>();
+    final memory = PlanMemory()
+      ..people = const PeopleList(
+        people: [Person(id: 'sam', name: 'Sam')],
+      )
+      ..locations = const [Location(id: 'home', name: 'Home')];
+    final event = Event(
+      id: 'e1',
+      summary: 'Dinner',
+      start: DateTime(2026, 10, 1, 18),
+      end: DateTime(2026, 10, 1, 20),
+      properties: const {
+        'facts': {
+          'location_id': 'home',
+          'with_ids': ['sam'],
+        },
+      },
+    );
+    await tester.pumpWidget(
+      PeopleScope(
+        repository: people,
+        child: MaterialApp(
+          builder: (context, child) =>
+              PlanMemoryScope(memory: memory, child: child!),
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showEventSummaryDialog(
+                context,
+                event,
+                save: (_) async => [event],
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    // Asked for, but not answered: named from what's loaded.
+    expect(people.calls, ['people', 'locations']);
+    expect(find.text('With Sam · @ Home'), findsOneWidget);
+    await tester.tap(find.text('With Sam · @ Home'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(FilterChip, 'Sam'), findsWidgets);
+    expect(find.text('Home'), findsWidgets);
+    // Asked once, not again for the facts.
+    expect(people.calls, ['people', 'locations']);
+    people.gate!.complete();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('someone picked as there is taken off those it was for', (
     tester,
   ) async {
@@ -870,5 +958,32 @@ class _RecordingClient extends McpClient {
   ]) async {
     calls.add((name, arguments));
     return answer(name, arguments);
+  }
+}
+
+/// Says what it was asked for; while [gate] is set, answers once it's
+/// done.
+class _CountingPeopleRepository extends InMemoryPeopleRepository {
+  _CountingPeopleRepository()
+    : super(
+        people: const [Person(id: 'sam', name: 'Sam')],
+        locations: const [Location(id: 'home', name: 'Home')],
+      );
+
+  final calls = <String>[];
+  Completer<void>? gate;
+
+  @override
+  Future<PeopleList> people() async {
+    calls.add('people');
+    await gate?.future;
+    return super.people();
+  }
+
+  @override
+  Future<List<Location>> locations() async {
+    calls.add('locations');
+    await gate?.future;
+    return super.locations();
   }
 }

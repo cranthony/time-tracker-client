@@ -1,3 +1,5 @@
+import 'package:flutter/widgets.dart';
+
 import '../models/event.dart';
 import '../models/goal.dart';
 import '../models/person.dart';
@@ -7,9 +9,11 @@ import 'events_repository.dart';
 import 'people_repository.dart';
 import 'traits_repository.dart';
 
-/// What the Plan page last showed, kept while the app runs -- by the home
-/// screen, across switching to Notes or Events and back -- so it comes
-/// back as it was, not empty, while it asks the server again.
+/// What the Plan page last showed, kept while the app runs -- above every
+/// route ([PlanMemoryScope]), across switching to Notes or Events and
+/// back -- so it comes back as it was, not empty, while it asks the server
+/// again. The Events page fills in its people, locations and traits too
+/// ([prefetchNames]), for an event's dialogs to name them at once.
 ///
 /// Each visit loads everything at once (see [load]): a pane opened while
 /// its load is still under way waits for that one, rather than asking
@@ -107,6 +111,33 @@ class PlanMemory {
     }, again: again);
   }
 
+  /// Loads everyone, every location and every trait -- from what was kept
+  /// from the app's last run, then afresh -- for what names them: an
+  /// event's people, location and judgments. Best effort; [onLoaded] is
+  /// called as each comes in.
+  Future<void> prefetchNames({
+    TraitsRepository? traits,
+    PeopleRepository? people,
+    VoidCallback? onLoaded,
+  }) async {
+    await loadKept(traits: traits, people: people);
+    onLoaded?.call();
+    Future<void> quietly(Future<void>? loading) async {
+      try {
+        await loading;
+        onLoaded?.call();
+      } catch (_) {
+        // Named by what's kept, or by id.
+      }
+    }
+
+    await Future.wait([
+      quietly(traits == null ? null : loadTraits(traits)),
+      quietly(people == null ? null : loadPeople(people)),
+      quietly(people == null ? null : loadLocations(people)),
+    ]);
+  }
+
   /// What was kept from the app's last run, for whatever this run hasn't
   /// loaded yet. Best effort.
   Future<void> loadKept({
@@ -123,4 +154,24 @@ class PlanMemory {
       // Then nothing's kept.
     }
   }
+}
+
+/// Makes a [PlanMemory] available to everything below it -- every route
+/// and dialog, when it's above the navigator.
+class PlanMemoryScope extends InheritedWidget {
+  const PlanMemoryScope({
+    super.key,
+    required this.memory,
+    required super.child,
+  });
+
+  final PlanMemory memory;
+
+  /// The nearest [PlanMemoryScope]'s memory, or null if there's none.
+  static PlanMemory? of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<PlanMemoryScope>()?.memory;
+
+  @override
+  bool updateShouldNotify(PlanMemoryScope oldWidget) =>
+      memory != oldWidget.memory;
 }
