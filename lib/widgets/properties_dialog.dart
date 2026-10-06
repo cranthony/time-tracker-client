@@ -79,8 +79,8 @@ class OneWayAction {
   /// What [label] saves.
   final Map<String, Object?> changes;
 
-  /// A switch offered while confirming it, off to begin with: its key is
-  /// saved with [changes], true or false.
+  /// A switch offered while confirming it, as it says to begin with: its
+  /// key is saved with [changes], true or false.
   final ConfirmOption? option;
 }
 
@@ -91,12 +91,16 @@ class ConfirmOption {
     required this.key,
     required this.label,
     required this.explanation,
+    this.initial = false,
   });
 
   /// What it's saved as, with the rest of the change.
   final String key;
   final String label;
   final String explanation;
+
+  /// Whether it's on as the confirmation opens.
+  final bool initial;
 }
 
 /// [explanation], then [option]'s switch if there is one -- [on] says
@@ -447,7 +451,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
   }
 
   Future<void> _oneWay(OneWayAction action) async {
-    var on = false;
+    var on = action.option?.initial ?? false;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(

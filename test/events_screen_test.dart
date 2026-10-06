@@ -567,15 +567,16 @@ void main() {
       expect(find.text('Cancel this event?'), findsOneWidget);
       await tester.tap(find.text('Cancel event').last);
       await tester.pumpAndSettle();
-      // Cancelled with delete_event, not saved: as a change of plan.
+      // Cancelled with delete_event, not saved -- counting against
+      // follow-through, as the switch starts.
       expect(repo.saved, isEmpty);
-      expect(repo.deleted, [('e1', false)]);
+      expect(repo.deleted, [('e1', true)]);
       // The server doesn't list cancelled events, so it leaves the list.
       expect(find.text('Event cancelled.'), findsOneWidget);
       expect(find.text('9:00 AM – 10:30 AM'), findsNothing);
     });
 
-    testWidgets('cancelling it can count against follow-through', (
+    testWidgets('cancelling it can be just a change of plan', (
       tester,
     ) async {
       final repo = _RecordingRepository([work()]);
@@ -587,7 +588,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Cancel event').last);
       await tester.pumpAndSettle();
-      expect(repo.deleted, [('e1', true)]);
+      expect(repo.deleted, [('e1', false)]);
       expect(find.text('Event cancelled.'), findsOneWidget);
     });
 
@@ -860,11 +861,11 @@ void main() {
       await tester.tap(find.text('Cancel event'));
       await tester.pumpAndSettle();
       expect(repo.saved, isEmpty);
-      expect(repo.deleted, [('e1', false)]);
+      expect(repo.deleted, [('e1', true)]);
       expect(find.text('Event cancelled.'), findsOneWidget);
     });
 
-    testWidgets('the trash can can count it against follow-through', (
+    testWidgets('the trash can can make it just a change of plan', (
       tester,
     ) async {
       final repo = _RecordingRepository([work()]);
@@ -875,7 +876,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Cancel event'));
       await tester.pumpAndSettle();
-      expect(repo.deleted, [('e1', true)]);
+      expect(repo.deleted, [('e1', false)]);
     });
 
     testWidgets('clears its priority and description', (tester) async {

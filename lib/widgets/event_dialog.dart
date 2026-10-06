@@ -119,13 +119,15 @@ Future<List<Event>?> showEventDialog(
 
 /// The switch cancelling an event offers: whether it counts against the
 /// follow-through of whoever a follow-through trait tracks it for, rather
-/// than being just a change of plan.
+/// than being just a change of plan. On to begin with: turning it off says
+/// the plan merely changed.
 const followThroughOption = ConfirmOption(
   key: 'counts_against_follow_through',
   label: 'Count against follow-through',
   explanation:
       'A commitment dropped, not just a change of plan: it lowers the '
       'follow-through of the people, and for the actions, a trait tracks.',
+  initial: true,
 );
 
 const _kinds = {
