@@ -400,7 +400,25 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final store = _store;
+    if (store == _listened) return;
+    _listened?.removeListener(_storeChanged);
+    _listened = store?..addListener(_storeChanged);
+  }
+
+  /// The app's events, listened to, so a day it loads -- as the app
+  /// opens, say -- shows here as soon as it has it.
+  EventStore? _listened;
+
+  void _storeChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _listened?.removeListener(_storeChanged);
     _lifecycle.dispose();
     widget.outbox?.removeListener(_outboxChanged);
     _pages.dispose();
@@ -1123,7 +1141,9 @@ class _EventsScreenState extends State<EventsScreen> {
   /// can't be shown, in the middle of the [view] tall part of it on
   /// screen.
   Widget _buildDay(BuildContext context, DateTime day, double view) {
-    final events = _events[day];
+    // The app's, if this page hasn't loaded the day: so a day sliding in
+    // is drawn as it slides, not after.
+    final events = _events[day] ?? _store?.day(day);
     if (day == _day && _error != null && (events == null || events.isEmpty)) {
       return _inView(
         view,
