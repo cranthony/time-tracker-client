@@ -26,6 +26,7 @@ import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/durations.dart';
 import '../widgets/priority_chip.dart';
+import '../widgets/priority_colors_dialog.dart';
 import '../widgets/action_details_dialog.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
@@ -461,6 +462,25 @@ class _PlanScreenState extends State<PlanScreen> {
           content: Text("Couldn't save the new order. ${describeSaveError(e)}"),
         ),
       );
+      await _load();
+    }
+  }
+
+  /// Shows each priority's color, to change; reloads the actions after a
+  /// change, since those that take their priority's color change with it.
+  Future<void> _editPriorityColors() async {
+    var changed = false;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => PriorityColorsDialog(
+        onSave: (priority, color) async {
+          await widget.repository.updatePriorityColor(priority, color);
+          changed = true;
+        },
+      ),
+    );
+    if (changed && mounted) {
+      setState(() {}); // The new colors, at once.
       await _load();
     }
   }
@@ -903,6 +923,24 @@ class _PlanScreenState extends State<PlanScreen> {
                 '${actions.labelSlotsUsed} of ${actions.labelSlotsTotal} labels '
                 'in use',
                 style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            InkWell(
+              onTap: _editPriorityColors,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final p in priorities)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 2),
+                      child: ColorDot(color: priorityColor(p), size: 10),
+                    ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Priority colors',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ),
             ),
           ],

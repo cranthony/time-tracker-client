@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.1.0
+
+Needs a server with the priority colors tools
+(time-tracking-google-calendar-mcp#152).
+
+- Priorities are shown in the server's colors, its priority labels'.
+- The Actions pane's "Priority colors" changes them. Actions and groups
+  without a color of their own change with them.
+
 ## 7.0.1
 
 - The code says actions, not goals, throughout: nothing changes in use.
