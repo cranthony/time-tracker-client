@@ -31,7 +31,8 @@ tapping the date goes back to the last compaction.
   with a lookback, location, general notes, person notes); and counts,
   time spent, continuity and follow-through, which can count one action
   or group. Every part reads the events with someone, or those done for
-  them. Tap one for its page: its score, its parts and who it applies to;
+  them. Tap one for its page: its parts, then its health (the last day's
+  score, the mean of everyone scored by it, and its trend);
   its pencil edits it.
 - **People** (who): Self, always, then everyone else, each with a context
   that tells people of the same name apart, in any number of circles.
@@ -44,9 +45,11 @@ tapping the date goes back to the last compaction.
   assistant recognizes it by. The summary splits the time by where it
   was.
 
-The sample data goes further than the server does so far: each person's relationship health (gray,
-disconnected, to green, healthy), trait scores, with Claude's judgments
-behind each, and history.
+Traits' daily scores come from the server (`get_trait_scores`), once a
+compaction settles each day. The sample data goes further than the server
+does so far: each person's relationship health (gray, disconnected, to
+green, healthy), the events and Claude's judgments behind each trait
+score, and history.
 
 Later it will show the summaries the server
 generates.

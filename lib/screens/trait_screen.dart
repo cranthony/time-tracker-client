@@ -6,12 +6,12 @@ import '../services/traits_repository.dart';
 import '../widgets/health.dart';
 import 'trait_breakdown.dart';
 
-/// A trait on one page, to read: its definition and status, its score and
-/// recent trend where people are scored (tapping it shows the people and
-/// parts behind it), each of its parts -- a judgment's rubric, rating
-/// scale and the facts it's judged from -- and who it applies to, with
-/// those who have their own parts for it. The pencil ([onEdit]) edits
-/// it, returning it as saved.
+/// A trait on one page, to read: its definition and status, each of its
+/// parts -- a judgment's rubric, rating scale and the facts it's judged
+/// from -- and below them its overall health: the last day's score, the
+/// mean of everyone scored by it, and its recent trend (tapping it shows
+/// the people and parts behind it). The pencil ([onEdit]) edits it, returning it as
+/// saved.
 class TraitScreen extends StatefulWidget {
   const TraitScreen({
     super.key,
@@ -31,7 +31,8 @@ class TraitScreen extends StatefulWidget {
   /// Its daily scores, oldest first; empty where people aren't scored.
   final List<TraitDay> days;
 
-  /// Everyone, to say who it applies to; null if they aren't known.
+  /// Everyone, to name who's behind its scores; null if they aren't
+  /// known.
   final PeopleList? people;
 
   /// Names the actions and groups a part counts, by id.
@@ -56,13 +57,6 @@ class _TraitScreenState extends State<TraitScreen> {
     final small = theme.textTheme.bodySmall;
     final muted = small?.copyWith(color: theme.colorScheme.onSurfaceVariant);
     final days = widget.days;
-    final people = widget.people?.withSelf
-        .where((p) => p.active && p.traits.applies(_trait.id ?? ''))
-        .toList();
-    final own = [
-      for (final p in people ?? const <Person>[])
-        if (p.traits.parts.containsKey(_trait.id)) p,
-    ];
     return Scaffold(
       appBar: AppBar(
         title: Text(_trait.name),
@@ -91,11 +85,30 @@ class _TraitScreenState extends State<TraitScreen> {
             ),
           for (final problem in _trait.problems)
             Text(problem, style: TextStyle(color: theme.colorScheme.error)),
-          if (days.isNotEmpty)
+          _heading(theme, 'Parts'),
+          for (final part in _trait.parts) _PartCard(part, widget.actionNames),
+          const SizedBox(height: 8),
+          if (days.isEmpty)
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Score'),
-              subtitle: Text(days.last.day),
+              title: const Text('Health'),
+              subtitle: Text(
+                _trait.status == 'active'
+                    ? 'Not scored yet: scores come once a compaction '
+                          'settles a day.'
+                    : 'Not scored.',
+                style: muted,
+              ),
+            )
+          else
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Health'),
+              subtitle: Text(switch (days.last.people.length) {
+                0 => days.last.day,
+                1 => '${days.last.day} · 1 person',
+                final n => '${days.last.day} · mean of $n people',
+              }),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -124,25 +137,6 @@ class _TraitScreenState extends State<TraitScreen> {
                       },
                     ),
             ),
-          _heading(theme, 'Parts'),
-          for (final part in _trait.parts) _PartCard(part, widget.actionNames),
-          if (people != null) ...[
-            _heading(theme, 'Applies to'),
-            Text(
-              people.isEmpty
-                  ? 'No one, for now.'
-                  : people.map((p) => personName(p)).join(', '),
-            ),
-            if (own.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'With parts of their own: '
-                  '${own.map((p) => personName(p)).join(', ')}',
-                  style: muted,
-                ),
-              ),
-          ],
         ],
       ),
     );

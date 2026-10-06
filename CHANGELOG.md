@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 6.3.0
+
+Needs a server with daily trait scores
+(time-tracking-google-calendar-mcp#140).
+
+- A trait's page shows its overall health below its parts -- the last
+  day's score, the mean of everyone scored by it, and its trend -- in
+  place of who it applies to.
+- Traits' scores come from the server's daily scores, so they show
+  against the real server, not just the sample data. Tapping a person's
+  score for a day shows how each part's was reached.
+
 ## 6.2.0
 
 - The Plan page keeps what it loaded while you're elsewhere in the app,
