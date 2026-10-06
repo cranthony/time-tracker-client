@@ -1,12 +1,14 @@
 // How the MCP repositories call the Time Tracker MCP server's action,
 // people, circle and location tools, and read what they answer.
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
+import 'package:time_tracker_client/widgets/color_picker.dart';
 
 void main() {
   group('McpActionsRepository', () {
@@ -52,6 +54,7 @@ void main() {
       expect(client.calls.map((c) => c.$1), [
         'get_actions',
         'get_action_groups',
+        'get_priority_colors',
       ]);
       expect(client.calls.first.$2, {
         'statuses': ['proposed', 'active', 'archived', 'deleted'],
@@ -140,6 +143,46 @@ void main() {
           'clear_fields': ['background_color'],
         },
       ));
+    });
+
+    group('priority colors', () {
+      tearDown(() => priorityPalette.value = defaultPriorityColors);
+
+      test('come with the actions, and color priorities', () async {
+        final client = _Client(
+          (name, _) => name == 'get_priority_colors'
+              ? [
+                  {'priority': 0, 'color': '#111111', 'label_id': 'l0'},
+                  {'priority': 3, 'color': 'not a color', 'label_id': 'l3'},
+                ]
+              : listed[name],
+        );
+
+        await McpActionsRepository(client).actions();
+
+        expect(priorityColor(0), const Color(0xFF111111));
+        expect(priorityColor(-1), const Color(0xFF111111));
+        // Kept as it was.
+        expect(priorityColor(3), defaultPriorityColors[3]);
+        expect(priorityColor(null), defaultPriorityColors[2]);
+      });
+
+      test('are changed with update_priority_color', () async {
+        final client = _Client(
+          (_, _) => {
+            'colors': [
+              {'priority': 1, 'color': '#222222', 'label_id': 'l1'},
+            ],
+            'affected_actions': [],
+          },
+        );
+
+        await McpActionsRepository(client).updatePriorityColor(1, '#222222');
+
+        expect(client.calls.single.$1, 'update_priority_color');
+        expect(client.calls.single.$2, {'priority': 1, 'color': '#222222'});
+        expect(priorityColor(1), const Color(0xFF222222));
+      });
     });
 
     test("isn't kept in an order of its own", () async {
