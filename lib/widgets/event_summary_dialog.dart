@@ -645,7 +645,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     final chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        // Filled when it's its own; outlined when it's its goals'.
+        // Filled when it's its own; outlined when it's its actions'.
         color: own == null ? null : color,
         border: Border.all(color: color, width: 1.5),
         borderRadius: BorderRadius.circular(6),
@@ -654,7 +654,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         switch (shown) {
           final p? => 'P$p',
           // Cleared, and so to follow its goals' once saved.
-          null when _changes.containsKey('priority') => 'From goals',
+          null when _changes.containsKey('priority') => 'From actions',
           null => 'No priority',
         },
         style: theme.textTheme.labelLarge?.copyWith(
@@ -667,7 +667,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       children: [
         Tooltip(
           message: own == null && shown != null
-              ? "Priority, from its goals"
+              ? "Priority, from its actions"
               : 'Priority',
           child: InkWell(
             onTap: _editable && !_saving ? () => _open(_Field.priority) : null,
@@ -727,7 +727,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               ),
               ChoiceChip(
                 showCheckmark: false,
-                label: const Text('From its goals'),
+                label: const Text('From its actions'),
                 selected: own == null && !other,
                 onSelected: (_) {
                   _otherPriority = false;
@@ -1280,7 +1280,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         children: [
           if (ids.isEmpty && !editing)
             Text(
-              'Add goals',
+              'Add actions',
               style: theme.textTheme.bodyLarge?.copyWith(
                 color: theme.hintColor,
               ),

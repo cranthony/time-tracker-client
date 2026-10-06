@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 6.9.1
+
+- The Events page and its dialogs say actions, not goals, which are
+  gone: "Add actions" and a priority "From its actions" on an event, the
+  action picker ("Search actions", "Primary action", "Show 2 inside"),
+  and the day summary's "Actions" and "Top-level groups" pages, with
+  time on no action as "No action".
+
 ## 6.9.0
 
 - What the app loads is kept once, for every page: the events, day by

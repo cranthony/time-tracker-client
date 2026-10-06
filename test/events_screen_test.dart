@@ -586,7 +586,7 @@ void main() {
       await edit(tester, inDialog(find.text('Deep focus')));
       // Active goals only; the first picked is the primary goal.
       expect(inDialog(find.text('Old')), findsNothing);
-      expect(inDialog(find.byTooltip('Primary goal')), findsOneWidget);
+      expect(inDialog(find.byTooltip('Primary action')), findsOneWidget);
       await tester.ensureVisible(inDialog(find.text('Exercise')));
       await tester.pumpAndSettle();
       await tester.tap(inDialog(find.text('Exercise')));
@@ -1012,9 +1012,9 @@ void main() {
       await open(tester, repo);
       await tester.tap(inDialog(find.text('P2')));
       await tester.pumpAndSettle();
-      await tester.tap(inDialog(find.text('From its goals')));
+      await tester.tap(inDialog(find.text('From its actions')));
       await tester.pumpAndSettle();
-      expect(inDialog(find.text('From goals')), findsOneWidget);
+      expect(inDialog(find.text('From actions')), findsOneWidget);
 
       await tester.tap(inDialog(find.text('Deep work')));
       await tester.pumpAndSettle();
@@ -1581,10 +1581,10 @@ void main() {
       final dialog = find.byType(AlertDialog).last;
       await tester.tap(find.descendant(of: dialog, matching: find.text('P1')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('From its goals'));
+      await tester.tap(find.text('From its actions'));
       await tester.pumpAndSettle();
       expect(
-        find.descendant(of: dialog, matching: find.text('From goals')),
+        find.descendant(of: dialog, matching: find.text('From actions')),
         findsOneWidget,
       );
       await tester.tap(find.text('Save'));

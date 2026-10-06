@@ -46,10 +46,10 @@ void main() {
     // Picked: a chip, and its row, opened down to it.
     expect(find.text('10k'), findsNWidgets(2));
 
-    await tester.tap(find.byTooltip('Show 2 sub-goals'));
+    await tester.tap(find.byTooltip('Show 2 inside'));
     await tester.pumpAndSettle();
     expect(find.text('Tofu'), findsOneWidget);
-    await tester.tap(find.byTooltip('Hide sub-goals').first);
+    await tester.tap(find.byTooltip("Hide what's inside").first);
     await tester.pumpAndSettle();
     expect(find.text('Tofu'), findsNothing);
   });
@@ -78,7 +78,7 @@ void main() {
 
     await tester.enterText(find.byType(TextField), 'nothing like it');
     await tester.pumpAndSettle();
-    expect(find.text('No goals match.'), findsOneWidget);
+    expect(find.text('No actions match.'), findsOneWidget);
   });
 
   testWidgets('keeps the picking order; the first is primary', (tester) async {
@@ -86,7 +86,7 @@ void main() {
     await tester.tap(find.text('Cooking'));
     await tester.pumpAndSettle();
     expect(picked, ['run', 'cook']);
-    expect(find.byTooltip('Primary goal'), findsOneWidget);
+    expect(find.byTooltip('Primary action'), findsOneWidget);
 
     // The primary goal's ✕ makes the next one primary.
     await tester.tap(find.byTooltip('Remove').first);
