@@ -6,11 +6,26 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
-## 6.9.2
+## 7.0.1
 
 - The code says actions, not goals, throughout: nothing changes in use.
   What older versions saved on the device (actions waiting to be saved,
   and the Plan summaries' choices) is still read.
+
+## 7.0.0
+
+Needs a server whose event tools take batches and move nothing to make
+room (time-tracking-google-calendar-mcp#151).
+
+- Creating, changing and cancelling an event go through the server's
+  batch tools. The server never moves other events to make room: a
+  change that would overlap one is refused, as the app already kept
+  times clear itself.
+- Changing or cancelling an event compaction has already recorded asks
+  "Change history?" first, and goes through only if you agree.
+- Fixed time, fixed duration and minimum duration are gone: they only
+  ever steered the server's reallocation, which is gone too. An event's
+  summary no longer has a Fixed/Flexible time switch.
 
 ## 6.9.1
 

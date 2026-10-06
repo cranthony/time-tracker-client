@@ -552,7 +552,6 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 hint: 'Add description',
                 multiline: true,
               ),
-              _fixedTimeRow(context),
               _actionsRow(context),
               if (widget.facets) _factsRow(context),
             ],
@@ -1222,33 +1221,6 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 color: blank ? theme.hintColor : null,
               ),
             ),
-    );
-  }
-
-  /// Fixed or flexible time, toggled by tapping.
-  Widget _fixedTimeRow(BuildContext context) {
-    final fixed = _value('is_fixed_time') == true;
-    return _row(
-      context,
-      icon: fixed ? Icons.push_pin : Icons.push_pin_outlined,
-      changedKey: 'is_fixed_time',
-      onTap: () {
-        setState(() => _editing = null);
-        // Not set is flexible, so a toggle back to it is no change.
-        final was = widget.values['is_fixed_time'] == true;
-        if (!fixed == was) {
-          setState(() => _changes.remove('is_fixed_time'));
-        } else {
-          _set('is_fixed_time', !fixed);
-        }
-      },
-      child: Tooltip(
-        message: 'Tap to make it ${fixed ? 'flexible' : 'fixed'}',
-        child: Text(
-          fixed ? 'Fixed time' : 'Flexible time',
-          style: Theme.of(context).textTheme.bodyLarge,
-        ),
-      ),
     );
   }
 

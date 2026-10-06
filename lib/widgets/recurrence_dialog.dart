@@ -151,7 +151,4 @@ const _kinds = {
   'location': PropertyKind.text,
   'action_ids': PropertyKind.actions,
   'priority': PropertyKind.integer,
-  'is_fixed_time': PropertyKind.flag,
-  'is_fixed_duration': PropertyKind.flag,
-  'min_duration': PropertyKind.duration,
 };
