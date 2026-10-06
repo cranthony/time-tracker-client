@@ -18,9 +18,6 @@ const clearableFields = {
   'priority',
   'description',
   'location',
-  'min_duration',
-  'is_fixed_duration',
-  'is_fixed_time',
 };
 
 /// [changes]' fields to clear: those changed to null that can be.
@@ -42,13 +39,21 @@ abstract class EventsRepository {
   Future<List<Event>?> cachedEvents(DateTime from, DateTime to);
 
   /// Saves [changes], keyed and encoded as `update_event` takes them, to
-  /// [event]. Returns every event the server changed to make room,
-  /// [event] included.
-  Future<List<Event>> updateEvent(Event event, Map<String, Object?> changes);
+  /// [event]. Returns the events the server changed: [event]. The server
+  /// moves nothing else to make room, and refuses a change that would
+  /// overlap another event -- or, without [allowCompactedChanges] (only
+  /// once the user has approved changing history), one to an event
+  /// compaction settled.
+  Future<List<Event>> updateEvent(
+    Event event,
+    Map<String, Object?> changes, {
+    bool allowCompactedChanges = false,
+  });
 
   /// Creates an event with [fields], keyed and encoded as `create_event`
-  /// takes them; those that are null are left out. Returns every event the
-  /// server changed to make room, the new one included.
+  /// takes them; those that are null are left out. Returns the events the
+  /// server changed: the new one. It's refused if it would overlap
+  /// another event.
   Future<List<Event>> createEvent(Map<String, Object?> fields);
 
   /// Cancels [event], with `delete_event` -- the one way the server
@@ -60,6 +65,7 @@ abstract class EventsRepository {
   Future<List<Event>> deleteEvent(
     Event event, {
     bool countsAgainstFollowThrough = false,
+    bool allowCompactedChanges = false,
   });
 
   /// The recurring series [id] is, or is one of the events of.
@@ -103,12 +109,6 @@ class McpEventsRepository implements EventsRepository {
   /// Holds one call's `min_time`, `max_time` and result.
   static const _cacheKey = 'list_events';
 
-  /// `reallocate` for `create_event` and `update_event`: false, so the
-  /// server writes nothing if an event's new times would move, shrink,
-  /// split or cancel any other event, and says what would have changed
-  /// instead. The app keeps times clear of other events itself (see
-  /// EventRoom), so it never means to.
-  static const _noReallocation = false;
 
   @override
   Future<List<Event>> events(
@@ -195,55 +195,69 @@ class McpEventsRepository implements EventsRepository {
   @override
   Future<List<Event>> createEvent(Map<String, Object?> fields) async {
     final result = await _client.callTool('create_event', {
-      'event': {
-        for (final MapEntry(:key, :value) in fields.entries) key: ?value,
-      },
-      // Never moves or shrinks other events to make room: see
-      // [_noReallocation].
-      'reallocate': _noReallocation,
+      'events': [
+        {for (final MapEntry(:key, :value) in fields.entries) key: ?value},
+      ],
     });
-    return (result as List)
-        .map((e) => Event.fromJson((e as Map).cast<String, dynamic>()))
-        .toList();
+    return _changed(result);
   }
 
   @override
   Future<List<Event>> deleteEvent(
     Event event, {
     bool countsAgainstFollowThrough = false,
+    bool allowCompactedChanges = false,
   }) async {
     final result = await _client.callTool('delete_event', {
-      'id': event.id,
-      'counts_against_follow_through': countsAgainstFollowThrough,
+      'cancels': [
+        {
+          'event_id': event.id,
+          'counts_against_follow_through': countsAgainstFollowThrough,
+        },
+      ],
+      if (allowCompactedChanges) 'allow_compacted_changes': true,
     });
-    return (result as List)
-        .map((e) => Event.fromJson((e as Map).cast<String, dynamic>()))
-        .toList();
+    return _changed(result);
   }
 
   @override
   Future<List<Event>> updateEvent(
     Event event,
-    Map<String, Object?> changes,
-  ) async {
+    Map<String, Object?> changes, {
+    bool allowCompactedChanges = false,
+  }) async {
     final result = await _client.callTool('update_event', {
-      'event': {
-        ...event.toJson(),
-        ...changes,
-        // Goals sent are set, not inferred from a label; left alone, the
-        // server keeps inferred ones inferred.
-        if (changes.containsKey('action_ids')) 'actions_from_label': false,
-      },
-      // The event's fields sent as null are kept; these are removed.
-      if (_cleared(changes) case final cleared when cleared.isNotEmpty)
-        'clear_fields': cleared,
-      'reallocate': _noReallocation,
+      'updates': [
+        {
+          'event': {
+            ...event.toJson(),
+            ...changes,
+            // Goals sent are set, not inferred from a label; left alone,
+            // the server keeps inferred ones inferred.
+            if (changes.containsKey('action_ids')) 'actions_from_label': false,
+          },
+          // The event's fields sent as null are kept; these are removed.
+          if (_cleared(changes) case final cleared when cleared.isNotEmpty)
+            'clear_fields': cleared,
+        },
+      ],
+      if (allowCompactedChanges) 'allow_compacted_changes': true,
     });
-    return (result as List)
-        .map((e) => Event.fromJson((e as Map).cast<String, dynamic>()))
-        .toList();
+    return _changed(result);
   }
 }
+
+/// The events a batch of changes (`create_event`, `update_event`,
+/// `delete_event`) changed.
+List<Event> _changed(Object? result) => [
+  for (final e in (result as Map)['events'] as List)
+    Event.fromJson((e as Map).cast<String, dynamic>()),
+];
+
+/// Whether [error] is the server refusing to change history -- an event
+/// compaction settled -- without the user's approval.
+bool isHistoryRefusal(Object error) =>
+    error is McpException && error.message.contains('allow_compacted_changes');
 
 /// Keeps events in memory. Used when no server is configured, and in tests.
 class InMemoryEventsRepository implements EventsRepository {
@@ -348,6 +362,7 @@ class InMemoryEventsRepository implements EventsRepository {
   Future<List<Event>> deleteEvent(
     Event event, {
     bool countsAgainstFollowThrough = false,
+    bool allowCompactedChanges = false,
   }) async {
     final i = _events.indexWhere((e) => e.id == event.id);
     if (i < 0) throw StateError('No event ${event.id}');
@@ -363,8 +378,9 @@ class InMemoryEventsRepository implements EventsRepository {
   @override
   Future<List<Event>> updateEvent(
     Event event,
-    Map<String, Object?> changes,
-  ) async {
+    Map<String, Object?> changes, {
+    bool allowCompactedChanges = false,
+  }) async {
     final i = _events.indexWhere((e) => e.id == event.id);
     if (i < 0) throw StateError('No event ${event.id}');
     final updated = Event.fromJson({

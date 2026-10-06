@@ -139,7 +139,4 @@ const _kinds = {
   // Its label follows its goals, so it isn't edited itself.
   'action_ids': PropertyKind.goals,
   'priority': PropertyKind.integer,
-  'is_fixed_time': PropertyKind.flag,
-  'is_fixed_duration': PropertyKind.flag,
-  'min_duration': PropertyKind.duration,
 };
