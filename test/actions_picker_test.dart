@@ -1,26 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:time_tracker_client/models/goal.dart';
-import 'package:time_tracker_client/widgets/goals_picker.dart';
+import 'package:time_tracker_client/models/plan_action.dart';
+import 'package:time_tracker_client/widgets/actions_picker.dart';
 
-const _goals = [
-  Goal(id: 'cook', name: 'Cooking', path: 'Cooking'),
-  Goal(id: 'tofu', parentId: 'cook', name: 'Tofu', path: 'Cooking › Tofu'),
-  Goal(id: 'dal', parentId: 'cook', name: 'Dal', path: 'Cooking › Dal'),
-  Goal(id: 'run', name: 'Running', path: 'Running'),
-  Goal(id: '10k', parentId: 'run', name: '10k', path: 'Running › 10k'),
-  Goal(id: 'old', name: 'Old', path: 'Old', status: 'archived'),
+const _actions = [
+  PlanAction(id: 'cook', name: 'Cooking', path: 'Cooking'),
+  PlanAction(
+    id: 'tofu',
+    parentId: 'cook',
+    name: 'Tofu',
+    path: 'Cooking › Tofu',
+  ),
+  PlanAction(id: 'dal', parentId: 'cook', name: 'Dal', path: 'Cooking › Dal'),
+  PlanAction(id: 'run', name: 'Running', path: 'Running'),
+  PlanAction(id: '10k', parentId: 'run', name: '10k', path: 'Running › 10k'),
+  PlanAction(id: 'old', name: 'Old', path: 'Old', status: 'archived'),
 ];
 
-/// Pumps a picker over [_goals], starting with [picked]; returns the ids
+/// Pumps a picker over [_actions], starting with [picked]; returns the ids
 /// as they're changed.
 Future<List<String>> _pump(WidgetTester tester, List<String> picked) async {
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
         body: StatefulBuilder(
-          builder: (context, setState) => GoalsPicker(
-            goals: _goals,
+          builder: (context, setState) => ActionsPicker(
+            actions: _actions,
             picked: picked,
             onChanged: (ids) => setState(() {
               picked
@@ -37,7 +42,9 @@ Future<List<String>> _pump(WidgetTester tester, List<String> picked) async {
 }
 
 void main() {
-  testWidgets('opens only the branches holding a picked goal', (tester) async {
+  testWidgets('opens only the branches holding a picked action', (
+    tester,
+  ) async {
     await _pump(tester, ['10k']);
     // Not one put away, not picked.
     expect(find.text('Old'), findsNothing);
@@ -54,7 +61,7 @@ void main() {
     expect(find.text('Tofu'), findsNothing);
   });
 
-  testWidgets('searches every goal by its whole path', (tester) async {
+  testWidgets('searches every action by its whole path', (tester) async {
     final picked = await _pump(tester, []);
     await tester.enterText(find.byType(TextField), 'cook to');
     await tester.pumpAndSettle();
@@ -88,23 +95,23 @@ void main() {
     expect(picked, ['run', 'cook']);
     expect(find.byTooltip('Primary action'), findsOneWidget);
 
-    // The primary goal's ✕ makes the next one primary.
+    // The primary action's ✕ makes the next one primary.
     await tester.tap(find.byTooltip('Remove').first);
     await tester.pumpAndSettle();
     expect(picked, ['cook']);
   });
 
-  testWidgets('lists an inactive goal already picked', (tester) async {
+  testWidgets('lists an inactive action already picked', (tester) async {
     await _pump(tester, ['old']);
     expect(find.text('Old'), findsNWidgets(2));
   });
 
-  test('goalAndSubGoals is a goal and everything under it', () {
-    expect(goalAndSubGoals(_goals, 'cook'), {'cook', 'tofu', 'dal'});
-    expect(goalAndSubGoals(_goals, 'tofu'), {'tofu'});
+  test('actionAndSubActions is an action and everything under it', () {
+    expect(actionAndSubActions(_actions, 'cook'), {'cook', 'tofu', 'dal'});
+    expect(actionAndSubActions(_actions, 'tofu'), {'tofu'});
   });
 
-  testWidgets('a GoalField picks one goal in a dialog, or none', (
+  testWidgets('a ActionField picks one action in a dialog, or none', (
     tester,
   ) async {
     String? value = 'tofu';
@@ -112,11 +119,11 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: StatefulBuilder(
-            builder: (context, setState) => GoalField(
-              goals: _goals,
+            builder: (context, setState) => ActionField(
+              actions: _actions,
               value: value,
               noneLabel: 'None',
-              exclude: goalAndSubGoals(_goals, 'run'),
+              exclude: actionAndSubActions(_actions, 'run'),
               marker: (_) => const SizedBox(width: 8),
               onChanged: (id) => setState(() => value = id),
             ),
@@ -127,9 +134,9 @@ void main() {
     // Its whole path.
     expect(find.text('Cooking › Tofu'), findsOneWidget);
 
-    await tester.tap(find.byType(GoalField));
+    await tester.tap(find.byType(ActionField));
     await tester.pumpAndSettle();
-    // Opened down to the goal picked; not those excluded; inactive ones
+    // Opened down to the action picked; not those excluded; inactive ones
     // too.
     expect(find.text('Dal'), findsOneWidget);
     expect(find.text('Running'), findsNothing);
@@ -139,11 +146,11 @@ void main() {
     await tester.tap(find.text('Dal'));
     await tester.pumpAndSettle();
     expect(value, 'dal');
-    expect(find.byType(GoalsPicker), findsNothing);
+    expect(find.byType(ActionsPicker), findsNothing);
     expect(find.text('Cooking › Dal'), findsOneWidget);
 
     // Searched, and picked with Enter.
-    await tester.tap(find.byType(GoalField));
+    await tester.tap(find.byType(ActionField));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'old');
     await tester.testTextInput.receiveAction(TextInputAction.done);
@@ -151,12 +158,12 @@ void main() {
     expect(value, 'old');
 
     // Cancel keeps it; None clears it.
-    await tester.tap(find.byType(GoalField));
+    await tester.tap(find.byType(ActionField));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(value, 'old');
-    await tester.tap(find.byType(GoalField));
+    await tester.tap(find.byType(ActionField));
     await tester.pumpAndSettle();
     await tester.tap(find.text('None'));
     await tester.pumpAndSettle();

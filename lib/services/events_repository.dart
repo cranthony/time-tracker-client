@@ -76,7 +76,7 @@ abstract class EventsRepository {
   ///
   /// There's deliberately no way here to delete a series whole. The
   /// server's `delete_recurrence` can, but that cancels every one of its
-  /// events, past ones included: each then counts against its goals'
+  /// events, past ones included: each then counts against its actions'
   /// follow-through as a cancellation, and its time no longer counts as
   /// spent. Someone deleting a series almost always means it won't happen
   /// any more, not that it never should have, which is what deleting from
@@ -132,7 +132,7 @@ class McpEventsRepository implements EventsRepository {
       'recurrence': {
         'id': recurrence.id,
         for (final MapEntry(:key, :value) in changes.entries) key: ?value,
-        // Goals sent are set, not inferred from a label.
+        // Actions sent are set, not inferred from a label.
         if (changes.containsKey('action_ids')) 'actions_from_label': false,
       },
       'starting_at_event_id': ?startingAt,
@@ -197,7 +197,7 @@ class McpEventsRepository implements EventsRepository {
       'event': {
         ...event.toJson(),
         ...changes,
-        // Goals sent are set, not inferred from a label; left alone, the
+        // Actions sent are set, not inferred from a label; left alone, the
         // server keeps inferred ones inferred.
         if (changes.containsKey('action_ids')) 'actions_from_label': false,
       },

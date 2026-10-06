@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../outbox/goal_outbox.dart';
+import '../outbox/action_outbox.dart';
 import '../outbox/note_outbox.dart';
-import '../services/goals_repository.dart';
+import '../services/actions_repository.dart';
 import '../services/event_store.dart';
 import '../services/events_place.dart';
 import '../services/events_repository.dart';
@@ -24,9 +24,9 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.notesRepository,
     required this.eventsRepository,
-    required this.goalsRepository,
+    required this.actionsRepository,
     required this.outbox,
-    required this.goalOutbox,
+    required this.actionOutbox,
     this.onSignIn,
     this.onSignOut,
     this.addNoteRequests,
@@ -36,9 +36,9 @@ class HomeScreen extends StatefulWidget {
 
   final NotesRepository notesRepository;
   final EventsRepository eventsRepository;
-  final GoalsRepository goalsRepository;
+  final ActionsRepository actionsRepository;
   final NoteOutbox outbox;
-  final GoalOutbox goalOutbox;
+  final ActionOutbox actionOutbox;
   final Future<void> Function()? onSignIn;
   final Future<void> Function()? onSignOut;
 
@@ -91,7 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await _planMemory.warmScores(
       traits: TraitsScope.of(context),
       people: PeopleScope.of(context),
-      goals: widget.goalsRepository,
+      actions: widget.actionsRepository,
     );
   }
 
@@ -119,7 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _Tab.events => EventsScreen(
           repository: widget.eventsRepository,
           serverLabel: widget.notesRepository.label,
-          goalsRepository: widget.goalsRepository,
+          actionsRepository: widget.actionsRepository,
           notesRepository: widget.notesRepository,
           outbox: widget.outbox,
           onSignIn: widget.onSignIn,
@@ -129,11 +129,11 @@ class _HomeScreenState extends State<HomeScreen> {
           memory: _planMemory,
         ),
         _Tab.plan => PlanScreen(
-          repository: widget.goalsRepository,
+          repository: widget.actionsRepository,
           eventsRepository: widget.eventsRepository,
           notesRepository: widget.notesRepository,
           memory: _planMemory,
-          outbox: widget.goalOutbox,
+          outbox: widget.actionOutbox,
           serverLabel: widget.notesRepository.label,
           onSignIn: widget.onSignIn,
           onSignOut: widget.onSignOut,

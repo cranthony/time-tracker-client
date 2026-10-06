@@ -1,25 +1,25 @@
 import 'package:flutter/material.dart';
 
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 
-/// Picks several goals from a long list: the picked ones as chips on top,
-/// the first marked as the primary goal; a search over every goal's whole
-/// path; and, while the search is empty, the goals as a tree that opens
-/// only the branches holding a picked goal.
+/// Picks several actions from a long list: the picked ones as chips on top,
+/// the first marked as the primary action; a search over every action's whole
+/// path; and, while the search is empty, the actions as a tree that opens
+/// only the branches holding a picked action.
 ///
-/// Lists every active goal in [goals] (in tree order, as the server gives
+/// Lists every active action in [actions] (in tree order, as the server gives
 /// them) and any inactive one already [picked], or with [inactive], every
-/// goal; never those in [exclude]. Calls [onChanged] with the new ids, in
-/// the order they were picked, so the first stays the primary goal.
+/// action; never those in [exclude]. Calls [onChanged] with the new ids, in
+/// the order they were picked, so the first stays the primary action.
 ///
-/// With [single], it picks one goal, with no chips: tapping a goal (or
+/// With [single], it picks one action, with no chips: tapping an action (or
 /// Enter, for the top match) calls [onChanged] with just that one. With
 /// [leavesOnly], groups are shown, to find what's in them, but can't be
 /// picked: only actions can be given to an event.
-class GoalsPicker extends StatefulWidget {
-  const GoalsPicker({
+class ActionsPicker extends StatefulWidget {
+  const ActionsPicker({
     super.key,
-    required this.goals,
+    required this.actions,
     required this.picked,
     required this.onChanged,
     required this.marker,
@@ -31,7 +31,7 @@ class GoalsPicker extends StatefulWidget {
     this.maxListHeight = 320,
   });
 
-  final List<Goal> goals;
+  final List<PlanAction> actions;
   final List<String> picked;
   final ValueChanged<List<String>> onChanged;
   final bool single;
@@ -42,20 +42,20 @@ class GoalsPicker extends StatefulWidget {
   /// Whether the search takes the keyboard at once.
   final bool autofocus;
 
-  /// Drawn before each goal's name, e.g. a dot in its color.
-  final Widget Function(Goal goal) marker;
+  /// Drawn before each action's name, e.g. a dot in its color.
+  final Widget Function(PlanAction action) marker;
 
-  /// How tall the list of goals grows before it scrolls.
+  /// How tall the list of actions grows before it scrolls.
   final double maxListHeight;
 
   @override
-  State<GoalsPicker> createState() => _GoalsPickerState();
+  State<ActionsPicker> createState() => _ActionsPickerState();
 }
 
-class _GoalsPickerState extends State<GoalsPicker> {
+class _ActionsPickerState extends State<ActionsPicker> {
   final _search = TextEditingController();
 
-  /// The goals whose sub-goals are shown, while the search is empty.
+  /// The actions whose sub-actions are shown, while the search is empty.
   late final Set<String> _open = _ancestorsOf(widget.picked);
 
   @override
@@ -64,19 +64,21 @@ class _GoalsPickerState extends State<GoalsPicker> {
     super.dispose();
   }
 
-  List<Goal> get _shown => [
-    for (final goal in widget.goals)
-      if (goal.id != null &&
-          !widget.exclude.contains(goal.id) &&
-          (widget.inactive || goal.active || widget.picked.contains(goal.id)))
-        goal,
+  List<PlanAction> get _shown => [
+    for (final action in widget.actions)
+      if (action.id != null &&
+          !widget.exclude.contains(action.id) &&
+          (widget.inactive ||
+              action.active ||
+              widget.picked.contains(action.id)))
+        action,
   ];
 
-  Map<String, Goal> get _byId => {
-    for (final goal in widget.goals) ?goal.id: goal,
+  Map<String, PlanAction> get _byId => {
+    for (final action in widget.actions) ?action.id: action,
   };
 
-  /// Every goal above any of [ids], so the tree opens down to them.
+  /// Every action above any of [ids], so the tree opens down to them.
   Set<String> _ancestorsOf(List<String> ids) {
     final byId = _byId;
     final above = <String>{};
@@ -89,24 +91,24 @@ class _GoalsPickerState extends State<GoalsPicker> {
     return above;
   }
 
-  /// Picks or unpicks [goal]; a goal picked opens the tree down to it.
-  void _toggle(Goal goal, bool on) {
-    if (on) _open.addAll(_ancestorsOf([goal.id!]));
+  /// Picks or unpicks [action]; an action picked opens the tree down to it.
+  void _toggle(PlanAction action, bool on) {
+    if (on) _open.addAll(_ancestorsOf([action.id!]));
     if (widget.single) {
-      widget.onChanged([goal.id!]);
+      widget.onChanged([action.id!]);
       return;
     }
     widget.onChanged([
       for (final id in widget.picked)
-        if (id != goal.id) id,
-      if (on) goal.id!,
+        if (id != action.id) id,
+      if (on) action.id!,
     ]);
   }
 
-  /// [goal]'s path above it, e.g. "Cooking" for "Cooking › Tofu"; null
-  /// for a top-level goal.
-  static String? _above(Goal goal) {
-    final path = goal.path;
+  /// [action]'s path above it, e.g. "Cooking" for "Cooking › Tofu"; null
+  /// for a top-level action.
+  static String? _above(PlanAction action) {
+    final path = action.path;
     if (path == null) return null;
     final cut = path.lastIndexOf(' › ');
     return cut < 0 ? null : path.substring(0, cut);
@@ -118,9 +120,9 @@ class _GoalsPickerState extends State<GoalsPicker> {
       if (word.isNotEmpty) word,
   ];
 
-  /// Whether every word of [query] is in [goal]'s path (or name).
-  static bool _matches(Goal goal, List<String> words) {
-    final text = (goal.path ?? goalName(goal)).toLowerCase();
+  /// Whether every word of [query] is in [action]'s path (or name).
+  static bool _matches(PlanAction action, List<String> words) {
+    final text = (action.path ?? actionName(action)).toLowerCase();
     return words.every(text.contains);
   }
 
@@ -132,8 +134,9 @@ class _GoalsPickerState extends State<GoalsPicker> {
     final rows = words.isEmpty
         ? _tree(shown)
         : [
-            for (final goal in shown)
-              if (_matches(goal, words)) _row(goal, subtitle: _above(goal)),
+            for (final action in shown)
+              if (_matches(action, words))
+                _row(action, subtitle: _above(action)),
           ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -159,17 +162,17 @@ class _GoalsPickerState extends State<GoalsPicker> {
                     ),
             ),
             onChanged: (_) => setState(() {}),
-            // Kept focused after Enter, ready for the next goal.
+            // Kept focused after Enter, ready for the next action.
             onEditingComplete: () {},
             // The top match, picked (or unpicked) from the keyboard.
             // What's typed now, which may not have been built yet.
             onSubmitted: (text) {
               final words = _words(text);
               if (words.isEmpty) return;
-              for (final goal in shown) {
-                if (widget.leavesOnly && goal.isGroup) continue;
-                if (_matches(goal, words)) {
-                  _toggle(goal, !widget.picked.contains(goal.id));
+              for (final action in shown) {
+                if (widget.leavesOnly && action.isGroup) continue;
+                if (_matches(action, words)) {
+                  _toggle(action, !widget.picked.contains(action.id));
                   setState(_search.clear);
                   return;
                 }
@@ -197,7 +200,7 @@ class _GoalsPickerState extends State<GoalsPicker> {
     );
   }
 
-  /// The picked goals, the first starred as the primary goal; ✕ unpicks.
+  /// The picked actions, the first starred as the primary action; ✕ unpicks.
   Widget _chips(BuildContext context) {
     final byId = _byId;
     return Wrap(
@@ -212,11 +215,11 @@ class _GoalsPickerState extends State<GoalsPicker> {
                     child: Icon(Icons.star, size: 18),
                   )
                 : switch (byId[id]) {
-                    final goal? => widget.marker(goal),
+                    final action? => widget.marker(action),
                     null => null,
                   },
             label: Text(switch (byId[id]) {
-              final goal? => goalName(goal),
+              final action? => actionName(action),
               null => id,
             }),
             deleteButtonTooltipMessage: 'Remove',
@@ -229,32 +232,32 @@ class _GoalsPickerState extends State<GoalsPicker> {
     );
   }
 
-  /// The goals in tree order, indented, each branch shown only while
-  /// it's open. A goal whose parent isn't shown sits at the top, with its
+  /// The actions in tree order, indented, each branch shown only while
+  /// it's open. An action whose parent isn't shown sits at the top, with its
   /// path under its name.
-  List<Widget> _tree(List<Goal> shown) {
-    final ids = {for (final goal in shown) goal.id!};
-    final children = <String?, List<Goal>>{};
-    for (final goal in shown) {
-      final parent = ids.contains(goal.parentId) ? goal.parentId : null;
-      children.putIfAbsent(parent, () => []).add(goal);
+  List<Widget> _tree(List<PlanAction> shown) {
+    final ids = {for (final action in shown) action.id!};
+    final children = <String?, List<PlanAction>>{};
+    for (final action in shown) {
+      final parent = ids.contains(action.parentId) ? action.parentId : null;
+      children.putIfAbsent(parent, () => []).add(action);
     }
     final rows = <Widget>[];
-    void visit(Goal goal, int depth) {
-      final id = goal.id!;
-      final subGoals = children[id] ?? const <Goal>[];
+    void visit(PlanAction action, int depth) {
+      final id = action.id!;
+      final subActions = children[id] ?? const <PlanAction>[];
       final open = _open.contains(id);
       rows.add(
         _row(
-          goal,
+          action,
           depth: depth,
-          subtitle: depth == 0 ? _above(goal) : null,
-          trailing: subGoals.isEmpty
+          subtitle: depth == 0 ? _above(action) : null,
+          trailing: subActions.isEmpty
               ? null
               : IconButton(
                   tooltip: open
                       ? "Hide what's inside"
-                      : 'Show ${subGoals.length} inside',
+                      : 'Show ${subActions.length} inside',
                   icon: Icon(open ? Icons.expand_less : Icons.expand_more),
                   onPressed: () =>
                       setState(() => open ? _open.remove(id) : _open.add(id)),
@@ -262,29 +265,34 @@ class _GoalsPickerState extends State<GoalsPicker> {
         ),
       );
       if (open) {
-        for (final child in subGoals) {
+        for (final child in subActions) {
           visit(child, depth + 1);
         }
       }
     }
 
-    for (final root in children[null] ?? const <Goal>[]) {
+    for (final root in children[null] ?? const <PlanAction>[]) {
       visit(root, 0);
     }
     return rows;
   }
 
-  Widget _row(Goal goal, {int depth = 0, String? subtitle, Widget? trailing}) {
+  Widget _row(
+    PlanAction action, {
+    int depth = 0,
+    String? subtitle,
+    Widget? trailing,
+  }) {
     final hint = Theme.of(context).hintColor;
-    final picked = widget.picked.contains(goal.id);
+    final picked = widget.picked.contains(action.id);
     final title = Row(
       children: [
-        widget.marker(goal),
+        widget.marker(action),
         const SizedBox(width: 8),
         Flexible(
           child: Text(
-            goalName(goal),
-            style: goal.active ? null : TextStyle(color: hint),
+            actionName(action),
+            style: action.active ? null : TextStyle(color: hint),
           ),
         ),
       ],
@@ -296,9 +304,9 @@ class _GoalsPickerState extends State<GoalsPicker> {
             style: TextStyle(color: hint),
             overflow: TextOverflow.ellipsis,
           );
-    if (widget.leavesOnly && goal.isGroup) {
+    if (widget.leavesOnly && action.isGroup) {
       return ListTile(
-        key: ValueKey(goal.id!),
+        key: ValueKey(action.id!),
         dense: true,
         contentPadding: EdgeInsetsDirectional.only(start: 16.0 * depth + 12),
         leading: Icon(Icons.folder_outlined, color: hint),
@@ -309,7 +317,7 @@ class _GoalsPickerState extends State<GoalsPicker> {
     }
     if (widget.single) {
       return ListTile(
-        key: ValueKey(goal.id!),
+        key: ValueKey(action.id!),
         dense: true,
         contentPadding: EdgeInsetsDirectional.only(start: 16.0 * depth + 12),
         selected: picked,
@@ -319,11 +327,11 @@ class _GoalsPickerState extends State<GoalsPicker> {
         trailing: trailing,
         title: title,
         subtitle: under,
-        onTap: () => _toggle(goal, true),
+        onTap: () => _toggle(action, true),
       );
     }
     return CheckboxListTile(
-      key: ValueKey(goal.id!),
+      key: ValueKey(action.id!),
       dense: true,
       contentPadding: EdgeInsetsDirectional.only(start: 16.0 * depth),
       controlAffinity: ListTileControlAffinity.leading,
@@ -332,31 +340,31 @@ class _GoalsPickerState extends State<GoalsPicker> {
       secondary: trailing,
       title: title,
       subtitle: under,
-      onChanged: (on) => _toggle(goal, on == true),
+      onChanged: (on) => _toggle(action, on == true),
     );
   }
 }
 
-/// [id] and every goal under it in [goals]: what can't be its parent.
-Set<String> goalAndSubGoals(List<Goal> goals, String id) {
+/// [id] and every action under it in [actions]: what can't be its parent.
+Set<String> actionAndSubActions(List<PlanAction> actions, String id) {
   final under = {id};
-  // In tree order, a goal's parent comes before it.
-  for (final goal in goals) {
-    if (goal.id case final child? when under.contains(goal.parentId)) {
+  // In tree order, an action's parent comes before it.
+  for (final action in actions) {
+    if (action.id case final child? when under.contains(action.parentId)) {
       under.add(child);
     }
   }
   return under;
 }
 
-/// One goal, shown by its whole path, picked by tapping it: a dialog
-/// searches [goals] or browses their tree (see [GoalsPicker]). With
-/// [noneLabel], the dialog can pick no goal too, which [value] null shows
+/// One action, shown by its whole path, picked by tapping it: a dialog
+/// searches [actions] or browses their tree (see [ActionsPicker]). With
+/// [noneLabel], the dialog can pick no action too, which [value] null shows
 /// as; without, null shows [hint].
-class GoalField extends StatelessWidget {
-  const GoalField({
+class ActionField extends StatelessWidget {
+  const ActionField({
     super.key,
-    required this.goals,
+    required this.actions,
     required this.value,
     required this.onChanged,
     required this.marker,
@@ -366,10 +374,10 @@ class GoalField extends StatelessWidget {
     this.exclude = const {},
   });
 
-  final List<Goal> goals;
+  final List<PlanAction> actions;
   final String? value;
   final ValueChanged<String?> onChanged;
-  final Widget Function(Goal goal) marker;
+  final Widget Function(PlanAction action) marker;
   final String title;
   final String hint;
   final String? noneLabel;
@@ -378,13 +386,13 @@ class GoalField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final goal = goals.where((g) => g.id == value).firstOrNull;
+    final action = actions.where((g) => g.id == value).firstOrNull;
     return InkWell(
       borderRadius: BorderRadius.circular(4),
       onTap: () async {
-        final picked = await showGoalPicker(
+        final picked = await showActionPicker(
           context,
-          goals: goals,
+          actions: actions,
           value: value,
           marker: marker,
           title: title,
@@ -399,7 +407,7 @@ class GoalField extends StatelessWidget {
           border: OutlineInputBorder(),
           suffixIcon: Icon(Icons.arrow_drop_down),
         ),
-        child: goal == null
+        child: action == null
             ? Text(
                 value == null ? noneLabel ?? hint : value!,
                 style: value == null && noneLabel == null
@@ -408,10 +416,10 @@ class GoalField extends StatelessWidget {
               )
             : Row(
                 children: [
-                  marker(goal),
+                  marker(action),
                   const SizedBox(width: 8),
                   // The whole path, wrapping as it needs to.
-                  Flexible(child: Text(goal.path ?? goalName(goal))),
+                  Flexible(child: Text(action.path ?? actionName(action))),
                 ],
               ),
       ),
@@ -419,14 +427,14 @@ class GoalField extends StatelessWidget {
   }
 }
 
-/// Asks for one of [goals], [value] picked to start with; see
-/// [GoalField]. Null if called off; otherwise the goal picked, its id
+/// Asks for one of [actions], [value] picked to start with; see
+/// [ActionField]. Null if called off; otherwise the action picked, its id
 /// null for none.
-Future<({String? id})?> showGoalPicker(
+Future<({String? id})?> showActionPicker(
   BuildContext context, {
-  required List<Goal> goals,
+  required List<PlanAction> actions,
   required String? value,
-  required Widget Function(Goal goal) marker,
+  required Widget Function(PlanAction action) marker,
   String title = 'Pick an action',
   String? noneLabel,
   Set<String> exclude = const {},
@@ -436,8 +444,8 @@ Future<({String? id})?> showGoalPicker(
     title: Text(title),
     content: SizedBox(
       width: 420,
-      child: GoalsPicker(
-        goals: goals,
+      child: ActionsPicker(
+        actions: actions,
         picked: [?value],
         single: true,
         inactive: true,

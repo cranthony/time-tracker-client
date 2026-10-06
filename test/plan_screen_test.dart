@@ -4,23 +4,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
-import 'package:time_tracker_client/outbox/pending_goal_save.dart';
+import 'package:time_tracker_client/outbox/pending_action_save.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
-import 'package:time_tracker_client/outbox/goal_outbox.dart';
+import 'package:time_tracker_client/outbox/action_outbox.dart';
 import 'package:time_tracker_client/models/event.dart';
-import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/screens/plan_screen.dart';
 import 'package:time_tracker_client/models/trait.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
-import 'package:time_tracker_client/services/goals_repository.dart';
+import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
-import 'package:time_tracker_client/widgets/goals_picker.dart';
+import 'package:time_tracker_client/widgets/actions_picker.dart';
 import 'package:time_tracker_client/widgets/priority_chip.dart';
 import 'package:time_tracker_client/widgets/properties_dialog.dart';
 
@@ -29,8 +29,8 @@ void main() {
   /// its own: its Actions pane, with no traits or people to show, and
   /// with [events], a summary of them, measured from [lastCompaction].
   Widget app(
-    GoalsRepository repo, {
-    GoalOutbox? outbox,
+    ActionsRepository repo, {
+    ActionOutbox? outbox,
     Future<void> Function()? onSignIn,
     EventsRepository? events,
     DateTime? lastCompaction,
@@ -40,7 +40,8 @@ void main() {
       repository: repo,
       outbox:
           outbox ??
-          (GoalOutbox(store: InMemoryOutboxStore(), repository: repo)..start()),
+          (ActionOutbox(store: InMemoryOutboxStore(), repository: repo)
+            ..start()),
       serverLabel: 'offline demo',
       onSignIn: onSignIn,
       eventsRepository: events,
@@ -52,20 +53,20 @@ void main() {
     ),
   );
 
-  InMemoryGoalsRepository tree() => InMemoryGoalsRepository([
-    const Goal(
+  InMemoryActionsRepository tree() => InMemoryActionsRepository([
+    const PlanAction(
       id: 'cook',
       name: 'Cooking',
       priority: 1,
       properties: {'kind': 'group'},
     ),
-    const Goal(id: 'tofu', name: 'Tofu tikka', parentId: 'cook'),
-    const Goal(id: 'host', name: 'Hosting'),
-    const Goal(id: 'idea', name: 'Idea', status: 'proposed'),
-    const Goal(id: 'old', name: 'Old habit', status: 'proposed'),
-    const Goal(id: 'done', name: 'Done thing', status: 'archived'),
-    const Goal(id: 'shelf', name: 'Shelved', status: 'archived'),
-    const Goal(id: 'oops', name: 'Oops', status: 'deleted'),
+    const PlanAction(id: 'tofu', name: 'Tofu tikka', parentId: 'cook'),
+    const PlanAction(id: 'host', name: 'Hosting'),
+    const PlanAction(id: 'idea', name: 'Idea', status: 'proposed'),
+    const PlanAction(id: 'old', name: 'Old habit', status: 'proposed'),
+    const PlanAction(id: 'done', name: 'Done thing', status: 'archived'),
+    const PlanAction(id: 'shelf', name: 'Shelved', status: 'archived'),
+    const PlanAction(id: 'oops', name: 'Oops', status: 'deleted'),
   ]);
 
   /// The text field in the dialog open: not the Actions pane's search.
@@ -81,7 +82,7 @@ void main() {
   bool ticked(WidgetTester tester, String status) =>
       tester.widget<CheckboxMenuButton>(option(status)).value == true;
 
-  /// A goal's name, from its title: plain, or with a priority chip after
+  /// An action's name, from its title: plain, or with a priority chip after
   /// it.
   String? nameIn(Text title) =>
       title.data ?? (title.textSpan as TextSpan?)?.text;
@@ -91,7 +92,7 @@ void main() {
       .map((t) => nameIn(t.title as Text))
       .toList();
 
-  /// The title of the goal named [name].
+  /// The title of the action named [name].
   Finder titled(String name) =>
       find.byWidgetPredicate((w) => w is Text && nameIn(w) == name);
 
@@ -103,9 +104,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// The bands down the left of [name]'s goal.
-  GoalBands bandsOf(WidgetTester tester, String name) =>
-      tester.widget<GoalBands>(
+  /// The bands down the left of [name]'s action.
+  ActionBands bandsOf(WidgetTester tester, String name) =>
+      tester.widget<ActionBands>(
         find.descendant(
           of: find
               .ancestor(
@@ -118,7 +119,7 @@ void main() {
                 matching: find.byType(Stack),
               )
               .first,
-          matching: find.byType(GoalBands),
+          matching: find.byType(ActionBands),
         ),
       );
 
@@ -132,14 +133,20 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  test('Goal.fromJson reads a server from before statuses', () {
-    expect(Goal.fromJson({'id': 'g', 'active': false}).status, 'archived');
-    expect(Goal.fromJson({'id': 'g', 'active': true}).status, 'active');
-    expect(Goal.fromJson({'id': 'g', 'status': 'archived'}).active, isFalse);
+  test('PlanAction.fromJson reads a server from before statuses', () {
+    expect(
+      PlanAction.fromJson({'id': 'g', 'active': false}).status,
+      'archived',
+    );
+    expect(PlanAction.fromJson({'id': 'g', 'active': true}).status, 'active');
+    expect(
+      PlanAction.fromJson({'id': 'g', 'status': 'archived'}).active,
+      isFalse,
+    );
   });
 
-  test('Goal.fromJson keeps every property the server sent', () {
-    final goal = Goal.fromJson({
+  test('PlanAction.fromJson keeps every property the server sent', () {
+    final action = PlanAction.fromJson({
       'id': 'g1',
       'parent_id': 'g0',
       'name': 'Tofu tikka',
@@ -149,16 +156,16 @@ void main() {
       'path': 'Cooking › Tofu tikka',
       'new_thing': 'x',
     });
-    expect(goal.parentId, 'g0');
-    expect(goal.active, isFalse);
-    expect(goal.depth, 1);
-    expect(goal.properties['new_thing'], 'x');
+    expect(action.parentId, 'g0');
+    expect(action.active, isFalse);
+    expect(action.depth, 1);
+    expect(action.properties['new_thing'], 'x');
   });
 
   testWidgets('a server error after sign-in is shown, not the sign-in '
       'prompt', (tester) async {
-    final repo = _SignInGoalsRepository(tree())
-      ..failure = McpException('Tool get_goals failed: token revoked');
+    final repo = _SignInActionsRepository(tree())
+      ..failure = McpException('Tool get_actions failed: token revoked');
     await tester.pumpWidget(
       app(repo, onSignIn: () async => repo.signedIn = true),
     );
@@ -178,18 +185,18 @@ void main() {
       await tester.pumpWidget(app(tree()));
       await tester.pumpAndSettle();
 
-      // Sub-goals start collapsed, their parent's band an arrow; how many
+      // Sub-actions start collapsed, their parent's band an arrow; how many
       // isn't said.
       expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
-      expect(bandsOf(tester, 'Cooking').shape, GoalBandShape.collapsed);
-      expect(find.textContaining('sub-goal'), findsNothing);
+      expect(bandsOf(tester, 'Cooking').shape, ActionBandShape.collapsed);
+      expect(find.textContaining('sub-action'), findsNothing);
       // Its priority, after its name.
       expect(find.text('P1'), findsOneWidget);
       expect(find.text('Proposed by Claude: review it'), findsWidgets);
       // Groups hold none.
       expect(find.text('2 of 200 labels in use'), findsOneWidget);
-      // Only a goal with sub-goals can be expanded.
-      expect(bandsOf(tester, 'Hosting').shape, GoalBandShape.plain);
+      // Only an action with sub-actions can be expanded.
+      expect(bandsOf(tester, 'Hosting').shape, ActionBandShape.plain);
 
       await toggle(tester, 'Cooking');
       expect(shownNames(tester), [
@@ -199,8 +206,8 @@ void main() {
         'Idea',
         'Old habit',
       ]);
-      expect(bandsOf(tester, 'Cooking').shape, GoalBandShape.expanded);
-      // The sub-goal is indented under its parent, beside its band.
+      expect(bandsOf(tester, 'Cooking').shape, ActionBandShape.expanded);
+      // The sub-action is indented under its parent, beside its band.
       expect(bandsOf(tester, 'Cooking').bands, hasLength(1));
       expect(bandsOf(tester, 'Tofu tikka').bands, hasLength(2));
       // Its inherited priority, too.
@@ -292,7 +299,7 @@ void main() {
     // Still open, with the change kept, to save or revert.
     expect(find.text('Save 1 change'), findsOneWidget);
     expect(
-      (await repo.goals()).goals.firstWhere((g) => g.id == 'host').status,
+      (await repo.actions()).actions.firstWhere((g) => g.id == 'host').status,
       'active',
     );
 
@@ -303,12 +310,14 @@ void main() {
     // Archived actions aren't shown until asked for.
     expect(shownNames(tester), isNot(contains('Hosting')));
     expect(
-      (await repo.goals()).goals.firstWhere((g) => g.id == 'host').status,
+      (await repo.actions()).actions.firstWhere((g) => g.id == 'host').status,
       'archived',
     );
   });
 
-  testWidgets('a proposed goal is made active without a check', (tester) async {
+  testWidgets('a proposed action is made active without a check', (
+    tester,
+  ) async {
     final repo = tree();
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
@@ -316,12 +325,12 @@ void main() {
     await pickStatus(tester, 'Idea', 'Active');
 
     expect(
-      (await repo.goals()).goals.firstWhere((g) => g.id == 'idea').status,
+      (await repo.actions()).actions.firstWhere((g) => g.id == 'idea').status,
       'active',
     );
   });
 
-  testWidgets('deleting asks first, then hides the goal', (tester) async {
+  testWidgets('deleting asks first, then hides the action', (tester) async {
     final repo = tree();
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
@@ -333,7 +342,7 @@ void main() {
 
     expect(shownNames(tester), isNot(contains('Old habit')));
     expect(
-      (await repo.goals()).goals.firstWhere((g) => g.id == 'old').status,
+      (await repo.actions()).actions.firstWhere((g) => g.id == 'old').status,
       'deleted',
     );
   });
@@ -359,7 +368,7 @@ void main() {
     await tester.tap(find.text('Approve'));
     await tester.pumpAndSettle();
     expect(
-      (await repo.goals()).goals.firstWhere((g) => g.id == 'idea').status,
+      (await repo.actions()).actions.firstWhere((g) => g.id == 'idea').status,
       'active',
     );
     expect(await menuOf('Hosting'), ['Edit']);
@@ -406,7 +415,7 @@ void main() {
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(
-      (await repo.goals()).goals.firstWhere((g) => g.id == 'host').priority,
+      (await repo.actions()).actions.firstWhere((g) => g.id == 'host').priority,
       0,
     );
 
@@ -514,7 +523,7 @@ void main() {
     await tester.tap(find.text('Save 1 change'));
     await tester.pumpAndSettle();
 
-    final added = (await repo.goals()).goals.firstWhere(
+    final added = (await repo.actions()).actions.firstWhere(
       (g) => g.name == 'Make curry',
     );
     expect(added.parentId, 'cook');
@@ -548,7 +557,7 @@ void main() {
     await tester.tap(find.text('Save 1 change'));
     await tester.pumpAndSettle();
 
-    final added = (await repo.goals()).goals.firstWhere(
+    final added = (await repo.actions()).actions.firstWhere(
       (g) => g.name == 'Music',
     );
     expect(added.isGroup, isTrue);
@@ -556,14 +565,14 @@ void main() {
   });
 
   /// Lets a second go by, a frame at a time: what pumpAndSettle does,
-  /// for when a goal being saved keeps it from settling.
+  /// for when an action being saved keeps it from settling.
   Future<void> settle(WidgetTester tester) async {
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
   }
 
-  /// In the dialog open, sets the goal's name to [name].
+  /// In the dialog open, sets the action's name to [name].
   Future<void> rename(WidgetTester tester, String name) async {
     final label = find.descendant(
       of: find.byType(AlertDialog),
@@ -581,7 +590,7 @@ void main() {
 
   /// Adds a top-level action named [name] from the "+" in the Actions
   /// heading.
-  Future<void> addGoal(WidgetTester tester, String name) async {
+  Future<void> addAction(WidgetTester tester, String name) async {
     await tester.tap(find.byTooltip('Add an action or group'));
     await settle(tester);
     await tester.tap(find.text('New action'));
@@ -597,22 +606,22 @@ void main() {
 
   testWidgets('saving closes the dialog at once, and saves in the '
       'background, in order', (tester) async {
-    final repo = _GatedGoalsRepository(tree());
+    final repo = _GatedActionsRepository(tree());
     await tester.pumpWidget(app(repo));
     await settle(tester);
 
-    await addGoal(tester, 'Running');
+    await addAction(tester, 'Running');
     await settle(tester);
     // Closed, and shown already, saving.
     expect(find.byType(AlertDialog), findsNothing);
     expect(shownNames(tester), contains('Running'));
     expect(find.byTooltip('Saving…'), findsOneWidget);
     // Another can be added straight away.
-    await addGoal(tester, 'Swimming');
+    await addAction(tester, 'Swimming');
     await settle(tester);
     expect(shownNames(tester), containsAllInOrder(['Running', 'Swimming']));
     expect(find.byTooltip('Saving…'), findsNWidgets(2));
-    // Renaming a goal shows at once, too.
+    // Renaming an action shows at once, too.
     await tester.tap(find.byTooltip('More for Hosting'));
     await settle(tester);
     await tester.tap(find.text('Edit'));
@@ -638,25 +647,25 @@ void main() {
     await tester.pump();
     expect(repo.sent, ['create Running', 'create Swimming', 'update host']);
     expect(find.byTooltip('Saving…'), findsNothing);
-    // The goals are only fetched once every change is saved.
+    // The actions are only fetched once every change is saved.
     expect(repo.fetches, fetched);
     repo.answer();
     await tester.pumpAndSettle();
     expect(repo.fetches, fetched + 1);
     expect(shownNames(tester), containsAll(['Running', 'Swimming', 'Parties']));
     expect(
-      (await repo.goals()).goals.map((g) => g.name),
+      (await repo.actions()).actions.map((g) => g.name),
       containsAll(['Running', 'Swimming', 'Parties']),
     );
   });
 
-  testWidgets('a new goal that fails to save stays, marked, to edit and '
+  testWidgets('a new action that fails to save stays, marked, to edit and '
       'save again', (tester) async {
-    final repo = _GatedGoalsRepository(tree());
+    final repo = _GatedActionsRepository(tree());
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
-    await addGoal(tester, 'Running');
+    await addAction(tester, 'Running');
     repo.fail(McpException('No room for it.'));
     await tester.pumpAndSettle();
     expect(find.text("Couldn't save Running. No room for it."), findsOneWidget);
@@ -682,18 +691,18 @@ void main() {
     expect(shownNames(tester), isNot(contains('Running')));
     expect(find.byTooltip('Not saved: No room for it.'), findsNothing);
     expect(
-      (await repo.goals()).goals.map((g) => g.name),
+      (await repo.actions()).actions.map((g) => g.name),
       containsAll(['Jogging']),
     );
   });
 
   testWidgets('a save that failed can be tried again as it was, or '
       'discarded', (tester) async {
-    final repo = _GatedGoalsRepository(tree());
+    final repo = _GatedActionsRepository(tree());
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
-    await addGoal(tester, 'Running');
+    await addAction(tester, 'Running');
     repo.fail(McpException('No room for it.'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Retry'));
@@ -711,14 +720,15 @@ void main() {
     expect(find.byTooltip('Not saved: Still no room.'), findsNothing);
   });
 
-  testWidgets('a goal that failed to save is still there when the app opens '
+  testWidgets('an action that failed to save is still there when the app opens '
       'again', (tester) async {
-    final store = InMemoryOutboxStore<PendingGoalSave>();
-    final repo = _GatedGoalsRepository(tree());
-    GoalOutbox outbox() => GoalOutbox(store: store, repository: repo)..start();
+    final store = InMemoryOutboxStore<PendingActionSave>();
+    final repo = _GatedActionsRepository(tree());
+    ActionOutbox outbox() =>
+        ActionOutbox(store: store, repository: repo)..start();
     await tester.pumpWidget(app(repo, outbox: outbox()));
     await tester.pumpAndSettle();
-    await addGoal(tester, 'Running');
+    await addAction(tester, 'Running');
     repo.fail(McpException('No room for it.'));
     await tester.pumpAndSettle();
 
@@ -730,21 +740,21 @@ void main() {
     expect(find.byTooltip('Not saved: No room for it.'), findsOneWidget);
   });
 
-  testWidgets('a new goal saved by the background task stays shown until '
-      'the goals are fetched with it', (tester) async {
-    final store = InMemoryOutboxStore<PendingGoalSave>();
+  testWidgets('a new action saved by the background task stays shown until '
+      'the actions are fetched with it', (tester) async {
+    final store = InMemoryOutboxStore<PendingActionSave>();
     final server = tree();
-    final repo = _GatedGoalsRepository(server);
+    final repo = _GatedActionsRepository(server);
     // Not started: as when the app is in the background.
-    final outbox = GoalOutbox(store: store, repository: repo);
+    final outbox = ActionOutbox(store: store, repository: repo);
     await tester.pumpWidget(app(repo, outbox: outbox));
     await tester.pumpAndSettle();
-    await addGoal(tester, 'Running');
+    await addAction(tester, 'Running');
     expect(repo.sent, isEmpty);
     expect(find.byTooltip('Saving…'), findsOneWidget);
 
     // The background task saves it, with its own outbox.
-    await GoalOutbox(
+    await ActionOutbox(
       store: store,
       repository: server,
     ).flush(ignoreBackoff: true);
@@ -768,7 +778,7 @@ void main() {
   testWidgets('a change that fails to save stays, to edit and save again', (
     tester,
   ) async {
-    final repo = _GatedGoalsRepository(tree());
+    final repo = _GatedActionsRepository(tree());
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
@@ -783,7 +793,7 @@ void main() {
     await settle(tester);
     repo.fail(McpException('Try later.'));
     await tester.pumpAndSettle();
-    // Kept, though the goals were fetched again.
+    // Kept, though the actions were fetched again.
     expect(shownNames(tester), contains('Parties'));
     expect(find.byTooltip('Not saved: Try later.'), findsOneWidget);
 
@@ -798,12 +808,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('Not saved: Try later.'), findsNothing);
     expect(
-      (await repo.goals()).goals.firstWhere((g) => g.id == 'host').name,
+      (await repo.actions()).actions.firstWhere((g) => g.id == 'host').name,
       'Parties',
     );
   });
 
-  testWidgets('a new goal needs a name', (tester) async {
+  testWidgets('a new action needs a name', (tester) async {
     await tester.pumpWidget(app(tree()));
     await tester.pumpAndSettle();
 
@@ -968,7 +978,7 @@ void main() {
     expect(shownNames(tester), contains('Hosting'));
 
     // Back again, with a server that hasn't answered yet.
-    final slow = _GatedGoalsRepository(tree())..fetchGate = Completer();
+    final slow = _GatedActionsRepository(tree())..fetchGate = Completer();
     await tester.pumpWidget(const SizedBox());
     await tester.pumpWidget(app(slow, memory: memory));
     await tester.pump();
@@ -998,15 +1008,15 @@ void main() {
   });
 
   group("an action's priority", () {
-    InMemoryGoalsRepository withColors() => InMemoryGoalsRepository([
-      const Goal(
+    InMemoryActionsRepository withColors() => InMemoryActionsRepository([
+      const PlanAction(
         id: 'cook',
         name: 'Cooking',
         priority: 1,
         properties: {'kind': 'group'},
       ),
-      const Goal(id: 'tofu', name: 'Tofu tikka', parentId: 'cook'),
-      const Goal(
+      const PlanAction(id: 'tofu', name: 'Tofu tikka', parentId: 'cook'),
+      const PlanAction(
         id: 'curry',
         name: 'Curry',
         parentId: 'cook',
@@ -1026,7 +1036,7 @@ void main() {
           ),
         );
 
-    testWidgets("each goal's priority is a chip: filled if set on it, "
+    testWidgets("each action's priority is a chip: filled if set on it, "
         'outlined if inherited', (tester) async {
       await tester.pumpWidget(app(withColors()));
       await tester.pumpAndSettle();
@@ -1042,7 +1052,7 @@ void main() {
     });
   });
 
-  testWidgets('pressing and holding a goal reorders goals by dragging', (
+  testWidgets('pressing and holding an action reorders actions by dragging', (
     tester,
   ) async {
     final repo = tree();
@@ -1066,7 +1076,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(shownNames(tester).take(2), ['Hosting', 'Cooking']);
-    final saved = [for (final goal in (await repo.goals()).goals) goal.id];
+    final saved = [
+      for (final action in (await repo.actions()).actions) action.id,
+    ];
     expect(saved.indexOf('host'), lessThan(saved.indexOf('cook')));
 
     await tester.tap(find.text('Done'));
@@ -1077,16 +1089,20 @@ void main() {
 
   testWidgets("an action's group is picked from the groups, and shown as "
       'its path', (tester) async {
-    final repo = InMemoryGoalsRepository([
-      const Goal(id: 'cook', name: 'Cooking', properties: {'kind': 'group'}),
-      const Goal(
+    final repo = InMemoryActionsRepository([
+      const PlanAction(
+        id: 'cook',
+        name: 'Cooking',
+        properties: {'kind': 'group'},
+      ),
+      const PlanAction(
         id: 'indian',
         name: 'Indian',
         parentId: 'cook',
         properties: {'kind': 'group'},
       ),
-      const Goal(id: 'tofu', name: 'Tofu tikka', parentId: 'indian'),
-      const Goal(id: 'host', name: 'Hosting'),
+      const PlanAction(id: 'tofu', name: 'Tofu tikka', parentId: 'indian'),
+      const PlanAction(id: 'host', name: 'Hosting'),
     ]);
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
@@ -1097,9 +1113,9 @@ void main() {
     final row = find.ancestor(of: label, matching: find.byType(PropertyRow));
     await tester.tap(find.descendant(of: row, matching: find.text('(none)')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(GoalField));
+    await tester.tap(find.byType(ActionField));
     await tester.pumpAndSettle();
-    final picker = find.byType(GoalsPicker);
+    final picker = find.byType(ActionsPicker);
     // Not itself, nor an action.
     expect(
       find.descendant(of: picker, matching: find.text('Hosting')),
@@ -1120,12 +1136,12 @@ void main() {
     await tester.tap(find.text('Save 1 change'));
     await tester.pumpAndSettle();
     expect(
-      (await repo.goals()).goals.firstWhere((g) => g.id == 'host').parentId,
+      (await repo.actions()).actions.firstWhere((g) => g.id == 'host').parentId,
       'indian',
     );
   });
 
-  testWidgets("a goal can't be put under itself or its sub-goals, and can "
+  testWidgets("an action can't be put under itself or its sub-actions, and can "
       'be made top-level', (tester) async {
     final repo = tree();
     await tester.pumpWidget(app(repo));
@@ -1142,10 +1158,10 @@ void main() {
       find.descendant(of: row, matching: find.byType(InkWell)).first,
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(GoalField));
+    await tester.tap(find.byType(ActionField));
     await tester.pumpAndSettle();
     // Only a group: Cooking, its own.
-    final picker = find.byType(GoalsPicker);
+    final picker = find.byType(ActionsPicker);
     for (final action in ['Shelved', 'Oops', 'Old habit', 'Hosting']) {
       expect(
         find.descendant(of: picker, matching: find.text(action)),
@@ -1159,13 +1175,13 @@ void main() {
     );
     // Searched by path; not itself.
     await tester.enterText(
-      find.descendant(of: find.byType(GoalsPicker), matching: dialogField),
+      find.descendant(of: find.byType(ActionsPicker), matching: dialogField),
       'cook',
     );
     await tester.pumpAndSettle();
     expect(
       find.descendant(
-        of: find.byType(GoalsPicker),
+        of: find.byType(ActionsPicker),
         matching: find.text('Tofu tikka'),
       ),
       findsNothing,
@@ -1177,7 +1193,7 @@ void main() {
     await tester.tap(find.text('Save 1 change'));
     await tester.pumpAndSettle();
     expect(
-      (await repo.goals()).goals.firstWhere((g) => g.id == 'tofu').parentId,
+      (await repo.actions()).actions.firstWhere((g) => g.id == 'tofu').parentId,
       isNull,
     );
 
@@ -1197,11 +1213,11 @@ void main() {
           .first,
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(GoalField));
+    await tester.tap(find.byType(ActionField));
     await tester.pumpAndSettle();
     expect(
       find.descendant(
-        of: find.byType(GoalsPicker),
+        of: find.byType(ActionsPicker),
         matching: find.text('Cooking'),
       ),
       findsNothing,
@@ -1209,25 +1225,25 @@ void main() {
   });
 
   testWidgets(
-    "a goal's band is its own color, or the one it inherits, dashed, beside "
+    "an action's band is its own color, or the one it inherits, dashed, beside "
     "its ancestors'",
     (tester) async {
       await tester.pumpWidget(
         app(
-          InMemoryGoalsRepository([
-            Goal.fromJson({
+          InMemoryActionsRepository([
+            PlanAction.fromJson({
               'id': 'own',
               'name': 'Own',
               'background_color': '#123456',
               'effective_color': '#123456',
             }),
-            Goal.fromJson({
+            PlanAction.fromJson({
               'id': 'kid',
               'name': 'Kid',
               'parent_id': 'own',
               'effective_color': '#123456',
             }),
-            Goal.fromJson({
+            PlanAction.fromJson({
               'id': 'idle',
               'name': 'Idle',
               'status': 'proposed',
@@ -1239,11 +1255,11 @@ void main() {
       await tester.pumpAndSettle();
       await toggle(tester, 'Own');
 
-      const own = GoalBand(color: Color(0xFF123456), dashed: false);
+      const own = ActionBand(color: Color(0xFF123456), dashed: false);
       expect(bandsOf(tester, 'Own').bands, [own]);
       expect(bandsOf(tester, 'Kid').bands, [
         own,
-        const GoalBand(color: Color(0xFF123456), dashed: true),
+        const ActionBand(color: Color(0xFF123456), dashed: true),
       ]);
       // A proposed action's is grey, and dashed.
       final idle = bandsOf(tester, 'Idle').bands.single;
@@ -1253,17 +1269,17 @@ void main() {
   );
 
   testWidgets('says when there are no actions yet', (tester) async {
-    await tester.pumpWidget(app(InMemoryGoalsRepository()));
+    await tester.pumpWidget(app(InMemoryActionsRepository()));
     await tester.pumpAndSettle();
     expect(find.text('No actions yet.\nTap + to add one.'), findsOneWidget);
   });
 }
 
 /// Holds each save until the test answers it, or fails it.
-class _GatedGoalsRepository implements GoalsRepository {
-  _GatedGoalsRepository(this._inner);
+class _GatedActionsRepository implements ActionsRepository {
+  _GatedActionsRepository(this._inner);
 
-  final InMemoryGoalsRepository _inner;
+  final InMemoryActionsRepository _inner;
 
   @override
   bool get reorderable => _inner.reorderable;
@@ -1285,52 +1301,56 @@ class _GatedGoalsRepository implements GoalsRepository {
     return gate.future;
   }
 
-  /// How many times every goal has been fetched.
+  /// How many times every action has been fetched.
   var fetches = 0;
 
   @override
-  Future<String?> createGoal(Map<String, Object?> fields) async {
+  Future<String?> createAction(Map<String, Object?> fields) async {
     await _gate('create ${fields['name']}');
-    return _inner.createGoal(fields);
+    return _inner.createAction(fields);
   }
 
   @override
-  Future<void> updateGoal(Goal goal, Map<String, Object?> changes) async {
-    await _gate('update ${goal.id}');
-    return _inner.updateGoal(goal, changes);
+  Future<void> updateAction(
+    PlanAction action,
+    Map<String, Object?> changes,
+  ) async {
+    await _gate('update ${action.id}');
+    return _inner.updateAction(action, changes);
   }
 
-  /// While set, fetching every goal waits for it.
+  /// While set, fetching every action waits for it.
   Completer<void>? fetchGate;
 
   @override
-  Future<GoalList> goals() async {
+  Future<ActionList> actions() async {
     fetches++;
     await fetchGate?.future;
-    return _inner.goals();
+    return _inner.actions();
   }
 
   @override
-  Future<GoalList?> cachedGoals() => _inner.cachedGoals();
+  Future<ActionList?> cachedActions() => _inner.cachedActions();
 
   @override
-  Future<GoalList> reorderGoals(List<String> ids) => _inner.reorderGoals(ids);
+  Future<ActionList> reorderActions(List<String> ids) =>
+      _inner.reorderActions(ids);
 }
 
-/// Needs sign-in until [signedIn], then answers with [inner]'s goals, or
+/// Needs sign-in until [signedIn], then answers with [inner]'s actions, or
 /// throws [failure], as a server that can't answer would.
-class _SignInGoalsRepository extends InMemoryGoalsRepository {
-  _SignInGoalsRepository(this._inner) : super(const []);
+class _SignInActionsRepository extends InMemoryActionsRepository {
+  _SignInActionsRepository(this._inner) : super(const []);
 
-  final InMemoryGoalsRepository _inner;
+  final InMemoryActionsRepository _inner;
   bool signedIn = false;
   Exception? failure;
 
   @override
-  Future<GoalList> goals() async {
+  Future<ActionList> actions() async {
     if (!signedIn) throw SignInRequiredException();
     if (failure case final failure?) throw failure;
-    return _inner.goals();
+    return _inner.actions();
   }
 }
 

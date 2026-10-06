@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 import 'event_room.dart';
 import 'properties_dialog.dart';
 
@@ -30,7 +30,7 @@ Future<List<Event>?> showEventDialog(
   Future<List<Event>> Function(Event event, bool countsAgainstFollowThrough)?
   cancel,
   EventRoom room = const EventRoom.none(),
-  Future<List<Goal>> Function()? goals,
+  Future<List<PlanAction>> Function()? actions,
   Future<bool> Function(String seriesId)? openSeries,
 }) {
   final typed = event.toJson();
@@ -100,7 +100,7 @@ Future<List<Event>?> showEventDialog(
         null => null,
       };
     },
-    goals: goals,
+    actions: actions,
     oneWayAction: event.isCancelled || cancel == null
         ? null
         : const OneWayAction(
@@ -136,8 +136,8 @@ const _kinds = {
   'end': PropertyKind.time,
   'description': PropertyKind.multiline,
   'location': PropertyKind.text,
-  // Its label follows its goals, so it isn't edited itself.
-  'action_ids': PropertyKind.goals,
+  // Its label follows its actions, so it isn't edited itself.
+  'action_ids': PropertyKind.actions,
   'priority': PropertyKind.integer,
   'is_fixed_time': PropertyKind.flag,
   'is_fixed_duration': PropertyKind.flag,

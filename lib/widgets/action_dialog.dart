@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 import '../services/mcp_client.dart';
 import 'color_picker.dart';
 import 'priority_chip.dart';
@@ -8,10 +8,10 @@ import 'priority_chip.dart';
 /// The priorities offered as buttons; "…" takes any other.
 const _priorities = [0, 1, 2, 3];
 
-/// Saves [changes] to [goal], returning every action as they're to be
+/// Saves [changes] to [action], returning every action as they're to be
 /// shown now.
-typedef SaveGoal = Future<GoalList> Function(
-  Goal goal,
+typedef SaveAction = Future<ActionList> Function(
+  PlanAction action,
   Map<String, Object?> changes,
 );
 
@@ -24,46 +24,46 @@ typedef SaveGoal = Future<GoalList> Function(
 /// set on it can be cleared, so it's inherited again. "Save" sends every
 /// change with [save]. Without [save], or for one with no id, nothing can
 /// be edited. "Details" closes it, then calls [onDetails] with it, for
-/// everything else. [goals] are the actions and groups listed, to say
+/// everything else. [actions] are the actions and groups listed, to say
 /// which group each inherited value comes from.
 Future<void> showActionDialog(
   BuildContext context,
-  Goal goal, {
-  List<Goal> goals = const [],
-  SaveGoal? save,
-  ValueChanged<Goal>? onDetails,
+  PlanAction action, {
+  List<PlanAction> actions = const [],
+  SaveAction? save,
+  ValueChanged<PlanAction>? onDetails,
 }) => showDialog<void>(
   context: context,
   builder: (_) => _ActionDialog(
-    goal: goal,
-    goals: goals,
-    save: save == null || goal.id == null ? null : save,
+    action: action,
+    actions: actions,
+    save: save == null || action.id == null ? null : save,
     onDetails: onDetails,
   ),
 );
 
-/// The properties the dialog edits, as `update_goal` names them.
+/// The properties the dialog edits, as `update_action` names them.
 enum _Property { priority, color }
 
 class _ActionDialog extends StatefulWidget {
   const _ActionDialog({
-    required this.goal,
-    required this.goals,
+    required this.action,
+    required this.actions,
     required this.save,
     required this.onDetails,
   });
 
-  final Goal goal;
-  final List<Goal> goals;
-  final SaveGoal? save;
-  final ValueChanged<Goal>? onDetails;
+  final PlanAction action;
+  final List<PlanAction> actions;
+  final SaveAction? save;
+  final ValueChanged<PlanAction>? onDetails;
 
   @override
   State<_ActionDialog> createState() => _ActionDialogState();
 }
 
 class _ActionDialogState extends State<_ActionDialog> {
-  /// What's been changed, keyed as `update_goal` takes it; null clears.
+  /// What's been changed, keyed as `update_action` takes it; null clears.
   final _changes = <String, Object?>{};
 
   /// The property open for editing, if one is.
@@ -72,7 +72,7 @@ class _ActionDialogState extends State<_ActionDialog> {
   /// Whether "…" was picked, to type a priority not among [_priorities].
   bool _otherPriority = false;
   late final _otherController = TextEditingController(
-    text: switch (widget.goal.priority) {
+    text: switch (widget.action.priority) {
       final p? when !_priorities.contains(p) => '$p',
       _ => '',
     },
@@ -81,7 +81,7 @@ class _ActionDialogState extends State<_ActionDialog> {
   bool _saving = false;
   String? _error;
 
-  Goal get _goal => widget.goal;
+  PlanAction get _action => widget.action;
   bool get _editable => widget.save != null;
 
   @override
@@ -94,9 +94,9 @@ class _ActionDialogState extends State<_ActionDialog> {
   Object? _value(String key, Object? was) =>
       _changes.containsKey(key) ? _changes[key] : was;
 
-  int? get _priority => _value('priority', _goal.priority) as int?;
+  int? get _priority => _value('priority', _action.priority) as int?;
   String? get _color =>
-      _value('background_color', _goal.backgroundColor) as String?;
+      _value('background_color', _action.backgroundColor) as String?;
 
   /// Sets [key] to [value], dropping the change if that's how it was.
   void _set(String key, Object? value, Object? was) => setState(() {
@@ -107,14 +107,14 @@ class _ActionDialogState extends State<_ActionDialog> {
     }
   });
 
-  /// The listed goal with [id], if it's listed.
-  Goal? _byId(String? id) =>
-      id == null ? null : widget.goals.where((g) => g.id == id).firstOrNull;
+  /// The listed action with [id], if it's listed.
+  PlanAction? _byId(String? id) =>
+      id == null ? null : widget.actions.where((g) => g.id == id).firstOrNull;
 
   /// Its ancestors, nearest first, as far as they're listed.
-  late final List<Goal> _ancestors = () {
-    final chain = <Goal>[];
-    var parent = _byId(_goal.parentId);
+  late final List<PlanAction> _ancestors = () {
+    final chain = <PlanAction>[];
+    var parent = _byId(_action.parentId);
     while (parent != null && !chain.contains(parent)) {
       chain.add(parent);
       parent = _byId(parent.parentId);
@@ -123,21 +123,23 @@ class _ActionDialogState extends State<_ActionDialog> {
   }();
 
   /// The nearest ancestor for which [has] is true, if one is listed.
-  Goal? _nearest(bool Function(Goal) has) => _ancestors.where(has).firstOrNull;
+  PlanAction? _nearest(bool Function(PlanAction) has) =>
+      _ancestors.where(has).firstOrNull;
 
   /// What it inherits for priority: its parent's, if it's listed;
   /// otherwise what the server said, if that was inherited.
-  int? get _inheritedPriority => switch (_byId(_goal.parentId)) {
+  int? get _inheritedPriority => switch (_byId(_action.parentId)) {
     final parent? => parent.effectivePriority,
-    null => _goal.inheritsPriority ? _goal.effectivePriority : null,
+    null => _action.inheritsPriority ? _action.effectivePriority : null,
   };
 
   /// "Inherited from Cooking", naming the nearest ancestor for which
   /// [has] is true, if it's listed.
-  String _inheritedFrom(bool Function(Goal) has) => switch (_nearest(has)) {
-    final from? => 'Inherited from ${goalName(from)}',
-    null => 'Inherited',
-  };
+  String _inheritedFrom(bool Function(PlanAction) has) =>
+      switch (_nearest(has)) {
+        final from? => 'Inherited from ${actionName(from)}',
+        null => 'Inherited',
+      };
 
   Future<void> _save() async {
     final navigator = Navigator.of(context);
@@ -146,7 +148,7 @@ class _ActionDialogState extends State<_ActionDialog> {
       _error = null;
     });
     try {
-      await widget.save!(_goal, Map.of(_changes));
+      await widget.save!(_action, Map.of(_changes));
       navigator.pop();
     } catch (e) {
       if (!mounted) return;
@@ -166,10 +168,10 @@ class _ActionDialogState extends State<_ActionDialog> {
   void _toggle(_Property property) =>
       setState(() => _editing = _editing == property ? null : property);
 
-  /// Closes it, then calls [then] with the goal.
-  void _leaveFor(ValueChanged<Goal> then) {
+  /// Closes it, then calls [then] with the action.
+  void _leaveFor(ValueChanged<PlanAction> then) {
     Navigator.of(context).pop();
-    then(_goal);
+    then(_action);
   }
 
   @override
@@ -183,8 +185,8 @@ class _ActionDialogState extends State<_ActionDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _priorityHeader(),
-          Text(goalName(_goal)),
-          if (_goal.path case final path? when path.contains(' › '))
+          Text(actionName(_action)),
+          if (_action.path case final path? when path.contains(' › '))
             Text(
               path,
               style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
@@ -213,7 +215,7 @@ class _ActionDialogState extends State<_ActionDialog> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
                 child: Text(
-                  _goal.isGroup
+                  _action.isGroup
                       ? 'The actions in it with nothing set take its '
                             'priority and color.'
                       : 'Its events take its priority and color.',
@@ -336,7 +338,7 @@ class _ActionDialogState extends State<_ActionDialog> {
                 selected: own == p && !other,
                 onSelected: (_) {
                   _otherPriority = false;
-                  _set('priority', p, _goal.priority);
+                  _set('priority', p, _action.priority);
                 },
               ),
             ChoiceChip(
@@ -361,7 +363,7 @@ class _ActionDialogState extends State<_ActionDialog> {
               ),
               onChanged: (typed) {
                 if (int.tryParse(typed.trim()) case final p?) {
-                  _set('priority', p, _goal.priority);
+                  _set('priority', p, _action.priority);
                 }
               },
             ),
@@ -372,7 +374,7 @@ class _ActionDialogState extends State<_ActionDialog> {
               : () {
                   _otherPriority = false;
                   _otherController.clear();
-                  _set('priority', null, _goal.priority);
+                  _set('priority', null, _action.priority);
                 },
           icon: const Icon(Icons.undo, size: 18),
           label: Text(switch (inherited) {
@@ -380,7 +382,7 @@ class _ActionDialogState extends State<_ActionDialog> {
               _nearest((g) => g.priority != null) == null
                   ? 'Inherit ($p)'
                   : 'Inherit from '
-                        '${goalName(_nearest((g) => g.priority != null)!)} ($p)',
+                        '${actionName(_nearest((g) => g.priority != null)!)} ($p)',
             null => 'No priority of its own',
           }),
         ),
@@ -402,7 +404,7 @@ class _ActionDialogState extends State<_ActionDialog> {
     final shown =
         own ??
         parseColor(ancestor?.backgroundColor) ??
-        (unchanged ? parseColor(_goal.effectiveColor) : null) ??
+        (unchanged ? parseColor(_action.effectiveColor) : null) ??
         priorityColor(_priority ?? _inheritedPriority);
     final follows = _priority ?? _inheritedPriority ?? defaultPriority;
     return _PropertyCard(
@@ -411,7 +413,7 @@ class _ActionDialogState extends State<_ActionDialog> {
       value: colorToHex(shown),
       source: switch ((own, ancestor)) {
         (_?, _) => 'Set on this one',
-        (null, final from?) => 'Inherited from ${goalName(from)}',
+        (null, final from?) => 'Inherited from ${actionName(from)}',
         (null, null) =>
           '${unchanged ? 'Follows' : 'Will follow'} priority $follows',
       },
@@ -419,7 +421,7 @@ class _ActionDialogState extends State<_ActionDialog> {
       editing: _editing == _Property.color,
       onTap: _editable ? () => _toggle(_Property.color) : null,
       onClear: _editable && own != null
-          ? () => _set('background_color', null, _goal.backgroundColor)
+          ? () => _set('background_color', null, _action.backgroundColor)
           : null,
       editor: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -429,14 +431,14 @@ class _ActionDialogState extends State<_ActionDialog> {
             onChanged: (color) => _set(
               'background_color',
               color == null ? null : colorToHex(color),
-              _goal.backgroundColor,
+              _action.backgroundColor,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             ancestor == null
                 ? 'With no color, it takes its priority\'s.'
-                : 'With no color, it takes ${goalName(ancestor)}\'s.',
+                : 'With no color, it takes ${actionName(ancestor)}\'s.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -468,7 +470,7 @@ class _PropertyCard extends StatelessWidget {
   final String value;
   final String source;
 
-  /// Whether it's set on the goal itself, so it can be cleared.
+  /// Whether it's set on the action itself, so it can be cleared.
   final bool own;
   final bool editing;
   final VoidCallback? onTap;

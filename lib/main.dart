@@ -9,13 +9,13 @@ import 'auth/platform_receiver.dart'
 import 'auth/token_store.dart';
 import 'demo/sample_data.dart';
 import 'outbox/background_sync.dart';
-import 'outbox/goal_outbox.dart';
+import 'outbox/action_outbox.dart';
 import 'outbox/note_outbox.dart';
 import 'outbox/outbox_store.dart';
 import 'platform/add_note_shortcut.dart';
 import 'screens/home_screen.dart';
 import 'services/event_store.dart';
-import 'services/goals_repository.dart';
+import 'services/actions_repository.dart';
 import 'services/events_repository.dart';
 import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
@@ -30,7 +30,7 @@ import 'theme.dart';
 /// Without it the app runs against an in-memory demo store.
 const _mcpUrl = String.fromEnvironment('MCP_URL');
 
-/// With no server, start from a realistic sample of notes, events and goals
+/// With no server, start from a realistic sample of notes, events and actions
 /// (lib/demo/sample_data.dart) instead of an empty store:
 ///   flutter run --dart-define=SAMPLE_DATA=true
 const _sampleData = bool.fromEnvironment('SAMPLE_DATA');
@@ -41,18 +41,21 @@ Future<void> main() async {
   if (_mcpUrl.isEmpty) {
     final sample = _sampleData ? SampleData(DateTime.now()) : null;
     final repository = sample?.notesRepository() ?? InMemoryNotesRepository();
-    final goals = sample?.goalsRepository() ?? InMemoryGoalsRepository();
+    final actions = sample?.actionsRepository() ?? InMemoryActionsRepository();
     runApp(
       TimeTrackerApp(
         repository: repository,
         eventsRepository:
             sample?.eventsRepository() ?? InMemoryEventsRepository(),
-        goalsRepository: goals,
+        actionsRepository: actions,
         outbox: NoteOutbox(
           store: InMemoryOutboxStore(),
           repository: repository,
         ),
-        goalOutbox: GoalOutbox(store: InMemoryOutboxStore(), repository: goals),
+        actionOutbox: ActionOutbox(
+          store: InMemoryOutboxStore(),
+          repository: actions,
+        ),
         traitsRepository:
             sample?.traitsRepository() ?? InMemoryTraitsRepository(),
         peopleRepository:
@@ -67,19 +70,19 @@ Future<void> main() async {
   final client = _client(auth);
   final cache = PrefsResponseCache();
   final repository = McpNotesRepository(client, cache: cache);
-  final goals = McpGoalsRepository(client, cache: cache);
+  final actions = McpActionsRepository(client, cache: cache);
   runApp(
     TimeTrackerApp(
       repository: repository,
       eventsRepository: McpEventsRepository(client),
-      goalsRepository: goals,
+      actionsRepository: actions,
       outbox: NoteOutbox(
         store: PrefsOutboxStore.notes(),
         repository: repository,
       ),
-      goalOutbox: GoalOutbox(
-        store: PrefsOutboxStore.goals(),
-        repository: goals,
+      actionOutbox: ActionOutbox(
+        store: PrefsOutboxStore.actions(),
+        repository: actions,
       ),
       auth: auth,
       cache: cache,
@@ -90,7 +93,7 @@ Future<void> main() async {
 }
 
 /// Runs WorkManager's background task (Android) that saves pending notes
-/// and goal saves.
+/// and action saves.
 @pragma('vm:entry-point')
 void backgroundDispatcher() => BackgroundSync.run(() {
   final client = _client(_authSession(interactive: false));
@@ -99,9 +102,9 @@ void backgroundDispatcher() => BackgroundSync.run(() {
       store: PrefsOutboxStore.notes(),
       repository: McpNotesRepository(client),
     ),
-    GoalOutbox(
-      store: PrefsOutboxStore.goals(),
-      repository: McpGoalsRepository(client),
+    ActionOutbox(
+      store: PrefsOutboxStore.actions(),
+      repository: McpActionsRepository(client),
     ),
   ];
 });
@@ -130,9 +133,9 @@ class TimeTrackerApp extends StatefulWidget {
     super.key,
     required this.repository,
     required this.eventsRepository,
-    required this.goalsRepository,
+    required this.actionsRepository,
     required this.outbox,
-    required this.goalOutbox,
+    required this.actionOutbox,
     this.auth,
     this.cache,
     this.traitsRepository,
@@ -149,11 +152,11 @@ class TimeTrackerApp extends StatefulWidget {
   /// [PeopleScope]); without it, they aren't offered.
   final PeopleRepository? peopleRepository;
   final EventsRepository eventsRepository;
-  final GoalsRepository goalsRepository;
+  final ActionsRepository actionsRepository;
   final NoteOutbox outbox;
 
-  /// Goal saves waiting to be sent, or that failed.
-  final GoalOutbox goalOutbox;
+  /// PlanAction saves waiting to be sent, or that failed.
+  final ActionOutbox actionOutbox;
   final AuthSession? auth;
 
   /// The server's last answers, which the repositories keep; emptied on
@@ -183,7 +186,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     super.initState();
     BackgroundSync.cancel();
     widget.outbox.start();
-    widget.goalOutbox.start();
+    widget.actionOutbox.start();
     _lifecycle = AppLifecycleListener(
       onResume: _onForeground,
       onPause: _onBackground,
@@ -208,15 +211,15 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     // The background task may have refreshed tokens and saved notes.
     widget.auth?.reload();
     widget.outbox.start();
-    widget.goalOutbox.start();
+    widget.actionOutbox.start();
   }
 
   Future<void> _onBackground() async {
-    widget.goalOutbox.stop();
+    widget.actionOutbox.stop();
     widget.outbox.stop();
     await widget.outbox.refresh();
-    await widget.goalOutbox.refresh();
-    if (widget.outbox.hasUnsent || widget.goalOutbox.hasUnsent) {
+    await widget.actionOutbox.refresh();
+    if (widget.outbox.hasUnsent || widget.actionOutbox.hasUnsent) {
       await BackgroundSync.schedule();
     }
   }
@@ -233,7 +236,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     _lifecycle.dispose();
     _addNoteShortcut.dispose();
     widget.outbox.dispose();
-    widget.goalOutbox.dispose();
+    widget.actionOutbox.dispose();
     super.dispose();
   }
 
@@ -257,9 +260,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       home: HomeScreen(
         notesRepository: widget.repository,
         eventsRepository: widget.eventsRepository,
-        goalsRepository: widget.goalsRepository,
+        actionsRepository: widget.actionsRepository,
         outbox: widget.outbox,
-        goalOutbox: widget.goalOutbox,
+        actionOutbox: widget.actionOutbox,
         onSignIn: widget.auth?.signIn,
         onSignOut: widget.auth == null ? null : _signOut,
         addNoteRequests: _addNoteShortcut.taps,

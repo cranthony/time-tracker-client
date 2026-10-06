@@ -2,85 +2,85 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../models/goal.dart';
-import '../services/goals_repository.dart';
+import '../models/plan_action.dart';
+import '../services/actions_repository.dart';
 import '../services/mcp_client.dart';
 import 'outbox.dart';
-import 'pending_goal_save.dart';
+import 'pending_action_save.dart';
 
-/// What happened to a goal save: see [GoalOutbox.events]. Saves that
+/// What happened to an action save: see [ActionOutbox.events]. Saves that
 /// went through are in [Outbox.justSaved].
-sealed class GoalSaveEvent {
-  const GoalSaveEvent();
+sealed class ActionSaveEvent {
+  const ActionSaveEvent();
 }
 
-/// [save] failed, as its [PendingGoalSave.lastError] says. It's kept, and
+/// [save] failed, as its [PendingActionSave.lastError] says. It's kept, and
 /// tried again after a while, or, if the server refused it, when it's
 /// retried.
-class GoalSaveFailed extends GoalSaveEvent {
-  const GoalSaveFailed(this.save);
-  final PendingGoalSave save;
+class ActionSaveFailed extends ActionSaveEvent {
+  const ActionSaveFailed(this.save);
+  final PendingActionSave save;
 }
 
-/// Goal saves waiting to be sent to the server, or that failed: an
+/// PlanAction saves waiting to be sent to the server, or that failed: an
 /// [Outbox] of them, sent oldest first, retrying with backoff. One the
 /// server refuses (a name already used, say) waits until it's retried,
 /// edited or discarded.
 ///
-/// A save to a goal that already has one waiting, or that failed, joins
+/// A save to an action that already has one waiting, or that failed, joins
 /// it, so they're sent as one. Call [start] to have it send while the app
 /// is in use, and [stop] when the app goes to the background, where the
 /// Android background task sends them, as it does notes.
-class GoalOutbox extends Outbox<PendingGoalSave, String?> {
-  GoalOutbox({required super.store, required this._repository, super.clock});
+class ActionOutbox extends Outbox<PendingActionSave, String?> {
+  ActionOutbox({required super.store, required this._repository, super.clock});
 
-  final GoalsRepository _repository;
+  final ActionsRepository _repository;
   int _nextId = 0;
   // Synchronous, so a failure is heard of as it's kept.
-  final _events = StreamController<GoalSaveEvent>.broadcast(sync: true);
+  final _events = StreamController<ActionSaveEvent>.broadcast(sync: true);
 
   /// Every save waiting, being sent, or that failed, oldest first.
-  List<PendingGoalSave> get saves => items;
+  List<PendingActionSave> get saves => items;
 
   /// What happens to each save, as it happens.
-  Stream<GoalSaveEvent> get events => _events.stream;
+  Stream<ActionSaveEvent> get events => _events.stream;
 
   /// Whether anything is being sent, or waiting to be for the first time.
   /// Saves that failed wait a while, or to be retried, so they don't count.
   bool get busy => saves.any((s) => !s.failed || isSending(s));
 
-  /// Saves a goal made from [fields], keyed as `create_goal` takes them.
+  /// Saves an action made from [fields], keyed as `create_action` takes them.
   /// Returns the id it's shown with until the server makes it.
   String create(Map<String, Object?> fields) {
-    final save = PendingGoalSave(
+    final save = PendingActionSave(
       id: _newId(),
-      goalId: 'unsaved-${_newId()}',
+      actionId: 'unsaved-${_newId()}',
       isNew: true,
       changes: fields,
     );
     _changeAndSend((saves) => [...saves, save]);
-    return save.goalId;
+    return save.actionId;
   }
 
-  /// Saves [changes], keyed as `update_goal` takes them, to the goal with
-  /// [goalId]. If it has a save waiting, or that failed, these join it,
+  /// Saves [changes], keyed as `update_action` takes them, to the action with
+  /// [actionId]. If it has a save waiting, or that failed, these join it,
   /// and it's sent (again) with all of them; with [replace], these stand
   /// in for its changes instead, as when what failed is edited. That's
-  /// also how a new goal that failed is changed before trying again.
+  /// also how a new action that failed is changed before trying again.
   void update(
-    String goalId,
+    String actionId,
     Map<String, Object?> changes, {
     bool replace = false,
   }) {
-    final added = PendingGoalSave(
+    final added = PendingActionSave(
       id: _newId(),
-      goalId: goalId,
+      actionId: actionId,
       isNew: false,
       changes: changes,
     );
     _changeAndSend((saves) {
       final i = saves.lastIndexWhere(
-        (s) => s.goalId == goalId && !isSending(s),
+        (s) => s.actionId == actionId && !isSending(s),
       );
       if (i < 0) return [...saves, added];
       final save = saves[i];
@@ -95,11 +95,11 @@ class GoalOutbox extends Outbox<PendingGoalSave, String?> {
     });
   }
 
-  /// Sends the saves that failed for the goal with [goalId] again, now.
-  void retry(String goalId) => _changeAndSend(
+  /// Sends the saves that failed for the action with [actionId] again, now.
+  void retry(String actionId) => _changeAndSend(
     (saves) => [
       for (final s in saves)
-        s.goalId == goalId && s.failed && !isSending(s)
+        s.actionId == actionId && s.failed && !isSending(s)
             ? s.copyWith(
                 refused: false,
                 lastError: () => null,
@@ -109,26 +109,26 @@ class GoalOutbox extends Outbox<PendingGoalSave, String?> {
     ],
   );
 
-  /// Drops the saves waiting, or that failed, for the goal with [goalId],
+  /// Drops the saves waiting, or that failed, for the action with [actionId],
   /// without sending them. One being sent can't be dropped.
-  void discard(String goalId) => _changeAndSend(
+  void discard(String actionId) => _changeAndSend(
     (saves) => [
       for (final s in saves)
-        if (s.goalId != goalId || isSending(s)) s,
+        if (s.actionId != actionId || isSending(s)) s,
     ],
   );
 
-  /// Drops new goals whose requests failed unanswered, if [goals] (from
+  /// Drops new actions whose requests failed unanswered, if [actions] (from
   /// the server) shows they were made after all. Returns the saves
   /// dropped.
-  List<PendingGoalSave> reconcile(GoalList goals) {
-    bool made(PendingGoalSave s) =>
+  List<PendingActionSave> reconcile(ActionList actions) {
+    bool made(PendingActionSave s) =>
         s.isNew &&
         s.failed &&
         !s.refused &&
         s.attempts > 0 &&
         !isSending(s) &&
-        s.madeIn(goals) != null;
+        s.madeIn(actions) != null;
     final dropped = saves.where(made).toList();
     if (dropped.isEmpty) return dropped;
     _changeAndSend(
@@ -141,18 +141,25 @@ class GoalOutbox extends Outbox<PendingGoalSave, String?> {
   }
 
   @override
-  Future<String?> send(PendingGoalSave item, {required bool maybeSaved}) async {
+  Future<String?> send(
+    PendingActionSave item, {
+    required bool maybeSaved,
+  }) async {
     if (!item.isNew) {
       await _repository
-          .updateGoal(Goal(id: item.goalId), item.changes)
+          .updateAction(PlanAction(id: item.actionId), item.changes)
           .timeout(Outbox.requestTimeout);
       return null;
     }
     if (maybeSaved) {
-      final goals = await _repository.goals().timeout(Outbox.requestTimeout);
-      if (item.madeIn(goals) case final made?) return made.id;
+      final actions = await _repository.actions().timeout(
+        Outbox.requestTimeout,
+      );
+      if (item.madeIn(actions) case final made?) return made.id;
     }
-    return _repository.createGoal(item.changes).timeout(Outbox.requestTimeout);
+    return _repository
+        .createAction(item.changes)
+        .timeout(Outbox.requestTimeout);
   }
 
   /// The server's refusals wait to be retried; the rest are tried again.
@@ -160,7 +167,7 @@ class GoalOutbox extends Outbox<PendingGoalSave, String?> {
   bool retries(Object error) => error is! McpException;
 
   @override
-  void failed(PendingGoalSave item) => _emit(GoalSaveFailed(item));
+  void failed(PendingActionSave item) => _emit(ActionSaveFailed(item));
 
   @override
   void dispose() {
@@ -168,7 +175,7 @@ class GoalOutbox extends Outbox<PendingGoalSave, String?> {
     super.dispose();
   }
 
-  void _emit(GoalSaveEvent event) {
+  void _emit(ActionSaveEvent event) {
     if (!_events.isClosed) _events.add(event);
   }
 
@@ -178,14 +185,14 @@ class GoalOutbox extends Outbox<PendingGoalSave, String?> {
   /// Applies [change] to the saves, at once, then keeps them and sends
   /// what's due. A store that fails only loses them if the app closes.
   void _changeAndSend(
-    List<PendingGoalSave> Function(List<PendingGoalSave> saves) change,
+    List<PendingActionSave> Function(List<PendingActionSave> saves) change,
   ) {
     unawaited(
       this.change(change).then((_) => schedule(immediately: true)).catchError((
         Object e,
         StackTrace stack,
       ) {
-        debugPrint("Couldn't keep the goal saves: $e\n$stack");
+        debugPrint("Couldn't keep the action saves: $e\n$stack");
       }),
     );
   }

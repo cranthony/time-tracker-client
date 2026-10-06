@@ -5,14 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 import '../models/person.dart';
-import '../outbox/goal_outbox.dart';
-import '../outbox/pending_goal_save.dart';
+import '../outbox/action_outbox.dart';
+import '../outbox/pending_action_save.dart';
 import '../outbox/save_error.dart';
 import '../services/event_store.dart';
 import '../services/events_repository.dart';
-import '../services/goals_repository.dart';
+import '../services/actions_repository.dart';
 import '../services/mcp_client.dart';
 import '../services/notes_repository.dart';
 import '../services/people_repository.dart';
@@ -26,7 +26,7 @@ import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/durations.dart';
 import '../widgets/priority_chip.dart';
-import '../widgets/goal_dialog.dart';
+import '../widgets/action_details_dialog.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
 import '../widgets/time_summary.dart';
@@ -36,7 +36,7 @@ import '../widgets/status_message.dart';
 /// The Plan page: panes to swipe between, or pick from the tabs at the
 /// top, each with a search of its own --
 ///
-/// * **Actions**, what to do, leftmost: the actions, kept as goals, and
+/// * **Actions**, what to do, leftmost: the actions, kept as actions, and
 ///   the groups they're in, as a tree;
 /// * **Traits**, how to be ([TraitsPane]), from the [TraitsScope];
 /// * **People**, who to be with, Self always among them ([PeoplePane]),
@@ -60,7 +60,7 @@ import '../widgets/status_message.dart';
 /// menu, edits its priority and color ([showActionDialog]), from which
 /// "Details" opens the rest. Searching shows the actions and groups
 /// whose name, path or note match, in their groups. Where the repository
-/// is [GoalsRepository.reorderable], pressing and holding one starts
+/// is [ActionsRepository.reorderable], pressing and holding one starts
 /// reordering: each can be dragged among its siblings, what's in it
 /// going with it, until "Done". The filter beside the search picks which
 /// statuses are shown: proposed and active to start with. Only active
@@ -80,7 +80,7 @@ class PlanScreen extends StatefulWidget {
     this.version,
   });
 
-  final GoalsRepository repository;
+  final ActionsRepository repository;
 
   /// The events the summaries measure; without it, there are none.
   final EventsRepository? eventsRepository;
@@ -95,7 +95,7 @@ class PlanScreen extends StatefulWidget {
 
   /// Where saves go, to be sent in the background: the dialogs close at
   /// once, as notes' do.
-  final GoalOutbox outbox;
+  final ActionOutbox outbox;
 
   /// Which server this build talks to, for the About dialog.
   final String serverLabel;
@@ -112,21 +112,21 @@ class PlanScreen extends StatefulWidget {
 }
 
 class _PlanScreenState extends State<PlanScreen> {
-  /// The goals as the server last listed them.
-  GoalList? _fromServer;
+  /// The actions as the server last listed them.
+  ActionList? _fromServer;
 
-  /// The goals shown: [_fromServer], with the saves made since it was
+  /// The actions shown: [_fromServer], with the saves made since it was
   /// fetched, here or by the background task, then those waiting in the
   /// outbox, or that failed, made to them.
-  GoalList? get _goals => switch (_fromServer) {
-    final goals? => _withSaves(
-      _withSaved(goals, widget.outbox.justSaved),
+  ActionList? get _actions => switch (_fromServer) {
+    final actions? => _withSaves(
+      _withSaved(actions, widget.outbox.justSaved),
       widget.outbox.saves,
     ),
     null => null,
   };
 
-  StreamSubscription<GoalSaveEvent>? _saveEvents;
+  StreamSubscription<ActionSaveEvent>? _saveEvents;
 
   /// [_fromServer] are the ones kept from last time; the server hasn't
   /// answered since.
@@ -136,12 +136,12 @@ class _PlanScreenState extends State<PlanScreen> {
   bool _signingIn = false;
 
   /// The statuses shown.
-  final _shown = {...defaultGoalStatuses};
+  final _shown = {...defaultActionStatuses};
 
-  /// The goals whose sub-goals are shown; every other goal is collapsed.
+  /// The actions whose sub-actions are shown; every other action is collapsed.
   final _expanded = <String>{};
 
-  /// Whether goals are being dragged into a new order.
+  /// Whether actions are being dragged into a new order.
   bool _reordering = false;
 
   /// What the Actions pane's search has in it.
@@ -209,7 +209,7 @@ class _PlanScreenState extends State<PlanScreen> {
         _memory.warmScores(
           traits: traits,
           people: people,
-          goals: widget.repository,
+          actions: widget.repository,
         ),
       );
     }
@@ -340,15 +340,15 @@ class _PlanScreenState extends State<PlanScreen> {
     }
   }
 
-  /// Shows the goals kept from last time, unless the server answered
+  /// Shows the actions kept from last time, unless the server answered
   /// first.
   Future<void> _showCached() async {
-    await _memory.loadKept(goals: widget.repository);
-    final goals = _memory.actions;
-    if (!mounted || goals == null) return;
+    await _memory.loadKept(actions: widget.repository);
+    final actions = _memory.actions;
+    if (!mounted || actions == null) return;
     if (_fromServer != null || _needsSignIn || _error != null) return;
     setState(() {
-      _fromServer = _memory.actions = goals;
+      _fromServer = _memory.actions = actions;
       _stale = true;
     });
   }
@@ -367,14 +367,18 @@ class _PlanScreenState extends State<PlanScreen> {
     setState(() {});
   }
 
-  void _onSaveEvent(GoalSaveEvent event) {
+  void _onSaveEvent(ActionSaveEvent event) {
     if (!mounted) return;
     switch (event) {
       // Said once, not again each time it's tried again by itself.
-      case GoalSaveFailed(:final save) when save.refused || save.attempts <= 1:
+      case ActionSaveFailed(:final save)
+          when save.refused || save.attempts <= 1:
         final name = save.isNew
-            ? save.goal.name
-            : _goals?.goals.where((g) => g.id == save.goalId).firstOrNull?.name;
+            ? save.action.name
+            : _actions?.actions
+                  .where((g) => g.id == save.actionId)
+                  .firstOrNull
+                  ?.name;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -383,11 +387,11 @@ class _PlanScreenState extends State<PlanScreen> {
             ),
             action: SnackBarAction(
               label: 'Retry',
-              onPressed: () => widget.outbox.retry(save.goalId),
+              onPressed: () => widget.outbox.retry(save.actionId),
             ),
           ),
         );
-      case GoalSaveFailed():
+      case ActionSaveFailed():
         break;
     }
   }
@@ -395,12 +399,12 @@ class _PlanScreenState extends State<PlanScreen> {
   Future<void> _load() async {
     final fetched = widget.outbox.fetching();
     try {
-      final goals = await widget.repository.goals();
+      final actions = await widget.repository.actions();
       if (!mounted) return;
-      widget.outbox.reconcile(goals);
+      widget.outbox.reconcile(actions);
       setState(() {
         // Saves made while these were fetched are still made to them.
-        _fromServer = _memory.actions = goals;
+        _fromServer = _memory.actions = actions;
         _stale = false;
         _error = null;
         _needsSignIn = false;
@@ -423,29 +427,33 @@ class _PlanScreenState extends State<PlanScreen> {
     }
   }
 
-  /// Moves the goal at [oldIndex] of [shown] to [newIndex] (as
+  /// Moves the action at [oldIndex] of [shown] to [newIndex] (as
   /// ReorderableListView.onReorderItem gives it) among its siblings, shows the new
   /// order at once, and saves it.
-  Future<void> _reorder(List<Goal> shown, int oldIndex, int newIndex) async {
-    final goals = _fromServer;
-    if (goals == null) return;
+  Future<void> _reorder(
+    List<PlanAction> shown,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    final actions = _fromServer;
+    if (actions == null) return;
     final moved = shown[oldIndex];
     final order = [...shown]
       ..removeAt(oldIndex)
       ..insert(newIndex, moved);
     final ids = [
-      for (final goal in order)
-        if (goal.parentId == moved.parentId) goal.id!,
+      for (final action in order)
+        if (action.parentId == moved.parentId) action.id!,
     ];
     final before = [
-      for (final goal in shown)
-        if (goal.parentId == moved.parentId) goal.id!,
+      for (final action in shown)
+        if (action.parentId == moved.parentId) action.id!,
     ];
     if (ids.join(',') == before.join(',')) return;
-    setState(() => _fromServer = _withSiblingOrder(goals, ids));
+    setState(() => _fromServer = _withSiblingOrder(actions, ids));
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final saved = await widget.repository.reorderGoals(ids);
+      final saved = await widget.repository.reorderActions(ids);
       if (mounted) setState(() => _fromServer = saved);
     } catch (e) {
       messenger.showSnackBar(
@@ -457,71 +465,75 @@ class _PlanScreenState extends State<PlanScreen> {
     }
   }
 
-  /// Every goal, for the dialogs' goal pickers.
-  Future<List<Goal>> _allGoals() async =>
-      (await widget.repository.goals()).goals;
+  /// Every action, for the dialogs' action pickers.
+  Future<List<PlanAction>> _allActions() async =>
+      (await widget.repository.actions()).actions;
 
-  /// Saves [changes] to [goal] in the background. Returns the goals as
+  /// Saves [changes] to [action] in the background. Returns the actions as
   /// they're shown now, with them.
-  Future<GoalList> _update(Goal goal, Map<String, Object?> changes) async {
-    widget.outbox.update(goal.id!, changes);
-    return _goals!;
+  Future<ActionList> _update(
+    PlanAction action,
+    Map<String, Object?> changes,
+  ) async {
+    widget.outbox.update(action.id!, changes);
+    return _actions!;
   }
 
-  /// Creates a goal from [fields] in the background. Returns the goals as
+  /// Creates an action from [fields] in the background. Returns the actions as
   /// they're shown now, with it.
-  Future<GoalList> _create(Map<String, Object?> fields) async {
+  Future<ActionList> _create(Map<String, Object?> fields) async {
     widget.outbox.create(fields);
-    return _goals!;
+    return _actions!;
   }
 
-  /// Drops the saves that failed for the goal shown as [id].
+  /// Drops the saves that failed for the action shown as [id].
   void _discard(String id) => widget.outbox.discard(id);
 
-  /// The save that failed for the goal shown as [id], if one did.
-  PendingGoalSave? _failed(String? id) =>
-      widget.outbox.saves.where((s) => s.goalId == id && s.failed).lastOrNull;
+  /// The save that failed for the action shown as [id], if one did.
+  PendingActionSave? _failed(String? id) =>
+      widget.outbox.saves.where((s) => s.actionId == id && s.failed).lastOrNull;
 
-  /// Whether the goal shown as [id] is new, and the server hasn't made it
+  /// Whether the action shown as [id] is new, and the server hasn't made it
   /// yet: it can't be opened until then.
   bool _unmade(String? id) =>
-      widget.outbox.saves.any((s) => s.goalId == id && s.isNew) ||
+      widget.outbox.saves.any((s) => s.actionId == id && s.isNew) ||
       // Made by the background task, which didn't say its id.
       widget.outbox.justSaved.any(
-        (s) => s.item.goalId == id && s.item.isNew && s.result == null,
+        (s) => s.item.actionId == id && s.item.isNew && s.result == null,
       );
 
-  /// Shows [goal]'s details to edit; one whose save failed opens with the
+  /// Shows [action]'s details to edit; one whose save failed opens with the
   /// changes that weren't saved, to save again.
-  Future<void> _open(Goal goal) async {
-    final id = goal.id!;
+  Future<void> _open(PlanAction action) async {
+    final id = action.id!;
     switch (_failed(id)) {
-      case PendingGoalSave(isNew: true, :final changes):
-        await showNewGoalDialog(
+      case PendingActionSave(isNew: true, :final changes):
+        await showNewActionDialog(
           context,
           create: (fields) async {
             widget.outbox.update(id, fields, replace: true);
-            return _goals!;
+            return _actions!;
           },
           parentId: changes['parent_id'] as String?,
           fields: changes,
-          goals: _allGoals,
+          actions: _allActions,
         );
       case final failed:
         // As the server has it, with what wasn't saved as changes.
         final saved = failed == null
-            ? goal
-            : _fromServer?.goals.where((g) => g.id == id).firstOrNull ?? goal;
-        await showGoalDialog(
+            ? action
+            : _fromServer?.actions.where((g) => g.id == id).firstOrNull ??
+                  action;
+        await showActionDetailsDialog(
           context,
           saved,
           changes: failed?.changes ?? const {},
           // What wasn't saved is among the changes, as they stand now.
           save: failed == null
               ? _update
-              : (goal, changes) async {
+              : (action, changes) async {
                   widget.outbox.update(id, changes, replace: true);
-                  return _goals!;
+                  return _actions!;
                 },
           confirmSave: (changes) => switch (changes['status']) {
             final String status when status != saved.status => _confirmStatus(
@@ -530,53 +542,54 @@ class _PlanScreenState extends State<PlanScreen> {
             ),
             _ => Future.value(true),
           },
-          goals: _allGoals,
+          actions: _allActions,
         );
     }
   }
 
-  /// Edits [goal]'s priority and color, from which "Details" opens the
+  /// Edits [action]'s priority and color, from which "Details" opens the
   /// rest.
-  Future<void> _edit(Goal goal) => showActionDialog(
+  Future<void> _edit(PlanAction action) => showActionDialog(
     context,
-    goal,
-    goals: _goals?.goals ?? const [],
+    action,
+    actions: _actions?.actions ?? const [],
     save: _update,
     onDetails: _open,
   );
 
-  Map<String?, String> get _goalNames => {
-    for (final goal in _goals?.goals ?? const <Goal>[]) goal.id: goalName(goal),
+  Map<String?, String> get _actionNames => {
+    for (final action in _actions?.actions ?? const <PlanAction>[])
+      action.id: actionName(action),
   };
 
   /// The actions and groups a trait's part can count, by id, each by its
   /// path.
   Map<String, String> get _actionChoices => {
-    for (final goal in _goals?.goals ?? const <Goal>[])
-      if (goal.id != null && goal.status != 'deleted')
-        goal.id!: goal.path ?? goalName(goal),
+    for (final action in _actions?.actions ?? const <PlanAction>[])
+      if (action.id != null && action.status != 'deleted')
+        action.id!: action.path ?? actionName(action),
   };
 
-  /// Approves [goal], one Claude proposed: it becomes active.
-  void _approve(Goal goal) =>
-      widget.outbox.update(goal.id!, {'status': 'active'});
+  /// Approves [action], one Claude proposed: it becomes active.
+  void _approve(PlanAction action) =>
+      widget.outbox.update(action.id!, {'status': 'active'});
 
   Future<void> _add({String? parentId, bool group = false}) async {
     // So the new one can be seen.
     if (parentId != null) setState(() => _expanded.add(parentId));
-    await showNewGoalDialog(
+    await showNewActionDialog(
       context,
       create: _create,
       parentId: parentId,
       group: group,
-      goals: _allGoals,
+      actions: _allActions,
     );
   }
 
-  /// Whether to move [goal] to [status]: freeing its label, or deleting it,
+  /// Whether to move [action] to [status]: freeing its label, or deleting it,
   /// is worth a second look.
-  Future<bool> _confirmStatus(Goal goal, String status) async {
-    final name = goalName(goal);
+  Future<bool> _confirmStatus(PlanAction action, String status) async {
+    final name = actionName(action);
     // Freeing a label, or deleting, is worth a second look.
     final (String, String, String)? check = switch (status) {
       'deleted' => (
@@ -586,12 +599,12 @@ class _PlanScreenState extends State<PlanScreen> {
             'actions.',
         'Delete',
       ),
-      _ when goal.active && !goal.isGroup => (
-        'Move $name to ${goalStatuses[status]?.toLowerCase()}?',
+      _ when action.active && !action.isGroup => (
+        'Move $name to ${actionStatuses[status]?.toLowerCase()}?',
         "It stops taking up one of the calendar's event labels, and its "
             "events lose its color until it's active again. Its history is "
             'kept.',
-        goalStatuses[status] ?? status,
+        actionStatuses[status] ?? status,
       ),
       _ => null,
     };
@@ -639,8 +652,8 @@ class _PlanScreenState extends State<PlanScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final goals = _goals;
-    final ready = goals != null && !_needsSignIn;
+    final actions = _actions;
+    final ready = actions != null && !_needsSignIn;
     final reordering = _reordering && ready;
     final traits = TraitsScope.of(context);
     final people = PeopleScope.of(context);
@@ -673,7 +686,7 @@ class _PlanScreenState extends State<PlanScreen> {
             summary: _summaryView,
             traits: traits,
             onPeople: (_) => setState(() {}),
-            actionNames: _goalNames,
+            actionNames: _actionNames,
             actions: _actionChoices,
             locationNames: _locationNames,
           ),
@@ -747,7 +760,7 @@ class _PlanScreenState extends State<PlanScreen> {
                 widget.outbox.busy,
             child: switch ((_needsSignIn, reordering)) {
               (true, _) => _signInPrompt(),
-              (_, true) => _reorderable(goals!),
+              (_, true) => _reorderable(actions!),
               _ when panes.length == 1 => panes.single.$3,
               _ => TabBarView(children: [for (final pane in panes) pane.$3]),
             },
@@ -785,7 +798,7 @@ class _PlanScreenState extends State<PlanScreen> {
       PopupMenuButton<bool>(
         tooltip: 'Add an action or group',
         icon: const Icon(Icons.add),
-        enabled: _goals != null,
+        enabled: _actions != null,
         onSelected: (group) => _add(group: group),
         itemBuilder: (_) => const [
           PopupMenuItem(value: false, child: Text('New action')),
@@ -798,7 +811,7 @@ class _PlanScreenState extends State<PlanScreen> {
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(bottom: 24),
-        children: _actions(context),
+        children: _actionTiles(context),
       ),
     ),
   );
@@ -808,10 +821,10 @@ class _PlanScreenState extends State<PlanScreen> {
   /// shown), or by priority; null without events, or actions, to show.
   Widget? _actionsSummary() {
     final view = _summaryView;
-    final goals = _goals;
-    if (view == null || goals == null) return null;
-    final tree = _Tree(goals, _shown, _expanded, query: _query);
-    final visible = {for (final goal in tree.shown) goal.id};
+    final actions = _actions;
+    if (view == null || actions == null) return null;
+    final tree = _Tree(actions, _shown, _expanded, query: _query);
+    final visible = {for (final action in tree.shown) action.id};
     return PlanSummary(
       view: view,
       titles: const ['Visible actions', 'By priority'],
@@ -842,9 +855,9 @@ class _PlanScreenState extends State<PlanScreen> {
 
   /// The Actions pane's list: the time spent on them, then the tree, or
   /// why it can't be shown.
-  List<Widget> _actions(BuildContext context) {
-    final goals = _goals;
-    if (_error != null && (goals == null || goals.goals.isEmpty)) {
+  List<Widget> _actionTiles(BuildContext context) {
+    final actions = _actions;
+    if (_error != null && (actions == null || actions.actions.isEmpty)) {
       return [
         StatusMessage(
           icon: Icons.cloud_off,
@@ -852,8 +865,8 @@ class _PlanScreenState extends State<PlanScreen> {
         ),
       ];
     }
-    if (goals == null) return const [LinearProgressIndicator()];
-    final tree = _Tree(goals, _shown, _expanded, query: _query);
+    if (actions == null) return const [LinearProgressIndicator()];
+    final tree = _Tree(actions, _shown, _expanded, query: _query);
     if (tree.all.isEmpty) {
       return const [
         StatusMessage(
@@ -883,7 +896,7 @@ class _PlanScreenState extends State<PlanScreen> {
                   "Each active action takes one of the calendar's event "
                   'labels, as do its own default colors.',
               child: Text(
-                '${goals.labelSlotsUsed} of ${goals.labelSlotsTotal} labels '
+                '${actions.labelSlotsUsed} of ${actions.labelSlotsTotal} labels '
                 'in use',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -898,49 +911,49 @@ class _PlanScreenState extends State<PlanScreen> {
                 icon: Icons.bolt_outlined,
                 text: 'No actions with these statuses.',
               ),
-      for (final (i, goal) in shown.indexed) ...[
+      for (final (i, action) in shown.indexed) ...[
         if (i > 0) tree.divider(i),
-        _GoalTile(
-          goal: goal,
+        _ActionTile(
+          action: action,
           ancestors: tree.ancestors[i],
           joined: tree.sharedAbove(i),
           time: switch (time) {
             (final day, final week) => (
-              day[goal.id] ?? Duration.zero,
-              week[goal.id] ?? Duration.zero,
+              day[action.id] ?? Duration.zero,
+              week[action.id] ?? Duration.zero,
             ),
             null => null,
           },
           timeLabels: _summaryView?.window.labels,
           durations: _durations,
-          subGoals: tree.subGoals[goal.id] ?? 0,
+          subActions: tree.subActions[action.id] ?? 0,
           // A search shows what's in the groups it finds.
-          expanded: searching || _expanded.contains(goal.id),
+          expanded: searching || _expanded.contains(action.id),
           onToggle: searching
               ? null
               : () => setState(() {
-                  if (!_expanded.remove(goal.id)) _expanded.add(goal.id!);
+                  if (!_expanded.remove(action.id)) _expanded.add(action.id!);
                 }),
           // One the server hasn't made yet has nothing to open, and
           // nothing is reordered under changes still being saved, or
           // around one that couldn't be made.
-          saving: _unmade(goal.id) && _failed(goal.id) == null,
-          failed: switch (_failed(goal.id)) {
+          saving: _unmade(action.id) && _failed(action.id) == null,
+          failed: switch (_failed(action.id)) {
             null => null,
             final save when save.refused => save.lastError,
             final save => '${save.lastError}. Trying again soon',
           },
-          onTap: _failed(goal.id) != null
-              ? () => _open(goal)
-              : (goal.isGroup || (tree.subGoals[goal.id] ?? 0) > 0) &&
+          onTap: _failed(action.id) != null
+              ? () => _open(action)
+              : (action.isGroup || (tree.subActions[action.id] ?? 0) > 0) &&
                     !searching
               ? () => setState(() {
-                  if (!_expanded.remove(goal.id)) _expanded.add(goal.id!);
+                  if (!_expanded.remove(action.id)) _expanded.add(action.id!);
                 })
-              : () => _edit(goal),
-          onEdit: () => _edit(goal),
-          onRetry: () => widget.outbox.retry(goal.id!),
-          onDiscard: () => _discard(goal.id!),
+              : () => _edit(action),
+          onEdit: () => _edit(action),
+          onRetry: () => widget.outbox.retry(action.id!),
+          onDiscard: () => _discard(action.id!),
           onLongPress:
               !widget.repository.reorderable ||
                   searching ||
@@ -948,17 +961,17 @@ class _PlanScreenState extends State<PlanScreen> {
                   widget.outbox.saves.any((s) => s.isNew)
               ? null
               : () => setState(() => _reordering = true),
-          onAddAction: () => _add(parentId: goal.id),
-          onAddGroup: () => _add(parentId: goal.id, group: true),
-          onApprove: goal.proposed ? () => _approve(goal) : null,
+          onAddAction: () => _add(parentId: action.id),
+          onAddGroup: () => _add(parentId: action.id, group: true),
+          onApprove: action.proposed ? () => _approve(action) : null,
         ),
       ],
     ];
   }
 
   /// The actions shown, to drag into a new order among their siblings.
-  Widget _reorderable(GoalList goals) {
-    final tree = _Tree(goals, _shown, _expanded);
+  Widget _reorderable(ActionList actions) {
+    final tree = _Tree(actions, _shown, _expanded);
     final shown = tree.shown;
     return ReorderableListView.builder(
       buildDefaultDragHandles: false,
@@ -978,11 +991,11 @@ class _PlanScreenState extends State<PlanScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (i > 0) tree.divider(i),
-          _GoalTile(
-            goal: shown[i],
+          _ActionTile(
+            action: shown[i],
             ancestors: tree.ancestors[i],
             joined: tree.sharedAbove(i),
-            subGoals: tree.subGoals[shown[i].id] ?? 0,
+            subActions: tree.subActions[shown[i].id] ?? 0,
             expanded: _expanded.contains(shown[i].id),
             dragIndex: i,
             onToggle: () => setState(() {
@@ -1003,25 +1016,25 @@ class _PlanScreenState extends State<PlanScreen> {
 /// it carries.
 class _Tree {
   _Tree(
-    GoalList goals,
+    ActionList actions,
     Set<String> statuses,
     Set<String> expanded, {
     String query = '',
   }) {
-    all = goals.goals;
-    byId = {for (final goal in all) goal.id: goal};
+    all = actions.actions;
+    byId = {for (final action in all) action.id: action};
     final withStatus = [
-      for (final goal in all)
-        if (statuses.contains(goal.status)) goal,
+      for (final action in all)
+        if (statuses.contains(action.status)) action,
     ];
-    for (final goal in withStatus) {
-      subGoals.update(goal.parentId, (n) => n + 1, ifAbsent: () => 1);
+    for (final action in withStatus) {
+      subActions.update(action.parentId, (n) => n + 1, ifAbsent: () => 1);
     }
     // One is hidden under any collapsed ancestor that's shown. One whose
     // parent's status is filtered out still shows, where it always has.
-    bool underCollapsed(Goal goal) {
+    bool underCollapsed(PlanAction action) {
       for (
-        var parent = byId[goal.parentId];
+        var parent = byId[action.parentId];
         parent != null;
         parent = byId[parent.parentId]
       ) {
@@ -1034,39 +1047,39 @@ class _Tree {
 
     if (query.trim().isEmpty) {
       shown = [
-        for (final goal in withStatus)
-          if (!underCollapsed(goal)) goal,
+        for (final action in withStatus)
+          if (!underCollapsed(action)) action,
       ];
     } else {
       // What matches, and every group above it.
       final found = <String?>{};
-      for (final goal in withStatus) {
+      for (final action in withStatus) {
         final texts = [
-          goal.name,
-          goal.path,
-          goal.properties['note'] as String?,
+          action.name,
+          action.path,
+          action.properties['note'] as String?,
         ];
         if (!matchesSearch(query, texts)) continue;
-        found.add(goal.id);
+        found.add(action.id);
         for (
-          var parent = byId[goal.parentId];
+          var parent = byId[action.parentId];
           parent != null && found.add(parent.id);
           parent = byId[parent.parentId]
         ) {}
       }
       shown = [
-        for (final goal in withStatus)
-          if (found.contains(goal.id)) goal,
+        for (final action in withStatus)
+          if (found.contains(action.id)) action,
       ];
-      subGoals.clear();
-      for (final goal in shown) {
-        subGoals.update(goal.parentId, (n) => n + 1, ifAbsent: () => 1);
+      subActions.clear();
+      for (final action in shown) {
+        subActions.update(action.parentId, (n) => n + 1, ifAbsent: () => 1);
       }
     }
-    List<Goal> ancestorsOf(Goal goal) {
-      final chain = <Goal>[];
+    List<PlanAction> ancestorsOf(PlanAction action) {
+      final chain = <PlanAction>[];
       for (
-        var parent = byId[goal.parentId];
+        var parent = byId[action.parentId];
         parent != null && !chain.contains(parent);
         parent = byId[parent.parentId]
       ) {
@@ -1075,16 +1088,16 @@ class _Tree {
       return chain;
     }
 
-    ancestors = [for (final goal in shown) ancestorsOf(goal)];
+    ancestors = [for (final action in shown) ancestorsOf(action)];
   }
 
-  late final List<Goal> all;
-  late final Map<String?, Goal> byId;
+  late final List<PlanAction> all;
+  late final Map<String?, PlanAction> byId;
 
   /// How many of each one's children are shown, or could be.
-  final subGoals = <String?, int>{};
-  late final List<Goal> shown;
-  late final List<List<Goal>> ancestors;
+  final subActions = <String?, int>{};
+  late final List<PlanAction> shown;
+  late final List<List<PlanAction>> ancestors;
 
   /// How many of the [i]th one's bands it shares with the one above it,
   /// which run unbroken over the divider between them.
@@ -1101,12 +1114,12 @@ class _Tree {
   }
 
   Widget divider(int i) =>
-      Divider(height: 1, indent: sharedAbove(i) * goalBandWidth);
+      Divider(height: 1, indent: sharedAbove(i) * actionBandWidth);
 }
 
 /// The Actions pane's filter: a drop-down of every status, each with a check
 /// box, which stays open while they're ticked. A dot on its icon says
-/// it's showing something other than [defaultGoalStatuses].
+/// it's showing something other than [defaultActionStatuses].
 class _StatusFilter extends StatelessWidget {
   const _StatusFilter({required this.shown, required this.onChanged});
 
@@ -1116,11 +1129,12 @@ class _StatusFilter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final changed =
-        shown.length != defaultGoalStatuses.length ||
-        !shown.containsAll(defaultGoalStatuses);
+        shown.length != defaultActionStatuses.length ||
+        !shown.containsAll(defaultActionStatuses);
     return MenuAnchor(
       menuChildren: [
-        for (final MapEntry(key: status, value: label) in goalStatuses.entries)
+        for (final MapEntry(key: status, value: label)
+            in actionStatuses.entries)
           CheckboxMenuButton(
             value: shown.contains(status),
             closeOnActivate: false,
@@ -1142,32 +1156,33 @@ class _StatusFilter extends StatelessWidget {
 }
 
 /// Where whether time is shown as durations is kept.
+// Named from when actions were goals: kept, so the choices stay.
 const _durationsKey = 'goal_time_durations';
 
 /// Where whether the time summary is folded away is kept.
 const _timeSummaryCollapsedKey = 'goal_time_summary_collapsed';
 
-/// How wide each goal's band is, down the left of the Goals page: also
-/// how far each level of sub-goals is indented, its band beside its
+/// How wide each action's band is, down the left of the Actions page: also
+/// how far each level of sub-actions is indented, its band beside its
 /// parent's.
-const goalBandWidth = 6.0;
+const actionBandWidth = 6.0;
 
 /// How long each dash of a dashed band is, and each gap between.
 const _dash = 5.0;
 
-/// How far a goal's band juts out to say it has sub-goals: as an arrow,
-/// collapsed. (Expanded, it widens down over its sub-goals' bands.)
+/// How far an action's band juts out to say it has sub-actions: as an arrow,
+/// collapsed. (Expanded, it widens down over its sub-actions' bands.)
 const _bandTip = 8.0;
 
-class _GoalTile extends StatelessWidget {
-  const _GoalTile({
-    required this.goal,
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
+    required this.action,
     this.ancestors = const [],
     this.joined = 0,
     this.time,
     this.timeLabels,
     this.durations = true,
-    required this.subGoals,
+    required this.subActions,
     required this.expanded,
     required this.onToggle,
     required this.onTap,
@@ -1183,7 +1198,7 @@ class _GoalTile extends StatelessWidget {
     this.onDiscard,
   });
 
-  final Goal goal;
+  final PlanAction action;
 
   /// Whether it's still being added: it shows that it's saving instead
   /// of its menu, and can't be tapped.
@@ -1197,7 +1212,7 @@ class _GoalTile extends StatelessWidget {
   final VoidCallback? onDiscard;
 
   /// Its ancestors, from the top: their bands run down beside its own.
-  final List<Goal> ancestors;
+  final List<PlanAction> ancestors;
 
   /// How many of [ancestors]' bands it shares with the row above, which
   /// run on up over the divider between them.
@@ -1214,10 +1229,10 @@ class _GoalTile extends StatelessWidget {
   /// Whether its time is in durations, rather than percentages.
   final bool durations;
 
-  /// How many sub-goals it has (of those shown); none, and it has no arrow.
-  final int subGoals;
+  /// How many sub-actions it has (of those shown); none, and it has no arrow.
+  final int subActions;
 
-  /// Whether its sub-goals are shown.
+  /// Whether its sub-actions are shown.
   final bool expanded;
 
   /// Shows or hides what's in it, for a group. Null while a search shows
@@ -1246,13 +1261,13 @@ class _GoalTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final faded = goal.active ? null : TextStyle(color: theme.hintColor);
+    final faded = action.active ? null : TextStyle(color: theme.hintColor);
     final details = [
-      if (goal.proposed)
+      if (action.proposed)
         'Proposed by Claude: review it'
-      else if (!goal.active)
-        goalStatuses[goal.status] ?? goal.status,
-      if (goal.isGroup && subGoals == 0) 'Empty group',
+      else if (!action.active)
+        actionStatuses[action.status] ?? action.status,
+      if (action.isGroup && subActions == 0) 'Empty group',
     ].nonNulls.join(' · ');
     final shown = switch (time) {
       (final day, final week) => describeTime(
@@ -1265,10 +1280,10 @@ class _GoalTile extends StatelessWidget {
       null => null,
     };
     // Its own priority, filled; else the one it inherits, outlined. Only
-    // an active goal's events take one.
-    final priority = goal.active ? goal.effectivePriority : null;
+    // an active action's events take one.
+    final priority = action.active ? action.effectivePriority : null;
     final bands = [
-      for (final goal in [...ancestors, goal]) _bandOf(context, goal),
+      for (final action in [...ancestors, action]) _bandOf(context, action),
     ];
     final listTile = ListTile(
       contentPadding: const EdgeInsetsDirectional.only(start: 8, end: 4),
@@ -1276,7 +1291,7 @@ class _GoalTile extends StatelessWidget {
       // event's summary.
       title: Text.rich(
         TextSpan(
-          text: goalName(goal),
+          text: actionName(action),
           children: [
             if (priority != null) ...[
               const TextSpan(text: ' '),
@@ -1284,7 +1299,7 @@ class _GoalTile extends StatelessWidget {
                 alignment: PlaceholderAlignment.middle,
                 child: PriorityChip(
                   priority: priority,
-                  own: goal.priority != null,
+                  own: action.priority != null,
                 ),
               ),
             ],
@@ -1335,7 +1350,7 @@ class _GoalTile extends StatelessWidget {
             ReorderableDragStartListener(
               index: index,
               child: Tooltip(
-                message: 'Drag to move ${goalName(goal)}',
+                message: 'Drag to move ${actionName(action)}',
                 child: const Padding(
                   padding: EdgeInsets.all(12),
                   child: Icon(Icons.drag_handle),
@@ -1344,7 +1359,7 @@ class _GoalTile extends StatelessWidget {
             )
           else
             PopupMenuButton<String>(
-              tooltip: 'More for ${goalName(goal)}',
+              tooltip: 'More for ${actionName(action)}',
               onSelected: (choice) => switch (choice) {
                 'approve' => onApprove?.call(),
                 'action' => onAddAction?.call(),
@@ -1354,7 +1369,7 @@ class _GoalTile extends StatelessWidget {
               itemBuilder: (context) => [
                 if (onApprove != null)
                   const PopupMenuItem(value: 'approve', child: Text('Approve')),
-                if (goal.isGroup) ...[
+                if (action.isGroup) ...[
                   if (onAddAction != null)
                     const PopupMenuItem(
                       value: 'action',
@@ -1372,8 +1387,8 @@ class _GoalTile extends StatelessWidget {
         ],
       ),
     );
-    final parent = subGoals > 0;
-    final bandsWidth = goalBandWidth * bands.length + _bandTip;
+    final parent = subActions > 0;
+    final bandsWidth = actionBandWidth * bands.length + _bandTip;
     final tile = InkWell(
       onTap: saving ? null : onTap,
       onLongPress: saving ? null : onLongPress,
@@ -1396,14 +1411,14 @@ class _GoalTile extends StatelessWidget {
                   ? '${expanded ? 'Expanded' : 'Collapsed'}: swipe right to '
                         '${expanded ? 'collapse' : 'expand'}'
                   : null,
-              child: GoalBands(
+              child: ActionBands(
                 bands: bands,
                 joined: joined,
                 shape: !parent
-                    ? GoalBandShape.plain
+                    ? ActionBandShape.plain
                     : expanded
-                    ? GoalBandShape.expanded
-                    : GoalBandShape.collapsed,
+                    ? ActionBandShape.expanded
+                    : ActionBandShape.collapsed,
               ),
             ),
           ),
@@ -1413,78 +1428,83 @@ class _GoalTile extends StatelessWidget {
     return tile;
   }
 
-  /// [goal]'s band: its own color, solid, or the one it inherits, dashed.
-  /// Only an active goal's is in color.
-  static GoalBand _bandOf(BuildContext context, Goal goal) {
-    final own = parseColor(goal.backgroundColor);
-    final color = goal.active ? own ?? parseColor(goal.effectiveColor) : null;
-    return GoalBand(
+  /// [action]'s band: its own color, solid, or the one it inherits, dashed.
+  /// Only an active action's is in color.
+  static ActionBand _bandOf(BuildContext context, PlanAction action) {
+    final own = parseColor(action.backgroundColor);
+    final color = action.active
+        ? own ?? parseColor(action.effectiveColor)
+        : null;
+    return ActionBand(
       color: color ?? Theme.of(context).colorScheme.outlineVariant,
-      dashed: own == null || !goal.active,
+      dashed: own == null || !action.active,
     );
   }
 }
 
-/// One goal's band: its color, and whether it's dashed, for one inherited.
-class GoalBand {
-  const GoalBand({required this.color, required this.dashed});
+/// One action's band: its color, and whether it's dashed, for one inherited.
+class ActionBand {
+  const ActionBand({required this.color, required this.dashed});
 
   final Color color;
   final bool dashed;
 
   @override
   bool operator ==(Object other) =>
-      other is GoalBand && other.color == color && other.dashed == dashed;
+      other is ActionBand && other.color == color && other.dashed == dashed;
 
   @override
   int get hashCode => Object.hash(color, dashed);
 }
 
-/// How a goal's own band ends: plainly, with no sub-goals; as an arrow
-/// pointing right, its sub-goals hidden; or slanting down to them, shown.
-enum GoalBandShape { plain, collapsed, expanded }
+/// How an action's own band ends: plainly, with no sub-actions; as an arrow
+/// pointing right, its sub-actions hidden; or slanting down to them, shown.
+enum ActionBandShape { plain, collapsed, expanded }
 
-/// A goal's [bands] side by side down the left of its row: its
+/// An action's [bands] side by side down the left of its row: its
 /// ancestors', then its own, shaped as [shape] says. The first [joined]
 /// run on up over the divider above, which they share with the row there.
 ///
 /// Dashes are laid out from the top of the list, not of the row, so a
 /// dashed band runs evenly down every row it's in.
-class GoalBands extends LeafRenderObjectWidget {
-  const GoalBands({
+class ActionBands extends LeafRenderObjectWidget {
+  const ActionBands({
     super.key,
     required this.bands,
     required this.shape,
     required this.joined,
   });
 
-  final List<GoalBand> bands;
-  final GoalBandShape shape;
+  final List<ActionBand> bands;
+  final ActionBandShape shape;
   final int joined;
 
   @override
-  RenderGoalBands createRenderObject(BuildContext context) => RenderGoalBands(
-    bands: bands,
-    shape: shape,
-    joined: joined,
-    scroll: Scrollable.maybeOf(context)?.position,
-  );
+  RenderActionBands createRenderObject(BuildContext context) =>
+      RenderActionBands(
+        bands: bands,
+        shape: shape,
+        joined: joined,
+        scroll: Scrollable.maybeOf(context)?.position,
+      );
 
   @override
-  void updateRenderObject(BuildContext context, RenderGoalBands renderObject) =>
-      renderObject
-        ..bands = bands
-        ..shape = shape
-        ..joined = joined
-        ..scroll = Scrollable.maybeOf(context)?.position
-        // Rows above may have grown or shrunk, moving this one without
-        // repainting it, which would leave its dashes out of step.
-        ..markNeedsPaint();
+  void updateRenderObject(
+    BuildContext context,
+    RenderActionBands renderObject,
+  ) => renderObject
+    ..bands = bands
+    ..shape = shape
+    ..joined = joined
+    ..scroll = Scrollable.maybeOf(context)?.position
+    // Rows above may have grown or shrunk, moving this one without
+    // repainting it, which would leave its dashes out of step.
+    ..markNeedsPaint();
 }
 
-/// Lays out and paints [GoalBands].
-class RenderGoalBands extends RenderBox {
-  RenderGoalBands({
+/// Lays out and paints [ActionBands].
+class RenderActionBands extends RenderBox {
+  RenderActionBands({
     required this._bands,
     required this._shape,
     required this._joined,
@@ -1494,15 +1514,15 @@ class RenderGoalBands extends RenderBox {
   /// The list's scrolling, to find where in the list the row is.
   ScrollPosition? scroll;
 
-  List<GoalBand> _bands;
-  set bands(List<GoalBand> value) {
+  List<ActionBand> _bands;
+  set bands(List<ActionBand> value) {
     if (listEquals(value, _bands)) return;
     _bands = value;
     markNeedsPaint();
   }
 
-  GoalBandShape _shape;
-  set shape(GoalBandShape value) {
+  ActionBandShape _shape;
+  set shape(ActionBandShape value) {
     if (value == _shape) return;
     _shape = value;
     markNeedsPaint();
@@ -1556,21 +1576,21 @@ class RenderGoalBands extends RenderBox {
     }
 
     for (final (i, band) in _bands.indexed) {
-      final x0 = goalBandWidth * i;
-      final x1 = x0 + goalBandWidth;
+      final x0 = actionBandWidth * i;
+      final x1 = x0 + actionBandWidth;
       // Over the divider above, if it's shared with the row there.
       final y0 = i < _joined ? -1.0 : 0.0;
       final paint = Paint()..color = band.color;
-      final shape = i == _bands.length - 1 ? _shape : GoalBandShape.plain;
+      final shape = i == _bands.length - 1 ? _shape : ActionBandShape.plain;
       if (band.dashed) {
         dashes(paint, i, x0, x1, y0);
       } else {
         canvas.drawRect(Rect.fromLTRB(x0, y0, x1, h), paint);
       }
       switch (shape) {
-        case GoalBandShape.plain:
+        case ActionBandShape.plain:
           break;
-        case GoalBandShape.collapsed:
+        case ActionBandShape.collapsed:
           // An arrow pointing right, as tall as the row, always solid:
           // dashed, it'd be too faint to see.
           final mid = h / 2;
@@ -1582,12 +1602,12 @@ class RenderGoalBands extends RenderBox {
               ..close(),
             paint,
           );
-        case GoalBandShape.expanded:
-          // Widening down over where its sub-goals' bands start, dashed as
+        case ActionBandShape.expanded:
+          // Widening down over where its sub-actions' bands start, dashed as
           // the next band's would be.
           final slant = Path()
             ..moveTo(x1, 0)
-            ..lineTo(x1 + goalBandWidth, h)
+            ..lineTo(x1 + actionBandWidth, h)
             ..lineTo(x1, h)
             ..close();
           if (!band.dashed) {
@@ -1595,7 +1615,7 @@ class RenderGoalBands extends RenderBox {
           } else {
             canvas.save();
             canvas.clipPath(slant);
-            dashes(paint, i + 1, x1, x1 + goalBandWidth, 0);
+            dashes(paint, i + 1, x1, x1 + actionBandWidth, 0);
             canvas.restore();
           }
       }
@@ -1604,133 +1624,138 @@ class RenderGoalBands extends RenderBox {
   }
 }
 
-/// [goals] with [saved], saves the server has answered, made to them, as
-/// far as they don't have them yet: each new goal added, with the id the
-/// server gave it if that's known, and each goal's changes made.
-GoalList _withSaved(
-  GoalList goals,
-  List<({PendingGoalSave item, String? result})> saved,
+/// [actions] with [saved], saves the server has answered, made to them, as
+/// far as they don't have them yet: each new action added, with the id the
+/// server gave it if that's known, and each action's changes made.
+ActionList _withSaved(
+  ActionList actions,
+  List<({PendingActionSave item, String? result})> saved,
 ) {
-  var shown = goals;
+  var shown = actions;
   for (final (:item, :result) in saved) {
     if (!item.isNew) {
-      shown = _withChanged(shown, item.goalId, item.changes);
+      shown = _withChanged(shown, item.actionId, item.changes);
     } else if (item.madeIn(shown) == null &&
-        !shown.goals.any((g) => result != null && g.id == result)) {
+        !shown.actions.any((g) => result != null && g.id == result)) {
       shown = _inTree(shown, [
-        ...shown.goals,
-        Goal.fromJson({...item.goal.toJson(), 'id': result ?? item.goalId}),
+        ...shown.actions,
+        PlanAction.fromJson({
+          ...item.action.toJson(),
+          'id': result ?? item.actionId,
+        }),
       ]);
     }
   }
   return shown;
 }
 
-/// [goals] with [saves] made to them, oldest first: each new goal added,
-/// and each goal's changes made.
-GoalList _withSaves(GoalList goals, List<PendingGoalSave> saves) {
-  if (saves.isEmpty) return goals;
-  var shown = goals;
+/// [actions] with [saves] made to them, oldest first: each new action added,
+/// and each action's changes made.
+ActionList _withSaves(ActionList actions, List<PendingActionSave> saves) {
+  if (saves.isEmpty) return actions;
+  var shown = actions;
   for (final save in saves) {
     shown = save.isNew
-        ? _inTree(shown, [...shown.goals, save.goal])
-        : _withChanged(shown, save.goalId, save.changes);
+        ? _inTree(shown, [...shown.actions, save.action])
+        : _withChanged(shown, save.actionId, save.changes);
   }
   return shown;
 }
 
-/// [goals] with [changes], keyed as `update_goal` takes them, made to the
-/// goal with [id]: moved, if it's given another parent, and renamed in
-/// its sub-goals' paths.
-GoalList _withChanged(
-  GoalList goals,
+/// [actions] with [changes], keyed as `update_action` takes them, made to the
+/// action with [id]: moved, if it's given another parent, and renamed in
+/// its sub-actions' paths.
+ActionList _withChanged(
+  ActionList actions,
   String? id,
   Map<String, Object?> changes,
-) => _inTree(goals, [
-  for (final goal in goals.goals)
-    goal.id == id ? Goal.fromJson({...goal.toJson(), ...changes}) : goal,
+) => _inTree(actions, [
+  for (final action in actions.actions)
+    action.id == id
+        ? PlanAction.fromJson({...action.toJson(), ...changes})
+        : action,
 ]);
 
-/// [goals] in place of [list]'s, parents first, each goal's sub-goals
+/// [actions] in place of [list]'s, parents first, each action's sub-actions
 /// after it in the order given, and each path made again from its
 /// ancestors' names, and the priority each inherits from them.
-GoalList _inTree(GoalList list, List<Goal> goals) {
-  final ids = {for (final goal in goals) goal.id};
-  final children = <String?, List<Goal>>{};
-  for (final goal in goals) {
-    final parent = ids.contains(goal.parentId) ? goal.parentId : null;
-    children.putIfAbsent(parent, () => []).add(goal);
+ActionList _inTree(ActionList list, List<PlanAction> actions) {
+  final ids = {for (final action in actions) action.id};
+  final children = <String?, List<PlanAction>>{};
+  for (final action in actions) {
+    final parent = ids.contains(action.parentId) ? action.parentId : null;
+    children.putIfAbsent(parent, () => []).add(action);
   }
-  final ordered = <Goal>[];
-  void visit(Goal goal, Goal? parent, String? parentPath) {
-    final path = switch ((parentPath, goal.parentId)) {
-      (final parent?, _) => '$parent › ${goalName(goal)}',
-      (null, null) => goalName(goal),
-      // Under a goal that isn't listed: only its own name can be redone.
-      _ => switch (goal.path?.lastIndexOf(' › ')) {
+  final ordered = <PlanAction>[];
+  void visit(PlanAction action, PlanAction? parent, String? parentPath) {
+    final path = switch ((parentPath, action.parentId)) {
+      (final parent?, _) => '$parent › ${actionName(action)}',
+      (null, null) => actionName(action),
+      // Under an action that isn't listed: only its own name can be redone.
+      _ => switch (action.path?.lastIndexOf(' › ')) {
         final end? when end >= 0 =>
-          '${goal.path!.substring(0, end)} › ${goalName(goal)}',
-        _ => goalName(goal),
+          '${action.path!.substring(0, end)} › ${actionName(action)}',
+        _ => actionName(action),
       },
     };
-    // Under a goal that isn't listed, what it inherits is as it was.
+    // Under an action that isn't listed, what it inherits is as it was.
     final priority =
-        goal.priority ??
+        action.priority ??
         (parent != null
             ? parent.effectivePriority
-            : goal.parentId == null
+            : action.parentId == null
             ? null
-            : goal.effectivePriority);
-    final shown = path == goal.path && priority == goal.effectivePriority
-        ? goal
-        : Goal.fromJson({
-            ...goal.toJson(),
+            : action.effectivePriority);
+    final shown = path == action.path && priority == action.effectivePriority
+        ? action
+        : PlanAction.fromJson({
+            ...action.toJson(),
             'path': path,
             'effective_priority': priority,
           });
     ordered.add(shown);
-    for (final child in children[goal.id] ?? const <Goal>[]) {
+    for (final child in children[action.id] ?? const <PlanAction>[]) {
       visit(child, shown, path);
     }
   }
 
-  children[null]?.forEach((goal) => visit(goal, null, null));
-  return GoalList(
-    goals: ordered,
+  children[null]?.forEach((action) => visit(action, null, null));
+  return ActionList(
+    actions: ordered,
     labelSlotsUsed: list.labelSlotsUsed,
     labelSlotsTotal: list.labelSlotsTotal,
   );
 }
 
-/// [goals] with the siblings [ids] (sharing a parent) put in that order
+/// [actions] with the siblings [ids] (sharing a parent) put in that order
 /// among the places they hold, and the list rebuilt parents first, each
-/// goal's sub-goals after it, as the server lists them.
-GoalList _withSiblingOrder(GoalList goals, List<String> ids) {
-  final byId = {for (final goal in goals.goals) goal.id: goal};
-  final children = <String?, List<Goal>>{};
-  for (final goal in goals.goals) {
-    final parent = byId.containsKey(goal.parentId) ? goal.parentId : null;
-    children.putIfAbsent(parent, () => []).add(goal);
+/// action's sub-actions after it, as the server lists them.
+ActionList _withSiblingOrder(ActionList actions, List<String> ids) {
+  final byId = {for (final action in actions.actions) action.id: action};
+  final children = <String?, List<PlanAction>>{};
+  for (final action in actions.actions) {
+    final parent = byId.containsKey(action.parentId) ? action.parentId : null;
+    children.putIfAbsent(parent, () => []).add(action);
   }
   final siblings = children[byId[ids.first]?.parentId] ?? [];
   final places = [
-    for (final (i, goal) in siblings.indexed)
-      if (ids.contains(goal.id)) i,
+    for (final (i, action) in siblings.indexed)
+      if (ids.contains(action.id)) i,
   ];
   for (var i = 0; i < places.length && i < ids.length; i++) {
     siblings[places[i]] = byId[ids[i]]!;
   }
-  final ordered = <Goal>[];
-  void visit(Goal goal) {
-    ordered.add(goal);
-    children[goal.id]?.forEach(visit);
+  final ordered = <PlanAction>[];
+  void visit(PlanAction action) {
+    ordered.add(action);
+    children[action.id]?.forEach(visit);
   }
 
   children[null]?.forEach(visit);
-  return GoalList(
-    goals: ordered,
-    labelSlotsUsed: goals.labelSlotsUsed,
-    labelSlotsTotal: goals.labelSlotsTotal,
+  return ActionList(
+    actions: ordered,
+    labelSlotsUsed: actions.labelSlotsUsed,
+    labelSlotsTotal: actions.labelSlotsTotal,
   );
 }
 

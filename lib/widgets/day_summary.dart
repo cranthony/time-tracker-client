@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 import '../models/time_split.dart';
 import 'color_picker.dart';
 import 'time_summary.dart';
@@ -39,29 +39,29 @@ List<SummarySlice> priorityShares(List<Event> events, DateTime day) {
   ];
 }
 
-/// [day]'s time by goal: the [top] goals with the most, then the rest
-/// together, then events with no goals, then the time with nothing
-/// scheduled. With [topLevel], a goal's time counts toward the top-level
-/// goal it's under, once per event however many of its goals are.
-List<SummarySlice> goalShares(
+/// [day]'s time by action: the [top] actions with the most, then the rest
+/// together, then events with no actions, then the time with nothing
+/// scheduled. With [topLevel], an action's time counts toward the top-level
+/// action it's under, once per event however many of its actions are.
+List<SummarySlice> actionShares(
   List<Event> events,
   DateTime day,
-  Map<String, Goal> goals, {
+  Map<String, PlanAction> actions, {
   bool topLevel = false,
   int top = 3,
 }) {
   final names = <String, String?>{
     for (final event in events)
-      for (final (i, id) in event.goalIds.indexed)
-        id: i < event.goalNames.length ? event.goalNames[i] : null,
+      for (final (i, id) in event.actionIds.indexed)
+        id: i < event.actionNames.length ? event.actionNames[i] : null,
   };
   String topLevelOf(String id) {
     final seen = {id};
     var at = id;
     for (
-      var parent = goals[at]?.parentId;
-      parent != null && goals.containsKey(parent) && seen.add(parent);
-      parent = goals[at]?.parentId
+      var parent = actions[at]?.parentId;
+      parent != null && actions.containsKey(parent) && seen.add(parent);
+      parent = actions[at]?.parentId
     ) {
       at = parent;
     }
@@ -72,29 +72,29 @@ List<SummarySlice> goalShares(
   final time = _timeBy(
     events,
     day,
-    (event) => event.goalIds.map(topLevel ? topLevelOf : (id) => id),
+    (event) => event.actionIds.map(topLevel ? topLevelOf : (id) => id),
     none,
   );
   final unscheduled = time.remove(null);
-  final noGoal = time.remove(none);
+  final noAction = time.remove(none);
   return [
     ...topShares(
       {for (final MapEntry(:key, :value) in time.entries) ?key: value},
       (id, time) => SummarySlice(
-        goals[id]?.name ?? names[id] ?? id,
-        parseColor(goals[id]?.effectiveColor) ??
-            priorityColor(goals[id]?.effectivePriority),
+        actions[id]?.name ?? names[id] ?? id,
+        parseColor(actions[id]?.effectiveColor) ??
+            priorityColor(actions[id]?.effectivePriority),
         time,
       ),
       top: top,
     ),
-    if (noGoal != null) SummarySlice('No action', noGoalColor, noGoal),
+    if (noAction != null) SummarySlice('No action', noActionColor, noAction),
     if (unscheduled != null) SummarySlice('Unscheduled', null, unscheduled),
   ];
 }
 
 /// A day's time at a glance, above its timeline: its share for each
-/// priority, for the top goals, and for the top-level goals they're
+/// priority, for the top actions, and for the top-level actions they're
 /// under, and the time with nothing scheduled. Swiping it, or tapping a
 /// title, turns between them, its chevron folds it away, and the button
 /// by that turns its percentages into durations and back.
@@ -103,7 +103,7 @@ class DaySummary extends StatelessWidget {
     super.key,
     required this.events,
     required this.day,
-    required this.goals,
+    required this.actions,
     this.initialPage = 0,
     this.collapsed = false,
     this.onCollapsed,
@@ -113,7 +113,7 @@ class DaySummary extends StatelessWidget {
 
   final List<Event> events;
   final DateTime day;
-  final Map<String, Goal> goals;
+  final Map<String, PlanAction> actions;
   final int initialPage;
 
   /// Whether it's folded away, by its chevron; with no [onCollapsed],
@@ -137,8 +137,8 @@ class DaySummary extends StatelessWidget {
     pages: [
       for (final slices in [
         priorityShares(events, day),
-        goalShares(events, day, goals),
-        goalShares(events, day, goals, topLevel: true),
+        actionShares(events, day, actions),
+        actionShares(events, day, actions, topLevel: true),
       ])
         SummaryBar.single(slices: slices),
     ],

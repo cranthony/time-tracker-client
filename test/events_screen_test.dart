@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:time_tracker_client/outbox/goal_outbox.dart';
+import 'package:time_tracker_client/outbox/action_outbox.dart';
 import 'package:time_tracker_client/models/event.dart';
-import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/recurrence.dart';
 import 'package:time_tracker_client/models/repeat.dart';
@@ -14,7 +14,7 @@ import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/home_screen.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
-import 'package:time_tracker_client/services/goals_repository.dart';
+import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
@@ -30,12 +30,12 @@ void main() {
   Widget app(
     EventsRepository repo, {
     Future<void> Function()? onSignIn,
-    GoalsRepository? goals,
+    ActionsRepository? actions,
   }) => MaterialApp(
     home: EventsScreen(
       repository: repo,
       serverLabel: 'offline demo',
-      goalsRepository: goals,
+      actionsRepository: actions,
       onSignIn: onSignIn,
       clock: () => now,
     ),
@@ -444,10 +444,10 @@ void main() {
       await tester.pumpWidget(
         app(
           repo,
-          goals: InMemoryGoalsRepository([
-            const Goal(id: 'g1', name: 'Deep focus', priority: 1),
-            const Goal(id: 'g2', name: 'Exercise', priority: 2),
-            const Goal(id: 'g3', name: 'Old', status: 'inactive'),
+          actions: InMemoryActionsRepository([
+            const PlanAction(id: 'g1', name: 'Deep focus', priority: 1),
+            const PlanAction(id: 'g2', name: 'Exercise', priority: 2),
+            const PlanAction(id: 'g3', name: 'Old', status: 'inactive'),
           ]),
         ),
       );
@@ -577,14 +577,14 @@ void main() {
       );
     });
 
-    testWidgets('picks goals by name, the first kept as primary', (
+    testWidgets('picks actions by name, the first kept as primary', (
       tester,
     ) async {
       final repo = _RecordingRepository([work()]);
       await openWork(tester, repo);
       // Shown by name straight away.
       await edit(tester, inDialog(find.text('Deep focus')));
-      // Active goals only; the first picked is the primary goal.
+      // Active actions only; the first picked is the primary action.
       expect(inDialog(find.text('Old')), findsNothing);
       expect(inDialog(find.byTooltip('Primary action')), findsOneWidget);
       await tester.ensureVisible(inDialog(find.text('Exercise')));
@@ -606,7 +606,7 @@ void main() {
       ]);
     });
 
-    testWidgets('goals inferred from its label are marked, and kept to '
+    testWidgets('actions inferred from its label are marked, and kept to '
         'confirm them', (tester) async {
       final inferred = Event.fromJson({
         ...work().toJson(),
@@ -639,7 +639,7 @@ void main() {
     });
 
     test(
-      'McpEventsRepository says goals it sends are set, not inferred',
+      'McpEventsRepository says actions it sends are set, not inferred',
       () async {
         final client = _RecurrenceClient();
         final event = Event.fromJson({
@@ -757,14 +757,14 @@ void main() {
       await tester.pumpWidget(
         app(
           repo,
-          goals: InMemoryGoalsRepository([
-            const Goal(
+          actions: InMemoryActionsRepository([
+            const PlanAction(
               id: 'g1',
               name: 'Deep focus',
               priority: 1,
               backgroundColor: '#4986e7',
             ),
-            const Goal(id: 'g2', name: 'Exercise', priority: 2),
+            const PlanAction(id: 'g2', name: 'Exercise', priority: 2),
           ]),
         ),
       );
@@ -944,10 +944,10 @@ void main() {
       );
     });
 
-    testWidgets('picks goals, shown with their diamonds', (tester) async {
+    testWidgets('picks actions, shown with their diamonds', (tester) async {
       final repo = _RecordingRepository([work()]);
       await open(tester, repo);
-      expect(inDialog(find.byType(GoalDiamond)), findsOneWidget);
+      expect(inDialog(find.byType(ActionDiamond)), findsOneWidget);
       await tester.ensureVisible(inDialog(find.text('Deep focus')));
       await tester.tap(inDialog(find.text('Deep focus')));
       await tester.pumpAndSettle();
@@ -958,7 +958,7 @@ void main() {
       await tester.ensureVisible(inDialog(find.text('Done')));
       await tester.tap(inDialog(find.text('Done')));
       await tester.pumpAndSettle();
-      expect(inDialog(find.byType(GoalDiamond)), findsNWidgets(2));
+      expect(inDialog(find.byType(ActionDiamond)), findsNWidgets(2));
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(repo.saved, [
@@ -1566,7 +1566,7 @@ void main() {
       expect(saved.single.id, 'standup_new');
     });
 
-    testWidgets("clears the series' priority, to follow its goals'", (
+    testWidgets("clears the series' priority, to follow its actions'", (
       tester,
     ) async {
       final repo = series();
@@ -1709,11 +1709,11 @@ void main() {
         home: HomeScreen(
           notesRepository: notes,
           eventsRepository: InMemoryEventsRepository(),
-          goalsRepository: InMemoryGoalsRepository(),
+          actionsRepository: InMemoryActionsRepository(),
           outbox: outbox,
-          goalOutbox: GoalOutbox(
+          actionOutbox: ActionOutbox(
             store: InMemoryOutboxStore(),
-            repository: InMemoryGoalsRepository(),
+            repository: InMemoryActionsRepository(),
           ),
           addNoteRequests: addNoteRequests,
         ),

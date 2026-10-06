@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/facts.dart';
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/person.dart';
 import '../models/recurrence.dart';
@@ -19,7 +19,7 @@ import 'color_picker.dart';
 import 'event_dialog.dart' show followThroughOption;
 import 'event_room.dart';
 import 'facts_dialog.dart';
-import 'goals_picker.dart';
+import 'actions_picker.dart';
 import 'properties_dialog.dart' show ConfirmOption, confirmationContent;
 import 'recurrence_dialog.dart';
 import 'repeat_editor.dart';
@@ -43,8 +43,8 @@ final class SummaryDetails<T> extends SummaryOutcome<T> {
 
 /// Shows the properties of [event] one edits most: its priority, summary,
 /// times, whether it's part of a series, location, description, whether
-/// it's at a fixed time, its goals, and its facets -- what happened at it,
-/// for its goals' traits -- edited in a dialog of their own
+/// it's at a fixed time, its actions, and its facets -- what happened at it,
+/// for its actions' traits -- edited in a dialog of their own
 /// ([showFacetsDialog]).
 ///
 /// Tapping one opens it for editing, in place; "Save" sends every change
@@ -52,8 +52,8 @@ final class SummaryDetails<T> extends SummaryOutcome<T> {
 /// event, after asking. Without [save], or for an event with no id,
 /// nothing can be edited.
 ///
-/// [goals] are the goals known, by id, to show the event's by name and
-/// color; [loadGoals] lists them to pick from. In a series, its "Repeats"
+/// [actions] are the actions known, by id, to show the event's by name and
+/// color; [loadActions] lists them to pick from. In a series, its "Repeats"
 /// chip calls [openSeries] with the series' id; if that saved a change
 /// (returning true), this closes, returning null. "Details" closes it
 /// with [SummaryDetails]. Changing its times keeps them clear of the
@@ -64,8 +64,8 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
   Future<List<Event>> Function(Map<String, Object?> changes)? save,
   Future<List<Event>> Function(bool countsAgainstFollowThrough)? cancel,
   EventRoom room = const EventRoom.none(),
-  Map<String, Goal> goals = const {},
-  Future<List<Goal>> Function()? loadGoals,
+  Map<String, PlanAction> actions = const {},
+  Future<List<PlanAction>> Function()? loadActions,
   Future<bool> Function(String seriesId)? openSeries,
 }) {
   final seriesId = event.properties['recurring_event_id'] as String?;
@@ -83,8 +83,8 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
         'start': localIsoTimestamp(event.start),
         'end': localIsoTimestamp(event.end),
       },
-      goals: goals,
-      loadGoals: loadGoals,
+      actions: actions,
+      loadActions: loadActions,
       room: room,
       facets: true,
       save: save == null || event.id == null
@@ -125,8 +125,8 @@ Future<List<Event>?> showNewEventDialog(
   required DateTime end,
   EventRoom room = const EventRoom.none(),
   required Future<List<Event>> Function(Map<String, Object?> fields) create,
-  Map<String, Goal> goals = const {},
-  Future<List<Goal>> Function()? loadGoals,
+  Map<String, PlanAction> actions = const {},
+  Future<List<PlanAction>> Function()? loadActions,
 }) async {
   final values = {
     'start': localIsoTimestamp(start),
@@ -138,8 +138,8 @@ Future<List<Event>?> showNewEventDialog(
       values: values,
       creating: true,
       room: room,
-      goals: goals,
-      loadGoals: loadGoals,
+      actions: actions,
+      loadActions: loadActions,
       save: (changes) async =>
           () => create({...values, ...changes}),
       remove: null,
@@ -171,8 +171,8 @@ Future<SummaryOutcome<List<Recurrence>>?> showSeriesSummaryDialog(
   required String fromEventId,
   required DateTime fromEventStart,
   Future<List<Recurrence>> Function()? delete,
-  Map<String, Goal> goals = const {},
-  Future<List<Goal>> Function()? loadGoals,
+  Map<String, PlanAction> actions = const {},
+  Future<List<PlanAction>> Function()? loadActions,
 }) {
   final day = MaterialLocalizations.of(context)
       .formatMediumDate(fromEventStart);
@@ -188,8 +188,8 @@ Future<SummaryOutcome<List<Recurrence>>?> showSeriesSummaryDialog(
         'schedule': recurrence.schedule,
       },
       series: true,
-      goals: goals,
-      loadGoals: loadGoals,
+      actions: actions,
+      loadActions: loadActions,
       save: (changes) async {
         final scope = await askSeriesScope(context, changes);
         if (scope == null) return null;
@@ -240,7 +240,7 @@ class _Removal {
 }
 
 /// The properties the dialog edits, one at a time.
-enum _Field { priority, summary, time, repeat, location, description, goals }
+enum _Field { priority, summary, time, repeat, location, description, actions }
 
 /// The priorities offered as chips; "Other" takes any other.
 const _priorities = [0, 1, 2, 3];
@@ -248,8 +248,8 @@ const _priorities = [0, 1, 2, 3];
 class _SummaryDialog<T> extends StatefulWidget {
   const _SummaryDialog({
     required this.values,
-    required this.goals,
-    required this.loadGoals,
+    required this.actions,
+    required this.loadActions,
     required this.save,
     required this.remove,
     this.series = false,
@@ -262,8 +262,8 @@ class _SummaryDialog<T> extends StatefulWidget {
   /// As the server sent them, with times in local time, and a series'
   /// repeat as a [Repeat].
   final Map<String, Object?> values;
-  final Map<String, Goal> goals;
-  final Future<List<Goal>> Function()? loadGoals;
+  final Map<String, PlanAction> actions;
+  final Future<List<PlanAction>> Function()? loadActions;
 
   /// Asks anything saving the changes needs, then gives what saves them;
   /// null if that was called off, keeping it open.
@@ -300,7 +300,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   /// [_priorities].
   bool _otherPriority = false;
 
-  late final Future<List<Goal>>? _goalList = widget.loadGoals?.call();
+  late final Future<List<PlanAction>>? _actionList = widget.loadActions?.call();
 
   /// Everyone's names, once the [PeopleScope] has them, for who it was
   /// with and for; the locations', for where; and the traits', from the
@@ -553,7 +553,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 multiline: true,
               ),
               _fixedTimeRow(context),
-              _goalsRow(context),
+              _actionsRow(context),
               if (widget.facets) _factsRow(context),
             ],
           ),
@@ -633,12 +633,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   Widget _topRow(BuildContext context) {
     final theme = Theme.of(context);
     final own = _value('priority') as int?;
-    // Its goals' priority, while its own isn't set or changed.
-    final fromGoals = _changes.containsKey('priority')
+    // Its actions' priority, while its own isn't set or changed.
+    final fromActions = _changes.containsKey('priority')
         ? null
         : widget.values['effective_priority'] as int?;
-    final shown = own ?? fromGoals;
-    // Neither its own nor its goals': not a priority's color.
+    final shown = own ?? fromActions;
+    // Neither its own nor its actions': not a priority's color.
     final color = shown == null
         ? theme.colorScheme.outline
         : priorityColor(shown);
@@ -653,7 +653,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       child: Text(
         switch (shown) {
           final p? => 'P$p',
-          // Cleared, and so to follow its goals' once saved.
+          // Cleared, and so to follow its actions' once saved.
           null when _changes.containsKey('priority') => 'From actions',
           null => 'No priority',
         },
@@ -1252,16 +1252,16 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     );
   }
 
-  List<String> get _goalIds => [
+  List<String> get _actionIds => [
     for (final id in _value('action_ids') as List? ?? const []) '$id',
   ];
 
-  /// Its goals, each after a diamond in the goal's color, as on the
+  /// Its actions, each after a diamond in the action's color, as on the
   /// timeline; picked from a list once opened.
-  Widget _goalsRow(BuildContext context) {
+  Widget _actionsRow(BuildContext context) {
     final theme = Theme.of(context);
-    final editing = _editing == _Field.goals;
-    final ids = _goalIds;
+    final editing = _editing == _Field.actions;
+    final ids = _actionIds;
     final names = [
       if (!_changes.containsKey('action_ids'))
         for (final name in widget.values['action_names'] as List? ?? const [])
@@ -1272,9 +1272,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       icon: Icons.flag_outlined,
       editing: editing,
       changedKey: 'action_ids',
-      onTap: editing || widget.loadGoals == null
+      onTap: editing || widget.loadActions == null
           ? null
-          : () => _open(_Field.goals),
+          : () => _open(_Field.actions),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1291,25 +1291,25 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 padding: const EdgeInsets.symmetric(vertical: 2),
                 child: Row(
                   children: [
-                    GoalDiamond(
-                      color: switch (widget.goals[id]) {
-                        final goal? => parseColor(
-                          goal.effectiveColor ?? goal.backgroundColor,
+                    ActionDiamond(
+                      color: switch (widget.actions[id]) {
+                        final action? => parseColor(
+                          action.effectiveColor ?? action.backgroundColor,
                         ),
                         null => null,
                       },
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text(switch (widget.goals[id]) {
-                        final goal? => goalName(goal),
+                      child: Text(switch (widget.actions[id]) {
+                        final action? => actionName(action),
                         null => (i < names.length ? names[i] : null) ?? id,
                       }, style: theme.textTheme.bodyLarge),
                     ),
                   ],
                 ),
               ),
-          if (editing) _goalsPicker(context, ids),
+          if (editing) _actionsPicker(context, ids),
         ],
       ),
     );
@@ -1379,14 +1379,14 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     );
   }
 
-  /// Its goals, searched for or picked from the tree; see [GoalsPicker].
-  Widget _goalsPicker(BuildContext context, List<String> picked) =>
+  /// Its actions, searched for or picked from the tree; see [ActionsPicker].
+  Widget _actionsPicker(BuildContext context, List<String> picked) =>
       FutureBuilder(
-        future: _goalList,
+        future: _actionList,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Text(
-              "Couldn't load goals. ${switch (snapshot.error) {
+              "Couldn't load actions. ${switch (snapshot.error) {
                 McpException(:final message) => message,
                 final e => '$e',
               }}",
@@ -1399,14 +1399,14 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              GoalsPicker(
-                goals: list,
+              ActionsPicker(
+                actions: list,
                 picked: picked,
                 leavesOnly: true,
                 onChanged: (ids) => _set('action_ids', ids),
-                marker: (goal) => GoalDiamond(
+                marker: (action) => ActionDiamond(
                   color: parseColor(
-                    goal.effectiveColor ?? goal.backgroundColor,
+                    action.effectiveColor ?? action.backgroundColor,
                   ),
                 ),
               ),
@@ -1441,10 +1441,10 @@ class _EditingFrame extends StatelessWidget {
   );
 }
 
-/// A small diamond in a goal's [color], or outlined if it has none, as
-/// the timeline marks an event's goals.
-class GoalDiamond extends StatelessWidget {
-  const GoalDiamond({super.key, required this.color, this.size = 8});
+/// A small diamond in an action's [color], or outlined if it has none, as
+/// the timeline marks an event's actions.
+class ActionDiamond extends StatelessWidget {
+  const ActionDiamond({super.key, required this.color, this.size = 8});
 
   final Color? color;
   final double size;

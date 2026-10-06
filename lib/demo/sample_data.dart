@@ -1,13 +1,13 @@
 import '../models/event.dart';
 import '../models/facts.dart';
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/person.dart';
 import '../models/recurrence.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/events_repository.dart';
-import '../services/goals_repository.dart';
+import '../services/actions_repository.dart';
 import '../services/notes_repository.dart';
 import '../services/people_repository.dart';
 import '../services/traits_repository.dart';
@@ -46,7 +46,7 @@ class SampleData {
   );
   EventsRepository eventsRepository() =>
       InMemoryEventsRepository([...events, ...week], recurrences);
-  GoalsRepository goalsRepository() => InMemoryGoalsRepository(goals);
+  ActionsRepository actionsRepository() => InMemoryActionsRepository(actions);
   PeopleRepository peopleRepository() => InMemoryPeopleRepository(
     people: people,
     circles: circles,
@@ -926,7 +926,7 @@ class SampleData {
 
   static final _names = {for (final (id, name, _, _, _) in _tree) id: name};
 
-  List<Goal> get goals {
+  List<PlanAction> get actions {
     final byId = {for (final row in _tree) row.$1: row};
     String? inherited(String? id, String field) {
       for (var at = id; at != null; at = byId[at]!.$3) {
@@ -937,7 +937,7 @@ class SampleData {
 
     return [
       for (final (id, name, parent, group, fields) in _tree)
-        Goal.fromJson({
+        PlanAction.fromJson({
           'id': id,
           'name': name,
           'parent_id': parent,

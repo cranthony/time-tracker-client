@@ -5,11 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/event.dart';
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/recurrence.dart';
 import '../outbox/note_outbox.dart';
-import '../services/goals_repository.dart';
+import '../services/actions_repository.dart';
 import '../services/event_store.dart';
 import '../services/events_repository.dart';
 import '../services/mcp_client.dart';
@@ -39,7 +39,7 @@ import '../widgets/status_message.dart';
 /// shows all its properties, and lets one change them; tapping between
 /// events creates one there. It opens scrolled
 /// to now, on today, or else to the day's first event. The last
-/// compaction, from the goals, is marked on it, and so is each note not
+/// compaction, from the actions, is marked on it, and so is each note not
 /// yet compacted, saved or not.
 ///
 /// Today's events are kept for next time, so they show at once while
@@ -54,7 +54,7 @@ class EventsScreen extends StatefulWidget {
     super.key,
     required this.repository,
     required this.serverLabel,
-    this.goalsRepository,
+    this.actionsRepository,
     this.notesRepository,
     this.outbox,
     this.onSignIn,
@@ -75,8 +75,8 @@ class EventsScreen extends StatefulWidget {
   /// [PlanMemoryScope]'s.
   final PlanMemory? memory;
 
-  /// Where to list goals from, to pick an event's; null to type their ids.
-  final GoalsRepository? goalsRepository;
+  /// Where to list actions from, to pick an event's; null to type their ids.
+  final ActionsRepository? actionsRepository;
 
   /// Where to load the notes not yet compacted from, to mark them; null
   /// not to.
@@ -154,10 +154,11 @@ class _EventsScreenState extends State<EventsScreen> {
   bool _needsSignIn = false;
   bool _signingIn = false;
 
-  /// The goals by id, for the colors and names of events' goals; empty
-  /// until they're loaded, or without goals.
-  Map<String, Goal> get _goalsById => {
-    for (final goal in _memory.actions?.goals ?? const <Goal>[]) ?goal.id: goal,
+  /// The actions by id, for the colors and names of events' actions; empty
+  /// until they're loaded, or without actions.
+  Map<String, PlanAction> get _actionsById => {
+    for (final action in _memory.actions?.actions ?? const <PlanAction>[])
+      ?action.id: action,
   };
 
   /// When notes were last compacted; null until it's known.
@@ -251,7 +252,7 @@ class _EventsScreenState extends State<EventsScreen> {
     _pages = PageController(initialPage: _pageOf(_day));
     _showCached();
     _refresh();
-    _loadGoals();
+    _loadActions();
     widget.outbox?.addListener(_outboxChanged);
     _loadNotes(cached: true);
     _loadSummaryCollapsed();
@@ -417,11 +418,11 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Loads the actions, for their colors: those kept from last time,
   /// then the server's. Best effort: without them, actions are named as
   /// the events have them, with outlined diamonds.
-  Future<void> _loadGoals() async {
-    final repository = widget.goalsRepository;
+  Future<void> _loadActions() async {
+    final repository = widget.actionsRepository;
     if (repository == null) return;
     try {
-      await _memory.loadKept(goals: repository);
+      await _memory.loadKept(actions: repository);
       await _memory.loadActions(repository, again: true);
     } catch (_) {
       // Shown as they were.
@@ -651,8 +652,8 @@ class _EventsScreenState extends State<EventsScreen> {
         countsAgainstFollowThrough: counts,
       ),
       room: _roomFor(event),
-      goals: _goalsById,
-      loadGoals: _goals,
+      actions: _actionsById,
+      loadActions: _actions,
       openSeries: (seriesId) => _openSeries(seriesId, event),
     );
     if (!mounted) return;
@@ -702,8 +703,8 @@ class _EventsScreenState extends State<EventsScreen> {
       end: end,
       room: room,
       create: widget.repository.createEvent,
-      goals: _goalsById,
-      loadGoals: _goals,
+      actions: _actionsById,
+      loadActions: _actions,
     );
     if (created == null || !mounted) return;
     final moved = created.length - 1;
@@ -719,7 +720,7 @@ class _EventsScreenState extends State<EventsScreen> {
     );
     _fresh.clear();
     await _refresh();
-    await _loadGoals();
+    await _loadActions();
   }
 
   /// Opens every one of [event]'s properties.
@@ -733,7 +734,7 @@ class _EventsScreenState extends State<EventsScreen> {
         countsAgainstFollowThrough: counts,
       ),
       room: _roomFor(event),
-      goals: _goals,
+      actions: _actions,
       openSeries: (seriesId) => _openSeries(seriesId, event),
     );
     if (updated != null) await _saved(event, updated);
@@ -761,15 +762,16 @@ class _EventsScreenState extends State<EventsScreen> {
     _store.putEvents(updated);
     _fresh.clear();
     await _refresh();
-    // Its goals may have changed, and with them its diamonds.
-    await _loadGoals();
+    // Its actions may have changed, and with them its diamonds.
+    await _loadActions();
   }
 
-  /// Every goal, for picking an event's goals; null without goals.
-  Future<List<Goal>> Function()? get _goals => switch (widget.goalsRepository) {
-    final goals? => () async => (await goals.goals()).goals,
-    null => null,
-  };
+  /// Every action, for picking an event's actions; null without actions.
+  Future<List<PlanAction>> Function()? get _actions =>
+      switch (widget.actionsRepository) {
+        final actions? => () async => (await actions.actions()).actions,
+        null => null,
+      };
 
   /// Opens the recurring series [seriesId]'s summary, from its [event],
   /// and from it, its details. True if a change to it was saved, after
@@ -801,8 +803,8 @@ class _EventsScreenState extends State<EventsScreen> {
       recurrence,
       fromEventId: event.id!,
       fromEventStart: event.start,
-      goals: _goalsById,
-      loadGoals: _goals,
+      actions: _actionsById,
+      loadActions: _actions,
       save: (changes, scope) {
         said = scope == SeriesScope.following
             ? 'Saved this and following events.'
@@ -845,7 +847,7 @@ class _EventsScreenState extends State<EventsScreen> {
       context,
       recurrence,
       fromEventId: event.id,
-      goals: _goals,
+      actions: _actions,
       save: (changes, scope) {
         savedFor = scope;
         return widget.repository.updateRecurrence(
@@ -1015,7 +1017,7 @@ class _EventsScreenState extends State<EventsScreen> {
           DaySummary(
             events: events,
             day: _day,
-            goals: _goalsById,
+            actions: _actionsById,
             collapsed: _summaryCollapsed,
             onCollapsed: _setSummaryCollapsed,
             durations: _summaryDurations,
@@ -1110,7 +1112,7 @@ class _EventsScreenState extends State<EventsScreen> {
       child: DayTimeline(
         events: events,
         day: day,
-        goals: _goalsById,
+        actions: _actionsById,
         scale: _scale,
         now: widget.clock(),
         lastCompaction: _lastCompaction,

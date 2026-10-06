@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
-import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/widgets/day_summary.dart';
 import 'package:time_tracker_client/widgets/time_summary.dart';
 
@@ -14,13 +14,13 @@ void main() {
     DateTime start,
     DateTime end, {
     int? priority,
-    List<String> goals = const [],
+    List<String> actions = const [],
     bool cancelled = false,
   }) => Event(
     start: start,
     end: end,
     isCancelled: cancelled,
-    properties: {'effective_priority': ?priority, 'action_ids': goals},
+    properties: {'effective_priority': ?priority, 'action_ids': actions},
   );
 
   /// Each share's label and hours.
@@ -65,31 +65,31 @@ void main() {
     });
   });
 
-  group('goalShares', () {
-    final goals = {
-      for (final goal in [
-        const Goal(id: 'cook', name: 'Cook', effectiveColor: '#33b679'),
-        const Goal(id: 'tofu', parentId: 'cook', name: 'Tofu'),
-        const Goal(id: 'curry', parentId: 'cook', name: 'Curry'),
-        const Goal(id: 'work', name: 'Work'),
-        const Goal(id: 'run', name: 'Run'),
-        const Goal(id: 'read', name: 'Read'),
-        const Goal(id: 'top', name: 'Top'),
+  group('actionShares', () {
+    final actions = {
+      for (final action in [
+        const PlanAction(id: 'cook', name: 'Cook', effectiveColor: '#33b679'),
+        const PlanAction(id: 'tofu', parentId: 'cook', name: 'Tofu'),
+        const PlanAction(id: 'curry', parentId: 'cook', name: 'Curry'),
+        const PlanAction(id: 'work', name: 'Work'),
+        const PlanAction(id: 'run', name: 'Run'),
+        const PlanAction(id: 'read', name: 'Read'),
+        const PlanAction(id: 'top', name: 'Top'),
       ])
-        goal.id!: goal,
+        action.id!: action,
     };
     final events = [
-      event(at(8), at(12), goals: ['work']),
-      event(at(12), at(14), goals: ['tofu', 'curry']),
-      event(at(14), at(15), goals: ['tofu']),
-      event(at(15), at(16), goals: ['run']),
-      event(at(16), at(16, 30), goals: ['read']),
-      event(at(16, 30), at(18), goals: ['top']),
+      event(at(8), at(12), actions: ['work']),
+      event(at(12), at(14), actions: ['tofu', 'curry']),
+      event(at(14), at(15), actions: ['tofu']),
+      event(at(15), at(16), actions: ['run']),
+      event(at(16), at(16, 30), actions: ['read']),
+      event(at(16, 30), at(18), actions: ['top']),
       event(at(18), at(20)),
     ];
 
-    test('the top goals, the rest, no goal, then unscheduled', () {
-      expect(hours(goalShares(events, day, goals)), {
+    test('the top actions, the rest, no action, then unscheduled', () {
+      expect(hours(actionShares(events, day, actions)), {
         'Work': 4,
         'Tofu': 2,
         'Top': 1.5,
@@ -99,8 +99,8 @@ void main() {
       });
     });
 
-    test("top-level goals count their sub-goals' time once", () {
-      final slices = goalShares(events, day, goals, topLevel: true);
+    test("top-level actions count their sub-actions' time once", () {
+      final slices = actionShares(events, day, actions, topLevel: true);
       expect(hours(slices), {
         'Work': 4,
         'Cook': 3,
@@ -130,7 +130,7 @@ void main() {
                   event(at(11), at(11, 1), priority: 3),
                 ],
                 day: day,
-                goals: const {},
+                actions: const {},
                 durations: durations,
                 onDurations: (value) => setState(() => durations = value),
               ),
@@ -177,7 +177,7 @@ void main() {
               child: DaySummary(
                 events: const [],
                 day: day,
-                goals: const {},
+                actions: const {},
                 onCollapsed: (_) {},
                 onDurations: (_) {},
               ),

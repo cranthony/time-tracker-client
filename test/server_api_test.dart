@@ -2,14 +2,14 @@
 // people, circle and location tools, and read what they answer.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/person.dart';
-import 'package:time_tracker_client/services/goals_repository.dart';
+import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 
 void main() {
-  group('McpGoalsRepository', () {
+  group('McpActionsRepository', () {
     final listed = {
       'get_actions': {
         'actions': [
@@ -47,7 +47,7 @@ void main() {
 
     test('lists actions and groups as one tree', () async {
       final client = _Client((name, _) => listed[name]);
-      final goals = await McpGoalsRepository(client).goals();
+      final actions = await McpActionsRepository(client).actions();
 
       expect(client.calls.map((c) => c.$1), [
         'get_actions',
@@ -57,7 +57,10 @@ void main() {
         'statuses': ['proposed', 'active', 'archived', 'deleted'],
       });
       expect(
-        [for (final g in goals.goals) (g.id, g.parentId, g.isGroup, g.status)],
+        [
+          for (final g in actions.actions)
+            (g.id, g.parentId, g.isGroup, g.status),
+        ],
         [
           ('g1', null, true, 'active'),
           ('g2', 'g1', true, 'active'),
@@ -65,16 +68,16 @@ void main() {
           ('a1', null, false, 'proposed'),
         ],
       );
-      expect(goals.labelSlotsUsed, 12);
-      expect(goals.goals[2].effectiveColor, '#f4511e');
+      expect(actions.labelSlotsUsed, 12);
+      expect(actions.actions[2].effectiveColor, '#f4511e');
     });
 
     test('creates an action, active, in a group, and a group', () async {
       final client = _Client((_, _) => {'created_id': 'new'});
-      final repository = McpGoalsRepository(client);
+      final repository = McpActionsRepository(client);
 
       expect(
-        await repository.createGoal({
+        await repository.createAction({
           'name': 'Sing',
           'parent_id': 'g1',
           'priority': null,
@@ -82,7 +85,7 @@ void main() {
         }),
         'new',
       );
-      await repository.createGoal({
+      await repository.createAction({
         'name': 'Music',
         'kind': 'group',
         'parent_id': null,
@@ -111,15 +114,15 @@ void main() {
 
     test('updates an action or a group, clearing what was cleared', () async {
       final client = _Client((_, _) => {});
-      final repository = McpGoalsRepository(client);
+      final repository = McpActionsRepository(client);
 
-      await repository.updateGoal(const Goal(id: 'a1'), {
+      await repository.updateAction(const PlanAction(id: 'a1'), {
         'status': 'active',
         'parent_id': null,
         'priority': 1,
       });
-      await repository.updateGoal(
-        const Goal(id: 'g1', properties: {'kind': 'group'}),
+      await repository.updateAction(
+        const PlanAction(id: 'g1', properties: {'kind': 'group'}),
         {'name': 'Making', 'background_color': null},
       );
 
@@ -141,7 +144,7 @@ void main() {
 
     test("isn't kept in an order of its own", () async {
       final client = _Client((_, _) => null);
-      final repository = McpGoalsRepository(client);
+      final repository = McpActionsRepository(client);
 
       expect(repository.reorderable, isFalse);
       expect(client.calls, isEmpty);

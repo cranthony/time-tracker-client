@@ -24,19 +24,19 @@ class Event {
   final Map<String, dynamic> properties;
 
   /// The priority it's treated as: its own, else the highest (lowest
-  /// numbered) among all its goals, each goal's own or its nearest
+  /// numbered) among all its actions, each action's own or its nearest
   /// ancestor's; null if none of them has one.
   int? get effectivePriority =>
       properties['effective_priority'] as int? ??
       properties['priority'] as int?;
 
   /// The ids of its actions, the first setting its color.
-  List<String> get goalIds => [
+  List<String> get actionIds => [
     for (final id in properties['action_ids'] as List? ?? const []) '$id',
   ];
 
-  /// The names of [goalIds], in the same order, if the server sent them.
-  List<String?> get goalNames => [
+  /// The names of [actionIds], in the same order, if the server sent them.
+  List<String?> get actionNames => [
     for (final name in properties['action_names'] as List? ?? const [])
       name as String?,
   ];

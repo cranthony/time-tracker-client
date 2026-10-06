@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 6.9.2
+
+- The code says actions, not goals, throughout: nothing changes in use.
+  What older versions saved on the device (actions waiting to be saved,
+  and the Plan summaries' choices) is still read.
+
 ## 6.9.1
 
 - The Events page and its dialogs say actions, not goals, which are

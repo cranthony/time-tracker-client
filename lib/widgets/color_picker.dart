@@ -16,7 +16,7 @@ String colorToHex(Color color) =>
 Color contrastingColor(Color color) =>
     color.computeLuminance() > 0.45 ? Colors.black : Colors.white;
 
-/// The priority an event or goal with none, anywhere up its tree, is
+/// The priority an event or action with none, anywhere up its tree, is
 /// treated as, and colored as.
 const defaultPriority = 2;
 

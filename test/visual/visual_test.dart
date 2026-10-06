@@ -4,8 +4,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:time_tracker_client/services/goals_repository.dart';
-import 'package:time_tracker_client/outbox/goal_outbox.dart';
+import 'package:time_tracker_client/services/actions_repository.dart';
+import 'package:time_tracker_client/outbox/action_outbox.dart';
 import 'package:time_tracker_client/demo/sample_data.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
@@ -22,7 +22,7 @@ import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/widgets/day_summary.dart';
 import 'package:time_tracker_client/widgets/time_summary.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
-import 'package:time_tracker_client/widgets/goals_picker.dart';
+import 'package:time_tracker_client/widgets/actions_picker.dart';
 
 /// A fixed moment, so every run renders the same thing.
 final _now = DateTime(2026, 10, 2, 13, 30);
@@ -80,8 +80,8 @@ void main() {
     }
 
     Widget plan() => PlanScreen(
-      outbox: _idleGoalOutbox(),
-      repository: sample.goalsRepository(),
+      outbox: _idleActionOutbox(),
+      repository: sample.actionsRepository(),
       eventsRepository: sample.eventsRepository(),
       notesRepository: sample.notesRepository(),
       serverLabel: 'sample',
@@ -191,7 +191,7 @@ void main() {
           () => memory.warmScores(
             traits: sample.traitsRepository(),
             people: sample.peopleRepository(),
-            goals: sample.goalsRepository(),
+            actions: sample.actionsRepository(),
           ),
         );
         await render(
@@ -203,7 +203,7 @@ void main() {
             memory: memory,
             circles: people.circles,
             personNames: {for (final p in people.withSelf) p.id: personName(p)},
-            actionNames: {for (final g in sample.goals) g.id: g.name ?? ''},
+            actionNames: {for (final g in sample.actions) g.id: g.name ?? ''},
           ),
           then: scrolled
               ? () async {
@@ -358,7 +358,7 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.text('Creative').last);
           await tester.pumpAndSettle();
-          await tester.tap(find.byType(GoalField));
+          await tester.tap(find.byType(ActionField));
           await tester.pumpAndSettle();
         },
       );
@@ -367,7 +367,7 @@ void main() {
     Widget events() => EventsScreen(
       repository: sample.eventsRepository(),
       notesRepository: sample.notesRepository(),
-      goalsRepository: sample.goalsRepository(),
+      actionsRepository: sample.actionsRepository(),
       serverLabel: 'sample',
       clock: () => _now,
     );
@@ -379,7 +379,7 @@ void main() {
     // The day's summary swiped once, to its actions, and twice, to its
     // top-level ones.
     for (final (name, swipes) in [
-      ('events_summary_goals', 1),
+      ('events_summary_actions', 1),
       ('events_summary_top_level', 2),
       // Folded away.
       ('events_summary_collapsed', 0),
@@ -515,8 +515,8 @@ void main() {
 
     // An event's actions open for editing: the tree, then a search.
     for (final (name, search) in [
-      ('event_goals', null),
-      ('event_goals_search', 'soc call'),
+      ('event_actions', null),
+      ('event_actions_search', 'soc call'),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
         await render(
@@ -577,9 +577,9 @@ void main() {
 Finder _tile(String name) => find.textContaining(name, findRichText: true).last;
 
 /// For a Plan page that saves nothing.
-GoalOutbox _idleGoalOutbox() => GoalOutbox(
+ActionOutbox _idleActionOutbox() => ActionOutbox(
   store: InMemoryOutboxStore(),
-  repository: InMemoryGoalsRepository(),
+  repository: InMemoryActionsRepository(),
 );
 
 /// The list a pane scrolls: not its search field, which scrolls too.

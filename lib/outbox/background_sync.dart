@@ -3,7 +3,7 @@ import 'package:workmanager/workmanager.dart';
 
 import 'outbox.dart';
 
-/// Saves pending notes and goal saves while the app is in the background,
+/// Saves pending notes and action saves while the app is in the background,
 /// on Android.
 ///
 /// When the app leaves the foreground with any still pending, [schedule]
