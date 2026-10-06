@@ -81,8 +81,8 @@ Future<void> main() async {
       ),
       auth: auth,
       cache: cache,
-      traitsRepository: McpTraitsRepository(client),
-      peopleRepository: McpPeopleRepository(client),
+      traitsRepository: McpTraitsRepository(client, cache: cache),
+      peopleRepository: McpPeopleRepository(client, cache: cache),
     ),
   );
 }

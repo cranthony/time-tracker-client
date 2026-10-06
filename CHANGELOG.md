@@ -6,6 +6,23 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 6.2.0
+
+- The Plan page keeps what it loaded while you're elsewhere in the app,
+  and what it loaded last run, so it no longer goes blank while you move
+  around it. Landing on it loads every pane at once.
+- Tap a group to open or close it. Tap an action to set its priority and
+  color; "Details" opens the rest.
+- The time summaries are back, above the search on the Actions pane, with
+  each action's and group's time in its row again. The client now works
+  them out from the events. New on the People and Locations panes: time
+  by person, by circle (people in none are "Individuals") and by location.
+- The summaries measure from the last compaction by default; move them a
+  day at a time, or look at the 24 hours and 7 days after instead of
+  before.
+- Tapping a trait opens its page; its pencil edits it.
+- The Events page shows when notes were last compacted again.
+
 ## 6.1.0
 
 - The Plan page swipes between panes -- Actions, Traits, People and

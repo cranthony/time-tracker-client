@@ -2,64 +2,24 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/goal.dart';
+import '../models/time_split.dart';
 import 'color_picker.dart';
 import 'time_summary.dart';
 
-/// How [day], from its midnight to the next, is spent among [events]: for
-/// each stretch of it, the events then, each with an even part of it. The
-/// stretches with no events are null's.
-Map<Event?, Duration> _timeByEvent(List<Event> events, DateTime day) {
-  final next = DateTime(day.year, day.month, day.day + 1);
-  DateTime clip(DateTime t) =>
-      t.isBefore(day) ? day : (t.isAfter(next) ? next : t);
-  final shown = [
-    for (final event in events)
-      if (!event.isCancelled && clip(event.end).isAfter(clip(event.start)))
-        event,
-  ];
-  final edges = {
-    day,
-    next,
-    for (final event in shown) ...[clip(event.start), clip(event.end)],
-  }.toList()..sort();
-  final time = <Event?, Duration>{};
-  for (var i = 0; i + 1 < edges.length; i++) {
-    final (from, to) = (edges[i], edges[i + 1]);
-    final during = [
-      for (final event in shown)
-        if (!event.start.isAfter(from) && !event.end.isBefore(to)) event,
-    ];
-    final length = to.difference(from);
-    if (during.isEmpty) time[null] = (time[null] ?? Duration.zero) + length;
-    for (final event in during) {
-      time[event] = (time[event] ?? Duration.zero) + length ~/ during.length;
-    }
-  }
-  return time;
-}
-
-/// [day]'s time by what each event counts toward, as [keysOf] says, an
-/// event's time split evenly between its keys: an event with none counts
-/// toward [none]. The time with no events is null's.
+/// [day]'s time, from its midnight to the next, by [keysOf]: see
+/// [timeBy].
 Map<K?, Duration> _timeBy<K>(
   List<Event> events,
   DateTime day,
   Iterable<K> Function(Event) keysOf,
   K none,
-) {
-  final time = <K?, Duration>{};
-  for (final MapEntry(key: event, value: length) in _timeByEvent(
-    events,
-    day,
-  ).entries) {
-    final keys = event == null ? {null} : keysOf(event).toSet();
-    if (keys.isEmpty) keys.add(none);
-    for (final key in keys) {
-      time[key] = (time[key] ?? Duration.zero) + length ~/ keys.length;
-    }
-  }
-  return time;
-}
+) => timeBy(
+  events,
+  day,
+  DateTime(day.year, day.month, day.day + 1),
+  keysOf,
+  none,
+);
 
 /// [day]'s time by priority, highest first, then the time with nothing
 /// scheduled. Events with none count as [defaultPriority], as the

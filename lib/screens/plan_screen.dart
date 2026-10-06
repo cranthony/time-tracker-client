@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,20 +10,25 @@ import '../models/person.dart';
 import '../outbox/goal_outbox.dart';
 import '../outbox/pending_goal_save.dart';
 import '../outbox/save_error.dart';
+import '../services/events_repository.dart';
 import '../services/goals_repository.dart';
 import '../services/mcp_client.dart';
+import '../services/notes_repository.dart';
 import '../services/people_repository.dart';
+import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import 'locations_pane.dart';
 import 'people_pane.dart';
 import 'traits_pane.dart';
+import '../widgets/action_dialog.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/durations.dart';
-import '../widgets/goals_time_summary.dart';
 import '../widgets/priority_chip.dart';
 import '../widgets/goal_dialog.dart';
 import '../widgets/plan_pane.dart';
+import '../widgets/plan_summaries.dart';
+import '../widgets/time_summary.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
 
@@ -38,33 +42,55 @@ import '../widgets/status_message.dart';
 ///   from the [PeopleScope];
 /// * **Locations**, where ([LocationsPane]), from the [PeopleScope].
 ///
-/// The Actions pane shows each action and group: its color, name, status,
-/// priority (as a chip, like the Events page's) and, where it's known
-/// (the sample data), the time spent on it in the last 24 hours and 7
-/// days up to the last compaction, with what's in a group indented under
-/// it. A group starts collapsed; swiping it right -- which, Actions being
-/// the leftmost pane, does nothing else -- expands it. Searching shows
-/// the actions and groups whose name, path or note match, in their
-/// groups. Where the repository is [GoalsRepository.reorderable],
-/// pressing and holding one starts reordering: each can be dragged among
-/// its siblings, what's in it going with it, until "Done". The filter
-/// beside the search picks which statuses are shown: proposed and active
-/// to start with. Only active actions take up a calendar label; a group
-/// never does. A proposed action -- one Claude made -- can be approved
-/// from its menu. Tapping one opens its details; a group's menu adds an
-/// action or a group to it.
+/// Landing on it loads everything at once, every pane's and the
+/// summaries', starting from what [memory] kept from the last visit, or
+/// else the repositories kept from the app's last run, so nothing shows
+/// empty while it loads.
+///
+/// The Actions, People and Locations panes each have a summary, above
+/// their search, of the time in its window -- the 24 hours and 7 days
+/// before, or after, the last compaction, or a day at a time from it --
+/// worked out from the events in it ([eventsRepository]); one window for
+/// all three. The Actions pane's splits the time by the actions shown, or
+/// by priority. Under it, each action and group: its color, name,
+/// status, priority (as a chip, like the Events page's) and the time on
+/// it in the window, with what's in a group indented under it. Tapping a
+/// group opens or closes it; tapping an action, or "Edit" in a group's
+/// menu, edits its priority and color ([showActionDialog]), from which
+/// "Details" opens the rest. Searching shows the actions and groups
+/// whose name, path or note match, in their groups. Where the repository
+/// is [GoalsRepository.reorderable], pressing and holding one starts
+/// reordering: each can be dragged among its siblings, what's in it
+/// going with it, until "Done". The filter beside the search picks which
+/// statuses are shown: proposed and active to start with. Only active
+/// actions take up a calendar label; a group never does. A proposed
+/// action -- one Claude made -- can be approved from its menu.
 class PlanScreen extends StatefulWidget {
   const PlanScreen({
     super.key,
     required this.repository,
     required this.outbox,
     required this.serverLabel,
+    this.eventsRepository,
+    this.notesRepository,
+    this.memory,
     this.onSignIn,
     this.onSignOut,
     this.version,
   });
 
   final GoalsRepository repository;
+
+  /// The events the summaries measure; without it, there are none.
+  final EventsRepository? eventsRepository;
+
+  /// When notes were last compacted, which the summaries measure from by
+  /// default; without it, they measure from now.
+  final NotesRepository? notesRepository;
+
+  /// What the page showed last time it was open, to show again while it
+  /// loads; without it, it starts empty.
+  final PlanMemory? memory;
 
   /// Where saves go, to be sent in the background: the dialogs close at
   /// once, as notes' do.
@@ -127,49 +153,135 @@ class _PlanScreenState extends State<PlanScreen> {
   /// in the time summary, and under each action.
   bool _durations = true;
 
-  /// Everyone, and each location's name, for the panes that name them:
-  /// loaded once here, and again whenever the People or Locations pane
-  /// loads them.
-  PeopleList? _people;
-  Map<String?, String> _locationNames = const {};
-  bool _namesAsked = false;
+  /// What's kept from visit to visit: the panes' data, and the
+  /// summaries' window.
+  late final PlanMemory _memory = widget.memory ?? PlanMemory();
+
+  /// Why the summaries' events couldn't be loaded, if they couldn't.
+  Object? _eventsError;
+  bool _prefetched = false;
+
+  PeopleList? get _people => _memory.people;
+
+  Map<String?, String> get _locationNames => {
+    for (final l in _memory.locations ?? const <Location>[]) l.id: l.name,
+  };
 
   @override
   void initState() {
     super.initState();
+    _memory.newVisit();
+    _fromServer = _memory.actions;
     widget.outbox.addListener(_outboxChanged);
     _saveEvents = widget.outbox.events.listen(_onSaveEvent);
     _showCached();
     _load();
     _loadDurations();
     _loadTimeSummaryCollapsed();
+    _loadCompaction();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_namesAsked) {
-      _namesAsked = true;
-      _loadNames();
+    if (!_prefetched) {
+      _prefetched = true;
+      _prefetch();
     }
   }
 
-  /// Everyone and every location, for their names. Best effort: without
-  /// them, they're named by id.
-  Future<void> _loadNames() async {
-    final repository = PeopleScope.of(context);
-    if (repository == null) return;
-    try {
-      final people = await repository.people();
-      final locations = await repository.locations();
-      if (!mounted) return;
-      setState(() {
-        _people = people;
-        _locationNames = {for (final l in locations) l.id: l.name};
-      });
-    } catch (_) {
-      // The panes say why, when they're shown.
+  /// Loads every pane's data at once, from what was kept from the app's
+  /// last run, then the server, so each is ready when it's swiped to.
+  /// Best effort: each pane says why, if its load failed.
+  Future<void> _prefetch() async {
+    final traits = TraitsScope.of(context);
+    final people = PeopleScope.of(context);
+    await _memory.loadKept(traits: traits, people: people);
+    if (mounted) setState(() {});
+    Future<void> quietly(Future<void>? loading) async {
+      try {
+        await loading;
+        if (mounted) setState(() {});
+      } catch (_) {
+        // Said by the pane.
+      }
     }
+
+    await Future.wait([
+      quietly(traits == null ? null : _memory.loadTraits(traits)),
+      quietly(people == null ? null : _memory.loadPeople(people)),
+      quietly(people == null ? null : _memory.loadLocations(people)),
+    ]);
+  }
+
+  /// When notes were last compacted, kept from last time, then the
+  /// server's, then the summaries' events. Best effort: without it, they
+  /// measure from now.
+  Future<void> _loadCompaction() async {
+    final notes = widget.notesRepository;
+    try {
+      if (notes != null && _memory.lastCompaction == null) {
+        if (await notes.cachedCompactionStatus() case final status?) {
+          _memory.lastCompaction = status.lastCompaction;
+        }
+      }
+      if (notes != null) {
+        _memory.lastCompaction =
+            (await notes.compactionStatus()).lastCompaction;
+      }
+    } catch (_) {
+      // Measured from what's known.
+    }
+    if (mounted) setState(() {});
+    await _loadEvents();
+  }
+
+  /// Loads the events in the summaries' window, unless they're loaded
+  /// already this visit; with [again], afresh.
+  Future<void> _loadEvents({bool again = false}) async {
+    final events = widget.eventsRepository;
+    if (events == null) return;
+    try {
+      await _memory.loadEvents(
+        events,
+        _memory.window(DateTime.now()),
+        again: again,
+      );
+      if (mounted) setState(() => _eventsError = null);
+    } catch (e) {
+      if (mounted) setState(() => _eventsError = e);
+    }
+  }
+
+  /// Moves the summaries' window to [days] from the last compaction, or
+  /// on from it rather than back with [forward].
+  void _moveWindow({int? days, bool? forward}) {
+    setState(() {
+      _memory.dayOffset = days ?? _memory.dayOffset;
+      _memory.forward = forward ?? _memory.forward;
+      _eventsError = null;
+    });
+    _loadEvents();
+  }
+
+  /// What every summary measures, and how they're shown; null without
+  /// events to measure.
+  SummaryView? get _summaryView {
+    if (widget.eventsRepository == null) return null;
+    final window = _memory.window(DateTime.now());
+    return SummaryView(
+      window: window,
+      lastCompaction: _memory.lastCompaction,
+      dayOffset: _memory.dayOffset,
+      collapsed: _timeSummaryCollapsed,
+      durations: _durations,
+      onDays: (days) => _moveWindow(days: days),
+      onForward: (forward) => _moveWindow(forward: forward),
+      onCollapsed: _setTimeSummaryCollapsed,
+      onDurations: _setDurations,
+      events: _memory.events[PlanMemory.eventsKey(window)],
+      error: _eventsError,
+    );
   }
 
   /// Whether time was in durations last time. Best effort, like the
@@ -227,7 +339,7 @@ class _PlanScreenState extends State<PlanScreen> {
     if (!mounted || goals == null) return;
     if (_fromServer != null || _needsSignIn || _error != null) return;
     setState(() {
-      _fromServer = goals;
+      _fromServer = _memory.actions = goals;
       _stale = true;
     });
   }
@@ -279,7 +391,7 @@ class _PlanScreenState extends State<PlanScreen> {
       widget.outbox.reconcile(goals);
       setState(() {
         // Saves made while these were fetched are still made to them.
-        _fromServer = goals;
+        _fromServer = _memory.actions = goals;
         _stale = false;
         _error = null;
         _needsSignIn = false;
@@ -414,6 +526,16 @@ class _PlanScreenState extends State<PlanScreen> {
     }
   }
 
+  /// Edits [goal]'s priority and color, from which "Details" opens the
+  /// rest.
+  Future<void> _edit(Goal goal) => showActionDialog(
+    context,
+    goal,
+    goals: _goals?.goals ?? const [],
+    save: _update,
+    onDetails: _open,
+  );
+
   Map<String?, String> get _goalNames => {
     for (final goal in _goals?.goals ?? const <Goal>[]) goal.id: goalName(goal),
   };
@@ -527,6 +649,7 @@ class _PlanScreenState extends State<PlanScreen> {
           'how to be',
           TraitsPane(
             repository: traits,
+            memory: _memory,
             personNames: personNames,
             actions: _actionChoices,
           ),
@@ -537,8 +660,10 @@ class _PlanScreenState extends State<PlanScreen> {
           'who',
           PeoplePane(
             repository: people,
+            memory: _memory,
+            summary: _summaryView,
             traits: traits,
-            onPeople: (people) => setState(() => _people = people),
+            onPeople: (_) => setState(() {}),
             actionNames: _goalNames,
             actions: _actionChoices,
             locationNames: _locationNames,
@@ -549,9 +674,9 @@ class _PlanScreenState extends State<PlanScreen> {
           'where',
           LocationsPane(
             repository: people,
-            onLocations: (locations) => setState(
-              () => _locationNames = {for (final l in locations) l.id: l.name},
-            ),
+            memory: _memory,
+            summary: _summaryView,
+            onLocations: (_) => setState(() {}),
           ),
         ),
       ],
@@ -641,6 +766,7 @@ class _PlanScreenState extends State<PlanScreen> {
   Widget _actionsPane(BuildContext context) => PlanPane(
     searchHint: 'Search actions',
     onSearch: (query) => setState(() => _query = query),
+    summary: _actionsSummary(),
     actions: [
       _StatusFilter(
         shown: _shown,
@@ -659,7 +785,7 @@ class _PlanScreenState extends State<PlanScreen> {
       ),
     ],
     child: RefreshIndicator(
-      onRefresh: _load,
+      onRefresh: () => Future.wait([_load(), _loadEvents(again: true)]),
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(bottom: 24),
@@ -667,6 +793,43 @@ class _PlanScreenState extends State<PlanScreen> {
       ),
     ),
   );
+
+  /// The Actions pane's summary: the window's time by the actions shown
+  /// (each action's going to the nearest of it and its groups that's
+  /// shown), or by priority; null without events, or actions, to show.
+  Widget? _actionsSummary() {
+    final view = _summaryView;
+    final goals = _goals;
+    if (view == null || goals == null) return null;
+    final tree = _Tree(goals, _shown, _expanded, query: _query);
+    final visible = {for (final goal in tree.shown) goal.id};
+    return PlanSummary(
+      view: view,
+      titles: const ['Visible actions', 'By priority'],
+      pages: (events) {
+        final (day, week) = actionTime(events, view.window, tree.byId, _shown);
+        List<SummarySlice> shares(Map<String?, Duration> time) => planShares(
+          byVisible(time, tree.byId, visible),
+          none: '',
+          noneLabel: 'No action',
+          others: 'actions',
+          slice: (id, time) => actionSlice(tree.byId[id], id, time),
+        );
+        return [(shares(day), shares(week)), priorityTime(events, view.window)];
+      },
+    );
+  }
+
+  /// Each action's and group's time in the summaries' window, with what's
+  /// in it, through the actions shown, for the 24 hours and 7 days; null
+  /// until the window's events are in.
+  (Map<String?, Duration>, Map<String?, Duration>)? _timeOnActions(_Tree tree) {
+    final view = _summaryView;
+    final events = view?.events;
+    if (view == null || events == null) return null;
+    final (day, week) = actionTime(events, view.window, tree.byId, _shown);
+    return (rolledUp(day, tree.byId), rolledUp(week, tree.byId));
+  }
 
   /// The Actions pane's list: the time spent on them, then the tree, or
   /// why it can't be shown.
@@ -691,7 +854,7 @@ class _PlanScreenState extends State<PlanScreen> {
       ];
     }
     final shown = tree.shown;
-    final onGoals = goals.timeFor(_shown);
+    final time = _timeOnActions(tree);
     final searching = _query.trim().isNotEmpty;
     return [
       // The last actions loaded, or kept from last time, are still shown.
@@ -706,17 +869,6 @@ class _PlanScreenState extends State<PlanScreen> {
           spacing: 16,
           runSpacing: 4,
           children: [
-            // Time spent is only counted where it's known.
-            if (goals.asOf case final asOf?)
-              Tooltip(
-                message:
-                    'Time spent is counted up to when notes were last '
-                    'compacted into the calendar.',
-                child: Text(
-                  'Last compacted ${formatTimestamp(context, asOf)}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
             Tooltip(
               message:
                   "Each active action takes one of the calendar's event "
@@ -730,18 +882,6 @@ class _PlanScreenState extends State<PlanScreen> {
           ],
         ),
       ),
-      if (onGoals != null && !searching)
-        GoalsTimeSummary(
-          visible: shown,
-          byId: tree.byId,
-          statuses: _shown,
-          onGoals: onGoals,
-          byPriority: goals.minutesByPriority,
-          collapsed: _timeSummaryCollapsed,
-          onCollapsed: _setTimeSummaryCollapsed,
-          durations: _durations,
-          onDurations: _setDurations,
-        ),
       if (shown.isEmpty)
         searching
             ? NoMatches(query: _query)
@@ -755,7 +895,14 @@ class _PlanScreenState extends State<PlanScreen> {
           goal: goal,
           ancestors: tree.ancestors[i],
           joined: tree.sharedAbove(i),
-          shownStatuses: _shown,
+          time: switch (time) {
+            (final day, final week) => (
+              day[goal.id] ?? Duration.zero,
+              week[goal.id] ?? Duration.zero,
+            ),
+            null => null,
+          },
+          timeLabels: _summaryView?.window.labels,
           durations: _durations,
           subGoals: tree.subGoals[goal.id] ?? 0,
           // A search shows what's in the groups it finds.
@@ -774,7 +921,15 @@ class _PlanScreenState extends State<PlanScreen> {
             final save when save.refused => save.lastError,
             final save => '${save.lastError}. Trying again soon',
           },
-          onTap: () => _open(goal),
+          onTap: _failed(goal.id) != null
+              ? () => _open(goal)
+              : (goal.isGroup || (tree.subGoals[goal.id] ?? 0) > 0) &&
+                    !searching
+              ? () => setState(() {
+                  if (!_expanded.remove(goal.id)) _expanded.add(goal.id!);
+                })
+              : () => _edit(goal),
+          onEdit: () => _edit(goal),
           onRetry: () => widget.outbox.retry(goal.id!),
           onDiscard: () => _discard(goal.id!),
           onLongPress:
@@ -1000,7 +1155,8 @@ class _GoalTile extends StatelessWidget {
     required this.goal,
     this.ancestors = const [],
     this.joined = 0,
-    this.shownStatuses,
+    this.time,
+    this.timeLabels,
     this.durations = true,
     required this.subGoals,
     required this.expanded,
@@ -1011,6 +1167,7 @@ class _GoalTile extends StatelessWidget {
     this.onAddAction,
     this.onAddGroup,
     this.onApprove,
+    this.onEdit,
     this.saving = false,
     this.failed,
     this.onRetry,
@@ -1037,9 +1194,13 @@ class _GoalTile extends StatelessWidget {
   /// run on up over the divider between them.
   final int joined;
 
-  /// The statuses the Plan page shows: its time is through actions with
-  /// these. Null for all its time.
-  final Set<String>? shownStatuses;
+  /// Its time, with what's in it, in the summaries' 24 hours and 7 days;
+  /// null if it isn't known.
+  final (Duration, Duration)? time;
+
+  /// The labels of those windows, as the summaries have them: "24h" and
+  /// "7d", or looking on, "+24h" and "+7d".
+  final (String, String)? timeLabels;
 
   /// Whether its time is in durations, rather than percentages.
   final bool durations;
@@ -1050,13 +1211,15 @@ class _GoalTile extends StatelessWidget {
   /// Whether its sub-goals are shown.
   final bool expanded;
 
-  /// Shows or hides what's in it: swiping it right does this. Null while
-  /// a search shows everything found in it.
+  /// Shows or hides what's in it, for a group. Null while a search shows
+  /// everything found in it.
   final VoidCallback? onToggle;
 
-  /// Opens its details, to see and edit: tapping it, or "Edit" in its
-  /// menu.
+  /// Tapping it: a group's opens or closes it; an action's edits it.
   final VoidCallback? onTap;
+
+  /// Edits its priority and color: "Edit" in its menu.
+  final VoidCallback? onEdit;
   final VoidCallback? onLongPress;
 
   /// While reordering, its index in the list, for its drag handle; null
@@ -1082,20 +1245,15 @@ class _GoalTile extends StatelessWidget {
         goalStatuses[goal.status] ?? goal.status,
       if (goal.isGroup && subGoals == 0) 'Empty group',
     ].nonNulls.join(' · ');
-    // Through what's in it with the statuses shown, if that's known; else
-    // all of it.
-    final filtered = switch (shownStatuses) {
-      final shown? => goal.timeFor(shown),
-      null => null,
-    };
-    final shown = switch (filtered ?? (goal.minutes24h, goal.minutes7d)) {
-      (final int day, final int week) => describeTime(
-        day,
-        week,
+    final shown = switch (time) {
+      (final day, final week) => describeTime(
+        day.inMinutes,
+        week.inMinutes,
         skipZero: true,
         asPercent: !durations,
+        windows: timeLabels ?? ('24h', '7d'),
       ),
-      _ => null,
+      null => null,
     };
     // Its own priority, filled; else the one it inherits, outlined. Only
     // an active goal's events take one.
@@ -1182,7 +1340,7 @@ class _GoalTile extends StatelessWidget {
                 'approve' => onApprove?.call(),
                 'action' => onAddAction?.call(),
                 'group' => onAddGroup?.call(),
-                _ => onTap?.call(),
+                _ => onEdit?.call(),
               },
               itemBuilder: (context) => [
                 if (onApprove != null)
@@ -1243,12 +1401,7 @@ class _GoalTile extends StatelessWidget {
         ],
       ),
     );
-    // Swiping it right shows or hides what's in it, if anything is.
-    return switch (onToggle) {
-      final onToggle? when parent && !saving && dragIndex == null =>
-        _SwipeRight(onSwipe: onToggle, child: tile),
-      _ => tile,
-    };
+    return tile;
   }
 
   /// [goal]'s band: its own color, solid, or the one it inherits, dashed.
@@ -1261,68 +1414,6 @@ class _GoalTile extends StatelessWidget {
       dashed: own == null || !goal.active,
     );
   }
-}
-
-/// [child], which follows a finger dragging it right, a little, and springs
-/// back; dragged far enough, or flicked, it calls [onSwipe]. Only a drag
-/// right is its: one left is left to what it's in -- the Plan page's
-/// panes, which it swipes between.
-class _SwipeRight extends StatefulWidget {
-  const _SwipeRight({required this.onSwipe, required this.child});
-
-  final VoidCallback onSwipe;
-  final Widget child;
-
-  @override
-  State<_SwipeRight> createState() => _SwipeRightState();
-}
-
-class _SwipeRightState extends State<_SwipeRight> {
-  /// How far it's been dragged right, up to [_far].
-  double _dx = 0;
-
-  /// How far a drag has to go to count, and as far as the row follows it.
-  static const _far = 48.0;
-
-  @override
-  Widget build(BuildContext context) => RawGestureDetector(
-    gestures: {
-      _RightDragRecognizer:
-          GestureRecognizerFactoryWithHandlers<_RightDragRecognizer>(
-            _RightDragRecognizer.new,
-            (recognizer) {
-              recognizer
-                ..onUpdate = (details) {
-                  setState(() => _dx = (_dx + details.delta.dx).clamp(0, _far));
-                }
-                ..onEnd = (details) {
-                  if (_dx >= _far || (details.primaryVelocity ?? 0) > 600) {
-                    widget.onSwipe();
-                  }
-                  setState(() => _dx = 0);
-                }
-                ..onCancel = () => setState(() => _dx = 0);
-            },
-          ),
-    },
-    child: AnimatedContainer(
-      duration: _dx == 0 ? const Duration(milliseconds: 150) : Duration.zero,
-      transform: Matrix4.translationValues(_dx, 0, 0),
-      child: widget.child,
-    ),
-  );
-}
-
-/// A horizontal drag that's only claimed once it's gone right: one that
-/// goes left first loses to whatever else wants it.
-class _RightDragRecognizer extends HorizontalDragGestureRecognizer {
-  _RightDragRecognizer({super.debugOwner});
-
-  @override
-  bool hasSufficientGlobalDistanceToAccept(
-    PointerDeviceKind pointerDeviceKind,
-    double? deviceTouchSlop,
-  ) => globalDistanceMoved > computeHitSlop(pointerDeviceKind, gestureSettings);
 }
 
 /// One goal's band: its color, and whether it's dashed, for one inherited.
@@ -1599,9 +1690,6 @@ GoalList _inTree(GoalList list, List<Goal> goals) {
     goals: ordered,
     labelSlotsUsed: list.labelSlotsUsed,
     labelSlotsTotal: list.labelSlotsTotal,
-    asOf: list.asOf,
-    minutesByStatuses: list.minutesByStatuses,
-    minutesByPriority: list.minutesByPriority,
   );
 }
 
@@ -1634,9 +1722,6 @@ GoalList _withSiblingOrder(GoalList goals, List<String> ids) {
     goals: ordered,
     labelSlotsUsed: goals.labelSlotsUsed,
     labelSlotsTotal: goals.labelSlotsTotal,
-    asOf: goals.asOf,
-    minutesByStatuses: goals.minutesByStatuses,
-    minutesByPriority: goals.minutesByPriority,
   );
 }
 
@@ -1657,6 +1742,7 @@ String? describeTime(
   int week, {
   bool skipZero = false,
   bool asPercent = false,
+  (String, String) windows = ('24h', '7d'),
 }) {
   String? part(int minutes, String window, int windowMinutes) {
     if (skipZero && minutes == 0) return null;
@@ -1666,8 +1752,8 @@ String? describeTime(
   }
 
   final parts = [
-    part(day, '24h', 24 * 60),
-    part(week, '7d', 7 * 24 * 60),
+    part(day, windows.$1, 24 * 60),
+    part(week, windows.$2, 7 * 24 * 60),
   ].nonNulls;
   return parts.isEmpty ? null : parts.join(' · ');
 }

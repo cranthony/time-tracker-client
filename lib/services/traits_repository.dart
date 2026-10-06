@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../models/trait.dart';
 import 'mcp_client.dart';
+import 'response_cache.dart';
 
 /// Traits, how each person (Self included) is rated by them, and each
 /// person's history, through the Time Tracker MCP server's tools. The app talks to this
@@ -15,6 +16,10 @@ abstract class TraitsRepository {
 
   /// The traits with any of [statuses] (by default active and off).
   Future<List<Trait>> traits({List<String>? statuses});
+
+  /// What [traits] last returned for [statuses], kept from an earlier run
+  /// of the app; null if there's nothing kept.
+  Future<List<Trait>?> cachedTraits({List<String>? statuses});
 
   /// Creates [trait]; returns it as created, with its id.
   Future<Trait> createTrait(Trait trait);
@@ -43,19 +48,37 @@ abstract class TraitsRepository {
 
 /// Reaches traits via the Time Tracker MCP server.
 class McpTraitsRepository implements TraitsRepository {
-  McpTraitsRepository(this._client);
+  McpTraitsRepository(this._client, {this._cache});
 
   final McpClient _client;
+
+  final ResponseCache? _cache;
+
+  static String _cacheKey(List<String>? statuses) =>
+      'traits:${(statuses ?? const ['default']).join(',')}';
+
+  static List<Trait> _decode(Object? result) => [
+    for (final t in result as List)
+      Trait.fromJson((t as Map).cast<String, dynamic>()),
+  ];
 
   @override
   Future<List<Trait>> traits({List<String>? statuses}) async {
     final result = await _client.callTool('get_traits', {
       'statuses': ?statuses,
     });
-    return [
-      for (final t in result as List)
-        Trait.fromJson((t as Map).cast<String, dynamic>()),
-    ];
+    await _cache?.write(_cacheKey(statuses), result);
+    return _decode(result);
+  }
+
+  @override
+  Future<List<Trait>?> cachedTraits({List<String>? statuses}) async {
+    try {
+      final result = await _cache?.read(_cacheKey(statuses));
+      return result == null ? null : _decode(result);
+    } catch (_) {
+      return null; // From an older version of the app, perhaps.
+    }
   }
 
   @override
@@ -122,6 +145,9 @@ class InMemoryTraitsRepository implements TraitsRepository {
 
   /// [personDigest]'s answer, by person id.
   final Map<String, PersonDigest> digests;
+
+  @override
+  Future<List<Trait>?> cachedTraits({List<String>? statuses}) async => null;
 
   @override
   bool get scored => true;

@@ -8,6 +8,7 @@ import '../services/goals_repository.dart';
 import '../services/events_place.dart';
 import '../services/events_repository.dart';
 import '../services/notes_repository.dart';
+import '../services/plan_memory.dart';
 import 'events_screen.dart';
 import 'notes_screen.dart';
 import 'plan_screen.dart';
@@ -62,6 +63,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Where Events was left, to go back there.
   final _eventsPlace = EventsPlaceStore();
 
+  /// What Plan showed, to show again while it loads when it's back.
+  final _planMemory = PlanMemory();
+
   @override
   void initState() {
     super.initState();
@@ -105,6 +109,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         _Tab.plan => PlanScreen(
           repository: widget.goalsRepository,
+          eventsRepository: widget.eventsRepository,
+          notesRepository: widget.notesRepository,
+          memory: _planMemory,
           outbox: widget.goalOutbox,
           serverLabel: widget.notesRepository.label,
           onSignIn: widget.onSignIn,

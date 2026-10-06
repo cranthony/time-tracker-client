@@ -9,12 +9,19 @@ done at it and what happened: who it was with and for, where, and notes.
 Above them, a summary shows how the day's time is split by priority;
 swipe it to see the top actions, or the top-level groups. A **Plan** page
 has four panes, swiped between or picked from its tabs, each with a search
-of its own:
+of its own. Landing on it loads every pane at once, and it shows what it
+had last time while it loads again. The Actions, People and Locations
+panes each have a summary, above the search, of the time in the 24 hours
+and 7 days before the last compaction -- or after it, with "Next" -- worked
+out from the events; its arrows move the window a day at a time, and
+tapping the date goes back to the last compaction.
 
 - **Actions** (do), leftmost: what you do with your time, as a tree of
   groups -- names that roll up the actions in them -- with actions, the
-  only thing events are given, as its leaves. Swipe a group right to open
-  it. Only active actions take up one of the calendar's event labels. An
+  only thing events are given, as its leaves, each with its time in the
+  window. The summary splits the time by the actions shown, or by
+  priority. Tap a group to open or close it; tap an action to set its
+  priority and color, or go on to its details. Only active actions take up one of the calendar's event labels. An
   action Claude made is *proposed* until you approve it. The search finds
   actions by name, path and note, in their groups.
 - **Traits** (how to be): each trait you define -- none is built in. A
@@ -24,17 +31,20 @@ of its own:
   with a lookback, location, general notes, person notes); and counts,
   time spent, continuity and follow-through, which can count one action
   or group. Every part reads the events with someone, or those done for
-  them. Tap one to edit it.
+  them. Tap one for its page: its score, its parts and who it applies to;
+  its pencil edits it.
 - **People** (who): Self, always, then everyone else, each with a context
   that tells people of the same name apart, in any number of circles.
   Tap a circle to see only its people; tap a person for their page: who
   they are, which traits apply to them (every active one, or those
-  picked, with their own parts for any) and what matters to them.
+  picked, with their own parts for any) and what matters to them. The
+  summary splits the time by who it was with, or by circle (people in
+  none are "Individuals").
 - **Locations** (where): the places events happen, each with a hint the
-  assistant recognizes it by.
+  assistant recognizes it by. The summary splits the time by where it
+  was.
 
-The sample data goes further than the server does so far: the time spent
-on each action, and each person's relationship health (gray,
+The sample data goes further than the server does so far: each person's relationship health (gray,
 disconnected, to green, healthy), trait scores, with Claude's judgments
 behind each, and history.
 
@@ -420,7 +430,8 @@ see [Try it with sample data](#try-it-with-sample-data).
 
 `test/visual` renders the main screens with the sample data, at a phone's
 size, in light and dark: Plan (each pane, a circle's people, searches
-of people and actions, a trait and an action being edited, and its
+of people and actions, a trait's page, a trait and an action being
+edited, and its
 actions with every status, and the time summary on each page and folded
 away), a person's page, Events (with each page of its day summary, folded away,
 and what happened at an event) and Notes.

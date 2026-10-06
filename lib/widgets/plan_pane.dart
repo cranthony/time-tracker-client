@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 /// One of the Plan page's panes -- Actions, Traits, People, Locations --
-/// that it swipes between: a search across the top, with the pane's
-/// [actions] beside it, over its [child], which fills the rest. The pane
+/// that it swipes between: its [summary], if it has one, then a search,
+/// with the pane's [actions] beside it, over its [child], which fills the
+/// rest. The pane
 /// is kept alive while swiped away, so it keeps its search and what it
 /// loaded.
 class PlanPane extends StatefulWidget {
@@ -11,8 +12,12 @@ class PlanPane extends StatefulWidget {
     required this.searchHint,
     required this.onSearch,
     this.actions = const [],
+    this.summary,
     required this.child,
   });
+
+  /// Above the search: a [TimeSummary], say.
+  final Widget? summary;
 
   /// What the search searches, e.g. "Search people".
   final String searchHint;
@@ -48,6 +53,7 @@ class _PlanPaneState extends State<PlanPane>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        ?widget.summary,
         Material(
           color: theme.colorScheme.surfaceContainerLow,
           child: Padding(

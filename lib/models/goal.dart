@@ -17,9 +17,6 @@ class Goal {
     this.priority,
     this.effectiveColor,
     this.effectivePriority,
-    this.minutes24h,
-    this.minutes7d,
-    this.minutesByStatuses,
     this.path,
     this.properties = const {},
   });
@@ -62,24 +59,6 @@ class Goal {
   /// Whether [effectivePriority] comes from an ancestor, not its own.
   bool get inheritsPriority => priority == null && effectivePriority != null;
 
-  /// Minutes spent on it and its sub-goals in the 24 hours up to
-  /// [GoalList.asOf]; null without one.
-  final int? minutes24h;
-
-  /// The same, over the 7 days up to [GoalList.asOf].
-  final int? minutes7d;
-
-  /// [minutes24h] and [minutes7d], split by the statuses of the goals each
-  /// event was given among this one and its sub-goals; null from a server
-  /// too old to say, or without a [GoalList.asOf].
-  final List<StatusMinutes>? minutesByStatuses;
-
-  /// Its minutes in the last 24 hours and 7 days through goals with any of
-  /// [statuses] (itself or its sub-goals), each event once: its time,
-  /// filtered as the Goals page is. Null if it isn't known.
-  (int, int)? timeFor(Set<String> statuses) =>
-      _timeFor(minutesByStatuses, statuses);
-
   /// Its names from the top of the tree down, e.g. "Cooking › Tofu".
   final String? path;
 
@@ -102,9 +81,6 @@ class Goal {
     effectiveColor: json['effective_color'] as String?,
     effectivePriority:
         json['effective_priority'] as int? ?? json['priority'] as int?,
-    minutes24h: json['minutes_24h'] as int?,
-    minutes7d: json['minutes_7d'] as int?,
-    minutesByStatuses: _statusMinutes(json['minutes_by_statuses']),
     path: json['path'] as String?,
     properties: Map.unmodifiable(json),
   );
@@ -121,88 +97,7 @@ class Goal {
     'priority': priority,
     'effective_color': effectiveColor,
     'effective_priority': effectivePriority,
-    'minutes_24h': minutes24h,
-    'minutes_7d': minutes7d,
-    'minutes_by_statuses': minutesByStatuses?.map((m) => m.toJson()).toList(),
   };
-}
-
-/// The time spent on events whose goals have exactly these [statuses]
-/// between them, as the server splits it: see [GoalList.timeFor].
-class StatusMinutes {
-  const StatusMinutes({
-    required this.statuses,
-    required this.minutes24h,
-    required this.minutes7d,
-  });
-
-  final Set<String> statuses;
-  final int minutes24h;
-  final int minutes7d;
-
-  factory StatusMinutes.fromJson(Map<String, dynamic> json) => StatusMinutes(
-    statuses: {...(json['statuses'] as List).cast<String>()},
-    minutes24h: json['minutes_24h'] as int? ?? 0,
-    minutes7d: json['minutes_7d'] as int? ?? 0,
-  );
-
-  Map<String, Object?> toJson() => {
-    'statuses': [...statuses],
-    'minutes_24h': minutes24h,
-    'minutes_7d': minutes7d,
-  };
-}
-
-List<StatusMinutes>? _statusMinutes(Object? json) => switch (json) {
-  final List split => [
-    for (final part in split)
-      StatusMinutes.fromJson((part as Map).cast<String, dynamic>()),
-  ],
-  _ => null,
-};
-
-/// The time in the last 24 hours and 7 days that went to a [priority], as
-/// the server splits it: each moment goes to the highest priority among
-/// the events then, each event's own or else its goals'. Null [priority]
-/// is the rest: no event, or none with a priority. A window's parts add
-/// up to the whole window.
-class PriorityMinutes {
-  const PriorityMinutes({
-    required this.priority,
-    required this.minutes24h,
-    required this.minutes7d,
-  });
-
-  final int? priority;
-  final int minutes24h;
-  final int minutes7d;
-
-  factory PriorityMinutes.fromJson(Map<String, dynamic> json) =>
-      PriorityMinutes(
-        priority: json['priority'] as int?,
-        minutes24h: json['minutes_24h'] as int? ?? 0,
-        minutes7d: json['minutes_7d'] as int? ?? 0,
-      );
-
-  Map<String, Object?> toJson() => {
-    'priority': priority,
-    'minutes_24h': minutes24h,
-    'minutes_7d': minutes7d,
-  };
-}
-
-/// The minutes in [split] whose statuses include any of [statuses]; null
-/// without a [split].
-(int, int)? _timeFor(List<StatusMinutes>? split, Set<String> statuses) {
-  if (split == null) return null;
-  var (day, week) = (0, 0);
-  for (final part in split) {
-    if (part.statuses.any(statuses.contains)) {
-      day += part.minutes24h;
-      week += part.minutes7d;
-    }
-  }
-  return (day, week);
 }
 
 /// The goals, and how many of the calendar's event labels they use.
@@ -211,33 +106,12 @@ class GoalList {
     required this.goals,
     this.labelSlotsUsed = 0,
     this.labelSlotsTotal = 200,
-    this.asOf,
-    this.minutesByStatuses,
-    this.minutesByPriority,
   });
 
   /// Parents before their children.
   final List<Goal> goals;
   final int labelSlotsUsed;
   final int labelSlotsTotal;
-
-  /// When notes were last compacted into the calendar, which each goal's
-  /// recent time is counted up to; null if they never have been.
-  final DateTime? asOf;
-
-  /// The time spent on any goal up to [asOf], split by the statuses of
-  /// the goals each event was given. Null from a server too old to say, or
-  /// without an [asOf].
-  final List<StatusMinutes>? minutesByStatuses;
-
-  /// The last 24 hours and 7 days up to [asOf], split by priority. Null
-  /// from a server too old to say, or without an [asOf].
-  final List<PriorityMinutes>? minutesByPriority;
-
-  /// The minutes spent on goals with any of [statuses] in the last 24
-  /// hours and 7 days, each event once; null if it isn't known.
-  (int, int)? timeFor(Set<String> statuses) =>
-      _timeFor(minutesByStatuses, statuses);
 
   factory GoalList.fromJson(Map<String, dynamic> json) => GoalList(
     goals: [
@@ -246,18 +120,6 @@ class GoalList {
     ],
     labelSlotsUsed: json['label_slots_used'] as int? ?? 0,
     labelSlotsTotal: json['label_slots_total'] as int? ?? 200,
-    asOf: switch (json['as_of']) {
-      final String asOf => DateTime.tryParse(asOf),
-      _ => null,
-    },
-    minutesByStatuses: _statusMinutes(json['minutes_by_statuses']),
-    minutesByPriority: switch (json['minutes_by_priority']) {
-      final List split => [
-        for (final part in split)
-          PriorityMinutes.fromJson((part as Map).cast<String, dynamic>()),
-      ],
-      _ => null,
-    },
   );
 }
 

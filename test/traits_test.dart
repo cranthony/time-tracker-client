@@ -8,6 +8,7 @@ import 'package:time_tracker_client/screens/person_screen.dart';
 import 'package:time_tracker_client/screens/traits_pane.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
+import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
 import 'package:time_tracker_client/widgets/facts_dialog.dart';
@@ -306,6 +307,7 @@ void main() {
           home: Scaffold(
             body: TraitsPane(
               repository: repository,
+              memory: PlanMemory(),
               actions: const {'call': 'Social › Call', 'social': 'Social'},
             ),
           ),
@@ -405,7 +407,10 @@ void main() {
       addTearDown(tester.view.reset);
       final repository = await pump(tester);
 
+      // Its page first, then its editor from the pencil.
       await tester.tap(find.text('Reliable'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Edit Reliable'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Social › Call'));
       await tester.pumpAndSettle();

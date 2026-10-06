@@ -2,29 +2,35 @@ import 'package:flutter/material.dart';
 
 import '../models/trait.dart';
 import '../services/mcp_client.dart';
+import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import '../widgets/health.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/trait_dialog.dart';
 import 'trait_breakdown.dart';
+import 'trait_screen.dart';
 
 /// The Plan page's Traits pane -- how the user wants to be: each
 /// trait's name, definition, status, latest score (the mean across the
 /// people rated by it) and its last 8 days' scores, and anything wrong
-/// with it. Tapping a trait edits it, parts and all; tapping its score
-/// shows the people and parts behind it; its menu turns it on or off, or
-/// archives it. "+" adds one. Archived traits are shown only when asked
-/// for. The search finds them by name, definition and parts. [personNames] names the people behind a score; [actions] the
-/// actions a cadence part can count.
+/// with it. Tapping a trait opens its page, to read ([TraitScreen]),
+/// whose pencil edits it, parts and all; tapping its score shows the
+/// people and parts behind it; its menu turns it on or off, or archives
+/// it. "+" adds one. Archived traits are shown only when asked for. The
+/// search finds them by name, definition and parts. It shows what
+/// [memory] has, while it loads afresh. [personNames] names the people
+/// behind a score; [actions] the actions a part can count.
 class TraitsPane extends StatefulWidget {
   const TraitsPane({
     super.key,
     required this.repository,
+    required this.memory,
     this.personNames = const {},
     this.actions = const {},
   });
 
   final TraitsRepository repository;
+  final PlanMemory memory;
   final Map<String?, String> personNames;
   final Map<String, String> actions;
 
@@ -33,42 +39,59 @@ class TraitsPane extends StatefulWidget {
 }
 
 class TraitsPaneState extends State<TraitsPane> {
-  List<Trait>? _traits;
-  Map<String, List<TraitDay>> _history = const {};
   Object? _error;
   bool _archived = false;
 
   /// What the search has in it.
   String _query = '';
 
+  List<Trait>? get _traits => widget.memory.traits;
+
+  /// Each trait's scores, by its id, oldest first.
+  Map<String, List<TraitDay>> get _history {
+    final history = <String, List<TraitDay>>{};
+    for (final day in widget.memory.traitHistory) {
+      (history[day.traitId] ??= []).add(day);
+    }
+    return history;
+  }
+
   @override
   void initState() {
     super.initState();
-    reload();
+    _settle(widget.memory.loadTraits(widget.repository));
   }
 
   /// Loads the traits and their scores afresh.
-  Future<void> reload() async {
+  Future<void> reload() =>
+      _settle(widget.memory.loadTraits(widget.repository, again: true));
+
+  /// Shows what [loading] loads, once it has, or why it couldn't.
+  Future<void> _settle(Future<void> loading) async {
     try {
-      final traits = await widget.repository.traits(
-        statuses: [...traitStatuses.keys],
-      );
-      final history = await widget.repository.traitHistory();
-      if (!mounted) return;
-      setState(() {
-        _traits = traits;
-        _history = {};
-        for (final day in history) {
-          (_history[day.traitId] ??= []).add(day);
-        }
-        _error = null;
-      });
+      await loading;
+      if (mounted) setState(() => _error = null);
     } catch (e) {
       if (mounted) setState(() => _error = e);
     }
   }
 
-  Future<void> _edit(Trait? trait) async {
+  Future<void> _open(Trait trait) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => TraitScreen(
+        trait: trait,
+        repository: widget.repository,
+        days: _history[trait.id] ?? const [],
+        people: widget.memory.people,
+        actionNames: widget.actions,
+        onEdit: _edit,
+      ),
+    ),
+  );
+
+  /// Creates a trait (with no [trait]) or edits one; returns it as
+  /// saved, or null if nothing was.
+  Future<Trait?> _edit(Trait? trait) async {
     final repository = widget.repository;
     final saved = await showTraitDialog(
       context,
@@ -84,6 +107,7 @@ class TraitsPaneState extends State<TraitsPane> {
             }),
     );
     if (saved != null) await reload();
+    return saved;
   }
 
   Future<void> _setStatus(Trait trait, String status) async {
@@ -179,7 +203,7 @@ class TraitsPaneState extends State<TraitsPane> {
     final judgments = trait.parts.where((p) => p['kind'] == 'judgment').length;
     final others = trait.parts.length - judgments;
     return ListTile(
-      onTap: () => _edit(trait),
+      onTap: () => _open(trait),
       title: Text(
         trait.name,
         style: muted ? TextStyle(color: theme.hintColor) : null,

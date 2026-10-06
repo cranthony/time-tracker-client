@@ -3,16 +3,30 @@ import 'package:flutter/material.dart';
 import '../models/person.dart';
 import '../services/mcp_client.dart';
 import '../services/people_repository.dart';
+import '../services/plan_memory.dart';
 import '../widgets/person_dialog.dart';
 import '../widgets/plan_pane.dart';
+import '../widgets/plan_summaries.dart';
 
 /// The Plan page's Locations pane -- where: each place events happen,
 /// with the hint the assistant recognizes it by. Tapping one edits or
 /// deletes it; "+" adds one. The search finds them by name and hint.
+/// Above it all, with a [summary] to measure, the time at each location
+/// in its window. It shows what [memory] has, while it loads afresh.
 class LocationsPane extends StatefulWidget {
-  const LocationsPane({super.key, required this.repository, this.onLocations});
+  const LocationsPane({
+    super.key,
+    required this.repository,
+    required this.memory,
+    this.summary,
+    this.onLocations,
+  });
 
   final PeopleRepository repository;
+  final PlanMemory memory;
+
+  /// What the summary measures, and how it's shown; null for none.
+  final SummaryView? summary;
 
   /// Told what the locations are each time they load.
   final ValueChanged<List<Location>>? onLocations;
@@ -22,7 +36,7 @@ class LocationsPane extends StatefulWidget {
 }
 
 class LocationsPaneState extends State<LocationsPane> {
-  List<Location>? _locations;
+  List<Location>? get _locations => widget.memory.locations;
   Object? _error;
 
   /// What the search has in it.
@@ -31,19 +45,20 @@ class LocationsPaneState extends State<LocationsPane> {
   @override
   void initState() {
     super.initState();
-    reload();
+    _settle(widget.memory.loadLocations(widget.repository));
   }
 
   /// Loads the locations afresh.
-  Future<void> reload() async {
+  Future<void> reload() =>
+      _settle(widget.memory.loadLocations(widget.repository, again: true));
+
+  /// Shows what [loading] loads, once it has, or why it couldn't.
+  Future<void> _settle(Future<void> loading) async {
     try {
-      final locations = await widget.repository.locations();
+      await loading;
       if (!mounted) return;
-      setState(() {
-        _locations = locations;
-        _error = null;
-      });
-      widget.onLocations?.call(locations);
+      setState(() => _error = null);
+      widget.onLocations?.call(_locations!);
     } catch (e) {
       if (mounted) setState(() => _error = e);
     }
@@ -74,7 +89,19 @@ class LocationsPaneState extends State<LocationsPane> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final locations = _locations;
+    final view = widget.summary;
     return PlanPane(
+      summary: view == null
+          ? null
+          : PlanSummary(
+              view: view,
+              titles: const ['By location'],
+              pages: (events) => [
+                locationTime(events, view.window, {
+                  for (final l in locations ?? const <Location>[]) l.id: l.name,
+                }),
+              ],
+            ),
       searchHint: 'Search locations',
       onSearch: (query) => setState(() => _query = query),
       actions: [

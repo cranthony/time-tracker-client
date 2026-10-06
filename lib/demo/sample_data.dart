@@ -19,8 +19,10 @@ import '../services/traits_repository.dart';
 ///
 /// The actions are a tree of groups (Sleep-related, Food-related, Social,
 /// Creative › Guitar...) with actions as its leaves: own and inherited
-/// colors and priorities, actions Claude proposed and an archived one, and
-/// the time spent on each up to the last compaction. The people are Self and six others in five
+/// colors and priorities, actions Claude proposed and an archived one.
+/// Besides today's events, the week around it has a routine (sleep,
+/// work, meals, TV) and the events with people that their histories
+/// tell of, with the plans to come, for the summaries to measure. The people are Self and six others in five
 /// circles, from healthy to disconnected (and one archived), each rated by
 /// five traits made of judgments and cadences -- Self by four, Sam with a
 /// cadence of their own -- with Claude's judgments of their recent events
@@ -42,13 +44,8 @@ class SampleData {
     ),
   );
   EventsRepository eventsRepository() =>
-      InMemoryEventsRepository(events, recurrences);
-  GoalsRepository goalsRepository() => InMemoryGoalsRepository(
-    goals,
-    lastCompaction,
-    minutesByStatuses,
-    minutesByPriority,
-  );
+      InMemoryEventsRepository([...events, ...week], recurrences);
+  GoalsRepository goalsRepository() => InMemoryGoalsRepository(goals);
   PeopleRepository peopleRepository() => InMemoryPeopleRepository(
     people: people,
     circles: circles,
@@ -793,49 +790,99 @@ class SampleData {
 
   // ---------------------------------------------------------------- Actions
 
-  /// The time on actions by the statuses of the actions each event
-  /// served: [_minutes], each action's own, added up by its status.
-  List<StatusMinutes> get minutesByStatuses {
-    final byStatus = <String, (int, int)>{};
-    for (final (id, _, _, _, fields) in _tree) {
-      if (_minutes[id] case (final day, final week)) {
-        final status = fields['status'] as String? ?? 'active';
-        final (d, w) = byStatus[status] ?? (0, 0);
-        byStatus[status] = (d + day, w + week);
-      }
-    }
-    return [
-      for (final MapEntry(key: status, value: (day, week)) in byStatus.entries)
-        StatusMinutes(statuses: {status}, minutes24h: day, minutes7d: week),
-    ];
-  }
-
-  /// The last 24 hours and 7 days by priority: each action's time to the
-  /// priority it takes, then the rest of each window, with none.
-  List<PriorityMinutes> get minutesByPriority {
-    final byPriority = <int?, (int, int)>{};
-    var (onDay, onWeek) = (0, 0);
-    for (final goal in goals) {
-      if (_minutes[goal.id] case (final day, final week)) {
-        final (d, w) = byPriority[goal.effectivePriority] ?? (0, 0);
-        byPriority[goal.effectivePriority] = (d + day, w + week);
-        onDay += day;
-        onWeek += week;
-      }
-    }
-    final (d, w) = byPriority[null] ?? (0, 0);
-    byPriority[null] = (d + 24 * 60 - onDay, w + 7 * 24 * 60 - onWeek);
-    return [
-      for (final MapEntry(key: priority, value: (day, week))
-          in byPriority.entries)
-        PriorityMinutes(priority: priority, minutes24h: day, minutes7d: week),
-    ]..sort((a, b) => (a.priority ?? 9).compareTo(b.priority ?? 9));
-  }
-
   List<Note> get notes => [
     Note(timestamp: _at(7, 50), description: 'Running a little late'),
     Note(timestamp: _at(9, 40), description: 'Started on the plan page'),
     Note(timestamp: _at(12, 15), description: 'Lunch with Sam, finally'),
+  ];
+
+  /// The weeks before and after today, other than today itself: a
+  /// routine each day, then the events with people their histories have,
+  /// and some plans.
+  List<Event> get week => [
+    for (var day = -8; day <= 7; day++)
+      if (day != 0) ...[
+        // Tonight's sleep is today's last event; last night's, its first.
+        if (day != -1)
+          _event(
+            'sleep$day',
+            'Sleep',
+            _at(23, 0, day),
+            _at(7, 0, day + 1),
+            actions: ['sleep'],
+            sleep: true,
+            priority: 3,
+          ),
+        _event(
+          'up$day',
+          'Get up and get ready',
+          _at(7, 0, day),
+          _at(7, 45, day),
+          actions: ['get_up'],
+          priority: 0,
+        ),
+        if (_today.add(Duration(days: day)).weekday <= DateTime.friday)
+          _event(
+            'work$day',
+            'Work',
+            _at(8, 30, day),
+            _at(17, 0, day),
+            actions: ['work'],
+            priority: 1,
+          ),
+        _event(
+          'dinner$day',
+          'Dinner',
+          _at(19, 0, day),
+          _at(19, 45, day),
+          actions: ['cook_lunch_dinner', 'eat_meal'],
+          priority: 2,
+        ),
+        _event(
+          'tv$day',
+          'TV',
+          _at(21, 30, day),
+          _at(22, 30, day),
+          actions: ['watch_tv'],
+        ),
+      ],
+    for (final e in _past)
+      if (e.daysAgo > 0)
+        _event(
+          'past-${e.key}',
+          e.summary,
+          _at(e.hour, 0, -e.daysAgo),
+          _at(e.hour + 1, 0, -e.daysAgo),
+          actions: e.actions,
+          facts: e.facts,
+        ),
+    _event(
+      'next-salsa',
+      'Salsa social',
+      _at(20, 0, 3),
+      _at(22, 0, 3),
+      actions: ['dance_class'],
+      priority: 2,
+      facts: const Facts(withIds: ['sam', 'jordan'], locationId: 'hall'),
+    ),
+    _event(
+      'next-ramen',
+      'Dinner with Priya',
+      _at(18, 30, 2),
+      _at(20, 0, 2),
+      actions: ['eat_meal', 'deep_talk'],
+      priority: 2,
+      facts: const Facts(withIds: ['priya'], locationId: 'ramen'),
+    ),
+    _event(
+      'next-parents',
+      'Video call with Mom and Dad',
+      _at(10, 0, 5),
+      _at(11, 0, 5),
+      actions: ['video_call'],
+      priority: 2,
+      facts: const Facts(withIds: ['mom', 'dad']),
+    ),
   ];
 
   List<Event> get events => [
@@ -1089,36 +1136,6 @@ class SampleData {
 
   static final _names = {for (final (id, name, _, _, _) in _tree) id: name};
 
-  /// Each action's minutes in the last 24 hours and 7 days, up to
-  /// [lastCompaction]: a group's are its actions'.
-  static const _minutes = {
-    'get_ready_for_bed': (30, 210),
-    'sleep': (480, 3360),
-    'get_up': (30, 225),
-    'work': (210, 1500),
-    'eat_meal': (60, 420),
-    'eat_snack': (0, 45),
-    'drink_water': (0, 0),
-    'walk': (0, 90),
-    'text': (15, 120),
-    'email': (0, 60),
-    'doomscroll': (25, 240),
-    'shallow_talk': (0, 60),
-    'deep_talk': (0, 60),
-    'call': (5, 35),
-    'video_call': (0, 0),
-    'dance_class': (0, 120),
-    'practice_guitar': (60, 120),
-    'play_guitar': (0, 30),
-    'sing_for_fun': (0, 45),
-    'cook_lunch_dinner': (0, 90),
-    'cook_breakfast': (0, 60),
-    'cooking_class': (0, 0),
-    'listen_music': (0, 120),
-    'watch_tv': (60, 300),
-    'wrap_gift': (0, 30),
-  };
-
   List<Goal> get goals {
     final byId = {for (final row in _tree) row.$1: row};
     String? inherited(String? id, String field) {
@@ -1126,19 +1143,6 @@ class SampleData {
         if (byId[at]!.$5[field] case final value?) return '$value';
       }
       return null;
-    }
-
-    (int, int) minutesOf(String id) {
-      if (_minutes[id] case final own?) return own;
-      var (day, week) = (0, 0);
-      for (final row in _tree) {
-        if (row.$3 == id) {
-          final (d, w) = minutesOf(row.$1);
-          day += d;
-          week += w;
-        }
-      }
-      return (day, week);
     }
 
     return [
@@ -1155,8 +1159,6 @@ class SampleData {
             final p? => int.parse(p),
             null => null,
           },
-          'minutes_24h': minutesOf(id).$1,
-          'minutes_7d': minutesOf(id).$2,
         }),
     ];
   }

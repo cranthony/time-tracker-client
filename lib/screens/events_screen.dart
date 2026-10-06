@@ -233,10 +233,12 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// Loads the saved notes not yet compacted, after those kept from last
-  /// time if [cached]. Best effort: without them, they aren't marked.
+  /// time if [cached], and when notes were last compacted. Best effort:
+  /// without them, they aren't marked.
   Future<void> _loadNotes({bool cached = false}) async {
     final repository = widget.notesRepository;
     if (repository == null) return;
+    unawaited(_loadCompaction(repository, cached: cached));
     void show(List<Note> notes) {
       if (!mounted) return;
       setState(() => _savedNotes = [for (final n in notes) n.timestamp]);
@@ -253,6 +255,28 @@ class _EventsScreenState extends State<EventsScreen> {
       fetched?.call();
     } catch (_) {
       // Shown as they were.
+    }
+  }
+
+  /// Loads when notes were last compacted, after what was kept from last
+  /// time if [cached]. Best effort: without it, it isn't marked.
+  Future<void> _loadCompaction(
+    NotesRepository repository, {
+    bool cached = false,
+  }) async {
+    void show(CompactionStatus status) {
+      if (mounted) setState(() => _lastCompaction = status.lastCompaction);
+    }
+
+    try {
+      if (cached) {
+        if (await repository.cachedCompactionStatus() case final status?) {
+          show(status);
+        }
+      }
+      show(await repository.compactionStatus());
+    } catch (_) {
+      // Shown as it was.
     }
   }
 
@@ -373,10 +397,9 @@ class _EventsScreenState extends State<EventsScreen> {
           )
           .inDays;
 
-  /// Loads the goals, for their colors, and when notes were last
-  /// compacted: those kept from last time, then the server's. Best
-  /// effort: without them, goals are named as the events have them, with
-  /// outlined diamonds, and the last compaction isn't marked.
+  /// Loads the actions, for their colors: those kept from last time,
+  /// then the server's. Best effort: without them, actions are named as
+  /// the events have them, with outlined diamonds.
   Future<void> _loadGoals() async {
     final repository = widget.goalsRepository;
     if (repository == null) return;
@@ -384,7 +407,6 @@ class _EventsScreenState extends State<EventsScreen> {
       if (!mounted) return;
       setState(() {
         _goalsById = {for (final goal in goals.goals) ?goal.id: goal};
-        _lastCompaction = goals.asOf;
       });
     }
 
