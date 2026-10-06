@@ -5,6 +5,7 @@ import '../models/note.dart';
 import '../models/person.dart';
 import '../models/recurrence.dart';
 import '../models/trait.dart';
+import '../models/trait_scores.dart';
 import '../services/events_repository.dart';
 import '../services/goals_repository.dart';
 import '../services/notes_repository.dart';
@@ -52,38 +53,10 @@ class SampleData {
     locations: locations,
   );
 
-  /// The traits; a week of their scores across everyone; and each
-  /// person's latest rating, part by part, and their history.
-  TraitsRepository traitsRepository() => InMemoryTraitsRepository(
-    traits: traits,
-    history: [
-      for (final trait in traits)
-        if (trait.status == 'active')
-          for (var back = 7; back >= 1; back--)
-            () {
-              final scores = {
-                for (final id in _ratedPeople)
-                  if (_traitScore(id, trait.id!) case final score?)
-                    id: (score - (back - 1) * _drift(id, trait.id!)).clamp(
-                      0,
-                      100,
-                    ),
-              };
-              return TraitDay(
-                traitId: trait.id!,
-                name: trait.name,
-                day: _day(_today.subtract(Duration(days: back))),
-                score: scores.isEmpty
-                    ? 0
-                    : (scores.values.reduce((a, b) => a + b) / scores.length)
-                          .round(),
-                people: scores,
-              );
-            }(),
-    ],
-    ratings: {for (final id in _ratedPeople) id: _rating(id)},
-    digests: {for (final id in _ratedPeople) id: _digest(id)},
-  );
+  /// The traits. How everyone is rated by them is worked out from the
+  /// events, as with the server.
+  TraitsRepository traitsRepository() =>
+      InMemoryTraitsRepository(traits: traits);
 
   // ---------------------------------------------------------------- Traits
 
@@ -214,15 +187,7 @@ class SampleData {
       ('college', 'College', null),
       ('work', 'Work', null),
     ])
-      Circle.fromJson({
-        'id': id,
-        'name': name,
-        'note': note,
-        ..._healthOf([
-          for (final p in _peopleSpec)
-            if (p.circles.contains(id) && p.status == 'active') p.id,
-        ]),
-      }),
+      Circle.fromJson({'id': id, 'name': name, 'note': note}),
   ];
 
   /// Where events happen.
@@ -309,12 +274,6 @@ class SampleData {
     ),
   ];
 
-  /// Everyone rated by the traits: the active people.
-  static final _ratedPeople = [
-    for (final p in _peopleSpec)
-      if (p.status == 'active') p.id,
-  ];
-
   /// Which traits apply to each person who isn't rated as everyone is:
   /// Self isn't held to Reliable, and Sam has a cadence of their own -- a
   /// call or more every two weeks.
@@ -348,42 +307,10 @@ class SampleData {
         'circles': p.circles,
         'what_matters': p.whatMatters,
         'traits': _personTraits[p.id]?.toJson(),
-        if (p.status == 'active') ..._healthOf([p.id]),
       }),
   ];
 
-  /// The health of [ids] together, as a person's or a circle's: their
-  /// mean rating, and their last 8 days.
-  Map<String, Object?> _healthOf(List<String> ids) {
-    final rated = [
-      for (final id in ids)
-        if (_rating(id).rating case final r?) (id, r),
-    ];
-    if (rated.isEmpty) return const {};
-    final health =
-        (rated.map((r) => r.$2).reduce((a, b) => a + b) / rated.length).round();
-    // Drifting toward today: up for those doing better, down for the rest.
-    final slope = rated.length == 1 ? _drift(rated.single.$1, 'present') : 1;
-    return {
-      'health': health,
-      'health_trend': [
-        for (var back = 7; back >= 0; back--)
-          back == 4 && ids.length == 1 && ids.single == 'dad'
-              ? '-'
-              : '${(health - back * slope).clamp(0, 100)}',
-      ].join(','),
-    };
-  }
-
-  /// How fast [id]'s score of [traitId] has been changing, a day: those
-  /// drifting apart, down.
-  static int _drift(String id, String traitId) => switch (id) {
-    'jordan' || 'dad' => -3,
-    'alex' => -1,
-    _ => (traitId.length % 3) + 1,
-  };
-
-  // ------------------------------------------------------- Ratings, digests
+  // ------------------------------------------------------------- History
 
   /// The past events: what was done (action ids), who was there and who
   /// it was for, where, the notes on each person, and Claude's judgments
@@ -565,229 +492,6 @@ class SampleData {
     ),
   ];
 
-  /// [id]'s events, oldest first: Self is at every one.
-  List<_PastEvent> _eventsOf(String id) => [
-    for (final e in _past)
-      if (id == selfPersonId || e.withIds.contains(id) || e.forIds.contains(id))
-        e,
-  ]..sort((a, b) => b.daysAgo.compareTo(a.daysAgo));
-
-  /// [id]'s parts for [trait]: their own, or the trait's.
-  List<Part> _partsOf(String id, Trait trait) =>
-      _personTraits[id]?.parts[trait.id] ?? trait.parts;
-
-  /// [id]'s score of [trait], part by part, as the server would work it
-  /// out; null if no part has anything to rate it by.
-  TraitScore? _traitScoreOf(String id, Trait trait) {
-    final events = _eventsOf(id);
-    final parts = <PartScore>[];
-    final keys = <String, int>{};
-    for (final part in _partsOf(id, trait)) {
-      final kind = part['kind'] as String;
-      final n = keys.update(kind, (n) => n + 1, ifAbsent: () => 1);
-      final key = n == 1 ? kind : '$kind#$n';
-      switch (kind) {
-        case 'judgment':
-          final top = judgmentRatings(part).last.score;
-          // Self is judged for everything they're at; others by whether
-          // they were there, or had it done for them.
-          final engaged = part['engagement_type'] == 'for'
-              ? (_PastEvent e) => e.forIds.contains(id)
-              : (_PastEvent e) => id == selfPersonId || e.withIds.contains(id);
-          final judged = [
-            for (final e in events)
-              if (e.daysAgo <= 30 && engaged(e))
-                if (e.judgments[trait.id] case (final rating, final why))
-                  Judgment(
-                    eventId: '$id-${e.key}',
-                    personId: id,
-                    traitId: trait.id!,
-                    part: key,
-                    rating: rating,
-                    scale: top,
-                    reasoning: why,
-                  ),
-          ];
-          final mean = judged.isEmpty
-              ? null
-              : judged.map((j) => j.rating).reduce((a, b) => a + b) /
-                    judged.length;
-          parts.add(
-            PartScore(
-              key: key,
-              kind: kind,
-              rubric: part['rubric'] as String?,
-              score: mean == null ? null : (mean / top * 100).round(),
-              said: mean == null
-                  ? 'Nothing to rate in the last 30 days'
-                  : 'Mean rating ${mean.toStringAsFixed(1)} of $top over '
-                        '${judged.length} event${judged.length == 1 ? '' : 's'} '
-                        'in the last 30 days',
-              eventIds: [for (final j in judged) j.eventId!],
-              judgments: judged,
-            ),
-          );
-        case 'count':
-          final days = (part['interval_days'] as num?) ?? 30;
-          final action = part['action'];
-          // A group counts the actions in it.
-          final counts = action == null
-              ? null
-              : {
-                  action,
-                  for (final row in _tree)
-                    if (row.$3 == action) row.$1,
-                };
-          final counted = [
-            for (final e in events)
-              if (e.daysAgo < days &&
-                  (counts == null || e.actions.any(counts.contains)))
-                e,
-          ];
-          final target = part['target'] as num;
-          parts.add(
-            PartScore(
-              key: key,
-              kind: kind,
-              score: (counted.length / target * 100).clamp(0, 100).round(),
-              said:
-                  '${counted.length} of $target '
-                  '${part['noun'] ?? (_names[action] ?? 'event').toLowerCase()} '
-                  'in the last $days days',
-              eventIds: [for (final e in counted) '$id-${e.key}'],
-            ),
-          );
-        case 'continuity':
-          final last = events.isEmpty ? null : events.last.daysAgo;
-          final within = (part['last_within_days'] as num?) ?? 14;
-          final recent = last != null && last <= within;
-          parts.add(
-            PartScore(
-              key: key,
-              kind: kind,
-              score: recent ? 50 : 0,
-              said: [
-                last == null ? 'No event yet' : 'Last $last days ago',
-                'nothing planned',
-                '(within $within days)',
-              ].join('; '),
-              eventIds: [if (recent) '$id-${events.last.key}'],
-            ),
-          );
-        case 'follow_through':
-          parts.add(
-            PartScore(
-              key: key,
-              kind: kind,
-              score: id == 'dad' ? 75 : 100,
-              said: id == 'dad'
-                  ? '1 cancelled in the last 30 days, from 100'
-                  : 'Nothing cancelled in the last 30 days',
-            ),
-          );
-      }
-    }
-    final scored = [
-      for (final p in parts)
-        if (p.score != null) p,
-    ];
-    return TraitScore(
-      traitId: trait.id!,
-      name: trait.name,
-      score: scored.isEmpty
-          ? null
-          : (scored.map((p) => p.score!).reduce((a, b) => a + b) /
-                    scored.length)
-                .round(),
-      parts: parts,
-    );
-  }
-
-  /// Whether [traitId] applies to [id].
-  static bool _applies(String id, String traitId) =>
-      _personTraits[id]?.applies(traitId) ?? true;
-
-  int? _traitScore(String id, String traitId) => _applies(id, traitId)
-      ? _traitScoreOf(id, traits.firstWhere((t) => t.id == traitId))?.score
-      : null;
-
-  TraitsRating _rating(String id) {
-    final scores = [
-      for (final trait in traits)
-        if (trait.status == 'active' && _applies(id, trait.id!))
-          ?_traitScoreOf(id, trait),
-    ];
-    final rated = [
-      for (final s in scores)
-        if (s.score != null) s.score!,
-    ];
-    final mean = rated.isEmpty
-        ? null
-        : (rated.reduce((a, b) => a + b) / rated.length).round();
-    return TraitsRating(
-      rating: mean,
-      day: _day(_today.subtract(const Duration(days: 1))),
-      explanation:
-          'Traits (${scores.map((t) => '${t.name} ${t.score}').join(', ')}) '
-          '→ $mean',
-      traits: scores,
-      leftOut: [
-        for (final trait in traits)
-          if (trait.status != 'active' || !_applies(id, trait.id!)) trait.name,
-      ],
-    );
-  }
-
-  PersonDigest _digest(String id) {
-    final events = _eventsOf(id);
-    List<DigestEntry> entries(Iterable<(String, int)> seen) {
-      final byLabel = <String, List<int>>{};
-      for (final (label, daysAgo) in seen) {
-        (byLabel[label] ??= []).add(daysAgo);
-      }
-      return [
-        for (final MapEntry(key: label, value: days) in byLabel.entries)
-          DigestEntry(
-            label: label,
-            count: days.length,
-            first: _day(_today.subtract(Duration(days: days.reduce(_max)))),
-            last: _day(_today.subtract(Duration(days: days.reduce(_min)))),
-          ),
-      ]..sort((a, b) => b.count.compareTo(a.count));
-    }
-
-    return PersonDigest(
-      personId: id,
-      eventsCounted: events.length,
-      actions: entries([
-        for (final e in events)
-          for (final a in e.actions) (a, e.daysAgo),
-      ]),
-      locations: entries([
-        for (final e in events)
-          if (e.location case final where?) (where, e.daysAgo),
-      ]),
-      events: [
-        for (final e in events)
-          {
-            'id': '$id-${e.key}',
-            'summary': e.summary,
-            'start': localIsoTimestamp(_at(e.hour, 0, -e.daysAgo)),
-            'end': localIsoTimestamp(_at(e.hour + 1, 0, -e.daysAgo)),
-            'action_ids': e.actions,
-            'facts': e.facts.toJson(),
-          },
-      ],
-    );
-  }
-
-  static int _max(int a, int b) => a > b ? a : b;
-  static int _min(int a, int b) => a < b ? a : b;
-
-  static String _day(DateTime day) =>
-      '${day.year}-${day.month.toString().padLeft(2, '0')}-'
-      '${day.day.toString().padLeft(2, '0')}';
-
   // ---------------------------------------------------------------- Actions
 
   List<Note> get notes => [
@@ -855,6 +559,7 @@ class SampleData {
           _at(e.hour + 1, 0, -e.daysAgo),
           actions: e.actions,
           facts: e.facts,
+          judgments: _judgmentsOf(e),
         ),
     _event(
       'next-salsa',
@@ -995,6 +700,42 @@ class SampleData {
     ),
   ];
 
+  /// Claude's judgments of [e], as the server keeps them: for each person
+  /// each trait's judgment reads it for -- Self and those with them, or
+  /// those it was for -- on that part's scale.
+  Map<String, Object?> _judgmentsOf(_PastEvent e) {
+    final judged = <Judgment>[];
+    for (final trait in traits) {
+      final (rating, why) = e.judgments[trait.id] ?? (null, null);
+      if (rating == null) continue;
+      for (final id in {selfPersonId, ...e.withIds, ...e.forIds}) {
+        final person = _personTraits[id] ?? const PersonTraits();
+        if (!person.applies(trait.id!)) continue;
+        final parts = person.parts[trait.id] ?? trait.parts;
+        final keys = partKeys(parts);
+        for (var i = 0; i < parts.length; i++) {
+          final part = parts[i];
+          if (part['kind'] != 'judgment') continue;
+          final reads = part['engagement_type'] == 'for'
+              ? e.forIds.contains(id)
+              : id == selfPersonId || e.withIds.contains(id);
+          if (!reads) continue;
+          judged.add(
+            Judgment(
+              personId: id,
+              traitId: trait.id!,
+              part: keys[i],
+              rating: rating,
+              scale: judgmentRatings(part).last.score,
+              reasoning: why,
+            ),
+          );
+        }
+      }
+    }
+    return judgmentsToJson(judged);
+  }
+
   Event _event(
     String id,
     String summary,
@@ -1006,6 +747,7 @@ class SampleData {
     bool fromLabel = false,
     int? priority,
     Facts? facts,
+    Map<String, Object?>? judgments,
   }) => Event.fromJson({
     'id': id,
     'summary': summary,
@@ -1019,6 +761,7 @@ class SampleData {
     if (fromLabel) 'actions_from_label': true,
     'effective_priority': ?priority,
     'facts': ?facts?.toJson(),
+    if (judgments != null && judgments.isNotEmpty) 'judgments': judgments,
   });
 
   /// The series "Get up and get ready" is part of: every weekday since a

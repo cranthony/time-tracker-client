@@ -47,24 +47,44 @@ class TraitsPaneState extends State<TraitsPane> {
 
   List<Trait>? get _traits => widget.memory.traits;
 
-  /// Each trait's scores, by its id, oldest first.
+  /// Each trait's scores, by its id, oldest first: worked out from the
+  /// events.
   Map<String, List<TraitDay>> get _history {
     final history = <String, List<TraitDay>>{};
-    for (final day in widget.memory.traitHistory) {
+    for (final day in widget.memory.scores?.history ?? const <TraitDay>[]) {
       (history[day.traitId] ??= []).add(day);
     }
     return history;
   }
 
+  /// How a person's traits rated a day, part by part, from the events.
+  TraitsRating? _rating(String personId, String day) =>
+      widget.memory.scores?.rating(personId, day);
+
   @override
   void initState() {
     super.initState();
+    widget.memory.addListener(_rescored);
     _settle(widget.memory.loadTraits(widget.repository));
   }
 
-  /// Loads the traits and their scores afresh.
-  Future<void> reload() =>
-      _settle(widget.memory.loadTraits(widget.repository, again: true));
+  @override
+  void dispose() {
+    widget.memory.removeListener(_rescored);
+    super.dispose();
+  }
+
+  /// Shows the scores again, as they're worked out again.
+  void _rescored() {
+    if (mounted) setState(() {});
+  }
+
+  /// Loads the traits afresh, and the events around today they're scored
+  /// from.
+  Future<void> reload() => Future.wait([
+    _settle(widget.memory.loadTraits(widget.repository, again: true)),
+    ?widget.memory.eventStore?.warm().catchError((Object _) {}),
+  ]);
 
   /// Shows what [loading] loads, once it has, or why it couldn't.
   Future<void> _settle(Future<void> loading) async {
@@ -80,7 +100,8 @@ class TraitsPaneState extends State<TraitsPane> {
     MaterialPageRoute<void>(
       builder: (_) => TraitScreen(
         trait: trait,
-        repository: widget.repository,
+        rating: _rating,
+        events: widget.memory.scores?.eventsBehind,
         days: _history[trait.id] ?? const [],
         people: widget.memory.people,
         actionNames: widget.actions,
@@ -235,7 +256,8 @@ class TraitsPaneState extends State<TraitsPane> {
                 context,
                 trait: trait,
                 days: days,
-                repository: widget.repository,
+                rating: _rating,
+                events: widget.memory.scores?.eventsBehind,
                 personNames: widget.personNames,
               ),
               // On one line: a column would overflow a list tile's height.

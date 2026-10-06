@@ -10,6 +10,7 @@ import '../models/person.dart';
 import '../outbox/goal_outbox.dart';
 import '../outbox/pending_goal_save.dart';
 import '../outbox/save_error.dart';
+import '../services/event_store.dart';
 import '../services/events_repository.dart';
 import '../services/goals_repository.dart';
 import '../services/mcp_client.dart';
@@ -196,6 +197,18 @@ class _PlanScreenState extends State<PlanScreen> {
   Future<void> _prefetch() async {
     final traits = TraitsScope.of(context);
     final people = PeopleScope.of(context);
+    // On its own, without the home screen to load the events the traits
+    // are scored from as the app opens: loads them here.
+    if (_memory.eventStore == null && widget.eventsRepository != null) {
+      _memory.useEvents(EventStore(repository: widget.eventsRepository!));
+      unawaited(
+        _memory.warmScores(
+          traits: traits,
+          people: people,
+          goals: widget.repository,
+        ),
+      );
+    }
     await _memory.loadKept(traits: traits, people: people);
     if (mounted) setState(() {});
     Future<void> quietly(Future<void>? loading) async {

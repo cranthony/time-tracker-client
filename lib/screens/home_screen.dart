@@ -5,10 +5,13 @@ import 'package:flutter/material.dart';
 import '../outbox/goal_outbox.dart';
 import '../outbox/note_outbox.dart';
 import '../services/goals_repository.dart';
+import '../services/event_store.dart';
 import '../services/events_place.dart';
 import '../services/events_repository.dart';
 import '../services/notes_repository.dart';
+import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
+import '../services/traits_repository.dart';
 import 'events_screen.dart';
 import 'notes_screen.dart';
 import 'plan_screen.dart';
@@ -70,11 +73,26 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // Once the scopes can be read: the events around today, and what the
+    // traits are scored by, for every page.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _warmScores());
     _addNoteRequests = widget.addNoteRequests?.listen((at) {
       setState(() => _tab = _Tab.notes);
       // Once the notes screen is built and listening.
       WidgetsBinding.instance.addPostFrameCallback((_) => _toNotes.add(at));
     });
+  }
+
+  /// Loads the week either side of today's events, and the traits,
+  /// people and actions they're scored by. Best effort.
+  Future<void> _warmScores() async {
+    if (!mounted) return;
+    _planMemory.useEvents(EventStore(repository: widget.eventsRepository));
+    await _planMemory.warmScores(
+      traits: TraitsScope.of(context),
+      people: PeopleScope.of(context),
+      goals: widget.goalsRepository,
+    );
   }
 
   @override

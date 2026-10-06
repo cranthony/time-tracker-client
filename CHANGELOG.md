@@ -6,6 +6,22 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 6.7.0
+
+No longer needs the server's daily trait scores.
+
+- The traits' scores are worked out in the app, from the events and
+  Claude's judgments of them, as the server scores them: each person's
+  score of each trait for each of the last 7 days, each trait's health,
+  and each person's and circle's relationship health and history. Their
+  pages show what's behind each score, with the events. Follow-through
+  isn't scored: the server doesn't list cancelled events.
+- As it opens, the app loads the week either side of today, and any
+  earlier (or later) day the traits read that it hasn't kept from an
+  earlier run. The Events page shows those days at once, and what's saved
+  there changes the scores straight away.
+- The sample data's scores are worked out from its events the same way.
+
 ## 6.6.0
 
 - "Count against follow-through" starts on when confirming a

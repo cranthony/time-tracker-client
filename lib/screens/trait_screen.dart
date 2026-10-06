@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../models/person.dart';
 import '../models/trait.dart';
-import '../services/traits_repository.dart';
 import '../widgets/health.dart';
 import 'trait_breakdown.dart';
 
@@ -16,7 +15,8 @@ class TraitScreen extends StatefulWidget {
   const TraitScreen({
     super.key,
     required this.trait,
-    this.repository,
+    this.rating,
+    this.events,
     this.days = const [],
     this.people,
     this.actionNames = const {},
@@ -25,8 +25,11 @@ class TraitScreen extends StatefulWidget {
 
   final Trait trait;
 
-  /// Where its scores come from, to show what's behind one.
-  final TraitsRepository? repository;
+  /// How a person's traits rated a day, to show what's behind a score.
+  final TraitsRating? Function(String personId, String day)? rating;
+
+  /// The events behind a score's parts, by id.
+  final Map<String, Map<String, dynamic>> Function(TraitScore score)? events;
 
   /// Its daily scores, oldest first; empty where people aren't scored.
   final List<TraitDay> days;
@@ -124,13 +127,14 @@ class _TraitScreenState extends State<TraitScreen> {
                   HealthDot(rating: days.last.score),
                 ],
               ),
-              onTap: widget.repository == null
+              onTap: widget.rating == null
                   ? null
                   : () => showTraitHistory(
                       context,
                       trait: _trait,
                       days: days,
-                      repository: widget.repository!,
+                      rating: widget.rating!,
+                      events: widget.events,
                       personNames: {
                         for (final p in widget.people?.withSelf ?? <Person>[])
                           p.id: personName(p),

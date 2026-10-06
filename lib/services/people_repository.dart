@@ -251,8 +251,6 @@ class InMemoryPeopleRepository implements PeopleRepository {
             for (final p in _people)
               if (p.circleIds.contains(c.id)) p.id,
           ],
-          health: c.health,
-          healthTrend: c.healthTrend,
         ),
     ],
   );
@@ -304,15 +302,7 @@ class InMemoryPeopleRepository implements PeopleRepository {
     if (before.isSelf && (changes['status'] ?? 'active') != 'active') {
       throw McpException('Self is always active.');
     }
-    final updated = Person.fromJson({
-      ...before.toJson(),
-      ...changes,
-      // Not the server's: kept as the sample has it.
-      'health': before.health,
-      'health_trend': before.healthTrend
-          .map((r) => r?.toString() ?? '-')
-          .join(','),
-    });
+    final updated = Person.fromJson({...before.toJson(), ...changes});
     _checkPerson(updated);
     if (i >= 0) {
       _people[i] = updated;
@@ -345,8 +335,6 @@ class InMemoryPeopleRepository implements PeopleRepository {
       note: changes.containsKey('note')
           ? changes['note'] as String?
           : before.note,
-      health: before.health,
-      healthTrend: before.healthTrend,
     );
     if (updated.name.trim().isEmpty) throw McpException('Give it a name.');
     _circles[i] = updated;
@@ -364,10 +352,6 @@ class InMemoryPeopleRepository implements PeopleRepository {
             for (final c in person.circleIds)
               if (c != id) c,
           ],
-          'health': person.health,
-          'health_trend': person.healthTrend
-              .map((r) => r?.toString() ?? '-')
-              .join(','),
         });
       }
     }

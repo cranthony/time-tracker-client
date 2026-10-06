@@ -1,31 +1,69 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/trait.dart';
 import 'package:time_tracker_client/screens/locations_pane.dart';
 import 'package:time_tracker_client/screens/people_pane.dart';
+import 'package:time_tracker_client/services/event_store.dart';
+import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/widgets/health.dart';
 
 const _circles = [
-  Circle(id: 'family', name: 'Family', health: 80),
+  Circle(id: 'family', name: 'Family'),
   Circle(id: 'dance', name: 'Dance friends', note: 'Thursday salsa'),
 ];
 
 const _people = [
-  Person(id: 'mom', name: 'Mom', circleIds: ['family'], health: 90),
+  Person(id: 'mom', name: 'Mom', circleIds: ['family']),
   Person(
     id: 'sam',
     name: 'Sam',
     context: 'from salsa',
     circleIds: ['dance', 'family'],
-    health: 40,
   ),
-  Person(id: 'jordan', name: 'Jordan', circleIds: ['dance'], health: 5),
+  Person(id: 'jordan', name: 'Jordan', circleIds: ['dance']),
   Person(id: 'casey', name: 'Casey', status: 'archived'),
 ];
+
+/// How caring an event was, judged out of 10.
+const _caring = Trait(
+  id: 'caring',
+  name: 'Caring',
+  parts: [
+    {
+      'kind': 'judgment',
+      'rubric': 'Was it caring?',
+      'ratings': {'0': 'Not at all', '10': 'Entirely'},
+      'facts': ['general_notes'],
+    },
+  ],
+);
+
+/// Yesterday's visit to Mom, judged 9 of 10 for her: her health, 90.
+Event _visit() {
+  final now = DateTime.now();
+  return Event.fromJson({
+    'id': 'visit',
+    'summary': 'Visit Mom',
+    'start': localIsoTimestamp(DateTime(now.year, now.month, now.day - 1, 12)),
+    'end': localIsoTimestamp(DateTime(now.year, now.month, now.day - 1, 14)),
+    'facts': {
+      'with_ids': ['mom'],
+    },
+    'judgments': {
+      'mom': {
+        'caring': {
+          'judgment': {'rating': 9, 'scale': 10},
+        },
+      },
+    },
+  });
+}
 
 const _traits = [
   Trait(
@@ -136,13 +174,20 @@ void main() {
         people: people,
         circles: circles,
       );
+      // Scored by how caring their events were.
+      final memory = PlanMemory(
+        eventStore: EventStore(
+          repository: InMemoryEventsRepository([_visit()]),
+        ),
+      )..traits = const [_caring];
+      await memory.eventStore!.warm();
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: _Fill(
               child: PeoplePane(
                 repository: repository,
-                memory: PlanMemory(),
+                memory: memory,
                 traits: InMemoryTraitsRepository(traits: _traits),
                 actions: const {'call': 'Call'},
               ),
@@ -171,7 +216,14 @@ void main() {
 
       expect(find.text('Self'), findsOneWidget);
       expect(find.text('from salsa · Family, Dance friends'), findsOneWidget);
+      // Mom's, worked out from her events; no one else has any judged.
       expect(find.text('90'), findsOneWidget);
+      expect(find.byType(HealthDot), findsOneWidget);
+      // Her circle's too.
+      expect(
+        find.byTooltip('Family: health 90, ${relationshipBand(90)}'),
+        findsOneWidget,
+      );
       expect(find.text('Casey'), findsNothing);
 
       await tester.tap(find.byTooltip('Show archived people'));

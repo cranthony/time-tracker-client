@@ -14,6 +14,7 @@ import 'outbox/note_outbox.dart';
 import 'outbox/outbox_store.dart';
 import 'platform/add_note_shortcut.dart';
 import 'screens/home_screen.dart';
+import 'services/event_store.dart';
 import 'services/goals_repository.dart';
 import 'services/events_repository.dart';
 import 'services/mcp_client.dart';
@@ -168,8 +169,14 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
   final _addNoteShortcut = AddNoteShortcut();
   String? _version;
 
-  /// What's been loaded of the plan, for every page to share.
-  final _planMemory = PlanMemory();
+  /// What's been loaded of the plan, and the events, for every page to
+  /// share: the traits are scored from them.
+  late final _planMemory = PlanMemory(
+    eventStore: EventStore(
+      repository: widget.eventsRepository,
+      cache: widget.cache,
+    ),
+  );
 
   @override
   void initState() {
@@ -217,6 +224,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
   /// Signs out, and forgets what the server said while signed in.
   Future<void> _signOut() async {
     await widget.auth!.signOut();
+    await _planMemory.eventStore?.clear();
     await widget.cache?.clear();
   }
 

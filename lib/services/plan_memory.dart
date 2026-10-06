@@ -5,7 +5,10 @@ import '../models/goal.dart';
 import '../models/person.dart';
 import '../models/time_split.dart';
 import '../models/trait.dart';
+import '../models/trait_scores.dart';
+import 'event_store.dart';
 import 'events_repository.dart';
+import 'goals_repository.dart';
 import 'people_repository.dart';
 import 'traits_repository.dart';
 
@@ -15,15 +18,85 @@ import 'traits_repository.dart';
 /// again. The Events page fills in its people, locations and traits too
 /// ([prefetchNames]), for an event's dialogs to name them at once.
 ///
+/// It holds the app's [eventStore] too, and the traits' [scores], worked
+/// out from it: [warmScores], as the app opens, loads what they need.
+/// Listeners hear whenever anything it holds changes.
+///
 /// Each visit loads everything at once (see [load]): a pane opened while
 /// its load is still under way waits for that one, rather than asking
 /// again.
-class PlanMemory {
+class PlanMemory extends ChangeNotifier {
+  PlanMemory({EventStore? eventStore}) {
+    if (eventStore != null) useEvents(eventStore);
+  }
+
   GoalList? actions;
   List<Trait>? traits;
-  List<TraitDay> traitHistory = const [];
   PeopleList? people;
   List<Location>? locations;
+
+  /// The calendar's events, kept day by day, that the traits are scored
+  /// from; null until there's somewhere to load them from.
+  EventStore? get eventStore => _eventStore;
+  EventStore? _eventStore;
+
+  /// Scores the traits from [store]'s events, unless it has a store
+  /// already.
+  void useEvents(EventStore store) {
+    if (_eventStore != null) return;
+    _eventStore = store..addListener(notifyListeners);
+  }
+
+  /// How many of the days before today the traits are scored for.
+  static const scoredDays = 7;
+
+  /// Everyone's traits scored for each of the last [scoredDays] days, from
+  /// [eventStore]'s events; null until the traits and people are loaded.
+  /// Worked out again only when something it's from changes.
+  TraitScores? get scores {
+    final traits = this.traits, people = this.people, store = _eventStore;
+    if (traits == null || people == null || store == null) return null;
+    final now = DateTime.now();
+    final key = (
+      store.version,
+      traits,
+      people,
+      actions,
+      DateTime(now.year, now.month, now.day),
+    );
+    if (_scores case (final kept, final scores) when _same(kept, key)) {
+      return scores;
+    }
+    final parents = {
+      for (final g in actions?.goals ?? const <Goal>[])
+        if (g.id != null) g.id!: g.parentId,
+    };
+    final today = key.$5;
+    final span = store.span;
+    final scores = TraitScores.compute(
+      traits: traits,
+      people: people.withSelf,
+      events: store.between(
+        span?.$1 ?? today,
+        span == null ? today : span.$2.add(const Duration(days: 1)),
+      ),
+      today: today,
+      parentOf: (id) => parents[id],
+      days: scoredDays,
+      windowDays: span == null ? 0 : today.difference(span.$1).inDays,
+    );
+    _scores = (key, scores);
+    return scores;
+  }
+
+  (_ScoresKey, TraitScores)? _scores;
+
+  static bool _same(_ScoresKey a, _ScoresKey b) =>
+      a.$1 == b.$1 &&
+      identical(a.$2, b.$2) &&
+      identical(a.$3, b.$3) &&
+      identical(a.$4, b.$4) &&
+      a.$5 == b.$5;
 
   /// When notes were last compacted, which the summaries measure from by
   /// default; null if they never have been, or it isn't known yet.
@@ -50,7 +123,7 @@ class PlanMemory {
   }) {
     final loading = _loads[what];
     if (loading != null && !again) return loading;
-    return _loads[what] = fetch();
+    return _loads[what] = fetch().then((_) => notifyListeners());
   }
 
   /// Forgets this visit's loads, so the next visit loads afresh.
@@ -81,7 +154,6 @@ class PlanMemory {
   Future<void> loadTraits(TraitsRepository repository, {bool again = false}) =>
       load('traits', () async {
         traits = await repository.traits(statuses: [...traitStatuses.keys]);
-        traitHistory = await repository.traitHistory();
       }, again: again);
 
   /// Loads everyone and their circles, this visit; [again] asks again.
@@ -138,11 +210,57 @@ class PlanMemory {
     ]);
   }
 
+  /// Loads every action and group, this visit, for the groups a trait's
+  /// part can count; [again] asks again.
+  Future<void> loadActions(GoalsRepository repository, {bool again = false}) =>
+      load('actions', () async {
+        actions = await repository.goals();
+      }, again: again);
+
+  /// Loads what the traits' [scores] are worked out from, as the app opens:
+  /// the traits, everyone and every action, then the events, as far back
+  /// and ahead as the traits' parts read from each day scored -- the week
+  /// either side of today afresh, and only what isn't kept from further
+  /// out. Best effort: what can't be loaded is scored without.
+  Future<void> warmScores({
+    TraitsRepository? traits,
+    PeopleRepository? people,
+    GoalsRepository? goals,
+  }) => load('scores', () async {
+    await loadKept(traits: traits, people: people, goals: goals);
+    notifyListeners();
+    Future<void> quietly(Future<void>? loading) async {
+      try {
+        await loading;
+      } catch (_) {
+        // Scored with what's kept, or not at all.
+      }
+    }
+
+    await Future.wait([
+      quietly(traits == null ? null : loadTraits(traits)),
+      quietly(people == null ? null : loadPeople(people)),
+      quietly(goals == null ? null : loadActions(goals)),
+    ]);
+    final store = _eventStore;
+    if (store == null) return;
+    final reached = reach([
+      for (final t in this.traits ?? const <Trait>[])
+        if (t.status == 'active') ...t.parts,
+      for (final p in this.people?.withSelf ?? const <Person>[])
+        for (final parts in p.traits.parts.values) ...parts,
+    ]);
+    await quietly(
+      store.warm(back: scoredDays + reached.back + 1, ahead: reached.ahead),
+    );
+  });
+
   /// What was kept from the app's last run, for whatever this run hasn't
   /// loaded yet. Best effort.
   Future<void> loadKept({
     TraitsRepository? traits,
     PeopleRepository? people,
+    GoalsRepository? goals,
   }) async {
     try {
       this.traits ??= await traits?.cachedTraits(
@@ -150,6 +268,8 @@ class PlanMemory {
       );
       this.people ??= await people?.cachedPeople();
       locations ??= await people?.cachedLocations();
+      actions ??= await goals?.cachedGoals();
+      await _eventStore?.restored();
     } catch (_) {
       // Then nothing's kept.
     }
@@ -175,3 +295,5 @@ class PlanMemoryScope extends InheritedWidget {
   bool updateShouldNotify(PlanMemoryScope oldWidget) =>
       memory != oldWidget.memory;
 }
+
+typedef _ScoresKey = (int, List<Trait>, PeopleList, GoalList?, DateTime);

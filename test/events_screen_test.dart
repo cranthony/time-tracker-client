@@ -12,10 +12,12 @@ import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/home_screen.dart';
+import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
+import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/durations.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
@@ -53,6 +55,55 @@ void main() {
     expect(event.end, DateTime.utc(2026, 9, 30, 13, 45));
     expect(event.isCancelled, isFalse);
     expect(event.properties['event_label_id'], 'label-1');
+  });
+
+  testWidgets("shares the app's events: shows a day it has at once, and "
+      'puts in each day it loads', (tester) async {
+    final store =
+        EventStore(
+          repository: InMemoryEventsRepository(),
+          clock: () => now,
+        )..putDay(at(30, 0), [
+          Event(id: 'kept', start: at(30, 8), end: at(30, 9), summary: 'Walk'),
+        ]);
+    final repo = _SlowRepository(
+      [
+        Event(
+          id: 'lunch',
+          start: at(30, 15),
+          end: at(30, 16),
+          summary: 'Lunch',
+        ),
+        Event(
+          id: 'dinner',
+          start: at(29, 18),
+          end: at(29, 19),
+          summary: 'Dinner',
+        ),
+      ],
+      slow: {at(30, 0)},
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EventsScreen(
+          repository: repo,
+          serverLabel: 'offline demo',
+          memory: PlanMemory(eventStore: store),
+          clock: () => now,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // What the app had, while it's asked for again.
+    expect(find.text('Walk'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Lunch'), findsOneWidget);
+    expect(find.text('Walk'), findsNothing);
+    expect(store.day(at(30, 0))?.map((e) => e.id), ['lunch']);
+    // The days either side, loaded in the background, too.
+    expect(store.day(at(29, 0))?.map((e) => e.id), ['dinner']);
   });
 
   testWidgets('shows today\'s events, and steps between days', (tester) async {

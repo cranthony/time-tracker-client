@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/facts.dart';
+import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/trait.dart';
 
@@ -10,6 +11,7 @@ import 'dart:async';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
 import 'package:time_tracker_client/screens/traits_pane.dart';
+import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
@@ -287,94 +289,43 @@ void main() {
     }));
   });
 
-  test("McpTraitsRepository's trait health is the mean of each day's "
-      'people, from the daily scores', () async {
-    final client = _RecordingClient(
-      (name, _) => [
-        {
-          'day': '2026-10-04',
-          'person_id': 'self',
-          'scores': {'kind': 80, 'bold': null},
-          'parts': {
-            'kind': {
-              'judgment': {'score': 90, 'said': 'Mean of 3 judgment(s)'},
-              'count#2': {'score': 70, 'said': '1 of 2 events'},
+  group('TraitsPane', () {
+    /// Yesterday's dinner with Sam: a new place for Sam (3 of 3), the
+    /// usual for Self (1 of 3).
+    List<Event> dinner() => [
+      _yesterday(
+        'dinner',
+        'Dinner',
+        withIds: ['sam'],
+        judgments: {
+          'sam': {
+            'adventurous': {
+              'judgment': {'rating': 3, 'scale': 3},
+            },
+          },
+          selfPersonId: {
+            'adventurous': {
+              'judgment': {'rating': 1, 'scale': 3},
             },
           },
         },
-        {
-          'day': '2026-10-04',
-          'person_id': 'sam',
-          'scores': {'kind': 61, 'bold': 40},
-        },
-        {
-          'day': '2026-10-03',
-          'person_id': 'sam',
-          'scores': {'kind': 50},
-        },
-      ],
-    );
-    final repository = McpTraitsRepository(client);
+      ),
+    ];
 
-    final days = await repository.traitHistory(
-      start: DateTime(2026, 10, 3),
-      end: DateTime(2026, 10, 4),
-    );
-    expect(client.calls.single.$1, 'get_trait_scores');
-    expect(client.calls.single.$2, {
-      'start': '2026-10-03',
-      'end': '2026-10-04',
-    });
-    final kind = days.where((d) => d.traitId == 'kind').toList();
-    // Oldest first; a person with no score that day is left out.
-    expect([for (final d in kind) d.day], ['2026-10-03', '2026-10-04']);
-    expect([for (final d in kind) d.score], [50, 71]);
-    expect(kind.last.people, {'self': 80, 'sam': 61});
-    expect(days.where((d) => d.traitId == 'bold').single.people, {'sam': 40});
-    // Only Sam's, if asked.
-    final sams = await repository.traitHistory(personIds: ['sam']);
-    expect(client.calls.last.$2['person_id'], 'sam');
-    expect(
-      sams
-          .where((d) => d.day == '2026-10-04' && d.traitId == 'kind')
-          .single
-          .score,
-      61,
-    );
-
-    // How a day's score was reached, part by part.
-    final rating = await repository.explainTraits(
-      'self',
-      day: DateTime(2026, 10, 4),
-    );
-    final parts = rating.traits.firstWhere((t) => t.traitId == 'kind').parts;
-    expect(
-      [for (final p in parts) (p.key, p.kind, p.score)],
-      [('judgment', 'judgment', 90), ('count#2', 'count', 70)],
-    );
-    expect(parts.first.said, 'Mean of 3 judgment(s)');
-  });
-
-  group('TraitsPane', () {
-    Future<InMemoryTraitsRepository> pump(WidgetTester tester) async {
+    Future<InMemoryTraitsRepository> pump(
+      WidgetTester tester, {
+      List<Event>? events,
+    }) async {
       final repository = InMemoryTraitsRepository(
         traits: [_adventurous, _reliable],
-        history: const [
-          TraitDay(
-            traitId: 'adventurous',
-            name: 'Adventurous',
-            day: '2026-10-01',
-            score: 70,
-            people: {'sam': 80, selfPersonId: 60},
-          ),
-        ],
       );
+      final memory = await _scoredMemory(events ?? dinner());
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: TraitsPane(
               repository: repository,
-              memory: PlanMemory(),
+              memory: memory,
               actions: const {'call': 'Social › Call', 'social': 'Social'},
             ),
           ),
@@ -390,7 +341,8 @@ void main() {
       expect(find.text('Adventurous'), findsOneWidget);
       expect(find.text('Try new things together.'), findsOneWidget);
       expect(find.text('1 judgment'), findsOneWidget);
-      expect(find.text('70'), findsOneWidget);
+      // Everyone's mean: Sam's 100 and Self's 33.
+      expect(find.text('67'), findsOneWidget);
       expect(find.text('Reliable'), findsOneWidget);
     });
 
@@ -401,15 +353,29 @@ void main() {
       await tester.tap(find.text('Adventurous'));
       await tester.pumpAndSettle();
       expect(find.text('Health'), findsOneWidget);
-      expect(find.text('2026-10-01 · mean of 2 people'), findsOneWidget);
-      expect(find.text('70'), findsOneWidget);
+      expect(find.text('${_dayKey(-1)} · mean of 2 people'), findsOneWidget);
+      expect(find.text('67'), findsOneWidget);
       expect(find.text('Parts'), findsOneWidget);
       expect(find.text('Applies to'), findsNothing);
-      await tester.pageBack();
-      await tester.pumpAndSettle();
 
-      // One with no scores yet says so.
-      await tester.tap(find.text('Reliable'));
+      // Its days, and how one person's day was scored, from the events.
+      await tester.tap(find.text('Health'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(_dayKey(-1)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sam'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Mean of 1 judgment(s) in the last 30 days'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Dinner — With Sam'), findsOneWidget);
+    });
+
+    testWidgets("one with nothing to score it by says so", (tester) async {
+      await pump(tester, events: const []);
+
+      await tester.tap(find.text('Adventurous'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Not scored yet'), findsOneWidget);
     });
@@ -537,68 +503,20 @@ void main() {
   });
 
   group("a person's page", () {
-    final scored = InMemoryTraitsRepository(
-      traits: [_adventurous, _reliable],
-      ratings: {
-        'sam': const TraitsRating(
-          rating: 67,
-          day: '2026-10-01',
-          traits: [
-            TraitScore(
-              traitId: 'adventurous',
-              name: 'Adventurous',
-              score: 67,
-              parts: [
-                PartScore(
-                  key: 'judgment',
-                  kind: 'judgment',
-                  score: 67,
-                  rubric: 'Was this activity or place new?',
-                  said: 'Mean rating 2.0 of 3 over 1 event',
-                  eventIds: ['e1'],
-                  judgments: [
-                    Judgment(
-                      eventId: 'e1',
-                      personId: 'sam',
-                      traitId: 'adventurous',
-                      part: 'judgment',
-                      rating: 2,
-                      reasoning: 'A new club',
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
-      },
-      digests: {
-        'sam': const PersonDigest(
-          personId: 'sam',
-          eventsCounted: 1,
-          actions: [
-            DigestEntry(
-              label: 'listen_music',
-              count: 1,
-              first: '2026-10-01',
-              last: '2026-10-01',
-            ),
-          ],
-          events: [
-            {
-              'id': 'e1',
-              'summary': 'Jazz night',
-              'start': '2026-10-01T18:00:00',
-              'end': '2026-10-01T20:00:00',
-              'action_ids': ['listen_music'],
-              'facts': {
-                'with_ids': ['sam'],
-                'location_id': 'cellar',
-                'notes': {'sam': 'Loved the trumpet'},
-              },
-            },
-          ],
-        ),
+    final traits = InMemoryTraitsRepository(traits: [_adventurous, _reliable]);
+    final jazz = _yesterday(
+      'e1',
+      'Jazz night',
+      actions: ['listen_music'],
+      withIds: ['sam'],
+      location: 'cellar',
+      notes: {'sam': 'Loved the trumpet'},
+      judgments: {
+        'sam': {
+          'adventurous': {
+            'judgment': {'rating': 2, 'scale': 3, 'reasoning': 'A new club'},
+          },
+        },
       },
     );
     const sam = Person(
@@ -619,10 +537,9 @@ void main() {
           ],
         },
       ),
-      health: 67,
     );
 
-    Future<void> pump(WidgetTester tester, TraitsRepository traits) async {
+    Future<void> pump(WidgetTester tester, {PlanMemory? memory}) async {
       // Tall enough to show the whole page at once.
       tester.view.physicalSize = const Size(800, 2400);
       tester.view.devicePixelRatio = 1;
@@ -632,6 +549,7 @@ void main() {
           home: PersonScreen(
             person: sam,
             traits: traits,
+            memory: memory,
             circles: const [Circle(id: 'close', name: 'Close friends')],
             personNames: const {'sam': 'Sam'},
             actionNames: const {
@@ -649,14 +567,19 @@ void main() {
         "history and events, and Claude's judgments behind a score", (
       tester,
     ) async {
-      await pump(tester, scored);
+      await pump(
+        tester,
+        memory: await _scoredMemory([jazz], people: const [sam]),
+      );
 
       expect(find.text('from salsa'), findsOneWidget);
       expect(find.text('Close friends'), findsOneWidget);
       expect(find.text('Every active trait'), findsOneWidget);
       expect(find.text('Reliable, their own'), findsOneWidget);
       expect(find.text('call every 14 days'), findsOneWidget);
-      expect(find.text('67 · 2026-10-01'), findsOneWidget);
+      // Adventurous's 67, and no call in 14 days, 0: 34 yesterday.
+      expect(find.text('34 · ${_dayKey(-1)}'), findsOneWidget);
+      expect(find.text('Relationship health'), findsOneWidget);
       expect(find.text('- loves jazz'), findsOneWidget);
       expect(find.textContaining('Listen to music ×1'), findsOneWidget);
       expect(find.text('Jazz night'), findsOneWidget);
@@ -665,7 +588,10 @@ void main() {
       await tester.tap(find.text('Adventurous'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Mean rating 2.0 of 3 over 1 event'), findsOneWidget);
+      expect(
+        find.text('Mean of 1 judgment(s) in the last 30 days'),
+        findsOneWidget,
+      );
       expect(
         find.textContaining('Jazz night — With Sam · @ The Cellar'),
         findsOneWidget,
@@ -673,10 +599,9 @@ void main() {
       expect(find.textContaining('Rated 2: A new club'), findsOneWidget);
     });
 
-    testWidgets("leaves out scores and history where they aren't kept", (
-      tester,
-    ) async {
-      await pump(tester, McpTraitsRepository(_RecordingClient((_, _) => [])));
+    testWidgets("leaves out scores and history where they aren't worked "
+        'out', (tester) async {
+      await pump(tester);
 
       expect(find.text('Every active trait'), findsOneWidget);
       expect(find.text('- loves jazz'), findsOneWidget);
@@ -986,4 +911,52 @@ class _CountingPeopleRepository extends InMemoryPeopleRepository {
     await gate?.future;
     return super.locations();
   }
+}
+
+/// [EventStore.dayKey] of [offset] days from today.
+String _dayKey(int offset) {
+  final now = DateTime.now();
+  return EventStore.dayKey(DateTime(now.year, now.month, now.day + offset));
+}
+
+/// An event from 6 to 8 pm yesterday, with its facts and judgments.
+Event _yesterday(
+  String id,
+  String summary, {
+  List<String> actions = const [],
+  List<String> withIds = const [],
+  String? location,
+  Map<String, String> notes = const {},
+  Map<String, Object?> judgments = const {},
+}) {
+  final now = DateTime.now();
+  return Event.fromJson({
+    'id': id,
+    'summary': summary,
+    'start': localIsoTimestamp(DateTime(now.year, now.month, now.day - 1, 18)),
+    'end': localIsoTimestamp(DateTime(now.year, now.month, now.day - 1, 20)),
+    'action_ids': actions,
+    'facts': Facts(
+      withIds: withIds,
+      locationId: location,
+      notes: notes,
+    ).toJson(),
+    if (judgments.isNotEmpty) 'judgments': judgments,
+  });
+}
+
+/// A memory that scores [people] (and Self) by [_adventurous] and
+/// [_reliable] from [events], loaded.
+Future<PlanMemory> _scoredMemory(
+  List<Event> events, {
+  List<Person> people = const [Person(id: 'sam', name: 'Sam')],
+}) async {
+  final memory =
+      PlanMemory(
+          eventStore: EventStore(repository: InMemoryEventsRepository(events)),
+        )
+        ..traits = [_adventurous, _reliable]
+        ..people = PeopleList(people: people);
+  await memory.eventStore!.warm();
+  return memory;
 }
