@@ -1,4 +1,5 @@
 import '../models/plan_action.dart';
+import '../widgets/color_picker.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
@@ -29,13 +30,19 @@ abstract class ActionsRepository {
   /// Puts sibling actions (sharing a parent), by id, in this order, among
   /// the places they hold. Returns every action, as [actions] does.
   Future<ActionList> reorderActions(List<String> ids);
+
+  /// Sets [priority]'s color to [color] ("#rrggbb"), and with it, the
+  /// color of every action that takes its color from that priority; sets
+  /// [priorityPalette]. Call [actions] for every action as they are now.
+  Future<void> updatePriorityColor(int priority, String color);
 }
 
 /// Reads and writes actions and their groups via the Time Tracker MCP
 /// server's action tools: `get_actions` and `get_action_groups`, listed
 /// together as one tree, and `create_`/`update_action` or
 /// `create_`/`update_action_group` for a group. They aren't kept in an
-/// order of their own there yet.
+/// order of their own there yet. The priority colors come with them
+/// (`get_priority_colors`), and set [priorityPalette].
 class McpActionsRepository implements ActionsRepository {
   McpActionsRepository(this._client, {this._cache});
 
@@ -53,8 +60,14 @@ class McpActionsRepository implements ActionsRepository {
       'statuses': actionStatuses.keys.toList(),
     });
     final groups = await _client.callTool('get_action_groups', {});
-    final result = {'actions': actions, 'groups': groups};
+    final colors = await _client.callTool('get_priority_colors', {});
+    final result = {
+      'actions': actions,
+      'groups': groups,
+      'priority_colors': colors,
+    };
     await _cache?.write(_cacheKey, result);
+    applyPriorityColors(colors);
     return actionTree(result);
   }
 
@@ -62,10 +75,22 @@ class McpActionsRepository implements ActionsRepository {
   Future<ActionList?> cachedActions() async {
     try {
       final result = await _cache?.read(_cacheKey);
-      return result == null ? null : actionTree(result);
+      if (result == null) return null;
+      final tree = actionTree(result);
+      applyPriorityColors((result as Map)['priority_colors']);
+      return tree;
     } catch (_) {
       return null; // From an older version of the app, perhaps.
     }
+  }
+
+  @override
+  Future<void> updatePriorityColor(int priority, String color) async {
+    final result = await _client.callTool('update_priority_color', {
+      'priority': priority,
+      'color': color,
+    });
+    applyPriorityColors((result as Map)['colors']);
   }
 
   /// [fields], keyed as the Plan page edits them, as the server's tools
@@ -244,6 +269,12 @@ class InMemoryActionsRepository implements ActionsRepository {
     );
     return id;
   }
+
+  @override
+  Future<void> updatePriorityColor(int priority, String color) async =>
+      applyPriorityColors([
+        {'priority': priority, 'color': color},
+      ]);
 
   @override
   Future<void> updateAction(

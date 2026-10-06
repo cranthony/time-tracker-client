@@ -20,18 +20,43 @@ Color contrastingColor(Color color) =>
 /// treated as, and colored as.
 const defaultPriority = 2;
 
-/// Each priority's color, as the server colors events and labels: any
-/// priority past these takes the nearest one's.
-const _priorityColors = {
+/// The priorities with a color of their own: any past these takes the
+/// nearest one's.
+const priorities = [0, 1, 2, 3];
+
+/// Each priority's color until the server says otherwise: the server's
+/// own defaults.
+const defaultPriorityColors = {
   0: Color(0xFFE1E1E1),
   1: Color(0xFFFBD75B),
   2: Color(0xFFA4BDFC),
   3: Color(0xFF7AE7BF),
 };
 
+/// Each priority's color, as the server colors events and labels: its
+/// priority label's (`get_priority_colors`). Set by [applyPriorityColors].
+final priorityPalette = ValueNotifier<Map<int, Color>>(defaultPriorityColors);
+
+/// Sets [priorityPalette] from what `get_priority_colors` answered: a list
+/// of {priority, color}. Leaves the colors as they are if [result] isn't
+/// one, and keeps a priority's if it's missing or not a color.
+void applyPriorityColors(Object? result) {
+  if (result is! List) return;
+  final colors = {...priorityPalette.value};
+  for (final entry in result) {
+    if (entry is! Map) continue;
+    final priority = entry['priority'];
+    final color = parseColor(entry['color'] as String?);
+    if (priority is int && color != null) colors[priority] = color;
+  }
+  priorityPalette.value = colors;
+}
+
 /// The color of [priority], or of [defaultPriority] if null.
-Color priorityColor(int? priority) =>
-    _priorityColors[(priority ?? defaultPriority).clamp(0, 3)]!;
+Color priorityColor(int? priority) {
+  final p = (priority ?? defaultPriority).clamp(0, 3);
+  return priorityPalette.value[p] ?? defaultPriorityColors[p]!;
+}
 
 /// Google Calendar's calendar colors, by hue then shade.
 const calendarColors = [

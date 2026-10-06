@@ -21,6 +21,7 @@ import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/widgets/actions_picker.dart';
+import 'package:time_tracker_client/widgets/color_picker.dart';
 import 'package:time_tracker_client/widgets/priority_chip.dart';
 import 'package:time_tracker_client/widgets/properties_dialog.dart';
 
@@ -1007,6 +1008,26 @@ void main() {
     expect(find.text('Home'), findsOneWidget);
   });
 
+  testWidgets('priority colors can be changed from the Actions pane', (
+    tester,
+  ) async {
+    addTearDown(() => priorityPalette.value = defaultPriorityColors);
+    await tester.pumpWidget(app(tree()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Priority colors'));
+    await tester.pumpAndSettle();
+    expect(find.text('#fbd75b'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('priority-color-1')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Hex'), '#123456');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('#123456'), findsOneWidget);
+    expect(priorityColor(1), const Color(0xFF123456));
+  });
+
   group("an action's priority", () {
     InMemoryActionsRepository withColors() => InMemoryActionsRepository([
       const PlanAction(
@@ -1318,6 +1339,10 @@ class _GatedActionsRepository implements ActionsRepository {
     await _gate('update ${action.id}');
     return _inner.updateAction(action, changes);
   }
+
+  @override
+  Future<void> updatePriorityColor(int priority, String color) =>
+      _inner.updatePriorityColor(priority, color);
 
   /// While set, fetching every action waits for it.
   Completer<void>? fetchGate;
