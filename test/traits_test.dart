@@ -519,7 +519,7 @@ void main() {
         },
       },
     );
-    const sam = Person(
+    final sam = Person(
       id: 'sam',
       name: 'Sam',
       context: 'from salsa',
@@ -537,6 +537,19 @@ void main() {
           ],
         },
       ),
+      // Called off the day before yesterday, against Reliable.
+      cancelledEvents: [
+        CancelledEvent(
+          eventId: 'coffee',
+          summary: 'Coffee with Sam',
+          start: DateTime(2026, 10, 3, 8),
+          end: DateTime(2026, 10, 3, 9),
+          actionIds: const ['call'],
+          parts: const ['reliable/follow_through'],
+          cancelledAt: DateTime(2026, 10, 3, 7),
+          source: 'delete_event',
+        ),
+      ],
     );
 
     Future<void> pump(WidgetTester tester, {PlanMemory? memory}) async {
@@ -567,10 +580,7 @@ void main() {
         "history and events, and Claude's judgments behind a score", (
       tester,
     ) async {
-      await pump(
-        tester,
-        memory: await _scoredMemory([jazz], people: const [sam]),
-      );
+      await pump(tester, memory: await _scoredMemory([jazz], people: [sam]));
 
       expect(find.text('from salsa'), findsOneWidget);
       expect(find.text('Close friends'), findsOneWidget);
@@ -584,6 +594,13 @@ void main() {
       expect(find.textContaining('Listen to music ×1'), findsOneWidget);
       expect(find.text('Jazz night'), findsOneWidget);
       expect(find.textContaining('“Loved the trumpet”'), findsOneWidget);
+      // What was cancelled, against their follow-through.
+      expect(find.text('Cancelled'), findsOneWidget);
+      expect(find.text('Coffee with Sam'), findsOneWidget);
+      expect(find.textContaining('with them'), findsOneWidget);
+      expect(find.textContaining('Call'), findsWidgets);
+      expect(find.textContaining('— deleted'), findsOneWidget);
+      expect(find.textContaining('Counts against Reliable'), findsOneWidget);
 
       await tester.tap(find.text('Adventurous'));
       await tester.pumpAndSettle();

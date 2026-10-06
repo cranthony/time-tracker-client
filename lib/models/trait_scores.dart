@@ -10,6 +10,10 @@
 /// for them while they weren't there). A part reads one or the other by
 /// its `engagement_type`.
 ///
+/// **Their cancellations** aren't read off the calendar: they're the ones
+/// the server recorded for each person when the user cancelled an event
+/// they were to be at, or for ([Person.cancelledEvents]).
+///
 /// | kind             | scores                                              |
 /// | ---------------- | --------------------------------------------------- |
 /// | `judgment`       | the mean of its judgments (rating / scale) on the   |
@@ -23,11 +27,14 @@
 /// |                  | or, with `zero_at_days`, falling from 100 when it   |
 /// |                  | was last met to 0 by `zero_at_days`                 |
 /// | `duration`       | the same with minutes, against `target_min`         |
-/// | `follow_through` | not scored: it counts cancelled events, which the   |
-/// |                  | server doesn't list                                 |
+/// | `follow_through` | a running score over `look_back_days` (30): from    |
+/// |                  | 100, each day loses `penalty` (25) per event the    |
+/// |                  | user cancelled and regains `recovery` (25) if one   |
+/// |                  | was kept                                            |
 ///
-/// `continuity`, `count` and `duration` with an `action` count only
-/// events of that action -- or, for an action group, of any action in it.
+/// `continuity`, `count`, `duration` and `follow_through` with an
+/// `action` count only events of that action -- or, for an action group,
+/// of any action in it.
 library;
 
 import 'dart:math' as math;
@@ -42,6 +49,12 @@ const defaultWindowDays = 30;
 
 /// How far continuity looks either way unless it says.
 const defaultWithinDays = 14;
+
+/// What a follow-through part loses per cancellation, and wins back per
+/// day kept, unless it says; and how far back it runs.
+const followThroughPenalty = 25;
+const followThroughRecovery = 25;
+const followThroughLookBackDays = 30;
 
 /// A name for each of [parts], unique within them: its kind, then
 /// "kind#2", "kind#3" for later ones of the same kind. Judgments name
@@ -90,6 +103,10 @@ List<(Trait, List<Part>)> traitsFor(Person person, List<Trait> traits) => [
       'count' || 'duration' => math.max(
         days(part['interval_days'], defaultWindowDays),
         days(part['zero_at_days'], 0),
+      ),
+      'follow_through' => days(
+        part['look_back_days'],
+        followThroughLookBackDays,
       ),
       _ => 0,
     };
@@ -155,8 +172,19 @@ List<Event> _ofAction(
   List<Event> events,
   String? actionId,
   String? Function(String id)? parentOf,
+) => [
+  for (final e in events)
+    if (_isOf(e.goalIds, actionId, parentOf)) e,
+];
+
+/// Whether [actionIds] are of the action [actionId], or in the group it
+/// names; any are, without one.
+bool _isOf(
+  List<String> actionIds,
+  String? actionId,
+  String? Function(String id)? parentOf,
 ) {
-  if (actionId == null || actionId.isEmpty) return events;
+  if (actionId == null || actionId.isEmpty) return true;
   bool matches(String candidate) {
     final seen = <String>{};
     for (String? id = candidate; id != null && seen.add(id);) {
@@ -166,10 +194,7 @@ List<Event> _ofAction(
     return false;
   }
 
-  return [
-    for (final e in events)
-      if (e.goalIds.any(matches)) e,
-  ];
+  return actionIds.any(matches);
 }
 
 num _num(Object? value, num fallback) => value is num ? value : fallback;
@@ -288,12 +313,69 @@ PartScore _part(
       final (rating, said, behind) = _overInterval(part, kind, end, engaged);
       return score(rating, said, behind);
     default: // follow_through
-      return score(
-        null,
-        "Not scored: it counts cancelled events, which the app doesn't load",
-        [],
+      engaged = _ofAction(engaged, part['action'] as String?, parentOf);
+      final dropped = [
+        for (final c in person.cancelledEvents)
+          if (c.engagement == engagement &&
+              _isOf(c.actionIds, part['action'] as String?, parentOf))
+            c,
+      ];
+      final (rating, said, behind) = _followThrough(
+        part,
+        end,
+        engaged,
+        dropped,
       );
+      return score(rating, said, behind);
   }
+}
+
+/// A follow-through part's running score, how the day's was reached, and
+/// the events kept that day: [kept] the person's events, [dropped] the
+/// cancellations recorded for them.
+(int, String, List<Event>) _followThrough(
+  Part part,
+  DateTime end,
+  List<Event> kept,
+  List<CancelledEvent> dropped,
+) {
+  final penalty = _num(part['penalty'], followThroughPenalty);
+  final recovery = _num(part['recovery'], followThroughRecovery);
+  final lookBack = _num(
+    part['look_back_days'],
+    followThroughLookBackDays,
+  ).round();
+  final start = DateTime(end.year, end.month, end.day - 1);
+  num score = 100, before = 100;
+  var lost = 0;
+  var gained = <Event>[];
+  for (var back = lookBack - 1; back >= 0; back--) {
+    final dayStart = DateTime(start.year, start.month, start.day - back);
+    final dayEnd = back == 0
+        ? end
+        : DateTime(dayStart.year, dayStart.month, dayStart.day + 1);
+    bool within(DateTime t) => !t.isBefore(dayStart) && t.isBefore(dayEnd);
+    before = score;
+    lost = dropped.where((c) => within(c.start)).length;
+    gained = [
+      for (final e in kept)
+        if (within(e.start)) e,
+    ];
+    score = (score - penalty * lost + (gained.isEmpty ? 0 : recovery)).clamp(
+      0,
+      100,
+    );
+  }
+  final said = [
+    if (lost > 0) '$lost cancelled (−${_g(penalty * lost)})',
+    if (gained.isNotEmpty) '${gained.length} kept (+${_g(recovery)})',
+  ].join(', ');
+  return (
+    score.round(),
+    '${said.isEmpty ? 'Nothing cancelled or kept' : said} that day, from '
+        '${before.round()}',
+    gained,
+  );
 }
 
 double _days(Duration d) => d.inMicroseconds / Duration.microsecondsPerDay;

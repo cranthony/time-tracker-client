@@ -292,19 +292,142 @@ void main() {
     expect(score.parts.single.said, '180 of 240 minutes in the last 7 days');
   });
 
-  test("follow-through isn't scored: the app doesn't load cancelled "
-      'events', () {
-    final score = _score(
-      [
-        {'kind': 'follow_through'},
-      ],
-      [
-        _event('a', 1, withIds: ['sam']),
-      ],
-    );
+  group('follow-through', () {
+    /// Sam, with the events the user cancelled that count against him.
+    Person samWith(List<CancelledEvent> cancelled) =>
+        Person(id: 'sam', name: 'Sam', cancelledEvents: cancelled);
 
-    expect(score.score, isNull);
-    expect(score.parts.single.said, contains('cancelled'));
+    /// A cancellation [daysAgo] days before [_end], at noon.
+    CancelledEvent cancelled(
+      int daysAgo, {
+      String engagement = 'with',
+      List<String> actions = const [],
+    }) {
+      final start = DateTime(_end.year, _end.month, _end.day - daysAgo, 12);
+      return CancelledEvent(
+        eventId: 'c$daysAgo',
+        summary: 'Coffee',
+        start: start,
+        end: start.add(const Duration(hours: 1)),
+        engagement: engagement,
+        actionIds: actions,
+        parts: const ['t/follow_through'],
+        source: 'delete_event',
+      );
+    }
+
+    test('loses the penalty per cancellation and wins back the recovery '
+        'each day one was kept', () {
+      const part = {'kind': 'follow_through'};
+      final sam = samWith([cancelled(4), cancelled(4)]);
+
+      // 50 after two on one day; back to 75 on the day an event was kept.
+      final kept = _score(
+        [part],
+        [
+          _event('a', 1, withIds: ['sam']),
+        ],
+        person: sam,
+      );
+      expect(kept.score, 75);
+      expect(kept.parts.single.said, '1 kept (+25) that day, from 50');
+      expect(kept.parts.single.eventIds, ['a']);
+
+      final none = _score([part], const [], person: sam);
+      expect(none.score, 50);
+      expect(
+        none.parts.single.said,
+        'Nothing cancelled or kept that day, from 50',
+      );
+
+      // Its own penalty, and only as far back as it looks.
+      expect(
+        _score(
+          [
+            {'kind': 'follow_through', 'penalty': 10},
+          ],
+          const [],
+          person: sam,
+        ).score,
+        80,
+      );
+      expect(
+        _score(
+          [
+            {'kind': 'follow_through', 'look_back_days': 3},
+          ],
+          const [],
+          person: sam,
+        ).score,
+        100,
+      );
+    });
+
+    test('counts only cancellations of its engagement, and its action', () {
+      final sam = samWith([
+        cancelled(2, engagement: 'for'),
+        cancelled(3, actions: ['work']),
+      ]);
+
+      expect(
+        _score(
+          [
+            const {'kind': 'follow_through'},
+          ],
+          const [],
+          person: sam,
+        ).score,
+        75,
+      );
+      expect(
+        _score(
+          [
+            const {'kind': 'follow_through', 'engagement_type': 'for'},
+          ],
+          const [],
+          person: sam,
+        ).score,
+        75,
+      );
+      expect(
+        _score(
+          [
+            const {'kind': 'follow_through', 'action': 'social'},
+          ],
+          const [],
+          person: sam,
+        ).score,
+        100,
+      );
+    });
+
+    test("are read from a person, as the server lists them", () {
+      final person = Person.fromJson({
+        'id': 'dad',
+        'name': 'Dad',
+        'cancelled_events': [
+          {
+            'event_id': 'e1',
+            'summary': 'Visit',
+            'start': '2026-10-01T10:00:00',
+            'end': '2026-10-01T11:00:00',
+            'action_ids': ['deep_talk'],
+            'engagement': 'with',
+            'parts': ['reliable/follow_through', 'reliable/follow_through#2'],
+            'cancelled_at': '2026-10-02T09:00:00',
+            'source': 'compaction c-1',
+          },
+          {'summary': 'No time'},
+        ],
+      });
+
+      final visit = person.cancelledEvents.single;
+      expect(visit.start, DateTime(2026, 10, 1, 10));
+      expect(visit.traitIds, ['reliable']);
+      expect(visit.byCompaction, isTrue);
+      // Kept apart from them: not sent back.
+      expect(person.toJson().containsKey('cancelled_events'), isFalse);
+    });
   });
 
   test("a trait is its parts' weighted mean, leaving out those with no "
@@ -313,7 +436,7 @@ void main() {
       [
         {'kind': 'count', 'target': 1, 'interval_days': 7, 'weight': 3},
         {'kind': 'continuity', 'last_within_days': 7, 'next_within_days': 7},
-        {'kind': 'follow_through'},
+        _judgment,
         {'kind': 'count'},
       ],
       [

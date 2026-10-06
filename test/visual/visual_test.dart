@@ -174,31 +174,50 @@ void main() {
       });
     }
 
-    testWidgets('person ($mode)', (tester) async {
-      final people = (await tester.runAsync(sample.peopleRepository().people))!;
-      // Scored from the sample's events, as the app does.
-      final memory = PlanMemory(
-        eventStore: EventStore(repository: sample.eventsRepository()),
-      );
-      await tester.runAsync(
-        () => memory.warmScores(
-          traits: sample.traitsRepository(),
-          people: sample.peopleRepository(),
-          goals: sample.goalsRepository(),
-        ),
-      );
-      await render(
-        tester,
-        'person',
-        PersonScreen(
-          person: people.people.firstWhere((p) => p.id == 'sam'),
-          traits: sample.traitsRepository(),
-          memory: memory,
-          circles: people.circles,
-          personNames: {for (final p in people.withSelf) p.id: personName(p)},
-        ),
-      );
-    });
+    // A person's page as it opens, and scrolled to what was cancelled.
+    for (final (name, scrolled) in [
+      ('person', false),
+      ('person_cancelled', true),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        final people = (await tester.runAsync(
+          sample.peopleRepository().people,
+        ))!;
+        // Scored from the sample's events, as the app does.
+        final memory = PlanMemory(
+          eventStore: EventStore(repository: sample.eventsRepository()),
+        );
+        await tester.runAsync(
+          () => memory.warmScores(
+            traits: sample.traitsRepository(),
+            people: sample.peopleRepository(),
+            goals: sample.goalsRepository(),
+          ),
+        );
+        await render(
+          tester,
+          name,
+          PersonScreen(
+            person: people.people.firstWhere((p) => p.id == 'sam'),
+            traits: sample.traitsRepository(),
+            memory: memory,
+            circles: people.circles,
+            personNames: {for (final p in people.withSelf) p.id: personName(p)},
+            actionNames: {for (final g in sample.goals) g.id: g.name ?? ''},
+          ),
+          then: scrolled
+              ? () async {
+                  await tester.scrollUntilVisible(
+                    find.text('Coffee with Sam'),
+                    300,
+                    scrollable: find.byType(Scrollable).first,
+                  );
+                  await tester.pumpAndSettle();
+                }
+              : null,
+        );
+      });
+    }
 
     // The Actions section alone, as the rest are when folded away.
     testWidgets('actions ($mode)', (tester) async {

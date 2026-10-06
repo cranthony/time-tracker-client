@@ -6,6 +6,20 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 6.8.0
+
+Needs a server that lists each person's cancelled events
+(time-tracking-google-calendar-mcp#150).
+
+- Follow-through is scored again, in the app: each event the user
+  cancelled that counts against someone, as the server lists it with
+  them, costs its penalty, and each day with an event kept with them wins
+  its recovery back, as the server scores it.
+- A person's page lists those cancellations, newest first: when each was
+  planned, what was to be done, whether they were to be there or it was
+  for them, when and how it was cancelled (it didn't happen, or was
+  deleted), and the traits it counts against.
+
 ## 6.7.0
 
 No longer needs the server's daily trait scores.

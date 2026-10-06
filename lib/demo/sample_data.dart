@@ -307,8 +307,55 @@ class SampleData {
         'circles': p.circles,
         'what_matters': p.whatMatters,
         'traits': _personTraits[p.id]?.toJson(),
+        'cancelled_events': _cancelled[p.id],
       }),
   ];
+
+  /// The events the user cancelled that count against each person's
+  /// follow-through, newest first, as the server records them: a visit to
+  /// Dad that didn't happen, and a coffee with Sam called off.
+  late final Map<String, List<Map<String, Object?>>> _cancelled = () {
+    Map<String, Object?> cancelled(
+      String id,
+      String summary,
+      int daysAgo,
+      int hour, {
+      required List<String> actions,
+      required String source,
+      String traitPart = 'reliable/follow_through',
+    }) => {
+      'event_id': id,
+      'summary': summary,
+      'start': localIsoTimestamp(_at(hour, 0, -daysAgo)),
+      'end': localIsoTimestamp(_at(hour + 1, 0, -daysAgo)),
+      'action_ids': actions,
+      'engagement': 'with',
+      'parts': [traitPart],
+      'cancelled_at': localIsoTimestamp(_at(hour + 2, 0, -daysAgo)),
+      'source': source,
+    };
+    final visit = cancelled(
+      'visit-dad',
+      'Help Dad with the sailboat',
+      4,
+      10,
+      actions: ['deep_talk'],
+      source: 'compaction c-17',
+    );
+    final coffee = cancelled(
+      'coffee-sam',
+      'Coffee with Sam',
+      2,
+      8,
+      actions: ['shallow_talk', 'eat_snack'],
+      source: 'delete_event',
+    );
+    return {
+      'dad': [visit],
+      'sam': [coffee],
+      selfPersonId: [coffee, visit],
+    };
+  }();
 
   // ------------------------------------------------------------- History
 
