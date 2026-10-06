@@ -548,6 +548,35 @@ void main() {
       expect(find.textContaining('Sign in again'), findsOneWidget);
     });
 
+    testWidgets("picks from the app's actions at once, without asking the "
+        'server again', (tester) async {
+      final actions = _CountingActionsRepository([
+        const PlanAction(id: 'g1', name: 'Deep focus', priority: 1),
+        const PlanAction(id: 'g2', name: 'Exercise', priority: 2),
+      ]);
+      await tester.pumpWidget(
+        app(_RecordingRepository([work()]), actions: actions),
+      );
+      await tester.pumpAndSettle();
+      // Once, as the page opened.
+      expect(actions.fetches, 1);
+
+      await tester.ensureVisible(find.text('Work').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Work').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Details'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(inDialog(find.text('Deep focus')));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text('Deep focus')));
+      // Drawn straight away: no bar while they load.
+      await tester.pump();
+      expect(inDialog(find.text('Exercise')), findsOneWidget);
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(actions.fetches, 1);
+    });
+
     testWidgets('picks actions by name, the first kept as primary', (
       tester,
     ) async {
@@ -1882,5 +1911,18 @@ class _RecurrenceClient extends McpClient {
     ];
     // A batch of event changes answers with its events; the rest, a list.
     return name.endsWith('_event') ? {'events': events} : events;
+  }
+}
+
+/// Counts how often every action is fetched.
+class _CountingActionsRepository extends InMemoryActionsRepository {
+  _CountingActionsRepository(super.actions);
+
+  var fetches = 0;
+
+  @override
+  Future<ActionList> actions() {
+    fetches++;
+    return super.actions();
   }
 }

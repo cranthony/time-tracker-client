@@ -300,7 +300,14 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   /// [_priorities].
   bool _otherPriority = false;
 
-  late final Future<List<PlanAction>>? _actionList = widget.loadActions?.call();
+  late final Future<List<PlanAction>>? _actionList = widget.loadActions?.call()
+    ?..then((list) {
+      if (mounted) setState(() => _actionsLoaded = list);
+    }, onError: (Object _) {});
+
+  /// [_actionList], once it's in: the picker is drawn from it at once,
+  /// rather than waiting a frame on a future that's done.
+  List<PlanAction>? _actionsLoaded;
 
   /// Everyone's names, once the [PeopleScope] has them, for who it was
   /// with and for; the locations', for where; and the traits', from the
@@ -1355,6 +1362,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   Widget _actionsPicker(BuildContext context, List<String> picked) =>
       FutureBuilder(
         future: _actionList,
+        initialData: _actionsLoaded,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Text(
