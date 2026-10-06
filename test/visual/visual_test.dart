@@ -80,6 +80,8 @@ void main() {
     Widget plan() => PlanScreen(
       outbox: _idleGoalOutbox(),
       repository: sample.goalsRepository(),
+      eventsRepository: sample.eventsRepository(),
+      notesRepository: sample.notesRepository(),
       serverLabel: 'sample',
     );
 
@@ -148,20 +150,27 @@ void main() {
       });
     }
 
-    // A trait open for editing: its judgment's rubric, ratings and facts.
-    testWidgets('trait dialog ($mode)', (tester) async {
-      await render(
-        tester,
-        'trait_dialog',
-        plan(),
-        scoped: true,
-        then: () async {
-          await openPane(tester, 'Traits');
-          await tester.tap(find.text('Adventurous'));
-          await tester.pumpAndSettle();
-        },
-      );
-    });
+    // A trait as tapping it opens it, and open for editing from its
+    // pencil: its judgment's rubric, ratings and facts.
+    for (final (name, edit) in [('trait', false), ('trait_dialog', true)]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          plan(),
+          scoped: true,
+          then: () async {
+            await openPane(tester, 'Traits');
+            await tester.tap(find.text('Adventurous'));
+            await tester.pumpAndSettle();
+            if (edit) {
+              await tester.tap(find.byTooltip('Edit Adventurous'));
+              await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
 
     testWidgets('person ($mode)', (tester) async {
       final people = (await tester.runAsync(sample.peopleRepository().people))!;
@@ -210,7 +219,7 @@ void main() {
       });
     }
 
-    // Groups expanded, by swiping right: three levels of bands.
+    // Groups expanded, by tapping them: three levels of bands.
     testWidgets('actions expanded ($mode)', (tester) async {
       await render(
         tester,
@@ -221,7 +230,7 @@ void main() {
             final group = _tile(name);
             await tester.ensureVisible(group);
             await tester.pumpAndSettle();
-            await tester.drag(group, const Offset(100, 0));
+            await tester.tap(group);
             await tester.pumpAndSettle();
           }
           await tester.scrollUntilVisible(
@@ -258,14 +267,15 @@ void main() {
       );
     });
 
-    // A group in a group, as tapping it shows it, its priority inherited.
+    // A group in a group, edited from its menu: its priority, inherited,
+    // and its color.
     testWidgets('action dialog ($mode)', (tester) async {
       await render(
         tester,
         'action_dialog',
         plan(),
         then: () async {
-          await tester.drag(_tile('Creative'), const Offset(100, 0));
+          await tester.tap(_tile('Creative'));
           await tester.pumpAndSettle();
           await tester.scrollUntilVisible(
             find.textContaining('Guitar', findRichText: true),
@@ -273,7 +283,9 @@ void main() {
             scrollable: _list,
           );
           await tester.pumpAndSettle();
-          await tester.tap(_tile('Guitar'));
+          await tester.tap(find.byTooltip('More for Guitar'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Edit'));
           await tester.pumpAndSettle();
         },
       );
@@ -297,7 +309,7 @@ void main() {
         'action_parent',
         plan(),
         then: () async {
-          await tester.drag(_tile('Creative'), const Offset(100, 0));
+          await tester.tap(_tile('Creative'));
           await tester.pumpAndSettle();
           await tester.scrollUntilVisible(
             find.textContaining('Guitar', findRichText: true),
@@ -308,6 +320,8 @@ void main() {
           await tester.tap(find.byTooltip('More for Guitar'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('Edit'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Details'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('Creative').last);
           await tester.pumpAndSettle();

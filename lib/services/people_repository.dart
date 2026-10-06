@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../models/person.dart';
 import 'mcp_client.dart';
+import 'response_cache.dart';
 
 /// Who the user wants to be with, and where: people, their circles, and
 /// the locations events happen at. The app talks to this rather than to
@@ -11,6 +12,10 @@ abstract class PeopleRepository {
   /// Everyone, whatever their status, and every circle. Self is always
   /// among them ([PeopleList.withSelf]).
   Future<PeopleList> people();
+
+  /// What [people] last returned, kept from an earlier run of the app;
+  /// null if there's nothing kept.
+  Future<PeopleList?> cachedPeople();
 
   /// Creates a person from [person]'s fields; returns them as created,
   /// with their id.
@@ -32,6 +37,10 @@ abstract class PeopleRepository {
   /// Every location, by name.
   Future<List<Location>> locations();
 
+  /// What [locations] last returned, kept from an earlier run of the
+  /// app; null if there's nothing kept.
+  Future<List<Location>?> cachedLocations();
+
   /// Creates a location from [location]'s fields; returns it with its id.
   Future<Location> createLocation(Location location);
 
@@ -45,9 +54,50 @@ abstract class PeopleRepository {
 /// Reaches people, circles and locations via the Time Tracker MCP
 /// server's tools.
 class McpPeopleRepository implements PeopleRepository {
-  McpPeopleRepository(this._client);
+  McpPeopleRepository(this._client, {this._cache});
 
   final McpClient _client;
+  final ResponseCache? _cache;
+
+  static const _peopleKey = 'people';
+  static const _locationsKey = 'locations';
+
+  static PeopleList _decodePeople(Object? result) {
+    final json = (result as Map).cast<String, dynamic>();
+    return PeopleList(
+      people: [
+        for (final p in json['people'] as List)
+          Person.fromJson((p as Map).cast<String, dynamic>()),
+      ],
+      circles: [
+        for (final c in json['circles'] as List)
+          Circle.fromJson((c as Map).cast<String, dynamic>()),
+      ],
+    );
+  }
+
+  static List<Location> _decodeLocations(Object? result) => [
+    for (final l in result as List)
+      Location.fromJson((l as Map).cast<String, dynamic>()),
+  ];
+
+  /// What's kept under [key], decoded; null if nothing is, or it can't
+  /// be read.
+  Future<T?> _cached<T>(String key, T Function(Object?) decode) async {
+    try {
+      final result = await _cache?.read(key);
+      return result == null ? null : decode(result);
+    } catch (_) {
+      return null; // From an older version of the app, perhaps.
+    }
+  }
+
+  @override
+  Future<PeopleList?> cachedPeople() => _cached(_peopleKey, _decodePeople);
+
+  @override
+  Future<List<Location>?> cachedLocations() =>
+      _cached(_locationsKey, _decodeLocations);
 
   static Map<String, dynamic> _map(Object? result) =>
       (result as Map).cast<String, dynamic>();
@@ -77,16 +127,9 @@ class McpPeopleRepository implements PeopleRepository {
       'statuses': personStatuses.keys.toList(),
     });
     final circles = await _client.callTool('get_circles', {});
-    return PeopleList(
-      people: [
-        for (final p in people as List)
-          Person.fromJson((p as Map).cast<String, dynamic>()),
-      ],
-      circles: [
-        for (final c in circles as List)
-          Circle.fromJson((c as Map).cast<String, dynamic>()),
-      ],
-    );
+    final result = {'people': people, 'circles': circles};
+    await _cache?.write(_peopleKey, result);
+    return _decodePeople(result);
   }
 
   @override
@@ -138,10 +181,11 @@ class McpPeopleRepository implements PeopleRepository {
       _client.callTool('delete_circle', {'circle_id': id});
 
   @override
-  Future<List<Location>> locations() async => [
-    for (final l in await _client.callTool('get_locations', {}) as List)
-      Location.fromJson((l as Map).cast<String, dynamic>()),
-  ];
+  Future<List<Location>> locations() async {
+    final result = await _client.callTool('get_locations', {});
+    await _cache?.write(_locationsKey, result);
+    return _decodeLocations(result);
+  }
 
   @override
   Future<Location> createLocation(Location location) async => Location.fromJson(
@@ -187,6 +231,12 @@ class InMemoryPeopleRepository implements PeopleRepository {
   final List<Person> _people;
   final List<Circle> _circles;
   final List<Location> _locations;
+
+  @override
+  Future<PeopleList?> cachedPeople() async => null;
+
+  @override
+  Future<List<Location>?> cachedLocations() async => null;
 
   @override
   Future<PeopleList> people() async => PeopleList(

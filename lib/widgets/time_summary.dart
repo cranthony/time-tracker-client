@@ -22,12 +22,13 @@ const noGoalColor = Color(0xFFD0D0D0);
 const otherGoalsColor = Color(0xFF8A8A8A);
 
 /// [time]'s shares, most first: the [top] keys with the most, each as
-/// [slice] makes it, then the rest together as "N other goals". Keys
+/// [slice] makes it, then the rest together as "N other [others]". Keys
 /// with no time are left out.
 List<SummarySlice> topShares<K>(
   Map<K, Duration> time,
   SummarySlice Function(K key, Duration time) slice, {
   int top = 3,
+  String others = 'actions',
 }) {
   final ranked = [
     for (final MapEntry(:key, :value) in time.entries)
@@ -40,7 +41,7 @@ List<SummarySlice> topShares<K>(
     for (final key in ranked.take(top)) slice(key, time[key]!),
     if (rest > Duration.zero)
       SummarySlice(
-        '${ranked.length - top} other actions',
+        '${ranked.length - top} other $others',
         otherGoalsColor,
         rest,
       ),
@@ -53,7 +54,8 @@ List<SummarySlice> topShares<K>(
 /// it's swiped. With [onCollapsed], a chevron folds it away, leaving
 /// only a quiet "Show summary" to bring it back. With [onDurations], a
 /// button by it turns its [SummaryBar]s between percentages and
-/// durations.
+/// durations. [controls], if any, go between the titles and the pages,
+/// folded away with them.
 class TimeSummary extends StatefulWidget {
   const TimeSummary({
     super.key,
@@ -64,9 +66,13 @@ class TimeSummary extends StatefulWidget {
     this.onCollapsed,
     this.durations = false,
     this.onDurations,
+    this.controls,
   });
 
   final List<String> titles;
+
+  /// Shown under the titles while it's open: what the pages measure, say.
+  final Widget? controls;
   final List<Widget> pages;
 
   final int initialPage;
@@ -124,7 +130,13 @@ class _TimeSummaryState extends State<TimeSummary> {
               offstage: widget.collapsed,
               child: TickerMode(
                 enabled: !widget.collapsed,
-                child: SummaryUnit(durations: widget.durations, child: _body()),
+                child: SummaryUnit(
+                  durations: widget.durations,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [?widget.controls, _body()],
+                  ),
+                ),
               ),
             ),
           ),

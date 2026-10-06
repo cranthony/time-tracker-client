@@ -176,27 +176,13 @@ GoalList actionTree(Object? result) {
   );
 }
 
-/// Keeps actions in memory, with the time spent on them, as the sample
-/// data has it. Used when no server is configured, and in tests.
+/// Keeps actions in memory. Used when no server is configured, and in
+/// tests.
 class InMemoryGoalsRepository implements GoalsRepository {
-  InMemoryGoalsRepository([
-    List<Goal> goals = const [],
-    this.asOf,
-    this.minutesByStatuses,
-    this.minutesByPriority,
-  ]) : _goals = [...goals];
+  InMemoryGoalsRepository([List<Goal> goals = const []]) : _goals = [...goals];
 
   @override
   bool get reorderable => true;
-
-  /// The last compaction, as [GoalList.asOf] gives it.
-  final DateTime? asOf;
-
-  /// The time on goals by status, as [GoalList.minutesByStatuses] gives it.
-  final List<StatusMinutes>? minutesByStatuses;
-
-  /// The time by priority, as [GoalList.minutesByPriority] gives it.
-  final List<PriorityMinutes>? minutesByPriority;
 
   final List<Goal> _goals;
   int _nextId = 1;
@@ -227,9 +213,6 @@ class InMemoryGoalsRepository implements GoalsRepository {
     return GoalList(
       goals: ordered,
       labelSlotsUsed: _goals.where((g) => g.active && !g.isGroup).length,
-      asOf: asOf,
-      minutesByStatuses: minutesByStatuses,
-      minutesByPriority: minutesByPriority,
     );
   }
 

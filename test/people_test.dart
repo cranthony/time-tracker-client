@@ -5,6 +5,7 @@ import 'package:time_tracker_client/models/trait.dart';
 import 'package:time_tracker_client/screens/locations_pane.dart';
 import 'package:time_tracker_client/screens/people_pane.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
+import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/widgets/health.dart';
 
@@ -141,6 +142,7 @@ void main() {
             body: _Fill(
               child: PeoplePane(
                 repository: repository,
+                memory: PlanMemory(),
                 traits: InMemoryTraitsRepository(traits: _traits),
                 actions: const {'call': 'Call'},
               ),
@@ -320,7 +322,12 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: _Fill(child: LocationsPane(repository: repository)),
+            body: _Fill(
+              child: LocationsPane(
+                repository: repository,
+                memory: PlanMemory(),
+              ),
+            ),
           ),
         ),
       );

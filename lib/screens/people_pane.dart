@@ -4,11 +4,13 @@ import '../models/person.dart';
 import '../models/trait.dart';
 import '../services/mcp_client.dart';
 import '../services/people_repository.dart';
+import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import '../widgets/color_picker.dart' show contrastingColor;
 import '../widgets/health.dart';
 import '../widgets/person_dialog.dart';
 import '../widgets/plan_pane.dart';
+import '../widgets/plan_summaries.dart';
 import 'person_screen.dart';
 
 /// The Plan page's People pane -- who the user wants to be with: Self,
@@ -19,12 +21,17 @@ import 'person_screen.dart';
 /// edits it. Tapping a person opens their page ([PersonScreen]); their
 /// menu edits or archives them. "+" adds a person or a circle. Archived
 /// people are shown only when asked for. The search finds people by
-/// name, context, circle and what matters to them. [onPeople] is told
-/// who's there each time they load.
+/// name, context, circle and what matters to them. Above it all, with a
+/// [summary] to measure, the time with people in its window: by person,
+/// and by circle, those in none together as "Individuals". It shows what
+/// [memory] has, while it loads afresh. [onPeople] is told who's there
+/// each time they load.
 class PeoplePane extends StatefulWidget {
   const PeoplePane({
     super.key,
     required this.repository,
+    required this.memory,
+    this.summary,
     this.traits,
     this.onPeople,
     this.actionNames = const {},
@@ -33,6 +40,10 @@ class PeoplePane extends StatefulWidget {
   });
 
   final PeopleRepository repository;
+  final PlanMemory memory;
+
+  /// What the summary measures, and how it's shown; null for none.
+  final SummaryView? summary;
 
   /// For each person's traits, and those their dialog offers.
   final TraitsRepository? traits;
@@ -52,7 +63,7 @@ class PeoplePane extends StatefulWidget {
 }
 
 class PeoplePaneState extends State<PeoplePane> {
-  PeopleList? _people;
+  PeopleList? get _people => widget.memory.people;
   Object? _error;
   bool _archived = false;
 
@@ -65,16 +76,20 @@ class PeoplePaneState extends State<PeoplePane> {
   @override
   void initState() {
     super.initState();
-    reload();
+    _settle(widget.memory.loadPeople(widget.repository));
   }
 
   /// Loads everyone afresh.
-  Future<void> reload() async {
+  Future<void> reload() =>
+      _settle(widget.memory.loadPeople(widget.repository, again: true));
+
+  /// Shows who [loading] loads, once it has, or why it couldn't.
+  Future<void> _settle(Future<void> loading) async {
     try {
-      final people = await widget.repository.people();
+      await loading;
       if (!mounted) return;
+      final people = _people!;
       setState(() {
-        _people = people;
         _error = null;
         if (!people.circles.any((c) => c.id == _circle)) _circle = null;
       });
@@ -174,7 +189,18 @@ class PeoplePaneState extends State<PeoplePane> {
   @override
   Widget build(BuildContext context) {
     final people = _people;
+    final view = widget.summary;
     return PlanPane(
+      summary: view == null || people == null
+          ? null
+          : PlanSummary(
+              view: view,
+              titles: const ['By person', 'By circle'],
+              pages: (events) => [
+                personTime(events, view.window, people),
+                circleTime(events, view.window, people),
+              ],
+            ),
       searchHint: 'Search people',
       onSearch: (query) => setState(() => _query = query),
       actions: [

@@ -7,24 +7,34 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 import 'package:time_tracker_client/outbox/pending_goal_save.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/outbox/goal_outbox.dart';
+import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/models/note.dart';
+import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/screens/plan_screen.dart';
 import 'package:time_tracker_client/models/trait.dart';
+import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
+import 'package:time_tracker_client/services/notes_repository.dart';
+import 'package:time_tracker_client/services/people_repository.dart';
+import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/widgets/goals_picker.dart';
-import 'package:time_tracker_client/widgets/goals_time_summary.dart';
 import 'package:time_tracker_client/widgets/priority_chip.dart';
 import 'package:time_tracker_client/widgets/properties_dialog.dart';
 
 void main() {
   /// The Plan page over [repo], saving through [outbox], or an outbox of
-  /// its own: its Actions pane, with no traits or people to show.
+  /// its own: its Actions pane, with no traits or people to show, and
+  /// with [events], a summary of them, measured from [lastCompaction].
   Widget app(
     GoalsRepository repo, {
     GoalOutbox? outbox,
     Future<void> Function()? onSignIn,
+    EventsRepository? events,
+    DateTime? lastCompaction,
+    PlanMemory? memory,
   }) => MaterialApp(
     home: PlanScreen(
       repository: repo,
@@ -33,6 +43,12 @@ void main() {
           (GoalOutbox(store: InMemoryOutboxStore(), repository: repo)..start()),
       serverLabel: 'offline demo',
       onSignIn: onSignIn,
+      eventsRepository: events,
+      notesRepository: InMemoryNotesRepository(
+        const [],
+        CompactionStatus(lastCompaction: lastCompaction),
+      ),
+      memory: memory,
     ),
   );
 
@@ -79,9 +95,11 @@ void main() {
   Finder titled(String name) =>
       find.byWidgetPredicate((w) => w is Text && nameIn(w) == name);
 
-  /// Swipes [name]'s goal right, showing or hiding its sub-goals.
-  Future<void> swipe(WidgetTester tester, String name) async {
-    await tester.drag(titled(name).first, const Offset(100, 0));
+  /// Taps [name]'s group, showing or hiding what's in it.
+  Future<void> toggle(WidgetTester tester, String name) async {
+    await tester.tap(
+      find.descendant(of: find.byType(ListTile), matching: titled(name)).first,
+    );
     await tester.pumpAndSettle();
   }
 
@@ -90,17 +108,27 @@ void main() {
       tester.widget<GoalBands>(
         find.descendant(
           of: find
-              .ancestor(of: titled(name).first, matching: find.byType(Stack))
+              .ancestor(
+                of: find
+                    .descendant(
+                      of: find.byType(ListTile),
+                      matching: titled(name),
+                    )
+                    .first,
+                matching: find.byType(Stack),
+              )
               .first,
           matching: find.byType(GoalBands),
         ),
       );
 
-  /// Opens [name]'s details from its menu.
+  /// Opens [name]'s details from its menu, through its Edit dialog.
   Future<void> openDetails(WidgetTester tester, String name) async {
     await tester.tap(find.byTooltip('More for $name'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Details'));
     await tester.pumpAndSettle();
   }
 
@@ -162,10 +190,8 @@ void main() {
       expect(find.text('2 of 200 labels in use'), findsOneWidget);
       // Only a goal with sub-goals can be expanded.
       expect(bandsOf(tester, 'Hosting').shape, GoalBandShape.plain);
-      await swipe(tester, 'Hosting');
-      expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
 
-      await swipe(tester, 'Cooking');
+      await toggle(tester, 'Cooking');
       expect(shownNames(tester), [
         'Cooking',
         'Tofu tikka',
@@ -180,7 +206,7 @@ void main() {
       // Its inherited priority, too.
       expect(find.text('P1'), findsNWidgets(2));
 
-      await swipe(tester, 'Cooking');
+      await toggle(tester, 'Cooking');
       expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
     },
   );
@@ -349,28 +375,60 @@ void main() {
     );
   });
 
-  testWidgets('swiping a goal right shows or hides its sub-goals; tapping '
-      'opens it', (tester) async {
-    await tester.pumpWidget(app(tree()));
+  testWidgets("tapping a group opens or closes it; tapping an action edits "
+      'its priority and color, from which "Details" opens the rest', (
+    tester,
+  ) async {
+    final repo = tree();
+    await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
-    await swipe(tester, 'Cooking');
+    await toggle(tester, 'Cooking');
     expect(shownNames(tester), contains('Tofu tikka'));
-    // A short drag doesn't count.
-    await tester.drag(titled('Cooking'), const Offset(20, 0));
-    await tester.pumpAndSettle();
-    expect(shownNames(tester), contains('Tofu tikka'));
-    await swipe(tester, 'Cooking');
+    expect(find.byType(AlertDialog), findsNothing);
+    await toggle(tester, 'Cooking');
     expect(shownNames(tester), isNot(contains('Tofu tikka')));
 
-    await tester.tap(titled('Cooking'));
+    await tester.tap(titled('Hosting'));
     await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsOneWidget);
-    expect(shownNames(tester), isNot(contains('Tofu tikka')));
+    final dialog = find.byType(AlertDialog);
+    expect(
+      find.descendant(of: dialog, matching: find.byType(PriorityChip)),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: dialog, matching: find.text('Color')), findsOne);
+    await tester.tap(
+      find.descendant(of: dialog, matching: find.byType(PriorityChip)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'P0'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(
+      (await repo.goals()).goals.firstWhere((g) => g.id == 'host').priority,
+      0,
+    );
+
+    // A group's menu edits it the same way; "Details" opens the rest.
+    await tester.tap(find.byTooltip('More for Cooking'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Details'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('parent_id'),
+      ),
+      findsOneWidget,
+    );
   });
 
-  testWidgets("swiping a group right opens it; swiping left goes to the "
-      'next pane', (tester) async {
+  testWidgets('tapping a group opens it; swiping goes to the next pane', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       TraitsScope(
         repository: InMemoryTraitsRepository(
@@ -390,7 +448,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.widgetWithText(Tab, 'Actions'), findsOneWidget);
 
-    await swipe(tester, 'Cooking');
+    await toggle(tester, 'Cooking');
     expect(shownNames(tester), contains('Tofu tikka'));
 
     await tester.fling(titled('Cooking').first, const Offset(-300, 0), 1000);
@@ -559,6 +617,8 @@ void main() {
     await settle(tester);
     await tester.tap(find.text('Edit'));
     await settle(tester);
+    await tester.tap(find.text('Details'));
+    await settle(tester);
     await rename(tester, 'Parties');
     await tester.tap(find.text('Save 1 change'));
     await settle(tester);
@@ -712,7 +772,12 @@ void main() {
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
-    await openDetails(tester, 'Hosting');
+    await tester.tap(find.byTooltip('More for Hosting'));
+    await settle(tester);
+    await tester.tap(find.text('Edit'));
+    await settle(tester);
+    await tester.tap(find.text('Details'));
+    await settle(tester);
     await rename(tester, 'Parties');
     await tester.tap(find.text('Save 1 change'));
     await settle(tester);
@@ -758,27 +823,6 @@ void main() {
     expect(find.textContaining('It needs a name.'), findsOneWidget);
   });
 
-  testWidgets('the time spent on each goal is shown, as of the last '
-      'compaction, noted at the top', (tester) async {
-    await tester.pumpWidget(
-      app(
-        InMemoryGoalsRepository([
-          const Goal(
-            id: 'neighbor',
-            name: 'Be a good neighbor',
-            minutes24h: 90,
-            minutes7d: 600,
-          ),
-          const Goal(id: 'idea', name: 'Idea', status: 'proposed'),
-        ], DateTime(2026, 10, 2, 21, 5)),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Last compacted Oct 2, 2026, 9:05 PM'), findsOneWidget);
-    expect(find.text('1h 30m in 24h · 10h in 7d'), findsOneWidget);
-  });
-
   test('a time is said in hours and minutes, or as shares of each window', () {
     expect(describeTime(540, 0), '9h in 24h · 0m in 7d');
     expect(describeTime(0, 1680), '0m in 24h · 28h in 7d');
@@ -793,22 +837,46 @@ void main() {
     expect(describeTime(0, 600, skipZero: true, asPercent: true), '6% of 7d');
   });
 
-  group('the time under each action', () {
-    InMemoryGoalsRepository goals() => InMemoryGoalsRepository(
-      [
-        const Goal(
-          id: 'app',
-          name: 'Make an app',
-          minutes24h: 540,
-          minutes7d: 1680,
-        ),
-        const Goal(id: 'idea', name: 'Idea', minutes24h: 0, minutes7d: 600),
-      ],
-      DateTime(2026, 10, 2, 21),
-      const [
-        StatusMinutes(statuses: {'active'}, minutes24h: 540, minutes7d: 2280),
-      ],
-    );
+  group('the summaries', () {
+    // A Thursday evening, after a compaction at 9 PM.
+    final compacted = DateTime(2026, 10, 1, 21);
+    Event event(
+      String id,
+      DateTime start,
+      Duration length, {
+      List<String> actions = const [],
+      int? priority,
+    }) => Event.fromJson({
+      'id': id,
+      'summary': id,
+      'start': localIsoTimestamp(start),
+      'end': localIsoTimestamp(start.add(length)),
+      'action_ids': actions,
+      'effective_priority': ?priority,
+    });
+    InMemoryEventsRepository events() => InMemoryEventsRepository([
+      // An hour of tofu on the day, two more in the week, and an hour
+      // of hosting the next day.
+      event(
+        'tonight',
+        DateTime(2026, 10, 1, 18),
+        const Duration(hours: 1),
+        actions: ['tofu'],
+        priority: 1,
+      ),
+      event(
+        'monday',
+        DateTime(2026, 9, 28, 18),
+        const Duration(hours: 2),
+        actions: ['tofu'],
+      ),
+      event(
+        'tomorrow',
+        DateTime(2026, 10, 2, 12),
+        const Duration(hours: 1),
+        actions: ['host'],
+      ),
+    ]);
 
     setUp(
       () => SharedPreferencesAsyncPlatform.instance =
@@ -819,42 +887,114 @@ void main() {
           InMemorySharedPreferencesAsync.empty(),
     );
 
-    testWidgets('is in durations to start with', (tester) async {
-      await tester.pumpWidget(app(goals()));
+    testWidgets("measure back from the last compaction, the shown actions' "
+        "time in each, and each one's in its row", (tester) async {
+      await tester.pumpWidget(
+        app(tree(), events: events(), lastCompaction: compacted),
+      );
       await tester.pumpAndSettle();
 
-      expect(find.text('9h in 24h · 28h in 7d'), findsOneWidget);
-      expect(find.text('10h in 7d'), findsOneWidget);
+      expect(find.text('Last compaction'), findsOneWidget);
+      expect(find.textContaining('As of'), findsOneWidget);
+      // Cooking, collapsed, has its tofu's time.
+      expect(find.text('Cooking'), findsWidgets);
+      expect(find.text('1h in 24h · 3h in 7d'), findsOneWidget);
+      // Hosting's is tomorrow: not in the window.
+      expect(
+        find.descendant(
+          of: find.widgetWithText(ListTile, 'Hosting'),
+          matching: find.textContaining('in 24h'),
+        ),
+        findsNothing,
+      );
+      await toggle(tester, 'Cooking');
+      expect(find.text('1h in 24h · 3h in 7d'), findsNWidgets(2));
     });
 
-    testWidgets("is in percentages, as the time summary's toggle says, kept "
-        'for next time', (tester) async {
-      await tester.pumpWidget(app(goals()));
+    testWidgets('move a day at a time, look on rather than back, and come '
+        'back to the last compaction', (tester) async {
+      await tester.pumpWidget(
+        app(tree(), events: events(), lastCompaction: compacted),
+      );
       await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('A day later'));
+      await tester.pumpAndSettle();
+      expect(find.text('+1 day from last compaction'), findsOneWidget);
+      // Hosting, tomorrow, is in the day now; tonight's tofu too.
+      expect(find.text('1h in 24h · 1h in 7d'), findsOneWidget);
+
+      await tester.tap(find.text('+1 day from last compaction'));
+      await tester.pumpAndSettle();
+      expect(find.text('Last compaction'), findsOneWidget);
+
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('From'), findsOneWidget);
+      // Only hosting is after the compaction.
+      expect(find.text('1h in +24h · 1h in +7d'), findsOneWidget);
+      expect(find.textContaining('in 24h'), findsNothing);
+    });
+
+    testWidgets("split the window by priority, and turn to percentages, as "
+        'the rows do, kept for next time', (tester) async {
+      await tester.pumpWidget(
+        app(tree(), events: events(), lastCompaction: compacted),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('By priority'));
+      await tester.pumpAndSettle();
+      expect(find.text('P1'), findsWidgets);
 
       await tester.tap(find.byTooltip('Show percentages'));
       await tester.pumpAndSettle();
-      expect(find.text('37.5% of 24h · 16.7% of 7d'), findsOneWidget);
-      expect(find.text('6% of 7d'), findsOneWidget);
+      expect(find.text('4.2% of 24h · 1.8% of 7d'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
-      await tester.pumpWidget(app(goals()));
+      await tester.pumpWidget(
+        app(tree(), events: events(), lastCompaction: compacted),
+      );
       await tester.pumpAndSettle();
-      expect(find.text('6% of 7d'), findsOneWidget);
-
-      await tester.tap(find.byTooltip('Show durations'));
-      await tester.pumpAndSettle();
-      expect(find.text('9h in 24h · 28h in 7d'), findsOneWidget);
+      expect(find.text('4.2% of 24h · 1.8% of 7d'), findsOneWidget);
     });
+  });
 
-    testWidgets("isn't shown while searching", (tester) async {
-      await tester.pumpWidget(app(goals()));
-      await tester.pumpAndSettle();
+  testWidgets('comes back as it was, from what it kept, while it loads '
+      'again', (tester) async {
+    final memory = PlanMemory();
+    await tester.pumpWidget(app(tree(), memory: memory));
+    await tester.pumpAndSettle();
+    expect(shownNames(tester), contains('Hosting'));
 
-      await tester.enterText(find.byType(TextField), 'idea');
-      await tester.pumpAndSettle();
-      expect(find.byType(GoalsTimeSummary), findsNothing);
-    });
+    // Back again, with a server that hasn't answered yet.
+    final slow = _GatedGoalsRepository(tree())..fetchGate = Completer();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(app(slow, memory: memory));
+    await tester.pump();
+    expect(shownNames(tester), contains('Hosting'));
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    slow.fetchGate!.complete();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets("loads every pane's people and locations on landing, once", (
+    tester,
+  ) async {
+    final people = _CountingPeopleRepository();
+    await tester.pumpWidget(
+      PeopleScope(repository: people, child: app(tree())),
+    );
+    await tester.pumpAndSettle();
+    // Before the People pane is ever shown.
+    expect(people.calls, ['people', 'locations']);
+
+    await tester.tap(find.widgetWithText(Tab, 'People'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(Tab, 'Locations'));
+    await tester.pumpAndSettle();
+    expect(people.calls, ['people', 'locations']);
+    expect(find.text('Home'), findsOneWidget);
   });
 
   group("an action's priority", () {
@@ -890,7 +1030,7 @@ void main() {
         'outlined if inherited', (tester) async {
       await tester.pumpWidget(app(withColors()));
       await tester.pumpAndSettle();
-      await swipe(tester, 'Cooking');
+      await toggle(tester, 'Cooking');
 
       expect(chipOf(tester, 'Cooking').priority, 1);
       expect(chipOf(tester, 'Cooking').own, isTrue);
@@ -900,15 +1040,6 @@ void main() {
       expect(chipOf(tester, 'Tofu tikka').priority, 1);
       expect(chipOf(tester, 'Tofu tikka').own, isFalse);
     });
-  });
-
-  testWidgets("says nothing of compaction where time spent isn't known", (
-    tester,
-  ) async {
-    await tester.pumpWidget(app(tree()));
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('compacted'), findsNothing);
   });
 
   testWidgets('pressing and holding a goal reorders goals by dragging', (
@@ -1000,7 +1131,7 @@ void main() {
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
-    await swipe(tester, 'Cooking');
+    await toggle(tester, 'Cooking');
     await openDetails(tester, 'Tofu tikka');
     final dialog = find.byType(AlertDialog);
     final row = find.ancestor(
@@ -1106,7 +1237,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await swipe(tester, 'Own');
+      await toggle(tester, 'Own');
 
       const own = GoalBand(color: Color(0xFF123456), dashed: false);
       expect(bandsOf(tester, 'Own').bands, [own]);
@@ -1120,93 +1251,6 @@ void main() {
       expect(idle.color, isNot(const Color(0xFFABCDEF)));
     },
   );
-
-  test('Goal.fromJson reads its time', () {
-    final goal = Goal.fromJson({
-      'id': 'g',
-      'minutes_24h': 30,
-      'minutes_7d': 300,
-    });
-    expect((goal.minutes24h, goal.minutes7d), (30, 300));
-  });
-
-  test('GoalList.fromJson reads when notes were last compacted', () {
-    final goals = GoalList.fromJson({
-      'goals': [],
-      'as_of': '2026-10-02T21:05:00-04:00',
-    });
-    expect(goals.asOf, DateTime.utc(2026, 10, 3, 1, 5));
-    expect(GoalList.fromJson({'goals': []}).asOf, isNull);
-  });
-
-  group('the time by status', () {
-    testWidgets("each goal's time counts only its sub-goals with the "
-        'statuses shown', (tester) async {
-      await tester.pumpWidget(
-        app(
-          InMemoryGoalsRepository([
-            const Goal(
-              id: 'work',
-              name: 'Work',
-              minutes24h: 90,
-              minutes7d: 690,
-              minutesByStatuses: [
-                StatusMinutes(
-                  statuses: {'active'},
-                  minutes24h: 60,
-                  minutes7d: 600,
-                ),
-                // Its proposed action's.
-                StatusMinutes(
-                  statuses: {'proposed'},
-                  minutes24h: 30,
-                  minutes7d: 90,
-                ),
-              ],
-            ),
-          ], DateTime(2026, 10, 2, 21)),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('1h 30m in 24h · 11h 30m in 7d'), findsOneWidget);
-
-      await tester.tap(find.byTooltip('Show actions that are…'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(CheckboxMenuButton, 'Proposed'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('1h in 24h · 10h in 7d'), findsOneWidget);
-    });
-
-    test('GoalList totals the time on goals of any of some statuses', () {
-      final goals = GoalList.fromJson({
-        'goals': [],
-        'minutes_by_statuses': [
-          {
-            'statuses': ['active'],
-            'minutes_24h': 60,
-            'minutes_7d': 600,
-          },
-          {
-            'statuses': ['active', 'inactive'],
-            'minutes_24h': 10,
-            'minutes_7d': 45,
-          },
-          {
-            'statuses': ['inactive'],
-            'minutes_24h': 30,
-            'minutes_7d': 90,
-          },
-        ],
-      });
-      expect(goals.timeFor({'active'}), (70, 645));
-      expect(goals.timeFor({'inactive'}), (40, 135));
-      expect(goals.timeFor({'active', 'inactive'}), (100, 735));
-      expect(goals.timeFor({'deleted'}), (0, 0));
-      expect(GoalList.fromJson({'goals': []}).timeFor({'active'}), isNull);
-    });
-  });
 
   testWidgets('says when there are no actions yet', (tester) async {
     await tester.pumpWidget(app(InMemoryGoalsRepository()));
@@ -1287,5 +1331,27 @@ class _SignInGoalsRepository extends InMemoryGoalsRepository {
     if (!signedIn) throw SignInRequiredException();
     if (failure case final failure?) throw failure;
     return _inner.goals();
+  }
+}
+
+/// Counts what it's asked for: everyone, or the locations.
+class _CountingPeopleRepository extends InMemoryPeopleRepository {
+  _CountingPeopleRepository()
+    : super(
+        locations: const [Location(id: 'home', name: 'Home')],
+      );
+
+  final calls = <String>[];
+
+  @override
+  Future<PeopleList> people() {
+    calls.add('people');
+    return super.people();
+  }
+
+  @override
+  Future<List<Location>> locations() {
+    calls.add('locations');
+    return super.locations();
   }
 }
