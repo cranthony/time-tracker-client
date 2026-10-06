@@ -255,8 +255,7 @@ void main() {
     });
   });
 
-  test('McpTraitsRepository sends the server what it takes, and scores no '
-      'one', () async {
+  test('McpTraitsRepository sends the server what it takes', () async {
     final client = _RecordingClient(
       (name, _) => {
         'id': 'kind',
@@ -281,11 +280,74 @@ void main() {
       },
       'clear_fields': ['definition'],
     }));
-    expect(repository.scored, isFalse);
-    expect(await repository.traitHistory(), isEmpty);
-    expect((await repository.explainTraits('sam')).traits, isEmpty);
-    // None of those asked the server, which has no such tools.
-    expect(client.calls, hasLength(1));
+  });
+
+  test("McpTraitsRepository's trait health is the mean of each day's "
+      'people, from the daily scores', () async {
+    final client = _RecordingClient(
+      (name, _) => [
+        {
+          'day': '2026-10-04',
+          'person_id': 'self',
+          'scores': {'kind': 80, 'bold': null},
+          'parts': {
+            'kind': {
+              'judgment': {'score': 90, 'said': 'Mean of 3 judgment(s)'},
+              'count#2': {'score': 70, 'said': '1 of 2 events'},
+            },
+          },
+        },
+        {
+          'day': '2026-10-04',
+          'person_id': 'sam',
+          'scores': {'kind': 61, 'bold': 40},
+        },
+        {
+          'day': '2026-10-03',
+          'person_id': 'sam',
+          'scores': {'kind': 50},
+        },
+      ],
+    );
+    final repository = McpTraitsRepository(client);
+
+    final days = await repository.traitHistory(
+      start: DateTime(2026, 10, 3),
+      end: DateTime(2026, 10, 4),
+    );
+    expect(client.calls.single.$1, 'get_trait_scores');
+    expect(client.calls.single.$2, {
+      'start': '2026-10-03',
+      'end': '2026-10-04',
+    });
+    final kind = days.where((d) => d.traitId == 'kind').toList();
+    // Oldest first; a person with no score that day is left out.
+    expect([for (final d in kind) d.day], ['2026-10-03', '2026-10-04']);
+    expect([for (final d in kind) d.score], [50, 71]);
+    expect(kind.last.people, {'self': 80, 'sam': 61});
+    expect(days.where((d) => d.traitId == 'bold').single.people, {'sam': 40});
+    // Only Sam's, if asked.
+    final sams = await repository.traitHistory(personIds: ['sam']);
+    expect(client.calls.last.$2['person_id'], 'sam');
+    expect(
+      sams
+          .where((d) => d.day == '2026-10-04' && d.traitId == 'kind')
+          .single
+          .score,
+      61,
+    );
+
+    // How a day's score was reached, part by part.
+    final rating = await repository.explainTraits(
+      'self',
+      day: DateTime(2026, 10, 4),
+    );
+    final parts = rating.traits.firstWhere((t) => t.traitId == 'kind').parts;
+    expect(
+      [for (final p in parts) (p.key, p.kind, p.score)],
+      [('judgment', 'judgment', 90), ('count#2', 'count', 70)],
+    );
+    expect(parts.first.said, 'Mean of 3 judgment(s)');
   });
 
   group('TraitsPane', () {
@@ -325,6 +387,26 @@ void main() {
       expect(find.text('1 judgment'), findsOneWidget);
       expect(find.text('70'), findsOneWidget);
       expect(find.text('Reliable'), findsOneWidget);
+    });
+
+    testWidgets("tapping one opens its page: its health, everyone's mean, "
+        'and its parts', (tester) async {
+      await pump(tester);
+
+      await tester.tap(find.text('Adventurous'));
+      await tester.pumpAndSettle();
+      expect(find.text('Health'), findsOneWidget);
+      expect(find.text('2026-10-01 · mean of 2 people'), findsOneWidget);
+      expect(find.text('70'), findsOneWidget);
+      expect(find.text('Parts'), findsOneWidget);
+      expect(find.text('Applies to'), findsNothing);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      // One with no scores yet says so.
+      await tester.tap(find.text('Reliable'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Not scored yet'), findsOneWidget);
     });
 
     testWidgets('searches them by name, definition and parts', (tester) async {
