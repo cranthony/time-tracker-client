@@ -1108,7 +1108,7 @@ void main() {
     expect(find.text('Tofu tikka'), findsNothing);
     // A group in a group, once its group's opened.
     expect(find.text('Indian'), findsNothing);
-    await tester.tap(find.byTooltip('Show 1 sub-goal'));
+    await tester.tap(find.byTooltip('Show 1 inside'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Indian'));
     await tester.pumpAndSettle();

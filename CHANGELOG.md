@@ -21,6 +21,34 @@ room (time-tracking-google-calendar-mcp#151).
   ever steered the server's reallocation, which is gone too. An event's
   summary no longer has a Fixed/Flexible time switch.
 
+## 6.9.1
+
+- The Events page and its dialogs say actions, not goals, which are
+  gone: "Add actions" and a priority "From its actions" on an event, the
+  action picker ("Search actions", "Primary action", "Show 2 inside"),
+  and the day summary's "Actions" and "Top-level groups" pages, with
+  time on no action as "No action".
+
+## 6.9.0
+
+- What the app loads is kept once, for every page: the events, day by
+  day, in the store the traits are scored from -- the Events page's days
+  and the Plan summaries' windows among them -- and the actions, the
+  notes not yet compacted and when notes were last compacted, which the
+  Notes, Events and Plan pages each used to load and keep apart. A page
+  shows what another loaded at once, while it asks the server again.
+- The events are no longer kept apart for the first day the Events page
+  shows: every day the app has is kept from run to run.
+- Fixes what was kept from the last run sometimes being lost when two
+  pages asked for it at once.
+
+## 6.8.1
+
+- Sliding between days on the Events page draws a day the app already
+  has as it slides in, rather than a spinner that its events then pop
+  into; and a day the app loads while it's showing (as it opens, say)
+  shows at once.
+
 ## 6.8.0
 
 Needs a server that lists each person's cancelled events

@@ -2,20 +2,24 @@ import 'package:flutter/widgets.dart';
 
 import '../models/event.dart';
 import '../models/goal.dart';
+import '../models/note.dart';
 import '../models/person.dart';
 import '../models/time_split.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import 'event_store.dart';
-import 'events_repository.dart';
 import 'goals_repository.dart';
+import 'notes_repository.dart';
 import 'people_repository.dart';
 import 'traits_repository.dart';
 
-/// What the Plan page last showed, kept while the app runs -- above every
-/// route ([PlanMemoryScope]), across switching to Notes or Events and
-/// back -- so it comes back as it was, not empty, while it asks the server
-/// again. The Events page fills in its people, locations and traits too
+/// What the app has loaded, kept while it runs -- above every route
+/// ([PlanMemoryScope]), across switching between Notes, Events and Plan
+/// -- once for every page, so each comes back as it was, not empty, while
+/// it asks the server again: the actions, traits, people and locations,
+/// the notes not yet compacted and when notes were last compacted, and
+/// the events (in [eventStore]). What the repositories kept from the
+/// app's last run fills in what this run hasn't loaded yet ([loadKept]). The Events page fills in its people, locations and traits too
 /// ([prefetchNames]), for an event's dialogs to name them at once.
 ///
 /// It holds the app's [eventStore] too, and the traits' [scores], worked
@@ -98,18 +102,21 @@ class PlanMemory extends ChangeNotifier {
       identical(a.$4, b.$4) &&
       a.$5 == b.$5;
 
+  /// The saved notes not yet compacted; null until they're loaded.
+  List<Note>? notes;
+
+  /// When notes were last compacted, and what's been compacted; null
+  /// until it's known.
+  CompactionStatus? compaction;
+
   /// When notes were last compacted, which the summaries measure from by
   /// default; null if they never have been, or it isn't known yet.
-  DateTime? lastCompaction;
+  DateTime? get lastCompaction => compaction?.lastCompaction;
 
   /// How many days from [lastCompaction] the summaries measure from, and
   /// whether they look on from there rather than back.
   int dayOffset = 0;
   bool forward = false;
-
-  /// The events of each window the summaries have measured, by
-  /// [eventsKey].
-  final events = <String, List<Event>>{};
 
   /// This visit's loads, by what they load.
   final _loads = <String, Future<void>>{};
@@ -144,10 +151,13 @@ class PlanMemory extends ChangeNotifier {
     forward: forward,
   );
 
-  /// The key [events] keeps [window]'s events under: the week it spans.
-  static String eventsKey(SummaryWindow window) {
+  /// [window]'s events, from [eventStore], once it has every day of it;
+  /// null until then.
+  List<Event>? windowEvents(SummaryWindow window) {
     final (from, to) = window.week;
-    return '${from.toIso8601String()}/${to.toIso8601String()}';
+    final store = _eventStore;
+    if (store == null || !store.hasAll(from, to)) return null;
+    return store.between(from, to);
   }
 
   /// Loads every trait and their scores, this visit; [again] asks again.
@@ -170,17 +180,17 @@ class PlanMemory extends ChangeNotifier {
     locations = await repository.locations();
   }, again: again);
 
-  /// Loads [window]'s events, this visit; [again] asks again.
-  Future<void> loadEvents(
-    EventsRepository repository,
-    SummaryWindow window, {
-    bool again = false,
-  }) {
-    final key = eventsKey(window);
-    return load('events:$key', () async {
-      final (from, to) = window.week;
-      events[key] = await repository.events(from, to);
-    }, again: again);
+  /// Loads [window]'s events into [eventStore], this visit; [again] asks
+  /// again.
+  Future<void> loadEvents(SummaryWindow window, {bool again = false}) {
+    final store = _eventStore;
+    if (store == null) return Future.value();
+    final (from, to) = window.week;
+    return load(
+      'events:${from.toIso8601String()}/${to.toIso8601String()}',
+      () => store.refresh(from, to),
+      again: again,
+    );
   }
 
   /// Loads everyone, every location and every trait -- from what was kept
@@ -210,12 +220,32 @@ class PlanMemory extends ChangeNotifier {
     ]);
   }
 
+  /// Loads the saved notes not yet compacted, this visit; [again] asks
+  /// again.
+  Future<void> loadNotes(NotesRepository repository, {bool again = false}) =>
+      load('notes', () async {
+        notes = await repository.uncompactedNotes();
+      }, again: again);
+
+  /// Loads when notes were last compacted, this visit; [again] asks
+  /// again.
+  Future<void> loadCompaction(
+    NotesRepository repository, {
+    bool again = false,
+  }) => load('compaction', () async {
+    compaction = await repository.compactionStatus();
+  }, again: again);
+
   /// Loads every action and group, this visit, for the groups a trait's
   /// part can count; [again] asks again.
   Future<void> loadActions(GoalsRepository repository, {bool again = false}) =>
       load('actions', () async {
         actions = await repository.goals();
       }, again: again);
+
+  /// Whether [warmScores] has been asked to load, this run.
+  bool get warmed => _warmed;
+  bool _warmed = false;
 
   /// Loads what the traits' [scores] are worked out from, as the app opens:
   /// the traits, everyone and every action, then the events, as far back
@@ -227,6 +257,7 @@ class PlanMemory extends ChangeNotifier {
     PeopleRepository? people,
     GoalsRepository? goals,
   }) => load('scores', () async {
+    _warmed = true;
     await loadKept(traits: traits, people: people, goals: goals);
     notifyListeners();
     Future<void> quietly(Future<void>? loading) async {
@@ -261,18 +292,30 @@ class PlanMemory extends ChangeNotifier {
     TraitsRepository? traits,
     PeopleRepository? people,
     GoalsRepository? goals,
+    NotesRepository? notes,
   }) async {
-    try {
-      this.traits ??= await traits?.cachedTraits(
-        statuses: [...traitStatuses.keys],
-      );
-      this.people ??= await people?.cachedPeople();
-      locations ??= await people?.cachedLocations();
-      actions ??= await goals?.cachedGoals();
-      await _eventStore?.restored();
-    } catch (_) {
-      // Then nothing's kept.
+    // Each awaited first, then kept only if nothing's there yet: a load
+    // finishing meanwhile, or another call, may have filled it.
+    Future<void> keep<T>(Future<T?>? kept, void Function(T value) fill) async {
+      try {
+        if (await kept case final value?) fill(value);
+      } catch (_) {
+        // Then that's not kept.
+      }
     }
+
+    await Future.wait([
+      keep(
+        traits?.cachedTraits(statuses: [...traitStatuses.keys]),
+        (v) => this.traits ??= v,
+      ),
+      keep(people?.cachedPeople(), (v) => this.people ??= v),
+      keep(people?.cachedLocations(), (v) => locations ??= v),
+      keep(goals?.cachedGoals(), (v) => actions ??= v),
+      keep(notes?.cachedUncompactedNotes(), (v) => this.notes ??= v),
+      keep(notes?.cachedCompactionStatus(), (v) => compaction ??= v),
+      keep(_eventStore?.restored().then((_) => true), (_) {}),
+    ]);
   }
 }
 

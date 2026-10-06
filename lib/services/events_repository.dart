@@ -3,7 +3,6 @@ import '../models/note.dart';
 import '../models/recurrence.dart';
 import '../models/repeat.dart';
 import 'mcp_client.dart';
-import 'response_cache.dart';
 
 /// The fields `update_event` and `update_recurrence` can remove, by
 /// listing them in `clear_fields` (time-tracking-google-calendar-mcp#119).
@@ -29,14 +28,9 @@ List<String> _cleared(Map<String, Object?> changes) => [
 /// Where events come from. The app talks to this rather than to MCP
 /// directly so screens can be exercised without a server.
 abstract class EventsRepository {
-  /// Events that overlap [from] to [to], by start time. With [keep], they
-  /// replace the ones kept for [cachedEvents].
-  Future<List<Event>> events(DateTime from, DateTime to, {bool keep = false});
-
-  /// What [events] last returned, with `keep`, for [from] to [to], kept
-  /// from an earlier run of the app; null if what's kept is for another
-  /// time, or there's nothing kept.
-  Future<List<Event>?> cachedEvents(DateTime from, DateTime to);
+  /// Events that overlap [from] to [to], by start time. The app keeps
+  /// them, day by day, in its EventStore.
+  Future<List<Event>> events(DateTime from, DateTime to);
 
   /// Saves [changes], keyed and encoded as `update_event` takes them, to
   /// [event]. Returns the events the server changed: [event]. The server
@@ -101,45 +95,18 @@ abstract class EventsRepository {
 
 /// Reads events via the Time Tracker MCP server's `list_events` tool.
 class McpEventsRepository implements EventsRepository {
-  McpEventsRepository(this._client, {this._cache});
+  McpEventsRepository(this._client);
 
   final McpClient _client;
-  final ResponseCache? _cache;
-
-  /// Holds one call's `min_time`, `max_time` and result.
-  static const _cacheKey = 'list_events';
 
 
   @override
-  Future<List<Event>> events(
-    DateTime from,
-    DateTime to, {
-    bool keep = false,
-  }) async {
-    final range = {
+  Future<List<Event>> events(DateTime from, DateTime to) async => _sorted(
+    await _client.callTool('list_events', {
       'min_time': localIsoTimestamp(from),
       'max_time': localIsoTimestamp(to),
-    };
-    final result = await _client.callTool('list_events', range);
-    final events = _sorted(result);
-    if (keep) await _cache?.write(_cacheKey, {...range, 'result': result});
-    return events;
-  }
-
-  @override
-  Future<List<Event>?> cachedEvents(DateTime from, DateTime to) async {
-    try {
-      final kept = await _cache?.read(_cacheKey) as Map?;
-      if (kept == null ||
-          kept['min_time'] != localIsoTimestamp(from) ||
-          kept['max_time'] != localIsoTimestamp(to)) {
-        return null;
-      }
-      return _sorted(kept['result']);
-    } catch (_) {
-      return null; // From an older version of the app, perhaps.
-    }
-  }
+    }),
+  );
 
   static List<Event> _sorted(Object? result) =>
       (result as List)
@@ -325,11 +292,7 @@ class InMemoryEventsRepository implements EventsRepository {
 
   /// Like the server, leaves out cancelled events.
   @override
-  Future<List<Event>> events(
-    DateTime from,
-    DateTime to, {
-    bool keep = false,
-  }) async =>
+  Future<List<Event>> events(DateTime from, DateTime to) async =>
       _events
           .where(
             (e) =>
@@ -337,9 +300,6 @@ class InMemoryEventsRepository implements EventsRepository {
           )
           .toList()
         ..sort((a, b) => a.start.compareTo(b.start));
-
-  @override
-  Future<List<Event>?> cachedEvents(DateTime from, DateTime to) async => null;
 
   /// The ids [createEvent] has given, to give the next a new one.
   int _created = 0;

@@ -133,14 +133,20 @@ class _EventsScreenState extends State<EventsScreen> {
   /// a second tap goes on from there.
   int? _slidingTo;
 
-  /// The events of the day shown and the days around it, as far as
-  /// they're loaded. The days either side are loaded in the background,
-  /// to be ready to slide in.
-  final _events = <DateTime, List<Event>>{};
+  /// What the app has loaded, for every page: here, the events (in its
+  /// [PlanMemory.eventStore]), the actions, the notes not yet compacted
+  /// and when notes were last compacted. The app's, or else one of its
+  /// own.
+  late final PlanMemory _memory;
 
-  /// The days in [_events] the server has answered for since anything
-  /// was last changed. The rest are kept from last time, or may be out of
-  /// date, and are loaded again when shown.
+  /// The app's events, day by day: each day loaded here goes in, and one
+  /// already there shows at once, while it's loaded again.
+  EventStore get _store => _memory.eventStore!;
+
+  /// The days the server has answered for here since anything was last
+  /// changed. The rest are kept from before, or may be out of date, and
+  /// are loaded again when shown. The day shown and those either side
+  /// are loaded, to be ready to slide in.
   final _fresh = <DateTime>{};
 
   /// Why the day shown couldn't be loaded, if it couldn't.
@@ -150,15 +156,18 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// The goals by id, for the colors and names of events' goals; empty
   /// until they're loaded, or without goals.
-  Map<String, Goal> _goalsById = const {};
+  Map<String, Goal> get _goalsById => {
+    for (final goal in _memory.actions?.goals ?? const <Goal>[]) ?goal.id: goal,
+  };
 
-  /// When notes were last compacted, as the goals say; null until
-  /// they're loaded.
-  DateTime? _lastCompaction;
+  /// When notes were last compacted; null until it's known.
+  DateTime? get _lastCompaction => _memory.lastCompaction;
 
   /// When each saved note not yet compacted was taken; empty until
   /// they're loaded.
-  List<DateTime> _savedNotes = const [];
+  List<DateTime> get _savedNotes => [
+    for (final n in _memory.notes ?? const <Note>[]) n.timestamp,
+  ];
 
   /// Whether the day's summary is folded away.
   bool _summaryCollapsed = false;
@@ -195,18 +204,23 @@ class _EventsScreenState extends State<EventsScreen> {
   double get _height => timelineHeight(_day, _scale) + 170;
 
   /// The day shown's events, if they're loaded.
-  List<Event>? get _shown => _events[_day];
+  List<Event>? get _shown => _store.day(_day);
 
   /// Whether the day shown is kept from last time, or may be out of date,
   /// and is being loaded again.
-  bool get _stale => _events.containsKey(_day) && !_fresh.contains(_day);
+  bool get _stale => _store.has(_day) && !_fresh.contains(_day);
+
+  /// Shows what the app loads -- a day, as it opens, say -- as soon as
+  /// it has it.
+  void _memoryChanged() {
+    if (mounted) setState(() {});
+  }
 
   /// Loads everyone, every location and every trait, for an event's
   /// dialogs to name at once. Best effort.
   Future<void> _prefetchNames() async {
     if (!mounted) return;
-    final memory = widget.memory ?? PlanMemoryScope.of(context);
-    if (memory == null) return;
+    final memory = _memory;
     // Asked afresh each time the page opens.
     memory.newVisit();
     await memory.prefetchNames(
@@ -218,6 +232,10 @@ class _EventsScreenState extends State<EventsScreen> {
   @override
   void initState() {
     super.initState();
+    _memory = widget.memory ?? PlanMemoryScope.of(context) ?? PlanMemory();
+    _memory
+      ..useEvents(EventStore(repository: widget.repository))
+      ..addListener(_memoryChanged);
     _day = _firstDay = _midnight(widget.clock());
     _lifecycle = AppLifecycleListener(onHide: _savePlace);
     final store = widget.placeStore;
@@ -265,45 +283,16 @@ class _EventsScreenState extends State<EventsScreen> {
   Future<void> _loadNotes({bool cached = false}) async {
     final repository = widget.notesRepository;
     if (repository == null) return;
-    unawaited(_loadCompaction(repository, cached: cached));
-    void show(List<Note> notes) {
-      if (!mounted) return;
-      setState(() => _savedNotes = [for (final n in notes) n.timestamp]);
-    }
-
+    if (cached) await _memory.loadKept(notes: repository);
+    unawaited(
+      _memory.loadCompaction(repository, again: true).catchError((Object _) {}),
+    );
     final fetched = widget.outbox?.fetching();
     try {
-      if (cached) {
-        if (await repository.cachedUncompactedNotes() case final notes?) {
-          show(notes);
-        }
-      }
-      show(await repository.uncompactedNotes());
+      await _memory.loadNotes(repository, again: true);
       fetched?.call();
     } catch (_) {
       // Shown as they were.
-    }
-  }
-
-  /// Loads when notes were last compacted, after what was kept from last
-  /// time if [cached]. Best effort: without it, it isn't marked.
-  Future<void> _loadCompaction(
-    NotesRepository repository, {
-    bool cached = false,
-  }) async {
-    void show(CompactionStatus status) {
-      if (mounted) setState(() => _lastCompaction = status.lastCompaction);
-    }
-
-    try {
-      if (cached) {
-        if (await repository.cachedCompactionStatus() case final status?) {
-          show(status);
-        }
-      }
-      show(await repository.compactionStatus());
-    } catch (_) {
-      // Shown as it was.
     }
   }
 
@@ -401,6 +390,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
   @override
   void dispose() {
+    _memory.removeListener(_memoryChanged);
     _lifecycle.dispose();
     widget.outbox?.removeListener(_outboxChanged);
     _pages.dispose();
@@ -430,16 +420,9 @@ class _EventsScreenState extends State<EventsScreen> {
   Future<void> _loadGoals() async {
     final repository = widget.goalsRepository;
     if (repository == null) return;
-    void show(GoalList goals) {
-      if (!mounted) return;
-      setState(() {
-        _goalsById = {for (final goal in goals.goals) ?goal.id: goal};
-      });
-    }
-
     try {
-      if (await repository.cachedGoals() case final cached?) show(cached);
-      show(await repository.goals());
+      await _memory.loadKept(goals: repository);
+      await _memory.loadActions(repository, again: true);
     } catch (_) {
       // Shown as they were.
     }
@@ -592,23 +575,11 @@ class _EventsScreenState extends State<EventsScreen> {
   static DateTime _dayAfter(DateTime day) =>
       DateTime(day.year, day.month, day.day + 1);
 
-  /// The app's events, day by day, that the traits are scored from: each
-  /// day loaded here goes in, and a day already there shows at once.
-  EventStore? get _store =>
-      (widget.memory ?? PlanMemoryScope.of(context))?.eventStore;
-
-  /// Shows the first day's events kept from last time, unless the server
-  /// answered first: the app's, or else those kept for [_firstDay] alone.
+  /// Shows the days the app kept from its last run, unless the server
+  /// answered first.
   Future<void> _showCached() async {
-    final day = _firstDay;
-    if (_store?.day(day) case final kept?) {
-      setState(() => _events[day] = kept);
-      return;
-    }
-    final events = await widget.repository.cachedEvents(day, _dayAfter(day));
-    if (!mounted || events == null || _events.containsKey(day)) return;
-    if (_needsSignIn || (_error != null && day == _day)) return;
-    setState(() => _events[day] = events);
+    await _store.restored();
+    if (mounted) setState(() {});
   }
 
   /// Loads [day]'s events, the day shown's by default. Only the day
@@ -616,15 +587,10 @@ class _EventsScreenState extends State<EventsScreen> {
   Future<void> _load([DateTime? day]) async {
     final which = day ?? _day;
     try {
-      final events = await widget.repository.events(
-        which,
-        _dayAfter(which),
-        keep: which == _firstDay,
-      );
+      final events = await widget.repository.events(which, _dayAfter(which));
       if (!mounted) return;
-      _store?.putDay(which, events);
+      _store.putDay(which, events);
       setState(() {
-        _events[which] = events;
         _fresh.add(which);
         if (which == _day) {
           _error = null;
@@ -634,7 +600,6 @@ class _EventsScreenState extends State<EventsScreen> {
     } on SignInRequiredException {
       if (!mounted || which != _day) return;
       setState(() {
-        _events.remove(which);
         _fresh.remove(which);
         _needsSignIn = true;
       });
@@ -670,12 +635,7 @@ class _EventsScreenState extends State<EventsScreen> {
     setState(() {
       _day = day;
       _error = null;
-      _events.removeWhere((d, _) => (_pageOf(d) - _pageOf(day)).abs() > 3);
-      _fresh.retainWhere(_events.containsKey);
-      // The app's, at once, while it's loaded again.
-      if (!_events.containsKey(day)) {
-        if (_store?.day(day) case final kept?) _events[day] = kept;
-      }
+      _fresh.removeWhere((d) => (_pageOf(d) - _pageOf(day)).abs() > 3);
     });
     _refresh(reloadShown: !_fresh.contains(day));
   }
@@ -717,8 +677,11 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Every event loaded, but [event], for keeping its times clear of.
   EventRoom _roomFor(Event? event) => EventRoom(
     {
-      for (final events in _events.values)
-        for (final e in events) e.id ?? e: e,
+      for (final e in _store.between(
+        DateTime(_day.year, _day.month, _day.day - 3),
+        DateTime(_day.year, _day.month, _day.day + 4),
+      ))
+        e.id ?? e: e,
     }.values,
     except: event?.id,
   );
@@ -848,7 +811,7 @@ class _EventsScreenState extends State<EventsScreen> {
     );
     // The traits are scored from it at once; it may have moved others, on
     // other days too.
-    _store?.putEvents(updated);
+    _store.putEvents(updated);
     _fresh.clear();
     await _refresh();
     // Its goals may have changed, and with them its diamonds.
@@ -996,10 +959,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
   Future<void> _signOut() async {
     await widget.onSignOut!();
-    setState(() {
-      _events.clear();
-      _fresh.clear();
-    });
+    setState(_fresh.clear);
     await _refresh();
   }
 
@@ -1176,7 +1136,8 @@ class _EventsScreenState extends State<EventsScreen> {
   /// can't be shown, in the middle of the [view] tall part of it on
   /// screen.
   Widget _buildDay(BuildContext context, DateTime day, double view) {
-    final events = _events[day];
+    // The app's, so a day sliding in is drawn as it slides, not after.
+    final events = _store.day(day);
     if (day == _day && _error != null && (events == null || events.isEmpty)) {
       return _inView(
         view,

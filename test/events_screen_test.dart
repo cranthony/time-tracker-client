@@ -106,6 +106,85 @@ void main() {
     expect(store.day(at(29, 0))?.map((e) => e.id), ['dinner']);
   });
 
+  testWidgets("draws a day the app has as it slides in, before it's "
+      'loaded here', (tester) async {
+    final store =
+        EventStore(
+          repository: InMemoryEventsRepository(),
+          clock: () => now,
+        )..putDay(at(29, 0), [
+          Event(id: 'kept', start: at(29, 8), end: at(29, 9), summary: 'Walk'),
+        ]);
+    // Yesterday takes a second to come from the server.
+    final repo = _SlowRepository(
+      [
+        Event(
+          id: 'dinner',
+          start: at(29, 18),
+          end: at(29, 19),
+          summary: 'Dinner',
+        ),
+      ],
+      slow: {at(29, 0)},
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EventsScreen(
+          repository: repo,
+          serverLabel: 'offline demo',
+          memory: PlanMemory(eventStore: store),
+          clock: () => now,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Previous day'));
+    // A few frames into the slide: there already, not a spinner.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('Walk'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    // Then as the server has it.
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Dinner'), findsOneWidget);
+    expect(find.text('Walk'), findsNothing);
+  });
+
+  testWidgets("shows a day the app loads as soon as it's there", (
+    tester,
+  ) async {
+    final store = EventStore(
+      repository: InMemoryEventsRepository(),
+      clock: () => now,
+    );
+    // Today never comes from the server here.
+    final repo = _SlowRepository(const [], slow: {at(30, 0)});
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EventsScreen(
+          repository: repo,
+          serverLabel: 'offline demo',
+          memory: PlanMemory(eventStore: store),
+          clock: () => now,
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    // The app loads it, as it opens, say.
+    store.putDay(at(30, 0), [
+      Event(id: 'kept', start: at(30, 8), end: at(30, 9), summary: 'Walk'),
+    ]);
+    await tester.pump();
+    expect(find.text('Walk'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('shows today\'s events, and steps between days', (tester) async {
     final repo = InMemoryEventsRepository([
       Event(start: at(30, 15), end: at(30, 16), summary: 'Lunch'),
@@ -479,7 +558,7 @@ void main() {
       await edit(tester, inDialog(find.text('Deep focus')));
       // Active goals only; the first picked is the primary goal.
       expect(inDialog(find.text('Old')), findsNothing);
-      expect(inDialog(find.byTooltip('Primary goal')), findsOneWidget);
+      expect(inDialog(find.byTooltip('Primary action')), findsOneWidget);
       await tester.ensureVisible(inDialog(find.text('Exercise')));
       await tester.pumpAndSettle();
       await tester.tap(inDialog(find.text('Exercise')));
@@ -597,9 +676,7 @@ void main() {
       expect(find.text('9:00 AM – 10:30 AM'), findsNothing);
     });
 
-    testWidgets('cancelling it can be just a change of plan', (
-      tester,
-    ) async {
+    testWidgets('cancelling it can be just a change of plan', (tester) async {
       final repo = _RecordingRepository([work()]);
       await openWork(tester, repo);
       await tester.tap(find.text('Cancel event'));
@@ -939,9 +1016,9 @@ void main() {
       await open(tester, repo);
       await tester.tap(inDialog(find.text('P2')));
       await tester.pumpAndSettle();
-      await tester.tap(inDialog(find.text('From its goals')));
+      await tester.tap(inDialog(find.text('From its actions')));
       await tester.pumpAndSettle();
-      expect(inDialog(find.text('From goals')), findsOneWidget);
+      expect(inDialog(find.text('From actions')), findsOneWidget);
 
       await tester.tap(inDialog(find.text('Deep work')));
       await tester.pumpAndSettle();
@@ -1533,10 +1610,10 @@ void main() {
       final dialog = find.byType(AlertDialog).last;
       await tester.tap(find.descendant(of: dialog, matching: find.text('P1')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('From its goals'));
+      await tester.tap(find.text('From its actions'));
       await tester.pumpAndSettle();
       expect(
-        find.descendant(of: dialog, matching: find.text('From goals')),
+        find.descendant(of: dialog, matching: find.text('From actions')),
         findsOneWidget,
       );
       await tester.tap(find.text('Save'));
@@ -1726,7 +1803,7 @@ class _SignInRepository extends InMemoryEventsRepository {
   Exception? failure;
 
   @override
-  Future<List<Event>> events(DateTime from, DateTime to, {bool keep = false}) {
+  Future<List<Event>> events(DateTime from, DateTime to) {
     if (!signedIn()) throw SignInRequiredException();
     if (failure case final failure?) throw failure;
     return super.events(from, to);
@@ -1740,11 +1817,7 @@ class _SlowRepository extends InMemoryEventsRepository {
   final Set<DateTime> slow;
 
   @override
-  Future<List<Event>> events(
-    DateTime from,
-    DateTime to, {
-    bool keep = false,
-  }) async {
+  Future<List<Event>> events(DateTime from, DateTime to) async {
     if (slow.contains(from)) await Future.delayed(const Duration(seconds: 1));
     return super.events(from, to);
   }

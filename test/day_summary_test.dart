@@ -94,7 +94,7 @@ void main() {
         'Tofu': 2,
         'Top': 1.5,
         '3 other actions': 2.5,
-        'No goal': 2,
+        'No action': 2,
         'Unscheduled': 12,
       });
     });
@@ -106,7 +106,7 @@ void main() {
         'Cook': 3,
         'Top': 1.5,
         '2 other actions': 1.5,
-        'No goal': 2,
+        'No action': 2,
         'Unscheduled': 12,
       });
       expect(slices[1].color, const Color(0xFF33B679));
