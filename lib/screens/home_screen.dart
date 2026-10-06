@@ -63,8 +63,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Where Events was left, to go back there.
   final _eventsPlace = EventsPlaceStore();
 
-  /// What Plan showed, to show again while it loads when it's back.
-  final _planMemory = PlanMemory();
+  /// What Plan showed, to show again while it loads when it's back: the
+  /// app's, if it shares one.
+  late final _planMemory = PlanMemoryScope.of(context) ?? PlanMemory();
 
   @override
   void initState() {
@@ -106,6 +107,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onSignOut: widget.onSignOut,
           version: widget.version,
           placeStore: _eventsPlace,
+          memory: _planMemory,
         ),
         _Tab.plan => PlanScreen(
           repository: widget.goalsRepository,

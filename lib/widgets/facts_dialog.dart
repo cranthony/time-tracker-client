@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/facts.dart';
 import '../models/person.dart';
 import '../services/people_repository.dart';
+import '../services/plan_memory.dart';
 import 'person_dialog.dart';
 
 /// Edits what happened at an event, its [facts] -- who was there with you,
@@ -46,6 +47,7 @@ class _FactsDialogState extends State<_FactsDialog> {
   late String? _location = widget.facts.locationId;
   final _notes = <String, TextEditingController>{};
   PeopleRepository? _repository;
+  PlanMemory? _memory;
   Future<PeopleList>? _people;
   Future<List<Location>>? _locations;
 
@@ -61,9 +63,32 @@ class _FactsDialogState extends State<_FactsDialog> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_repository != null) return;
-    _repository = PeopleScope.of(context);
-    _people = _repository?.people();
-    _locations = _repository?.locations();
+    final repository = _repository = PeopleScope.of(context);
+    if (repository == null) return;
+    final memory = _memory = PlanMemoryScope.of(context);
+    if (memory == null) {
+      _people = repository.people();
+      _locations = repository.locations();
+      return;
+    }
+    // What the Events page loaded, or is loading, rather than asking
+    // again; what's kept, if that fails.
+    _people = _kept(memory.loadPeople(repository), () => memory.people);
+    _locations = _kept(
+      memory.loadLocations(repository),
+      () => memory.locations,
+    );
+  }
+
+  /// What [loading] leaves [kept], or what it kept already, if it fails.
+  static Future<T> _kept<T>(Future<void> loading, T? Function() kept) async {
+    try {
+      await loading;
+    } catch (_) {
+      if (kept() case final had?) return had;
+      rethrow;
+    }
+    return kept() as T;
   }
 
   @override
@@ -101,7 +126,13 @@ class _FactsDialogState extends State<_FactsDialog> {
     if (created == null || !mounted) return;
     setState(() {
       _location = created.id;
-      _locations = repository.locations();
+      _locations = switch (_memory) {
+        final memory? => _kept(
+          memory.loadLocations(repository, again: true),
+          () => memory.locations,
+        ),
+        null => repository.locations(),
+      };
     });
   }
 
@@ -116,6 +147,7 @@ class _FactsDialogState extends State<_FactsDialog> {
         child: SingleChildScrollView(
           child: FutureBuilder(
             future: _people,
+            initialData: _memory?.people,
             builder: (context, snapshot) {
               final everyone =
                   snapshot.data?.withSelf ??
@@ -140,7 +172,9 @@ class _FactsDialogState extends State<_FactsDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (snapshot.connectionState == ConnectionState.waiting)
+                  // Only while there's no one to show: what's known shows at once.
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData)
                     const LinearProgressIndicator(),
                   _chips(
                     theme,
@@ -273,6 +307,7 @@ class _FactsDialogState extends State<_FactsDialog> {
     padding: const EdgeInsets.only(top: 12),
     child: FutureBuilder(
       future: _locations,
+      initialData: _memory?.locations,
       builder: (context, snapshot) {
         final locations = snapshot.data ?? const <Location>[];
         final known = locations.any((l) => l.id == _location);
