@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 6.8.1
+
+- Sliding between days on the Events page draws a day the app already
+  has as it slides in, rather than a spinner that its events then pop
+  into; and a day the app loads while it's showing (as it opens, say)
+  shows at once.
+
 ## 6.8.0
 
 Needs a server that lists each person's cancelled events
