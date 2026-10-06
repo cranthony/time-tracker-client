@@ -127,7 +127,7 @@ class _GoalsPickerState extends State<GoalsPicker> {
   @override
   Widget build(BuildContext context) {
     final shown = _shown;
-    if (shown.isEmpty) return const Text('No active goals.');
+    if (shown.isEmpty) return const Text('No active actions.');
     final words = _words(_search.text);
     final rows = words.isEmpty
         ? _tree(shown)
@@ -149,7 +149,7 @@ class _GoalsPickerState extends State<GoalsPicker> {
               isDense: true,
               border: const OutlineInputBorder(),
               prefixIcon: const Icon(Icons.search),
-              hintText: 'Search goals',
+              hintText: 'Search actions',
               suffixIcon: _search.text.isEmpty
                   ? null
                   : IconButton(
@@ -182,7 +182,7 @@ class _GoalsPickerState extends State<GoalsPicker> {
           child: rows.isEmpty
               ? const Padding(
                   padding: EdgeInsets.all(8),
-                  child: Text('No goals match.'),
+                  child: Text('No actions match.'),
                 )
               // Not a ListView: a dialog measures its content's
               // intrinsic width, which a lazy list can't give.
@@ -208,7 +208,7 @@ class _GoalsPickerState extends State<GoalsPicker> {
           InputChip(
             avatar: i == 0
                 ? const Tooltip(
-                    message: 'Primary goal',
+                    message: 'Primary action',
                     child: Icon(Icons.star, size: 18),
                   )
                 : switch (byId[id]) {
@@ -253,9 +253,8 @@ class _GoalsPickerState extends State<GoalsPicker> {
               ? null
               : IconButton(
                   tooltip: open
-                      ? 'Hide sub-goals'
-                      : 'Show ${subGoals.length} sub-goal'
-                            '${subGoals.length == 1 ? '' : 's'}',
+                      ? "Hide what's inside"
+                      : 'Show ${subGoals.length} inside',
                   icon: Icon(open ? Icons.expand_less : Icons.expand_more),
                   onPressed: () =>
                       setState(() => open ? _open.remove(id) : _open.add(id)),
@@ -361,8 +360,8 @@ class GoalField extends StatelessWidget {
     required this.value,
     required this.onChanged,
     required this.marker,
-    this.title = 'Pick a goal',
-    this.hint = 'Pick a goal',
+    this.title = 'Pick an action',
+    this.hint = 'Pick an action',
     this.noneLabel,
     this.exclude = const {},
   });
@@ -428,7 +427,7 @@ Future<({String? id})?> showGoalPicker(
   required List<Goal> goals,
   required String? value,
   required Widget Function(Goal goal) marker,
-  String title = 'Pick a goal',
+  String title = 'Pick an action',
   String? noneLabel,
   Set<String> exclude = const {},
 }) => showDialog<({String? id})>(

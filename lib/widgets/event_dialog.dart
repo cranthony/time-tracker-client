@@ -59,7 +59,7 @@ Future<List<Event>?> showEventDialog(
     },
     hints: const {
       'action_ids':
-          'Goals shown "from its label" were never set: they come from the '
+          'Actions shown "from its label" were never set: they come from the '
           "event's label. Keep or change them to set them.",
     },
     links: {

@@ -989,14 +989,14 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
   Widget _goalsPicker(BuildContext context) {
     final picked = _draft as List<String>;
     if (_goals == null) {
-      // Nowhere to list goals from: take ids, separated by commas.
+      // Nowhere to list actions from: take ids, separated by commas.
       return TextField(
         controller: _text,
         autofocus: true,
         decoration: const InputDecoration(
           isDense: true,
           border: OutlineInputBorder(),
-          hintText: 'Goal ids, separated by commas',
+          hintText: 'Action ids, separated by commas',
         ),
         onChanged: (text) => _draft = [
           for (final id in text.split(','))

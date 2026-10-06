@@ -88,7 +88,7 @@ List<SummarySlice> goalShares(
       ),
       top: top,
     ),
-    if (noGoal != null) SummarySlice('No goal', noGoalColor, noGoal),
+    if (noGoal != null) SummarySlice('No action', noGoalColor, noGoal),
     if (unscheduled != null) SummarySlice('Unscheduled', null, unscheduled),
   ];
 }
@@ -128,7 +128,7 @@ class DaySummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => TimeSummary(
-    titles: const ['Priorities', 'Goals', 'Top-level goals'],
+    titles: const ['Priorities', 'Actions', 'Top-level groups'],
     initialPage: initialPage,
     collapsed: collapsed,
     onCollapsed: onCollapsed,
