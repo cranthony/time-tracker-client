@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.1.1
+
+- An action picker opens at once: the Events page's pickers list the
+  actions the app already has, and the Plan page's those it shows, rather
+  than loading every action from the server each time a dialog opens.
+
 ## 7.1.0
 
 Needs a server with the priority colors tools

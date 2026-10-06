@@ -485,9 +485,13 @@ class _PlanScreenState extends State<PlanScreen> {
     }
   }
 
-  /// Every action, for the dialogs' action pickers.
-  Future<List<PlanAction>> _allActions() async =>
-      (await widget.repository.actions()).actions;
+  /// Every action, for the dialogs' action pickers: those shown, with
+  /// what's still being saved, or else the server's.
+  Future<List<PlanAction>> _allActions() async {
+    if (_actions case final shown?) return shown.actions;
+    await _memory.loadActions(widget.repository);
+    return _memory.actions?.actions ?? const [];
+  }
 
   /// Saves [changes] to [action] in the background. Returns the actions as
   /// they're shown now, with them.

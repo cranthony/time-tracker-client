@@ -244,6 +244,10 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
 
   Future<List<PlanAction>>? _actions;
 
+  /// [_actions], once they're in: pickers are drawn from them at once,
+  /// rather than waiting a frame on a future that's done.
+  List<PlanAction>? _actionsLoaded;
+
   /// PlanAction names by id, once [_actions] has them.
   Map<String?, String> _actionNames = const {};
 
@@ -320,6 +324,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         ?..then((actions) {
           if (!mounted) return;
           setState(() {
+            _actionsLoaded = actions;
             _actionNames = {for (final g in actions) g.id: actionName(g)};
             _actionPaths = {
               for (final g in actions) g.id: g.path ?? actionName(g),
@@ -928,6 +933,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     Widget Function(List<PlanAction> actions) build,
   ) => FutureBuilder(
     future: _actions,
+    initialData: _actionsLoaded,
     builder: (context, snapshot) {
       if (snapshot.hasError) {
         return Text(

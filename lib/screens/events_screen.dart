@@ -819,10 +819,17 @@ class _EventsScreenState extends State<EventsScreen> {
     await _loadActions();
   }
 
-  /// Every action, for picking an event's actions; null without actions.
+  /// Every action, for picking an event's actions: the app's, loaded
+  /// as it opened and again as this page did, or else the server's; null
+  /// without actions.
   Future<List<PlanAction>> Function()? get _actions =>
       switch (widget.actionsRepository) {
-        final actions? => () async => (await actions.actions()).actions,
+        final repository? => () async {
+          if (_memory.actions == null) {
+            await _memory.loadActions(repository);
+          }
+          return _memory.actions?.actions ?? const [];
+        },
         null => null,
       };
 
