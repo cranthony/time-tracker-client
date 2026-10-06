@@ -17,6 +17,8 @@ import 'trait_breakdown.dart';
 /// the parts, events and Claude's judgments behind it), their history
 /// (the actions done and locations of their events, with how often and
 /// when), and a timeline of those events with what happened at each.
+/// Always, the events the user cancelled that count against their
+/// follow-through ([Person.cancelledEvents]).
 /// [onEdit] edits them, returning them as saved.
 class PersonScreen extends StatefulWidget {
   const PersonScreen({
@@ -193,6 +195,8 @@ class _PersonScreenState extends State<PersonScreen> {
               _heading(theme, 'Events'),
               ..._timeline(theme),
             ],
+            _heading(theme, 'Cancelled'),
+            ..._cancelled(theme),
           ],
         ),
       ),
@@ -348,6 +352,65 @@ class _PersonScreenState extends State<PersonScreen> {
                 if (facts.notes[_person.id] case final note?) '“$note”',
               ],
             ].where((line) => line.isNotEmpty).join('\n'),
+          ),
+        ),
+    ];
+  }
+
+  /// The events the user cancelled that count against their
+  /// follow-through, newest first: when each was planned, what was to be
+  /// done, whether they were to be there or it was for them, and when
+  /// and how it was cancelled, with the traits it counted against.
+  List<Widget> _cancelled(ThemeData theme) {
+    final cancelled = _person.cancelledEvents;
+    if (cancelled.isEmpty) {
+      return [
+        _padded(
+          Text(
+            'Nothing cancelled that counts against '
+            '${_person.isSelf ? 'your' : 'their'} follow-through.',
+            style: TextStyle(color: theme.hintColor),
+          ),
+        ),
+      ];
+    }
+    final localizations = MaterialLocalizations.of(context);
+    String at(DateTime t) =>
+        '${localizations.formatMediumDate(t)}, '
+        '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(t))}';
+    return [
+      for (final c in cancelled)
+        ListTile(
+          dense: true,
+          leading: Icon(Icons.event_busy, color: theme.colorScheme.error),
+          title: Text(c.summary ?? '(no title)'),
+          subtitle: Text(
+            [
+              [
+                'Planned for ${at(c.start)}',
+                if (c.engagement == 'for')
+                  'for ${_person.isSelf ? 'you' : 'them'}'
+                else if (!_person.isSelf)
+                  'with them',
+              ].join(', '),
+              if (c.actionIds.isNotEmpty)
+                [for (final id in c.actionIds) widget.actionNames[id] ?? id]
+                    .join(', '),
+              [
+                switch (c.cancelledAt) {
+                  final day? =>
+                    'Cancelled ${localizations.formatMediumDate(day)}',
+                  null => 'Cancelled',
+                },
+                if (c.byCompaction)
+                  "— it didn't happen"
+                else if (c.source == 'delete_event')
+                  '— deleted',
+              ].join(' '),
+              if (c.traitIds.isNotEmpty)
+                'Counts against '
+                    '${c.traitIds.map((id) => _traitList[id]?.name ?? id).join(', ')}',
+            ].join('\n'),
           ),
         ),
     ];

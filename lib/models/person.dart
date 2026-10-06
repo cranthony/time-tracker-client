@@ -16,6 +16,7 @@ class Person {
     this.circleIds = const [],
     this.whatMatters,
     this.traits = const PersonTraits(),
+    this.cancelledEvents = const [],
   });
 
   final String id;
@@ -37,6 +38,24 @@ class Person {
   /// Which traits apply to them, and their own parts for any.
   final PersonTraits traits;
 
+  /// The events the user cancelled that count against their
+  /// follow-through, newest first, as the server recorded them: not sent
+  /// back.
+  final List<CancelledEvent> cancelledEvents;
+
+  /// Them, with [events] as their cancellations: what the server keeps
+  /// apart from them, kept through an edit.
+  Person withCancelledEvents(List<CancelledEvent> events) => Person(
+    id: id,
+    name: name,
+    context: context,
+    status: status,
+    circleIds: circleIds,
+    whatMatters: whatMatters,
+    traits: traits,
+    cancelledEvents: events,
+  );
+
   bool get isSelf => id == selfPersonId;
   bool get active => status == 'active';
 
@@ -48,6 +67,10 @@ class Person {
     circleIds: [for (final id in json['circles'] as List? ?? const []) '$id'],
     whatMatters: _text(json['what_matters']),
     traits: PersonTraits.fromJson(json['traits']),
+    cancelledEvents: [
+      for (final e in json['cancelled_events'] as List? ?? const [])
+        ?CancelledEvent.fromJson(e),
+    ],
   );
 
   /// As `create_person` and `update_person` take them: only what the
@@ -61,6 +84,77 @@ class Person {
     'what_matters': ?whatMatters,
     if (!traits.isDefault) 'traits': traits.toJson(),
   };
+}
+
+/// An event the user cancelled, as it counts against one person's
+/// follow-through: one of the server's `CancelledEvent`s (its
+/// utilities/people.py), recorded when a compaction found it didn't
+/// happen, or it was deleted as counting against them.
+class CancelledEvent {
+  const CancelledEvent({
+    this.eventId,
+    this.summary,
+    required this.start,
+    required this.end,
+    this.actionIds = const [],
+    this.engagement = 'with',
+    this.parts = const [],
+    this.cancelledAt,
+    this.source,
+  });
+
+  final String? eventId;
+  final String? summary;
+
+  /// When it was planned.
+  final DateTime start;
+  final DateTime end;
+
+  /// What was to be done at it.
+  final List<String> actionIds;
+
+  /// "with" (they were to be there) or "for" (it was to be done for them
+  /// while they weren't).
+  final String engagement;
+
+  /// The follow-through parts it counted against when it was recorded,
+  /// `"trait id/part key"`.
+  final List<String> parts;
+
+  final DateTime? cancelledAt;
+
+  /// What cancelled it: `"compaction <id>"`, or `"delete_event"`.
+  final String? source;
+
+  /// The ids of the traits it counted against, each once.
+  List<String> get traitIds =>
+      {for (final part in parts) part.split('/').first}.toList();
+
+  /// Whether a compaction found it didn't happen, rather than its being
+  /// deleted.
+  bool get byCompaction => source?.startsWith('compaction') ?? false;
+
+  /// One from the server; null without when it was planned.
+  static CancelledEvent? fromJson(Object? json) {
+    if (json is! Map) return null;
+    DateTime? time(Object? value) =>
+        value is String ? DateTime.tryParse(value)?.toLocal() : null;
+    final start = time(json['start']);
+    if (start == null) return null;
+    return CancelledEvent(
+      eventId: json['event_id'] as String?,
+      summary: json['summary'] as String?,
+      start: start,
+      end: time(json['end']) ?? start,
+      actionIds: [
+        for (final id in json['action_ids'] as List? ?? const []) '$id',
+      ],
+      engagement: json['engagement'] == 'for' ? 'for' : 'with',
+      parts: [for (final p in json['parts'] as List? ?? const []) '$p'],
+      cancelledAt: time(json['cancelled_at']),
+      source: json['source'] as String?,
+    );
+  }
 }
 
 /// Which traits apply to a person, and their own parts for any, as the

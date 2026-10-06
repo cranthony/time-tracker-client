@@ -49,8 +49,9 @@ The app works out the traits' scores itself, from the calendar's events
 and Claude's judgments of them, as the server's scoring does: each
 person's score of each trait for each of the last 7 days, each trait's
 health (everyone's mean), and each person's relationship health (gray,
-disconnected, to green, healthy) and history. Follow-through isn't scored,
-since the server doesn't list cancelled events. As it opens, the app asks
+disconnected, to green, healthy) and history. Follow-through counts the events the user cancelled that
+count against each person, which the server lists with them; a person's
+page lists them too. As it opens, the app asks
 for the week either side of today, and for any day further back (or
 ahead) the traits read that it hasn't kept from an earlier run; the
 Events page shares those days, and its saves change the scores at once.

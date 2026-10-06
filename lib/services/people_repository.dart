@@ -302,7 +302,8 @@ class InMemoryPeopleRepository implements PeopleRepository {
     if (before.isSelf && (changes['status'] ?? 'active') != 'active') {
       throw McpException('Self is always active.');
     }
-    final updated = Person.fromJson({...before.toJson(), ...changes});
+    final updated = Person.fromJson({...before.toJson(), ...changes})
+        .withCancelledEvents(before.cancelledEvents);
     _checkPerson(updated);
     if (i >= 0) {
       _people[i] = updated;
@@ -352,7 +353,7 @@ class InMemoryPeopleRepository implements PeopleRepository {
             for (final c in person.circleIds)
               if (c != id) c,
           ],
-        });
+        }).withCancelledEvents(person.cancelledEvents);
       }
     }
   }
