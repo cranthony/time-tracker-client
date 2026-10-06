@@ -3,25 +3,27 @@ import 'package:flutter/material.dart';
 import '../models/facts.dart';
 import '../models/person.dart';
 import '../models/trait.dart';
-import '../services/mcp_client.dart';
+import '../models/trait_scores.dart';
+import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import '../widgets/health.dart';
 import 'trait_breakdown.dart';
 
 /// A person -- Self included -- on one page: who they are (their context
 /// and circles), which traits apply to them and their own parts for any,
-/// and what matters to them. Where people are scored ([TraitsRepository.
-/// scored]: the sample data, not yet the server), also their relationship
-/// health, their traits' scores of the last day that's over (tapping one
-/// shows the parts, events and Claude's judgments behind it), their
-/// history (the actions done and locations of their events, with how
-/// often and when), and a timeline of those events with what happened at
-/// each. [onEdit] edits them, returning them as saved.
+/// and what matters to them. Once [memory] has scored everyone from the
+/// events (see [PlanMemory.scores]), also their relationship health,
+/// their traits' scores of the last day that's over (tapping one shows
+/// the parts, events and Claude's judgments behind it), their history
+/// (the actions done and locations of their events, with how often and
+/// when), and a timeline of those events with what happened at each.
+/// [onEdit] edits them, returning them as saved.
 class PersonScreen extends StatefulWidget {
   const PersonScreen({
     super.key,
     required this.person,
     this.traits,
+    this.memory,
     this.circles = const [],
     this.personNames = const {},
     this.actionNames = const {},
@@ -31,6 +33,9 @@ class PersonScreen extends StatefulWidget {
 
   final Person person;
   final TraitsRepository? traits;
+
+  /// Where everyone's scores are worked out, from the events.
+  final PlanMemory? memory;
   final List<Circle> circles;
 
   /// Names people by id, for who events were with and for.
@@ -48,26 +53,40 @@ class PersonScreen extends StatefulWidget {
 }
 
 class _PersonScreenState extends State<PersonScreen> {
-  TraitsRating? _rating;
-  Object? _ratingError;
-  PersonDigest? _digest;
-  Object? _digestError;
-
   late Person _person = widget.person;
 
   /// Every trait, by id, to name those that apply to them.
   Map<String, Trait> _traitList = const {};
 
-  bool get _scored => widget.traits?.scored ?? false;
+  /// Everyone's scores, if they're worked out yet.
+  TraitScores? get _scores => widget.memory?.scores;
+  bool get _scored => widget.memory != null;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    widget.memory?.addListener(_rescored);
+    _loadTraitList();
   }
 
+  @override
+  void dispose() {
+    widget.memory?.removeListener(_rescored);
+    super.dispose();
+  }
+
+  /// Shows the scores again, as they're worked out again.
+  void _rescored() {
+    if (mounted) setState(() {});
+  }
+
+  /// The traits again, and the week either side of today's events.
   Future<void> _load() async {
-    await Future.wait([_loadTraitList(), _loadRating(), _loadDigest()]);
+    await Future.wait([
+      _loadTraitList(),
+      if (widget.memory?.eventStore case final store?)
+        store.warm().catchError((Object _) {}),
+    ]);
   }
 
   Future<void> _loadTraitList() async {
@@ -87,47 +106,11 @@ class _PersonScreenState extends State<PersonScreen> {
     }
   }
 
-  Future<void> _loadRating() async {
-    final traits = widget.traits;
-    if (traits == null || !traits.scored) return;
-    try {
-      final rating = await traits.explainTraits(_person.id);
-      if (!mounted) return;
-      setState(() {
-        _rating = rating;
-        _ratingError = null;
-      });
-    } catch (e) {
-      if (mounted) setState(() => _ratingError = e);
-    }
-  }
-
-  Future<void> _loadDigest() async {
-    final traits = widget.traits;
-    if (traits == null || !traits.scored) return;
-    try {
-      final digest = await traits.personDigest(_person.id);
-      if (!mounted) return;
-      setState(() {
-        _digest = digest;
-        _digestError = null;
-      });
-    } catch (e) {
-      if (mounted) setState(() => _digestError = e);
-    }
-  }
-
   Future<void> _edit() async {
     final saved = await widget.onEdit!();
     if (saved == null || !mounted) return;
     setState(() => _person = saved);
-    await _loadRating();
   }
-
-  Map<String, Map<String, dynamic>> get _eventsById => {
-    for (final event in _digest?.events ?? const <Map<String, dynamic>>[])
-      '${event['id']}': event,
-  };
 
   @override
   Widget build(BuildContext context) {
@@ -153,25 +136,26 @@ class _PersonScreenState extends State<PersonScreen> {
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
-            if (_scored || _person.health != null)
+            if (_scored)
               ListTile(
                 title: const Text('Relationship health'),
-                subtitle: Text(switch (_person.health) {
+                subtitle: Text(switch (_scores?.health(_person.id)) {
                   final h? => relationshipBand(h),
                   null => 'Not rated yet',
                 }),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (_person.healthTrend.isNotEmpty) ...[
+                    if (_scores?.healthTrend(_person.id) case final trend?
+                        when trend.nonNulls.isNotEmpty) ...[
                       TrendSparkline(
-                        trend: _person.healthTrend,
+                        trend: trend,
                         scale: HealthScale.relationship,
                       ),
                       const SizedBox(width: 8),
                     ],
                     HealthDot(
-                      rating: _person.health,
+                      rating: _scores?.health(_person.id),
                       scale: HealthScale.relationship,
                     ),
                   ],
@@ -247,13 +231,14 @@ class _PersonScreenState extends State<PersonScreen> {
 
   List<Widget> _traits(BuildContext context) {
     final theme = Theme.of(context);
-    final rating = _rating;
-    if (rating == null) return [_padded(_loading(_ratingError))];
-    if (rating.traits.isEmpty) {
+    final scores = _scores;
+    if (scores == null) return [_padded(const LinearProgressIndicator())];
+    final rating = scores.rating(_person.id);
+    if (rating == null || rating.traits.isEmpty) {
       return [
         _padded(
           Text(
-            'Not rated yet: the reflection rates them by every active trait.',
+            'Not rated: no active trait applies to them.',
             style: TextStyle(color: theme.hintColor),
           ),
         ),
@@ -287,7 +272,7 @@ class _PersonScreenState extends State<PersonScreen> {
             score,
             labels: [for (final part in score.parts) _partLabel(part)],
             title: rating.day,
-            events: _eventsById,
+            events: scores.eventsBehind(score),
             personNames: widget.personNames,
             locationNames: widget.locationNames,
           ),
@@ -308,8 +293,8 @@ class _PersonScreenState extends State<PersonScreen> {
       part.rubric ?? partKinds[part.kind]?.label ?? part.key;
 
   List<Widget> _history(ThemeData theme) {
-    final digest = _digest;
-    if (digest == null) return [_padded(_loading(_digestError))];
+    final digest = _scores?.digest(_person.id);
+    if (digest == null) return [_padded(const LinearProgressIndicator())];
     String entries(List<DigestEntry> list) => list.isEmpty
         ? 'None recorded'
         : [
@@ -339,8 +324,8 @@ class _PersonScreenState extends State<PersonScreen> {
   }
 
   List<Widget> _timeline(ThemeData theme) {
-    final digest = _digest;
-    if (digest == null) return [_padded(_loading(_digestError))];
+    final digest = _scores?.digest(_person.id);
+    if (digest == null) return [_padded(const LinearProgressIndicator())];
     if (digest.events.isEmpty) {
       return [_padded(const Text('No events in this window.'))];
     }
@@ -385,11 +370,4 @@ class _PersonScreenState extends State<PersonScreen> {
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     child: child,
   );
-
-  Widget _loading(Object? error) => error == null
-      ? const LinearProgressIndicator()
-      : Text(switch (error) {
-          McpException(:final message) => message,
-          _ => '$error',
-        });
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/person.dart';
 import '../models/trait.dart';
+import '../models/trait_scores.dart';
 import '../services/mcp_client.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
@@ -76,12 +77,34 @@ class PeoplePaneState extends State<PeoplePane> {
   @override
   void initState() {
     super.initState();
+    widget.memory.addListener(_scored);
     _settle(widget.memory.loadPeople(widget.repository));
   }
 
-  /// Loads everyone afresh.
-  Future<void> reload() =>
-      _settle(widget.memory.loadPeople(widget.repository, again: true));
+  @override
+  void dispose() {
+    widget.memory.removeListener(_scored);
+    super.dispose();
+  }
+
+  /// Shows the scores again, as they're worked out again.
+  void _scored() {
+    if (mounted) setState(() {});
+  }
+
+  /// Each person's and circle's relationship health, worked out from
+  /// their events.
+  TraitScores? get _scores => widget.memory.scores;
+
+  int? _circleHealth(Circle c) =>
+      _scores?.groupHealth(_people?.inCircle(c.id).map((p) => p.id) ?? []);
+
+  /// Loads everyone afresh, and the events around today they're scored
+  /// from.
+  Future<void> reload() => Future.wait([
+    _settle(widget.memory.loadPeople(widget.repository, again: true)),
+    ?widget.memory.eventStore?.warm().catchError((Object _) {}),
+  ]);
 
   /// Shows who [loading] loads, once it has, or why it couldn't.
   Future<void> _settle(Future<void> loading) async {
@@ -168,6 +191,7 @@ class PeoplePaneState extends State<PeoplePane> {
         builder: (_) => PersonScreen(
           person: person,
           traits: widget.traits,
+          memory: widget.memory,
           circles: people?.circles ?? const [],
           personNames: {
             for (final p in people?.withSelf ?? const <Person>[])
@@ -285,12 +309,12 @@ class PeoplePaneState extends State<PeoplePane> {
             children: [
               for (final c in people.circles)
                 FilterChip(
-                  avatar: switch (c.health) {
+                  avatar: switch (_circleHealth(c)) {
                     final h? => _HealthRing(health: h),
                     null => null,
                   },
                   label: Text(c.name),
-                  tooltip: switch (c.health) {
+                  tooltip: switch (_circleHealth(c)) {
                     final h? => '${c.name}: health $h, ${relationshipBand(h)}',
                     null => c.note ?? c.name,
                   },
@@ -320,18 +344,15 @@ class PeoplePaneState extends State<PeoplePane> {
                   style: theme.textTheme.bodySmall,
                 ),
               ),
-              if (circle.healthTrend.isNotEmpty) ...[
-                TrendSparkline(
-                  trend: circle.healthTrend,
-                  scale: HealthScale.relationship,
-                ),
+              if (_scores?.groupTrend(
+                    people.inCircle(circle.id).map((p) => p.id),
+                  )
+                  case final trend? when trend.nonNulls.isNotEmpty) ...[
+                TrendSparkline(trend: trend, scale: HealthScale.relationship),
                 const SizedBox(width: 8),
               ],
-              if (circle.health != null)
-                HealthDot(
-                  rating: circle.health,
-                  scale: HealthScale.relationship,
-                ),
+              if (_circleHealth(circle) case final health?)
+                HealthDot(rating: health, scale: HealthScale.relationship),
             ],
           ),
         ),
@@ -361,14 +382,16 @@ class PeoplePaneState extends State<PeoplePane> {
         if (person.circleIds.contains(c.id)) c.name,
     ];
     final muted = !person.active;
+    final health = _scores?.health(person.id);
+    final trend = _scores?.healthTrend(person.id) ?? const <int?>[];
     return ListTile(
       onTap: () => _open(person),
       leading: CircleAvatar(
-        backgroundColor: switch (person.health) {
+        backgroundColor: switch (health) {
           final h? => relationshipColor(h),
           null => theme.colorScheme.surfaceContainerHighest,
         },
-        foregroundColor: switch (person.health) {
+        foregroundColor: switch (health) {
           final h? => contrastingColor(relationshipColor(h)),
           null => theme.colorScheme.onSurfaceVariant,
         },
@@ -392,15 +415,12 @@ class PeoplePaneState extends State<PeoplePane> {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (person.healthTrend.isNotEmpty) ...[
-            TrendSparkline(
-              trend: person.healthTrend,
-              scale: HealthScale.relationship,
-            ),
+          if (trend.nonNulls.isNotEmpty) ...[
+            TrendSparkline(trend: trend, scale: HealthScale.relationship),
             const SizedBox(width: 8),
           ],
-          if (person.health != null)
-            HealthDot(rating: person.health, scale: HealthScale.relationship),
+          if (health != null)
+            HealthDot(rating: health, scale: HealthScale.relationship),
           PopupMenuButton<String>(
             tooltip: 'More for ${personName(person)}',
             onSelected: (choice) => switch (choice) {

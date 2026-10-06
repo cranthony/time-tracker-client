@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../models/facts.dart';
 import '../models/trait.dart';
-import '../services/mcp_client.dart';
-import '../services/traits_repository.dart';
 
 /// Shows [trait]'s daily scores, [days], newest first, each the mean
 /// across the people rated by it; tapping a person's score shows the parts
@@ -12,8 +10,10 @@ Future<void> showTraitHistory(
   BuildContext context, {
   required Trait trait,
   required List<TraitDay> days,
-  required TraitsRepository repository,
+  required TraitsRating? Function(String personId, String day) rating,
+  Map<String, Map<String, dynamic>> Function(TraitScore score)? events,
   Map<String?, String> personNames = const {},
+  Map<String?, String> locationNames = const {},
 }) => showModalBottomSheet<void>(
   context: context,
   isScrollControlled: true,
@@ -42,34 +42,21 @@ Future<void> showTraitHistory(
                   dense: true,
                   title: Text(personNames[personId] ?? personId),
                   trailing: Text('$score'),
-                  onTap: () async {
-                    try {
-                      final rating = await repository.explainTraits(
-                        personId,
-                        day: DateTime.parse(day.day),
-                      );
-                      final score = rating.traits
-                          .where((t) => t.traitId == trait.id)
-                          .firstOrNull;
-                      if (score != null && context.mounted) {
-                        await showTraitParts(
-                          context,
-                          score,
-                          title:
-                              '${personNames[personId] ?? personId} · ${day.day}',
-                        );
-                      }
-                    } catch (e) {
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(switch (e) {
-                            McpException(:final message) => message,
-                            _ => '$e',
-                          }),
-                        ),
-                      );
-                    }
+                  onTap: () {
+                    final score = rating(
+                      personId,
+                      day.day,
+                    )?.traits.where((t) => t.traitId == trait.id).firstOrNull;
+                    if (score == null) return;
+                    showTraitParts(
+                      context,
+                      score,
+                      title:
+                          '${personNames[personId] ?? personId} · ${day.day}',
+                      events: events?.call(score) ?? const {},
+                      personNames: personNames,
+                      locationNames: locationNames,
+                    );
                   },
                 ),
             ],

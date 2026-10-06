@@ -16,8 +16,6 @@ class Person {
     this.circleIds = const [],
     this.whatMatters,
     this.traits = const PersonTraits(),
-    this.health,
-    this.healthTrend = const [],
   });
 
   final String id;
@@ -39,14 +37,6 @@ class Person {
   /// Which traits apply to them, and their own parts for any.
   final PersonTraits traits;
 
-  /// Their relationship health (0-100), from their traits' scores; null
-  /// until it's been rated. The server doesn't rate people yet: only the
-  /// sample data has it.
-  final int? health;
-
-  /// Its last 8 days, oldest first; null for a day with none.
-  final List<int?> healthTrend;
-
   bool get isSelf => id == selfPersonId;
   bool get active => status == 'active';
 
@@ -58,8 +48,6 @@ class Person {
     circleIds: [for (final id in json['circles'] as List? ?? const []) '$id'],
     whatMatters: _text(json['what_matters']),
     traits: PersonTraits.fromJson(json['traits']),
-    health: (json['health'] as num?)?.round(),
-    healthTrend: _trend(json['health_trend']),
   );
 
   /// As `create_person` and `update_person` take them: only what the
@@ -127,8 +115,6 @@ class Circle {
     required this.name,
     this.note,
     this.memberIds = const [],
-    this.health,
-    this.healthTrend = const [],
   });
 
   final String id;
@@ -138,10 +124,6 @@ class Circle {
   /// The people in it, as the server lists them.
   final List<String> memberIds;
 
-  /// Its relationship health: only the sample data has it so far.
-  final int? health;
-  final List<int?> healthTrend;
-
   factory Circle.fromJson(Map<String, dynamic> json) => Circle(
     id: json['id'] as String,
     name: json['name'] as String? ?? '',
@@ -149,8 +131,6 @@ class Circle {
     memberIds: [
       for (final id in json['member_ids'] as List? ?? const []) '$id',
     ],
-    health: (json['health'] as num?)?.round(),
-    healthTrend: _trend(json['health_trend']),
   );
 
   /// As `create_circle` and `update_circle` take it.
@@ -228,9 +208,3 @@ String personName(Person person, {bool context = false}) {
 
 String? _text(Object? value) =>
     value is String && value.trim().isNotEmpty ? value : null;
-
-List<int?> _trend(Object? json) => [
-  for (final cell
-      in ((json as String?) ?? '').split(',').where((c) => c.isNotEmpty))
-    int.tryParse(cell),
-];

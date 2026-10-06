@@ -10,6 +10,7 @@ import '../models/note.dart';
 import '../models/recurrence.dart';
 import '../outbox/note_outbox.dart';
 import '../services/goals_repository.dart';
+import '../services/event_store.dart';
 import '../services/events_repository.dart';
 import '../services/mcp_client.dart';
 import '../services/events_place.dart';
@@ -591,10 +592,19 @@ class _EventsScreenState extends State<EventsScreen> {
   static DateTime _dayAfter(DateTime day) =>
       DateTime(day.year, day.month, day.day + 1);
 
+  /// The app's events, day by day, that the traits are scored from: each
+  /// day loaded here goes in, and a day already there shows at once.
+  EventStore? get _store =>
+      (widget.memory ?? PlanMemoryScope.of(context))?.eventStore;
+
   /// Shows the first day's events kept from last time, unless the server
-  /// answered first. Only [_firstDay]'s are kept.
+  /// answered first: the app's, or else those kept for [_firstDay] alone.
   Future<void> _showCached() async {
     final day = _firstDay;
+    if (_store?.day(day) case final kept?) {
+      setState(() => _events[day] = kept);
+      return;
+    }
     final events = await widget.repository.cachedEvents(day, _dayAfter(day));
     if (!mounted || events == null || _events.containsKey(day)) return;
     if (_needsSignIn || (_error != null && day == _day)) return;
@@ -612,6 +622,7 @@ class _EventsScreenState extends State<EventsScreen> {
         keep: which == _firstDay,
       );
       if (!mounted) return;
+      _store?.putDay(which, events);
       setState(() {
         _events[which] = events;
         _fresh.add(which);
@@ -661,6 +672,10 @@ class _EventsScreenState extends State<EventsScreen> {
       _error = null;
       _events.removeWhere((d, _) => (_pageOf(d) - _pageOf(day)).abs() > 3);
       _fresh.retainWhere(_events.containsKey);
+      // The app's, at once, while it's loaded again.
+      if (!_events.containsKey(day)) {
+        if (_store?.day(day) case final kept?) _events[day] = kept;
+      }
     });
     _refresh(reloadShown: !_fresh.contains(day));
   }
@@ -770,7 +785,9 @@ class _EventsScreenState extends State<EventsScreen> {
         ),
       ),
     );
-    // It may have moved others, on other days too.
+    // The traits are scored from it at once; it may have moved others, on
+    // other days too.
+    _store?.putEvents(updated);
     _fresh.clear();
     await _refresh();
     // Its goals may have changed, and with them its diamonds.

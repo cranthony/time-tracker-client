@@ -17,6 +17,8 @@ import 'package:time_tracker_client/screens/notes_screen.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/theme.dart';
+import 'package:time_tracker_client/services/event_store.dart';
+import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/widgets/day_summary.dart';
 import 'package:time_tracker_client/widgets/time_summary.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
@@ -174,12 +176,24 @@ void main() {
 
     testWidgets('person ($mode)', (tester) async {
       final people = (await tester.runAsync(sample.peopleRepository().people))!;
+      // Scored from the sample's events, as the app does.
+      final memory = PlanMemory(
+        eventStore: EventStore(repository: sample.eventsRepository()),
+      );
+      await tester.runAsync(
+        () => memory.warmScores(
+          traits: sample.traitsRepository(),
+          people: sample.peopleRepository(),
+          goals: sample.goalsRepository(),
+        ),
+      );
       await render(
         tester,
         'person',
         PersonScreen(
           person: people.people.firstWhere((p) => p.id == 'sam'),
           traits: sample.traitsRepository(),
+          memory: memory,
           circles: people.circles,
           personNames: {for (final p in people.withSelf) p.id: personName(p)},
         ),

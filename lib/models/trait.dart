@@ -428,21 +428,10 @@ class TraitDay {
 
   /// Each person's score of it, by person id.
   final Map<String, int> people;
-
-  factory TraitDay.fromJson(Map<String, dynamic> json) => TraitDay(
-    traitId: json['trait_id'] as String,
-    name: json['name'] as String? ?? json['trait_id'] as String,
-    day: json['day'] as String,
-    score: (json['score'] as num).round(),
-    people: {
-      for (final p in json['people'] as List? ?? const [])
-        if (p is Map) '${p['person_id']}': (p['score'] as num).round(),
-    },
-  );
 }
 
-/// How a person's traits rate one day, part by part: the server's
-/// `explain_traits`.
+/// How a person's traits rate one day, part by part (see
+/// models/trait_scores.dart).
 class TraitsRating {
   const TraitsRating({
     this.rating,
@@ -460,17 +449,6 @@ class TraitsRating {
   /// Traits that aren't rated for them: off, archived, or weighed 0.
   final List<String> leftOut;
   final String? day;
-
-  factory TraitsRating.fromJson(Map<String, dynamic> json) => TraitsRating(
-    rating: json['rating'] is num ? (json['rating'] as num).round() : null,
-    explanation: json['explanation'] as String?,
-    traits: [
-      for (final t in json['traits'] as List? ?? const [])
-        if (t is Map) TraitScore.fromJson(t.cast()),
-    ],
-    leftOut: [for (final id in json['left_out'] as List? ?? const []) '$id'],
-    day: json['day'] as String?,
-  );
 }
 
 class TraitScore {
@@ -489,17 +467,6 @@ class TraitScore {
   /// Null if no part had anything to rate it by.
   final int? score;
   final List<PartScore> parts;
-
-  factory TraitScore.fromJson(Map<String, dynamic> json) => TraitScore(
-    traitId: json['trait_id'] as String,
-    name: json['name'] as String? ?? json['trait_id'] as String,
-    weight: json['weight'] as num? ?? 1,
-    score: json['score'] is num ? (json['score'] as num).round() : null,
-    parts: [
-      for (final p in json['parts'] as List? ?? const [])
-        if (p is Map) PartScore.fromJson(p.cast()),
-    ],
-  );
 }
 
 class PartScore {
@@ -533,17 +500,6 @@ class PartScore {
 
   /// A judgment's ratings of each event behind it, as Claude made them.
   final List<Judgment> judgments;
-
-  factory PartScore.fromJson(Map<String, dynamic> json) => PartScore(
-    key: json['key'] as String,
-    kind: json['kind'] as String,
-    weight: json['weight'] as num? ?? 1,
-    score: json['score'] is num ? (json['score'] as num).round() : null,
-    said: json['said'] as String? ?? '',
-    eventIds: [for (final id in json['event_ids'] as List? ?? const []) '$id'],
-    rubric: json['rubric'] as String?,
-    judgments: const [],
-  );
 }
 
 /// One action or location in a person's history digest.
@@ -561,18 +517,11 @@ class DigestEntry {
   /// e.g. "2026-04-10".
   final String first;
   final String last;
-
-  factory DigestEntry.fromJson(Map<String, dynamic> json) => DigestEntry(
-    label: json['label'] as String,
-    count: (json['count'] as num).round(),
-    first: json['first'] as String,
-    last: json['last'] as String,
-  );
 }
 
 /// A person's history: the actions done and locations of the events
 /// with or for them, with how often and when, and the events themselves
-/// -- the server's `get_person_digest`.
+/// -- worked out from the events (see models/trait_scores.dart).
 class PersonDigest {
   const PersonDigest({
     required this.personId,
@@ -592,27 +541,4 @@ class PersonDigest {
   /// Its events, oldest first, as the server sent them (each a
   /// `PublicEvent`, with its `facts` and `judgments`).
   final List<Map<String, dynamic>> events;
-
-  factory PersonDigest.fromJson(Map<String, dynamic> json) => PersonDigest(
-    personId: json['person_id'] as String,
-    windowDays: (json['window_days'] as num?)?.round() ?? 180,
-    eventsCounted: (json['events_counted'] as num?)?.round() ?? 0,
-    actions: [
-      for (final e in json['actions'] as List? ?? const [])
-        if (e is Map) DigestEntry.fromJson(e.cast()),
-    ],
-    locations: [
-      for (final e in json['locations'] as List? ?? const [])
-        if (e is Map) DigestEntry.fromJson(e.cast()),
-    ],
-    events: [
-      for (final e in json['events'] as List? ?? const [])
-        if (e is Map) e.cast<String, dynamic>(),
-    ],
-  );
-
-  /// Facts of each of [events], by event id.
-  Map<String, Facts> get factsByEvent => {
-    for (final e in events) '${e['id']}': ?Facts.fromJson(e['facts']),
-  };
 }

@@ -45,11 +45,15 @@ tapping the date goes back to the last compaction.
   assistant recognizes it by. The summary splits the time by where it
   was.
 
-Traits' daily scores come from the server (`get_trait_scores`), once a
-compaction settles each day. The sample data goes further than the server
-does so far: each person's relationship health (gray, disconnected, to
-green, healthy), the events and Claude's judgments behind each trait
-score, and history.
+The app works out the traits' scores itself, from the calendar's events
+and Claude's judgments of them, as the server's scoring does: each
+person's score of each trait for each of the last 7 days, each trait's
+health (everyone's mean), and each person's relationship health (gray,
+disconnected, to green, healthy) and history. Follow-through isn't scored,
+since the server doesn't list cancelled events. As it opens, the app asks
+for the week either side of today, and for any day further back (or
+ahead) the traits read that it hasn't kept from an earlier run; the
+Events page shares those days, and its saves change the scores at once.
 
 Later it will show the summaries the server
 generates.
