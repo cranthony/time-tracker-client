@@ -19,10 +19,16 @@ import 'properties_dialog.dart';
 /// returning null.
 ///
 /// New times that would overlap an event in [room] can't be saved.
+///
+/// With [cancel] too, "Cancel event" cancels it after asking -- and asks
+/// whether that counts against follow-through (see
+/// [followThroughOption]) -- returning what [cancel] returned.
 Future<List<Event>?> showEventDialog(
   BuildContext context,
   Event event, {
   Future<List<Event>> Function(Event event, Map<String, Object?> changes)? save,
+  Future<List<Event>> Function(Event event, bool countsAgainstFollowThrough)?
+  cancel,
   EventRoom room = const EventRoom.none(),
   Future<List<Goal>> Function()? goals,
   Future<bool> Function(String seriesId)? openSeries,
@@ -68,7 +74,14 @@ Future<List<Event>?> showEventDialog(
     },
     save: save == null || event.id == null
         ? null
-        : (changes) => save(event, changes),
+        : (changes) => switch ((changes['is_cancelled'], cancel)) {
+            // Cancelling isn't an update: see OneWayAction below.
+            (true, final cancel?) => cancel(
+              event,
+              changes[followThroughOption.key] == true,
+            ),
+            _ => save(event, changes),
+          },
     validate: (values) {
       final start = DateTime.parse(values['start'] as String);
       final end = DateTime.parse(values['end'] as String);
@@ -88,7 +101,7 @@ Future<List<Event>?> showEventDialog(
       };
     },
     goals: goals,
-    oneWayAction: event.isCancelled
+    oneWayAction: event.isCancelled || cancel == null
         ? null
         : const OneWayAction(
             label: 'Cancel event',
@@ -98,10 +111,22 @@ Future<List<Event>?> showEventDialog(
                 'cancelled.',
             keepLabel: 'Keep event',
             changes: {'is_cancelled': true},
+            option: followThroughOption,
           ),
     signInHint: 'Sign in again from the Events page, then try again.',
   );
 }
+
+/// The switch cancelling an event offers: whether it counts against the
+/// follow-through of whoever a follow-through trait tracks it for, rather
+/// than being just a change of plan.
+const followThroughOption = ConfirmOption(
+  key: 'counts_against_follow_through',
+  label: 'Count against follow-through',
+  explanation:
+      'A commitment dropped, not just a change of plan: it lowers the '
+      'follow-through of the people, and for the actions, a trait tracks.',
+);
 
 const _kinds = {
   'summary': PropertyKind.text,
