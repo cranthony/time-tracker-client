@@ -1,12 +1,12 @@
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 import 'outbox.dart';
 
-/// A change to the goals waiting to be sent to the server, or that failed:
-/// a new goal, or changes to one.
-class PendingGoalSave implements OutboxItem<PendingGoalSave> {
-  const PendingGoalSave({
+/// A change to the actions waiting to be sent to the server, or that failed:
+/// a new action, or changes to one.
+class PendingActionSave implements OutboxItem<PendingActionSave> {
+  const PendingActionSave({
     required this.id,
-    required this.goalId,
+    required this.actionId,
     required this.isNew,
     required this.changes,
     this.attempts = 0,
@@ -19,15 +19,15 @@ class PendingGoalSave implements OutboxItem<PendingGoalSave> {
   @override
   final String id;
 
-  /// The goal it's for. For a new goal, the id it's shown with until the
+  /// The action it's for. For a new action, the id it's shown with until the
   /// server makes it, which the server knows nothing about.
-  final String goalId;
+  final String actionId;
 
-  /// Whether it makes a new goal, rather than changing one.
+  /// Whether it makes a new action, rather than changing one.
   final bool isNew;
 
-  /// For a new goal, everything it's made with, keyed as `create_goal`
-  /// takes them; else its changes, keyed as `update_goal` takes them, a
+  /// For a new action, everything it's made with, keyed as `create_action`
+  /// takes them; else its changes, keyed as `update_action` takes them, a
   /// null clearing that property.
   final Map<String, Object?> changes;
 
@@ -46,38 +46,39 @@ class PendingGoalSave implements OutboxItem<PendingGoalSave> {
   /// if [refused], when it's retried.
   bool get failed => lastError != null;
 
-  /// The new goal it makes, shown as [goalId].
-  Goal get goal =>
-      Goal.fromJson({'status': 'active', ...changes, 'id': goalId});
+  /// The new action it makes, shown as [actionId].
+  PlanAction get action =>
+      PlanAction.fromJson({'status': 'active', ...changes, 'id': actionId});
 
-  /// The goal in [goals] that's the new one it makes, if there is one. A
+  /// The action in [actions] that's the new one it makes, if there is one. A
   /// name is only used once among siblings, so the same one under the same
   /// parent is it.
-  Goal? madeIn(GoalList goals) => goals.goals
+  PlanAction? madeIn(ActionList actions) => actions.actions
       .where(
         (g) => g.parentId == changes['parent_id'] && g.name == changes['name'],
       )
       .firstOrNull;
 
   /// It with [changes] in place of its own, sent afresh.
-  PendingGoalSave withChanges(Map<String, Object?> changes) => PendingGoalSave(
-    id: id,
-    goalId: goalId,
-    isNew: isNew,
-    changes: changes,
-    attempts: attempts,
-  );
+  PendingActionSave withChanges(Map<String, Object?> changes) =>
+      PendingActionSave(
+        id: id,
+        actionId: actionId,
+        isNew: isNew,
+        changes: changes,
+        attempts: attempts,
+      );
 
   @override
-  PendingGoalSave copyWith({
+  PendingActionSave copyWith({
     int? attempts,
     String? Function()? lastError,
     DateTime? Function()? nextAttemptAt,
     DateTime? Function()? sendingSince,
     bool? refused,
-  }) => PendingGoalSave(
+  }) => PendingActionSave(
     id: id,
-    goalId: goalId,
+    actionId: actionId,
     isNew: isNew,
     changes: changes,
     attempts: attempts ?? this.attempts,
@@ -87,10 +88,11 @@ class PendingGoalSave implements OutboxItem<PendingGoalSave> {
     refused: refused ?? this.refused,
   );
 
-  factory PendingGoalSave.fromJson(Map<String, dynamic> json) =>
-      PendingGoalSave(
+  factory PendingActionSave.fromJson(Map<String, dynamic> json) =>
+      PendingActionSave(
         id: json['id'] as String,
-        goalId: json['goal_id'] as String,
+        // Kept as 'goal_id', as older versions saved it.
+        actionId: json['goal_id'] as String,
         isNew: json['is_new'] as bool? ?? false,
         changes: (json['changes'] as Map).cast<String, Object?>(),
         attempts: json['attempts'] as int? ?? 0,
@@ -102,7 +104,7 @@ class PendingGoalSave implements OutboxItem<PendingGoalSave> {
 
   Map<String, dynamic> toJson() => {
     'id': id,
-    'goal_id': goalId,
+    'goal_id': actionId,
     'is_new': isNew,
     'changes': changes,
     'attempts': attempts,

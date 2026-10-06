@@ -1,14 +1,14 @@
 import 'package:flutter/widgets.dart';
 
 import '../models/event.dart';
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/person.dart';
 import '../models/time_split.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import 'event_store.dart';
-import 'goals_repository.dart';
+import 'actions_repository.dart';
 import 'notes_repository.dart';
 import 'people_repository.dart';
 import 'traits_repository.dart';
@@ -34,7 +34,7 @@ class PlanMemory extends ChangeNotifier {
     if (eventStore != null) useEvents(eventStore);
   }
 
-  GoalList? actions;
+  ActionList? actions;
   List<Trait>? traits;
   PeopleList? people;
   List<Location>? locations;
@@ -72,7 +72,7 @@ class PlanMemory extends ChangeNotifier {
       return scores;
     }
     final parents = {
-      for (final g in actions?.goals ?? const <Goal>[])
+      for (final g in actions?.actions ?? const <PlanAction>[])
         if (g.id != null) g.id!: g.parentId,
     };
     final today = key.$5;
@@ -238,10 +238,12 @@ class PlanMemory extends ChangeNotifier {
 
   /// Loads every action and group, this visit, for the groups a trait's
   /// part can count; [again] asks again.
-  Future<void> loadActions(GoalsRepository repository, {bool again = false}) =>
-      load('actions', () async {
-        actions = await repository.goals();
-      }, again: again);
+  Future<void> loadActions(
+    ActionsRepository repository, {
+    bool again = false,
+  }) => load('actions', () async {
+    actions = await repository.actions();
+  }, again: again);
 
   /// Whether [warmScores] has been asked to load, this run.
   bool get warmed => _warmed;
@@ -255,10 +257,10 @@ class PlanMemory extends ChangeNotifier {
   Future<void> warmScores({
     TraitsRepository? traits,
     PeopleRepository? people,
-    GoalsRepository? goals,
+    ActionsRepository? actions,
   }) => load('scores', () async {
     _warmed = true;
-    await loadKept(traits: traits, people: people, goals: goals);
+    await loadKept(traits: traits, people: people, actions: actions);
     notifyListeners();
     Future<void> quietly(Future<void>? loading) async {
       try {
@@ -271,7 +273,7 @@ class PlanMemory extends ChangeNotifier {
     await Future.wait([
       quietly(traits == null ? null : loadTraits(traits)),
       quietly(people == null ? null : loadPeople(people)),
-      quietly(goals == null ? null : loadActions(goals)),
+      quietly(actions == null ? null : loadActions(actions)),
     ]);
     final store = _eventStore;
     if (store == null) return;
@@ -291,7 +293,7 @@ class PlanMemory extends ChangeNotifier {
   Future<void> loadKept({
     TraitsRepository? traits,
     PeopleRepository? people,
-    GoalsRepository? goals,
+    ActionsRepository? actions,
     NotesRepository? notes,
   }) async {
     // Each awaited first, then kept only if nothing's there yet: a load
@@ -311,7 +313,7 @@ class PlanMemory extends ChangeNotifier {
       ),
       keep(people?.cachedPeople(), (v) => this.people ??= v),
       keep(people?.cachedLocations(), (v) => locations ??= v),
-      keep(goals?.cachedGoals(), (v) => actions ??= v),
+      keep(actions?.cachedActions(), (v) => this.actions ??= v),
       keep(notes?.cachedUncompactedNotes(), (v) => this.notes ??= v),
       keep(notes?.cachedCompactionStatus(), (v) => compaction ??= v),
       keep(_eventStore?.restored().then((_) => true), (_) {}),
@@ -339,4 +341,4 @@ class PlanMemoryScope extends InheritedWidget {
       memory != oldWidget.memory;
 }
 
-typedef _ScoresKey = (int, List<Trait>, PeopleList, GoalList?, DateTime);
+typedef _ScoresKey = (int, List<Trait>, PeopleList, ActionList?, DateTime);

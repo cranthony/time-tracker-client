@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
-import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/widgets/color_picker.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 
@@ -16,7 +16,7 @@ void main() {
     DateTime start,
     DateTime end, {
     int? priority,
-    List<String> goals = const [],
+    List<String> actions = const [],
     List<String>? names,
     bool cancelled = false,
   }) => Event(
@@ -26,7 +26,7 @@ void main() {
     isCancelled: cancelled,
     properties: {
       'effective_priority': ?priority,
-      'action_ids': goals,
+      'action_ids': actions,
       'action_names': ?names,
     },
   );
@@ -128,48 +128,56 @@ void main() {
   });
 
   group('eventColor', () {
-    const goals = {
-      'host': Goal(id: 'host', name: 'Host', effectiveColor: '#f4511e'),
-      'plain': Goal(id: 'plain', name: 'Plain'),
+    const actions = {
+      'host': PlanAction(id: 'host', name: 'Host', effectiveColor: '#f4511e'),
+      'plain': PlanAction(id: 'plain', name: 'Plain'),
     };
 
-    test("is its primary goal's color", () {
+    test("is its primary action's color", () {
       expect(
         eventColor(
-          event('Dinner', at(18), at(20), goals: ['host'], priority: 1),
-          goals,
+          event('Dinner', at(18), at(20), actions: ['host'], priority: 1),
+          actions,
         ),
         const Color(0xFFF4511E),
       );
     });
 
-    test("is its priority's without a primary goal with a color", () {
+    test("is its priority's without a primary action with a color", () {
       for (final ids in [
         <String>[],
         ['plain', 'host'],
         ['unknown'],
       ]) {
         expect(
-          eventColor(event('E', at(1), at(2), goals: ids, priority: 1), goals),
+          eventColor(
+            event('E', at(1), at(2), actions: ids, priority: 1),
+            actions,
+          ),
           priorityColor(1),
         );
       }
       // With none, the default priority's.
-      expect(eventColor(event('E', at(1), at(2)), goals), priorityColor(null));
+      expect(
+        eventColor(event('E', at(1), at(2)), actions),
+        priorityColor(null),
+      );
     });
   });
 
   group('DayTimeline', () {
-    Widget timeline(List<Event> events, {Map<String, Goal> goals = const {}}) =>
-        MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: DayTimeline(events: events, day: day, goals: goals),
-            ),
-          ),
-        );
+    Widget timeline(
+      List<Event> events, {
+      Map<String, PlanAction> actions = const {},
+    }) => MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: DayTimeline(events: events, day: day, actions: actions),
+        ),
+      ),
+    );
 
-    testWidgets("shows each event's summary, then its goals, primary first", (
+    testWidgets("shows each event's summary, then its actions, primary first", (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -179,12 +187,12 @@ void main() {
               'Dinner',
               at(0, 10),
               at(2),
-              goals: ['host', 'tofu'],
+              actions: ['host', 'tofu'],
               names: ['Host friends', 'Tofu tikka'],
             ),
           ],
-          goals: {
-            'host': const Goal(
+          actions: {
+            'host': const PlanAction(
               id: 'host',
               name: 'Host friends weekly',
               effectiveColor: '#f4511e',
@@ -193,7 +201,7 @@ void main() {
         ),
       );
       double top(String text) => tester.getTopLeft(find.text(text)).dy;
-      // A listed goal by its name now; another by the event's.
+      // A listed action by its name now; another by the event's.
       expect(top('Dinner'), lessThan(top('Host friends weekly')));
       expect(top('Host friends weekly'), lessThan(top('Tofu tikka')));
       // How long it is, and its priority: none, so the default.
@@ -210,7 +218,7 @@ void main() {
             'Call Mom',
             at(0, 10),
             at(0, 15),
-            goals: ['a', 'b'],
+            actions: ['a', 'b'],
             priority: 0,
           ),
         ]),

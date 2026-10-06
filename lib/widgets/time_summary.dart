@@ -5,7 +5,7 @@ import 'package:flutter/rendering.dart';
 
 import 'durations.dart';
 
-/// One share of some time: by priority or goal.
+/// One share of some time: by priority or action.
 class SummarySlice {
   const SummarySlice(this.label, this.color, this.time);
 
@@ -16,10 +16,10 @@ class SummarySlice {
   final Duration time;
 }
 
-/// The colors of the shares of events with no goal, and of the goals
+/// The colors of the shares of events with no action, and of the actions
 /// past the top few together.
-const noGoalColor = Color(0xFFD0D0D0);
-const otherGoalsColor = Color(0xFF8A8A8A);
+const noActionColor = Color(0xFFD0D0D0);
+const otherActionsColor = Color(0xFF8A8A8A);
 
 /// [time]'s shares, most first: the [top] keys with the most, each as
 /// [slice] makes it, then the rest together as "N other [others]". Keys
@@ -42,7 +42,7 @@ List<SummarySlice> topShares<K>(
     if (rest > Duration.zero)
       SummarySlice(
         '${ranked.length - top} other $others',
-        otherGoalsColor,
+        otherActionsColor,
         rest,
       ),
   ];

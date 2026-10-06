@@ -35,10 +35,10 @@ String relationshipBand(int rating) => rating >= 70
     ? 'drifting'
     : 'disconnected';
 
-/// Which scale a rating is shown on: a goal's (red, yellow, green) or a
+/// Which scale a rating is shown on: an action's (red, yellow, green) or a
 /// relationship's (gray to green).
 enum HealthScale {
-  goal(healthColor, healthBand),
+  action(healthColor, healthBand),
   relationship(relationshipColor, relationshipBand);
 
   const HealthScale(this.color, this.band);
@@ -53,7 +53,7 @@ class HealthDot extends StatelessWidget {
   const HealthDot({
     super.key,
     required this.rating,
-    this.scale = HealthScale.goal,
+    this.scale = HealthScale.action,
   });
 
   final int? rating;
@@ -90,14 +90,14 @@ class HealthDot extends StatelessWidget {
   }
 }
 
-/// A goal's last few ratings, oldest first, as tiny bars: each as tall as
+/// An action's last few ratings, oldest first, as tiny bars: each as tall as
 /// its rating and in its band's color; a day with none is a short muted
 /// tick.
 class TrendSparkline extends StatelessWidget {
   const TrendSparkline({
     super.key,
     required this.trend,
-    this.scale = HealthScale.goal,
+    this.scale = HealthScale.action,
   });
 
   final List<int?> trend;

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 import 'properties_dialog.dart';
 
 /// What an action's or group's properties are edited as, as the server's
@@ -9,7 +9,7 @@ import 'properties_dialog.dart';
 Map<String, PropertyKind> _kinds({required bool group}) => {
   'name': PropertyKind.text,
   if (!group) 'status': PropertyKind.choice,
-  'parent_id': PropertyKind.goal,
+  'parent_id': PropertyKind.action,
   'background_color': PropertyKind.color,
   'priority': PropertyKind.integer,
   'note': PropertyKind.multiline,
@@ -32,25 +32,26 @@ String? _needsName(Map<String, Object?> values) => switch (values['name']) {
   _ => 'It needs a name.',
 };
 
-/// Shows every property of [goal] -- an action or a group -- as the
+/// Shows every property of [action] -- an action or a group -- as the
 /// server sent it, under its name.
 ///
 /// Tapping one of its editable values opens it for editing, in place;
 /// "Save" sends every change with [save]. Returns what [save] returned
 /// (every action, as they're to be shown now), or null if nothing was
 /// saved. Without [save], or for one with no id, nothing can be edited.
-/// [goals] lists the groups it can be in. Tapping its status moves it to
+/// [actions] lists the groups it can be in. Tapping its status moves it to
 /// another; [confirmSave] is asked first, with the changes, and can call
 /// the save off. [changes] opens it with those changes already made: ones
 /// that couldn't be saved before.
-Future<GoalList?> showGoalDialog(
+Future<ActionList?> showActionDetailsDialog(
   BuildContext context,
-  Goal goal, {
+  PlanAction action, {
   Map<String, Object?> changes = const {},
-  Future<GoalList> Function(Goal goal, Map<String, Object?> changes)? save,
+  Future<ActionList> Function(PlanAction action, Map<String, Object?> changes)?
+  save,
   Future<bool> Function(Map<String, Object?> changes)? confirmSave,
-  Future<List<Goal>> Function()? goals,
-}) => showPropertiesDialog<GoalList>(
+  Future<List<PlanAction>> Function()? actions,
+}) => showPropertiesDialog<ActionList>(
   context,
   title: (values) => switch (values['name']) {
     final String name when name.isNotEmpty => name,
@@ -58,25 +59,25 @@ Future<GoalList?> showGoalDialog(
   },
   // The typed fields first, for one made without the server's.
   properties: {
-    'name': goal.name,
-    'path': goal.path,
-    if (!goal.isGroup) 'status': goal.status,
-    'parent_id': goal.parentId,
-    'background_color': goal.backgroundColor,
-    'priority': goal.priority,
-    ...goal.properties,
+    'name': action.name,
+    'path': action.path,
+    if (!action.isGroup) 'status': action.status,
+    'parent_id': action.parentId,
+    'background_color': action.backgroundColor,
+    'priority': action.priority,
+    ...action.properties,
   },
-  kinds: _kinds(group: goal.isGroup),
-  choices: const {'status': goalStatuses},
-  required: {'name', if (!goal.isGroup) 'status'},
+  kinds: _kinds(group: action.isGroup),
+  choices: const {'status': actionStatuses},
+  required: {'name', if (!action.isGroup) 'status'},
   hints: _hints,
-  goals: goals,
+  actions: actions,
   validate: _needsName,
   changes: changes,
   confirmSave: confirmSave,
-  save: save == null || goal.id == null
+  save: save == null || action.id == null
       ? null
-      : (changes) => save(goal, changes),
+      : (changes) => save(action, changes),
   signInHint: 'Sign in again from the Plan page, then try again.',
 );
 
@@ -86,16 +87,16 @@ Future<GoalList?> showGoalDialog(
 /// they're to be shown now), or null if nothing was created. [fields]
 /// opens it with those already filled in: one that couldn't be created
 /// before.
-Future<GoalList?> showNewGoalDialog(
+Future<ActionList?> showNewActionDialog(
   BuildContext context, {
-  required Future<GoalList> Function(Map<String, Object?> fields) create,
+  required Future<ActionList> Function(Map<String, Object?> fields) create,
   String? parentId,
   bool group = false,
   Map<String, Object?> fields = const {},
-  Future<List<Goal>> Function()? goals,
+  Future<List<PlanAction>> Function()? actions,
 }) {
   final isGroup = group || fields['kind'] == 'group';
-  return showPropertiesDialog<GoalList>(
+  return showPropertiesDialog<ActionList>(
     context,
     title: (values) => switch (values['name']) {
       final String name when name.isNotEmpty => name,
@@ -109,7 +110,7 @@ Future<GoalList?> showNewGoalDialog(
     },
     kinds: _kinds(group: isGroup),
     hints: _hints,
-    goals: goals,
+    actions: actions,
     validate: _needsName,
     changes: {
       for (final MapEntry(:key, :value) in fields.entries)

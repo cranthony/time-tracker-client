@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/facts.dart';
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 import '../models/person.dart';
 import '../models/time_split.dart';
 import 'color_picker.dart';
@@ -34,7 +34,7 @@ List<SummarySlice> planShares<K>(
       others: others,
     ),
     if (noKey != null && noKey > Duration.zero)
-      SummarySlice(noneLabel, noGoalColor, noKey),
+      SummarySlice(noneLabel, noActionColor, noKey),
     if (unscheduled != null && unscheduled > Duration.zero)
       SummarySlice(_unscheduled, null, unscheduled),
   ];
@@ -51,22 +51,22 @@ Color colorFor(String id) =>
 (Map<String?, Duration>, Map<String?, Duration>) actionTime(
   List<Event> events,
   SummaryWindow window,
-  Map<String?, Goal> byId,
+  Map<String?, PlanAction> byId,
   Set<String> statuses,
 ) => window.split<String>(
   events,
   (event) => [
-    for (final id in event.goalIds)
+    for (final id in event.actionIds)
       if (statuses.contains(byId[id]?.status ?? 'active')) id,
   ],
   '',
 );
 
-/// Each of [goals]' time, with what's in it, from each action's [time]:
+/// Each of [actions]' time, with what's in it, from each action's [time]:
 /// an action's own, and a group's, its actions'.
 Map<String?, Duration> rolledUp(
   Map<String?, Duration> time,
-  Map<String?, Goal> byId,
+  Map<String?, PlanAction> byId,
 ) {
   final total = <String?, Duration>{};
   for (final MapEntry(key: id, value: length) in time.entries) {
@@ -84,7 +84,7 @@ Map<String?, Duration> rolledUp(
 /// group has what's in it.
 Map<String?, Duration> byVisible(
   Map<String?, Duration> time,
-  Map<String?, Goal> byId,
+  Map<String?, PlanAction> byId,
   Set<String?> visible,
 ) {
   final shown = <String?, Duration>{};
@@ -104,11 +104,13 @@ Map<String?, Duration> byVisible(
 }
 
 /// An action's or group's share, in its color.
-SummarySlice actionSlice(Goal? goal, String id, Duration time) => SummarySlice(
-  goal == null ? id : goalName(goal),
-  parseColor(goal?.effectiveColor) ?? priorityColor(goal?.effectivePriority),
-  time,
-);
+SummarySlice actionSlice(PlanAction? action, String id, Duration time) =>
+    SummarySlice(
+      action == null ? id : actionName(action),
+      parseColor(action?.effectiveColor) ??
+          priorityColor(action?.effectivePriority),
+      time,
+    );
 
 /// [window]'s time by priority: each moment's events' highest, those
 /// with none counting as [defaultPriority], as the Events page counts
@@ -193,7 +195,7 @@ const individuals = '\u0000individuals';
     noneLabel: 'With no one',
     others: 'circles',
     slice: (id, time) => id == individuals
-        ? SummarySlice('Individuals', otherGoalsColor, time)
+        ? SummarySlice('Individuals', otherActionsColor, time)
         : SummarySlice(circles[id]?.name ?? id, colorFor(id), time),
   );
   return (shares(day), shares(week));

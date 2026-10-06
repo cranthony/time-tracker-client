@@ -174,7 +174,7 @@ List<Event> _ofAction(
   String? Function(String id)? parentOf,
 ) => [
   for (final e in events)
-    if (_isOf(e.goalIds, actionId, parentOf)) e,
+    if (_isOf(e.actionIds, actionId, parentOf)) e,
 ];
 
 /// Whether [actionIds] are of the action [actionId], or in the group it
@@ -708,7 +708,7 @@ class TraitScores {
       eventsCounted: events.length,
       actions: entries([
         for (final e in events)
-          for (final id in e.goalIds) (id, e.start),
+          for (final id in e.actionIds) (id, e.start),
       ]),
       locations: entries([
         for (final e in events)

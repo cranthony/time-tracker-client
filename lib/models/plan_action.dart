@@ -1,5 +1,5 @@
 /// An action -- a verb for what the user is doing in a given moment -- or
-/// a group of them, mirroring the Time Tracker MCP server's `Goal`, which
+/// a group of them, mirroring the Time Tracker MCP server's `PlanAction`, which
 /// actions are kept as. They form a tree through [parentId]: groups are
 /// names that roll up the actions under them, for targets, and actions are
 /// always its leaves. Only an active action colors its events through a
@@ -7,8 +7,8 @@
 ///
 /// Only the fields the app uses so far are typed; everything the server
 /// sent stays in [properties].
-class Goal {
-  const Goal({
+class PlanAction {
+  const PlanAction({
     this.id,
     this.parentId,
     this.name,
@@ -23,11 +23,11 @@ class Goal {
 
   final String? id;
 
-  /// The goal this is a sub-goal of; null for a top-level goal.
+  /// The action this is a sub-action of; null for a top-level action.
   final String? parentId;
   final String? name;
 
-  /// Where it stands: one of [goalStatuses]. Only active goals take up a
+  /// Where it stands: one of [actionStatuses]. Only active actions take up a
   /// calendar label.
   final String status;
 
@@ -62,13 +62,13 @@ class Goal {
   /// Its names from the top of the tree down, e.g. "Cooking › Tofu".
   final String? path;
 
-  /// The goal as the server sent it.
+  /// The action as the server sent it.
   final Map<String, dynamic> properties;
 
-  /// How deep in the tree it is: 0 for a top-level goal.
+  /// How deep in the tree it is: 0 for a top-level action.
   int get depth => (path ?? '').split(' › ').length - 1;
 
-  factory Goal.fromJson(Map<String, dynamic> json) => Goal(
+  factory PlanAction.fromJson(Map<String, dynamic> json) => PlanAction(
     id: json['id'] as String?,
     parentId: json['parent_id'] as String?,
     name: json['name'] as String?,
@@ -85,7 +85,7 @@ class Goal {
     properties: Map.unmodifiable(json),
   );
 
-  /// The goal as [Goal.fromJson] takes it: what the server sent, with the
+  /// The action as [PlanAction.fromJson] takes it: what the server sent, with the
   /// typed fields over it.
   Map<String, Object?> toJson() => {
     ...properties,
@@ -100,38 +100,38 @@ class Goal {
   };
 }
 
-/// The goals, and how many of the calendar's event labels they use.
-class GoalList {
-  const GoalList({
-    required this.goals,
+/// The actions, and how many of the calendar's event labels they use.
+class ActionList {
+  const ActionList({
+    required this.actions,
     this.labelSlotsUsed = 0,
     this.labelSlotsTotal = 200,
   });
 
   /// Parents before their children.
-  final List<Goal> goals;
+  final List<PlanAction> actions;
   final int labelSlotsUsed;
   final int labelSlotsTotal;
 
-  factory GoalList.fromJson(Map<String, dynamic> json) => GoalList(
-    goals: [
-      for (final goal in json['goals'] as List)
-        Goal.fromJson((goal as Map).cast<String, dynamic>()),
+  factory ActionList.fromJson(Map<String, dynamic> json) => ActionList(
+    actions: [
+      for (final action in json['actions'] as List)
+        PlanAction.fromJson((action as Map).cast<String, dynamic>()),
     ],
     labelSlotsUsed: json['label_slots_used'] as int? ?? 0,
     labelSlotsTotal: json['label_slots_total'] as int? ?? 200,
   );
 }
 
-/// [goal]'s name, or "(no name)".
-String goalName(Goal goal) {
-  final name = goal.name;
+/// [action]'s name, or "(no name)".
+String actionName(PlanAction action) {
+  final name = action.name;
   return name == null || name.isEmpty ? '(no name)' : name;
 }
 
 /// The statuses an action can have, as the server names them, and as the
 /// app shows them. Proposed is one Claude made, for the user to review.
-const goalStatuses = {
+const actionStatuses = {
   'proposed': 'Proposed',
   'active': 'Active',
   'archived': 'Archived',
@@ -140,4 +140,4 @@ const goalStatuses = {
 
 /// The statuses the Plan page shows until told otherwise: the actions in
 /// play.
-const defaultGoalStatuses = {'proposed', 'active'};
+const defaultActionStatuses = {'proposed', 'active'};

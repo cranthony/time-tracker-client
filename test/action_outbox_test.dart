@@ -2,17 +2,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
-import 'package:time_tracker_client/models/goal.dart';
-import 'package:time_tracker_client/outbox/goal_outbox.dart';
+import 'package:time_tracker_client/models/plan_action.dart';
+import 'package:time_tracker_client/outbox/action_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
-import 'package:time_tracker_client/outbox/pending_goal_save.dart';
-import 'package:time_tracker_client/services/goals_repository.dart';
+import 'package:time_tracker_client/outbox/pending_action_save.dart';
+import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 
 /// A server that can refuse saves, or lose its answers.
-class FlakyGoals extends InMemoryGoalsRepository {
-  FlakyGoals() : super([const Goal(id: 'cook', name: 'Cooking')]);
+class FlakyActions extends InMemoryActionsRepository {
+  FlakyActions() : super([const PlanAction(id: 'cook', name: 'Cooking')]);
 
   /// Thrown instead of saving.
   Object? failWith;
@@ -24,43 +24,50 @@ class FlakyGoals extends InMemoryGoalsRepository {
   final calls = <String>[];
 
   @override
-  Future<GoalList> goals() {
-    calls.add('goals');
-    return super.goals();
+  Future<ActionList> actions() {
+    calls.add('actions');
+    return super.actions();
   }
 
   @override
-  Future<String> createGoal(Map<String, Object?> fields) async {
+  Future<String> createAction(Map<String, Object?> fields) async {
     calls.add('create ${fields['name']}');
     if (failWith case final error?) throw error;
-    final id = await super.createGoal(fields);
+    final id = await super.createAction(fields);
     if (loseResponses) throw http.ClientException('connection reset');
     return id;
   }
 
   @override
-  Future<void> updateGoal(Goal goal, Map<String, Object?> changes) async {
-    calls.add('update ${goal.id} $changes');
+  Future<void> updateAction(
+    PlanAction action,
+    Map<String, Object?> changes,
+  ) async {
+    calls.add('update ${action.id} $changes');
     if (failWith case final error?) throw error;
-    await super.updateGoal(goal, changes);
+    await super.updateAction(action, changes);
     if (loseResponses) throw http.ClientException('connection reset');
   }
 }
 
 void main() {
-  late FlakyGoals server;
-  late InMemoryOutboxStore<PendingGoalSave> store;
+  late FlakyActions server;
+  late InMemoryOutboxStore<PendingActionSave> store;
   late DateTime now;
-  late List<GoalOutbox> boxes;
+  late List<ActionOutbox> boxes;
 
-  GoalOutbox outbox() {
-    final box = GoalOutbox(store: store, repository: server, clock: () => now);
+  ActionOutbox outbox() {
+    final box = ActionOutbox(
+      store: store,
+      repository: server,
+      clock: () => now,
+    );
     boxes.add(box);
     return box;
   }
 
   /// Lets [box] send what it can.
-  Future<void> settled(GoalOutbox box) async {
+  Future<void> settled(ActionOutbox box) async {
     for (var i = 0; i < 100 && box.busy; i++) {
       await Future<void>.delayed(Duration.zero);
     }
@@ -69,7 +76,7 @@ void main() {
   }
 
   setUp(() {
-    server = FlakyGoals();
+    server = FlakyActions();
     store = InMemoryOutboxStore();
     now = DateTime.utc(2026, 10, 4, 9);
     boxes = [];
@@ -82,7 +89,7 @@ void main() {
     }
   });
 
-  test('sends saves one at a time, in order, then wants the goals '
+  test('sends saves one at a time, in order, then wants the actions '
       'fetched, once', () async {
     final box = outbox();
     final wanted = <bool>[];
@@ -91,14 +98,14 @@ void main() {
 
     final shownAs = box.create({'name': 'Running', 'parent_id': null});
     box.update('cook', {'priority': 2});
-    expect(box.saves.map((s) => s.goalId), [shownAs, 'cook']);
+    expect(box.saves.map((s) => s.actionId), [shownAs, 'cook']);
     await settled(box);
 
     expect(server.calls, ['create Running', 'update cook {priority: 2}']);
     expect(box.saves, isEmpty);
     expect(store.items, isEmpty);
-    // Kept, with the id the server gave the new goal, until fetched.
-    expect(box.justSaved.map((s) => (s.item.goalId, s.result)), [
+    // Kept, with the id the server gave the new action, until fetched.
+    expect(box.justSaved.map((s) => (s.item.actionId, s.result)), [
       (shownAs, 'g1'),
       ('cook', null),
     ]);
@@ -112,7 +119,7 @@ void main() {
     expect(box.justSaved, isEmpty);
   });
 
-  test('what was saved while the goals were fetched is kept after', () async {
+  test('what was saved while the actions were fetched is kept after', () async {
     final box = outbox();
     box.update('cook', {'priority': 2});
     await box.flush();
@@ -136,13 +143,13 @@ void main() {
     expect(app.justSaved, isEmpty);
     await app.refresh();
     expect(app.saves, isEmpty);
-    expect(app.justSaved.map((s) => (s.item.goalId, s.result)), [
+    expect(app.justSaved.map((s) => (s.item.actionId, s.result)), [
       (shownAs, null),
     ]);
     expect(app.wantsFetch, isTrue);
   });
 
-  test('a save to a goal with one waiting joins it, to be sent as one', () {
+  test('a save to an action with one waiting joins it, to be sent as one', () {
     final box = outbox();
     box.update('cook', {'name': 'Cooking at home', 'priority': 1});
     box.update('cook', {'priority': 2});
@@ -159,7 +166,7 @@ void main() {
   test('a save the server refuses is kept, and waits to be retried', () async {
     server.failWith = McpException('No room for it.');
     final box = outbox();
-    final events = <GoalSaveEvent>[];
+    final events = <ActionSaveEvent>[];
     box.events.listen(events.add);
     box.start();
 
@@ -168,7 +175,7 @@ void main() {
     final failed = box.saves.single;
     expect(failed.lastError, 'No room for it.');
     expect(failed.refused, isTrue);
-    expect(events.whereType<GoalSaveFailed>(), hasLength(1));
+    expect(events.whereType<ActionSaveFailed>(), hasLength(1));
     expect(store.items.single.lastError, 'No room for it.');
 
     // Not by starting again: it would only be refused again.
@@ -183,25 +190,28 @@ void main() {
     expect(box.saves, isEmpty);
   });
 
-  test('a later save to a goal whose save failed sends both, as one', () async {
-    server.failWith = McpException('Try later.');
-    final box = outbox();
-    box.start();
-    box.update('cook', {'name': 'Cooking at home'});
-    await settled(box);
+  test(
+    'a later save to an action whose save failed sends both, as one',
+    () async {
+      server.failWith = McpException('Try later.');
+      final box = outbox();
+      box.start();
+      box.update('cook', {'name': 'Cooking at home'});
+      await settled(box);
 
-    server.failWith = null;
-    box.update('cook', {'priority': 2});
-    await settled(box);
-    expect(
-      server.calls.last,
-      'update cook {name: Cooking at home, priority: 2}',
-    );
-    expect(box.saves, isEmpty);
-  });
+      server.failWith = null;
+      box.update('cook', {'priority': 2});
+      await settled(box);
+      expect(
+        server.calls.last,
+        'update cook {name: Cooking at home, priority: 2}',
+      );
+      expect(box.saves, isEmpty);
+    },
+  );
 
   test('kept across restarts; one that got no answer is tried again, '
-      "without making the goal twice", () async {
+      "without making the action twice", () async {
     server.loseResponses = true;
     final before = outbox();
     before.start();
@@ -220,17 +230,17 @@ void main() {
     after.start();
     await after.flush();
 
-    expect(server.calls, ['goals']);
+    expect(server.calls, ['actions']);
     expect(
-      (await server.goals()).goals.where((g) => g.name == 'Running'),
+      (await server.actions()).actions.where((g) => g.name == 'Running'),
       hasLength(1),
     );
     expect(after.justSaved.single.result, 'g1');
     expect(after.saves, isEmpty);
   });
 
-  test('a new goal that failed without an answer is let go of once the '
-      'goals show it was made', () async {
+  test('a new action that failed without an answer is let go of once the '
+      'actions show it was made', () async {
     server.loseResponses = true;
     final box = outbox();
     box.start();
@@ -238,12 +248,12 @@ void main() {
     await settled(box);
     // Refused: kept, though there's one of that name.
     server.loseResponses = false;
-    server.failWith = McpException('Running is already a goal.');
+    server.failWith = McpException('Running is already an action.');
     box.create({'name': 'Cooking', 'parent_id': null});
     await settled(box);
     expect(box.saves, hasLength(2));
 
-    box.reconcile(await server.goals());
+    box.reconcile(await server.actions());
     expect(box.saves.single.changes['name'], 'Cooking');
   });
 
@@ -264,7 +274,7 @@ void main() {
     now = failed.nextAttemptAt!;
     final result = await box.flush();
     // It may have been made the first time, so that's checked first.
-    expect(server.calls, ['create Running', 'goals', 'create Running']);
+    expect(server.calls, ['create Running', 'actions', 'create Running']);
     expect(result.remaining, 0);
     expect(box.saves, isEmpty);
   });
@@ -282,7 +292,7 @@ void main() {
     await box.retryNow();
     expect(box.needsSignIn, isFalse);
     expect(box.saves, isEmpty);
-    expect((await server.goals()).goals.single.priority, 2);
+    expect((await server.actions()).actions.single.priority, 2);
   });
 
   test('the background task sends what the app kept', () async {
@@ -290,7 +300,7 @@ void main() {
     final shownAs = app.create({'name': 'Running', 'parent_id': null});
     app.update('cook', {'priority': 2});
     await app.refresh();
-    expect(store.items.map((s) => s.goalId), [shownAs, 'cook']);
+    expect(store.items.map((s) => s.actionId), [shownAs, 'cook']);
 
     // Its own outbox, as the app is in the background.
     final result = await outbox().flush(ignoreBackoff: true);
@@ -304,9 +314,9 @@ void main() {
   test('leaves a save alone while another sender has it in flight, until '
       'it seems to have stopped', () async {
     store.items = [
-      PendingGoalSave(
+      PendingActionSave(
         id: 'a',
-        goalId: 'unsaved-a',
+        actionId: 'unsaved-a',
         isNew: true,
         changes: const {'name': 'Running', 'parent_id': null},
         sendingSince: now,
@@ -318,14 +328,14 @@ void main() {
     await box.flush(ignoreBackoff: true);
     expect(server.calls, isEmpty);
 
-    // It may have made the goal before it stopped, so that's checked.
+    // It may have made the action before it stopped, so that's checked.
     now = now.add(Outbox.inFlightTimeout);
     await box.flush();
-    expect(server.calls, ['goals', 'create Running']);
+    expect(server.calls, ['actions', 'create Running']);
     expect(box.saves, isEmpty);
   });
 
-  test('discards what waits for a goal', () async {
+  test('discards what waits for an action', () async {
     server.failWith = McpException('No.');
     final box = outbox();
     box.start();
@@ -338,13 +348,13 @@ void main() {
     expect(store.items, isEmpty);
   });
 
-  test('PrefsOutboxStore.goals round-trips', () async {
+  test('PrefsOutboxStore.actions round-trips', () async {
     SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty();
-    final prefs = PrefsOutboxStore.goals();
-    final save = PendingGoalSave(
+    final prefs = PrefsOutboxStore.actions();
+    final save = PendingActionSave(
       id: 'x',
-      goalId: 'cook',
+      actionId: 'cook',
       isNew: false,
       changes: {
         'measure': {'kind': 'duration', 'target_min': 600},
@@ -358,7 +368,7 @@ void main() {
     );
     await prefs.save([save]);
 
-    final loaded = (await PrefsOutboxStore.goals().load()).single;
+    final loaded = (await PrefsOutboxStore.actions().load()).single;
     expect(loaded.toJson(), save.toJson());
 
     await prefs.save([]);

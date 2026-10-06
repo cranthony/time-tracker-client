@@ -117,7 +117,7 @@ A few things to know:
 - **Don't add `--dart-define-from-file=config.json`.** Sample data is used
   only when there's no `MCP_URL`. With one, the app talks to your server
   and ignores `SAMPLE_DATA`.
-- **Changes aren't saved.** New notes, edited events and goals last until
+- **Changes aren't saved.** New notes, edited events and actions last until
   the app restarts. Reloading the page in Chrome, or a hot restart (`R`
   in the terminal), starts again from the sample data. A hot reload (`r`)
   keeps them.
@@ -455,7 +455,7 @@ The fonts come with the SDK but are downloaded only for a build or
 `flutter precache`. Without them the tests fail rather than draw text as
 blocks; `flutter precache` downloads them.
 
-Some characters show as a box with an X in it, such as the `→` in a goal
+Some characters show as a box with an X in it, such as the `→` in an action
 history's "8h of 10h target → 82". The sample data uses the arrow because
 the server writes it in every measured rating's explanation, so the app
 must show it. The SDK's Roboto doesn't have it, and tests have no other

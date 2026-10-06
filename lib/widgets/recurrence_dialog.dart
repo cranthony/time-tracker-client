@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 import '../models/recurrence.dart';
 import 'properties_dialog.dart';
 
@@ -30,7 +30,7 @@ Future<List<Recurrence>?> showRecurrenceDialog(
   )
   save,
   String? fromEventId,
-  Future<List<Goal>> Function()? goals,
+  Future<List<PlanAction>> Function()? actions,
 }) {
   final typed = recurrence.toJson();
   // Asked as the save starts, then saved for.
@@ -64,7 +64,7 @@ Future<List<Recurrence>?> showRecurrenceDialog(
       final end = DateTime.parse(values['end'] as String);
       return end.isAfter(start) ? null : 'The end has to be after the start.';
     },
-    goals: goals,
+    actions: actions,
     confirmSave: fromEventId == null
         ? null
         : (changes) async {
@@ -149,6 +149,6 @@ const _kinds = {
   'end': PropertyKind.time,
   'description': PropertyKind.multiline,
   'location': PropertyKind.text,
-  'action_ids': PropertyKind.goals,
+  'action_ids': PropertyKind.actions,
   'priority': PropertyKind.integer,
 };

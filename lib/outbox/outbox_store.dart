@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'pending_goal_save.dart';
+import 'pending_action_save.dart';
 import 'pending_note.dart';
 
 /// Keeps unsaved changes, of type [T], across app restarts.
@@ -32,12 +32,14 @@ class PrefsOutboxStore<T> implements OutboxStore<T> {
         prefs: prefs,
       );
 
-  /// Where goal saves waiting to be sent, or that failed, are kept.
-  static PrefsOutboxStore<PendingGoalSave> goals({
+  /// Where action saves waiting to be sent, or that failed, are kept.
+  static PrefsOutboxStore<PendingActionSave> actions({
     SharedPreferencesAsync? prefs,
   }) => PrefsOutboxStore(
+    // Named from when actions were goals: kept, so saves waiting from an
+    // older version aren't lost.
     key: 'goal_outbox',
-    fromJson: PendingGoalSave.fromJson,
+    fromJson: PendingActionSave.fromJson,
     toJson: (save) => save.toJson(),
     prefs: prefs,
   );

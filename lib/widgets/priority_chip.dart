@@ -4,7 +4,7 @@ import 'color_picker.dart';
 
 /// A priority as a small chip, "P2", in the priority's color, as the Events
 /// page shows them: filled when it's [own], outlined when it's inherited
-/// (from goals or an ancestor). With no [priority], [label] in an outline
+/// (from actions or an ancestor). With no [priority], [label] in an outline
 /// of the theme's color, or nothing if there's no [label] either.
 class PriorityChip extends StatelessWidget {
   const PriorityChip({

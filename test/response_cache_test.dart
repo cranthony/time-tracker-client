@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
-import 'package:time_tracker_client/outbox/goal_outbox.dart';
+import 'package:time_tracker_client/outbox/action_outbox.dart';
 import 'package:time_tracker_client/models/event.dart';
-import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
@@ -17,7 +17,7 @@ import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
-import 'package:time_tracker_client/services/goals_repository.dart';
+import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/response_cache.dart';
@@ -240,14 +240,17 @@ void main() {
       'what two pages keep at once is kept, not lost to the other',
       () async {
         final memory = PlanMemory();
-        final goals = _GatedGoalsRepository(
-          cached: const GoalList(
-            goals: [Goal(id: '1', name: 'Old')],
+        final actions = _GatedActionsRepository(
+          cached: const ActionList(
+            actions: [PlanAction(id: '1', name: 'Old')],
           ),
         );
-        // One page asks for what's kept of the goals, another not, at once.
-        await Future.wait([memory.loadKept(), memory.loadKept(goals: goals)]);
-        expect(memory.actions?.goals.single.name, 'Old');
+        // One page asks for what's kept of the actions, another not, at once.
+        await Future.wait([
+          memory.loadKept(),
+          memory.loadKept(actions: actions),
+        ]);
+        expect(memory.actions?.actions.single.name, 'Old');
       },
     );
 
@@ -297,15 +300,15 @@ void main() {
     testWidgets('Plan asks to sign in, rather than show kept actions', (
       tester,
     ) async {
-      final repo = _GatedGoalsRepository(
-        cached: const GoalList(
-          goals: [Goal(id: '1', name: 'Old', path: 'Old')],
+      final repo = _GatedActionsRepository(
+        cached: const ActionList(
+          actions: [PlanAction(id: '1', name: 'Old', path: 'Old')],
         ),
       );
       await tester.pumpWidget(
         MaterialApp(
           home: PlanScreen(
-            outbox: _idleGoalOutbox(),
+            outbox: _idleActionOutbox(),
             repository: repo,
             serverLabel: 'test',
           ),
@@ -420,25 +423,25 @@ class _GatedEventsRepository extends InMemoryEventsRepository {
   }
 }
 
-/// Has [cached] goals kept, and answers once [gate] opens.
-class _GatedGoalsRepository extends InMemoryGoalsRepository {
-  _GatedGoalsRepository({required this.cached});
+/// Has [cached] actions kept, and answers once [gate] opens.
+class _GatedActionsRepository extends InMemoryActionsRepository {
+  _GatedActionsRepository({required this.cached});
 
-  final GoalList cached;
+  final ActionList cached;
   final gate = Completer<void>();
 
   @override
-  Future<GoalList?> cachedGoals() async => cached;
+  Future<ActionList?> cachedActions() async => cached;
 
   @override
-  Future<GoalList> goals() async {
+  Future<ActionList> actions() async {
     await gate.future;
-    return super.goals();
+    return super.actions();
   }
 }
 
-/// For a Goals page that saves nothing.
-GoalOutbox _idleGoalOutbox() => GoalOutbox(
+/// For a Actions page that saves nothing.
+ActionOutbox _idleActionOutbox() => ActionOutbox(
   store: InMemoryOutboxStore(),
-  repository: InMemoryGoalsRepository(),
+  repository: InMemoryActionsRepository(),
 );

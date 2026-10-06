@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter/foundation.dart';
 
-import '../models/goal.dart';
+import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../services/mcp_client.dart';
 import 'color_picker.dart';
 import 'durations.dart';
-import 'goals_picker.dart';
+import 'actions_picker.dart';
 
 /// How a property is shown and edited.
 enum PropertyKind {
@@ -17,11 +17,11 @@ enum PropertyKind {
   /// An ISO 8601 timestamp, shown and picked in local time.
   time,
 
-  /// A goal's id, picked by name.
-  goal,
+  /// An action's id, picked by name.
+  action,
 
-  /// A list of goals' ids, picked by name; the first is the primary goal.
-  goals,
+  /// A list of actions' ids, picked by name; the first is the primary action.
+  actions,
 
   /// One of a fixed set of values, given by the dialog's `choices`.
   choice,
@@ -137,8 +137,8 @@ Widget confirmationContent(
 /// in place; "Save" sends every change, as [kinds] encode them, to [save].
 /// [validate] can refuse the values first, giving the reason; keys in
 /// [required] can't be emptied. Returns what [save] returned, or null if
-/// nothing was saved. [goals] lists the goals a [PropertyKind.goal] or
-/// [PropertyKind.goals] can be; [choices] gives each [PropertyKind.choice]
+/// nothing was saved. [actions] lists the actions a [PropertyKind.action] or
+/// [PropertyKind.actions] can be; [choices] gives each [PropertyKind.choice]
 /// property's values, and how each is shown; [links] shows those keys'
 /// values as links instead. [confirmSave] is asked before each save, with
 /// the changes; false calls the save off, keeping the dialog open.
@@ -157,7 +157,7 @@ Future<R?> showPropertiesDialog<R>(
   String? Function(Map<String, Object?> values)? validate,
   Set<String> required = const {},
   Map<String, String> hints = const {},
-  Future<List<Goal>> Function()? goals,
+  Future<List<PlanAction>> Function()? actions,
   Map<String, Map<String, String>> choices = const {},
   Map<String, PropertyLink> links = const {},
   Map<String, String> inferred = const {},
@@ -175,7 +175,7 @@ Future<R?> showPropertiesDialog<R>(
     validate: validate,
     required: required,
     hints: hints,
-    goals: goals,
+    actions: actions,
     choices: choices,
     links: links,
     inferred: inferred,
@@ -195,7 +195,7 @@ class _PropertiesDialog<R> extends StatefulWidget {
     required this.validate,
     required this.required,
     required this.hints,
-    required this.goals,
+    required this.actions,
     required this.choices,
     required this.links,
     required this.inferred,
@@ -214,7 +214,7 @@ class _PropertiesDialog<R> extends StatefulWidget {
 
   /// Said under a property's editor.
   final Map<String, String> hints;
-  final Future<List<Goal>> Function()? goals;
+  final Future<List<PlanAction>> Function()? actions;
   final Map<String, Map<String, String>> choices;
   final Map<String, PropertyLink> links;
   final Map<String, String> inferred;
@@ -242,13 +242,13 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
   String? _draftError;
   final _text = TextEditingController();
 
-  Future<List<Goal>>? _goals;
+  Future<List<PlanAction>>? _actions;
 
-  /// Goal names by id, once [_goals] has them.
-  Map<String?, String> _goalNames = const {};
+  /// PlanAction names by id, once [_actions] has them.
+  Map<String?, String> _actionNames = const {};
 
-  /// Goal paths from the top ("Cooking › Tofu") by id, likewise.
-  Map<String?, String> _goalPaths = const {};
+  /// PlanAction paths from the top ("Cooking › Tofu") by id, likewise.
+  Map<String?, String> _actionPaths = const {};
   bool _saving = false;
 
   /// Why the last save failed.
@@ -277,7 +277,9 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         PropertyKind.time => DateTime.parse(value as String).toLocal(),
         PropertyKind.flag => value == true,
         PropertyKind.color => parseColor(value as String?),
-        PropertyKind.goals => [...(value as List? ?? const []).cast<String>()],
+        PropertyKind.actions => [
+          ...(value as List? ?? const []).cast<String>(),
+        ],
         PropertyKind.date => switch (value) {
           final String iso => DateTime.tryParse(iso),
           _ => null,
@@ -289,7 +291,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
           final String iso => formatDuration(parseIsoDuration(iso)) ?? iso,
           _ => '',
         },
-        PropertyKind.goals => (value as List? ?? const []).join(', '),
+        PropertyKind.actions => (value as List? ?? const []).join(', '),
         PropertyKind.lines => (value as List? ?? const []).join('\n'),
         _ => value == null ? '' : '$value',
       };
@@ -310,16 +312,18 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
   void initState() {
     super.initState();
     _changes.addAll(widget.changes);
-    // Goals are shown by name, so they're needed before anything opens.
+    // Actions are shown by name, so they're needed before anything opens.
     if (widget.kinds.values.any(
-      (kind) => kind == PropertyKind.goal || kind == PropertyKind.goals,
+      (kind) => kind == PropertyKind.action || kind == PropertyKind.actions,
     )) {
-      _goals = widget.goals?.call()
-        ?..then((goals) {
+      _actions = widget.actions?.call()
+        ?..then((actions) {
           if (!mounted) return;
           setState(() {
-            _goalNames = {for (final g in goals) g.id: goalName(g)};
-            _goalPaths = {for (final g in goals) g.id: g.path ?? goalName(g)};
+            _actionNames = {for (final g in actions) g.id: actionName(g)};
+            _actionPaths = {
+              for (final g in actions) g.id: g.path ?? actionName(g),
+            };
           });
         }, onError: (_) {});
     }
@@ -349,10 +353,10 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         value = localIsoTimestamp(_draft as DateTime);
       case PropertyKind.flag ||
           PropertyKind.optionalFlag ||
-          PropertyKind.goal ||
+          PropertyKind.action ||
           PropertyKind.choice:
         value = _draft;
-      case PropertyKind.goals:
+      case PropertyKind.actions:
         value = [...(_draft as List<String>)];
       case PropertyKind.date:
         value = switch (_draft) {
@@ -411,7 +415,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       (a as List? ?? const []).cast<String>(),
       (b as List? ?? const []).cast<String>(),
     ),
-    PropertyKind.goals => listEquals(
+    PropertyKind.actions => listEquals(
       (a as List? ?? const []).cast<String>(),
       (b as List? ?? const []).cast<String>(),
     ),
@@ -816,8 +820,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
           },
         ),
       ),
-      PropertyKind.goal => _goalPicker(context),
-      PropertyKind.goals => _goalsPicker(context),
+      PropertyKind.action => _actionPicker(context),
+      PropertyKind.actions => _actionsPicker(context),
       PropertyKind.choice => DropdownButton<String?>(
         isExpanded: true,
         value: _draft as String?,
@@ -887,11 +891,11 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       ),
       null => null,
     };
-    // The color picker, the three-way choice and the goals list need the
+    // The color picker, the three-way choice and the actions list need the
     // dialog's whole width.
     if (kind == PropertyKind.color ||
         kind == PropertyKind.optionalFlag ||
-        kind == PropertyKind.goals) {
+        kind == PropertyKind.actions) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -917,17 +921,17 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     );
   }
 
-  /// [build]s with the goals, once [_goals] has them; a message if they
+  /// [build]s with the actions, once [_actions] has them; a message if they
   /// couldn't be loaded, and a progress bar until then.
-  Widget _withGoals(
+  Widget _withActions(
     BuildContext context,
-    Widget Function(List<Goal> goals) build,
+    Widget Function(List<PlanAction> actions) build,
   ) => FutureBuilder(
-    future: _goals,
+    future: _actions,
     builder: (context, snapshot) {
       if (snapshot.hasError) {
         return Text(
-          "Couldn't load goals. ${switch (snapshot.error) {
+          "Couldn't load actions. ${switch (snapshot.error) {
             McpException(:final message) => message,
             final e => '$e',
           }}",
@@ -940,9 +944,9 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     },
   );
 
-  Widget _goalPicker(BuildContext context) {
-    if (_goals == null) {
-      // Nowhere to list goals from: take an id.
+  Widget _actionPicker(BuildContext context) {
+    if (_actions == null) {
+      // Nowhere to list actions from: take an id.
       return TextField(
         controller: _text,
         autofocus: true,
@@ -954,41 +958,41 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       );
     }
     final id = _values['id'];
-    return _withGoals(
+    return _withActions(
       context,
-      (goals) => GoalField(
-        goals: goals,
+      (actions) => ActionField(
+        actions: actions,
         value: _draft as String?,
         title: 'Pick its group',
         noneLabel: 'None (top-level)',
         exclude: {
           // Not under itself,
-          if (id is String) ...goalAndSubGoals(goals, id),
+          if (id is String) ...actionAndSubActions(actions, id),
           // nor under an action -- only groups hold anything -- or one put
           // away, unless it's there already.
-          for (final goal in goals)
-            if ((!goal.isGroup ||
-                    const {'archived', 'deleted'}.contains(goal.status)) &&
-                goal.id != _draft)
-              ?goal.id,
+          for (final action in actions)
+            if ((!action.isGroup ||
+                    const {'archived', 'deleted'}.contains(action.status)) &&
+                action.id != _draft)
+              ?action.id,
         },
-        marker: _goalDot,
+        marker: _actionDot,
         onChanged: (id) => setState(() => _draft = id),
       ),
     );
   }
 
-  /// A dot in [goal]'s color, if it has one.
-  Widget _goalDot(Goal goal) =>
-      switch (parseColor(goal.backgroundColor ?? goal.effectiveColor)) {
+  /// A dot in [action]'s color, if it has one.
+  Widget _actionDot(PlanAction action) =>
+      switch (parseColor(action.backgroundColor ?? action.effectiveColor)) {
         final c? => ColorDot(color: c, size: 12),
         null => const SizedBox(width: 12),
       };
 
-  /// Its goals, searched for or picked from the tree; see [GoalsPicker].
-  Widget _goalsPicker(BuildContext context) {
+  /// Its actions, searched for or picked from the tree; see [ActionsPicker].
+  Widget _actionsPicker(BuildContext context) {
     final picked = _draft as List<String>;
-    if (_goals == null) {
+    if (_actions == null) {
       // Nowhere to list actions from: take ids, separated by commas.
       return TextField(
         controller: _text,
@@ -1004,13 +1008,13 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         ],
       );
     }
-    return _withGoals(
+    return _withActions(
       context,
-      (goals) => GoalsPicker(
-        goals: goals,
+      (actions) => ActionsPicker(
+        actions: actions,
         picked: picked,
         onChanged: (ids) => setState(() => _draft = ids),
-        marker: _goalDot,
+        marker: _actionDot,
       ),
     );
   }
@@ -1073,14 +1077,14 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
             '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
       case PropertyKind.duration when value is String:
         return formatDuration(parseIsoDuration(value)) ?? value;
-      case PropertyKind.goal:
-        // Its name, once the goals are loaded.
-        return _goalPaths[value] ?? '$value';
+      case PropertyKind.action:
+        // Its name, once the actions are loaded.
+        return _actionPaths[value] ?? '$value';
       case PropertyKind.lines when value is List:
         return value.join('\n');
-      case PropertyKind.goals when value is List:
+      case PropertyKind.actions when value is List:
         if (value.isEmpty) return '(none)';
-        return [for (final id in value) _goalNames[id] ?? '$id'].join(', ');
+        return [for (final id in value) _actionNames[id] ?? '$id'].join(', ');
       case PropertyKind.choice:
         return widget.choices[key]?[value] ?? '$value';
       case PropertyKind.date when value is String:
