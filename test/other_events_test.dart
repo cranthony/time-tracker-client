@@ -176,4 +176,95 @@ void main() {
     expect(others.touching(at(8, 30), at(11, 30)), (at(8), at(12)));
     expect(others.touching(at(9), at(10)), (at(9), at(10)));
   });
+
+  group('pushing', () {
+    // p 9-10 and q 10-11 meet; free 11-12; r 12-13; free 13-14; s 14-15.
+    final day = OtherEvents([
+      Event(id: 'p', start: at(9), end: at(10)),
+      Event(id: 'q', start: at(10), end: at(11)),
+      Event(id: 'r', start: at(12), end: at(13)),
+      Event(id: 's', start: at(14), end: at(15)),
+    ]);
+    // Each update as "id {changes}", to compare.
+    String u(String? id, Map<String, Object?> changes) => '$id $changes';
+    List<String> updates(Overwrite over) => [
+      for (final (event, changes) in over.updates) u(event.id, changes),
+    ];
+
+    test('trimming, the event it starts inside of is cut short there, and '
+        'the next pushed along, as far as it must be', () {
+      final over = day.pushing(at(9, 30), at(10, 30), later: true);
+      expect(updates(over), [
+        u('p', {'end': localIsoTimestamp(at(9, 30))}),
+        u('q', {
+          'start': localIsoTimestamp(at(10, 30)),
+          'end': localIsoTimestamp(at(11, 30)),
+        }),
+      ]);
+      expect(over.creates, isEmpty);
+      expect(over.cancels, isEmpty);
+      expect(day.pushedTo(at(9, 30), at(10, 30), later: true), at(11, 30));
+    });
+
+    test('splitting, the rest of the event it starts inside of is pushed '
+        'along first, as a new event', () {
+      final over = day.pushing(
+        at(9, 30),
+        at(10, 30),
+        later: true,
+        inside: Inside.split,
+      );
+      expect(updates(over), [
+        u('p', {'end': localIsoTimestamp(at(9, 30))}),
+        u('q', {
+          'start': localIsoTimestamp(at(11)),
+          'end': localIsoTimestamp(at(12)),
+        }),
+      ]);
+      expect(over.creates, [
+        {
+          'start': localIsoTimestamp(at(10, 30)),
+          'end': localIsoTimestamp(at(11)),
+        },
+      ]);
+      // r, at 12, is just clear.
+      expect(
+        day.pushedTo(at(9, 30), at(10, 30), later: true, inside: Inside.split),
+        at(12),
+      );
+    });
+
+    test('earlier, from its end: cut there, and the events before pushed '
+        'earlier', () {
+      final over = day.pushing(at(10, 30), at(12, 30), later: false);
+      expect(updates(over), [
+        u('r', {'start': localIsoTimestamp(at(12, 30))}),
+        u('q', {
+          'start': localIsoTimestamp(at(9, 30)),
+          'end': localIsoTimestamp(at(10, 30)),
+        }),
+        u('p', {
+          'start': localIsoTimestamp(at(8, 30)),
+          'end': localIsoTimestamp(at(9, 30)),
+        }),
+      ]);
+      expect(day.pushedTo(at(10, 30), at(12, 30), later: false), at(8, 30));
+    });
+
+    test('a cursor snaps out of an event to its nearer edge -- between two '
+        'that meet', () {
+      expect(day.between(at(9, 45)), at(10));
+      expect(day.between(at(9, 20)), at(9));
+      expect(day.between(at(11, 30)), at(11, 30));
+    });
+
+    test('a box is no longer than leaves room in the day for what it '
+        'pushes', () {
+      // s pushed to 15-16, no further.
+      expect(day.pushFit(at(13, 30), at(16), from: at(8), to: at(16)), at(15));
+      expect(day.pushFit(at(13, 30), at(14), from: at(8), to: at(16)), at(14));
+      // Earlier: q and p pushed back to 8, no further.
+      expect(day.pushFit(at(12), at(9), from: at(8), to: at(16)), at(10));
+    });
+  });
 }

@@ -219,6 +219,132 @@ class OtherEvents {
     return (from, to);
   }
 
+  /// What a new event from [start] to [end] does to the others, pushing
+  /// them: [later], from [start] (or else earlier, from [end]). An event
+  /// [start] -- or [end] -- is inside of is cut there, as [inside] says;
+  /// then the events after it -- or before -- are pushed along, their
+  /// lengths kept, as far as they must be, into the free time beyond.
+  Overwrite pushing(
+    DateTime start,
+    DateTime end, {
+    required bool later,
+    Inside inside = Inside.trim,
+  }) => _push(start, end, later: later, inside: inside).$1;
+
+  /// How far [pushing] pushes the events: the end of the last one pushed
+  /// -- or, earlier, the start of the first -- or [end] (or [start]) if
+  /// none is.
+  DateTime pushedTo(
+    DateTime start,
+    DateTime end, {
+    required bool later,
+    Inside inside = Inside.trim,
+  }) => _push(start, end, later: later, inside: inside).$2;
+
+  (Overwrite, DateTime) _push(
+    DateTime start,
+    DateTime end, {
+    required bool later,
+    required Inside inside,
+  }) {
+    final updates = <(Event, Map<String, Object?>)>[];
+    final creates = <Map<String, Object?>>[];
+    final anchor = later ? start : end;
+    var frontier = later ? end : start;
+    // Places a piece [length] long at the frontier, moving it along.
+    (DateTime, DateTime) place(Duration length) {
+      final piece = later
+          ? (frontier, frontier.add(length))
+          : (frontier.subtract(length), frontier);
+      frontier = later ? piece.$2 : piece.$1;
+      return piece;
+    }
+
+    // Cut at the anchor: the part on the new event's side, trimmed away,
+    // or split off and pushed along first.
+    final cut = <Event>{};
+    final rests = <(Event, Duration)>[];
+    for (final other in events) {
+      if (!other.start.isBefore(anchor) || !other.end.isAfter(anchor)) {
+        continue;
+      }
+      cut.add(other);
+      final at = localIsoTimestamp(anchor);
+      updates.add((other, later ? {'end': at} : {'start': at}));
+      if (inside == Inside.split) {
+        rests.add((
+          other,
+          later ? other.end.difference(anchor) : anchor.difference(other.start),
+        ));
+      }
+    }
+    for (final (other, length) in rests) {
+      final (from, to) = place(length);
+      creates.add(_rest(other, from, to));
+    }
+    // The rest, from the anchor on, nearest first, until one's clear.
+    final beyond = [
+      for (final other in events)
+        if (!cut.contains(other) &&
+            (later
+                ? !other.start.isBefore(anchor)
+                : !other.end.isAfter(anchor)))
+          other,
+    ];
+    if (!later) beyond.sort((a, b) => b.end.compareTo(a.end));
+    for (final other in beyond) {
+      final clear = later
+          ? !other.start.isBefore(frontier)
+          : !other.end.isAfter(frontier);
+      if (clear) break;
+      final (from, to) = place(other.end.difference(other.start));
+      updates.add((
+        other,
+        {'start': localIsoTimestamp(from), 'end': localIsoTimestamp(to)},
+      ));
+    }
+    return (Overwrite(updates: updates, creates: creates), frontier);
+  }
+
+  /// [anchor] out of any event it's strictly inside of, to that event's
+  /// nearer edge: where two events meet, it can sit between them.
+  DateTime between(DateTime anchor) {
+    var at = anchor;
+    for (var i = 0; i < events.length; i++) {
+      final around = events.where(
+        (e) => e.start.isBefore(at) && e.end.isAfter(at),
+      );
+      if (around.isEmpty) break;
+      final e = around.first;
+      at = at.difference(e.start) <= e.end.difference(at) ? e.start : e.end;
+    }
+    return at;
+  }
+
+  /// A box from [anchor] to [toward] -- either way -- no longer than
+  /// leaves room, between [from] and [to] (the day), for the events it
+  /// pushes ([pushing]): [toward], moved back toward [anchor] if it must.
+  DateTime pushFit(
+    DateTime anchor,
+    DateTime toward, {
+    required DateTime from,
+    required DateTime to,
+    Inside inside = Inside.trim,
+  }) {
+    final later = toward.isAfter(anchor);
+    var end = toward;
+    for (var i = 0; i < 100 && end != anchor; i++) {
+      final reached = later
+          ? pushedTo(anchor, end, later: true, inside: inside)
+          : pushedTo(end, anchor, later: false, inside: inside);
+      final over = later ? reached.difference(to) : from.difference(reached);
+      if (over <= Duration.zero) break;
+      end = later ? end.subtract(over) : end.add(over);
+      if (later ? end.isBefore(anchor) : end.isAfter(anchor)) end = anchor;
+    }
+    return end;
+  }
+
   /// What's left of [event] from [start] to [end], as a new event: what
   /// was done there and who it was with, not what was said of it.
   static Map<String, Object?> _rest(Event event, DateTime start, DateTime end) {
@@ -320,6 +446,11 @@ class OtherEvents {
     return to.isAfter(end) ? to : null;
   }
 }
+
+/// What [OtherEvents.pushing] does with an event the new one starts
+/// inside of: cuts it short there, or splits it there, pushing along the
+/// rest.
+enum Inside { trim, split }
 
 /// What a new event takes from the events already there, to overwrite
 /// them ([OtherEvents.overwrite]): those to cancel, the changes to the

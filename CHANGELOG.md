@@ -6,6 +6,26 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.5.0
+
+- Three more ways for a new event to treat the events in its way, in
+  its drop-down, each pushing them along, their lengths kept, into the
+  free time beyond -- as far as the day has room: the box is no longer
+  than leaves it that. Where they go is outlined while the box is up.
+  - **Trim and push**: an event the new one starts inside of is cut
+    short there.
+  - **Push**: like Keep, the cursor snaps out of an event, to its nearer
+    edge -- which can be between two events that meet.
+  - **Split and push**: an event the new one starts inside of is split
+    there, and the rest of it pushed along after the new one.
+  The box pushes the way it goes from its cursor: later, or earlier.
+  Its trash makes the room without a new event.
+- In the drop-down's dialog, each way's icon is beside its radio, ahead
+  of its name, and only the one picked says what it does: tapping
+  another picks it, and tapping it again, or Done, settles on it. Trim
+  and push has scissors over its push, and Split and push a zipper
+  coming open over its.
+
 ## 7.4.0
 
 - Keeping events, when the new event's box is moved to fit into free

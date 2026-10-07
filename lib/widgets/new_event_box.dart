@@ -1,10 +1,13 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'create_mode_icon.dart';
 import 'day_timeline.dart';
+import 'other_events.dart';
 
 /// What a new event does with the events already there: keeps clear of
-/// them, or overwrites them -- trimming them, or cancelling them.
+/// them; overwrites them -- trimming them, or cancelling them; or pushes
+/// them along, out of its way.
 enum CreateMode {
   keep(
     'Keep events',
@@ -23,46 +26,112 @@ enum CreateMode {
     'Overwrite and cancel',
     'Every event the new one touches is cancelled, whole.',
     Icons.event_busy,
+  ),
+  push(
+    'Push',
+    'Like Keep, the cursor snaps out of events -- but it can sit between '
+        'two that meet. The events after it are pushed along, into free '
+        'time, to make room -- as far as the day has room.',
+    Icons.keyboard_double_arrow_down,
+  ),
+  trimPush(
+    'Trim and push',
+    'An event the new one starts inside of is cut short there; the events '
+        'after it are pushed along, into free time, to make room -- as '
+        'far as the day has room.',
+    // Drawn: scissors over a push (see [CreateModeIcon]).
+    null,
+  ),
+  splitPush(
+    'Split and push',
+    'An event the new one starts inside of is split there, and the rest '
+        'of it pushed along after the new one, with the events after it, '
+        'into free time -- as far as the day has room.',
+    // Drawn: a zipper coming open over a push (see [CreateModeIcon]).
+    null,
   );
 
   const CreateMode(this.label, this.description, this.icon);
 
   final String label;
   final String description;
-  final IconData icon;
+
+  /// Its Material icon; null where [CreateModeIcon] draws its own.
+  final IconData? icon;
 
   /// Whether it changes the events in the way.
   bool get overwrites => this != keep;
+
+  /// Whether it pushes the events in the way along ([OtherEvents.pushing]).
+  bool get pushes => this == trimPush || this == push || this == splitPush;
+
+  /// What, pushing, it does with an event it starts inside of.
+  Inside get inside => this == splitPush ? Inside.split : Inside.trim;
 }
 
+/// Where a pushed event goes, to show: from [start] to [end], [label]led.
+typedef PushedEvent = ({DateTime start, DateTime end, String label});
+
 /// Asks which [CreateMode] to create in, [current] picked to start with;
-/// null if dismissed.
+/// null if dismissed. Only the one picked says what it does: tapping
+/// another picks it, and tapping it again, or Done, settles on it.
 Future<CreateMode?> showCreateModeDialog(
   BuildContext context,
   CreateMode current,
 ) => showDialog<CreateMode>(
   context: context,
-  builder: (context) => SimpleDialog(
-    title: const Text('Events in the way'),
-    children: [
-      RadioGroup<CreateMode>(
-        groupValue: current,
-        onChanged: (mode) => Navigator.of(context).pop(mode),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final mode in CreateMode.values)
-              RadioListTile<CreateMode>(
-                value: mode,
-                secondary: Icon(mode.icon),
-                title: Text(mode.label),
-                subtitle: Text(mode.description),
-              ),
-          ],
+  builder: (context) {
+    var picked = current;
+    return StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: const Text('Events in the way'),
+        contentPadding: const EdgeInsets.symmetric(vertical: 16),
+        content: SingleChildScrollView(
+          child: RadioGroup<CreateMode>(
+            groupValue: picked,
+            onChanged: (mode) => setState(() => picked = mode ?? picked),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Its icon beside its radio, ahead of the text, to pick
+                // out.
+                for (final mode in CreateMode.values)
+                  ListTile(
+                    onTap: () => mode == picked
+                        ? Navigator.of(context).pop(mode)
+                        : setState(() => picked = mode),
+                    contentPadding: const EdgeInsetsDirectional.only(
+                      start: 12,
+                      end: 24,
+                    ),
+                    titleAlignment: ListTileTitleAlignment.top,
+                    leading: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Radio<CreateMode>(value: mode),
+                        CreateModeIcon(mode),
+                      ],
+                    ),
+                    title: Text(mode.label),
+                    subtitle: mode == picked ? Text(mode.description) : null,
+                  ),
+              ],
+            ),
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(picked),
+            child: const Text('Done'),
+          ),
+        ],
       ),
-    ],
-  ),
+    );
+  },
 );
 
 /// A new event as it's being made: a box between two cursors -- the one
@@ -146,6 +215,7 @@ class NewEventBoxView extends StatefulWidget {
     this.shaded = true,
     this.overwrites = false,
     this.covers,
+    this.pushed = const [],
   });
 
   final DateTime day;
@@ -163,6 +233,9 @@ class NewEventBoxView extends StatefulWidget {
   /// What the shadow covers, if it's more than the event: the events it
   /// cancels whole.
   final (DateTime, DateTime)? covers;
+
+  /// Where the events it pushes go: each outlined there.
+  final List<PushedEvent> pushed;
 
   /// The [NewEventBox.cursor]'s handle dragged to a time.
   final ValueChanged<DateTime> onMoveCursor;
@@ -226,6 +299,17 @@ class _NewEventBoxViewState extends State<NewEventBoxView> {
               end: end,
               overwrites: widget.overwrites,
             ),
+          ),
+        for (final pushed in widget.pushed)
+          Positioned(
+            left: timelineCardsLeft,
+            right: 8,
+            top: _y(pushed.start),
+            height: (_y(pushed.end) - _y(pushed.start)).clamp(
+              2.0,
+              double.infinity,
+            ),
+            child: PushedEventOutline(label: pushed.label),
           ),
         if (box.other case final other?) ...[
           _boxHandle(colors, box.cursor, other),
@@ -464,7 +548,7 @@ class _NewEventBoxViewState extends State<NewEventBoxView> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(widget.mode.icon, size: 22),
+              CreateModeIcon(widget.mode, size: 22),
               const Icon(Icons.arrow_drop_down, size: 20),
             ],
           ),
@@ -697,4 +781,43 @@ class _ArrowPainter extends CustomPainter {
       old.color != color ||
       old.drawn != drawn ||
       old.opacity != opacity;
+}
+
+/// Where a pushed event goes ([PushedEvent]): outlined, with its [label]
+/// and an arrow, over what's there. It takes no touches.
+class PushedEventOutline extends StatelessWidget {
+  const PushedEventOutline({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return IgnorePointer(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(8, 2, 40, 2),
+        alignment: Alignment.topLeft,
+        decoration: BoxDecoration(
+          color: colors.tertiaryContainer.withValues(alpha: 0.85),
+          border: Border.all(color: colors.tertiary, width: 1.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.redo, size: 14, color: colors.onTertiaryContainer),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelMedium
+                    ?.copyWith(color: colors.onTertiaryContainer),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

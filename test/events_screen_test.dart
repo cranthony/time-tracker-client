@@ -1309,6 +1309,8 @@ void main() {
       // Overwriting, it can cover Tea; keeping again, it's out of the way.
       await tapButton(tester, find.byTooltip('Keep events: tap to change'));
       await tester.tap(find.text('Overwrite and trim'));
+      await tester.pump();
+      await tester.tap(find.text('Done'));
       await settle(tester);
       await drag(tester, otherHandle, const Duration(hours: 1));
       expect(box(tester).span, (at(30, 12, 30), at(30, 15)));
@@ -1319,6 +1321,8 @@ void main() {
       await tester.tap(mode);
       await settle(tester);
       await tester.tap(find.text('Keep events'));
+      await tester.pump();
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
       expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
     });
@@ -1422,16 +1426,25 @@ void main() {
       // Picked from the drop-down, each said what it does.
       await tester.tap(find.byTooltip('Keep events: tap to change'));
       await tester.pumpAndSettle();
+      // Only the one picked says what it does.
       expect(find.textContaining('never overlaps them'), findsOneWidget);
+      expect(find.textContaining('touches is cancelled, whole'), findsNothing);
+      await tester.tap(find.text('Overwrite and cancel'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('never overlaps them'), findsNothing);
       expect(
         find.textContaining('touches is cancelled, whole'),
         findsOneWidget,
       );
+      await tester.tap(find.text('Overwrite and trim'));
+      await tester.pumpAndSettle();
       expect(
         find.textContaining('shortened, or split around it'),
         findsOneWidget,
       );
-      await tester.tap(find.text('Overwrite and trim'));
+      // Still open, until Done.
+      expect(find.text('Events in the way'), findsOneWidget);
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
       expect(
         find.byTooltip('Overwrite and trim: tap to change'),
@@ -1497,6 +1510,8 @@ void main() {
       await plus(tester);
       await tapButton(tester, find.byTooltip('Keep events: tap to change'));
       await tester.tap(find.text('Overwrite and cancel'));
+      await tester.pump();
+      await tester.tap(find.text('Done'));
       await settle(tester);
 
       await tapPulsing(tester, startHere);
@@ -1545,6 +1560,8 @@ void main() {
       await plus(tester);
       await tapButton(tester, find.byTooltip('Keep events: tap to change'));
       await tester.tap(find.text('Overwrite and trim'));
+      await tester.pump();
+      await tester.tap(find.text('Done'));
       await settle(tester);
       await tapPulsing(tester, startHere);
       expect(box(tester).span, (at(30, 12), at(30, 13)));
@@ -1562,6 +1579,169 @@ void main() {
       expect(repo.deleted, [('b', false)]);
       expect(find.text('Time cleared: 2 events changed.'), findsOneWidget);
       expect(find.byType(NewEventBoxView), findsNothing);
+    });
+
+    /// Picks [mode] from the box's drop-down.
+    Future<void> pickMode(WidgetTester tester, String mode) async {
+      await tapPulsing(tester, find.byTooltip(RegExp(r'^.*: tap to change$')));
+      await tester.ensureVisible(find.text(mode));
+      await settle(tester);
+      await tester.tap(find.text(mode));
+      await tester.pump();
+      await tester.tap(find.text('Done'));
+      await settle(tester);
+      await settle(tester);
+    }
+
+    /// Where the box shows the events it pushes going.
+    List<PushedEvent> pushed(WidgetTester tester) =>
+        tester.widget<NewEventBoxView>(find.byType(NewEventBoxView)).pushed;
+
+    testWidgets('trimming and pushing: the event the cursor is inside of is '
+        'cut short, and the next pushed along, shown where it goes', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([
+        Event(
+          id: 'l',
+          start: at(30, 11, 30),
+          end: at(30, 12, 30),
+          summary: 'Lunch',
+        ),
+        Event(
+          id: 't',
+          start: at(30, 12, 30),
+          end: at(30, 13, 30),
+          summary: 'Tea',
+        ),
+        Event(id: 'w', start: at(30, 14), end: at(30, 15), summary: 'Walk'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      await pickMode(tester, 'Trim and push');
+      await tapPulsing(tester, startHere);
+      // In Lunch, at noon, an hour: Lunch cut at noon, Tea pushed to 1-2;
+      // Walk, at 2, clear.
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
+      expect(pushed(tester), [
+        (start: at(30, 13), end: at(30, 14), label: 'Tea'),
+      ]);
+      expect(find.byType(PushedEventOutline), findsOneWidget);
+      expect(overwrites(tester), isTrue);
+
+      await continueToDialog(tester);
+      await tester.enterText(inDialog(find.byType(TextField)), 'Party');
+      await settle(tester);
+      await tester.tap(find.text('Create'));
+      await settle(tester);
+      expect(repo.created.single['summary'], 'Party');
+      expect(repo.saved, [
+        {'end': localIsoTimestamp(at(30, 12))},
+        {
+          'start': localIsoTimestamp(at(30, 13)),
+          'end': localIsoTimestamp(at(30, 14)),
+        },
+      ]);
+      expect(
+        find.text('Event created. 2 other events changed to make room.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('pushing: the cursor snaps out of an event, to between two '
+        'that meet, and the trash just makes room', (tester) async {
+      final repo = _RecordingRepository([
+        Event(
+          id: 'a',
+          start: at(30, 11, 30),
+          end: at(30, 12, 15),
+          summary: 'A',
+        ),
+        Event(id: 'b', start: at(30, 12, 15), end: at(30, 13), summary: 'B'),
+        Event(
+          id: 'c',
+          start: at(30, 13, 30),
+          end: at(30, 14, 30),
+          summary: 'C',
+        ),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      await pickMode(tester, 'Push');
+      // Noon, in A, nearer its end: where A and B meet.
+      expect(box(tester).cursor, at(30, 12, 15));
+      await tapPulsing(tester, startHere);
+      expect(box(tester).span, (at(30, 12, 15), at(30, 13, 15)));
+      // B pushed to 1:15-2, and C, on, to 2-3. Nothing cut.
+      expect(pushed(tester), [
+        (start: at(30, 13, 15), end: at(30, 14), label: 'B'),
+        (start: at(30, 14), end: at(30, 15), label: 'C'),
+      ]);
+      expect(overwrites(tester), isFalse);
+
+      await continueToDialog(tester);
+      await tester.tap(find.byTooltip('Clear this time instead'));
+      await settle(tester);
+      expect(find.text('Make room, changing 2 events?'), findsOneWidget);
+      await tester.tap(find.text('Make room'));
+      await settle(tester);
+      expect(repo.created, isEmpty);
+      expect(repo.saved, [
+        {
+          'start': localIsoTimestamp(at(30, 13, 15)),
+          'end': localIsoTimestamp(at(30, 14)),
+        },
+        {
+          'start': localIsoTimestamp(at(30, 14)),
+          'end': localIsoTimestamp(at(30, 15)),
+        },
+      ]);
+    });
+
+    testWidgets('splitting and pushing: the rest of the event the cursor is '
+        "inside of goes after the new one, pushing the rest -- only as far "
+        "as the day has room", (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 'k', start: at(30, 11), end: at(30, 13), summary: 'Class'),
+        Event(id: 'f', start: at(30, 13), end: at(30, 23, 30), summary: 'Long'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      await pickMode(tester, 'Split and push');
+      await tapPulsing(tester, startHere);
+      // An hour would push Long past midnight: half an hour, no more.
+      expect(box(tester).span, (at(30, 12), at(30, 12, 30)));
+      expect(pushed(tester), [
+        (start: at(30, 13, 30), end: at(30, 24), label: 'Long'),
+        (start: at(30, 12, 30), end: at(30, 13, 30), label: 'Event (the rest)'),
+      ]);
+      expect(overwrites(tester), isFalse);
+
+      await continueToDialog(tester);
+      await tester.enterText(inDialog(find.byType(TextField)), 'Call');
+      await settle(tester);
+      await tester.tap(find.text('Create'));
+      await settle(tester);
+      expect(repo.saved, [
+        {'end': localIsoTimestamp(at(30, 12))},
+        {
+          'start': localIsoTimestamp(at(30, 13, 30)),
+          'end': localIsoTimestamp(at(30, 24)),
+        },
+      ]);
+      expect(
+        [for (final c in repo.created) (c['start'], c['end'])],
+        [
+          (localIsoTimestamp(at(30, 12)), localIsoTimestamp(at(30, 12, 30))),
+          (
+            localIsoTimestamp(at(30, 12, 30)),
+            localIsoTimestamp(at(30, 13, 30)),
+          ),
+        ],
+      );
     });
 
     testWidgets('Cancel makes nothing', (tester) async {

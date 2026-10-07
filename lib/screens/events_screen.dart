@@ -729,12 +729,14 @@ class _EventsScreenState extends State<EventsScreen> {
   /// [box], keeping events, fitted into free time (see [OtherEvents]):
   /// [moved] whole, as near as it fits; or from its [NewEventBox.cursor] --
   /// or, [fromOther], its other cursor -- out of any event it's in, and to
-  /// no further than the next event. Overwriting, as it is.
+  /// no further than the next event. Pushing, see [_pushKept].
+  /// Overwriting, as it is.
   NewEventBox _kept(
     NewEventBox box, {
     bool moved = false,
     bool fromOther = false,
   }) {
+    if (_createMode.pushes) return _pushKept(box, moved: moved);
     final other = box.other;
     if (_createMode.overwrites || other == null) return box;
     final others = _otherEvents(null);
@@ -755,6 +757,36 @@ class _EventsScreenState extends State<EventsScreen> {
     final (cursor, fitted) = others.fitFrom(box.cursor, other);
     return NewEventBox(cursor, other: fitted);
   }
+
+  /// [box], pushing events: its cursor -- for [CreateMode.push] -- out
+  /// of any event it's inside of, to its nearer edge ([moved] whole, the
+  /// other cursor with it); and its other cursor no further from it than
+  /// leaves the day room for the events it pushes.
+  NewEventBox _pushKept(NewEventBox box, {bool moved = false}) {
+    final others = _otherEvents(null);
+    var (cursor, other) = (box.cursor, box.other);
+    if (_createMode == CreateMode.push) {
+      final snapped = others.between(cursor);
+      if (moved) other = other?.add(snapped.difference(cursor));
+      cursor = snapped;
+    }
+    if (other != null && other != cursor) {
+      other = others.pushFit(
+        cursor,
+        other,
+        from: _day,
+        to: _dayEnd,
+        inside: _createMode.inside,
+      );
+    }
+    return NewEventBox(cursor, other: other);
+  }
+
+  /// Whether the box goes later from its cursor: the way it pushes.
+  bool get _later => switch (_box) {
+    NewEventBox(:final cursor, other: final other?) => other.isAfter(cursor),
+    _ => true,
+  };
 
   /// Changes the box to what [change] makes of it, kept in free time
   /// (see [_kept]).
@@ -811,12 +843,43 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  /// Whether the new event takes time from events already there.
+  /// Whether the new event takes time from events already there:
+  /// pushing, only if it cuts one short.
   bool get _overwrites => switch (_box?.span) {
+    (final start, final end) when _createMode.pushes =>
+      _createMode == CreateMode.trimPush &&
+          _otherEvents(null).events.any((e) {
+            final anchor = _later ? start : end;
+            return e.start.isBefore(anchor) && e.end.isAfter(anchor);
+          }),
     (final start, final end) =>
       _createMode.overwrites &&
           _otherEvents(null).overlapping(start, end) != null,
     null => false,
+  };
+
+  /// Where the events the new one pushes go, pushing.
+  List<PushedEvent> get _pushed => switch (_box?.span) {
+    (final start, final end) when _createMode.pushes => [
+      for (final (event, changes) in _overwrite(
+        _otherEvents(null),
+        start,
+        end,
+      ).updates)
+        if (changes case {'start': final String from, 'end': final String to})
+          (
+            start: DateTime.parse(from).toLocal(),
+            end: DateTime.parse(to).toLocal(),
+            label: event.summary ?? 'Event',
+          ),
+      for (final rest in _overwrite(_otherEvents(null), start, end).creates)
+        (
+          start: DateTime.parse(rest['start'] as String).toLocal(),
+          end: DateTime.parse(rest['end'] as String).toLocal(),
+          label: '${rest['summary'] ?? 'Event'} (the rest)',
+        ),
+    ],
+    _ => const [],
   };
 
   /// What the shadow covers, cancelling: the box, and every event it
@@ -828,11 +891,23 @@ class _EventsScreenState extends State<EventsScreen> {
   };
 
   /// What an event from [start] to [end] does to the [others] in its way,
-  /// overwriting them: trims, or cancels, them.
-  Overwrite _overwrite(OtherEvents others, DateTime start, DateTime end) =>
-      _createMode == CreateMode.cancel
-      ? others.cancelling(start, end)
-      : others.overwrite(start, end);
+  /// overwriting them: trims, or cancels, them; or pushes them, [later]
+  /// (the way the box goes, unless said).
+  Overwrite _overwrite(
+    OtherEvents others,
+    DateTime start,
+    DateTime end, {
+    bool? later,
+  }) => switch (_createMode) {
+    CreateMode.cancel => others.cancelling(start, end),
+    final mode when mode.pushes => others.pushing(
+      start,
+      end,
+      later: later ?? _later,
+      inside: mode.inside,
+    ),
+    _ => others.overwrite(start, end),
+  };
 
   /// A button on the cursor, its [step] later or earlier, dragged to
   /// [to]: the other cursor there, at least a quarter hour from the
@@ -855,6 +930,7 @@ class _EventsScreenState extends State<EventsScreen> {
     final (start, end) = span;
     final others = _otherEvents(null);
     final overwrite = _createMode.overwrites;
+    final later = _later;
     final inTheWay = _overwrite(others, start, end);
     var cleared = false;
     final created = await showNewEventDialog(
@@ -871,6 +947,7 @@ class _EventsScreenState extends State<EventsScreen> {
                   others,
                   DateTime.parse(fields['start'] as String),
                   DateTime.parse(fields['end'] as String),
+                  later: later,
                 ),
                 allowCompactedChanges: allow,
               ),
@@ -881,17 +958,28 @@ class _EventsScreenState extends State<EventsScreen> {
       clear: !overwrite || inTheWay.isEmpty
           ? null
           : (
-              question: _createMode == CreateMode.cancel
-                  ? 'Cancel ${_events(inTheWay.count)}?'
-                  : 'Clear this time of ${_events(inTheWay.count)}?',
-              explanation: _createMode == CreateMode.cancel
-                  ? 'Every event the new one touches is cancelled, as a '
-                        'change of plan, and no new event is made.'
-                  : 'The events under the new one are trimmed out of this '
-                        'time, and no new event is made.',
-              label: _createMode == CreateMode.cancel
-                  ? 'Cancel them'
-                  : 'Clear the time',
+              question: switch (_createMode) {
+                CreateMode.cancel => 'Cancel ${_events(inTheWay.count)}?',
+                final mode when mode.pushes =>
+                  'Make room, changing ${_events(inTheWay.count)}?',
+                _ => 'Clear this time of ${_events(inTheWay.count)}?',
+              },
+              explanation: switch (_createMode) {
+                CreateMode.cancel =>
+                  'Every event the new one touches is cancelled, as a '
+                      'change of plan, and no new event is made.',
+                final mode when mode.pushes =>
+                  'The events in the way are pushed along, as the new one '
+                      'would push them, and no new event is made.',
+                _ =>
+                  'The events under the new one are trimmed out of this '
+                      'time, and no new event is made.',
+              },
+              label: switch (_createMode) {
+                CreateMode.cancel => 'Cancel them',
+                final mode when mode.pushes => 'Make room',
+                _ => 'Clear the time',
+              },
               run: () {
                 cleared = true;
                 return _approvingHistory(
@@ -1378,6 +1466,7 @@ class _EventsScreenState extends State<EventsScreen> {
                                   mode: _createMode,
                                   overwrites: _overwrites,
                                   covers: _covers,
+                                  pushed: _pushed,
                                   onMoveCursor: (to) => _changeBox(
                                     (box) =>
                                         box.withCursor(_nearestQuarter(to)),
