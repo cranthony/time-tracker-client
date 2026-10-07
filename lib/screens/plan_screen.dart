@@ -499,7 +499,7 @@ class _PlanScreenState extends State<PlanScreen> {
     PlanAction action,
     Map<String, Object?> changes,
   ) async {
-    widget.outbox.update(action.id!, changes);
+    widget.outbox.update(action.id!, changes, group: action.isGroup);
     return _actions!;
   }
 
@@ -535,7 +535,7 @@ class _PlanScreenState extends State<PlanScreen> {
         await showNewActionDialog(
           context,
           create: (fields) async {
-            widget.outbox.update(id, fields, replace: true);
+            widget.outbox.update(id, fields, group: false, replace: true);
             return _actions!;
           },
           parentId: changes['parent_id'] as String?,
@@ -556,7 +556,12 @@ class _PlanScreenState extends State<PlanScreen> {
           save: failed == null
               ? _update
               : (action, changes) async {
-                  widget.outbox.update(id, changes, replace: true);
+                  widget.outbox.update(
+                    id,
+                    changes,
+                    group: saved.isGroup,
+                    replace: true,
+                  );
                   return _actions!;
                 },
           confirmSave: (changes) => switch (changes['status']) {
@@ -595,8 +600,9 @@ class _PlanScreenState extends State<PlanScreen> {
   };
 
   /// Approves [action], one Claude proposed: it becomes active.
-  void _approve(PlanAction action) =>
-      widget.outbox.update(action.id!, {'status': 'active'});
+  void _approve(PlanAction action) => widget.outbox.update(action.id!, {
+    'status': 'active',
+  }, group: action.isGroup);
 
   Future<void> _add({String? parentId, bool group = false}) async {
     // So the new one can be seen.

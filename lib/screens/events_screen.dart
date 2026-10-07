@@ -154,6 +154,10 @@ class _EventsScreenState extends State<EventsScreen> {
   /// "✓" opens it.
   NewEventBox? _box;
 
+  /// Where keeping events last moved the box, from where it was put, to
+  /// show with a [KeptMoveArrow]; [id] tells each move from the last.
+  ({DateTime from, DateTime to, int id})? _keptMove;
+
   /// Whether a new event keeps clear of the events already there, or
   /// overwrites them.
   CreateMode _createMode = CreateMode.keep;
@@ -645,7 +649,7 @@ class _EventsScreenState extends State<EventsScreen> {
       _day = day;
       _error = null;
       _fresh.removeWhere((d) => (_pageOf(d) - _pageOf(day)).abs() > 3);
-      if (_box case final box?) _box = _kept(box, moved: true);
+      if (_box case final box?) _keep(box, moved: true);
     });
     _refresh(reloadShown: !_fresh.contains(day));
   }
@@ -716,7 +720,10 @@ class _EventsScreenState extends State<EventsScreen> {
     } else {
       at = _day.add(const Duration(hours: 9));
     }
-    setState(() => _box = NewEventBox(_nearestQuarter(at)));
+    setState(() {
+      _box = NewEventBox(_nearestQuarter(at));
+      _keptMove = null;
+    });
   }
 
   /// [box], keeping events, fitted into free time (see [OtherEvents]):
@@ -758,8 +765,49 @@ class _EventsScreenState extends State<EventsScreen> {
   }) {
     final box = _box;
     if (box == null) return;
-    setState(
-      () => _box = _kept(change(box), moved: moved, fromOther: fromOther),
+    setState(() => _keep(change(box), moved: moved, fromOther: fromOther));
+  }
+
+  /// Makes the box [box], kept in free time (see [_kept]); if that moves
+  /// it, an arrow shows from where it was put to where it went.
+  void _keep(NewEventBox box, {bool moved = false, bool fromOther = false}) {
+    final kept = _kept(box, moved: moved, fromOther: fromOther);
+    _box = kept;
+    if (kept == box) return;
+    // The box's middle, moved whole; or the end that moved.
+    DateTime middle(NewEventBox box) =>
+        (box.span?.$1 ?? box.cursor).add(box.length ~/ 2);
+    final (from, to) = moved
+        ? (middle(box), middle(kept))
+        : box.cursor != kept.cursor
+        ? (box.cursor, kept.cursor)
+        : (box.other ?? box.cursor, kept.other ?? kept.cursor);
+    // Still going to the same place, as a drag goes on: the same arrow,
+    // from where it's put now.
+    final last = _keptMove;
+    final id = last == null
+        ? 1
+        : last.to == to
+        ? last.id
+        : last.id + 1;
+    _keptMove = (from: from, to: to, id: id);
+  }
+
+  /// Scrolls the new event into the middle of the view.
+  void _goToBox() {
+    final box = _box;
+    if (box == null || !_scroll.hasClients) return;
+    final position = _scroll.position;
+    final at = box.span == null
+        ? box.cursor
+        : box.span!.$1.add(box.length ~/ 2);
+    final y =
+        timelineOffset(at, day: _day, dayEnd: _dayEnd, scale: _scale) -
+        position.viewportDimension / 2;
+    _scroll.animateTo(
+      y.clamp(0, position.maxScrollExtent),
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
     );
   }
 
@@ -1169,36 +1217,49 @@ class _EventsScreenState extends State<EventsScreen> {
       floatingActionButton: _needsSignIn
           ? null
           : _box != null
-          ? Row(
+          ? Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                FloatingActionButton(
-                  heroTag: 'cancel-new',
-                  tooltip: 'Cancel',
-                  onPressed: () => setState(() => _box = null),
-                  child: const Icon(Icons.close),
+                FloatingActionButton.small(
+                  heroTag: 'to-new',
+                  tooltip: 'Go to the new event',
+                  onPressed: _goToBox,
+                  child: const Icon(Icons.filter_center_focus),
                 ),
-                const SizedBox(width: 12),
-                // Only with an event to make.
-                Builder(
-                  builder: (context) {
-                    final colors = Theme.of(context).colorScheme;
-                    final ready = _box?.span != null;
-                    return FloatingActionButton(
-                      heroTag: 'continue-new',
-                      tooltip: ready
-                          ? 'Continue'
-                          : 'Continue: first, make an event between the '
-                                'cursors',
-                      onPressed: ready ? _continueCreating : null,
-                      backgroundColor: ready
-                          ? null
-                          : colors.surfaceContainerHighest,
-                      foregroundColor: ready ? null : colors.outline,
-                      elevation: ready ? null : 0,
-                      child: const Icon(Icons.check),
-                    );
-                  },
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FloatingActionButton(
+                      heroTag: 'cancel-new',
+                      tooltip: 'Cancel',
+                      onPressed: () => setState(() => _box = null),
+                      child: const Icon(Icons.close),
+                    ),
+                    const SizedBox(width: 12),
+                    // Only with an event to make.
+                    Builder(
+                      builder: (context) {
+                        final colors = Theme.of(context).colorScheme;
+                        final ready = _box?.span != null;
+                        return FloatingActionButton(
+                          heroTag: 'continue-new',
+                          tooltip: ready
+                              ? 'Continue'
+                              : 'Continue: first, make an event between the '
+                                    'cursors',
+                          onPressed: ready ? _continueCreating : null,
+                          backgroundColor: ready
+                              ? null
+                              : colors.surfaceContainerHighest,
+                          foregroundColor: ready ? null : colors.outline,
+                          elevation: ready ? null : 0,
+                          child: const Icon(Icons.check),
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ],
             )
@@ -1338,6 +1399,17 @@ class _EventsScreenState extends State<EventsScreen> {
                                   ),
                                   onDrag: _dragStep,
                                   onPickMode: _pickCreateMode,
+                                ),
+                              ),
+                            if ((_box, _keptMove) case (_?, final move?))
+                              Positioned.fill(
+                                child: KeptMoveArrow(
+                                  key: ValueKey(move.id),
+                                  from: move.from,
+                                  to: move.to,
+                                  day: _day,
+                                  dayEnd: _dayEnd,
+                                  scale: _scale,
                                 ),
                               ),
                           ],
