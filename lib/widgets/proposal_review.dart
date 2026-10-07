@@ -619,6 +619,7 @@ Future<bool> showRecheckedDialog(
 
 /// What became of [note], as the timeline marks it.
 ReviewNoteKind reviewNoteKind(ProposalNote note) => switch (note.use) {
+  _ when note.compacted => ReviewNoteKind.compacted,
   NoteUse.edge => ReviewNoteKind.setsEdge,
   NoteUse.annotates => ReviewNoteKind.annotated,
   NoteUse.ignored => ReviewNoteKind.ignored,
@@ -629,6 +630,7 @@ ReviewNoteKind reviewNoteKind(ProposalNote note) => switch (note.use) {
 /// the start of Breakfast", "Added to “Work” · you", "Left out · Claude".
 /// [events] names the events, by id or key.
 String noteFate(ProposalNote note, {Map<String, String> events = const {}}) {
+  if (note.compacted) return 'Compacted earlier';
   final event = events[note.eventId] ?? note.annotates;
   // The edge it sets, whatever else it's for.
   final edge = switch (events[note.edgeOf ?? '']) {
@@ -741,7 +743,9 @@ class ProposalNoteStrip extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: kind == ReviewNoteKind.ignored
+                            color:
+                                kind == ReviewNoteKind.ignored ||
+                                    kind == ReviewNoteKind.compacted
                                 ? colors.onSurfaceVariant
                                 : colors.tertiary,
                           ),

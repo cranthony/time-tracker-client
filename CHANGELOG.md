@@ -19,7 +19,9 @@ on. Add the new version's section here at the same time; CI checks both.
   badge saying what became of it: added to an event, setting an event's
   start or end, or left out. Under the bar, one of them -- its time, its
   text and what became of it -- is highlighted on the timeline, and
-  arrows go to the note before or after it, scrolling to it.
+  arrows go to the note before or after it, scrolling to it. Before the
+  first, as context, is the latest note the last compaction used, with a
+  check: there to see, not to change.
 - Saying what a note is for: its pencil (or tapping it) asks. Add it to
   the event it falls within -- or, for one that sets an event's start or
   end, to that event -- or to another of its day's; leave it out; put it

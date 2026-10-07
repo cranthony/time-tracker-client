@@ -415,6 +415,15 @@ void main() {
         },
       ),
       (
+        'events_proposal_compacted',
+        (tester) async {
+          // Back from the first note to review to the one compacted last
+          // time, there as context.
+          await tester.tap(find.byTooltip('Previous note'));
+          await tester.pumpAndSettle();
+        },
+      ),
+      (
         'events_proposal_note_use',
         (tester) async {
           // What the first note, which sets breakfast's start, is for.

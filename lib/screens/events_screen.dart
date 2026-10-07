@@ -276,16 +276,46 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Which of the proposal's notes is shown under its bar, and
   /// highlighted on the timeline.
-  int _noteIndex = 0;
+  /// Null for the first note to review.
+  int? _noteIndex;
 
-  /// The proposal's notes; [_noteIndex] of them, if there are any.
-  List<ProposalNote> get _proposalNotes =>
-      _proposal?.notes ?? const <ProposalNote>[];
+  /// The proposal's notes, after the latest one an earlier compaction
+  /// used, as context: the proposal's own, or else the one the app was
+  /// told of.
+  List<ProposalNote> get _proposalNotes {
+    final proposal = _proposal;
+    if (proposal == null) return const [];
+    final notes = proposal.notes;
+    final latest = _memory.compaction?.latestCompacted;
+    if (latest == null ||
+        notes.any((n) => n.compacted) ||
+        !latest.timestamp.isBefore(proposal.windowStart)) {
+      return notes;
+    }
+    return [
+      ProposalNote(
+        id: latest.id ?? 'compacted',
+        time: latest.timestamp,
+        text: latest.description,
+        compacted: true,
+      ),
+      ...notes,
+    ];
+  }
 
-  ProposalNote? get _note => switch (_proposalNotes) {
-    final notes when notes.isEmpty => null,
-    final notes => notes[_noteIndex.clamp(0, notes.length - 1)],
-  };
+  /// The note shown under the proposal's bar: [_noteIndex], or else the
+  /// first to review.
+  ProposalNote? get _note {
+    final notes = _proposalNotes;
+    if (notes.isEmpty) return null;
+    final i =
+        _noteIndex ??
+        switch (notes.indexWhere((n) => !n.compacted)) {
+          -1 => 0,
+          final first => first,
+        };
+    return notes[i.clamp(0, notes.length - 1)];
+  }
 
   /// The proposal's notes, as the timeline draws them.
   List<ReviewNote> get _reviewNotes {
@@ -295,7 +325,7 @@ class _EventsScreenState extends State<EventsScreen> {
         ReviewNote(
           time: note.time,
           kind: reviewNoteKind(note),
-          selected: identical(note, selected),
+          selected: note.id == selected?.id,
         ),
     ];
   }
@@ -2348,19 +2378,20 @@ class _EventsScreenState extends State<EventsScreen> {
             onGoTo: _goToProposal,
             onAbandon: _abandonProposal,
           ),
-        if (_note case final note?)
+        if ((_note, _proposalNotes) case (final note?, final notes))
           ProposalNoteStrip(
             note: note,
-            index: _proposalNotes.indexOf(note),
-            count: _proposalNotes.length,
-            onPrevious: _proposalNotes.indexOf(note) > 0
-                ? () => _goToNote(_proposalNotes.indexOf(note) - 1)
+            index: notes.indexWhere((n) => n.id == note.id),
+            count: notes.length,
+            onPrevious: notes.first.id != note.id
+                ? () => _goToNote(notes.indexWhere((n) => n.id == note.id) - 1)
                 : null,
-            onNext: _proposalNotes.indexOf(note) < _proposalNotes.length - 1
-                ? () => _goToNote(_proposalNotes.indexOf(note) + 1)
+            onNext: notes.last.id != note.id
+                ? () => _goToNote(notes.indexWhere((n) => n.id == note.id) + 1)
                 : null,
             events: _reviewedSummaries,
-            onEdit: () => _editNote(note),
+            // Compacted already: there to see, not to change.
+            onEdit: note.compacted ? null : () => _editNote(note),
           ),
         Expanded(
           child: LayoutBuilder(

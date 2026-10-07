@@ -10,6 +10,7 @@ import 'package:time_tracker_client/models/proposal.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
+import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/other_events.dart';
@@ -178,24 +179,31 @@ void main() {
     });
 
     test('its notes, by time, each saying what it is for and who said '
-        "so -- with the timeline's words for the edges it sets -- but those "
-        'already compacted', () {
+        "so -- with the timeline's words for the edges it sets -- after the "
+        'latest one compacted last time, there as context', () {
       final notes = Proposal.fromJson(proposalJson()).notes;
       expect(
-        [for (final n in notes) (n.id, n.use, n.eventId, n.decidedBy)],
         [
-          ('n1#1', NoteUse.edge, 'tea', null),
-          ('n2#2', NoteUse.annotates, 'work', null),
-          ('n3#3', NoteUse.ignored, null, DecidedBy.claude),
+          for (final n in notes)
+            (n.id, n.use, n.eventId, n.decidedBy, n.compacted),
+        ],
+        [
+          // The latest an earlier compaction used, from the timeline.
+          ('n0#0', NoteUse.unused, null, null, true),
+          ('n1#1', NoteUse.edge, 'tea', null, false),
+          ('n2#2', NoteUse.annotates, 'work', null, false),
+          ('n3#3', NoteUse.ignored, null, DecidedBy.claude, false),
         ],
       );
-      expect(notes[0].anchors, ['start of Tea']);
-      expect(notes[0].edgeOf, 'tea');
+      expect(notes[0].text, 'Up');
+      expect(notes[1].anchors, ['start of Tea']);
+      expect(notes[1].edgeOf, 'tea');
       // From a server that doesn't say what each is for: the timeline.
       final older = Proposal.fromJson({...proposalJson(), 'notes': null}).notes;
       expect(
         [for (final n in older) (n.id, n.use)],
         [
+          ('n0#0', NoteUse.unused),
           ('n1#1', NoteUse.edge),
           ('n2#2', NoteUse.annotates),
           ('n3#3', NoteUse.ignored),
@@ -535,6 +543,7 @@ void main() {
       Map<String, Object?>? json,
       Map<String, int>? seen,
       Map<int, Set<String>> changed = const {},
+      NotesRepository? notes,
     }) async {
       events = InMemoryEventsRepository(calendar());
       proposals = _Proposals(
@@ -549,6 +558,7 @@ void main() {
             serverLabel: 'offline demo',
             proposals: proposals,
             proposalSeen: ProposalSeenStore(persist: false, seen: seen),
+            notesRepository: notes,
             clock: () => now,
           ),
         ),
@@ -634,8 +644,9 @@ void main() {
       expect(tester.widget<FilledButton>(confirmButton).onPressed, isNotNull);
     });
 
-    testWidgets('shows a note under the bar, highlighted on the timeline, '
-        'with what became of it; the arrows go from note to note', (
+    testWidgets('shows a note under the bar -- the first to review -- '
+        'highlighted on the timeline, with what became of it; the arrows go '
+        'from note to note, back to the one compacted last time', (
       tester,
     ) async {
       await open(tester);
@@ -646,8 +657,9 @@ void main() {
       ];
       expect(find.textContaining('Tea at last'), findsOneWidget);
       expect(find.text('Sets the start of Tea'), findsOneWidget);
-      expect(find.text('1/3'), findsOneWidget);
+      expect(find.text('2/4'), findsOneWidget);
       expect(drawn(), [
+        (ReviewNoteKind.compacted, false),
         (ReviewNoteKind.setsEdge, true),
         (ReviewNoteKind.annotated, false),
         (ReviewNoteKind.ignored, false),
@@ -660,20 +672,70 @@ void main() {
               : Icons.keyboard_arrow_down,
         ),
       );
+
+      // Back to the one compacted last time: there to see, not to change.
+      await tester.tap(find.byTooltip('Previous note'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Up'), findsOneWidget);
+      expect(find.text('Compacted earlier'), findsOneWidget);
+      expect(find.text('1/4'), findsOneWidget);
+      expect(drawn().first, (ReviewNoteKind.compacted, true));
+      expect(find.byTooltip('What this note is for'), findsNothing);
       expect(arrow('Previous note').onPressed, isNull);
 
       await tester.tap(find.byTooltip('Next note'));
       await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Next note'));
+      await tester.pumpAndSettle();
       expect(find.text('Added to “Work”'), findsOneWidget);
-      expect(drawn()[1], (ReviewNoteKind.annotated, true));
+      expect(drawn()[2], (ReviewNoteKind.annotated, true));
       await tester.tap(find.byTooltip('Next note'));
       await tester.pumpAndSettle();
       expect(find.text('Left out · Claude'), findsOneWidget);
-      expect(find.text('3/3'), findsOneWidget);
+      expect(find.text('4/4'), findsOneWidget);
       expect(arrow('Next note').onPressed, isNull);
       await tester.tap(find.byTooltip('Previous note'));
       await tester.pumpAndSettle();
-      expect(find.text('2/3'), findsOneWidget);
+      expect(find.text('3/4'), findsOneWidget);
+    });
+
+    testWidgets("without the proposal's, the note the app was told was "
+        'compacted last is there as context', (tester) async {
+      final json = proposalJson();
+      final timeline = json['timeline']! as Map<String, Object?>;
+      await open(
+        tester,
+        json: {
+          ...json,
+          'notes': [
+            for (final n in json['notes']! as List)
+              if ((n as Map)['id'] != 'n0#0') n,
+          ],
+          'timeline': {
+            ...timeline,
+            'notes': [
+              for (final n in timeline['notes']! as List)
+                if ((n as Map)['compacted'] != true) n,
+            ],
+          },
+        },
+        notes: InMemoryNotesRepository(
+          null,
+          CompactionStatus(
+            lastCompaction: at(8),
+            latestCompacted: Note(
+              timestamp: at(7, 40),
+              description: 'Kettle on',
+              compactionId: 'c-1',
+            ),
+          ),
+        ),
+      );
+      expect(find.text('2/4'), findsOneWidget);
+      await tester.tap(find.byTooltip('Previous note'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Kettle on'), findsOneWidget);
+      expect(find.text('Compacted earlier'), findsOneWidget);
     });
 
     testWidgets("says what a note is for: left out -- still setting its "
@@ -710,8 +772,7 @@ void main() {
       expect(
         tester
             .widget<DayTimeline>(find.byType(DayTimeline))
-            .reviewNotes
-            .first
+            .reviewNotes[1]
             .kind,
         ReviewNoteKind.ignored,
       );

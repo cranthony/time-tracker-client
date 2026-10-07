@@ -946,9 +946,16 @@ class SampleData {
               },
             },
       ],
-      // How it words the edges notes set.
+      // How it words the edges notes set; and the latest note the last
+      // compaction used, as context.
       'timeline': {
         'notes': [
+          {
+            'id': '${localIsoTimestamp(latestCompacted.timestamp)}#0',
+            'time': localIsoTimestamp(latestCompacted.timestamp),
+            'text': latestCompacted.description,
+            'compacted': true,
+          },
           for (final (i, note) in notes.indexed)
             if (note.timestamp.isBefore(_at(13, 30)))
               {

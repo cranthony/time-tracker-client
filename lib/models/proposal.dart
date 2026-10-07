@@ -467,6 +467,7 @@ class ProposalNote {
     this.decidedBy,
     this.anchors = const [],
     this.annotates,
+    this.compacted = false,
   });
 
   /// `<timestamp>#<row>`.
@@ -495,6 +496,10 @@ class ProposalNote {
   /// The summary of the event it's added to, as the timeline says it.
   final String? annotates;
 
+  /// Whether an earlier compaction used it: the latest that did, before
+  /// the proposal's window, there as context. It can't be changed.
+  final bool compacted;
+
   /// Whether it's left out: added to no event.
   bool get ignored => use == NoteUse.ignored;
 
@@ -512,6 +517,7 @@ class ProposalNote {
     decidedBy: decidedBy == null ? this.decidedBy : decidedBy(),
     anchors: anchors,
     annotates: annotates,
+    compacted: compacted,
   );
 
   Map<String, Object?> toJson() => {
@@ -526,9 +532,10 @@ class ProposalNote {
 
   /// [proposal]'s notes, by time, as `get_proposal` gives them: its
   /// `notes`, each saying what it's for, with how its `timeline` words
-  /// the edges it sets -- leaving out those an earlier compaction used,
-  /// shown there only as context. From a server that doesn't say what
-  /// each note is for, what the timeline says.
+  /// the edges it sets; and, from the timeline, the latest note an
+  /// earlier compaction used, there as context ([compacted]). From a
+  /// server that doesn't say what each note is for, what the timeline
+  /// says.
   static List<ProposalNote> allFrom(Map<String, dynamic> proposal) {
     DateTime? time(Object? value) =>
         value is String ? DateTime.tryParse(value) : null;
@@ -537,7 +544,13 @@ class ProposalNote {
         for (final n in notes.cast<Map>()) '${n['id']}': n,
     };
     ProposalNote? fromTimeline(String id, Map n) => switch (time(n['time'])) {
-      final at? when n['compacted'] != true => ProposalNote(
+      final at? when n['compacted'] == true => ProposalNote(
+        id: id,
+        time: at,
+        text: n['text'] as String?,
+        compacted: true,
+      ),
+      final at? => ProposalNote(
         id: id,
         time: at,
         text: n['text'] as String?,
@@ -554,11 +567,13 @@ class ProposalNote {
       _ => null,
     };
     final listed = (proposal['notes'] as List? ?? []).cast<Map>();
+    // A server that doesn't say what each note is for: the timeline.
+    final older = listed.isEmpty || !listed.any((n) => n.containsKey('use'));
     final notes = <ProposalNote>[
-      if (listed.isEmpty || !listed.any((n) => n.containsKey('use')))
+      if (older)
         for (final MapEntry(:key, :value) in timeline.entries)
-          ?fromTimeline(key, value)
-      else
+          if (value['compacted'] != true) ?fromTimeline(key, value),
+      if (!older)
         for (final n in listed)
           if (time(n['timestamp']) case final at?)
             if (timeline['${n['id']}']?['compacted'] != true)
@@ -581,6 +596,8 @@ class ProposalNote {
                 ],
                 annotates: timeline['${n['id']}']?['annotates'] as String?,
               ),
+      for (final MapEntry(:key, :value) in timeline.entries)
+        if (value['compacted'] == true) ?fromTimeline(key, value),
     ];
     // An old server's notes, with no timeline.
     if (notes.isEmpty && timeline.isEmpty) {

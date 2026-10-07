@@ -722,7 +722,8 @@ List<Widget> _reviewNote(BuildContext context, ReviewNote note, double y) {
   final colors = Theme.of(context).colorScheme;
   final color = note.selected
       ? colors.primary
-      : note.kind == ReviewNoteKind.ignored
+      : note.kind == ReviewNoteKind.ignored ||
+            note.kind == ReviewNoteKind.compacted
       ? colors.outline
       : colors.tertiary;
   final halo = note.selected ? 14.0 : 0.0;
@@ -783,7 +784,10 @@ enum ReviewNoteKind {
   ignored(Icons.do_not_disturb_alt, 'not added to any event'),
 
   /// None of those.
-  other(Icons.sticky_note_2_outlined, 'not used');
+  other(Icons.sticky_note_2_outlined, 'not used'),
+
+  /// An earlier compaction used it: there as context.
+  compacted(Icons.check, 'compacted earlier');
 
   const ReviewNoteKind(this.icon, this.description);
 
