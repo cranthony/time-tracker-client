@@ -1,16 +1,45 @@
-# Runs the app on an Android emulator and checks that the home screen "+"
-# opens the New note dialog with the keyboard up; see
-# tool/emulator/keyboard_test.sh. Runs on Android 16 with animations on,
-# like a phone.
+# Runs the release app on an Android emulator (Android 16, with animations
+# on, like a phone) and checks what only a real Android device can show.
 # The device logs and screenshots are kept as the run's artifacts.
+#
+# Tests belong here only when they need Android itself: its intents and
+# home screen widgets, the system keyboard, start-up from a cold process,
+# and the like. Everything else, animations included, should be a Flutter
+# widget test in test/, which runs in seconds on a fake clock and can
+# check any frame; tests here take minutes and can only poke the app from
+# outside with adb. Each test is a script in tool/emulator/, run by a step
+# below.
+#
+# Now:
+#   tool/emulator/keyboard_test.sh  the home screen "+" opens the New note
+#                                   dialog with the keyboard up.
 name: Emulator tests
 
 on:
   push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  keyboard:
+  # On a pull request, whether anything the release APK or the test script
+  # uses has changed (see needs-run.yml).
+  changes:
+    uses: ./.github/workflows/needs-run.yml
+    permissions:
+      contents: read
+      checks: read
+    with:
+      check: android-emulator
+      paths: >-
+        . :!.claude :!test :!web :!windows :(exclude,glob)**/*.md
+        :(exclude,glob)tool/* :!tool/icon
+        :!.github/workflows/android.yml :!.github/workflows/pages.yml
+        :!.github/workflows/version.yml :!.github/workflows/visual.yml
+
+  android-emulator:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -32,7 +61,8 @@ jobs:
             sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - uses: reactivecircus/android-emulator-runner@v2
+      - name: Home screen "+" brings up the keyboard
+        uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
           target: google_apis

@@ -1,0 +1,53 @@
+# Decides whether a workflow's check has anything new to check; called by
+# the workflows whose checks are slow. On a pull request, see
+# tool/ci/needs_run.sh; anything else (a push to main, a manual run)
+# always runs. The caller runs its check unless this says run=false, so if
+# this fails, the check still runs.
+name: Needs run
+
+on:
+  workflow_call:
+    inputs:
+      check:
+        description: The required job's name, e.g. android-emulator.
+        type: string
+        required: true
+      paths:
+        description: >-
+          The files it depends on, as space-separated git pathspecs (e.g.
+          ". :!web"); a version bump alone never counts.
+        type: string
+        default: .
+    outputs:
+      run:
+        value: ${{ jobs.decide.outputs.run }}
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+      - id: decide
+        env:
+          CHECK: ${{ inputs.check }}
+          PATHS: ${{ inputs.paths }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE_SHA: ${{ github.event.action == 'synchronize' && github.event.before || '' }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != pull_request ]; then
+            echo run=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          read -ra specs <<< "$PATHS"
+          tool/ci/needs_run.sh "$CHECK" "${specs[@]}"

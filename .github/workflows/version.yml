@@ -1,0 +1,18 @@
+# Checks that a pull request that changes the app bumps its version and
+# adds it to CHANGELOG.md (tool/check_version.sh; see "Versions" in
+# README.md). It's its own small check so that fixing the version doesn't
+# wait on, or rerun, the Android build: the other checks skip a push that
+# only bumps the version (tool/ci/needs_run.sh).
+name: Version
+
+on:
+  pull_request:
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: |
+          git fetch --depth=1 origin "${{ github.base_ref }}"
+          tool/check_version.sh FETCH_HEAD

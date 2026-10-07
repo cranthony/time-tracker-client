@@ -486,7 +486,15 @@ because a screen changed.
 
 `.github/workflows/emulator.yml` also runs the Android app on an emulator
 and checks that the home screen "+" brings the keyboard up
-(`tool/emulator/keyboard_test.sh`).
+(`tool/emulator/keyboard_test.sh`). Tests go there only when they need
+Android itself (intents, home screen widgets, the system keyboard, a cold
+start); anything else, animations included, is a Flutter widget test,
+which is faster and can check every frame.
+
+On a pull request, the slow checks (the Android build, the emulator and
+the visual tests) skip a push that changes nothing they use: one that
+only changes docs, say, or, after a push they passed, only bumps the
+version (`tool/ci/needs_run.sh`). A skipped check counts as passed.
 
 ### Versions
 
@@ -496,7 +504,8 @@ hand: CI builds with its run number as the build number, so Android sees
 each build as an update. Every pull request that changes the app bumps the
 version, following [semantic versioning](https://semver.org) (patch for
 fixes, minor for features), and adds a section for it to `CHANGELOG.md`;
-the Android workflow fails the PR otherwise. Releases are titled with the
+the `version` check (`.github/workflows/version.yml`) fails the PR
+otherwise. Fixing it reruns only that check. Releases are titled with the
 version, e.g. *Time Tracker 1.1.0 (build 25)*.
 
 ### App icon

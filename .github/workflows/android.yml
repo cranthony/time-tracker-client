@@ -22,7 +22,24 @@ permissions:
   contents: write
 
 jobs:
+  # On a pull request, whether anything the build and unit tests use has
+  # changed (see needs-run.yml); the version is checked by version.yml.
+  changes:
+    uses: ./.github/workflows/needs-run.yml
+    permissions:
+      contents: read
+      checks: read
+    with:
+      check: build
+      paths: >-
+        . :!.claude :!web :!windows :(exclude,glob)**/*.md
+        :!tool/check_version.sh :!tool/emulator :!tool/icon :!tool/visual_diff.py
+        :!.github/workflows/emulator.yml :!.github/workflows/pages.yml
+        :!.github/workflows/version.yml :!.github/workflows/visual.yml
+
   build:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
     runs-on: ubuntu-latest
     env:
       # Secrets can't be tested in `if:` directly; this can.
@@ -48,11 +65,6 @@ jobs:
           test -n "$MCP_URL" || { echo "::error::Set the MCP_URL repository variable"; exit 1; }
           test -n "$KEYSTORE_BASE64" && test -n "$KEYSTORE_PASSWORD" ||
             { echo "::error::Set the ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD secrets"; exit 1; }
-      - name: Check the version was bumped
-        if: github.event_name == 'pull_request'
-        run: |
-          git fetch --depth=1 origin "${{ github.base_ref }}"
-          tool/check_version.sh FETCH_HEAD
       - run: flutter pub get
       - run: flutter test
       - name: Set up signing

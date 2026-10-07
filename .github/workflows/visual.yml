@@ -7,7 +7,8 @@
 # difference for each screen, with an index.html. The job summary lists
 # the changed screens. Nothing is compared with images kept in the repo,
 # so the repo doesn't grow with every UI change, and the job never fails
-# because a screen changed.
+# because a screen changed. A pull request push that changes nothing the
+# screens use (only the version, say) skips the job.
 name: Visual tests
 
 on:
@@ -17,7 +18,25 @@ on:
   workflow_dispatch:
 
 jobs:
+  # On a pull request, whether anything the screens or their screenshots
+  # use has changed (see needs-run.yml).
+  changes:
+    uses: ./.github/workflows/needs-run.yml
+    permissions:
+      contents: read
+      checks: read
+    with:
+      check: visual
+      paths: >-
+        . :!.claude :!android :!web :!windows :(exclude,glob)**/*.md
+        :(exclude,glob)test/*.dart
+        :!tool/check_version.sh :!tool/emulator :!tool/icon :!tool/web_csp.dart
+        :!.github/workflows/android.yml :!.github/workflows/emulator.yml
+        :!.github/workflows/pages.yml :!.github/workflows/version.yml
+
   visual:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
