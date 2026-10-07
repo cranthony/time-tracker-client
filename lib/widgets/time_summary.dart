@@ -55,7 +55,8 @@ List<SummarySlice> topShares<K>(
 /// only a quiet "Show summary" to bring it back. With [onDurations], a
 /// button by it turns its [SummaryBar]s between percentages and
 /// durations. [controls], if any, go between the titles and the pages,
-/// folded away with them.
+/// folded away with them. [onPage] hears which page it's turned to; its
+/// [color] and what it says folded away ([showLabel]) can be its own.
 class TimeSummary extends StatefulWidget {
   const TimeSummary({
     super.key,
@@ -67,9 +68,17 @@ class TimeSummary extends StatefulWidget {
     this.durations = false,
     this.onDurations,
     this.controls,
+    this.onPage,
+    this.color,
+    this.showLabel = 'Show summary',
+    this.hideLabel = 'Hide summary',
   });
 
   final List<String> titles;
+  final ValueChanged<int>? onPage;
+  final Color? color;
+  final String showLabel;
+  final String hideLabel;
 
   /// Shown under the titles while it's open: what the pages measure, say.
   final Widget? controls;
@@ -111,7 +120,7 @@ class _TimeSummaryState extends State<TimeSummary> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
-      color: theme.colorScheme.surfaceContainerLow,
+      color: widget.color ?? theme.colorScheme.surfaceContainerLow,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -161,7 +170,10 @@ class _TimeSummaryState extends State<TimeSummary> {
     },
     child: PageView(
       controller: _pages,
-      onPageChanged: (page) => setState(() => _page = page),
+      onPageChanged: (page) {
+        setState(() => _page = page);
+        widget.onPage?.call(page);
+      },
       children: [
         for (final (i, page) in widget.pages.indexed)
           // As tall as it needs, whatever the summary's height this frame.
@@ -196,7 +208,7 @@ class _TimeSummaryState extends State<TimeSummary> {
           GestureDetector(
             onTap: () => onCollapsed(false),
             child: Text(
-              'Show summary',
+              widget.showLabel,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -204,7 +216,7 @@ class _TimeSummaryState extends State<TimeSummary> {
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
-            tooltip: 'Show summary',
+            tooltip: widget.showLabel,
             icon: const Icon(Icons.expand_more),
             onPressed: () => onCollapsed(false),
           ),
@@ -261,7 +273,7 @@ class _TimeSummaryState extends State<TimeSummary> {
         if (onCollapsed != null)
           IconButton(
             visualDensity: VisualDensity.compact,
-            tooltip: 'Hide summary',
+            tooltip: widget.hideLabel,
             icon: const Icon(Icons.expand_less),
             onPressed: () => onCollapsed(true),
           ),

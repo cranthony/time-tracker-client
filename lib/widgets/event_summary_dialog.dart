@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/plan_action.dart';
+import '../models/proposal.dart';
 import '../models/note.dart';
 import '../models/person.dart';
 import '../models/recurrence.dart';
@@ -67,6 +68,7 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
   Map<String, PlanAction> actions = const {},
   Future<List<PlanAction>> Function()? loadActions,
   Future<bool> Function(String seriesId)? openSeries,
+  List<ProposalAddition> additions = const [],
 }) {
   final seriesId = event.properties['recurring_event_id'] as String?;
   final day = MaterialLocalizations.of(context).formatMediumDate(event.start);
@@ -109,6 +111,7 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
         (final open?, final id?) => () => open(id),
         _ => null,
       },
+      additions: additions,
     ),
   );
 }
@@ -279,6 +282,7 @@ class _SummaryDialog<T> extends StatefulWidget {
     this.otherEvents = const OtherEvents.none(),
     this.openSeries,
     this.facets = false,
+    this.additions = const [],
   });
 
   /// As the server sent them, with times in local time, and a series'
@@ -306,6 +310,10 @@ class _SummaryDialog<T> extends StatefulWidget {
 
   /// Whether it shows its facets: an event's, not a series'.
   final bool facets;
+
+  /// The people and locations a compaction proposal adds, which its
+  /// facts may name by their refs ("new:priya").
+  final List<ProposalAddition> additions;
 
   @override
   State<_SummaryDialog<T>> createState() => _SummaryDialogState<T>();
@@ -393,6 +401,17 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     }
     if (locations != null) {
       _locationNames = {for (final l in locations) l.id: l.name};
+    }
+    // What a proposal adds, by ref, until it's made.
+    for (final a in widget.additions) {
+      final named = '${a.name} (new)';
+      switch (a.kind) {
+        case AdditionKind.person:
+          _personNames = {..._personNames, a.ref: named};
+        case AdditionKind.location:
+          _locationNames = {..._locationNames, a.ref: named};
+        case AdditionKind.action:
+      }
     }
     if (traits != null) {
       _traitNames = {for (final t in traits) t.id: t.name};
@@ -1341,6 +1360,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           facts,
           judgments: judgments,
           traitNames: _traitNames,
+          additions: widget.additions,
         );
         if (edited == null || !mounted) return;
         final was = Facts.fromJson(widget.values['facts']) ?? const Facts();

@@ -545,6 +545,11 @@ void main() {
       Map<int, Set<String>> changed = const {},
       NotesRepository? notes,
     }) async {
+      // A phone's height: the bar and its details, and the morning, in
+      // view.
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       events = InMemoryEventsRepository(calendar());
       proposals = _Proposals(
         Proposal.fromJson(json ?? proposalJson()),
@@ -630,7 +635,10 @@ void main() {
       expect(find.text('through 12:00 PM'), findsOneWidget);
       expect(find.text('Moved, was 9:00 AM–10:00 AM · Claude'), findsOneWidget);
       expect(find.text('New · Claude'), findsOneWidget);
-      expect(find.text('Cancelled · Claude'), findsOneWidget);
+      expect(
+        find.text('Cancelled, counts against follow-through · Claude'),
+        findsOneWidget,
+      );
       // As the proposal has it, not the calendar.
       final tea = timeline.events.firstWhere((e) => e.id == 'tea');
       expect(tea.start.isAtSameMomentAs(at(9, 15)), isTrue);
@@ -1092,7 +1100,10 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.text('Cancelled · Claude'), findsNothing);
+      expect(
+        find.text('Cancelled, counts against follow-through · Claude'),
+        findsNothing,
+      );
       expect(find.text('What happened — to confirm'), findsNWidgets(2));
     });
 

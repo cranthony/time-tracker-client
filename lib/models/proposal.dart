@@ -76,6 +76,8 @@ class ProposalEvent {
     this.decidedBy,
     this.historyUntil,
     this.isEndOfDaySleep = false,
+    this.countsAgainstFollowThrough,
+    this.followThrough = const [],
     this.properties = const {},
   });
 
@@ -101,6 +103,15 @@ class ProposalEvent {
   /// proposal's window: the part before can't change.
   final DateTime? historyUntil;
   final bool isEndOfDaySleep;
+
+  /// For a cancelled one, whether it counts against the follow-through of
+  /// whoever a follow-through trait tracks it for -- a commitment dropped
+  /// -- rather than being a change of plan.
+  final bool? countsAgainstFollowThrough;
+
+  /// For a cancelled one that counts, who it counts against, with the
+  /// trait: "Sam (Reliable)".
+  final List<String> followThrough;
 
   /// As the server sent it.
   final Map<String, Object?> properties;
@@ -145,6 +156,11 @@ class ProposalEvent {
       },
       historyUntil: time(json['history_until']),
       isEndOfDaySleep: json['is_end_of_day_sleep'] == true,
+      countsAgainstFollowThrough:
+          json['counts_against_follow_through'] as bool?,
+      followThrough: [
+        for (final f in json['follow_through'] as List? ?? []) '$f',
+      ],
       properties: Map.unmodifiable(json),
     );
   }
@@ -156,22 +172,28 @@ class ProposalEvent {
     'planned_end',
     'decided_by',
     'history_until',
+    'counts_against_follow_through',
+    'follow_through',
   };
 
   /// It as an [Event], to show and edit like the calendar's: over
   /// [calendar], the calendar's own event if it has one, for what the
   /// proposal leaves out (its priority, its actions' names). A cancelled
-  /// or merged one is cancelled.
-  Event toEvent([Event? calendar]) => Event.fromJson({
-    ...?calendar?.properties,
-    for (final MapEntry(:key, :value) in properties.entries)
-      if (!_proposalOnly.contains(key)) key: value,
-    // Names for the calendar's own actions only: the proposal may have
-    // changed them.
-    if (calendar != null && !_sameIds(calendar.actionIds, actionIds))
-      'action_names': null,
-    'is_cancelled': !live,
-  });
+  /// or merged one is cancelled. The actions the proposal adds are named
+  /// from [added], by ref.
+  Event toEvent([Event? calendar, Map<String, String> added = const {}]) =>
+      Event.fromJson({
+        ...?calendar?.properties,
+        for (final MapEntry(:key, :value) in properties.entries)
+          if (!_proposalOnly.contains(key)) key: value,
+        // Names for the calendar's own actions only: the proposal may have
+        // changed them.
+        if (actionIds.any(added.containsKey))
+          'action_names': [for (final id in actionIds) added[id]]
+        else if (calendar != null && !_sameIds(calendar.actionIds, actionIds))
+          'action_names': null,
+        'is_cancelled': !live,
+      });
 
   static bool _sameIds(List<String> a, List<String> b) =>
       a.length == b.length &&
@@ -278,6 +300,8 @@ class Proposal {
     this.warnings = const [],
     this.timeline,
     this.notes = const [],
+    this.additions = const [],
+    this.settledAdditions = const [],
     this.feedback = const [],
     this.userEdits = const [],
     this.changedSince = const {},
@@ -315,6 +339,26 @@ class Proposal {
 
   /// The notes in its window, by time, and what became of each.
   final List<ProposalNote> notes;
+
+  /// The people, actions and locations its decisions add, made when it's
+  /// applied: until then, named by their refs.
+  final List<ProposalAddition> additions;
+
+  /// Those of [additions] the user settled, no longer listed there:
+  /// made, found among those already there, or dropped.
+  final List<AdditionSettled> settledAdditions;
+
+  /// The names of [additions], by ref.
+  Map<String, String> get addedNames => {
+    for (final a in additions) a.ref: a.name,
+  };
+
+  /// The cancelled events of what happened: each counting against
+  /// follow-through, or not.
+  List<ProposalEvent> get cancels => [
+    for (final e in reviewed)
+      if (e.status == ProposalEventStatus.cancelled) e,
+  ];
   final List<ProposalFeedback> feedback;
 
   /// The user's edits, each as `amend_proposal` took it.
@@ -382,6 +426,11 @@ class Proposal {
       _ => null,
     },
     notes: ProposalNote.allFrom(json),
+    additions: ProposalAddition.allFrom(json['additions']),
+    settledAdditions: [
+      for (final s in (json['settled_additions'] as List? ?? []).cast<Map>())
+        ?AdditionSettled.fromJson(s.cast<String, Object?>()),
+    ],
     feedback: [
       for (final f in json['feedback'] as List? ?? [])
         ProposalFeedback.fromJson((f as Map).cast<String, dynamic>()),
@@ -407,6 +456,8 @@ class Proposal {
     String? reason,
     bool? byUser,
     List<ProposalNote>? notes,
+    List<ProposalAddition>? additions,
+    List<AdditionSettled>? settledAdditions,
   }) => Proposal(
     id: id,
     revision: revision ?? this.revision,
@@ -420,11 +471,112 @@ class Proposal {
     warnings: warnings,
     timeline: timeline,
     notes: notes ?? this.notes,
+    additions: additions ?? this.additions,
+    settledAdditions: settledAdditions ?? this.settledAdditions,
     feedback: feedback ?? this.feedback,
     userEdits: userEdits ?? this.userEdits,
     changedSince: changedSince ?? this.changedSince,
     replaced: replaced ?? this.replaced,
   );
+}
+
+/// What a [ProposalAddition] is.
+enum AdditionKind {
+  person('people', 'Person'),
+  action('actions', 'Action'),
+  location('locations', 'Location');
+
+  const AdditionKind(this.json, this.label);
+
+  /// Its list in `additions`.
+  final String json;
+  final String label;
+}
+
+/// A person, action or location a [Proposal]'s decisions add, mirroring
+/// an item of `get_proposal`'s `additions`: named by its [ref] ("new:
+/// priya") wherever an id would go, until it's made, when the proposal's
+/// applied.
+class ProposalAddition {
+  const ProposalAddition({
+    required this.ref,
+    required this.kind,
+    required this.name,
+    this.fields = const {},
+  });
+
+  final String ref;
+  final AdditionKind kind;
+  final String name;
+
+  /// As the server sent it: a person's context, a location's hint, an
+  /// action's group and priority...
+  final Map<String, Object?> fields;
+
+  /// What tells it apart: a person's context, or a location's hint.
+  String? get detail => switch (kind) {
+    AdditionKind.person => fields['context'] as String?,
+    AdditionKind.location => fields['hint'] as String?,
+    AdditionKind.action => null,
+  };
+
+  /// The proposal's `additions`, people first, then actions, then
+  /// locations.
+  static List<ProposalAddition> allFrom(Object? additions) => [
+    if (additions is Map)
+      for (final kind in AdditionKind.values)
+        for (final item in (additions[kind.json] as List? ?? []).cast<Map>())
+          if (item['ref'] case final String ref)
+            ProposalAddition(
+              ref: ref,
+              kind: kind,
+              name: switch (item['name']) {
+                final String name when name.trim().isNotEmpty => name,
+                _ => ref,
+              },
+              fields: Map.unmodifiable(item.cast<String, Object?>()),
+            ),
+  ];
+}
+
+/// How the user settled one of a proposal's additions.
+enum AdditionUse {
+  /// Made now, perhaps renamed.
+  create,
+
+  /// One already there.
+  existing,
+
+  /// Not real: taken out of every event.
+  drop;
+
+  static AdditionUse? parse(Object? json) {
+    for (final use in values) {
+      if (use.name == json) return use;
+    }
+    return null;
+  }
+}
+
+/// One of a proposal's additions the user settled, mirroring an item of
+/// `get_proposal`'s `settled_additions`: [ref]'s [use], and the [id] it's
+/// named by now -- none, dropped.
+class AdditionSettled {
+  const AdditionSettled({required this.ref, required this.use, this.id});
+
+  final String ref;
+  final AdditionUse use;
+  final String? id;
+
+  static AdditionSettled? fromJson(Map<String, Object?> json) =>
+      switch ((json['ref'], AdditionUse.parse(json['use']))) {
+        (final String ref, final use?) => AdditionSettled(
+          ref: ref,
+          use: use,
+          id: json['id'] as String?,
+        ),
+        _ => null,
+      };
 }
 
 /// What a [Proposal] does with one of its notes.

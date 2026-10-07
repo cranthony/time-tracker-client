@@ -6,6 +6,24 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.10.0
+
+- Under a compaction proposal's bar, its details, in pages swiped or
+  tapped between, folded away like the day's summary: its notes, its
+  follow-through, and what it adds. Each shows one at a time, with
+  arrows to the one before or after, scrolling the timeline to it.
+- Follow-through: how many of its cancels count against follow-through,
+  of how many. Each cancel says whether it does, and against whom -- or
+  that it's a change of plan -- outlined on the timeline; its switch
+  says otherwise.
+- Added: each person, action and location it adds -- named, not by the
+  ref it goes by until it's made -- with what tells it apart, and the
+  events it's at, outlined. Settle it: make it now (corrected, if need
+  be), say it's one already here, or drop it; put it back as Claude
+  proposed it; or ask Claude about it.
+- In an event's dialogs, and on its card, what a proposal adds is named,
+  marked new, and offered among the people and locations to pick.
+
 ## 7.9.0
 
 - The box's "+" buttons stretch it an hour at the end they're on: "+"
