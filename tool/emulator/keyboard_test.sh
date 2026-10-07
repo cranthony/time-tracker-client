@@ -19,6 +19,22 @@ PKG=com.cranthony.timetracker
 OUT=${OUT:-build/emulator}
 mkdir -p "$OUT"
 
+# Every adb call waits out the device dropping off for a moment, as it does
+# when Android restarts adbd, rather than failing whatever case is running.
+adb() { command adb wait-for-device && command adb "$@"; }
+
+# The emulator's runner starts this once Android says it's booted, which
+# can be well before the user is unlocked -- and unlocking restarts adbd.
+# Wait for both, then for things to settle.
+prop() { adb shell getprop "$1" | tr -d '\r'; }
+for _ in $(seq 1 120); do
+  [ "$(prop sys.boot_completed)" = 1 ] &&
+    [ "$(prop sys.user.0.ce_available)" = true ] && break
+  sleep 1
+done
+echo "Booted: $(prop sys.boot_completed), user unlocked: $(prop sys.user.0.ce_available)"
+sleep 5
+
 adb install -r "$APK" >/dev/null || exit 1
 # A keyboard even if the emulator reports a hardware one.
 adb shell settings put secure show_ime_with_hard_keyboard 1
