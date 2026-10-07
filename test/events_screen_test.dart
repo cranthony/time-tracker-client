@@ -1804,6 +1804,40 @@ void main() {
       expect(find.byTooltip('Keep events: tap to change'), findsOneWidget);
     });
 
+    testWidgets("the label's on the cursor, away from the box; switching "
+        'the cursors turns the box around, pointing to where the cursor went', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([
+        Event(id: 't', start: at(30, 12), end: at(30, 13), summary: 'Tea'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text('Tea'));
+      await tester.pumpAndSettle();
+      final top = tester.getTopLeft(find.byType(DayTimeline)).dy;
+      final label = find.text('Moving “Tea”');
+      // Above the cursor, at noon, the box going down from it.
+      expect(box(tester).cursor, at(30, 12));
+      expect(tester.getCenter(label).dy, lessThan(top + y(at(30, 12))));
+
+      await tester.tap(find.byTooltip('Switch the cursors'));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(box(tester).cursor, at(30, 13));
+      expect(box(tester).other, at(30, 12));
+      // An arrow from where the cursor was to where it is.
+      final arrow = tester.widget<KeptMoveArrow>(find.byType(KeptMoveArrow));
+      expect((arrow.from, arrow.to), (at(30, 12), at(30, 13)));
+      await tester.pumpAndSettle();
+      // Below it now, the box going up from it.
+      expect(tester.getCenter(label).dy, greaterThan(top + y(at(30, 13))));
+
+      // Saved as it is: the same times, so nothing to save.
+      await tester.tap(find.byTooltip('Move it here'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, isEmpty);
+    });
+
     testWidgets('a move dropped, or left where it was, saves nothing', (
       tester,
     ) async {

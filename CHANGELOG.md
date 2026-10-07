@@ -10,11 +10,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 - Pressing and holding an event on the Events page moves it: the box a
   new event is made in comes up around it, pushing the events in its way
-  to start with (its drop-down picks another way), and saying, in its
-  shadow, which event it's moving; the event is faint where it was. ✓
+  to start with (its drop-down picks another way), and saying, by its
+  cursor -- on the side away from the box, to read however short it
+  is -- which event it's moving; the event is faint where it was. ✓
   saves the move, with what it does to the events in its way, in one go;
   ✕ leaves it be. After it, a new event treats the events in its way as
   it did before.
+- A button on the box's cursor switches its two cursors: the box goes
+  the other way from the cursor -- pushing the other way, pushing -- an
+  arrow pointing from where the cursor was to where it's gone, and the
+  cursor pinging there. If there's no room that way, it says so instead.
 
 ## 7.5.0
 

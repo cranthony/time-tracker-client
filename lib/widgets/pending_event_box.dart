@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -225,6 +227,8 @@ class PendingEventBoxView extends StatefulWidget {
     this.covers,
     this.pushed = const [],
     this.label,
+    this.onSwap,
+    this.swaps = 0,
   });
 
   final DateTime day;
@@ -247,7 +251,16 @@ class PendingEventBoxView extends StatefulWidget {
   final List<PushedEvent> pushed;
 
   /// What the shadow says it is, if anything: the event it's moving.
+  /// What it is, by the cursor, on its side away from the box: the
+  /// event it's moving, if it's moving one.
   final String? label;
+
+  /// The cursors switched: the box going the other way from the other.
+  final VoidCallback? onSwap;
+
+  /// How many times the cursors have been switched: each time, the
+  /// cursor, where it is now, pings.
+  final int swaps;
 
   /// The [PendingEventBox.cursor]'s handle dragged to a time.
   final ValueChanged<DateTime> onMoveCursor;
@@ -272,9 +285,28 @@ class PendingEventBoxView extends StatefulWidget {
   State<PendingEventBoxView> createState() => _PendingEventBoxViewState();
 }
 
-class _PendingEventBoxViewState extends State<PendingEventBoxView> {
+class _PendingEventBoxViewState extends State<PendingEventBoxView>
+    with SingleTickerProviderStateMixin {
   /// Where a drag is, down the timeline.
   double _dragY = 0;
+
+  /// The cursor's ping, after the cursors are switched: twice, outward.
+  late final _ping = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  );
+
+  @override
+  void didUpdateWidget(PendingEventBoxView old) {
+    super.didUpdateWidget(old);
+    if (widget.swaps != old.swaps) _ping.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _ping.dispose();
+    super.dispose();
+  }
 
   double _y(DateTime time) => timelineOffset(
     time,
@@ -295,88 +327,186 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
     final colors = Theme.of(context).colorScheme;
     final box = widget.box;
     final y = _y(box.cursor);
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        if (box.span case (final start, final end) when widget.shaded)
-          Positioned(
-            left: timelineCardsLeft,
-            right: 8,
-            top: _y(widget.covers?.$1 ?? start),
-            height:
-                (_y(widget.covers?.$2 ?? end) - _y(widget.covers?.$1 ?? start))
-                    .clamp(2.0, double.infinity),
-            child: PendingEventShadow(
-              start: start,
-              end: end,
-              overwrites: widget.overwrites,
-              label: widget.label,
+    // Whether the box goes down from the cursor, or up.
+    final down = box.other?.isAfter(box.cursor) ?? true;
+    return LayoutBuilder(
+      builder: (context, constraints) => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          if (box.span case (final start, final end) when widget.shaded)
+            Positioned(
+              left: timelineCardsLeft,
+              right: 8,
+              top: _y(widget.covers?.$1 ?? start),
+              height:
+                  (_y(widget.covers?.$2 ?? end) -
+                          _y(widget.covers?.$1 ?? start))
+                      .clamp(2.0, double.infinity),
+              child: PendingEventShadow(
+                start: start,
+                end: end,
+                overwrites: widget.overwrites,
+              ),
             ),
-          ),
-        for (final pushed in widget.pushed)
-          Positioned(
-            left: timelineCardsLeft,
-            right: 8,
-            top: _y(pushed.start),
-            height: (_y(pushed.end) - _y(pushed.start)).clamp(
-              2.0,
-              double.infinity,
+          for (final pushed in widget.pushed)
+            Positioned(
+              left: timelineCardsLeft,
+              right: 8,
+              top: _y(pushed.start),
+              height: (_y(pushed.end) - _y(pushed.start)).clamp(
+                2.0,
+                double.infinity,
+              ),
+              child: PushedEventOutline(label: pushed.label),
             ),
-            child: PushedEventOutline(label: pushed.label),
-          ),
-        if (box.other case final other?) ...[
-          _boxHandle(colors, box.cursor, other),
+          if (box.other case final other?) ...[
+            _boxHandle(colors, box.cursor, other),
+            ..._line(
+              colors,
+              other,
+              tooltip: 'Drag to move the other end',
+              onDragTo: widget.onMoveOther,
+            ),
+          ],
           ..._line(
             colors,
-            other,
-            tooltip: 'Drag to move the other end',
-            onDragTo: widget.onMoveOther,
+            box.cursor,
+            tooltip: 'Drag to move the cursor',
+            onDragTo: widget.onMoveCursor,
           ),
-        ],
-        ..._line(
-          colors,
-          box.cursor,
-          tooltip: 'Drag to move the cursor',
-          onDragTo: widget.onMoveCursor,
-        ),
-        // In the middle of the cursor, clear of its handle: each button
-        // on the side its event goes, touching the line.
-        Positioned(
-          left: timelineCardsLeft,
-          right: 44,
-          top: y - _buttonHeight - _buttonGap,
-          height: 2 * (_buttonHeight + _buttonGap),
-          child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _stepButton(
-                      colors,
-                      -_hour,
-                      Icons.arrow_upward,
-                      'An hour earlier: tap to move the other end, or drag it',
-                    ),
-                    const SizedBox(height: 2 * _buttonGap),
-                    _stepButton(
-                      colors,
-                      _hour,
-                      Icons.arrow_downward,
-                      'An hour later: tap to move the other end, or drag it',
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 8),
-                _modeButton(colors),
-              ],
+          // In the middle of the cursor, clear of its handle: each button
+          // on the side its event goes, touching the line.
+          Positioned(
+            left: timelineCardsLeft,
+            right: 44,
+            top: y - _buttonHeight - _buttonGap,
+            height: 2 * (_buttonHeight + _buttonGap),
+            child: Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _swapButton(colors),
+                  const SizedBox(width: 8),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _stepButton(
+                        colors,
+                        -_hour,
+                        Icons.arrow_upward,
+                        'An hour earlier: tap to move the other end, or drag it',
+                      ),
+                      const SizedBox(height: 2 * _buttonGap),
+                      _stepButton(
+                        colors,
+                        _hour,
+                        Icons.arrow_downward,
+                        'An hour later: tap to move the other end, or drag it',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 8),
+                  _modeButton(colors),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+          // The label, by the cursor, away from the box: from the left,
+          // up to its buttons.
+          if (widget.label case final label?)
+            Positioned(
+              left: 4,
+              top: down ? y - 34 : y + 14,
+              height: 20,
+              width: math.max(
+                0,
+                (timelineCardsLeft + constraints.maxWidth - 44) / 2 -
+                    _groupWidth / 2 -
+                    10,
+              ),
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colors.primary,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colors.onPrimary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          // The cursor pinging, twice, where it is after a switch.
+          Positioned(
+            left: timelineTimesWidth - 4,
+            right: 0,
+            top: y - 30,
+            height: 60,
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _ping,
+                builder: (context, _) {
+                  if (!_ping.isAnimating) return const SizedBox.shrink();
+                  final phase = (_ping.value * 2) % 1;
+                  return Center(
+                    child: Container(
+                      height: 4 + 52 * phase,
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(
+                          alpha: 0.35 * (1 - phase),
+                        ),
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
+
+  /// How wide the cursor's buttons are, side by side: the switch, the
+  /// steps, and the mode.
+  static const _groupWidth = 36 + 8 + 40 + 8 + 56.0;
+
+  /// The switch: the cursors trade places, the box going the other way.
+  Widget _swapButton(ColorScheme colors) => Tooltip(
+    message: 'Switch the cursors',
+    child: Material(
+      color: colors.surfaceContainerHigh,
+      shape: const CircleBorder(),
+      elevation: 2,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: widget.onSwap,
+        child: SizedBox.square(
+          dimension: 36,
+          child: Icon(
+            Icons.swap_vert,
+            size: 22,
+            color: widget.onSwap == null ? colors.outline : colors.onSurface,
+          ),
+        ),
+      ),
+    ),
+  );
 
   /// The box's own handle, in its middle, right of its buttons: bigger
   /// than the cursors', and fainter, to move the whole box by -- there
@@ -580,15 +710,11 @@ class PendingEventShadow extends StatefulWidget {
     required this.start,
     required this.end,
     this.overwrites = false,
-    this.label,
   });
 
   final DateTime start;
   final DateTime end;
   final bool overwrites;
-
-  /// What it is, at its foot, if anything: the event it's moving.
-  final String? label;
 
   @override
   State<PendingEventShadow> createState() => _PendingEventShadowState();
@@ -665,33 +791,11 @@ class _PendingEventShadowState extends State<PendingEventShadow>
               border: Border.all(color: color, width: 1.5),
               borderRadius: BorderRadius.circular(8),
             ),
-            // Along its foot, solid, to read over the events under it --
-            // clear of the cursor's buttons at its head: what it is, at the
-            // left, over its times, at the right.
-            alignment: Alignment.bottomCenter,
-            clipBehavior: Clip.hardEdge,
-            // A box too short for them shows what of them fits.
-            child: OverflowBox(
-              alignment: Alignment.bottomCenter,
-              minHeight: 0,
-              maxHeight: double.infinity,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (widget.label case final label?) ...[
-                    Align(alignment: Alignment.centerLeft, child: chip(label)),
-                    const SizedBox(height: 4),
-                  ],
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: chip(
-                      '${clockTime(context, widget.start)} – '
-                      '${clockTime(context, widget.end)}',
-                    ),
-                  ),
-                ],
-              ),
+            // In its corner, solid, to read over the events under it.
+            alignment: Alignment.bottomRight,
+            child: chip(
+              '${clockTime(context, widget.start)} – '
+              '${clockTime(context, widget.end)}',
             ),
           );
         },

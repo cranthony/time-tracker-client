@@ -159,6 +159,10 @@ class _EventsScreenState extends State<EventsScreen> {
   /// The event the box is moving, if it's moving one.
   Event? _moving;
 
+  /// How many times the box's cursors have been switched: each time,
+  /// the cursor pings where it's gone.
+  int _swaps = 0;
+
   /// What [_createMode] was before a move, to go back to after it: a move
   /// starts out pushing.
   CreateMode? _modeBeforeMove;
@@ -745,6 +749,38 @@ class _EventsScreenState extends State<EventsScreen> {
       _keptMove = null;
       _modeBeforeMove = _createMode;
       _createMode = CreateMode.push;
+    });
+  }
+
+  /// Switches the box's cursors: the box going the other way from the
+  /// other one -- kept in free time, or pushing, as before -- and an
+  /// arrow to where the cursor's gone. Not if there's no room that way:
+  /// the box would be gone.
+  void _swapCursors() {
+    final box = _box;
+    final other = box?.other;
+    if (box == null || other == null) return;
+    final switched = PendingEventBox(other, other: box.cursor);
+    if (_kept(switched).span == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "No room to switch: there's no free time "
+            '${switched.other!.isAfter(switched.cursor) ? 'later' : 'earlier'} '
+            'in the day to push into.',
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _keep(switched);
+      _keptMove = (
+        from: box.cursor,
+        to: _box!.cursor,
+        id: (_keptMove?.id ?? 0) + 1,
+      );
+      _swaps++;
     });
   }
 
@@ -1565,6 +1601,10 @@ class _EventsScreenState extends State<EventsScreen> {
                                   overwrites: _overwrites,
                                   covers: _covers,
                                   pushed: _pushed,
+                                  onSwap: box.other == null
+                                      ? null
+                                      : _swapCursors,
+                                  swaps: _swaps,
                                   label: switch (_moving) {
                                     final event? =>
                                       'Moving ${switch (event.summary) {
