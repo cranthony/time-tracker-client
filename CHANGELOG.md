@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.17.0
+
+- A person is prioritized by a star, as a habit is focused on: on their
+  page, and as they're edited. It still applies at once, on this
+  device, and stops at three; their menu does it too.
+- Editing a person or a habit, or adding one, opens a page of its own,
+  not a dialog: the fields down the page, with room to write what
+  matters to someone, or what a habit's for. Save is in its bar, beside
+  the star; its close button calls it off.
+
 ## 7.16.0
 
 - The People pane is two sections, one over the other, each folded away

@@ -45,12 +45,13 @@ tapping the date goes back to the last compaction.
 - **People** (who): two sections, each folded away by tapping its head.
   **Self** has your health and the two habits you focus on (starred on
   a habit's page), with a way to your page. **Prioritized people** has
-  the three you keep in front (from a person's menu), each with their
+  the three you keep in front (starred on a person's page, or from their
+  menu), each with their
   time with you in the summary's window and the last event with them --
   or the next, looking on; both picks are kept on the device. "All
   people and circles" opens everyone, to search, sort (by health, when
   last or next seen, or time in 24 hours or 7 days, either way) and
-  edit: each with a context
+  edit, on a page of its own: each with a context
   that tells people of the same name apart, in any number of circles.
   Tap a circle to see only its people; tap a person for their page: who
   they are, which traits apply to them (every active one, or those
@@ -495,7 +496,8 @@ The app scores them as it scores people, from those events and
 judgments: a habit's page shows its health, each trait's score and
 trend, how each was reached, and its events. An event's notes name its
 judgments for a habit by the habit. Self's page lists them, with "Habit"
-to add one; each has a page of its own, and a pencil to edit it. They come from the server's `get_habits`,
+to add one; each has a page of its own, and a pencil that opens another
+to edit it. They come from the server's `get_habits`,
 `create_habit` and `update_habit`; a server without them shows none, and
 nothing else changes. The sample data has two: one on the Guitar group
 with parts of its own, one on Cook lunch or dinner with every trait,
@@ -528,7 +530,7 @@ see [Try it with sample data](#try-it-with-sample-data).
 
 `test/visual` renders the main screens with the sample data, at a phone's
 size, in light and dark: Plan (each pane, People looking on, everyone
-as listed and sorted, a circle's people, searches
+as listed and sorted, a person being edited, a circle's people, searches
 of people and actions, a trait's page, a trait and an action being
 edited, and its
 actions with every status, and the time summary on each page and folded

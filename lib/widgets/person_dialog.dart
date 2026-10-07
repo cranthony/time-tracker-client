@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../models/person.dart';
 import '../models/trait.dart';
+import '../services/focus_store.dart';
+import 'edit_page.dart';
 import 'error_sheet.dart';
+import 'focus_buttons.dart';
 import 'traits_field.dart';
 
-/// Adds a person (with no [person]) or edits one: their name, a context
+/// Adds a person (with no [person]) or edits one, on a page of its own
+/// ([EditPage]): their name, a context
 /// that tells them apart from others of the same name, the [circles]
 /// they're in, what matters to them, which of [traits] apply to them --
 /// every active one, or those picked -- with their own parts for any, and
@@ -13,31 +17,35 @@ import 'traits_field.dart';
 /// [save], which gets the fields as `create_person` or `update_person`
 /// takes them (null to clear one), and returns what it returned, or null
 /// if it was called off. [actions] names the actions and groups a part
-/// can count.
-Future<Person?> showPersonDialog(
+/// can count. With [focus], a star beside Save prioritizes someone
+/// already there, at once.
+Future<Person?> showPersonEditor(
   BuildContext context, {
   Person? person,
   List<Circle> circles = const [],
   List<Trait> traits = const [],
   Map<String, String> actions = const {},
+  FocusStore? focus,
   required Future<Person> Function(Map<String, Object?> fields) save,
-}) => showDialog<Person>(
-  context: context,
-  builder: (_) => _PersonDialog(
+}) => showEditPage<Person>(
+  context,
+  _PersonEditor(
     person: person,
     circles: circles,
     traits: traits,
     actions: actions,
+    focus: focus,
     save: save,
   ),
 );
 
-class _PersonDialog extends StatefulWidget {
-  const _PersonDialog({
+class _PersonEditor extends StatefulWidget {
+  const _PersonEditor({
     required this.person,
     required this.circles,
     required this.traits,
     required this.actions,
+    required this.focus,
     required this.save,
   });
 
@@ -45,13 +53,14 @@ class _PersonDialog extends StatefulWidget {
   final List<Circle> circles;
   final List<Trait> traits;
   final Map<String, String> actions;
+  final FocusStore? focus;
   final Future<Person> Function(Map<String, Object?> fields) save;
 
   @override
-  State<_PersonDialog> createState() => _PersonDialogState();
+  State<_PersonEditor> createState() => _PersonEditorState();
 }
 
-class _PersonDialogState extends State<_PersonDialog> {
+class _PersonEditorState extends State<_PersonEditor> {
   late final _name = TextEditingController(text: widget.person?.name);
   late final _context = TextEditingController(text: widget.person?.context);
   late final _whatMatters = TextEditingController(
@@ -109,147 +118,129 @@ class _PersonDialogState extends State<_PersonDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final problem = _name.text.trim().isEmpty ? 'Give them a name.' : null;
-    return AlertDialog(
-      title: Text(switch (widget.person) {
+    final person = widget.person;
+    return EditPage(
+      title: switch (person) {
         null => 'New person',
         final p when p.isSelf => 'Self',
         final p => 'Edit ${personName(p)}',
-      }),
-      content: SizedBox(
-        width: 460,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _name,
-                autofocus: widget.person == null,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (_) => setState(() {}),
+      },
+      actions: [
+        if ((widget.focus, person) case (final focus?, final person?)
+            when !person.isSelf)
+          prioritizeButton(focus, person),
+      ],
+      problem: problem,
+      saving: _saving,
+      onSave: _save,
+      children: [
+        TextField(
+          controller: _name,
+          autofocus: widget.person == null,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Name',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        if (!_isSelf)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: TextField(
+              controller: _context,
+              decoration: const InputDecoration(
+                labelText: 'Context (optional)',
+                hintText: 'e.g. met at salsa',
+                helperText:
+                    'What tells them apart from others of the same '
+                    'name.',
+                border: OutlineInputBorder(),
+                isDense: true,
               ),
-              if (!_isSelf)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: TextField(
-                    controller: _context,
-                    decoration: const InputDecoration(
-                      labelText: 'Context (optional)',
-                      hintText: 'e.g. met at salsa',
-                      helperText:
-                          'What tells them apart from others of the same '
-                          'name.',
-                      border: OutlineInputBorder(),
-                      isDense: true,
+            ),
+          ),
+        if (!_isSelf) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 16, bottom: 4),
+            child: Text('Circles', style: theme.textTheme.titleSmall),
+          ),
+          if (widget.circles.isEmpty)
+            Text(
+              'No circles yet: add one from the People section.',
+              style: theme.textTheme.bodySmall,
+            )
+          else
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final circle in widget.circles)
+                  FilterChip(
+                    label: Text(circle.name),
+                    selected: _circleIds.contains(circle.id),
+                    onSelected: (on) => setState(
+                      () => on
+                          ? _circleIds.add(circle.id)
+                          : _circleIds.remove(circle.id),
                     ),
                   ),
-                ),
-              if (!_isSelf) ...[
-                Padding(
-                  padding: const EdgeInsets.only(top: 16, bottom: 4),
-                  child: Text('Circles', style: theme.textTheme.titleSmall),
-                ),
-                if (widget.circles.isEmpty)
-                  Text(
-                    'No circles yet: add one from the People section.',
-                    style: theme.textTheme.bodySmall,
-                  )
-                else
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final circle in widget.circles)
-                        FilterChip(
-                          label: Text(circle.name),
-                          selected: _circleIds.contains(circle.id),
-                          onSelected: (on) => setState(
-                            () => on
-                                ? _circleIds.add(circle.id)
-                                : _circleIds.remove(circle.id),
-                          ),
-                        ),
-                    ],
-                  ),
               ],
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: TextField(
-                  controller: _whatMatters,
-                  minLines: 3,
-                  maxLines: 10,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: InputDecoration(
-                    labelText: _isSelf
-                        ? 'What matters to you'
-                        : 'What matters to them',
-                    hintText: '- 2026-10-05: starts a new job in November',
-                    helperText:
-                        'One dated line each: facts, moments coming up, '
-                        'preferences.',
-                    border: const OutlineInputBorder(),
-                    floatingLabelBehavior: FloatingLabelBehavior.always,
-                  ),
-                ),
-              ),
-              TraitsField(
-                traits: widget.traits,
-                value: _traits,
-                actions: widget.actions,
-                partsTitle: (trait) =>
-                    '${trait.name} for ${_text(_name) ?? 'them'}',
-                partsExplanation: (trait) =>
-                    "Their own parts for ${trait.name}, in place of the "
-                    "trait's: their own cadence, say.",
-                onChanged: (traits) => _traits = traits,
-              ),
-              if (!_isSelf && widget.person != null) ...[
-                const SizedBox(height: 16),
-                SegmentedButton<String>(
-                  showSelectedIcon: false,
-                  segments: [
-                    for (final MapEntry(:key, :value) in personStatuses.entries)
-                      ButtonSegment(value: key, label: Text(value)),
-                  ],
-                  selected: {_status},
-                  onSelectionChanged: (picked) =>
-                      setState(() => _status = picked.single),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(switch (_status) {
-                    'archived' => 'Out of touch: kept, out of the way.',
-                    'deleted' => "Shouldn't have existed.",
-                    _ => 'Someone you spend time with.',
-                  }, style: theme.textTheme.bodySmall),
-                ),
-              ],
-              if (problem != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    problem,
-                    style: TextStyle(color: theme.colorScheme.error),
-                  ),
-                ),
-            ],
+            ),
+        ],
+        Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: TextField(
+            controller: _whatMatters,
+            minLines: 6,
+            maxLines: null,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              labelText: _isSelf
+                  ? 'What matters to you'
+                  : 'What matters to them',
+              hintText: '- 2026-10-05: starts a new job in November',
+              helperText:
+                  'One dated line each: facts, moments coming up, '
+                  'preferences.',
+              helperMaxLines: 2,
+              border: const OutlineInputBorder(),
+              floatingLabelBehavior: FloatingLabelBehavior.always,
+            ),
           ),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+        TraitsField(
+          traits: widget.traits,
+          value: _traits,
+          actions: widget.actions,
+          partsTitle: (trait) => '${trait.name} for ${_text(_name) ?? 'them'}',
+          partsExplanation: (trait) =>
+              "Their own parts for ${trait.name}, in place of the "
+              "trait's: their own cadence, say.",
+          onChanged: (traits) => _traits = traits,
         ),
-        FilledButton(
-          onPressed: _saving || problem != null ? null : _save,
-          child: const Text('Save'),
-        ),
+        if (!_isSelf && widget.person != null) ...[
+          const SizedBox(height: 16),
+          SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: [
+              for (final MapEntry(:key, :value) in personStatuses.entries)
+                ButtonSegment(value: key, label: Text(value)),
+            ],
+            selected: {_status},
+            onSelectionChanged: (picked) =>
+                setState(() => _status = picked.single),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(switch (_status) {
+              'archived' => 'Out of touch: kept, out of the way.',
+              'deleted' => "Shouldn't have existed.",
+              _ => 'Someone you spend time with.',
+            }, style: theme.textTheme.bodySmall),
+          ),
+        ],
       ],
     );
   }

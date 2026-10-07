@@ -193,9 +193,10 @@ class PeoplePaneState extends State<PeoplePane> {
     final traits = await _traits();
     if (!mounted) return;
     final repository = widget.repository;
-    final saved = await showPersonDialog(
+    final saved = await showPersonEditor(
       context,
       person: person,
+      focus: widget.memory.focus,
       circles: _people?.circles ?? const [],
       traits: traits,
       actions: widget.actions,
@@ -278,9 +279,10 @@ class PeoplePaneState extends State<PeoplePane> {
           onEdit: repository == null
               ? null
               : (habit) async {
-                  final saved = await showHabitDialog(
+                  final saved = await showHabitEditor(
                     context,
                     habit: habit,
+                    focus: widget.memory.focus,
                     actions: widget.actionList,
                     traits: [..._traitList.values],
                     save: (fields) => repository.updateHabit(habit.id, fields),

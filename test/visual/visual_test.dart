@@ -183,6 +183,28 @@ void main() {
       });
     }
 
+    // Sam being edited, on a page of its own, starred.
+    testWidgets('person_edit ($mode)', (tester) async {
+      await render(
+        tester,
+        'person_edit',
+        plan(),
+        scoped: true,
+        then: () async {
+          await openPane(tester, 'People');
+          await tester.scrollUntilVisible(
+            find.byTooltip('More for Sam'),
+            300,
+            scrollable: find.byType(Scrollable).last,
+          );
+          await tester.tap(find.byTooltip('More for Sam'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Edit'));
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
     // The People pane looking on: each person's next event, and the
     // time in the next 24 hours and 7 days.
     testWidgets('plan_people_next ($mode)', (tester) async {

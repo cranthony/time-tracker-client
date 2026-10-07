@@ -16,6 +16,7 @@ import 'package:time_tracker_client/services/habits_repository.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
+import 'package:time_tracker_client/widgets/edit_page.dart';
 import 'package:time_tracker_client/widgets/health.dart';
 import 'package:time_tracker_client/widgets/plan_summaries.dart';
 
@@ -469,6 +470,41 @@ void main() {
 
       expect(find.text('Sam'), findsOneWidget);
       expect(find.text('Prioritized people'), findsNothing);
+    });
+
+    testWidgets('prioritizes someone by the star on their page, or as '
+        "they're edited, on a page of its own", (tester) async {
+      final (_, memory) = await pump(tester, prioritized: ['sam']);
+      await openAll(tester);
+
+      await tester.tap(find.text('Mom'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Prioritize Mom'));
+      await tester.pumpAndSettle();
+      expect(memory.focus.people, ['sam', 'mom']);
+
+      await tester.tap(find.byTooltip('Edit Mom'));
+      await tester.pumpAndSettle();
+      expect(find.byType(EditPage), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+      await tester.tap(find.byTooltip("Don't prioritize Mom"));
+      await tester.pumpAndSettle();
+      expect(memory.focus.people, ['sam']);
+      expect(find.byTooltip('Prioritize Mom'), findsOneWidget);
+
+      // Called off: nothing saved, but the star's kept.
+      await tester.tap(find.byType(CloseButton));
+      await tester.pumpAndSettle();
+      expect(find.byType(EditPage), findsNothing);
+      expect(find.byTooltip('Prioritize Mom'), findsOneWidget);
+    });
+
+    testWidgets("Self isn't prioritized", (tester) async {
+      await pump(tester);
+      await tester.tap(find.text('All habits and scores'));
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Prioritize Self'), findsNothing);
     });
 
     testWidgets('prioritizes up to three people from their menu', (
