@@ -11,6 +11,7 @@ import '../services/events_repository.dart';
 import '../services/notes_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
+import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
 import 'events_screen.dart';
 import 'notes_screen.dart';
@@ -27,6 +28,7 @@ class HomeScreen extends StatefulWidget {
     required this.actionsRepository,
     required this.outbox,
     required this.actionOutbox,
+    this.proposalsRepository,
     this.onSignIn,
     this.onSignOut,
     this.addNoteRequests,
@@ -36,6 +38,9 @@ class HomeScreen extends StatefulWidget {
 
   final NotesRepository notesRepository;
   final EventsRepository eventsRepository;
+
+  /// Where the open compaction proposal comes from; null for none.
+  final ProposalRepository? proposalsRepository;
   final ActionsRepository actionsRepository;
   final NoteOutbox outbox;
   final ActionOutbox actionOutbox;
@@ -127,6 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
           version: widget.version,
           placeStore: _eventsPlace,
           memory: _planMemory,
+          proposals: widget.proposalsRepository,
         ),
         _Tab.plan => PlanScreen(
           repository: widget.actionsRepository,

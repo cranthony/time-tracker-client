@@ -21,6 +21,7 @@ import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
 import 'services/people_repository.dart';
 import 'services/plan_memory.dart';
+import 'services/proposal_repository.dart';
 import 'services/response_cache.dart';
 import 'services/traits_repository.dart';
 import 'theme.dart';
@@ -42,11 +43,15 @@ Future<void> main() async {
     final sample = _sampleData ? SampleData(DateTime.now()) : null;
     final repository = sample?.notesRepository() ?? InMemoryNotesRepository();
     final actions = sample?.actionsRepository() ?? InMemoryActionsRepository();
+    final events = sample?.eventsRepository() ?? InMemoryEventsRepository();
     runApp(
       TimeTrackerApp(
         repository: repository,
-        eventsRepository:
-            sample?.eventsRepository() ?? InMemoryEventsRepository(),
+        eventsRepository: events,
+        proposalsRepository: sample?.proposalRepository(
+          events: events,
+          notes: repository,
+        ),
         actionsRepository: actions,
         outbox: NoteOutbox(
           store: InMemoryOutboxStore(),
@@ -75,6 +80,7 @@ Future<void> main() async {
     TimeTrackerApp(
       repository: repository,
       eventsRepository: McpEventsRepository(client),
+      proposalsRepository: McpProposalRepository(client),
       actionsRepository: actions,
       outbox: NoteOutbox(
         store: PrefsOutboxStore.notes(),
@@ -140,9 +146,14 @@ class TimeTrackerApp extends StatefulWidget {
     this.cache,
     this.traitsRepository,
     this.peopleRepository,
+    this.proposalsRepository,
   });
 
   final NotesRepository repository;
+
+  /// Where the open compaction proposal comes from, to review on the
+  /// Events page; without it, there's none.
+  final ProposalRepository? proposalsRepository;
 
   /// Traits, and how each person is rated by them, for every screen
   /// below (see [TraitsScope]); without it, they aren't offered.
@@ -260,6 +271,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       home: HomeScreen(
         notesRepository: widget.repository,
         eventsRepository: widget.eventsRepository,
+        proposalsRepository: widget.proposalsRepository,
         actionsRepository: widget.actionsRepository,
         outbox: widget.outbox,
         actionOutbox: widget.actionOutbox,

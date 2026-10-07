@@ -6,6 +6,30 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.7.0
+
+- Compaction proposals, on the Events page. While Claude has one open --
+  what it says happened since the last compaction -- it's a band over the
+  timeline, tinted and outlined, to confirm, ending at a line saying
+  through when. Each event in it says what the proposal does to it --
+  moved, and where it was; new; cancelled; renamed; new actions or facts
+  -- and whether Claude or you decided it. Those changed since you last
+  looked have a dot.
+- Edits to the events in the band edit the proposal, not the calendar:
+  moving (pressing and holding, too), resizing, cancelling or adding one,
+  or setting its actions, people or location, with what that does to the
+  events in its way. A cancelled one can be put back as planned. One the
+  server refuses stays in its dialog, to fix.
+- A bar above the timeline confirms it ("Confirm ... happened as shown"),
+  or leaves a note for Claude, about one of its events or all of it.
+  While a note's open it's waiting for Claude, and can't be confirmed;
+  its notes show Claude's replies, and an open one can be withdrawn. If
+  the calendar changed since it was planned, it says what changed and
+  asks to confirm again; if it can't be planned any more, it's handed to
+  Claude; if applying it stopped partway, Retry finishes it. Its menu
+  goes to it, or abandons it.
+- The sample data has a proposal open.
+
 ## 7.6.0
 
 - Pressing and holding an event on the Events page moves it: the box a

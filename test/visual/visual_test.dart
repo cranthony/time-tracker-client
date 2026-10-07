@@ -19,6 +19,7 @@ import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/theme.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
+import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/widgets/day_summary.dart';
 import 'package:time_tracker_client/widgets/time_summary.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
@@ -375,6 +376,63 @@ void main() {
     testWidgets('events ($mode)', (tester) async {
       await render(tester, 'events', events());
     });
+
+    // A compaction proposal open: what happened, to confirm, in a band
+    // ending at its through, each change marked -- those since the
+    // revision last seen highlighted -- under the bar to confirm it; the
+    // band's start, gone to from the bar; its notes, with Claude's reply
+    // beside the one it answers; and a note left, waiting for Claude.
+    Widget reviewing() => EventsScreen(
+      repository: sample.eventsRepository(),
+      notesRepository: sample.notesRepository(),
+      actionsRepository: sample.actionsRepository(),
+      proposals: sample.proposalRepository(),
+      proposalSeen: ProposalSeenStore(
+        persist: false,
+        seen: {SampleData.proposalId: 2},
+      ),
+      serverLabel: 'sample',
+      clock: () => _now,
+    );
+
+    for (final (name, then) in <(String, Future<void> Function(WidgetTester))>[
+      ('events_proposal', (_) async {}),
+      (
+        'events_proposal_start',
+        (tester) async {
+          await tester.tap(find.text('What happened — to confirm').first);
+          await tester.pumpAndSettle();
+        },
+      ),
+      (
+        'events_proposal_notes',
+        (tester) async {
+          await tester.tap(find.text('Notes (1)'));
+          await tester.pumpAndSettle();
+        },
+      ),
+      (
+        'events_proposal_waiting',
+        (tester) async {
+          await tester.tap(find.text('Note for Claude'));
+          await tester.pumpAndSettle();
+          await tester.enterText(
+            find.byType(TextField),
+            'The email was before breakfast',
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Leave note'));
+          await tester.pumpAndSettle();
+          // The snack bar gone.
+          await tester.pump(const Duration(seconds: 5));
+          await tester.pumpAndSettle();
+        },
+      ),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(tester, name, reviewing(), then: () => then(tester));
+      });
+    }
 
     // Making an event: the cursor at now, from "+"; dragged out over
     // events, keeping them -- fitted into the free time there; moved to a

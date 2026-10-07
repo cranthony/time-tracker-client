@@ -131,8 +131,8 @@ class InMemoryNotesRepository implements NotesRepository {
     notes?.forEach(_store);
   }
 
-  /// What [compactionStatus] says.
-  final CompactionStatus status;
+  /// What [compactionStatus] says: changed when a proposal is confirmed.
+  CompactionStatus status;
 
   @override
   Future<CompactionStatus> compactionStatus() async => status;
