@@ -1323,6 +1323,58 @@ void main() {
       expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
     });
 
+    testWidgets('keeping events, an arrow shows where the box was moved to, '
+        'then fades; a button scrolls back to it', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 't', start: at(30, 14), end: at(30, 15), summary: 'Tea'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      await tapButton(tester, startHere);
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
+      // Free where it's put: no arrow.
+      expect(find.byType(KeptMoveArrow), findsNothing);
+
+      // Put in Tea, it's moved before it: an arrow from the middle of where
+      // it was put to the middle of where it went.
+      final timeline = find.byType(DayTimeline);
+      await tester.tapAt(
+        tester.getTopLeft(timeline) +
+            Offset(tester.getSize(timeline).width / 2, y(at(30, 14))),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(box(tester).span, (at(30, 13), at(30, 14)));
+      final arrow = tester.widget<KeptMoveArrow>(find.byType(KeptMoveArrow));
+      expect((arrow.from, arrow.to), (at(30, 14, 30), at(30, 13, 30)));
+      expect(
+        find.descendant(
+          of: find.byType(KeptMoveArrow),
+          matching: find.byType(CustomPaint),
+        ),
+        findsOneWidget,
+      );
+      // Faded away.
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(KeptMoveArrow),
+          matching: find.byType(CustomPaint),
+        ),
+        findsNothing,
+      );
+
+      // Scrolled well away, the button brings it to the middle.
+      await tester.drag(find.byType(ListView).first, const Offset(0, 2000));
+      await tester.pumpAndSettle();
+      final handle = find.byTooltip('Drag to move the event');
+      final list = tester.getRect(find.byType(ListView).first);
+      expect(tester.getCenter(handle).dy, greaterThan(list.bottom));
+      await tester.tap(find.byTooltip('Go to the new event'));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(handle).dy, closeTo(list.center.dy, 2));
+    });
+
     testWidgets('dragging a button makes the event up to where it goes; each '
         "cursor's handle moves its end, and the shadow's both", (tester) async {
       final repo = _RecordingRepository([]);
