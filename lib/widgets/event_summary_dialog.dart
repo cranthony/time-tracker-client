@@ -22,6 +22,7 @@ import 'event_dialog.dart' show followThroughOption;
 import 'other_events.dart';
 import 'facts_dialog.dart';
 import 'picker_sheet.dart';
+import 'plow_icon.dart';
 import 'properties_dialog.dart' show ConfirmOption, confirmationContent;
 import 'recurrence_dialog.dart';
 import 'repeat_editor.dart';
@@ -1186,10 +1187,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     ),
   );
 
-  /// One property after its [icon], tapped to edit or toggle it.
+  /// One property after its [icon] -- or a [glyph] drawn in its place --
+  /// tapped to edit or toggle it.
   Widget _row(
     BuildContext context, {
-    required IconData icon,
+    IconData? icon,
+    Widget? glyph,
     required Widget child,
     required VoidCallback? onTap,
     bool editing = false,
@@ -1206,12 +1209,14 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  icon,
-                  size: 22,
-                  color: editing
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant,
+                IconTheme(
+                  data: IconThemeData(
+                    size: 22,
+                    color: editing
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  child: glyph ?? Icon(icon),
                 ),
                 const SizedBox(width: 12),
                 Expanded(child: child),
@@ -1295,7 +1300,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     ];
     return _row(
       context,
-      icon: Icons.task_alt,
+      glyph: const PlowIcon(),
       changedKey: 'action_ids',
       onTap: switch (_actionList) {
         final actions? => () async {

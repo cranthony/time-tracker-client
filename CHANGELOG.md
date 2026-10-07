@@ -19,7 +19,7 @@ on. Add the new version's section here at the same time; CI checks both.
   a note and pencil, not sparkles -- keeps the notes and Claude's
   judgments, and opens just the notes.
 - The description is written in a sheet up from the foot, too.
-- The actions are after a check, not a flag.
+- The actions are after a plow, drawn, not a flag.
 
 ## 7.11.0
 

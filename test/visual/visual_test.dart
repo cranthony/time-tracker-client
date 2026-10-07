@@ -821,7 +821,7 @@ void main() {
 
     // Lunch's summary: who after a person, its location after a pin, its
     // description,
-    // its actions after a check, and its notes; and its description,
+    // its actions after a plow, and its notes; and its description,
     // written in a sheet up from the foot.
     for (final (name, describe) in [
       ('event_summary', false),
