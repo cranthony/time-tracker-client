@@ -922,18 +922,22 @@ void main() {
       expect(find.text('Renamed · you'), findsOneWidget);
     });
 
-    testWidgets("an event's priority, location and whole description are "
+    testWidgets("an event's priority and whole description are "
         'edited in the proposal too', (tester) async {
       await open(tester);
       await tap(tester, find.text('Work'));
       await tap(tester, inDialog(find.text('No priority')));
       await tap(tester, inDialog(find.text('P1')));
-      await tap(tester, inDialog(find.text('Add location')));
-      await tester.enterText(find.byType(TextField), 'Office');
-      await tester.pumpAndSettle();
+      // The description, in a sheet of its own.
       await tap(tester, inDialog(find.text('Add description')));
-      await tester.enterText(find.byType(TextField), 'Invoices, mostly');
-      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(BottomSheet),
+          matching: find.byType(TextField),
+        ),
+        'Invoices, mostly',
+      );
+      await tap(tester, find.widgetWithText(FilledButton, 'Done'));
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
 
@@ -943,14 +947,12 @@ void main() {
             'event': {
               'id': 'work',
               'priority': 1,
-              'location': 'Office',
               'description': 'Invoices, mostly',
             },
           },
         ],
       });
       final work = proposals.proposal!.event('work')!;
-      expect(work.properties['location'], 'Office');
       expect(work.description, 'Invoices, mostly');
       // Drawn at the priority it's given.
       final drawn = tester

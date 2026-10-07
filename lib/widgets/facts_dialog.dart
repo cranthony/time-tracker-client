@@ -12,13 +12,16 @@ import 'person_dialog.dart';
 /// and on each person there -- and returns them: empty to remove them, or
 /// null if it was called off. The assistant's [judgments] of it are shown,
 /// not edited. The people and locations to pick from come from the
-/// [PeopleScope]; a new location can be added from here.
+/// [PeopleScope]; a new location can be added from here. Without
+/// [pickers], who and where aren't picked here, only the notes written
+/// -- those are picked in [showWhoWhereSheet].
 Future<Facts?> showFactsDialog(
   BuildContext context,
   Facts? facts, {
   List<Judgment> judgments = const [],
   Map<String?, String> traitNames = const {},
   List<ProposalAddition> additions = const [],
+  bool pickers = true,
 }) => showDialog<Facts>(
   context: context,
   builder: (_) => _FactsDialog(
@@ -26,6 +29,7 @@ Future<Facts?> showFactsDialog(
     judgments: judgments,
     traitNames: traitNames,
     additions: additions,
+    pickers: pickers,
   ),
 );
 
@@ -35,11 +39,13 @@ class _FactsDialog extends StatefulWidget {
     required this.judgments,
     required this.traitNames,
     this.additions = const [],
+    required this.pickers,
   });
 
   final Facts facts;
   final List<Judgment> judgments;
   final Map<String?, String> traitNames;
+  final bool pickers;
 
   /// The people and locations a compaction proposal adds: offered too,
   /// by their refs, marked new.
@@ -149,7 +155,7 @@ class _FactsDialogState extends State<_FactsDialog> {
     final theme = Theme.of(context);
     final problem = _facts.problem;
     return AlertDialog(
-      title: const Text('What happened'),
+      title: Text(widget.pickers ? 'What happened' : 'Notes'),
       content: SizedBox(
         width: 440,
         child: SingleChildScrollView(
@@ -196,23 +202,18 @@ class _FactsDialogState extends State<_FactsDialog> {
                   if (snapshot.connectionState == ConnectionState.waiting &&
                       !snapshot.hasData)
                     const LinearProgressIndicator(),
-                  _chips(
-                    theme,
-                    'With you',
-                    'Who was there',
-                    others,
-                    _with,
-                    _for,
-                  ),
-                  _chips(
-                    theme,
-                    'For',
-                    "Who it was done for, while they weren't there",
-                    others,
-                    _for,
-                    _with,
-                  ),
-                  _locationPicker(),
+                  if (widget.pickers) ...[
+                    _chips(theme, 'With', 'Who was there', others, _with, _for),
+                    _chips(
+                      theme,
+                      'For',
+                      "Who it was for, who wasn't there",
+                      others,
+                      _for,
+                      _with,
+                    ),
+                    _locationPicker(),
+                  ],
                   for (final person in there)
                     _note(
                       person,
@@ -252,10 +253,22 @@ class _FactsDialogState extends State<_FactsDialog> {
         ),
       ),
       actions: [
-        if (!widget.facts.isEmpty)
+        if (widget.pickers && !widget.facts.isEmpty)
           TextButton(
             onPressed: () => Navigator.of(context).pop(const Facts()),
             child: const Text('Remove all'),
+          )
+        // Just the notes: who and where are kept.
+        else if (!widget.pickers && widget.facts.notes.isNotEmpty)
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(
+              Facts(
+                locationId: widget.facts.locationId,
+                withIds: widget.facts.withIds,
+                forIds: widget.facts.forIds,
+              ),
+            ),
+            child: const Text('Clear notes'),
           ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),

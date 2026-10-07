@@ -819,7 +819,43 @@ void main() {
       });
     }
 
-    // What happened at lunch: who it was with, where, and the notes.
+    // Lunch's summary: who after a person, its location after a pin, its
+    // description,
+    // its actions after a plow, and its notes; and its description,
+    // written in a sheet up from the foot.
+    for (final (name, describe) in [
+      ('event_summary', false),
+      ('event_description', true),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          events(),
+          scoped: true,
+          then: () async {
+            await tester.ensureVisible(find.text('Lunch with Sam'));
+            await tester.pumpAndSettle();
+            await tester.tap(find.text('Lunch with Sam'));
+            await tester.pumpAndSettle();
+            if (describe) {
+              await tester.tap(find.text('Add description'));
+              await tester.pumpAndSettle();
+              await tester.enterText(
+                find.descendant(
+                  of: find.byType(BottomSheet),
+                  matching: find.byType(TextField),
+                ),
+                'Ramen, and catching up on the move.',
+              );
+              await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
+
+    // Who lunch was with: picked in a sheet up from the foot.
     testWidgets('event facts ($mode)', (tester) async {
       await render(
         tester,
@@ -831,7 +867,7 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.text('Lunch with Sam'));
           await tester.pumpAndSettle();
-          final facts = find.text('With Sam · @ The noodle bar');
+          final facts = find.text('With Sam');
           await tester.ensureVisible(facts);
           await tester.pumpAndSettle();
           await tester.tap(facts);
@@ -840,7 +876,27 @@ void main() {
       );
     });
 
-    // An event's actions open for editing: the tree, then a search.
+    // Where lunch was: its location, picked in a sheet up from the foot,
+    // with a new one to add above the list.
+    testWidgets('event_location ($mode)', (tester) async {
+      await render(
+        tester,
+        'event_location',
+        events(),
+        scoped: true,
+        then: () async {
+          await tester.ensureVisible(find.text('Lunch with Sam'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Lunch with Sam'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('The noodle bar'));
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
+    // An event's actions, picked in a sheet up from the foot: the tree,
+    // then a search.
     for (final (name, search) in [
       ('event_actions', null),
       ('event_actions_search', 'soc call'),

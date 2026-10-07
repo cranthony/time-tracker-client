@@ -698,26 +698,36 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
 
-    expect(find.text('@ Home'), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
     expect(find.text('1 judgment by Claude'), findsOneWidget);
-    await tester.tap(find.text('@ Home'));
+    // Who, in a sheet: with, and for, a tab each.
+    await tester.tap(find.text('Add who'));
     await tester.pumpAndSettle();
     // Self is at every event: not to pick.
-    expect(find.widgetWithText(FilterChip, 'Self'), findsNothing);
+    expect(find.widgetWithText(CheckboxListTile, 'Self'), findsNothing);
+    await tester.tap(find.widgetWithText(CheckboxListTile, 'Sam'));
+    await tester.tap(find.widgetWithText(Tab, 'For'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(CheckboxListTile, 'Priya'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+    await tester.pumpAndSettle();
+    expect(find.text('With Sam · For Priya'), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
+
+    // The notes, and the judgments, under the sparkle.
+    await tester.tap(find.text('1 judgment by Claude'));
+    await tester.pumpAndSettle();
     expect(
       find.textContaining('Self · Adventurous: 1 of 3 — Usual'),
       findsOneWidget,
     );
-    await tester.tap(find.widgetWithText(FilterChip, 'Sam').first);
-    await tester.tap(find.widgetWithText(FilterChip, 'Priya').last);
-    await tester.pumpAndSettle();
     await tester.enterText(
       find.widgetWithText(TextField, 'Notes on Sam'),
       'Glad to be out',
     );
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
-    expect(find.text('With Sam · For Priya · @ Home'), findsOneWidget);
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
@@ -803,11 +813,16 @@ void main() {
 
     // Asked for, but not answered: named from what's loaded.
     expect(people.calls, ['people', 'locations']);
-    expect(find.text('With Sam · @ Home'), findsOneWidget);
-    await tester.tap(find.text('With Sam · @ Home'));
+    expect(find.text('With Sam'), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
+    await tester.tap(find.text('With Sam'));
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(FilterChip, 'Sam'), findsWidgets);
-    expect(find.text('Home'), findsWidgets);
+    expect(find.widgetWithText(CheckboxListTile, 'Sam'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Home'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(CheckboxListTile, 'Home'), findsOneWidget);
     // Asked once, not again for the facts.
     expect(people.calls, ['people', 'locations']);
     people.gate!.complete();
@@ -879,18 +894,24 @@ void main() {
     );
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add what happened'));
+    await tester.tap(find.text('Add location'));
     await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Not said'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('New location…').last);
+    await tester.tap(find.text('New location…'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Home');
     await tester.pump();
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Done'));
+    // Picked, once it's made.
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.widgetWithText(CheckboxListTile, 'Home'),
+          )
+          .value,
+      isTrue,
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
