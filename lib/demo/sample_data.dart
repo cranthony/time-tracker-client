@@ -921,37 +921,50 @@ class SampleData {
         for (final id in ['class', 'dinner', 'guitar', 'bed'])
           event(id, 'planned'),
       ],
+      // What each note is for: setting an edge, added to an event, or --
+      // as Claude has it -- left out.
       'notes': [
-        for (final note in notes)
+        for (final (i, note) in notes.indexed)
           if (note.timestamp.isBefore(_at(13, 30)))
             {
-              'id': localIsoTimestamp(note.timestamp),
+              'id': '${localIsoTimestamp(note.timestamp)}#${i + 1}',
               'timestamp': localIsoTimestamp(note.timestamp),
               'description': note.description,
+              ...switch ((note.timestamp.hour, note.timestamp.minute)) {
+                (7, 50) => {
+                  'use': 'edge',
+                  'event_id': 'breakfast',
+                  'edge_of': 'breakfast',
+                },
+                (9, 40) => {'use': 'annotates', 'event_id': 'work'},
+                (12, 15) => {
+                  'use': 'edge',
+                  'event_id': 'lunch',
+                  'edge_of': 'lunch',
+                },
+                _ => {'use': 'ignored', 'decided_by': 'claude'},
+              },
             },
       ],
-      // What became of each note: setting an edge, added to an event, or
-      // left out.
+      // How it words the edges notes set.
       'timeline': {
         'notes': [
-          for (final note in notes)
+          for (final (i, note) in notes.indexed)
             if (note.timestamp.isBefore(_at(13, 30)))
               {
-                'id': localIsoTimestamp(note.timestamp),
+                'id': '${localIsoTimestamp(note.timestamp)}#${i + 1}',
                 'time': localIsoTimestamp(note.timestamp),
                 'text': note.description,
-                ...switch ((note.timestamp.hour, note.timestamp.minute)) {
-                  (7, 50) => {
-                    'anchors': ['start of Breakfast'],
-                  },
-                  (9, 40) => {'annotates': 'Time Tracker: plan page'},
-                  (12, 15) => {
-                    'anchors': [
-                      'end of Time Tracker: plan page',
-                      'start of Lunch with Sam',
-                    ],
-                  },
-                  _ => {'ignored': true},
+                'anchors': switch ((
+                  note.timestamp.hour,
+                  note.timestamp.minute,
+                )) {
+                  (7, 50) => ['start of Breakfast'],
+                  (12, 15) => [
+                    'end of Time Tracker: plan page',
+                    'start of Lunch with Sam',
+                  ],
+                  _ => <String>[],
                 },
               },
         ],

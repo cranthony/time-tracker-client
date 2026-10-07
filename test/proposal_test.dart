@@ -83,18 +83,50 @@ void main() {
       },
     ],
     'feedback': feedback,
+    // What each note is for: an edge, added to an event, left out.
+    'notes': [
+      {'id': 'n0#0', 'timestamp': iso(7), 'description': 'Up', 'use': 'unused'},
+      {
+        'id': 'n1#1',
+        'timestamp': iso(9, 15),
+        'description': 'Tea at last',
+        'use': 'edge',
+        'event_id': 'tea',
+        'edge_of': 'tea',
+      },
+      {
+        'id': 'n3#3',
+        'timestamp': iso(11, 10),
+        'description': 'Rain',
+        'use': 'ignored',
+        'decided_by': 'claude',
+      },
+      {
+        'id': 'n2#2',
+        'timestamp': iso(10, 30),
+        'description': 'Bugs',
+        'use': 'annotates',
+        'event_id': 'work',
+      },
+    ],
+    // As a server before notes said what they're for has them too.
     'timeline': {
       'text': '09:15 Tea',
       'notes': [
-        {'id': 'n0', 'time': iso(7), 'text': 'Up', 'compacted': true},
+        {'id': 'n0#0', 'time': iso(7), 'text': 'Up', 'compacted': true},
         {
-          'id': 'n1',
+          'id': 'n1#1',
           'time': iso(9, 15),
           'text': 'Tea at last',
           'anchors': ['start of Tea'],
         },
-        {'id': 'n3', 'time': iso(11, 10), 'text': 'Rain', 'ignored': true},
-        {'id': 'n2', 'time': iso(10, 30), 'text': 'Bugs', 'annotates': 'Work'},
+        {'id': 'n3#3', 'time': iso(11, 10), 'text': 'Rain', 'ignored': true},
+        {
+          'id': 'n2#2',
+          'time': iso(10, 30),
+          'text': 'Bugs',
+          'annotates': 'Work',
+        },
       ],
     },
   };
@@ -145,22 +177,39 @@ void main() {
       expect(proposal.confirmable, isFalse);
     });
 
-    test("its notes, from its timeline, by time, but those already "
-        'compacted; each saying what became of it', () {
+    test('its notes, by time, each saying what it is for and who said '
+        "so -- with the timeline's words for the edges it sets -- but those "
+        'already compacted', () {
       final notes = Proposal.fromJson(proposalJson()).notes;
-      expect([for (final n in notes) n.id], ['n1', 'n2', 'n3']);
+      expect(
+        [for (final n in notes) (n.id, n.use, n.eventId, n.decidedBy)],
+        [
+          ('n1#1', NoteUse.edge, 'tea', null),
+          ('n2#2', NoteUse.annotates, 'work', null),
+          ('n3#3', NoteUse.ignored, null, DecidedBy.claude),
+        ],
+      );
       expect(notes[0].anchors, ['start of Tea']);
-      expect(notes[1].annotates, 'Work');
-      expect(notes[2].ignored, isTrue);
-      // Without a timeline, from its notes.
+      expect(notes[0].edgeOf, 'tea');
+      // From a server that doesn't say what each is for: the timeline.
+      final older = Proposal.fromJson({...proposalJson(), 'notes': null}).notes;
+      expect(
+        [for (final n in older) (n.id, n.use)],
+        [
+          ('n1#1', NoteUse.edge),
+          ('n2#2', NoteUse.annotates),
+          ('n3#3', NoteUse.ignored),
+        ],
+      );
+      // Without a timeline either, just its notes.
       final plain = Proposal.fromJson({
         ...proposalJson(),
         'timeline': null,
         'notes': [
-          {'id': 'n1', 'timestamp': iso(9, 15), 'description': 'Tea'},
+          {'id': 'n1#1', 'timestamp': iso(9, 15), 'description': 'Tea'},
         ],
       }).notes;
-      expect([for (final n in plain) (n.id, n.text)], [('n1', 'Tea')]);
+      expect([for (final n in plain) (n.id, n.text)], [('n1#1', 'Tea')]);
     });
 
     test("an event without times of its own is where the calendar has it; "
@@ -356,7 +405,11 @@ void main() {
         proposal,
         const ProposalEdits(
           cancels: [(eventId: 'work', countsAgainstFollowThrough: true)],
-          asPlanned: ['tea'],
+          asPlanned: ['tea', 'n1#1'],
+          notes: [
+            (noteId: 'n2#2', ignore: true, eventId: null),
+            (noteId: 'n3#3', ignore: false, eventId: 'tea'),
+          ],
         ),
       );
       expect(_calls(client), [
@@ -368,7 +421,11 @@ void main() {
             'cancels': [
               {'event_id': 'work', 'counts_against_follow_through': true},
             ],
-            'as_planned': ['tea'],
+            'as_planned': ['tea', 'n1#1'],
+            'notes': [
+              {'note_id': 'n2#2', 'use': 'ignore'},
+              {'note_id': 'n3#3', 'use': 'annotate', 'event_id': 'tea'},
+            ],
           },
         ],
       ]);
@@ -418,6 +475,7 @@ void main() {
           eventId: 'tea',
         );
         expect(note.open, isTrue);
+        await repository.addNote(proposal, 'Not rain: snow', noteId: 'n3#3');
         await repository.withdrawNote(note.id);
         final confirmed = await repository.confirm(proposal);
         expect(confirmed.status, ProposalOutcomeStatus.rechecked);
@@ -434,6 +492,14 @@ void main() {
               'proposal_id': 'abc123def456',
               'text': 'Tea was later',
               'event_id': 'tea',
+            },
+          ],
+          [
+            'add_proposal_note',
+            {
+              'proposal_id': 'abc123def456',
+              'text': 'Not rain: snow',
+              'note_id': 'n3#3',
             },
           ],
           [
@@ -599,12 +665,106 @@ void main() {
       expect(drawn()[1], (ReviewNoteKind.annotated, true));
       await tester.tap(find.byTooltip('Next note'));
       await tester.pumpAndSettle();
-      expect(find.text('Not added to any event'), findsOneWidget);
+      expect(find.text('Left out · Claude'), findsOneWidget);
       expect(find.text('3/3'), findsOneWidget);
       expect(arrow('Next note').onPressed, isNull);
       await tester.tap(find.byTooltip('Previous note'));
       await tester.pumpAndSettle();
       expect(find.text('2/3'), findsOneWidget);
+    });
+
+    testWidgets("says what a note is for: left out -- still setting its "
+        "edge -- put back as Claude had it, added to the event whose edge "
+        'it sets, or to another', (tester) async {
+      await open(tester);
+      Future<void> choose(String choice) async {
+        await tester.tap(find.byTooltip('What this note is for'));
+        await tester.pumpAndSettle();
+        expect(find.text("What's this note for?"), findsOneWidget);
+        await tester.scrollUntilVisible(
+          find.text(choice),
+          100,
+          scrollable: find
+              .descendant(
+                of: find.byType(BottomSheet),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await tap(tester, find.text(choice));
+      }
+
+      await choose('Leave it out');
+      expect(proposals.amends.last.toJson(), {
+        'notes': [
+          {'note_id': 'n1#1', 'use': 'ignore'},
+        ],
+      });
+      expect(
+        find.text('Sets the start of Tea · Left out · you'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<DayTimeline>(find.byType(DayTimeline))
+            .reviewNotes
+            .first
+            .kind,
+        ReviewNoteKind.ignored,
+      );
+
+      await choose('Put it back as Claude had it');
+      expect(proposals.amends.last.asPlanned, ['n1#1']);
+      expect(find.text('Sets the start of Tea'), findsOneWidget);
+
+      // Naming no event: the one whose edge it sets.
+      await choose('Add it to “Tea, 9:15 AM”');
+      expect(proposals.amends.last.toJson(), {
+        'notes': [
+          {'note_id': 'n1#1', 'use': 'annotate'},
+        ],
+      });
+      expect(
+        find.text('Sets the start of Tea · Added to “Tea” · you'),
+        findsOneWidget,
+      );
+
+      await choose('Work, 10:00 AM');
+      expect(proposals.amends.last.toJson(), {
+        'notes': [
+          {'note_id': 'n1#1', 'use': 'annotate', 'event_id': 'work'},
+        ],
+      });
+      expect(
+        find.text('Sets the start of Tea · Added to “Work” · you'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('asks Claude about a note, in a note for Claude naming it', (
+      tester,
+    ) async {
+      await open(tester);
+      await tester.tap(find.byTooltip('What this note is for'));
+      await tester.pumpAndSettle();
+      await tap(tester, find.text('Ask Claude about it'));
+      expect(
+        find.text('About the 9:15 AM note, “Tea at last”'),
+        findsOneWidget,
+      );
+      await tester.enterText(inDialog(find.byType(TextField)), 'Tea at 9');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Leave note'));
+      await tester.pumpAndSettle();
+      final asked = proposals.proposal!.feedback.last;
+      expect(
+        (asked.text, asked.noteId, asked.eventId),
+        ('Tea at 9', 'n1#1', null),
+      );
+      expect(
+        find.widgetWithText(FilledButton, 'Waiting for Claude'),
+        findsOneWidget,
+      );
     });
 
     testWidgets("highlights what's changed since the revision last seen", (

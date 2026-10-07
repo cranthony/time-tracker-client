@@ -435,7 +435,10 @@ Claude can't apply one; only confirming it in the app does.
   Its notes are lines across it, each with a badge: ↳ added to an event,
   ⇕ setting an event's start or end, ⊘ left out. Under the bar is one of
   them -- its time, text and what became of it -- highlighted on the
-  timeline, with arrows to step to the note before or after.
+  timeline, with arrows to step to the note before or after. Its pencil
+  says what the note is for -- added to the event it falls within (or
+  whose start or end it sets), to another of its day's, or left out --
+  puts it back as Claude had it, or asks Claude about it.
 - **Editing it.** Moving, resizing, cancelling or adding an event in the
   band, or setting its actions, people or location, edits the proposal
   (`amend_proposal`), with the same dialogs and press-and-hold move as

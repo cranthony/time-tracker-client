@@ -1921,18 +1921,113 @@ class _EventsScreenState extends State<EventsScreen> {
     };
   }
 
+  /// The open proposal's events, by id, by summary.
+  Map<String, String> get _reviewedSummaries => {
+    for (final e in _proposal?.reviewed ?? const <ProposalEvent>[])
+      e.id: switch (e.summary) {
+        final s? when s.isNotEmpty => s,
+        _ => '(no summary)',
+      },
+  };
+
+  /// The open proposal's time notes, by id, named for notes about them:
+  /// "the 11:05 AM note, “Coffee's cold”".
+  Map<String, String> get _noteNames {
+    final strings = MaterialLocalizations.of(context);
+    return {
+      for (final n in _proposalNotes)
+        n.id:
+            'the ${strings.formatTimeOfDay(TimeOfDay.fromDateTime(n.time.toLocal()))} '
+            'note${n.text == null ? '' : ', “${n.text}”'}',
+    };
+  }
+
+  /// Asks what [note] is for, and edits the proposal so: added to the
+  /// event it falls within or another of its day's, left out, or put back
+  /// as Claude had it -- or leaves a note for Claude about it.
+  Future<void> _editNote(ProposalNote note) async {
+    final proposal = _proposal;
+    if (proposal == null) return;
+    final day = _midnight(note.time.toLocal());
+    final live = [
+      for (final e in proposal.reviewed)
+        if (e.live && e.start.isBefore(_dayAfter(day)) && e.end.isAfter(day)) e,
+    ];
+    final summaries = _reviewedSummaries;
+    final strings = MaterialLocalizations.of(context);
+    String time(DateTime t) =>
+        strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()));
+    final choice = await showNoteUseSheet(
+      context,
+      note,
+      events: {
+        for (final e in live) e.id: '${summaries[e.id]}, ${time(e.start)}',
+      },
+      // Annotated with no event named, a note goes to the event whose edge
+      // it sets, or else the one it falls within.
+      fallsIn:
+          note.edgeOf ??
+          live
+              .where(
+                (e) => !e.start.isAfter(note.time) && e.end.isAfter(note.time),
+              )
+              .firstOrNull
+              ?.id,
+    );
+    if (choice == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final (edits, said) = switch (choice) {
+      AnnotateNote(:final eventId) => (
+        ProposalEdits(
+          notes: [(noteId: note.id, ignore: false, eventId: eventId)],
+        ),
+        'Note added to ${switch (summaries[eventId]) {
+          final name? => '“$name”',
+          null => 'the event it falls within',
+        }}, in what happened, to confirm.',
+      ),
+      IgnoreNote() => (
+        ProposalEdits(notes: [(noteId: note.id, ignore: true, eventId: null)]),
+        'Note left out of what happened, to confirm.',
+      ),
+      NoteAsClaudeHadIt() => (
+        ProposalEdits(asPlanned: [note.id]),
+        'Note put back as Claude had it.',
+      ),
+      AskClaudeAboutNote() => (null, null),
+    };
+    if (edits == null) return _noteForClaude(aboutNote: note);
+    try {
+      final amended = await _amend(edits);
+      if (mounted) _amended(amended, said!);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text("Couldn't change it: ${describeSaveError(e)}")),
+      );
+    }
+  }
+
   /// Asks for a note for Claude on the open proposal, about [about] to
-  /// start with, and leaves it.
-  Future<void> _noteForClaude({String? about}) async {
+  /// start with -- or about the time note [aboutNote] -- and leaves it.
+  Future<void> _noteForClaude({String? about, ProposalNote? aboutNote}) async {
     final note = await showProposalNoteDialog(
       context,
       events: _reviewedNames,
       about: about,
+      subject: switch (aboutNote) {
+        final n? => 'About ${_noteNames[n.id]}',
+        null => null,
+      },
     );
     if (note == null || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     await _onProposal("Couldn't leave the note:", (proposal, repository) async {
-      await repository.addNote(proposal, note.text, eventId: note.eventId);
+      await repository.addNote(
+        proposal,
+        note.text,
+        eventId: aboutNote == null ? note.eventId : null,
+        noteId: aboutNote?.id,
+      );
       await _loadProposal();
       messenger.showSnackBar(
         const SnackBar(
@@ -1950,6 +2045,7 @@ class _EventsScreenState extends State<EventsScreen> {
       context,
       proposal,
       names: _reviewedNames,
+      noteNames: _noteNames,
     );
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
@@ -2238,7 +2334,8 @@ class _EventsScreenState extends State<EventsScreen> {
             onNext: _proposalNotes.indexOf(note) < _proposalNotes.length - 1
                 ? () => _goToNote(_proposalNotes.indexOf(note) + 1)
                 : null,
-            onTap: () => _goToNote(_proposalNotes.indexOf(note)),
+            events: _reviewedSummaries,
+            onEdit: () => _editNote(note),
           ),
         Expanded(
           child: LayoutBuilder(

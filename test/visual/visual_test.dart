@@ -415,6 +415,14 @@ void main() {
         },
       ),
       (
+        'events_proposal_note_use',
+        (tester) async {
+          // What the first note, which sets breakfast's start, is for.
+          await tester.tap(find.byTooltip('What this note is for'));
+          await tester.pumpAndSettle();
+        },
+      ),
+      (
         'events_proposal_notes',
         (tester) async {
           await tester.tap(find.text('Notes (1)'));

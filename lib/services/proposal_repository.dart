@@ -11,32 +11,40 @@ import 'mcp_client.dart';
 
 /// The user's edits to a [Proposal], as `amend_proposal` takes them:
 /// [updates] and [creates] keyed as `compact_notes` takes them (an update
-/// naming its event by `event_id`, an event id or a key), [cancels], and
-/// the events to put back [asPlanned].
+/// naming its event by `event_id`, an event id or a key), [cancels], what
+/// [notes] are for, and the events and notes to put back [asPlanned].
+/// A note edit adds the note to the event it falls within -- or, with
+/// an `eventId`, to that event -- or, [ignore]d, leaves it out.
 class ProposalEdits {
   const ProposalEdits({
     this.updates = const [],
     this.creates = const [],
     this.cancels = const [],
     this.asPlanned = const [],
+    this.notes = const [],
   });
 
   final List<Map<String, Object?>> updates;
   final List<Map<String, Object?>> creates;
   final List<({String eventId, bool countsAgainstFollowThrough})> cancels;
+
+  /// Events' ids and keys, and notes' ids.
   final List<String> asPlanned;
+  final List<({String noteId, bool ignore, String? eventId})> notes;
 
   bool get isEmpty =>
       updates.isEmpty &&
       creates.isEmpty &&
       cancels.isEmpty &&
-      asPlanned.isEmpty;
+      asPlanned.isEmpty &&
+      notes.isEmpty;
 
-  /// The ids and keys of the events they name.
+  /// The ids and keys of the events they name, and the notes' ids.
   Set<String> get eventIds => {
     for (final u in updates) '${u['event_id']}',
     for (final c in cancels) c.eventId,
     ...asPlanned,
+    for (final n in notes) n.noteId,
   };
 
   Map<String, Object?> toJson() => {
@@ -51,6 +59,15 @@ class ProposalEdits {
           },
       ],
     if (asPlanned.isNotEmpty) 'as_planned': asPlanned,
+    if (notes.isNotEmpty)
+      'notes': [
+        for (final n in notes)
+          {
+            'note_id': n.noteId,
+            'use': n.ignore ? 'ignore' : 'annotate',
+            'event_id': ?n.eventId,
+          },
+      ],
   };
 
   /// [over]'s changes to the events in a new or moved event's way, as
@@ -178,13 +195,15 @@ abstract class ProposalRepository {
   /// changes history: nothing is moved to make room.
   Future<Proposal> amend(Proposal proposal, ProposalEdits edits);
 
-  /// Leaves [text] for Claude on [proposal], about [eventId] or [at] if
-  /// given. Until Claude answers, the proposal can't be confirmed.
+  /// Leaves [text] for Claude on [proposal], about [eventId], [at] or the
+  /// time note [noteId] if given. Until Claude answers, the proposal can't
+  /// be confirmed.
   Future<ProposalFeedback> addNote(
     Proposal proposal,
     String text, {
     String? eventId,
     DateTime? at,
+    String? noteId,
   });
 
   /// Withdraws the open note [feedbackId].
@@ -201,6 +220,10 @@ abstract class ProposalRepository {
   /// Gives [proposal] up. Writes already made stay.
   Future<void> abandon(Proposal proposal);
 }
+
+/// Whether [id] is a time note's (`<timestamp>#<row>`), not an event's or
+/// a key.
+bool isNoteId(String id) => id.contains('#');
 
 /// Proposals via the Time Tracker MCP server's tools:
 /// `get_compaction_status`, `get_proposal`, `amend_proposal`,
@@ -247,12 +270,14 @@ class McpProposalRepository implements ProposalRepository {
     String text, {
     String? eventId,
     DateTime? at,
+    String? noteId,
   }) async {
     final result = await _client.callTool('add_proposal_note', {
       'proposal_id': proposal.id,
       'text': text,
       'event_id': ?eventId,
       'at': ?(at == null ? null : localIsoTimestamp(at)),
+      'note_id': ?noteId,
     });
     return ProposalFeedback.fromJson((result as Map).cast<String, dynamic>());
   }
@@ -294,9 +319,13 @@ class InMemoryProposalRepository implements ProposalRepository {
     this.events,
     this.onApplied,
     Map<int, Set<String>> changed = const {},
-  }) : _changed = {...changed};
+  }) : _changed = {...changed},
+       _claudeNotes = {for (final n in _proposal?.notes ?? []) n.id: n};
 
   Proposal? _proposal;
+
+  /// The notes as Claude had them, for putting back.
+  final Map<String, ProposalNote> _claudeNotes;
   final EventsRepository? events;
   final void Function(Proposal applied)? onApplied;
 
@@ -408,6 +437,7 @@ class InMemoryProposalRepository implements ProposalRepository {
       events[i] = edited(events[i], status: ProposalEventStatus.cancelled);
     }
     for (final id in edits.asPlanned) {
+      if (isNoteId(id)) continue;
       final i = indexOf(id);
       final e = events[i];
       events[i] = edited(
@@ -449,11 +479,13 @@ class InMemoryProposalRepository implements ProposalRepository {
         );
       }
     }
+    final notes = _editedNotes(current, events, edits);
     final revision = current.revision + 1;
     _changed[revision] = changed;
     _proposal = current.copyWith(
       revision: revision,
       events: events,
+      notes: notes,
       reason: 'user edit',
       byUser: true,
       userEdits: [...current.userEdits, edits.toJson()],
@@ -462,12 +494,67 @@ class InMemoryProposalRepository implements ProposalRepository {
     return _proposal!;
   }
 
+  /// [current]'s notes, with [edits]' to them, among [events]: one
+  /// annotating goes to the event named, or the one it falls within.
+  List<ProposalNote> _editedNotes(
+    Proposal current,
+    List<ProposalEvent> events,
+    ProposalEdits edits,
+  ) {
+    final notes = {for (final n in current.notes) n.id: n};
+    ProposalNote known(String id) =>
+        notes[id] ??
+        (throw McpException("amend_proposal: there's no note $id."));
+    for (final id in edits.asPlanned) {
+      if (!isNoteId(id)) continue;
+      known(id);
+      notes[id] = _claudeNotes[id]!;
+    }
+    for (final edit in edits.notes) {
+      final note = known(edit.noteId);
+      if (edit.ignore) {
+        notes[edit.noteId] = note.copyWith(
+          use: NoteUse.ignored,
+          eventId: () => null,
+          decidedBy: () => DecidedBy.user,
+        );
+        continue;
+      }
+      final live = [
+        for (final e in events)
+          if (e.reviewed && e.live) e,
+      ];
+      final ProposalEvent? to;
+      if (edit.eventId ?? note.edgeOf case final id?) {
+        to = live.where((e) => e.id == id).firstOrNull;
+        if (to == null) {
+          throw McpException(
+            "amend_proposal: there's no event $id to add it to.",
+          );
+        }
+      } else {
+        to = live
+            .where(
+              (e) => !e.start.isAfter(note.time) && e.end.isAfter(note.time),
+            )
+            .firstOrNull;
+      }
+      notes[edit.noteId] = note.copyWith(
+        use: to == null ? NoteUse.unused : NoteUse.annotates,
+        eventId: () => to?.id,
+        decidedBy: () => DecidedBy.user,
+      );
+    }
+    return notes.values.toList()..sort((a, b) => a.time.compareTo(b.time));
+  }
+
   @override
   Future<ProposalFeedback> addNote(
     Proposal proposal,
     String text, {
     String? eventId,
     DateTime? at,
+    String? noteId,
   }) async {
     calls.add('add_proposal_note');
     final current = _open();
@@ -476,6 +563,7 @@ class InMemoryProposalRepository implements ProposalRepository {
       text: text,
       eventId: eventId,
       at: at,
+      noteId: noteId,
     );
     _proposal = current.copyWith(
       feedback: [...current.feedback, note],

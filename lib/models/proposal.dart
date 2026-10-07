@@ -1,4 +1,5 @@
 import 'event.dart';
+import 'note.dart';
 
 /// Where a [Proposal] is: awaiting the user's review, or Claude's
 /// (while any note is open), being applied, applied, or given up.
@@ -190,6 +191,7 @@ class ProposalFeedback {
     this.status = FeedbackStatus.open,
     this.reply,
     this.answeredIn,
+    this.noteId,
   });
 
   /// `<proposal>f<n>`.
@@ -212,6 +214,9 @@ class ProposalFeedback {
 
   /// The revision that answered it.
   final int? answeredIn;
+
+  /// The time note it's about, if it's about one.
+  final String? noteId;
 
   bool get open => status == FeedbackStatus.open;
 
@@ -236,6 +241,7 @@ class ProposalFeedback {
         },
         reply: json['reply'] as String?,
         answeredIn: (json['answered_in'] as num?)?.toInt(),
+        noteId: json['note_id'] as String?,
       );
 
   ProposalFeedback withStatus(FeedbackStatus status) => ProposalFeedback(
@@ -248,6 +254,7 @@ class ProposalFeedback {
     status: status,
     reply: reply,
     answeredIn: answeredIn,
+    noteId: noteId,
   );
 }
 
@@ -399,6 +406,7 @@ class Proposal {
     List<String>? replaced,
     String? reason,
     bool? byUser,
+    List<ProposalNote>? notes,
   }) => Proposal(
     id: id,
     revision: revision ?? this.revision,
@@ -411,7 +419,7 @@ class Proposal {
     byUser: byUser ?? this.byUser,
     warnings: warnings,
     timeline: timeline,
-    notes: notes,
+    notes: notes ?? this.notes,
     feedback: feedback ?? this.feedback,
     userEdits: userEdits ?? this.userEdits,
     changedSince: changedSince ?? this.changedSince,
@@ -419,62 +427,175 @@ class Proposal {
   );
 }
 
-/// A note in a [Proposal]'s window, and what became of it, mirroring an
-/// item of its `timeline`'s `notes`.
+/// What a [Proposal] does with one of its notes.
+enum NoteUse {
+  /// It sets an edge of an event, and isn't added to one.
+  edge('edge'),
+
+  /// Its text is added to an event's description.
+  annotates('annotates'),
+
+  /// It's left out.
+  ignored('ignored'),
+
+  /// It has no text, or no event to add it to.
+  unused('unused');
+
+  const NoteUse(this.json);
+
+  /// As the server writes it.
+  final String json;
+
+  static NoteUse? parse(Object? json) {
+    for (final use in values) {
+      if (use.json == json) return use;
+    }
+    return null;
+  }
+}
+
+/// A note in a [Proposal]'s window, and what the proposal does with it,
+/// mirroring an item of `get_proposal`'s `notes`.
 class ProposalNote {
   const ProposalNote({
     required this.id,
     required this.time,
     this.text,
+    this.use = NoteUse.unused,
+    this.eventId,
+    this.edgeOf,
+    this.decidedBy,
     this.anchors = const [],
     this.annotates,
-    this.ignored = false,
   });
 
+  /// `<timestamp>#<row>`.
   final String id;
   final DateTime time;
   final String? text;
+  final NoteUse use;
 
-  /// The event edges it sets, e.g. "start of Breakfast".
+  /// The event (id, or key) it's added to -- or, for an [NoteUse.edge],
+  /// whose edge it sets.
+  final String? eventId;
+
+  /// The event (id, or key) whose start or end it sets, if it sets one,
+  /// whether or not it's added to an event too. Annotating it without
+  /// naming an event adds it to this one; nothing the user says of the
+  /// note moves the edge.
+  final String? edgeOf;
+
+  /// Who said what it's for: none for a note just added where it falls.
+  final DecidedBy? decidedBy;
+
+  /// The event edges it sets, as the timeline says them, e.g. "start of
+  /// Breakfast".
   final List<String> anchors;
 
-  /// The summary of the event its text is added to, if it's added to one.
+  /// The summary of the event it's added to, as the timeline says it.
   final String? annotates;
 
-  /// Whether Claude left it out: added to no event.
-  final bool ignored;
+  /// Whether it's left out: added to no event.
+  bool get ignored => use == NoteUse.ignored;
 
-  /// [proposal]'s notes, as `get_proposal` gives them: from its
-  /// `timeline`, which says what became of each -- leaving out those an
-  /// earlier compaction used, shown only as context -- or else from its
-  /// `notes`.
+  ProposalNote copyWith({
+    NoteUse? use,
+    String? Function()? eventId,
+    DecidedBy? Function()? decidedBy,
+  }) => ProposalNote(
+    id: id,
+    time: time,
+    text: text,
+    use: use ?? this.use,
+    eventId: eventId == null ? this.eventId : eventId(),
+    edgeOf: edgeOf,
+    decidedBy: decidedBy == null ? this.decidedBy : decidedBy(),
+    anchors: anchors,
+    annotates: annotates,
+  );
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'timestamp': localIsoTimestamp(time),
+    'description': text,
+    'use': use.json,
+    'event_id': eventId,
+    'edge_of': edgeOf,
+    'decided_by': decidedBy?.name,
+  };
+
+  /// [proposal]'s notes, by time, as `get_proposal` gives them: its
+  /// `notes`, each saying what it's for, with how its `timeline` words
+  /// the edges it sets -- leaving out those an earlier compaction used,
+  /// shown there only as context. From a server that doesn't say what
+  /// each note is for, what the timeline says.
   static List<ProposalNote> allFrom(Map<String, dynamic> proposal) {
     DateTime? time(Object? value) =>
         value is String ? DateTime.tryParse(value) : null;
-    final notes = switch (proposal['timeline']) {
-      {'notes': final List notes} => [
-        for (final n in notes.cast<Map>())
-          if (n['compacted'] != true)
-            if (time(n['time']) case final at?)
+    final timeline = {
+      if (proposal['timeline'] case {'notes': final List notes})
+        for (final n in notes.cast<Map>()) '${n['id']}': n,
+    };
+    ProposalNote? fromTimeline(String id, Map n) => switch (time(n['time'])) {
+      final at? when n['compacted'] != true => ProposalNote(
+        id: id,
+        time: at,
+        text: n['text'] as String?,
+        use: n['ignored'] == true
+            ? NoteUse.ignored
+            : n['annotates'] != null
+            ? NoteUse.annotates
+            : (n['anchors'] as List? ?? []).isNotEmpty
+            ? NoteUse.edge
+            : NoteUse.unused,
+        anchors: [for (final a in n['anchors'] as List? ?? []) '$a'],
+        annotates: n['annotates'] as String?,
+      ),
+      _ => null,
+    };
+    final listed = (proposal['notes'] as List? ?? []).cast<Map>();
+    final notes = <ProposalNote>[
+      if (listed.isEmpty || !listed.any((n) => n.containsKey('use')))
+        for (final MapEntry(:key, :value) in timeline.entries)
+          ?fromTimeline(key, value)
+      else
+        for (final n in listed)
+          if (time(n['timestamp']) case final at?)
+            if (timeline['${n['id']}']?['compacted'] != true)
               ProposalNote(
                 id: '${n['id']}',
                 time: at,
-                text: n['text'] as String?,
-                anchors: [for (final a in n['anchors'] as List? ?? []) '$a'],
-                annotates: n['annotates'] as String?,
-                ignored: n['ignored'] == true,
+                text: n['description'] as String?,
+                use: NoteUse.parse(n['use']) ?? NoteUse.unused,
+                eventId: n['event_id'] as String?,
+                edgeOf: n['edge_of'] as String?,
+                decidedBy: switch (n['decided_by']) {
+                  'claude' => DecidedBy.claude,
+                  'user' => DecidedBy.user,
+                  _ => null,
+                },
+                anchors: [
+                  for (final a
+                      in timeline['${n['id']}']?['anchors'] as List? ?? [])
+                    '$a',
+                ],
+                annotates: timeline['${n['id']}']?['annotates'] as String?,
               ),
-      ],
-      _ => [
-        for (final n in (proposal['notes'] as List? ?? []).cast<Map>())
-          if (time(n['timestamp']) case final at?)
+    ];
+    // An old server's notes, with no timeline.
+    if (notes.isEmpty && timeline.isEmpty) {
+      for (final n in listed) {
+        if (time(n['timestamp']) case final at?) {
+          notes.add(
             ProposalNote(
               id: '${n['id']}',
               time: at,
               text: n['description'] as String?,
             ),
-      ],
-    };
+          );
+        }
+      }
+    }
     return notes..sort((a, b) => a.time.compareTo(b.time));
   }
 }

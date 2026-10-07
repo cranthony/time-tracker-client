@@ -304,11 +304,13 @@ final class AddNote extends NotesSheetAction {
 
 /// Shows [proposal]'s notes for Claude -- each with Claude's reply beside
 /// it, once it's answered, or else a button to withdraw it -- and its
-/// warnings. [names] names the events notes are about, by id.
+/// warnings. [names] names the events notes are about, by id, and
+/// [noteNames] the time notes.
 Future<NotesSheetAction?> showProposalNotesSheet(
   BuildContext context,
   Proposal proposal, {
   Map<String, String> names = const {},
+  Map<String, String> noteNames = const {},
 }) => showModalBottomSheet<NotesSheetAction>(
   context: context,
   isScrollControlled: true,
@@ -346,7 +348,7 @@ Future<NotesSheetAction?> showProposalNotesSheet(
           for (final note in notes)
             _NoteCard(
               note: note,
-              about: names[note.eventId],
+              about: names[note.eventId] ?? noteNames[note.noteId],
               onWithdraw: note.open && note.byUser
                   ? () => Navigator.of(context).pop(WithdrawNote(note))
                   : null,
@@ -458,22 +460,25 @@ class _NoteCard extends StatelessWidget {
 }
 
 /// Asks for a note for Claude, about one of [events] (by id, with its
-/// name) or none, [about] to start with. Returns its text and event, or
-/// null if it was called off.
+/// name) or none, [about] to start with -- or, given a [subject], about
+/// that. Returns its text and event, or null if it was called off.
 Future<({String text, String? eventId})?> showProposalNoteDialog(
   BuildContext context, {
   Map<String, String> events = const {},
   String? about,
+  String? subject,
 }) => showDialog(
   context: context,
-  builder: (context) => _NoteDialog(events: events, about: about),
+  builder: (context) =>
+      _NoteDialog(events: events, about: about, subject: subject),
 );
 
 class _NoteDialog extends StatefulWidget {
-  const _NoteDialog({required this.events, this.about});
+  const _NoteDialog({required this.events, this.about, this.subject});
 
   final Map<String, String> events;
   final String? about;
+  final String? subject;
 
   @override
   State<_NoteDialog> createState() => _NoteDialogState();
@@ -517,7 +522,9 @@ class _NoteDialogState extends State<_NoteDialog> {
               ),
             ),
             const SizedBox(height: 12),
-            if (widget.events.isNotEmpty)
+            if (widget.subject case final subject?)
+              Text(subject, style: theme.textTheme.titleSmall)
+            else if (widget.events.isNotEmpty)
               DropdownButtonFormField<String?>(
                 initialValue: _about,
                 isExpanded: true,
@@ -611,43 +618,68 @@ Future<bool> showRecheckedDialog(
     false;
 
 /// What became of [note], as the timeline marks it.
-ReviewNoteKind reviewNoteKind(ProposalNote note) => note.ignored
-    ? ReviewNoteKind.ignored
-    : note.annotates != null
-    ? ReviewNoteKind.annotated
-    : note.anchors.isNotEmpty
-    ? ReviewNoteKind.setsEdge
-    : ReviewNoteKind.other;
+ReviewNoteKind reviewNoteKind(ProposalNote note) => switch (note.use) {
+  NoteUse.edge => ReviewNoteKind.setsEdge,
+  NoteUse.annotates => ReviewNoteKind.annotated,
+  NoteUse.ignored => ReviewNoteKind.ignored,
+  NoteUse.unused => ReviewNoteKind.other,
+};
 
-/// What became of [note], in words: "Sets the start of Breakfast · Added
-/// to “Breakfast”", or that it's added to no event.
-String noteFate(ProposalNote note) => [
-  if (note.anchors.isNotEmpty) 'Sets the ${note.anchors.join(' and the ')}',
-  if (note.annotates case final event?) 'Added to “$event”',
-  if (note.ignored) 'Not added to any event',
-].join(' · ');
+/// What the proposal does with [note], in words, and who said so: "Sets
+/// the start of Breakfast", "Added to “Work” · you", "Left out · Claude".
+/// [events] names the events, by id or key.
+String noteFate(ProposalNote note, {Map<String, String> events = const {}}) {
+  final event = events[note.eventId] ?? note.annotates;
+  // The edge it sets, whatever else it's for.
+  final edge = switch (events[note.edgeOf ?? '']) {
+    _ when note.anchors.isNotEmpty =>
+      'Sets the ${note.anchors.join(' and the ')}',
+    final name? => 'Sets an edge of “$name”',
+    _ when note.use == NoteUse.edge =>
+      'Sets ${event == null ? 'an edge' : 'an edge of “$event”'}',
+    _ => null,
+  };
+  final what = switch (note.use) {
+    NoteUse.edge => null,
+    NoteUse.annotates => 'Added to ${event == null ? 'an event' : '“$event”'}',
+    NoteUse.ignored => 'Left out',
+    NoteUse.unused => 'Not added: no event to add it to',
+  };
+  return [
+    ?edge,
+    ?what,
+    ?switch (note.decidedBy) {
+      DecidedBy.claude => 'Claude',
+      DecidedBy.user => 'you',
+      null => null,
+    },
+  ].join(' · ');
+}
 
 /// Under the [ProposalBar], one of the proposal's notes -- the [index]th
 /// of [count] -- its time and text, and what became of it, with buttons to
 /// go to the note before it ([onPrevious]) and after it ([onNext]).
-/// Tapping it calls [onTap], to show it.
+/// Tapping it, or its pencil, calls [onEdit], to say what it's for.
+/// [events] names the events, by id or key.
 class ProposalNoteStrip extends StatelessWidget {
   const ProposalNoteStrip({
     super.key,
     required this.note,
     required this.index,
     required this.count,
+    this.events = const {},
     this.onPrevious,
     this.onNext,
-    this.onTap,
+    this.onEdit,
   });
 
   final ProposalNote note;
+  final Map<String, String> events;
   final int index;
   final int count;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
-  final VoidCallback? onTap;
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -656,7 +688,7 @@ class ProposalNoteStrip extends StatelessWidget {
     final kind = reviewNoteKind(note);
     final time = MaterialLocalizations.of(context)
         .formatTimeOfDay(TimeOfDay.fromDateTime(note.time.toLocal()));
-    final fate = noteFate(note);
+    final fate = noteFate(note, events: events);
     return Material(
       color: Color.alphaBlend(
         reviewColors(colors).tint,
@@ -681,7 +713,7 @@ class ProposalNoteStrip extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: InkWell(
-                onTap: onTap,
+                onTap: onEdit,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Column(
@@ -719,6 +751,13 @@ class ProposalNoteStrip extends StatelessWidget {
                 ),
               ),
             ),
+            if (onEdit != null)
+              IconButton(
+                tooltip: 'What this note is for',
+                visualDensity: VisualDensity.compact,
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_note),
+              ),
             Text(
               '${index + 1}/$count',
               style: theme.textTheme.labelSmall?.copyWith(
@@ -743,3 +782,144 @@ class ProposalNoteStrip extends StatelessWidget {
     );
   }
 }
+
+/// What the user said a note is for, from [showNoteUseSheet].
+sealed class NoteUseChoice {
+  const NoteUseChoice();
+}
+
+/// Add the note to [eventId], or, without one, to the event it falls
+/// within.
+final class AnnotateNote extends NoteUseChoice {
+  const AnnotateNote([this.eventId]);
+  final String? eventId;
+}
+
+/// Leave the note out.
+final class IgnoreNote extends NoteUseChoice {
+  const IgnoreNote();
+}
+
+/// Put the note back as Claude had it.
+final class NoteAsClaudeHadIt extends NoteUseChoice {
+  const NoteAsClaudeHadIt();
+}
+
+/// Leave a note for Claude about it.
+final class AskClaudeAboutNote extends NoteUseChoice {
+  const AskClaudeAboutNote();
+}
+
+/// Asks what [note] is for: added to the event it falls within, or whose
+/// edge it sets -- [fallsIn], if there's one -- or to another of [events] (by id or key,
+/// with their names: those of its day), left out, put back as Claude had
+/// it (once the user's said what it's for), or asked about, in a note for
+/// Claude.
+Future<NoteUseChoice?> showNoteUseSheet(
+  BuildContext context,
+  ProposalNote note, {
+  Map<String, String> events = const {},
+  String? fallsIn,
+}) => showModalBottomSheet<NoteUseChoice>(
+  context: context,
+  isScrollControlled: true,
+  showDragHandle: true,
+  builder: (context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final time = MaterialLocalizations.of(context)
+        .formatTimeOfDay(TimeOfDay.fromDateTime(note.time.toLocal()));
+    Widget current(bool selected) => selected
+        ? Icon(Icons.check, color: colors.primary)
+        : const SizedBox(width: 24);
+    final annotatedHere =
+        note.use == NoteUse.annotates &&
+        (note.eventId == null || note.eventId == fallsIn);
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      maxChildSize: 0.9,
+      builder: (context, scroll) => ListView(
+        controller: scroll,
+        padding: const EdgeInsets.only(bottom: 24),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Text(
+              "What's this note for?",
+              style: theme.textTheme.titleMedium,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              '$time  ${note.text ?? '(no text)'}\n'
+              '${noteFate(note, events: events)}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+          ListTile(
+            leading: Icon(ReviewNoteKind.annotated.icon),
+            title: Text(switch (events[fallsIn]) {
+              final name? => 'Add it to “$name”',
+              null => 'Add it where it falls',
+            }),
+            subtitle: Text(
+              note.edgeOf != null && note.edgeOf == fallsIn
+                  ? 'The event whose start or end it sets'
+                  : 'The event it falls within',
+            ),
+            trailing: current(annotatedHere),
+            onTap: () => Navigator.of(context).pop(const AnnotateNote()),
+          ),
+          ListTile(
+            leading: Icon(ReviewNoteKind.ignored.icon),
+            title: const Text('Leave it out'),
+            subtitle: Text(
+              note.edgeOf == null
+                  ? 'Add it to no event'
+                  : 'Add it to no event; it still sets the edge',
+            ),
+            trailing: current(note.use == NoteUse.ignored),
+            onTap: () => Navigator.of(context).pop(const IgnoreNote()),
+          ),
+          if (note.decidedBy == DecidedBy.user)
+            ListTile(
+              leading: const Icon(Icons.undo),
+              title: const Text('Put it back as Claude had it'),
+              onTap: () => Navigator.of(context).pop(const NoteAsClaudeHadIt()),
+            ),
+          ListTile(
+            leading: const Icon(Icons.add_comment_outlined),
+            title: const Text('Ask Claude about it'),
+            subtitle: const Text('Leave a note for Claude about this note'),
+            onTap: () => Navigator.of(context).pop(const AskClaudeAboutNote()),
+          ),
+          if (events.keys.any((id) => id != fallsIn)) ...[
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: Text(
+                'Or add it to another event',
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            for (final MapEntry(key: id, value: name) in events.entries)
+              if (id != fallsIn)
+                ListTile(
+                  dense: true,
+                  leading: const SizedBox(width: 24),
+                  title: Text(name),
+                  trailing: current(
+                    note.use == NoteUse.annotates && note.eventId == id,
+                  ),
+                  onTap: () => Navigator.of(context).pop(AnnotateNote(id)),
+                ),
+          ],
+        ],
+      ),
+    );
+  },
+);

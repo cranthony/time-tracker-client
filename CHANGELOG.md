@@ -20,6 +20,12 @@ on. Add the new version's section here at the same time; CI checks both.
   start or end, or left out. Under the bar, one of them -- its time, its
   text and what became of it -- is highlighted on the timeline, and
   arrows go to the note before or after it, scrolling to it.
+- Saying what a note is for: its pencil (or tapping it) asks. Add it to
+  the event it falls within -- or, for one that sets an event's start or
+  end, to that event -- or to another of its day's; leave it out; put it
+  back as Claude had it; or ask Claude about it, in a note for Claude
+  about that note. Which you said, and which Claude did, is shown with
+  it. A note's edge stays where it is whatever it's added to.
 - Edits to the events in the band edit the proposal, not the calendar:
   moving (pressing and holding, too), resizing, cancelling or adding one,
   or setting its actions, people or location, with what that does to the
