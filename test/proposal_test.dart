@@ -576,28 +576,31 @@ void main() {
     );
 
     /// Taps the timeline, away from the times, at [time].
+    /// Today's timeline: while the box is up, the days either side are
+    /// stacked with it.
+    final today = find.byKey(ValueKey(('shown', at(0))));
+
     Future<void> tapAt(WidgetTester tester, DateTime time) async {
-      final timeline = find.byType(DayTimeline);
       await tester.tapAt(
-        tester.getTopLeft(timeline) +
-            Offset(tester.getSize(timeline).width / 2, y(time)),
+        tester.getTopLeft(today) +
+            Offset(tester.getSize(today).width / 2, y(time)),
       );
       await tester.pumpAndSettle();
     }
 
-    /// Scrolls the timeline to 7, the band's start just below.
+    /// Scrolls today's timeline so 7, the band's start just below it, is
+    /// at the top of the view.
     Future<void> toBand(WidgetTester tester) async {
-      tester
-          .state<ScrollableState>(
-            find
-                .byWidgetPredicate(
-                  (w) =>
-                      w is Scrollable && w.axisDirection == AxisDirection.down,
-                )
-                .first,
+      final scrollable = find
+          .byWidgetPredicate(
+            (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
           )
-          .position
-          .jumpTo(y(at(7)));
+          .first;
+      final position = tester.state<ScrollableState>(scrollable).position;
+      final top = tester.getTopLeft(scrollable).dy;
+      position.jumpTo(
+        position.pixels + tester.getTopLeft(today).dy + y(at(7)) - top,
+      );
       await tester.pumpAndSettle();
     }
 

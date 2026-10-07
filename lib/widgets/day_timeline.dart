@@ -133,6 +133,11 @@ double timelineOffset(
   return _pad + minutes.clamp(0, length) * scale;
 }
 
+/// How tall a timeline from [start] to [end] -- days stacked on each
+/// other -- is at [scale], with room for their labels.
+double timelineSpanHeight(DateTime start, DateTime end, double scale) =>
+    timelineOffset(end, day: start, dayEnd: end, scale: scale) + _pad;
+
 /// How tall a [DayTimeline] for [day] is at [scale]: midnight to
 /// midnight, with room for their labels; taller only if an event near
 /// midnight is drawn past it.
@@ -854,22 +859,36 @@ Color _noteColor(ColorScheme colors) => colors.tertiary.withValues(alpha: 0.6);
 /// both ends, then the hours, as many as fit. A day's timeline covers
 /// those its own labels would overlap.
 class TimelineAxis extends StatelessWidget {
-  const TimelineAxis({super.key, required this.day, required this.scale});
+  const TimelineAxis({
+    super.key,
+    required this.day,
+    this.dayEnd,
+    required this.scale,
+  });
 
   /// Midnight, local time, at the start of the day.
   final DateTime day;
+
+  /// Midnight at its end: the day after [day]'s, unless it runs on over
+  /// days stacked on it.
+  final DateTime? dayEnd;
   final double scale;
 
   @override
   Widget build(BuildContext context) =>
-      CustomPaint(painter: _axisPainter(context, day, scale));
+      CustomPaint(painter: _axisPainter(context, day, scale, dayEnd: dayEnd));
 }
 
-_AxisPainter _axisPainter(BuildContext context, DateTime day, double scale) {
+_AxisPainter _axisPainter(
+  BuildContext context,
+  DateTime day,
+  double scale, {
+  DateTime? dayEnd,
+}) {
   final theme = Theme.of(context);
   return _AxisPainter(
     day: day,
-    dayEnd: DateTime(day.year, day.month, day.day + 1),
+    dayEnd: dayEnd ?? DateTime(day.year, day.month, day.day + 1),
     scale: scale,
     timeLabel: (t) =>
         MaterialLocalizations.of(context)

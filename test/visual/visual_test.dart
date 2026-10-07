@@ -555,6 +555,39 @@ void main() {
       });
     }
 
+    // Across midnight: while the box is up, the days either side are
+    // stacked above and below the day shown, shaded, and the box can run
+    // on into them.
+    testWidgets('events_new_midnight ($mode)', (tester) async {
+      await render(
+        tester,
+        'events_new_midnight',
+        events(),
+        then: () async {
+          await tester.tap(find.byTooltip('New event'));
+          await tester.pumpAndSettle();
+          // The cursor on to 11:30 PM; then two hours, past midnight.
+          await tester.drag(
+            find.byTooltip('Drag to move the cursor'),
+            Offset(0, 600 * defaultTimelineScale),
+            warnIfMissed: false,
+          );
+          await tester.pumpAndSettle();
+          final later = find.byTooltip(
+            'An hour later: tap to move the other end, or drag it',
+          );
+          for (var i = 0; i < 2; i++) {
+            await tester.ensureVisible(later);
+            await tester.pumpAndSettle();
+            await tester.tap(later);
+            await tester.pumpAndSettle();
+          }
+          await tester.tap(find.byTooltip('Go to the new event'));
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
     // Moving an event, pressed and held: the box around it, pushing, and
     // saying, by the cursor, which it's moving; the event faint where it
     // was; and the cursors switched, the box turned around.
