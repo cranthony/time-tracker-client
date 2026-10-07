@@ -199,30 +199,36 @@ class _CreateCursorState extends State<CreateCursor>
           tooltip: 'Drag to move the cursor',
           onDragTo: widget.onMove,
         ),
-        // In the middle of the cursor, clear of its handle.
+        // In the middle of the cursor, clear of its handle: each button
+        // on the side its event goes, touching the line.
         Positioned(
           left: timelineCardsLeft,
           right: 44,
-          top: y - 20,
-          height: 40,
+          top: y - _buttonHeight - _buttonGap,
+          height: 2 * (_buttonHeight + _buttonGap),
           child: Center(
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _endButton(
-                  colors,
-                  CursorEnd.start,
-                  Icons.vertical_align_top,
-                  'Start here: tap, or drag to where it ends',
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _endButton(
+                      colors,
+                      CursorEnd.end,
+                      Icons.arrow_upward,
+                      'End here: tap, or drag to where it starts',
+                    ),
+                    const SizedBox(height: 2 * _buttonGap),
+                    _endButton(
+                      colors,
+                      CursorEnd.start,
+                      Icons.arrow_downward,
+                      'Start here: tap, or drag to where it ends',
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 6),
-                _endButton(
-                  colors,
-                  CursorEnd.end,
-                  Icons.vertical_align_bottom,
-                  'End here: tap, or drag to where it starts',
-                ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 _modeButton(colors),
               ],
             ),
@@ -347,35 +353,60 @@ class _CreateCursorState extends State<CreateCursor>
     );
   }
 
+  /// How tall the buttons above and below the line are, and how far
+  /// from it.
+  static const _buttonHeight = 44.0;
+  static const _buttonGap = 3.0;
+
+  /// The button for an event with its [end] at the cursor: a "+", with
+  /// [arrow] pointing the way the event goes from it -- up, above the
+  /// line, for one ending there; down, below it, for one starting there.
+  /// Tapped for an hour; dragged to where the event's other end goes.
   Widget _endButton(
     ColorScheme colors,
     CursorEnd end,
-    IconData icon,
+    IconData arrow,
     String tooltip,
-  ) => Tooltip(
-    message: tooltip,
-    child: GestureDetector(
-      dragStartBehavior: DragStartBehavior.down,
-      onVerticalDragStart: (_) => _dragY = _y(widget.at),
-      onVerticalDragUpdate: (details) {
-        _dragY += details.delta.dy;
-        widget.onDrag(end, _time(_dragY));
-      },
-      child: Material(
-        color: colors.primaryContainer,
-        shape: const CircleBorder(),
-        elevation: 2,
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: () => widget.onTap(end),
-          child: SizedBox.square(
-            dimension: 40,
-            child: Icon(icon, color: colors.onPrimaryContainer),
+  ) {
+    final color = colors.onPrimaryContainer;
+    final icons = [
+      Icon(Icons.add, size: 20, color: color),
+      Icon(arrow, size: 14, color: color),
+    ];
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        dragStartBehavior: DragStartBehavior.down,
+        onVerticalDragStart: (_) => _dragY = _y(widget.at),
+        onVerticalDragUpdate: (details) {
+          _dragY += details.delta.dy;
+          widget.onDrag(end, _time(_dragY));
+        },
+        child: Material(
+          color: colors.primaryContainer,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          elevation: 2,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => widget.onTap(end),
+            child: SizedBox(
+              width: 40,
+              height: _buttonHeight,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                // The arrow away from the line, the "+" by it.
+                children: end == CursorEnd.end
+                    ? icons.reversed.toList()
+                    : icons,
+              ),
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _modeButton(ColorScheme colors) => Tooltip(
     message: '${widget.mode.label}: tap to change',
