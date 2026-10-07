@@ -271,6 +271,57 @@ class _EventsScreenState extends State<EventsScreen> {
   /// can't be used meanwhile.
   bool _proposalBusy = false;
 
+  /// Which of the proposal's notes is shown under its bar, and
+  /// highlighted on the timeline.
+  int _noteIndex = 0;
+
+  /// The proposal's notes; [_noteIndex] of them, if there are any.
+  List<ProposalNote> get _proposalNotes =>
+      _proposal?.notes ?? const <ProposalNote>[];
+
+  ProposalNote? get _note => switch (_proposalNotes) {
+    final notes when notes.isEmpty => null,
+    final notes => notes[_noteIndex.clamp(0, notes.length - 1)],
+  };
+
+  /// The proposal's notes, as the timeline draws them.
+  List<ReviewNote> get _reviewNotes {
+    final selected = _note;
+    return [
+      for (final note in _proposalNotes)
+        ReviewNote(
+          time: note.time,
+          kind: reviewNoteKind(note),
+          selected: identical(note, selected),
+        ),
+    ];
+  }
+
+  /// Shows the [index]th of the proposal's notes under its bar, and
+  /// scrolls the timeline to it, in the middle of the view.
+  void _goToNote(int index) {
+    final notes = _proposalNotes;
+    if (notes.isEmpty) return;
+    final i = index.clamp(0, notes.length - 1);
+    setState(() => _noteIndex = i);
+    final at = notes[i].time.toLocal();
+    final day = _midnight(at);
+    if (_pages.hasClients && day != _day) _pages.jumpToPage(_pageOf(day));
+    // Once it's laid out on that day.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      final position = _scroll.position;
+      final y =
+          timelineOffset(at, day: day, dayEnd: _dayAfter(day), scale: _scale) -
+          position.viewportDimension / 2;
+      _scroll.animateTo(
+        y.clamp(0, position.maxScrollExtent),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
   /// The day shown's events, if they're loaded.
   List<Event>? get _shown => _eventsOn(_day);
 
@@ -2176,6 +2227,19 @@ class _EventsScreenState extends State<EventsScreen> {
             onGoTo: _goToProposal,
             onAbandon: _abandonProposal,
           ),
+        if (_note case final note?)
+          ProposalNoteStrip(
+            note: note,
+            index: _proposalNotes.indexOf(note),
+            count: _proposalNotes.length,
+            onPrevious: _proposalNotes.indexOf(note) > 0
+                ? () => _goToNote(_proposalNotes.indexOf(note) - 1)
+                : null,
+            onNext: _proposalNotes.indexOf(note) < _proposalNotes.length - 1
+                ? () => _goToNote(_proposalNotes.indexOf(note) + 1)
+                : null,
+            onTap: () => _goToNote(_proposalNotes.indexOf(note)),
+          ),
         Expanded(
           child: LayoutBuilder(
             builder: (context, view) => RefreshIndicator(
@@ -2330,7 +2394,14 @@ class _EventsScreenState extends State<EventsScreen> {
         scale: _scale,
         now: widget.clock(),
         lastCompaction: _lastCompaction,
-        pendingNotes: _pendingNotes,
+        // In a proposal's window, its notes, drawn as it says.
+        pendingNotes: [
+          for (final t in _pendingNotes)
+            if (!(proposal?.covers(t, t.add(const Duration(seconds: 1))) ??
+                false))
+              t,
+        ],
+        reviewNotes: _reviewNotes,
         // While the cursor's up, events don't open: a tap on one goes to
         // the timeline under it, and moves the cursor there.
         onTap: _box == null ? _openEvent : null,

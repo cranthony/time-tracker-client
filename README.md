@@ -432,6 +432,10 @@ Claude can't apply one; only confirming it in the app does.
   moved (and from where), new, cancelled, renamed, new actions or facts
   -- and whether Claude or you decided it; one as planned is plain. Those
   changed since the revision you last saw (kept on the device) have a dot.
+  Its notes are lines across it, each with a badge: ↳ added to an event,
+  ⇕ setting an event's start or end, ⊘ left out. Under the bar is one of
+  them -- its time, text and what became of it -- highlighted on the
+  timeline, with arrows to step to the note before or after.
 - **Editing it.** Moving, resizing, cancelling or adding an event in the
   band, or setting its actions, people or location, edits the proposal
   (`amend_proposal`), with the same dialogs and press-and-hold move as
@@ -483,7 +487,8 @@ edited, and its
 actions with every status, and the time summary on each page and folded
 away), a person's page, Events (with each page of its day summary, folded away,
 what happened at an event, and a compaction proposal: the band, its
-start, its notes, and waiting for Claude) and Notes.
+start, a note stepped to, its notes for Claude, and waiting for Claude)
+and Notes.
 It writes them, at 2x and with the real fonts (Roboto and Material
 Icons, from the Flutter SDK), to `build/screenshots/`. This is the quick
 way to see a UI change without running the app:

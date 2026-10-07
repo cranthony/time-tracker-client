@@ -83,7 +83,20 @@ void main() {
       },
     ],
     'feedback': feedback,
-    'timeline': {'text': '09:15 Tea'},
+    'timeline': {
+      'text': '09:15 Tea',
+      'notes': [
+        {'id': 'n0', 'time': iso(7), 'text': 'Up', 'compacted': true},
+        {
+          'id': 'n1',
+          'time': iso(9, 15),
+          'text': 'Tea at last',
+          'anchors': ['start of Tea'],
+        },
+        {'id': 'n3', 'time': iso(11, 10), 'text': 'Rain', 'ignored': true},
+        {'id': 'n2', 'time': iso(10, 30), 'text': 'Bugs', 'annotates': 'Work'},
+      ],
+    },
   };
 
   group('Proposal', () {
@@ -130,6 +143,24 @@ void main() {
       // A note open: waiting for Claude.
       expect(proposal.openFeedback, hasLength(1));
       expect(proposal.confirmable, isFalse);
+    });
+
+    test("its notes, from its timeline, by time, but those already "
+        'compacted; each saying what became of it', () {
+      final notes = Proposal.fromJson(proposalJson()).notes;
+      expect([for (final n in notes) n.id], ['n1', 'n2', 'n3']);
+      expect(notes[0].anchors, ['start of Tea']);
+      expect(notes[1].annotates, 'Work');
+      expect(notes[2].ignored, isTrue);
+      // Without a timeline, from its notes.
+      final plain = Proposal.fromJson({
+        ...proposalJson(),
+        'timeline': null,
+        'notes': [
+          {'id': 'n1', 'timestamp': iso(9, 15), 'description': 'Tea'},
+        ],
+      }).notes;
+      expect([for (final n in plain) (n.id, n.text)], [('n1', 'Tea')]);
     });
 
     test("an event without times of its own is where the calendar has it; "
@@ -532,6 +563,48 @@ void main() {
       expect(timeline.marks['work']!.label, isNull);
       expect(timeline.marks.containsKey('talk'), isFalse);
       expect(tester.widget<FilledButton>(confirmButton).onPressed, isNotNull);
+    });
+
+    testWidgets('shows a note under the bar, highlighted on the timeline, '
+        'with what became of it; the arrows go from note to note', (
+      tester,
+    ) async {
+      await open(tester);
+      List<(ReviewNoteKind, bool)> drawn() => [
+        for (final n
+            in tester.widget<DayTimeline>(find.byType(DayTimeline)).reviewNotes)
+          (n.kind, n.selected),
+      ];
+      expect(find.textContaining('Tea at last'), findsOneWidget);
+      expect(find.text('Sets the start of Tea'), findsOneWidget);
+      expect(find.text('1/3'), findsOneWidget);
+      expect(drawn(), [
+        (ReviewNoteKind.setsEdge, true),
+        (ReviewNoteKind.annotated, false),
+        (ReviewNoteKind.ignored, false),
+      ]);
+      IconButton arrow(String tooltip) => tester.widget<IconButton>(
+        find.widgetWithIcon(
+          IconButton,
+          tooltip == 'Previous note'
+              ? Icons.keyboard_arrow_up
+              : Icons.keyboard_arrow_down,
+        ),
+      );
+      expect(arrow('Previous note').onPressed, isNull);
+
+      await tester.tap(find.byTooltip('Next note'));
+      await tester.pumpAndSettle();
+      expect(find.text('Added to “Work”'), findsOneWidget);
+      expect(drawn()[1], (ReviewNoteKind.annotated, true));
+      await tester.tap(find.byTooltip('Next note'));
+      await tester.pumpAndSettle();
+      expect(find.text('Not added to any event'), findsOneWidget);
+      expect(find.text('3/3'), findsOneWidget);
+      expect(arrow('Next note').onPressed, isNull);
+      await tester.tap(find.byTooltip('Previous note'));
+      await tester.pumpAndSettle();
+      expect(find.text('2/3'), findsOneWidget);
     });
 
     testWidgets("highlights what's changed since the revision last seen", (

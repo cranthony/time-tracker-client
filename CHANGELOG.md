@@ -15,6 +15,11 @@ on. Add the new version's section here at the same time; CI checks both.
   moved, and where it was; new; cancelled; renamed; new actions or facts
   -- and whether Claude or you decided it. Those changed since you last
   looked have a dot.
+- Its notes are drawn across the band, over the events, each with a
+  badge saying what became of it: added to an event, setting an event's
+  start or end, or left out. Under the bar, one of them -- its time, its
+  text and what became of it -- is highlighted on the timeline, and
+  arrows go to the note before or after it, scrolling to it.
 - Edits to the events in the band edit the proposal, not the calendar:
   moving (pressing and holding, too), resizing, cancelling or adding one,
   or setting its actions, people or location, with what that does to the

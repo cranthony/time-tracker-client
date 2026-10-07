@@ -609,3 +609,137 @@ Future<bool> showRecheckedDialog(
       ),
     ) ??
     false;
+
+/// What became of [note], as the timeline marks it.
+ReviewNoteKind reviewNoteKind(ProposalNote note) => note.ignored
+    ? ReviewNoteKind.ignored
+    : note.annotates != null
+    ? ReviewNoteKind.annotated
+    : note.anchors.isNotEmpty
+    ? ReviewNoteKind.setsEdge
+    : ReviewNoteKind.other;
+
+/// What became of [note], in words: "Sets the start of Breakfast · Added
+/// to “Breakfast”", or that it's added to no event.
+String noteFate(ProposalNote note) => [
+  if (note.anchors.isNotEmpty) 'Sets the ${note.anchors.join(' and the ')}',
+  if (note.annotates case final event?) 'Added to “$event”',
+  if (note.ignored) 'Not added to any event',
+].join(' · ');
+
+/// Under the [ProposalBar], one of the proposal's notes -- the [index]th
+/// of [count] -- its time and text, and what became of it, with buttons to
+/// go to the note before it ([onPrevious]) and after it ([onNext]).
+/// Tapping it calls [onTap], to show it.
+class ProposalNoteStrip extends StatelessWidget {
+  const ProposalNoteStrip({
+    super.key,
+    required this.note,
+    required this.index,
+    required this.count,
+    this.onPrevious,
+    this.onNext,
+    this.onTap,
+  });
+
+  final ProposalNote note;
+  final int index;
+  final int count;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final kind = reviewNoteKind(note);
+    final time = MaterialLocalizations.of(context)
+        .formatTimeOfDay(TimeOfDay.fromDateTime(note.time.toLocal()));
+    final fate = noteFate(note);
+    return Material(
+      color: Color.alphaBlend(
+        reviewColors(colors).tint,
+        colors.surfaceContainerLow,
+      ),
+      shape: Border(
+        bottom: BorderSide(color: reviewColors(colors).line, width: 2),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 2, 4, 2),
+        child: Row(
+          children: [
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: colors.primary,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(kind.icon, size: 14, color: colors.onPrimary),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: InkWell(
+                onTap: onTap,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '$time  ',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            TextSpan(text: note.text ?? '(no text)'),
+                          ],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      if (fate.isNotEmpty)
+                        Text(
+                          fate,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: kind == ReviewNoteKind.ignored
+                                ? colors.onSurfaceVariant
+                                : colors.tertiary,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Text(
+              '${index + 1}/$count',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Previous note',
+              visualDensity: VisualDensity.compact,
+              onPressed: onPrevious,
+              icon: const Icon(Icons.keyboard_arrow_up),
+            ),
+            IconButton(
+              tooltip: 'Next note',
+              visualDensity: VisualDensity.compact,
+              onPressed: onNext,
+              icon: const Icon(Icons.keyboard_arrow_down),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

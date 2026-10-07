@@ -405,6 +405,16 @@ void main() {
         },
       ),
       (
+        'events_proposal_note',
+        (tester) async {
+          // To the third note: one Claude left out.
+          for (var i = 0; i < 2; i++) {
+            await tester.tap(find.byTooltip('Next note'));
+            await tester.pumpAndSettle();
+          }
+        },
+      ),
+      (
         'events_proposal_notes',
         (tester) async {
           await tester.tap(find.text('Notes (1)'));

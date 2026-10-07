@@ -270,6 +270,7 @@ class Proposal {
     this.byUser = false,
     this.warnings = const [],
     this.timeline,
+    this.notes = const [],
     this.feedback = const [],
     this.userEdits = const [],
     this.changedSince = const {},
@@ -304,6 +305,9 @@ class Proposal {
 
   /// The notes beside the events, as text.
   final String? timeline;
+
+  /// The notes in its window, by time, and what became of each.
+  final List<ProposalNote> notes;
   final List<ProposalFeedback> feedback;
 
   /// The user's edits, each as `amend_proposal` took it.
@@ -370,6 +374,7 @@ class Proposal {
       final String text => text,
       _ => null,
     },
+    notes: ProposalNote.allFrom(json),
     feedback: [
       for (final f in json['feedback'] as List? ?? [])
         ProposalFeedback.fromJson((f as Map).cast<String, dynamic>()),
@@ -406,11 +411,72 @@ class Proposal {
     byUser: byUser ?? this.byUser,
     warnings: warnings,
     timeline: timeline,
+    notes: notes,
     feedback: feedback ?? this.feedback,
     userEdits: userEdits ?? this.userEdits,
     changedSince: changedSince ?? this.changedSince,
     replaced: replaced ?? this.replaced,
   );
+}
+
+/// A note in a [Proposal]'s window, and what became of it, mirroring an
+/// item of its `timeline`'s `notes`.
+class ProposalNote {
+  const ProposalNote({
+    required this.id,
+    required this.time,
+    this.text,
+    this.anchors = const [],
+    this.annotates,
+    this.ignored = false,
+  });
+
+  final String id;
+  final DateTime time;
+  final String? text;
+
+  /// The event edges it sets, e.g. "start of Breakfast".
+  final List<String> anchors;
+
+  /// The summary of the event its text is added to, if it's added to one.
+  final String? annotates;
+
+  /// Whether Claude left it out: added to no event.
+  final bool ignored;
+
+  /// [proposal]'s notes, as `get_proposal` gives them: from its
+  /// `timeline`, which says what became of each -- leaving out those an
+  /// earlier compaction used, shown only as context -- or else from its
+  /// `notes`.
+  static List<ProposalNote> allFrom(Map<String, dynamic> proposal) {
+    DateTime? time(Object? value) =>
+        value is String ? DateTime.tryParse(value) : null;
+    final notes = switch (proposal['timeline']) {
+      {'notes': final List notes} => [
+        for (final n in notes.cast<Map>())
+          if (n['compacted'] != true)
+            if (time(n['time']) case final at?)
+              ProposalNote(
+                id: '${n['id']}',
+                time: at,
+                text: n['text'] as String?,
+                anchors: [for (final a in n['anchors'] as List? ?? []) '$a'],
+                annotates: n['annotates'] as String?,
+                ignored: n['ignored'] == true,
+              ),
+      ],
+      _ => [
+        for (final n in (proposal['notes'] as List? ?? []).cast<Map>())
+          if (time(n['timestamp']) case final at?)
+            ProposalNote(
+              id: '${n['id']}',
+              time: at,
+              text: n['description'] as String?,
+            ),
+      ],
+    };
+    return notes..sort((a, b) => a.time.compareTo(b.time));
+  }
 }
 
 /// What confirming a [Proposal], or finishing one whose apply stopped,

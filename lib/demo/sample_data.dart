@@ -546,6 +546,7 @@ class SampleData {
   List<Note> get notes => [
     Note(timestamp: _at(7, 50), description: 'Running a little late'),
     Note(timestamp: _at(9, 40), description: 'Started on the plan page'),
+    Note(timestamp: _at(11, 5), description: "Coffee's gone cold again"),
     Note(timestamp: _at(12, 15), description: 'Lunch with Sam, finally'),
   ];
 
@@ -929,6 +930,33 @@ class SampleData {
               'description': note.description,
             },
       ],
+      // What became of each note: setting an edge, added to an event, or
+      // left out.
+      'timeline': {
+        'notes': [
+          for (final note in notes)
+            if (note.timestamp.isBefore(_at(13, 30)))
+              {
+                'id': localIsoTimestamp(note.timestamp),
+                'time': localIsoTimestamp(note.timestamp),
+                'text': note.description,
+                ...switch ((note.timestamp.hour, note.timestamp.minute)) {
+                  (7, 50) => {
+                    'anchors': ['start of Breakfast'],
+                  },
+                  (9, 40) => {'annotates': 'Time Tracker: plan page'},
+                  (12, 15) => {
+                    'anchors': [
+                      'end of Time Tracker: plan page',
+                      'start of Lunch with Sam',
+                    ],
+                  },
+                  _ => {'ignored': true},
+                },
+              },
+        ],
+        'text': '',
+      },
       'feedback': [
         {
           'id': '${proposalId}f1',

@@ -326,7 +326,9 @@ List<T> placeLabels<T>(
 /// starts and ending at a line labeled with its `through`. Each event in
 /// [marks] -- the proposal's -- is tinted too, and says under its summary
 /// what the proposal does to it; one changed since the user last looked
-/// stands out.
+/// stands out. Its notes ([reviewNotes]) are drawn over the events, each
+/// with a badge saying what became of it, and the one [ReviewNote.selected]
+/// highlighted.
 ///
 /// Tapping an event calls [onTap] with it, and pressing and holding it,
 /// [onLongPress]; tapping anywhere else calls [onTapTime] with the time
@@ -348,6 +350,7 @@ class DayTimeline extends StatelessWidget {
     this.axis = true,
     this.review,
     this.marks = const {},
+    this.reviewNotes = const [],
   });
 
   final List<Event> events;
@@ -384,6 +387,9 @@ class DayTimeline extends StatelessWidget {
 
   /// What the proposal says of each of its events, by id.
   final Map<String, EventMark> marks;
+
+  /// The proposal's notes.
+  final List<ReviewNote> reviewNotes;
 
   /// Midnight at the end of the day.
   DateTime get dayEnd => DateTime(day.year, day.month, day.day + 1);
@@ -594,6 +600,9 @@ class DayTimeline extends StatelessWidget {
                         ),
                       ),
                     ...?band?.over,
+                    for (final note in reviewNotes)
+                      if (yIfToday(note.time) case final y?)
+                        ..._reviewNote(context, note, y),
                   ],
                 ),
               ),
@@ -699,6 +708,96 @@ class DayTimeline extends StatelessWidget {
         ),
     ],
   );
+}
+
+/// A proposal's [note], at [y]: a line across, over the events, in the
+/// highlight if it's selected, and on the priority band a badge saying
+/// what became of it.
+List<Widget> _reviewNote(BuildContext context, ReviewNote note, double y) {
+  final colors = Theme.of(context).colorScheme;
+  final color = note.selected
+      ? colors.primary
+      : note.kind == ReviewNoteKind.ignored
+      ? colors.outline
+      : colors.tertiary;
+  final halo = note.selected ? 14.0 : 0.0;
+  const badge = 18.0;
+  return [
+    Positioned(
+      left: _timeWidth,
+      right: 0,
+      top: y - halo / 2 - 1,
+      height: halo + 2 + (note.selected ? 1 : 0),
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: note.selected
+                ? colors.primary.withValues(alpha: 0.18)
+                : null,
+          ),
+          child: Center(
+            child: Container(
+              height: note.selected ? 3 : 2,
+              color: color.withValues(alpha: note.selected ? 1 : 0.85),
+            ),
+          ),
+        ),
+      ),
+    ),
+    Positioned(
+      left: _timeWidth + (_bandWidth - badge) / 2,
+      top: y - badge / 2,
+      child: IgnorePointer(
+        child: Semantics(
+          label: 'Note: ${note.kind.description}',
+          child: Container(
+            width: badge,
+            height: badge,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: colors.surface, width: 1.5),
+            ),
+            child: Icon(note.kind.icon, size: 11, color: colors.surface),
+          ),
+        ),
+      ),
+    ),
+  ];
+}
+
+/// What became of a note in a compaction proposal.
+enum ReviewNoteKind {
+  /// Its text was added to an event.
+  annotated(Icons.subdirectory_arrow_right, 'added to an event'),
+
+  /// It sets an event's start or end, and isn't added to one.
+  setsEdge(Icons.vertical_align_center, "sets an event's start or end"),
+
+  /// Claude left it out: it's added to no event.
+  ignored(Icons.do_not_disturb_alt, 'not added to any event'),
+
+  /// None of those.
+  other(Icons.sticky_note_2_outlined, 'not used');
+
+  const ReviewNoteKind(this.icon, this.description);
+
+  final IconData icon;
+  final String description;
+}
+
+/// A note in a compaction proposal, at [time], as [DayTimeline] draws it:
+/// what became of it, and whether it's the one [selected].
+class ReviewNote {
+  const ReviewNote({
+    required this.time,
+    required this.kind,
+    this.selected = false,
+  });
+
+  final DateTime time;
+  final ReviewNoteKind kind;
+  final bool selected;
 }
 
 /// How tall the tabs on a review band's edges are.
