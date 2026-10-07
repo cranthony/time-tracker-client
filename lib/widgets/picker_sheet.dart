@@ -178,16 +178,20 @@ class _TextSheetFieldState extends State<_TextSheetField> {
 
 /// Picks who an event was with, who it was for, and where it was, in a
 /// [showPickerSheet], a tab for each: each a search over a [ListPicker].
-/// The rest of [facts] -- the notes -- kept. Returns them; null if
-/// dismissed. The people and locations come from the [PeopleScope], as
+/// The rest of [facts] -- the notes -- kept. Where can be put in words
+/// too, as the event's [place]: its free-text location. Returns them;
+/// null if dismissed. The people and locations come from the
+/// [PeopleScope], as
 /// [showFactsDialog]'s do, with those a compaction proposal adds -- its
 /// [additions], by their refs, marked new; a new location can be added
 /// from here.
-Future<Facts?> showWhoWhereSheet(
+Future<({Facts facts, String? place})?> showWhoWhereSheet(
   BuildContext context,
   Facts facts, {
+  String? place,
   List<ProposalAddition> additions = const [],
 }) {
+  var said = place ?? '';
   final addedPeople = [
     for (final a in additions)
       if (a.kind == AdditionKind.person)
@@ -205,17 +209,20 @@ Future<Facts?> showWhoWhereSheet(
   final memory = PlanMemoryScope.of(context);
   var people = _people(repository, memory);
   var locations = _locations(repository, memory);
-  return showPickerSheet<Facts>(
+  return showPickerSheet<({Facts facts, String? place})>(
     context,
     title: 'Who and where',
-    result: () => Facts(
-      locationId: location,
-      withIds: [...with_],
-      forIds: [...for_],
-      notes: {
-        for (final MapEntry(:key, :value) in facts.notes.entries)
-          if (key == selfPersonId || with_.contains(key)) key: value,
-      },
+    result: () => (
+      facts: Facts(
+        locationId: location,
+        withIds: [...with_],
+        forIds: [...for_],
+        notes: {
+          for (final MapEntry(:key, :value) in facts.notes.entries)
+            if (key == selfPersonId || with_.contains(key)) key: value,
+        },
+      ),
+      place: said.trim().isEmpty ? null : said.trim(),
     ),
     body: (context, setState) => DefaultTabController(
       length: 3,
@@ -271,60 +278,82 @@ Future<Facts?> showWhoWhereSheet(
                   children: [
                     pick(with_, for_, 'Who was there'),
                     pick(for_, with_, "Who it was for, while they weren't"),
-                    FutureBuilder(
-                      future: locations,
-                      initialData: memory?.locations,
-                      builder: (context, snapshot) {
-                        final known = [
-                          ...snapshot.data ?? const <Location>[],
-                          ...addedLocations,
-                        ];
-                        return ListPicker<Location>(
-                          items: [
-                            ...known,
-                            if (location != null &&
-                                !known.any((l) => l.id == location))
-                              Location(id: location!, name: location!),
-                          ],
-                          id: (l) => l.id,
-                          label: (l) => l.name,
-                          detail: (l) => l.hint,
-                          picked: [?location],
-                          single: true,
-                          hint: 'Where it was',
-                          empty: 'No locations yet.',
-                          onChanged: (ids) =>
-                              setState(() => location = ids.firstOrNull),
-                          extra: repository == null
-                              ? null
-                              : ListTile(
-                                  leading: const Icon(Icons.add_location_alt),
-                                  title: const Text('New location…'),
-                                  onTap: () async {
-                                    final created = await showLocationDialog(
-                                      context,
-                                      save: (fields) =>
-                                          repository.createLocation(
-                                            Location(
-                                              id: '',
-                                              name: fields['name'] as String,
-                                              hint: fields['hint'] as String?,
-                                            ),
-                                          ),
-                                    );
-                                    if (created == null) return;
-                                    setState(() {
-                                      location = created.id;
-                                      locations = _locations(
-                                        repository,
-                                        memory,
-                                        again: true,
-                                      );
-                                    });
-                                  },
-                                ),
-                        );
-                      },
+                    // A location, or where in words: the event's own.
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: _PlaceField(
+                            text: place,
+                            onChanged: (text) => said = text,
+                          ),
+                        ),
+                        Expanded(
+                          child: FutureBuilder(
+                            future: locations,
+                            initialData: memory?.locations,
+                            builder: (context, snapshot) {
+                              final known = [
+                                ...snapshot.data ?? const <Location>[],
+                                ...addedLocations,
+                              ];
+                              return ListPicker<Location>(
+                                items: [
+                                  ...known,
+                                  if (location != null &&
+                                      !known.any((l) => l.id == location))
+                                    Location(id: location!, name: location!),
+                                ],
+                                id: (l) => l.id,
+                                label: (l) => l.name,
+                                detail: (l) => l.hint,
+                                picked: [?location],
+                                single: true,
+                                hint: 'Where it was',
+                                empty: 'No locations yet.',
+                                onChanged: (ids) =>
+                                    setState(() => location = ids.firstOrNull),
+                                extra: repository == null
+                                    ? null
+                                    : ListTile(
+                                        leading: const Icon(
+                                          Icons.add_location_alt,
+                                        ),
+                                        title: const Text('New location…'),
+                                        onTap: () async {
+                                          final created =
+                                              await showLocationDialog(
+                                                context,
+                                                save: (fields) =>
+                                                    repository.createLocation(
+                                                      Location(
+                                                        id: '',
+                                                        name:
+                                                            fields['name']
+                                                                as String,
+                                                        hint:
+                                                            fields['hint']
+                                                                as String?,
+                                                      ),
+                                                    ),
+                                              );
+                                          if (created == null) return;
+                                          setState(() {
+                                            location = created.id;
+                                            locations = _locations(
+                                              repository,
+                                              memory,
+                                              again: true,
+                                            );
+                                          });
+                                        },
+                                      ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 );
@@ -534,4 +563,39 @@ class _ListPickerState<T> extends State<ListPicker<T>> {
       ],
     );
   }
+}
+
+/// Where an event was, in words: its free-text location, with a
+/// controller of its own, as the sheet's kept.
+class _PlaceField extends StatefulWidget {
+  const _PlaceField({required this.text, required this.onChanged});
+
+  final String? text;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_PlaceField> createState() => _PlaceFieldState();
+}
+
+class _PlaceFieldState extends State<_PlaceField> {
+  late final _controller = TextEditingController(text: widget.text);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => TextField(
+    controller: _controller,
+    textCapitalization: TextCapitalization.sentences,
+    decoration: const InputDecoration(
+      isDense: true,
+      border: OutlineInputBorder(),
+      labelText: 'Where, in words',
+      hintText: 'An address, or anywhere not a location',
+    ),
+    onChanged: widget.onChanged,
+  );
 }

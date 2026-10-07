@@ -1293,7 +1293,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     ];
     return _row(
       context,
-      icon: Icons.front_hand_outlined,
+      icon: Icons.task_alt,
       changedKey: 'action_ids',
       onTap: switch (_actionList) {
         final actions? => () async {
@@ -1384,9 +1384,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         final edited = await showWhoWhereSheet(
           context,
           facts,
+          place: _value('location') as String?,
           additions: widget.additions,
         );
-        if (edited != null && mounted) _setFacts(edited);
+        if (edited == null || !mounted) return;
+        _setFacts(edited.facts);
+        _set('location', edited.place);
       },
       child: Text(
         switch ([
@@ -1445,7 +1448,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     final empty = (facts?.notes.isEmpty ?? true) && judgments.isEmpty;
     return _row(
       context,
-      icon: Icons.auto_awesome_outlined,
+      icon: Icons.note_alt_outlined,
       changedKey: 'facts',
       onTap: () async {
         setState(() => _editing = null);

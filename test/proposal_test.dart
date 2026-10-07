@@ -928,12 +928,25 @@ void main() {
       await tap(tester, find.text('Work'));
       await tap(tester, inDialog(find.text('No priority')));
       await tap(tester, inDialog(find.text('P1')));
-      await tap(tester, inDialog(find.text('Add location')));
-      await tester.enterText(find.byType(TextField), 'Office');
-      await tester.pumpAndSettle();
+      // Where, in words, in the who-and-where sheet's Where tab.
+      await tap(tester, inDialog(find.text('Add who and where')));
+      await tap(tester, find.widgetWithText(Tab, 'Where'));
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Where, in words'),
+        'Office',
+      );
+      await tap(tester, find.widgetWithText(FilledButton, 'Done'));
+      // The description, in a sheet of its own.
       await tap(tester, inDialog(find.text('Add description')));
-      await tester.enterText(find.byType(TextField), 'Invoices, mostly');
-      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(BottomSheet),
+          matching: find.byType(TextField),
+        ),
+        'Invoices, mostly',
+      );
+      await tap(tester, find.widgetWithText(FilledButton, 'Done'));
+      expect(inDialog(find.text('@ Office')), findsOneWidget);
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
 

@@ -203,14 +203,7 @@ class _FactsDialogState extends State<_FactsDialog> {
                       !snapshot.hasData)
                     const LinearProgressIndicator(),
                   if (widget.pickers) ...[
-                    _chips(
-                      theme,
-                      'With you',
-                      'Who was there',
-                      others,
-                      _with,
-                      _for,
-                    ),
+                    _chips(theme, 'With', 'Who was there', others, _with, _for),
                     _chips(
                       theme,
                       'For',
