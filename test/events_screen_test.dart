@@ -1309,6 +1309,8 @@ void main() {
       // Overwriting, it can cover Tea; keeping again, it's out of the way.
       await tapButton(tester, find.byTooltip('Keep events: tap to change'));
       await tester.tap(find.text('Overwrite and trim'));
+      await tester.pump();
+      await tester.tap(find.text('Done'));
       await settle(tester);
       await drag(tester, otherHandle, const Duration(hours: 1));
       expect(box(tester).span, (at(30, 12, 30), at(30, 15)));
@@ -1319,6 +1321,8 @@ void main() {
       await tester.tap(mode);
       await settle(tester);
       await tester.tap(find.text('Keep events'));
+      await tester.pump();
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
       expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
     });
@@ -1422,16 +1426,25 @@ void main() {
       // Picked from the drop-down, each said what it does.
       await tester.tap(find.byTooltip('Keep events: tap to change'));
       await tester.pumpAndSettle();
+      // Only the one picked says what it does.
       expect(find.textContaining('never overlaps them'), findsOneWidget);
+      expect(find.textContaining('touches is cancelled, whole'), findsNothing);
+      await tester.tap(find.text('Overwrite and cancel'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('never overlaps them'), findsNothing);
       expect(
         find.textContaining('touches is cancelled, whole'),
         findsOneWidget,
       );
+      await tester.tap(find.text('Overwrite and trim'));
+      await tester.pumpAndSettle();
       expect(
         find.textContaining('shortened, or split around it'),
         findsOneWidget,
       );
-      await tester.tap(find.text('Overwrite and trim'));
+      // Still open, until Done.
+      expect(find.text('Events in the way'), findsOneWidget);
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
       expect(
         find.byTooltip('Overwrite and trim: tap to change'),
@@ -1497,6 +1510,8 @@ void main() {
       await plus(tester);
       await tapButton(tester, find.byTooltip('Keep events: tap to change'));
       await tester.tap(find.text('Overwrite and cancel'));
+      await tester.pump();
+      await tester.tap(find.text('Done'));
       await settle(tester);
 
       await tapPulsing(tester, startHere);
@@ -1545,6 +1560,8 @@ void main() {
       await plus(tester);
       await tapButton(tester, find.byTooltip('Keep events: tap to change'));
       await tester.tap(find.text('Overwrite and trim'));
+      await tester.pump();
+      await tester.tap(find.text('Done'));
       await settle(tester);
       await tapPulsing(tester, startHere);
       expect(box(tester).span, (at(30, 12), at(30, 13)));
@@ -1570,6 +1587,8 @@ void main() {
       await tester.ensureVisible(find.text(mode));
       await settle(tester);
       await tester.tap(find.text(mode));
+      await tester.pump();
+      await tester.tap(find.text('Done'));
       await settle(tester);
       await settle(tester);
     }

@@ -68,45 +68,65 @@ enum CreateMode {
 typedef PushedEvent = ({DateTime start, DateTime end, String label});
 
 /// Asks which [CreateMode] to create in, [current] picked to start with;
-/// null if dismissed.
+/// null if dismissed. Only the one picked says what it does: tapping
+/// another picks it, and tapping it again, or Done, settles on it.
 Future<CreateMode?> showCreateModeDialog(
   BuildContext context,
   CreateMode current,
 ) => showDialog<CreateMode>(
   context: context,
-  builder: (context) => SimpleDialog(
-    title: const Text('Events in the way'),
-    children: [
-      RadioGroup<CreateMode>(
-        groupValue: current,
-        onChanged: (mode) => Navigator.of(context).pop(mode),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Its icon beside its radio, ahead of the text, to pick out.
-            for (final mode in CreateMode.values)
-              ListTile(
-                onTap: () => Navigator.of(context).pop(mode),
-                contentPadding: const EdgeInsetsDirectional.only(
-                  start: 12,
-                  end: 24,
-                ),
-                titleAlignment: ListTileTitleAlignment.top,
-                leading: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Radio<CreateMode>(value: mode),
-                    Icon(mode.icon),
-                  ],
-                ),
-                title: Text(mode.label),
-                subtitle: Text(mode.description),
-              ),
-          ],
+  builder: (context) {
+    var picked = current;
+    return StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: const Text('Events in the way'),
+        contentPadding: const EdgeInsets.symmetric(vertical: 16),
+        content: SingleChildScrollView(
+          child: RadioGroup<CreateMode>(
+            groupValue: picked,
+            onChanged: (mode) => setState(() => picked = mode ?? picked),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Its icon beside its radio, ahead of the text, to pick
+                // out.
+                for (final mode in CreateMode.values)
+                  ListTile(
+                    onTap: () => mode == picked
+                        ? Navigator.of(context).pop(mode)
+                        : setState(() => picked = mode),
+                    contentPadding: const EdgeInsetsDirectional.only(
+                      start: 12,
+                      end: 24,
+                    ),
+                    titleAlignment: ListTileTitleAlignment.top,
+                    leading: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Radio<CreateMode>(value: mode),
+                        Icon(mode.icon),
+                      ],
+                    ),
+                    title: Text(mode.label),
+                    subtitle: mode == picked ? Text(mode.description) : null,
+                  ),
+              ],
+            ),
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(picked),
+            child: const Text('Done'),
+          ),
+        ],
       ),
-    ],
-  ),
+    );
+  },
 );
 
 /// A new event as it's being made: a box between two cursors -- the one

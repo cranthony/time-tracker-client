@@ -436,6 +436,8 @@ void main() {
               await tester.ensureVisible(find.text(overwrite));
               await settle();
               await tester.tap(find.text(overwrite));
+              await tester.pump();
+              await tester.tap(find.text('Done'));
               await settle();
             }
             if (move != 0) {
