@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.3.1
+
+- Changing a group's priority, or anything else about it, is saved: it
+  was sent as an action's change, which the server refused, leaving the
+  group stuck on the failed save. One stuck that way goes through when
+  it's retried.
+
 ## 7.3.0
 
 - Overwriting comes in two kinds, in the new event's drop-down:
