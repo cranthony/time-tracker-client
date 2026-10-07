@@ -479,6 +479,28 @@ void main() {
       });
     }
 
+    // Moving an event, pressed and held: the box around it, pushing, and
+    // saying which it's moving; the event faint where it was.
+    testWidgets('events_moving ($mode)', (tester) async {
+      await render(
+        tester,
+        'events_moving',
+        events(),
+        then: () async {
+          await tester.longPress(find.text('Cooking class'));
+          await tester.pumpAndSettle();
+          // Up an hour, onto the call and what's after it: they're
+          // pushed along after it.
+          await tester.drag(
+            find.byTooltip('Drag to move the event'),
+            Offset(0, -60 * defaultTimelineScale),
+            warnIfMissed: false,
+          );
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
     // The day's summary swiped once, to its actions, and twice, to its
     // top-level ones.
     for (final (name, swipes) in [

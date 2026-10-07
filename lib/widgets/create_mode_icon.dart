@@ -2,7 +2,7 @@ import 'dart:ui' show PathMetric;
 
 import 'package:flutter/material.dart';
 
-import 'new_event_box.dart';
+import 'pending_event_box.dart';
 
 /// [mode]'s icon, in the [IconTheme]'s color and size: its
 /// [CreateMode.icon], or, where Material has none for it, drawn here --

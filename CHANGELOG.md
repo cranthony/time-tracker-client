@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.6.0
+
+- Pressing and holding an event on the Events page moves it: the box a
+  new event is made in comes up around it, pushing the events in its way
+  to start with (its drop-down picks another way), and saying, in its
+  shadow, which event it's moving; the event is faint where it was. ✓
+  saves the move, with what it does to the events in its way, in one go;
+  ✕ leaves it be. After it, a new event treats the events in its way as
+  it did before.
+
 ## 7.5.0
 
 - Three more ways for a new event to treat the events in its way, in

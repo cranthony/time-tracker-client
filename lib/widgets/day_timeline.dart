@@ -321,8 +321,9 @@ List<T> placeLabels<T>(
 /// then it's drawn over one drawn apart, and covers the axis' times its
 /// own labels would overlap.
 ///
-/// Tapping an event calls [onTap] with it; tapping anywhere else calls
-/// [onTapTime] with the time there.
+/// Tapping an event calls [onTap] with it, and pressing and holding it,
+/// [onLongPress]; tapping anywhere else calls [onTapTime] with the time
+/// there.
 class DayTimeline extends StatelessWidget {
   const DayTimeline({
     super.key,
@@ -334,7 +335,9 @@ class DayTimeline extends StatelessWidget {
     this.lastCompaction,
     this.pendingNotes = const [],
     this.onTap,
+    this.onLongPress,
     this.onTapTime,
+    this.faded,
     this.axis = true,
   });
 
@@ -355,6 +358,10 @@ class DayTimeline extends StatelessWidget {
   /// When each note not yet compacted into the calendar was taken.
   final List<DateTime> pendingNotes;
   final ValueChanged<Event>? onTap;
+  final ValueChanged<Event>? onLongPress;
+
+  /// The id of an event to draw faintly: one being moved from there.
+  final String? faded;
 
   /// Called with the time at a tap that isn't on an event.
   final ValueChanged<DateTime>? onTapTime;
@@ -543,6 +550,10 @@ class DayTimeline extends StatelessWidget {
                           onTap: onTap == null
                               ? null
                               : () => onTap!(placement.event),
+                          onLongPress: onLongPress == null
+                              ? null
+                              : () => onLongPress!(placement.event),
+                          faded: faded != null && placement.event.id == faded,
                           timeLabel: (t) => MaterialLocalizations.of(context)
                               .formatTimeOfDay(
                                 TimeOfDay.fromDateTime(t.toLocal()),
@@ -619,6 +630,8 @@ class _EventCard extends StatelessWidget {
     required this.actions,
     required this.styles,
     required this.onTap,
+    required this.onLongPress,
+    required this.faded,
     required this.timeLabel,
   });
 
@@ -637,6 +650,10 @@ class _EventCard extends StatelessWidget {
   final Map<String, PlanAction> actions;
   final _CardStyles styles;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  /// Whether it's drawn faintly: being moved from here.
+  final bool faded;
   final String Function(DateTime) timeLabel;
 
   Color? _colorOf(String id) => switch (actions[id]) {
@@ -663,11 +680,13 @@ class _EventCard extends StatelessWidget {
     final strike = cancelled ? TextDecoration.lineThrough : null;
     final duration = formatDuration(event.end.difference(event.start));
     final priority = event.effectivePriority ?? defaultPriority;
-    return Semantics(
+    final card = Semantics(
       label:
           '$summary, ${timeLabel(event.start)} to ${timeLabel(event.end)}'
           '${cancelled ? ', cancelled' : ''}',
       button: onTap != null,
+      onLongPress: onLongPress,
+      onLongPressHint: onLongPress == null ? null : 'Move',
       excludeSemantics: true,
       child: Material(
         color: colors.surfaceContainerHigh,
@@ -690,6 +709,7 @@ class _EventCard extends StatelessWidget {
           ),
           child: InkWell(
             onTap: onTap,
+            onLongPress: onLongPress,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -774,6 +794,7 @@ class _EventCard extends StatelessWidget {
         ),
       ),
     );
+    return faded ? Opacity(opacity: 0.35, child: card) : card;
   }
 }
 

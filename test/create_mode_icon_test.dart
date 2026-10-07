@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/widgets/create_mode_icon.dart';
-import 'package:time_tracker_client/widgets/new_event_box.dart';
+import 'package:time_tracker_client/widgets/pending_event_box.dart';
 
 void main() {
   testWidgets("draws the modes Material has no icon for, and shows the "

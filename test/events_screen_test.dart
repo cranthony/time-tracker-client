@@ -18,7 +18,7 @@ import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
-import 'package:time_tracker_client/widgets/new_event_box.dart';
+import 'package:time_tracker_client/widgets/pending_event_box.dart';
 import 'package:time_tracker_client/widgets/other_events.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/durations.dart';
@@ -1196,12 +1196,14 @@ void main() {
         );
 
     /// The box, as it's drawn.
-    NewEventBox box(WidgetTester tester) =>
-        tester.widget<NewEventBoxView>(find.byType(NewEventBoxView)).box;
+    PendingEventBox box(WidgetTester tester) => tester
+        .widget<PendingEventBoxView>(find.byType(PendingEventBoxView))
+        .box;
 
     /// Whether the box takes time from events already there.
-    bool overwrites(WidgetTester tester) =>
-        tester.widget<NewEventBoxView>(find.byType(NewEventBoxView)).overwrites;
+    bool overwrites(WidgetTester tester) => tester
+        .widget<PendingEventBoxView>(find.byType(PendingEventBoxView))
+        .overwrites;
 
     testWidgets('tapping a blank space does nothing', (tester) async {
       final repo = _RecordingRepository([
@@ -1212,7 +1214,7 @@ void main() {
       await tapAt(tester, at(30, 11, 20));
 
       expect(find.byType(AlertDialog), findsNothing);
-      expect(find.byType(NewEventBoxView), findsNothing);
+      expect(find.byType(PendingEventBoxView), findsNothing);
       // No zooming buttons: pinching zooms.
       expect(find.byTooltip('Zoom in'), findsNothing);
       expect(find.byTooltip('Zoom out'), findsNothing);
@@ -1263,7 +1265,7 @@ void main() {
       expect(find.text('Event created.'), findsOneWidget);
       expect(find.text('Admin'), findsOneWidget);
       // Done: "+" again.
-      expect(find.byType(NewEventBoxView), findsNothing);
+      expect(find.byType(PendingEventBoxView), findsNothing);
       expect(find.byTooltip('New event'), findsOneWidget);
     });
 
@@ -1518,7 +1520,9 @@ void main() {
       await tapPulsing(tester, startHere);
       // 12-2, touching A and B: the shadow over both, whole.
       expect(box(tester).span, (at(30, 12), at(30, 14)));
-      final view = tester.widget<NewEventBoxView>(find.byType(NewEventBoxView));
+      final view = tester.widget<PendingEventBoxView>(
+        find.byType(PendingEventBoxView),
+      );
       expect(view.covers, (at(30, 11), at(30, 15)));
       expect(view.overwrites, isTrue);
 
@@ -1578,7 +1582,7 @@ void main() {
       ]);
       expect(repo.deleted, [('b', false)]);
       expect(find.text('Time cleared: 2 events changed.'), findsOneWidget);
-      expect(find.byType(NewEventBoxView), findsNothing);
+      expect(find.byType(PendingEventBoxView), findsNothing);
     });
 
     /// Picks [mode] from the box's drop-down.
@@ -1594,8 +1598,9 @@ void main() {
     }
 
     /// Where the box shows the events it pushes going.
-    List<PushedEvent> pushed(WidgetTester tester) =>
-        tester.widget<NewEventBoxView>(find.byType(NewEventBoxView)).pushed;
+    List<PushedEvent> pushed(WidgetTester tester) => tester
+        .widget<PendingEventBoxView>(find.byType(PendingEventBoxView))
+        .pushed;
 
     testWidgets('trimming and pushing: the event the cursor is inside of is '
         'cut short, and the next pushed along, shown where it goes', (
@@ -1744,6 +1749,85 @@ void main() {
       );
     });
 
+    testWidgets('pressing and holding an event moves it: the box around it, '
+        'pushing to start with, and saying which; saved with what it '
+        'pushes, in one go', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 't', start: at(30, 12), end: at(30, 13), summary: 'Tea'),
+        Event(id: 'w', start: at(30, 14), end: at(30, 15), summary: 'Walk'),
+        Event(id: 'x', start: at(30, 15), end: at(30, 16), summary: 'Talk'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text('Tea'));
+      await tester.pumpAndSettle();
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
+      expect(find.byTooltip('Push: tap to change'), findsOneWidget);
+      expect(find.text('Moving “Tea”'), findsOneWidget);
+      // Faint where it was.
+      expect(
+        find.ancestor(of: find.text('Tea'), matching: find.byType(Opacity)),
+        findsOneWidget,
+      );
+
+      // Onto Walk: Walk, and Talk after it, pushed along.
+      await tapAt(tester, at(30, 14));
+      expect(box(tester).span, (at(30, 14), at(30, 15)));
+      expect(pushed(tester), [
+        (start: at(30, 15), end: at(30, 16), label: 'Walk'),
+        (start: at(30, 16), end: at(30, 17), label: 'Talk'),
+      ]);
+      await tester.tap(find.byTooltip('Move it here'));
+      await tester.pumpAndSettle();
+      expect(repo.created, isEmpty);
+      expect(repo.saved, [
+        {
+          'start': localIsoTimestamp(at(30, 14)),
+          'end': localIsoTimestamp(at(30, 15)),
+        },
+        {
+          'start': localIsoTimestamp(at(30, 15)),
+          'end': localIsoTimestamp(at(30, 16)),
+        },
+        {
+          'start': localIsoTimestamp(at(30, 16)),
+          'end': localIsoTimestamp(at(30, 17)),
+        },
+      ]);
+      expect(
+        find.text('Event moved. 2 events changed to make room.'),
+        findsOneWidget,
+      );
+      expect(find.byType(PendingEventBoxView), findsNothing);
+      // A new event keeps events again, as it did before the move.
+      await plus(tester);
+      expect(find.byTooltip('Keep events: tap to change'), findsOneWidget);
+    });
+
+    testWidgets('a move dropped, or left where it was, saves nothing', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([
+        Event(id: 't', start: at(30, 12), end: at(30, 13), summary: 'Tea'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text('Tea'));
+      await tester.pumpAndSettle();
+      await tapAt(tester, at(30, 15));
+      await tester.tap(find.byTooltip('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PendingEventBoxView), findsNothing);
+      expect(find.text('Moving “Tea”'), findsNothing);
+
+      await tester.longPress(find.text('Tea'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Move it here'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, isEmpty);
+      expect(find.byType(PendingEventBoxView), findsNothing);
+    });
+
     testWidgets('Cancel makes nothing', (tester) async {
       final repo = _RecordingRepository([]);
       await tester.pumpWidget(app(repo));
@@ -1753,7 +1837,7 @@ void main() {
       await tester.tap(find.byTooltip('Cancel'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(NewEventBoxView), findsNothing);
+      expect(find.byType(PendingEventBoxView), findsNothing);
       expect(repo.created, isEmpty);
     });
 

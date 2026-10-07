@@ -134,12 +134,13 @@ Future<CreateMode?> showCreateModeDialog(
   },
 );
 
-/// A new event as it's being made: a box between two cursors -- the one
-/// it was started from, with the buttons ([cursor]), and, once one's been
-/// used, the [other] -- holding the event ([span]).
+/// An event pending: a new one as it's being made, or one being moved --
+/// a box between two cursors -- the one it was started from, with the
+/// buttons ([cursor]), and, once one's been used, the [other] -- holding
+/// the event ([span]).
 @immutable
-class NewEventBox {
-  const NewEventBox(this.cursor, {this.other});
+class PendingEventBox {
+  const PendingEventBox(this.cursor, {this.other});
 
   final DateTime cursor;
   final DateTime? other;
@@ -159,25 +160,32 @@ class NewEventBox {
   };
 
   /// It with its [cursor] moved alone.
-  NewEventBox withCursor(DateTime cursor) => NewEventBox(cursor, other: other);
+  PendingEventBox withCursor(DateTime cursor) =>
+      PendingEventBox(cursor, other: other);
 
   /// It with its [other] cursor moved alone.
-  NewEventBox withOther(DateTime other) => NewEventBox(cursor, other: other);
+  PendingEventBox withOther(DateTime other) =>
+      PendingEventBox(cursor, other: other);
 
   /// It moved whole, its size intact, its cursor to [cursor].
-  NewEventBox movedTo(DateTime cursor) =>
-      NewEventBox(cursor, other: other?.add(cursor.difference(this.cursor)));
+  PendingEventBox movedTo(DateTime cursor) => PendingEventBox(
+    cursor,
+    other: other?.add(cursor.difference(this.cursor)),
+  );
 
   /// It with its cursors at [start] and [end] -- each where it was, the
   /// [cursor] still the earlier if it was.
-  NewEventBox at(DateTime start, DateTime end) => switch (other) {
-    final other? when other.isBefore(cursor) => NewEventBox(end, other: start),
-    _ => NewEventBox(start, other: end),
+  PendingEventBox at(DateTime start, DateTime end) => switch (other) {
+    final other? when other.isBefore(cursor) => PendingEventBox(
+      end,
+      other: start,
+    ),
+    _ => PendingEventBox(start, other: end),
   };
 
   @override
   bool operator ==(Object other) =>
-      other is NewEventBox &&
+      other is PendingEventBox &&
       other.cursor == cursor &&
       other.other == this.other;
 
@@ -185,21 +193,21 @@ class NewEventBox {
   int get hashCode => Object.hash(cursor, other);
 
   @override
-  String toString() => 'NewEventBox($cursor, other: $other)';
+  String toString() => 'PendingEventBox($cursor, other: $other)';
 }
 
-/// A [NewEventBox], over a [DayTimeline] for [day] at [scale]. Each of
+/// A [PendingEventBox], over a [DayTimeline] for [day] at [scale]. Each of
 /// its cursors is a line across the timeline, with its time at its left
 /// and a handle at its right that moves it alone. The [box]'s
-/// [NewEventBox.cursor] has in its middle a button below it, which moves
+/// [PendingEventBox.cursor] has in its middle a button below it, which moves
 /// the other cursor an hour later each tap, and one above it, an hour
 /// earlier -- an hour from it to start with -- or puts the other cursor
 /// where either's dragged to; and the [mode] to pick. Between the
-/// cursors, the event is shaded ([NewEventShadow]) -- unless [shaded] is
+/// cursors, the event is shaded ([PendingEventShadow]) -- unless [shaded] is
 /// false -- tinged red and slowly pulsing where it [overwrites] events;
 /// and in it, a bigger, fainter handle that moves the whole box.
-class NewEventBoxView extends StatefulWidget {
-  const NewEventBoxView({
+class PendingEventBoxView extends StatefulWidget {
+  const PendingEventBoxView({
     super.key,
     required this.day,
     required this.dayEnd,
@@ -216,12 +224,13 @@ class NewEventBoxView extends StatefulWidget {
     this.overwrites = false,
     this.covers,
     this.pushed = const [],
+    this.label,
   });
 
   final DateTime day;
   final DateTime dayEnd;
   final double scale;
-  final NewEventBox box;
+  final PendingEventBox box;
   final CreateMode mode;
 
   /// Whether the event between the cursors is shaded.
@@ -237,10 +246,13 @@ class NewEventBoxView extends StatefulWidget {
   /// Where the events it pushes go: each outlined there.
   final List<PushedEvent> pushed;
 
-  /// The [NewEventBox.cursor]'s handle dragged to a time.
+  /// What the shadow says it is, if anything: the event it's moving.
+  final String? label;
+
+  /// The [PendingEventBox.cursor]'s handle dragged to a time.
   final ValueChanged<DateTime> onMoveCursor;
 
-  /// The [NewEventBox.other] cursor's handle dragged to a time.
+  /// The [PendingEventBox.other] cursor's handle dragged to a time.
   final ValueChanged<DateTime> onMoveOther;
 
   /// The box's handle dragged: the box moved whole, its cursor to the
@@ -257,10 +269,10 @@ class NewEventBoxView extends StatefulWidget {
   final VoidCallback onPickMode;
 
   @override
-  State<NewEventBoxView> createState() => _NewEventBoxViewState();
+  State<PendingEventBoxView> createState() => _PendingEventBoxViewState();
 }
 
-class _NewEventBoxViewState extends State<NewEventBoxView> {
+class _PendingEventBoxViewState extends State<PendingEventBoxView> {
   /// Where a drag is, down the timeline.
   double _dragY = 0;
 
@@ -294,10 +306,11 @@ class _NewEventBoxViewState extends State<NewEventBoxView> {
             height:
                 (_y(widget.covers?.$2 ?? end) - _y(widget.covers?.$1 ?? start))
                     .clamp(2.0, double.infinity),
-            child: NewEventShadow(
+            child: PendingEventShadow(
               start: start,
               end: end,
               overwrites: widget.overwrites,
+              label: widget.label,
             ),
           ),
         for (final pushed in widget.pushed)
@@ -561,25 +574,29 @@ class _NewEventBoxViewState extends State<NewEventBoxView> {
 /// The new event, shaded from [start] to [end], with its times in its
 /// corner: tinged red, and slowly pulsing, where it [overwrites] events.
 /// It takes no touches: they go to what's under it.
-class NewEventShadow extends StatefulWidget {
-  const NewEventShadow({
+class PendingEventShadow extends StatefulWidget {
+  const PendingEventShadow({
     super.key,
     required this.start,
     required this.end,
     this.overwrites = false,
+    this.label,
   });
 
   final DateTime start;
   final DateTime end;
   final bool overwrites;
 
+  /// What it is, at its foot, if anything: the event it's moving.
+  final String? label;
+
   @override
-  State<NewEventShadow> createState() => _NewEventShadowState();
+  State<PendingEventShadow> createState() => _PendingEventShadowState();
 }
 
-class _NewEventShadowState extends State<NewEventShadow>
+class _PendingEventShadowState extends State<PendingEventShadow>
     with SingleTickerProviderStateMixin {
-  /// The red tinge's slow pulse, while [NewEventShadow.overwrites].
+  /// The red tinge's slow pulse, while [PendingEventShadow.overwrites].
   late final _pulse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1600),
@@ -592,7 +609,7 @@ class _NewEventShadowState extends State<NewEventShadow>
   }
 
   @override
-  void didUpdateWidget(NewEventShadow old) {
+  void didUpdateWidget(PendingEventShadow old) {
     super.didUpdateWidget(old);
     _pulseIfOverwriting();
   }
@@ -623,31 +640,57 @@ class _NewEventShadowState extends State<NewEventShadow>
         builder: (context, _) {
           final color = widget.overwrites ? tinge : colors.primary;
           final alpha = widget.overwrites ? 0.16 + 0.22 * _pulse.value : 0.2;
+          Widget chip(String text) => Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: widget.overwrites ? Colors.white : colors.onPrimary,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
           return Container(
             // Clear of the handles at the right.
             padding: const EdgeInsets.fromLTRB(4, 4, 36, 4),
-            // In its corner, solid, to read over the events under it.
-            alignment: Alignment.bottomRight,
             decoration: BoxDecoration(
               color: color.withValues(alpha: alpha),
               border: Border.all(color: color, width: 1.5),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '${clockTime(context, widget.start)} – '
-                '${clockTime(context, widget.end)}',
-                maxLines: 1,
-                style: TextStyle(
-                  color: widget.overwrites ? Colors.white : colors.onPrimary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
+            // Along its foot, solid, to read over the events under it --
+            // clear of the cursor's buttons at its head: what it is, at the
+            // left, over its times, at the right.
+            alignment: Alignment.bottomCenter,
+            clipBehavior: Clip.hardEdge,
+            // A box too short for them shows what of them fits.
+            child: OverflowBox(
+              alignment: Alignment.bottomCenter,
+              minHeight: 0,
+              maxHeight: double.infinity,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (widget.label case final label?) ...[
+                    Align(alignment: Alignment.centerLeft, child: chip(label)),
+                    const SizedBox(height: 4),
+                  ],
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: chip(
+                      '${clockTime(context, widget.start)} – '
+                      '${clockTime(context, widget.end)}',
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -662,7 +705,7 @@ String clockTime(BuildContext context, DateTime time) =>
     MaterialLocalizations.of(context)
         .formatTimeOfDay(TimeOfDay.fromDateTime(time.toLocal()));
 
-/// Where keeping events moved a [NewEventBox]: a pointed arrow down the
+/// Where keeping events moved a [PendingEventBox]: a pointed arrow down the
 /// timeline for [day] at [scale], [from] where it was put [to] where it
 /// fits, that draws out to its point and then fades away. It takes no
 /// touches.
