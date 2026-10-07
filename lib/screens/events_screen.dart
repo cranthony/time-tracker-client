@@ -729,7 +729,7 @@ class _EventsScreenState extends State<EventsScreen> {
     bool fromOther = false,
   }) {
     final other = box.other;
-    if (_createMode == CreateMode.overwrite || other == null) return box;
+    if (_createMode.overwrites || other == null) return box;
     final others = _otherEvents(null);
     if (moved) {
       final start = box.span?.$1 ?? box.cursor;
@@ -766,10 +766,25 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Whether the new event takes time from events already there.
   bool get _overwrites => switch (_box?.span) {
     (final start, final end) =>
-      _createMode == CreateMode.overwrite &&
+      _createMode.overwrites &&
           _otherEvents(null).overlapping(start, end) != null,
     null => false,
   };
+
+  /// What the shadow covers, cancelling: the box, and every event it
+  /// touches, whole. Null otherwise: just the box.
+  (DateTime, DateTime)? get _covers => switch (_box?.span) {
+    (final start, final end) when _createMode == CreateMode.cancel =>
+      _otherEvents(null).touching(start, end),
+    _ => null,
+  };
+
+  /// What an event from [start] to [end] does to the [others] in its way,
+  /// overwriting them: trims, or cancels, them.
+  Overwrite _overwrite(OtherEvents others, DateTime start, DateTime end) =>
+      _createMode == CreateMode.cancel
+      ? others.cancelling(start, end)
+      : others.overwrite(start, end);
 
   /// A button on the cursor, its [step] later or earlier, dragged to
   /// [to]: the other cursor there, at least a quarter hour from the
@@ -791,7 +806,9 @@ class _EventsScreenState extends State<EventsScreen> {
     if (span == null) return;
     final (start, end) = span;
     final others = _otherEvents(null);
-    final overwrite = _createMode == CreateMode.overwrite;
+    final overwrite = _createMode.overwrites;
+    final inTheWay = _overwrite(others, start, end);
+    var cleared = false;
     final created = await showNewEventDialog(
       context,
       start: start,
@@ -802,7 +819,8 @@ class _EventsScreenState extends State<EventsScreen> {
           ? (fields) => _approvingHistory(
               (allow) => widget.repository.createOver(
                 fields,
-                others.overwrite(
+                _overwrite(
+                  others,
                   DateTime.parse(fields['start'] as String),
                   DateTime.parse(fields['end'] as String),
                 ),
@@ -810,6 +828,32 @@ class _EventsScreenState extends State<EventsScreen> {
               ),
             )
           : widget.repository.createEvent,
+      // Overwriting events, the trash makes no new event, but just
+      // clears the time of them.
+      clear: !overwrite || inTheWay.isEmpty
+          ? null
+          : (
+              question: _createMode == CreateMode.cancel
+                  ? 'Cancel ${_events(inTheWay.count)}?'
+                  : 'Clear this time of ${_events(inTheWay.count)}?',
+              explanation: _createMode == CreateMode.cancel
+                  ? 'Every event the new one touches is cancelled, as a '
+                        'change of plan, and no new event is made.'
+                  : 'The events under the new one are trimmed out of this '
+                        'time, and no new event is made.',
+              label: _createMode == CreateMode.cancel
+                  ? 'Cancel them'
+                  : 'Clear the time',
+              run: () {
+                cleared = true;
+                return _approvingHistory(
+                  (allow) => widget.repository.makeRoom(
+                    inTheWay,
+                    allowCompactedChanges: allow,
+                  ),
+                );
+              },
+            ),
       actions: _actionsById,
       loadActions: _actions,
     );
@@ -819,10 +863,12 @@ class _EventsScreenState extends State<EventsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          changed <= 0
+          cleared
+              ? 'Time cleared: ${_events(created.length)} changed.'
+              : changed <= 0
               ? 'Event created.'
-              : 'Event created. $changed other event${changed == 1 ? '' : 's'} '
-                    'changed to make room.',
+              : 'Event created. $changed other '
+                    'event${changed == 1 ? '' : 's'} changed to make room.',
         ),
       ),
     );
@@ -831,6 +877,9 @@ class _EventsScreenState extends State<EventsScreen> {
     await _refresh();
     await _loadActions();
   }
+
+  /// "3 events", or "1 event".
+  static String _events(int count) => '$count event${count == 1 ? '' : 's'}';
 
   Future<void> _pickCreateMode() async {
     final mode = await showCreateModeDialog(context, _createMode);
@@ -1267,6 +1316,7 @@ class _EventsScreenState extends State<EventsScreen> {
                                   box: box,
                                   mode: _createMode,
                                   overwrites: _overwrites,
+                                  covers: _covers,
                                   onMoveCursor: (to) => _changeBox(
                                     (box) =>
                                         box.withCursor(_nearestQuarter(to)),

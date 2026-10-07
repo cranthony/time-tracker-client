@@ -118,13 +118,16 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
 /// "Create", once it has a summary, sends it with [create], as
 /// `create_event` takes it. Returns what [create] returned (the events the
 /// server changed), or null if it was called off. Its times are kept
-/// clear of the events in [otherEvents].
+/// clear of the events in [otherEvents]. With [clear], a trash can at its
+/// top right offers to make no new event, but just clear the time --
+/// asking first.
 Future<List<Event>?> showNewEventDialog(
   BuildContext context, {
   required DateTime start,
   required DateTime end,
   OtherEvents otherEvents = const OtherEvents.none(),
   required Future<List<Event>> Function(Map<String, Object?> fields) create,
+  ClearTime? clear,
   Map<String, PlanAction> actions = const {},
   Future<List<PlanAction>> Function()? loadActions,
 }) async {
@@ -142,7 +145,17 @@ Future<List<Event>?> showNewEventDialog(
       loadActions: loadActions,
       save: (changes) async =>
           () => create({...values, ...changes}),
-      remove: null,
+      remove: switch (clear) {
+        final clear? => _Removal(
+          tooltip: 'Clear this time instead',
+          question: clear.question,
+          explanation: clear.explanation,
+          keepLabel: 'Keep them',
+          label: clear.label,
+          run: (_) => clear.run(),
+        ),
+        null => null,
+      },
     ),
   );
   return switch (outcome) {
@@ -219,6 +232,15 @@ Future<SummaryOutcome<List<Recurrence>>?> showSeriesSummaryDialog(
 
 /// The trash can's action: what it asks, and [run]s once confirmed --
 /// with whether [option], if it offers one, was switched on.
+/// What a new event's trash can does instead of making it: clear the
+/// time, with [run], once [question] is answered with [label].
+typedef ClearTime = ({
+  String question,
+  String explanation,
+  String label,
+  Future<List<Event>> Function() run,
+});
+
 class _Removal {
   const _Removal({
     required this.tooltip,

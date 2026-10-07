@@ -378,14 +378,18 @@ void main() {
 
     // Making an event: the cursor at now, from "+"; dragged out over
     // events, keeping them -- fitted into the free time there; moved to a
-    // free stretch, and dragged out there; overwriting, tinged red; and
-    // the choice between them.
-    for (final (name, overwrite, move, drag, dialog) in [
-      ('events_new_cursor', false, 0, 0, false),
-      ('events_new_dragged', false, 0, 150, false),
-      ('events_new_kept', false, 180, 60, false),
-      ('events_new_overwrite', true, 0, 150, false),
-      ('events_new_modes', false, 0, 0, true),
+    // free stretch, and dragged out there; overwriting and trimming,
+    // tinged red; overwriting and cancelling, the shadow stretched over
+    // the events it cancels whole; the choice between them; and the new
+    // event, overwriting, with its trash to clear the time instead.
+    for (final (name, overwrite, move, drag, dialog, open) in [
+      ('events_new_cursor', null, 0, 0, false, false),
+      ('events_new_dragged', null, 0, 150, false, false),
+      ('events_new_kept', null, 180, 60, false, false),
+      ('events_new_overwrite', 'Overwrite and trim', 0, 150, false, false),
+      ('events_new_cancel', 'Overwrite and cancel', 0, 150, false, false),
+      ('events_new_modes', null, 0, 0, true, false),
+      ('events_new_clear', 'Overwrite and trim', 0, 150, false, true),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
         await render(
@@ -401,13 +405,13 @@ void main() {
 
             await tester.tap(find.byTooltip('New event'));
             await tester.pumpAndSettle();
-            if (overwrite || dialog) {
+            if (overwrite != null || dialog) {
               await tester.tap(find.byTooltip('Keep events: tap to change'));
               await tester.pumpAndSettle();
             }
-            if (overwrite) {
-              await tester.tap(find.text('Overwrite events'));
-              await tester.pumpAndSettle();
+            if (overwrite != null) {
+              await tester.tap(find.text(overwrite));
+              await settle();
             }
             if (move != 0) {
               await tester.drag(
@@ -426,6 +430,10 @@ void main() {
                 Offset(0, drag * defaultTimelineScale),
                 warnIfMissed: false,
               );
+              await settle();
+            }
+            if (open) {
+              await tester.tap(find.byTooltip('Continue'));
               await settle();
             }
           },

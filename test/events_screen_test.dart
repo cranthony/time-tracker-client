@@ -1155,6 +1155,15 @@ void main() {
       }
     }
 
+    /// Taps [button] on the cursor, scrolled into view, while the
+    /// overwriting pulse may be going: it never settles.
+    Future<void> tapPulsing(WidgetTester tester, Finder button) async {
+      await tester.ensureVisible(button);
+      await settle(tester);
+      await tester.tap(button);
+      await settle(tester);
+    }
+
     Future<void> continueToDialog(WidgetTester tester) async {
       await tester.tap(find.byTooltip('Continue'));
       await settle(tester);
@@ -1299,12 +1308,12 @@ void main() {
 
       // Overwriting, it can cover Tea; keeping again, it's out of the way.
       await tapButton(tester, find.byTooltip('Keep events: tap to change'));
-      await tester.tap(find.text('Overwrite events'));
+      await tester.tap(find.text('Overwrite and trim'));
       await settle(tester);
       await drag(tester, otherHandle, const Duration(hours: 1));
       expect(box(tester).span, (at(30, 12, 30), at(30, 15)));
       expect(overwrites(tester), isTrue);
-      final mode = find.byTooltip('Overwrite events: tap to change');
+      final mode = find.byTooltip('Overwrite and trim: tap to change');
       await tester.ensureVisible(mode);
       await settle(tester);
       await tester.tap(mode);
@@ -1363,12 +1372,19 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('never overlaps them'), findsOneWidget);
       expect(
-        find.textContaining('shortened, split or removed'),
+        find.textContaining('touches is cancelled, whole'),
         findsOneWidget,
       );
-      await tester.tap(find.text('Overwrite events'));
+      expect(
+        find.textContaining('shortened, or split around it'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Overwrite and trim'));
       await tester.pumpAndSettle();
-      expect(find.byTooltip('Overwrite events: tap to change'), findsOneWidget);
+      expect(
+        find.byTooltip('Overwrite and trim: tap to change'),
+        findsOneWidget,
+      );
 
       await drag(tester, startHere, const Duration(hours: 3));
       expect(box(tester).span, (at(30, 12), at(30, 15)));
@@ -1416,6 +1432,84 @@ void main() {
       expect(continueButton(tester).onPressed, isNull);
       await tapButton(tester, endHere);
       expect(box(tester).span, (at(30, 11), at(30, 12)));
+    });
+
+    testWidgets('overwriting and cancelling: the shadow covers every event '
+        'it touches, whole, and saving cancels them', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 'a', start: at(30, 11), end: at(30, 12, 30), summary: 'A'),
+        Event(id: 'b', start: at(30, 13, 30), end: at(30, 15), summary: 'B'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      await tapButton(tester, find.byTooltip('Keep events: tap to change'));
+      await tester.tap(find.text('Overwrite and cancel'));
+      await settle(tester);
+
+      await tapPulsing(tester, startHere);
+      await tapPulsing(tester, startHere);
+      // 12-2, touching A and B: the shadow over both, whole.
+      expect(box(tester).span, (at(30, 12), at(30, 14)));
+      final view = tester.widget<NewEventBoxView>(find.byType(NewEventBoxView));
+      expect(view.covers, (at(30, 11), at(30, 15)));
+      expect(view.overwrites, isTrue);
+
+      await continueToDialog(tester);
+      // The new event keeps the box's times.
+      expect(
+        inDialog(find.text('Wed, Sep 30 · 12:00 PM – 2:00 PM')),
+        findsOneWidget,
+      );
+      await tester.enterText(inDialog(find.byType(TextField)), 'Party');
+      await settle(tester);
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+      expect(repo.created.single['summary'], 'Party');
+      expect(repo.saved, isEmpty);
+      expect(repo.deleted, [('a', false), ('b', false)]);
+    });
+
+    testWidgets("the new event's trash clears the time of the events under it, "
+        'after asking, making no new one', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 'a', start: at(30, 11), end: at(30, 12, 30), summary: 'A'),
+        Event(id: 'b', start: at(30, 12, 45), end: at(30, 13), summary: 'B'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      // Keeping events, there's nothing under it to clear.
+      await tapButton(tester, startHere);
+      await continueToDialog(tester);
+      expect(find.byTooltip('Clear this time instead'), findsNothing);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      // Overwriting and trimming, afresh from noon: A trimmed, B cancelled,
+      // nothing made.
+      await tester.tap(find.byTooltip('Cancel'));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      await tapButton(tester, find.byTooltip('Keep events: tap to change'));
+      await tester.tap(find.text('Overwrite and trim'));
+      await settle(tester);
+      await tapPulsing(tester, startHere);
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
+      await continueToDialog(tester);
+      await tester.tap(find.byTooltip('Clear this time instead'));
+      await settle(tester);
+      expect(find.text('Clear this time of 2 events?'), findsOneWidget);
+      await tester.tap(find.text('Clear the time'));
+      await tester.pumpAndSettle();
+
+      expect(repo.created, isEmpty);
+      expect(repo.saved, [
+        {'end': localIsoTimestamp(at(30, 12))},
+      ]);
+      expect(repo.deleted, [('b', false)]);
+      expect(find.text('Time cleared: 2 events changed.'), findsOneWidget);
+      expect(find.byType(NewEventBoxView), findsNothing);
     });
 
     testWidgets('Cancel makes nothing', (tester) async {
@@ -1476,6 +1570,21 @@ void main() {
         findsOneWidget,
       );
       expect(inDialog(find.text('Gym')), findsOneWidget);
+    });
+
+    test('McpEventsRepository clears time in one update_event batch', () async {
+      final client = _RecurrenceClient();
+      await McpEventsRepository(client).makeRoom(
+        Overwrite(
+          cancels: [Event(id: 'b', start: at(30, 12), end: at(30, 12, 30))],
+        ),
+      );
+      expect(client.name, 'update_event');
+      expect(client.arguments, {
+        'cancels': [
+          {'event_id': 'b', 'counts_against_follow_through': false},
+        ],
+      });
     });
 
     test('McpEventsRepository overwrites in one update_event batch', () async {

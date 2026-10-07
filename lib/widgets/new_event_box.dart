@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 
 import 'day_timeline.dart';
 
-/// Whether a new event keeps clear of the events already there, or takes
-/// its time from them.
+/// What a new event does with the events already there: keeps clear of
+/// them, or overwrites them -- trimming them, or cancelling them.
 enum CreateMode {
   keep(
     'Keep events',
@@ -12,11 +12,17 @@ enum CreateMode {
         'overlaps them.',
     Icons.lock_outline,
   ),
-  overwrite(
-    'Overwrite events',
+  trim(
+    'Overwrite and trim',
     'The new event takes its time from the events already there: they '
-        'are shortened, split or removed to make room.',
-    Icons.layers_clear,
+        'are shortened, or split around it, to make room; one it covers '
+        'whole is cancelled.',
+    Icons.content_cut,
+  ),
+  cancel(
+    'Overwrite and cancel',
+    'Every event the new one touches is cancelled, whole.',
+    Icons.event_busy,
   );
 
   const CreateMode(this.label, this.description, this.icon);
@@ -24,6 +30,9 @@ enum CreateMode {
   final String label;
   final String description;
   final IconData icon;
+
+  /// Whether it changes the events in the way.
+  bool get overwrites => this != keep;
 }
 
 /// Asks which [CreateMode] to create in, [current] picked to start with;
@@ -136,6 +145,7 @@ class NewEventBoxView extends StatefulWidget {
     required this.onPickMode,
     this.shaded = true,
     this.overwrites = false,
+    this.covers,
   });
 
   final DateTime day;
@@ -149,6 +159,10 @@ class NewEventBoxView extends StatefulWidget {
 
   /// Whether the event takes time from events already there.
   final bool overwrites;
+
+  /// What the shadow covers, if it's more than the event: the events it
+  /// cancels whole.
+  final (DateTime, DateTime)? covers;
 
   /// The [NewEventBox.cursor]'s handle dragged to a time.
   final ValueChanged<DateTime> onMoveCursor;
@@ -203,8 +217,10 @@ class _NewEventBoxViewState extends State<NewEventBoxView> {
           Positioned(
             left: timelineCardsLeft,
             right: 8,
-            top: _y(start),
-            height: (_y(end) - _y(start)).clamp(2.0, double.infinity),
+            top: _y(widget.covers?.$1 ?? start),
+            height:
+                (_y(widget.covers?.$2 ?? end) - _y(widget.covers?.$1 ?? start))
+                    .clamp(2.0, double.infinity),
             child: NewEventShadow(
               start: start,
               end: end,
@@ -435,7 +451,7 @@ class _NewEventBoxViewState extends State<NewEventBoxView> {
   Widget _modeButton(ColorScheme colors) => Tooltip(
     message: '${widget.mode.label}: tap to change',
     child: Material(
-      color: widget.mode == CreateMode.overwrite
+      color: widget.mode.overwrites
           ? Color.lerp(colors.errorContainer, colors.surface, 0.2)
           : colors.surfaceContainerHigh,
       shape: const StadiumBorder(),

@@ -166,4 +166,14 @@ void main() {
       (at(11), at(11, 20)),
     );
   });
+
+  test('cancelling takes every event a new one touches, whole, and its '
+      'shadow stretches over them', () {
+    // a 8-8:50, b 11-12.
+    final cancelling = others.cancelling(at(8, 30), at(11, 30));
+    expect([for (final e in cancelling.cancels) e.id], ['a', 'b']);
+    expect(cancelling.updates, isEmpty);
+    expect(others.touching(at(8, 30), at(11, 30)), (at(8), at(12)));
+    expect(others.touching(at(9), at(10)), (at(9), at(10)));
+  });
 }

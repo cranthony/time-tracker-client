@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.3.0
+
+- Overwriting comes in two kinds, in the new event's drop-down:
+  **Overwrite and trim** shortens or splits the events in the way (and
+  cancels one it covers whole), as overwriting did; **Overwrite and
+  cancel** cancels every event the new one touches, whole -- its shadow
+  stretching past the box to cover them, while the new event keeps the
+  box's times.
+- Overwriting events, the new event's dialog has a trash can at its top
+  right: rather than making the event, it clears the time -- trimming or
+  cancelling the events under the box, as the mode says -- after asking.
+
 ## 7.2.0
 
 - Events are added from a **+** on the Events page, in place of the zoom
