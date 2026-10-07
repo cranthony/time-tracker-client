@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.9.0
+
+- The box's "+" buttons stretch it an hour at the end they're on: "+"
+  above, earlier at its top, and "+" below, later at its foot --
+  whichever cursor is there. (They moved the other cursor, which could
+  shrink it.) Keeping events, a stretch stops at the event before, or
+  after. Dragged, a "+" takes that end with it.
+- Beside each, a "−" shrinks it an hour from that end, to no less than
+  a quarter hour: "−" above, from the top, and "−" below, from the foot.
+- The other cursor has a "−" and a "+" of its own, on its outside: the
+  box shrunk and stretched at that end, as by the cursor's.
+
 ## 7.8.1
 
 - The sample data's events no longer overlap: the events with people,

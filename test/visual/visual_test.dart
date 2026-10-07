@@ -535,7 +535,7 @@ void main() {
             }
             if (drag != 0) {
               final start = find.byTooltip(
-                'An hour later: tap to move the other end, or drag it',
+                'An hour later: tap to stretch it down, or drag its foot',
               );
               await tester.drag(
                 start,
@@ -583,7 +583,7 @@ void main() {
           );
           await tester.pumpAndSettle();
           final later = find.byTooltip(
-            'An hour later: tap to move the other end, or drag it',
+            'An hour later: tap to stretch it down, or drag its foot',
           );
           for (var i = 0; i < 2; i++) {
             await tester.ensureVisible(later);

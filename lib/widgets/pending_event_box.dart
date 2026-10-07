@@ -169,6 +169,20 @@ class PendingEventBox {
   PendingEventBox withOther(DateTime other) =>
       PendingEventBox(cursor, other: other);
 
+  /// Whether the [cursor] is its top end: the [other] below it, or not
+  /// apart from it.
+  bool get cursorOnTop => other == null || !other!.isBefore(cursor);
+
+  /// It with its top end at [time]: the [other] cursor, if there's no
+  /// event between them yet, to make one above.
+  PendingEventBox withTop(DateTime time) =>
+      span != null && cursorOnTop ? withCursor(time) : withOther(time);
+
+  /// It with its foot at [time]: the [other] cursor, if there's no event
+  /// between them yet, to make one below.
+  PendingEventBox withFoot(DateTime time) =>
+      span != null && !cursorOnTop ? withCursor(time) : withOther(time);
+
   /// It moved whole, its size intact, its cursor to [cursor].
   PendingEventBox movedTo(DateTime cursor) => PendingEventBox(
     cursor,
@@ -220,6 +234,7 @@ class PendingEventBoxView extends StatefulWidget {
     required this.onMoveOther,
     required this.onMoveBox,
     required this.onTap,
+    this.onShrink,
     required this.onDrag,
     required this.onPickMode,
     this.shaded = true,
@@ -272,12 +287,17 @@ class PendingEventBoxView extends StatefulWidget {
   /// time given.
   final ValueChanged<DateTime> onMoveBox;
 
-  /// A button tapped: the other cursor moved by its [step] -- an hour
-  /// later, below the cursor, or earlier, above it.
+  /// A "+" tapped: the box stretched by its [step] -- an hour later, at
+  /// its foot, below the cursor, or earlier, at its top, above it.
   final ValueChanged<Duration> onTap;
 
-  /// A button dragged to a time: the other cursor there, on the side of
-  /// the cursor its [step] goes.
+  /// A "−" tapped: the box shrunk by its [step] -- an hour from its top
+  /// (later), or from its foot (earlier). Null while there's nothing to
+  /// shrink.
+  final ValueChanged<Duration>? onShrink;
+
+  /// A "+" dragged to a time: the box's top there, or its foot, the way
+  /// its [step] goes.
   final void Function(Duration step, DateTime to) onDrag;
   final VoidCallback onPickMode;
 
@@ -367,6 +387,7 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
               tooltip: 'Drag to move the other end',
               onDragTo: widget.onMoveOther,
             ),
+            if (box.span != null) _otherButtons(colors, other, constraints),
           ],
           ..._line(
             colors,
@@ -387,6 +408,26 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
                 children: [
                   _swapButton(colors),
                   const SizedBox(width: 8),
+                  // Beside each "+", a "−": the box shrunk from that end.
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _shrinkButton(
+                        colors,
+                        _hour,
+                        Icons.arrow_downward,
+                        'Shrink it an hour, from the top',
+                      ),
+                      const SizedBox(height: 2 * _buttonGap),
+                      _shrinkButton(
+                        colors,
+                        -_hour,
+                        Icons.arrow_upward,
+                        'Shrink it an hour, from the foot',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 6),
                   Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -394,14 +435,14 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
                         colors,
                         -_hour,
                         Icons.arrow_upward,
-                        'An hour earlier: tap to move the other end, or drag it',
+                        'An hour earlier: tap to stretch it up, or drag its top',
                       ),
                       const SizedBox(height: 2 * _buttonGap),
                       _stepButton(
                         colors,
                         _hour,
                         Icons.arrow_downward,
-                        'An hour later: tap to move the other end, or drag it',
+                        'An hour later: tap to stretch it down, or drag its foot',
                       ),
                     ],
                   ),
@@ -484,7 +525,7 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
 
   /// How wide the cursor's buttons are, side by side: the switch, the
   /// steps, and the mode.
-  static const _groupWidth = 36 + 8 + 40 + 8 + 56.0;
+  static const _groupWidth = 36 + 8 + 36 + 6 + 40 + 8 + 56.0;
 
   /// The switch: the cursors trade places, the box going the other way.
   Widget _swapButton(ColorScheme colors) => Tooltip(
@@ -631,12 +672,89 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
   /// line, or earlier, above it: a "+", with [arrow] pointing the way the
   /// event goes from the cursor. Tapped, by [step]; dragged, to where the
   /// other cursor goes.
-  Widget _stepButton(
+  /// On the [other] cursor's outside, beside where the cursor's are: a
+  /// "−" and a "+", shrinking and stretching the box at that end.
+  Widget _otherButtons(
+    ColorScheme colors,
+    DateTime other,
+    BoxConstraints constraints,
+  ) {
+    final foot = widget.box.cursorOnTop;
+    final y = _y(other);
+    final middle = (timelineCardsLeft + constraints.maxWidth - 44) / 2;
+    return Positioned(
+      // Under the cursor's "−" and "+".
+      left: middle - _groupWidth / 2 + 36 + 8,
+      top: foot ? y + _buttonGap : y - _buttonGap - _buttonHeight,
+      height: _buttonHeight,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _shrinkButton(
+            colors,
+            foot ? -_hour : _hour,
+            foot ? Icons.arrow_upward : Icons.arrow_downward,
+            'Shrink it an hour, at this end',
+          ),
+          const SizedBox(width: 6),
+          _stepButton(
+            colors,
+            foot ? _hour : -_hour,
+            foot ? Icons.arrow_downward : Icons.arrow_upward,
+            'Stretch it an hour, at this end: tap, or drag it',
+            from: other,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A "−", beside the "+" on its side of the cursor: the box shrunk
+  /// from that end by its [step] -- later, from the top, with an [arrow]
+  /// down; earlier, from the foot, with one up.
+  Widget _shrinkButton(
     ColorScheme colors,
     Duration step,
     IconData arrow,
     String tooltip,
   ) {
+    final onShrink = widget.onShrink;
+    final color = onShrink == null ? colors.outline : colors.onSurface;
+    final icons = [
+      Icon(Icons.remove, size: 20, color: color),
+      Icon(arrow, size: 14, color: color),
+    ];
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: colors.surfaceContainerHigh,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        elevation: onShrink == null ? 0 : 2,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onShrink == null ? null : () => onShrink(step),
+          child: SizedBox(
+            width: 36,
+            height: _buttonHeight,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              // The "−" away from the line, the arrow by it, the way the
+              // end goes.
+              children: step.isNegative ? icons.reversed.toList() : icons,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _stepButton(
+    ColorScheme colors,
+    Duration step,
+    IconData arrow,
+    String tooltip, {
+    DateTime? from,
+  }) {
     final color = colors.onPrimaryContainer;
     final icons = [
       Icon(Icons.add, size: 20, color: color),
@@ -646,7 +764,8 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
       message: tooltip,
       child: GestureDetector(
         dragStartBehavior: DragStartBehavior.down,
-        onVerticalDragStart: (_) => _dragY = _y(widget.box.cursor),
+        // From the line it's on.
+        onVerticalDragStart: (_) => _dragY = _y(from ?? widget.box.cursor),
         onVerticalDragUpdate: (details) {
           _dragY += details.delta.dy;
           widget.onDrag(step, _time(_dragY));
