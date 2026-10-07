@@ -1186,11 +1186,23 @@ class _EventsScreenState extends State<EventsScreen> {
   Future<void> _openCancelled(Event event) async {
     final proposed = _proposal?.event(event.id);
     if (proposed == null) return;
-    final choice = await showCancelledDialog(context, proposed);
+    final choice = await showCancelledDialog(
+      context,
+      proposed,
+      // Saved as the switch is turned, the dialog staying open.
+      setCounts: (counts) async {
+        final amended = await _amend(
+          ProposalEdits(
+            cancels: [
+              (eventId: proposed.id, countsAgainstFollowThrough: counts),
+            ],
+          ),
+        );
+        return amended.event(proposed.id);
+      },
+    );
     if (!mounted) return;
     switch (choice) {
-      case SetCounts(:final counts):
-        await _setCounts(proposed, counts);
       case AskAboutCancel():
         await _noteForClaude(about: proposed.id);
       case PutBack():

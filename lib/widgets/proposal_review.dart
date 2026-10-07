@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/proposal.dart';
+import '../services/mcp_client.dart';
 import 'day_timeline.dart';
 import 'time_summary.dart';
 
@@ -1530,7 +1531,7 @@ Future<NoteUseChoice?> showNoteUseSheet(
   },
 );
 
-/// What the user did from [showCancelledDialog].
+/// What the user did from [showCancelledDialog], that closes it.
 sealed class CancelledChoice {
   const CancelledChoice();
 }
@@ -1540,12 +1541,6 @@ final class PutBack extends CancelledChoice {
   const PutBack();
 }
 
-/// Say whether it [counts] against follow-through.
-final class SetCounts extends CancelledChoice {
-  const SetCounts(this.counts);
-  final bool counts;
-}
-
 /// Leave a note for Claude about it.
 final class AskAboutCancel extends CancelledChoice {
   const AskAboutCancel();
@@ -1553,17 +1548,66 @@ final class AskAboutCancel extends CancelledChoice {
 
 /// Shows [event], which the proposal says didn't happen -- cancelled, or
 /// merged into another -- when it was, who said so, and, cancelled,
-/// whether that counts against follow-through, and against whom, in full,
-/// with a switch to say otherwise. It can be put back as planned, or asked
-/// about in a note for Claude.
+/// whether that counts against follow-through, and against whom, in full.
+/// Its switch says otherwise with [setCounts], staying open to show what
+/// that came to -- the event as it is now -- or why it couldn't. It can be
+/// put back as planned, or asked about in a note for Claude.
 Future<CancelledChoice?> showCancelledDialog(
   BuildContext context,
-  ProposalEvent event,
-) => showDialog<CancelledChoice>(
+  ProposalEvent event, {
+  Future<ProposalEvent?> Function(bool counts)? setCounts,
+}) => showDialog<CancelledChoice>(
   context: context,
-  builder: (context) {
+  builder: (context) => _CancelledDialog(event: event, setCounts: setCounts),
+);
+
+class _CancelledDialog extends StatefulWidget {
+  const _CancelledDialog({required this.event, this.setCounts});
+
+  final ProposalEvent event;
+  final Future<ProposalEvent?> Function(bool counts)? setCounts;
+
+  @override
+  State<_CancelledDialog> createState() => _CancelledDialogState();
+}
+
+class _CancelledDialogState extends State<_CancelledDialog> {
+  /// The event as it is now: after the switch, as the proposal has it.
+  late ProposalEvent _event = widget.event;
+  bool _saving = false;
+  String? _error;
+
+  Future<void> _setCounts(bool counts) async {
+    final setCounts = widget.setCounts;
+    if (setCounts == null) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final now = await setCounts(counts);
+      if (!mounted) return;
+      setState(() {
+        _event = now ?? _event;
+        _saving = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = switch (e) {
+          McpException(:final message) => message,
+          _ => '$e',
+        };
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final event = _event;
     final name = switch (event.summary) {
       final s? when s.isNotEmpty => '“$s”',
       _ => 'This event',
@@ -1591,6 +1635,19 @@ Future<CancelledChoice?> showCancelledDialog(
               }}',
               style: small,
             ),
+            if (_error case final error?)
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colors.errorContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  "Couldn't change it. $error",
+                  style: TextStyle(color: colors.onErrorContainer),
+                ),
+              ),
             if (!merged) ...[
               const SizedBox(height: 16),
               SwitchListTile(
@@ -1601,8 +1658,16 @@ Future<CancelledChoice?> showCancelledDialog(
                       ? 'A commitment dropped'
                       : 'A change of plan: no one’s follow-through',
                 ),
+                secondary: _saving
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : null,
                 value: counts,
-                onChanged: (on) => Navigator.of(context).pop(SetCounts(on)),
+                onChanged: _saving || widget.setCounts == null
+                    ? null
+                    : _setCounts,
               ),
               if (counts) ...[
                 const SizedBox(height: 4),
@@ -1634,18 +1699,22 @@ Future<CancelledChoice?> showCancelledDialog(
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(const AskAboutCancel()),
+          onPressed: _saving
+              ? null
+              : () => Navigator.of(context).pop(const AskAboutCancel()),
           child: const Text('Note for Claude'),
         ),
         TextButton(
-          onPressed: () => Navigator.of(context).pop(const PutBack()),
+          onPressed: _saving
+              ? null
+              : () => Navigator.of(context).pop(const PutBack()),
           child: const Text('Put it back'),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
           child: const Text('Done'),
         ),
       ],
     );
-  },
-);
+  }
+}

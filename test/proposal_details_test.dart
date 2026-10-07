@@ -10,6 +10,7 @@ import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/proposal.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
@@ -270,9 +271,8 @@ void main() {
     });
 
     testWidgets('tapping a cancel shows it in full: when, who said so, and '
-        'who it counts against; its switch, and putting it back', (
-      tester,
-    ) async {
+        'who it counts against; its switch saves, staying open; and putting '
+        'it back', (tester) async {
       await open(tester);
       expect(
         find.text('Cancelled, counts against Mom (Reliable) · Claude'),
@@ -296,7 +296,8 @@ void main() {
         findsOneWidget,
       );
 
-      // A change of plan, after all.
+      // A change of plan, after all: saved, the dialog still open, saying
+      // so.
       await tester.tap(find.byType(SwitchListTile));
       await tester.pumpAndSettle();
       expect(proposals.amends.last.toJson(), {
@@ -304,15 +305,42 @@ void main() {
           {'event_id': 'call', 'counts_against_follow_through': false},
         ],
       });
+      expect(find.text("“Call Mom” didn't happen"), findsOneWidget);
+      expect(
+        find.text('A change of plan: no one’s follow-through'),
+        findsOneWidget,
+      );
+      expect(find.text('It counts against:'), findsNothing);
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
       expect(find.text('Follow-through (0 of 2)'), findsOneWidget);
 
       // Put back as planned.
       await tester.tap(find.text('Call Mom').last);
       await tester.pumpAndSettle();
-      expect(find.text('It counts against:'), findsNothing);
       await tester.tap(find.text('Put it back'));
       await tester.pumpAndSettle();
       expect(proposals.amends.last.asPlanned, ['call']);
+    });
+
+    testWidgets("a change the server refuses is said in the dialog, and "
+        "the switch stays as it was", (tester) async {
+      await open(tester);
+      proposals.error = McpException('amend_proposal: the call is history');
+      await tester.ensureVisible(find.text('Call Mom').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Call Mom').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(SwitchListTile));
+      await tester.pumpAndSettle();
+      expect(
+        find.text("Couldn't change it. amend_proposal: the call is history"),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
+        isTrue,
+      );
     });
 
     testWidgets('what it adds is named, not by its ref; and settled: made '
@@ -452,9 +480,11 @@ class _Proposals extends InMemoryProposalRepository {
   _Proposals(super.proposal, {super.events, super.people});
 
   final amends = <ProposalEdits>[];
+  Object? error;
 
   @override
   Future<Proposal> amend(Proposal proposal, ProposalEdits edits) async {
+    if (error case final error?) throw error;
     final amended = await super.amend(proposal, edits);
     amends.add(edits);
     return amended;
