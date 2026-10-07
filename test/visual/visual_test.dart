@@ -479,6 +479,47 @@ void main() {
       });
     }
 
+    // Moving an event, pressed and held: the box around it, pushing, and
+    // saying, by the cursor, which it's moving; the event faint where it
+    // was; and the cursors switched, the box turned around.
+    for (final switched in [false, true]) {
+      testWidgets('events_moving${switched ? '_switched' : ''} ($mode)', (
+        tester,
+      ) async {
+        await render(
+          tester,
+          'events_moving${switched ? '_switched' : ''}',
+          events(),
+          then: () async {
+            await tester.longPress(find.text('Cooking class'));
+            await tester.pumpAndSettle();
+            // Up an hour, onto the call and what's after it: they're
+            // pushed along after it.
+            await tester.drag(
+              find.byTooltip('Drag to move the event'),
+              Offset(0, -60 * defaultTimelineScale),
+              warnIfMissed: false,
+            );
+            await tester.pumpAndSettle();
+            if (switched) {
+              // Keeping events -- pushing, there's no room earlier in the
+              // day -- and turned around, part way through pointing to
+              // where the cursor's gone.
+              await tester.tap(find.byTooltip('Push: tap to change'));
+              await tester.pumpAndSettle();
+              await tester.tap(find.text('Keep events'));
+              await tester.pumpAndSettle();
+              await tester.tap(find.text('Done'));
+              await tester.pumpAndSettle();
+              await tester.tap(find.byTooltip('Switch the cursors'));
+              await tester.pump();
+              await tester.pump(const Duration(milliseconds: 450));
+            }
+          },
+        );
+      });
+    }
+
     // The day's summary swiped once, to its actions, and twice, to its
     // top-level ones.
     for (final (name, swipes) in [

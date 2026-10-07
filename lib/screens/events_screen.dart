@@ -9,6 +9,7 @@ import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/recurrence.dart';
 import '../outbox/note_outbox.dart';
+import '../outbox/save_error.dart';
 import '../services/actions_repository.dart';
 import '../services/event_store.dart';
 import '../services/events_repository.dart';
@@ -21,7 +22,7 @@ import '../services/traits_repository.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
 import '../widgets/day_summary.dart';
-import '../widgets/new_event_box.dart';
+import '../widgets/pending_event_box.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/event_dialog.dart';
 import '../widgets/other_events.dart';
@@ -150,9 +151,21 @@ class _EventsScreenState extends State<EventsScreen> {
   /// are loaded, to be ready to slide in.
   final _fresh = <DateTime>{};
 
-  /// The new event being made, while one is: the "+" starts it, and its
-  /// "✓" opens it.
-  NewEventBox? _box;
+  /// The event being made or moved, while one is: the "+" starts a new
+  /// one, and pressing and holding an event, moving it ([_moving]); its
+  /// "✓" opens the new one, or saves the move.
+  PendingEventBox? _box;
+
+  /// The event the box is moving, if it's moving one.
+  Event? _moving;
+
+  /// How many times the box's cursors have been switched: each time,
+  /// the cursor pings where it's gone.
+  int _swaps = 0;
+
+  /// What [_createMode] was before a move, to go back to after it: a move
+  /// starts out pushing.
+  CreateMode? _modeBeforeMove;
 
   /// Where keeping events last moved the box, from where it was put, to
   /// show with a [KeptMoveArrow]; [id] tells each move from the last.
@@ -721,25 +734,134 @@ class _EventsScreenState extends State<EventsScreen> {
       at = _day.add(const Duration(hours: 9));
     }
     setState(() {
-      _box = NewEventBox(_nearestQuarter(at));
+      _box = PendingEventBox(_nearestQuarter(at));
       _keptMove = null;
     });
   }
 
+  /// Starts moving [event]: the box around it, pushing the events in its
+  /// way to start with.
+  void _startMoving(Event event) {
+    if (event.isCancelled) return;
+    setState(() {
+      _moving = event;
+      _box = PendingEventBox(event.start, other: event.end);
+      _keptMove = null;
+      _modeBeforeMove = _createMode;
+      _createMode = CreateMode.push;
+    });
+  }
+
+  /// Switches the box's cursors: the box going the other way from the
+  /// other one -- kept in free time, or pushing, as before -- and an
+  /// arrow to where the cursor's gone. Not if there's no room that way:
+  /// the box would be gone.
+  void _swapCursors() {
+    final box = _box;
+    final other = box?.other;
+    if (box == null || other == null) return;
+    final switched = PendingEventBox(other, other: box.cursor);
+    if (_kept(switched).span == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "No room to switch: there's no free time "
+            '${switched.other!.isAfter(switched.cursor) ? 'later' : 'earlier'} '
+            'in the day to push into.',
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _keep(switched);
+      _keptMove = (
+        from: box.cursor,
+        to: _box!.cursor,
+        id: (_keptMove?.id ?? 0) + 1,
+      );
+      _swaps++;
+    });
+  }
+
+  /// Puts the box away -- the new event or the move done, or dropped.
+  void _endBox() => setState(() {
+    _box = null;
+    _moving = null;
+    if (_modeBeforeMove case final mode?) _createMode = mode;
+    _modeBeforeMove = null;
+  });
+
+  /// Saves the move of [_moving] to the box, and what it does to the
+  /// events in its way, in one batch.
+  Future<void> _finishMoving() async {
+    final event = _moving;
+    final span = _box?.span;
+    if (event == null || span == null) return;
+    final (start, end) = span;
+    if (start == event.start && end == event.end) return _endBox();
+    final inTheWay = _createMode.overwrites
+        ? _overwrite(_otherEvents(event), start, end)
+        : const Overwrite();
+    final messenger = ScaffoldMessenger.of(context);
+    final List<Event> changed;
+    try {
+      changed = await _approvingHistory(
+        (allow) => widget.repository.makeRoom(
+          Overwrite(
+            updates: [
+              (
+                event,
+                {
+                  'start': localIsoTimestamp(start),
+                  'end': localIsoTimestamp(end),
+                },
+              ),
+              ...inTheWay.updates,
+            ],
+            cancels: inTheWay.cancels,
+            creates: inTheWay.creates,
+          ),
+          allowCompactedChanges: allow,
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text("Couldn't move it: ${describeSaveError(e)}")),
+      );
+      return;
+    }
+    if (!mounted) return;
+    _endBox();
+    final others = inTheWay.count;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          others == 0
+              ? 'Event moved.'
+              : 'Event moved. ${_events(others)} changed to make room.',
+        ),
+      ),
+    );
+    _store.putEvents(changed);
+    _fresh.clear();
+    await _refresh();
+  }
+
   /// [box], keeping events, fitted into free time (see [OtherEvents]):
-  /// [moved] whole, as near as it fits; or from its [NewEventBox.cursor] --
+  /// [moved] whole, as near as it fits; or from its [PendingEventBox.cursor] --
   /// or, [fromOther], its other cursor -- out of any event it's in, and to
   /// no further than the next event. Pushing, see [_pushKept].
   /// Overwriting, as it is.
-  NewEventBox _kept(
-    NewEventBox box, {
+  PendingEventBox _kept(
+    PendingEventBox box, {
     bool moved = false,
     bool fromOther = false,
   }) {
     if (_createMode.pushes) return _pushKept(box, moved: moved);
     final other = box.other;
     if (_createMode.overwrites || other == null) return box;
-    final others = _otherEvents(null);
+    final others = _otherEvents(_moving);
     if (moved) {
       final start = box.span?.$1 ?? box.cursor;
       final (from, to) = others.fitMoved(
@@ -752,18 +874,18 @@ class _EventsScreenState extends State<EventsScreen> {
     }
     if (fromOther) {
       final (fitted, cursor) = others.fitFrom(other, box.cursor);
-      return NewEventBox(cursor, other: fitted);
+      return PendingEventBox(cursor, other: fitted);
     }
     final (cursor, fitted) = others.fitFrom(box.cursor, other);
-    return NewEventBox(cursor, other: fitted);
+    return PendingEventBox(cursor, other: fitted);
   }
 
   /// [box], pushing events: its cursor -- for [CreateMode.push] -- out
   /// of any event it's inside of, to its nearer edge ([moved] whole, the
   /// other cursor with it); and its other cursor no further from it than
   /// leaves the day room for the events it pushes.
-  NewEventBox _pushKept(NewEventBox box, {bool moved = false}) {
-    final others = _otherEvents(null);
+  PendingEventBox _pushKept(PendingEventBox box, {bool moved = false}) {
+    final others = _otherEvents(_moving);
     var (cursor, other) = (box.cursor, box.other);
     if (_createMode == CreateMode.push) {
       final snapped = others.between(cursor);
@@ -779,19 +901,21 @@ class _EventsScreenState extends State<EventsScreen> {
         inside: _createMode.inside,
       );
     }
-    return NewEventBox(cursor, other: other);
+    return PendingEventBox(cursor, other: other);
   }
 
   /// Whether the box goes later from its cursor: the way it pushes.
   bool get _later => switch (_box) {
-    NewEventBox(:final cursor, other: final other?) => other.isAfter(cursor),
+    PendingEventBox(:final cursor, other: final other?) => other.isAfter(
+      cursor,
+    ),
     _ => true,
   };
 
   /// Changes the box to what [change] makes of it, kept in free time
   /// (see [_kept]).
   void _changeBox(
-    NewEventBox Function(NewEventBox box) change, {
+    PendingEventBox Function(PendingEventBox box) change, {
     bool moved = false,
     bool fromOther = false,
   }) {
@@ -802,12 +926,16 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Makes the box [box], kept in free time (see [_kept]); if that moves
   /// it, an arrow shows from where it was put to where it went.
-  void _keep(NewEventBox box, {bool moved = false, bool fromOther = false}) {
+  void _keep(
+    PendingEventBox box, {
+    bool moved = false,
+    bool fromOther = false,
+  }) {
     final kept = _kept(box, moved: moved, fromOther: fromOther);
     _box = kept;
     if (kept == box) return;
     // The box's middle, moved whole; or the end that moved.
-    DateTime middle(NewEventBox box) =>
+    DateTime middle(PendingEventBox box) =>
         (box.span?.$1 ?? box.cursor).add(box.length ~/ 2);
     final (from, to) = moved
         ? (middle(box), middle(kept))
@@ -848,13 +976,13 @@ class _EventsScreenState extends State<EventsScreen> {
   bool get _overwrites => switch (_box?.span) {
     (final start, final end) when _createMode.pushes =>
       _createMode == CreateMode.trimPush &&
-          _otherEvents(null).events.any((e) {
+          _otherEvents(_moving).events.any((e) {
             final anchor = _later ? start : end;
             return e.start.isBefore(anchor) && e.end.isAfter(anchor);
           }),
     (final start, final end) =>
       _createMode.overwrites &&
-          _otherEvents(null).overlapping(start, end) != null,
+          _otherEvents(_moving).overlapping(start, end) != null,
     null => false,
   };
 
@@ -862,7 +990,7 @@ class _EventsScreenState extends State<EventsScreen> {
   List<PushedEvent> get _pushed => switch (_box?.span) {
     (final start, final end) when _createMode.pushes => [
       for (final (event, changes) in _overwrite(
-        _otherEvents(null),
+        _otherEvents(_moving),
         start,
         end,
       ).updates)
@@ -872,7 +1000,7 @@ class _EventsScreenState extends State<EventsScreen> {
             end: DateTime.parse(to).toLocal(),
             label: event.summary ?? 'Event',
           ),
-      for (final rest in _overwrite(_otherEvents(null), start, end).creates)
+      for (final rest in _overwrite(_otherEvents(_moving), start, end).creates)
         (
           start: DateTime.parse(rest['start'] as String).toLocal(),
           end: DateTime.parse(rest['end'] as String).toLocal(),
@@ -886,7 +1014,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// touches, whole. Null otherwise: just the box.
   (DateTime, DateTime)? get _covers => switch (_box?.span) {
     (final start, final end) when _createMode == CreateMode.cancel =>
-      _otherEvents(null).touching(start, end),
+      _otherEvents(_moving).touching(start, end),
     _ => null,
   };
 
@@ -928,7 +1056,7 @@ class _EventsScreenState extends State<EventsScreen> {
     final span = _box?.span;
     if (span == null) return;
     final (start, end) = span;
-    final others = _otherEvents(null);
+    final others = _otherEvents(_moving);
     final overwrite = _createMode.overwrites;
     final later = _later;
     final inTheWay = _overwrite(others, start, end);
@@ -994,7 +1122,7 @@ class _EventsScreenState extends State<EventsScreen> {
       loadActions: _actions,
     );
     if (created == null || !mounted) return;
-    setState(() => _box = null);
+    _endBox();
     final changed = created.length - 1;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1322,7 +1450,7 @@ class _EventsScreenState extends State<EventsScreen> {
                     FloatingActionButton(
                       heroTag: 'cancel-new',
                       tooltip: 'Cancel',
-                      onPressed: () => setState(() => _box = null),
+                      onPressed: _endBox,
                       child: const Icon(Icons.close),
                     ),
                     const SizedBox(width: 12),
@@ -1333,11 +1461,17 @@ class _EventsScreenState extends State<EventsScreen> {
                         final ready = _box?.span != null;
                         return FloatingActionButton(
                           heroTag: 'continue-new',
-                          tooltip: ready
-                              ? 'Continue'
-                              : 'Continue: first, make an event between the '
-                                    'cursors',
-                          onPressed: ready ? _continueCreating : null,
+                          tooltip: !ready
+                              ? 'Continue: first, make an event between the '
+                                    'cursors'
+                              : _moving != null
+                              ? 'Move it here'
+                              : 'Continue',
+                          onPressed: !ready
+                              ? null
+                              : _moving != null
+                              ? _finishMoving
+                              : _continueCreating,
                           backgroundColor: ready
                               ? null
                               : colors.surfaceContainerHighest,
@@ -1458,7 +1592,7 @@ class _EventsScreenState extends State<EventsScreen> {
                             ),
                             if (_box case final box?)
                               Positioned.fill(
-                                child: NewEventBoxView(
+                                child: PendingEventBoxView(
                                   day: _day,
                                   dayEnd: _dayEnd,
                                   scale: _scale,
@@ -1467,6 +1601,18 @@ class _EventsScreenState extends State<EventsScreen> {
                                   overwrites: _overwrites,
                                   covers: _covers,
                                   pushed: _pushed,
+                                  onSwap: box.other == null
+                                      ? null
+                                      : _swapCursors,
+                                  swaps: _swaps,
+                                  label: switch (_moving) {
+                                    final event? =>
+                                      'Moving ${switch (event.summary) {
+                                        final s? when s.isNotEmpty => '“$s”',
+                                        _ => 'this event',
+                                      }}',
+                                    null => null,
+                                  },
                                   onMoveCursor: (to) => _changeBox(
                                     (box) =>
                                         box.withCursor(_nearestQuarter(to)),
@@ -1554,6 +1700,9 @@ class _EventsScreenState extends State<EventsScreen> {
         // While the cursor's up, events don't open: a tap on one goes to
         // the timeline under it, and moves the cursor there.
         onTap: _box == null ? _openEvent : null,
+        // Pressed and held, it's moved: the box around it.
+        onLongPress: _box == null ? _startMoving : null,
+        faded: _moving?.id,
         // The box moved there, its size intact.
         onTapTime: _box == null
             ? null

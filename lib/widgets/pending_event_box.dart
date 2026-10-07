@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -134,12 +136,13 @@ Future<CreateMode?> showCreateModeDialog(
   },
 );
 
-/// A new event as it's being made: a box between two cursors -- the one
-/// it was started from, with the buttons ([cursor]), and, once one's been
-/// used, the [other] -- holding the event ([span]).
+/// An event pending: a new one as it's being made, or one being moved --
+/// a box between two cursors -- the one it was started from, with the
+/// buttons ([cursor]), and, once one's been used, the [other] -- holding
+/// the event ([span]).
 @immutable
-class NewEventBox {
-  const NewEventBox(this.cursor, {this.other});
+class PendingEventBox {
+  const PendingEventBox(this.cursor, {this.other});
 
   final DateTime cursor;
   final DateTime? other;
@@ -159,25 +162,32 @@ class NewEventBox {
   };
 
   /// It with its [cursor] moved alone.
-  NewEventBox withCursor(DateTime cursor) => NewEventBox(cursor, other: other);
+  PendingEventBox withCursor(DateTime cursor) =>
+      PendingEventBox(cursor, other: other);
 
   /// It with its [other] cursor moved alone.
-  NewEventBox withOther(DateTime other) => NewEventBox(cursor, other: other);
+  PendingEventBox withOther(DateTime other) =>
+      PendingEventBox(cursor, other: other);
 
   /// It moved whole, its size intact, its cursor to [cursor].
-  NewEventBox movedTo(DateTime cursor) =>
-      NewEventBox(cursor, other: other?.add(cursor.difference(this.cursor)));
+  PendingEventBox movedTo(DateTime cursor) => PendingEventBox(
+    cursor,
+    other: other?.add(cursor.difference(this.cursor)),
+  );
 
   /// It with its cursors at [start] and [end] -- each where it was, the
   /// [cursor] still the earlier if it was.
-  NewEventBox at(DateTime start, DateTime end) => switch (other) {
-    final other? when other.isBefore(cursor) => NewEventBox(end, other: start),
-    _ => NewEventBox(start, other: end),
+  PendingEventBox at(DateTime start, DateTime end) => switch (other) {
+    final other? when other.isBefore(cursor) => PendingEventBox(
+      end,
+      other: start,
+    ),
+    _ => PendingEventBox(start, other: end),
   };
 
   @override
   bool operator ==(Object other) =>
-      other is NewEventBox &&
+      other is PendingEventBox &&
       other.cursor == cursor &&
       other.other == this.other;
 
@@ -185,21 +195,21 @@ class NewEventBox {
   int get hashCode => Object.hash(cursor, other);
 
   @override
-  String toString() => 'NewEventBox($cursor, other: $other)';
+  String toString() => 'PendingEventBox($cursor, other: $other)';
 }
 
-/// A [NewEventBox], over a [DayTimeline] for [day] at [scale]. Each of
+/// A [PendingEventBox], over a [DayTimeline] for [day] at [scale]. Each of
 /// its cursors is a line across the timeline, with its time at its left
 /// and a handle at its right that moves it alone. The [box]'s
-/// [NewEventBox.cursor] has in its middle a button below it, which moves
+/// [PendingEventBox.cursor] has in its middle a button below it, which moves
 /// the other cursor an hour later each tap, and one above it, an hour
 /// earlier -- an hour from it to start with -- or puts the other cursor
 /// where either's dragged to; and the [mode] to pick. Between the
-/// cursors, the event is shaded ([NewEventShadow]) -- unless [shaded] is
+/// cursors, the event is shaded ([PendingEventShadow]) -- unless [shaded] is
 /// false -- tinged red and slowly pulsing where it [overwrites] events;
 /// and in it, a bigger, fainter handle that moves the whole box.
-class NewEventBoxView extends StatefulWidget {
-  const NewEventBoxView({
+class PendingEventBoxView extends StatefulWidget {
+  const PendingEventBoxView({
     super.key,
     required this.day,
     required this.dayEnd,
@@ -216,12 +226,15 @@ class NewEventBoxView extends StatefulWidget {
     this.overwrites = false,
     this.covers,
     this.pushed = const [],
+    this.label,
+    this.onSwap,
+    this.swaps = 0,
   });
 
   final DateTime day;
   final DateTime dayEnd;
   final double scale;
-  final NewEventBox box;
+  final PendingEventBox box;
   final CreateMode mode;
 
   /// Whether the event between the cursors is shaded.
@@ -237,10 +250,22 @@ class NewEventBoxView extends StatefulWidget {
   /// Where the events it pushes go: each outlined there.
   final List<PushedEvent> pushed;
 
-  /// The [NewEventBox.cursor]'s handle dragged to a time.
+  /// What the shadow says it is, if anything: the event it's moving.
+  /// What it is, by the cursor, on its side away from the box: the
+  /// event it's moving, if it's moving one.
+  final String? label;
+
+  /// The cursors switched: the box going the other way from the other.
+  final VoidCallback? onSwap;
+
+  /// How many times the cursors have been switched: each time, the
+  /// cursor, where it is now, pings.
+  final int swaps;
+
+  /// The [PendingEventBox.cursor]'s handle dragged to a time.
   final ValueChanged<DateTime> onMoveCursor;
 
-  /// The [NewEventBox.other] cursor's handle dragged to a time.
+  /// The [PendingEventBox.other] cursor's handle dragged to a time.
   final ValueChanged<DateTime> onMoveOther;
 
   /// The box's handle dragged: the box moved whole, its cursor to the
@@ -257,12 +282,31 @@ class NewEventBoxView extends StatefulWidget {
   final VoidCallback onPickMode;
 
   @override
-  State<NewEventBoxView> createState() => _NewEventBoxViewState();
+  State<PendingEventBoxView> createState() => _PendingEventBoxViewState();
 }
 
-class _NewEventBoxViewState extends State<NewEventBoxView> {
+class _PendingEventBoxViewState extends State<PendingEventBoxView>
+    with SingleTickerProviderStateMixin {
   /// Where a drag is, down the timeline.
   double _dragY = 0;
+
+  /// The cursor's ping, after the cursors are switched: twice, outward.
+  late final _ping = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  );
+
+  @override
+  void didUpdateWidget(PendingEventBoxView old) {
+    super.didUpdateWidget(old);
+    if (widget.swaps != old.swaps) _ping.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _ping.dispose();
+    super.dispose();
+  }
 
   double _y(DateTime time) => timelineOffset(
     time,
@@ -283,87 +327,186 @@ class _NewEventBoxViewState extends State<NewEventBoxView> {
     final colors = Theme.of(context).colorScheme;
     final box = widget.box;
     final y = _y(box.cursor);
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        if (box.span case (final start, final end) when widget.shaded)
-          Positioned(
-            left: timelineCardsLeft,
-            right: 8,
-            top: _y(widget.covers?.$1 ?? start),
-            height:
-                (_y(widget.covers?.$2 ?? end) - _y(widget.covers?.$1 ?? start))
-                    .clamp(2.0, double.infinity),
-            child: NewEventShadow(
-              start: start,
-              end: end,
-              overwrites: widget.overwrites,
+    // Whether the box goes down from the cursor, or up.
+    final down = box.other?.isAfter(box.cursor) ?? true;
+    return LayoutBuilder(
+      builder: (context, constraints) => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          if (box.span case (final start, final end) when widget.shaded)
+            Positioned(
+              left: timelineCardsLeft,
+              right: 8,
+              top: _y(widget.covers?.$1 ?? start),
+              height:
+                  (_y(widget.covers?.$2 ?? end) -
+                          _y(widget.covers?.$1 ?? start))
+                      .clamp(2.0, double.infinity),
+              child: PendingEventShadow(
+                start: start,
+                end: end,
+                overwrites: widget.overwrites,
+              ),
             ),
-          ),
-        for (final pushed in widget.pushed)
-          Positioned(
-            left: timelineCardsLeft,
-            right: 8,
-            top: _y(pushed.start),
-            height: (_y(pushed.end) - _y(pushed.start)).clamp(
-              2.0,
-              double.infinity,
+          for (final pushed in widget.pushed)
+            Positioned(
+              left: timelineCardsLeft,
+              right: 8,
+              top: _y(pushed.start),
+              height: (_y(pushed.end) - _y(pushed.start)).clamp(
+                2.0,
+                double.infinity,
+              ),
+              child: PushedEventOutline(label: pushed.label),
             ),
-            child: PushedEventOutline(label: pushed.label),
-          ),
-        if (box.other case final other?) ...[
-          _boxHandle(colors, box.cursor, other),
+          if (box.other case final other?) ...[
+            _boxHandle(colors, box.cursor, other),
+            ..._line(
+              colors,
+              other,
+              tooltip: 'Drag to move the other end',
+              onDragTo: widget.onMoveOther,
+            ),
+          ],
           ..._line(
             colors,
-            other,
-            tooltip: 'Drag to move the other end',
-            onDragTo: widget.onMoveOther,
+            box.cursor,
+            tooltip: 'Drag to move the cursor',
+            onDragTo: widget.onMoveCursor,
           ),
-        ],
-        ..._line(
-          colors,
-          box.cursor,
-          tooltip: 'Drag to move the cursor',
-          onDragTo: widget.onMoveCursor,
-        ),
-        // In the middle of the cursor, clear of its handle: each button
-        // on the side its event goes, touching the line.
-        Positioned(
-          left: timelineCardsLeft,
-          right: 44,
-          top: y - _buttonHeight - _buttonGap,
-          height: 2 * (_buttonHeight + _buttonGap),
-          child: Center(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _stepButton(
-                      colors,
-                      -_hour,
-                      Icons.arrow_upward,
-                      'An hour earlier: tap to move the other end, or drag it',
-                    ),
-                    const SizedBox(height: 2 * _buttonGap),
-                    _stepButton(
-                      colors,
-                      _hour,
-                      Icons.arrow_downward,
-                      'An hour later: tap to move the other end, or drag it',
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 8),
-                _modeButton(colors),
-              ],
+          // In the middle of the cursor, clear of its handle: each button
+          // on the side its event goes, touching the line.
+          Positioned(
+            left: timelineCardsLeft,
+            right: 44,
+            top: y - _buttonHeight - _buttonGap,
+            height: 2 * (_buttonHeight + _buttonGap),
+            child: Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _swapButton(colors),
+                  const SizedBox(width: 8),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _stepButton(
+                        colors,
+                        -_hour,
+                        Icons.arrow_upward,
+                        'An hour earlier: tap to move the other end, or drag it',
+                      ),
+                      const SizedBox(height: 2 * _buttonGap),
+                      _stepButton(
+                        colors,
+                        _hour,
+                        Icons.arrow_downward,
+                        'An hour later: tap to move the other end, or drag it',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 8),
+                  _modeButton(colors),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+          // The label, by the cursor, away from the box: from the left,
+          // up to its buttons.
+          if (widget.label case final label?)
+            Positioned(
+              left: 4,
+              top: down ? y - 34 : y + 14,
+              height: 20,
+              width: math.max(
+                0,
+                (timelineCardsLeft + constraints.maxWidth - 44) / 2 -
+                    _groupWidth / 2 -
+                    10,
+              ),
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colors.primary,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colors.onPrimary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          // The cursor pinging, twice, where it is after a switch.
+          Positioned(
+            left: timelineTimesWidth - 4,
+            right: 0,
+            top: y - 30,
+            height: 60,
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _ping,
+                builder: (context, _) {
+                  if (!_ping.isAnimating) return const SizedBox.shrink();
+                  final phase = (_ping.value * 2) % 1;
+                  return Center(
+                    child: Container(
+                      height: 4 + 52 * phase,
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(
+                          alpha: 0.35 * (1 - phase),
+                        ),
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
+
+  /// How wide the cursor's buttons are, side by side: the switch, the
+  /// steps, and the mode.
+  static const _groupWidth = 36 + 8 + 40 + 8 + 56.0;
+
+  /// The switch: the cursors trade places, the box going the other way.
+  Widget _swapButton(ColorScheme colors) => Tooltip(
+    message: 'Switch the cursors',
+    child: Material(
+      color: colors.surfaceContainerHigh,
+      shape: const CircleBorder(),
+      elevation: 2,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: widget.onSwap,
+        child: SizedBox.square(
+          dimension: 36,
+          child: Icon(
+            Icons.swap_vert,
+            size: 22,
+            color: widget.onSwap == null ? colors.outline : colors.onSurface,
+          ),
+        ),
+      ),
+    ),
+  );
 
   /// The box's own handle, in its middle, right of its buttons: bigger
   /// than the cursors', and fainter, to move the whole box by -- there
@@ -561,8 +704,8 @@ class _NewEventBoxViewState extends State<NewEventBoxView> {
 /// The new event, shaded from [start] to [end], with its times in its
 /// corner: tinged red, and slowly pulsing, where it [overwrites] events.
 /// It takes no touches: they go to what's under it.
-class NewEventShadow extends StatefulWidget {
-  const NewEventShadow({
+class PendingEventShadow extends StatefulWidget {
+  const PendingEventShadow({
     super.key,
     required this.start,
     required this.end,
@@ -574,12 +717,12 @@ class NewEventShadow extends StatefulWidget {
   final bool overwrites;
 
   @override
-  State<NewEventShadow> createState() => _NewEventShadowState();
+  State<PendingEventShadow> createState() => _PendingEventShadowState();
 }
 
-class _NewEventShadowState extends State<NewEventShadow>
+class _PendingEventShadowState extends State<PendingEventShadow>
     with SingleTickerProviderStateMixin {
-  /// The red tinge's slow pulse, while [NewEventShadow.overwrites].
+  /// The red tinge's slow pulse, while [PendingEventShadow.overwrites].
   late final _pulse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1600),
@@ -592,7 +735,7 @@ class _NewEventShadowState extends State<NewEventShadow>
   }
 
   @override
-  void didUpdateWidget(NewEventShadow old) {
+  void didUpdateWidget(PendingEventShadow old) {
     super.didUpdateWidget(old);
     _pulseIfOverwriting();
   }
@@ -623,32 +766,36 @@ class _NewEventShadowState extends State<NewEventShadow>
         builder: (context, _) {
           final color = widget.overwrites ? tinge : colors.primary;
           final alpha = widget.overwrites ? 0.16 + 0.22 * _pulse.value : 0.2;
+          Widget chip(String text) => Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: widget.overwrites ? Colors.white : colors.onPrimary,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
           return Container(
             // Clear of the handles at the right.
             padding: const EdgeInsets.fromLTRB(4, 4, 36, 4),
-            // In its corner, solid, to read over the events under it.
-            alignment: Alignment.bottomRight,
             decoration: BoxDecoration(
               color: color.withValues(alpha: alpha),
               border: Border.all(color: color, width: 1.5),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '${clockTime(context, widget.start)} – '
-                '${clockTime(context, widget.end)}',
-                maxLines: 1,
-                style: TextStyle(
-                  color: widget.overwrites ? Colors.white : colors.onPrimary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+            // In its corner, solid, to read over the events under it.
+            alignment: Alignment.bottomRight,
+            child: chip(
+              '${clockTime(context, widget.start)} – '
+              '${clockTime(context, widget.end)}',
             ),
           );
         },
@@ -662,7 +809,7 @@ String clockTime(BuildContext context, DateTime time) =>
     MaterialLocalizations.of(context)
         .formatTimeOfDay(TimeOfDay.fromDateTime(time.toLocal()));
 
-/// Where keeping events moved a [NewEventBox]: a pointed arrow down the
+/// Where keeping events moved a [PendingEventBox]: a pointed arrow down the
 /// timeline for [day] at [scale], [from] where it was put [to] where it
 /// fits, that draws out to its point and then fades away. It takes no
 /// touches.
