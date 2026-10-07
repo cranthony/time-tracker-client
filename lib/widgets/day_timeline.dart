@@ -832,11 +832,20 @@ reviewColors(ColorScheme colors) => (
 /// an [icon], if it has one; and whether that's [changed] since the user
 /// last looked, marked with a dot.
 class EventMark {
-  const EventMark({this.label, this.icon, this.changed = false});
+  const EventMark({
+    this.label,
+    this.icon,
+    this.changed = false,
+    this.selected = false,
+  });
 
   final String? label;
   final IconData? icon;
   final bool changed;
+
+  /// Whether it's the one being looked at, outlined: the cancel, or an
+  /// event an addition is used at, under the proposal's bar.
+  final bool selected;
 }
 
 /// A dot, marking an event changed since the user last looked.
@@ -1135,7 +1144,20 @@ class _EventCard extends StatelessWidget {
         ),
       ),
     );
-    return faded ? Opacity(opacity: 0.35, child: card) : card;
+    final shown = mark?.selected ?? false
+        ? DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: BoxDecoration(
+              border: Border.all(color: colors.primary, width: 2.5),
+              borderRadius: BorderRadius.only(
+                topRight: Radius.circular(joinedAbove ? 0 : _cardRadius),
+                bottomRight: Radius.circular(joinedBelow ? 0 : _cardRadius),
+              ),
+            ),
+            child: card,
+          )
+        : card;
+    return faded ? Opacity(opacity: 0.35, child: shown) : shown;
   }
 }
 

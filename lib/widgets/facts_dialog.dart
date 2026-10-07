@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/facts.dart';
 import '../models/person.dart';
+import '../models/proposal.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import 'person_dialog.dart';
@@ -17,12 +18,14 @@ Future<Facts?> showFactsDialog(
   Facts? facts, {
   List<Judgment> judgments = const [],
   Map<String?, String> traitNames = const {},
+  List<ProposalAddition> additions = const [],
 }) => showDialog<Facts>(
   context: context,
   builder: (_) => _FactsDialog(
     facts: facts ?? const Facts(),
     judgments: judgments,
     traitNames: traitNames,
+    additions: additions,
   ),
 );
 
@@ -31,11 +34,16 @@ class _FactsDialog extends StatefulWidget {
     required this.facts,
     required this.judgments,
     required this.traitNames,
+    this.additions = const [],
   });
 
   final Facts facts;
   final List<Judgment> judgments;
   final Map<String?, String> traitNames;
+
+  /// The people and locations a compaction proposal adds: offered too,
+  /// by their refs, marked new.
+  final List<ProposalAddition> additions;
 
   @override
   State<_FactsDialog> createState() => _FactsDialogState();
@@ -149,14 +157,26 @@ class _FactsDialogState extends State<_FactsDialog> {
             future: _people,
             initialData: _memory?.people,
             builder: (context, snapshot) {
-              final everyone =
-                  snapshot.data?.withSelf ??
-                  // Without the list, at least who's already there.
-                  [
-                    defaultSelf,
-                    for (final id in {..._with, ..._for})
-                      Person(id: id, name: id),
-                  ];
+              final added = [
+                for (final a in widget.additions)
+                  if (a.kind == AdditionKind.person)
+                    Person(
+                      id: a.ref,
+                      name: '${a.name} (new)',
+                      context: a.detail,
+                    ),
+              ];
+              final everyone = [
+                ...snapshot.data?.withSelf ??
+                    // Without the list, at least who's already there.
+                    [
+                      defaultSelf,
+                      for (final id in {..._with, ..._for})
+                        if (!added.any((p) => p.id == id))
+                          Person(id: id, name: id),
+                    ],
+                ...added,
+              ];
               final others = [
                 for (final p in everyone)
                   if (!p.isSelf &&
@@ -309,7 +329,12 @@ class _FactsDialogState extends State<_FactsDialog> {
       future: _locations,
       initialData: _memory?.locations,
       builder: (context, snapshot) {
-        final locations = snapshot.data ?? const <Location>[];
+        final locations = [
+          ...snapshot.data ?? const <Location>[],
+          for (final a in widget.additions)
+            if (a.kind == AdditionKind.location)
+              Location(id: a.ref, name: '${a.name} (new)', hint: a.detail),
+        ];
         final known = locations.any((l) => l.id == _location);
         return DropdownButtonFormField<String?>(
           key: ValueKey((_location, locations.length)),

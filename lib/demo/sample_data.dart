@@ -888,10 +888,12 @@ class SampleData {
 
   /// The open compaction proposal: what Claude says happened from the
   /// last compaction to 1:30 PM, from [notes] -- breakfast later than
-  /// planned, then an email that wasn't planned -- as the user edited it,
-  /// cancelling the texts, and as Claude revised it for the user's note,
-  /// starting lunch later and work running until then. Its third
-  /// revision; [proposalChanges] says what each changed.
+  /// planned, then an email that wasn't planned, at a co-working space it
+  /// adds, doing something new; the call to Mom dropped, counting against
+  /// her follow-through; and someone new at lunch -- as the user edited
+  /// it, cancelling the texts as a change of plan, and as Claude revised
+  /// it for the user's note, starting lunch later and work running until
+  /// then. Its third revision; [proposalChanges] says what each changed.
   Proposal get proposal {
     final byId = {for (final e in events) e.id: e};
     Map<String, Object?> event(
@@ -940,13 +942,14 @@ class SampleData {
           end: _at(8, 20),
           by: 'claude',
         ),
+        // At somewhere new, and something new done there.
         {
           'id': '${proposalId}c1',
           'summary': 'Email',
           'start': localIsoTimestamp(_at(8, 20)),
           'end': localIsoTimestamp(_at(8, 45)),
-          'action_ids': ['email'],
-          'action_names': [_names['email']],
+          'action_ids': ['email', 'new:inbox_zero'],
+          'facts': {'location_id': 'new:cowork'},
           'status': 'new',
           'decided_by': 'claude',
         },
@@ -958,13 +961,58 @@ class SampleData {
           by: 'claude',
           description: 'Notes:\n- 9:40 Started on the plan page',
         ),
-        event('lunch', 'adjusted', start: _at(12, 15), by: 'claude'),
-        event('call', 'on_schedule'),
-        event('texts', 'cancelled', by: 'user'),
+        // With someone new.
+        {
+          ...event('lunch', 'adjusted', start: _at(12, 15), by: 'claude'),
+          'facts': {
+            ...const Facts(
+              withIds: ['sam'],
+              locationId: 'noodles',
+              notes: {
+                selfPersonId: 'Talked through the job offer; phones away',
+                'sam': 'Excited, and a little anxious',
+              },
+            ).toJson(),
+            'with_ids': ['sam', 'new:jo'],
+          },
+        },
+        // Didn't call Mom: a commitment dropped. The texts were just a
+        // change of plan.
+        {
+          ...event('call', 'cancelled', by: 'claude'),
+          'counts_against_follow_through': true,
+          'follow_through': ['Mom (Reliable)'],
+        },
+        {
+          ...event('texts', 'cancelled', by: 'user'),
+          'counts_against_follow_through': false,
+          'follow_through': <String>[],
+        },
         event('scroll', 'on_schedule'),
         for (final id in ['class', 'dinner', 'guitar', 'bed'])
           event(id, 'planned'),
       ],
+      // Someone, something done and somewhere new, made when it's
+      // applied -- unless settled first.
+      'additions': {
+        'people': [
+          {'ref': 'new:jo', 'name': 'Jo', 'context': "Sam's friend from work"},
+        ],
+        'actions': [
+          {
+            'ref': 'new:inbox_zero',
+            'name': 'Inbox zero',
+            'parent_id': 'screens',
+          },
+        ],
+        'locations': [
+          {
+            'ref': 'new:cowork',
+            'name': 'The co-working space',
+            'hint': 'on Main St',
+          },
+        ],
+      },
       // What each note is for: setting an edge, added to an event, or --
       // as Claude has it -- left out.
       'notes': [
@@ -1059,9 +1107,13 @@ class SampleData {
   ProposalRepository proposalRepository({
     EventsRepository? events,
     NotesRepository? notes,
+    PeopleRepository? people,
+    ActionsRepository? actions,
   }) => InMemoryProposalRepository(
     proposal,
     events: events,
+    people: people,
+    actions: actions,
     changed: proposalChanges,
     onApplied: (applied) {
       if (notes is InMemoryNotesRepository) {

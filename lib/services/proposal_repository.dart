@@ -4,10 +4,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/event.dart';
 import '../models/note.dart';
+import '../models/person.dart';
 import '../models/proposal.dart';
 import '../widgets/other_events.dart';
+import 'actions_repository.dart';
 import 'events_repository.dart';
 import 'mcp_client.dart';
+import 'people_repository.dart';
 
 /// The user's edits to a [Proposal], as `amend_proposal` takes them:
 /// [updates] and [creates] keyed as `compact_notes` takes them (an update
@@ -22,26 +25,43 @@ class ProposalEdits {
     this.cancels = const [],
     this.asPlanned = const [],
     this.notes = const [],
+    this.additions = const [],
   });
 
   final List<Map<String, Object?>> updates;
   final List<Map<String, Object?>> creates;
   final List<({String eventId, bool countsAgainstFollowThrough})> cancels;
 
-  /// Events' ids and keys, and notes' ids.
+  /// Events' ids and keys, notes' ids, and additions' refs.
   final List<String> asPlanned;
   final List<({String noteId, bool ignore, String? eventId})> notes;
+
+  /// What's to become of a proposal's additions: each made now -- with,
+  /// if it's corrected, its [name] and a person's context or a location's
+  /// hint ([detail]) -- found among those there ([id]), or dropped.
+  final List<
+    ({
+      String ref,
+      AdditionUse use,
+      String? id,
+      String? name,
+      String? detail,
+      AdditionKind kind,
+    })
+  >
+  additions;
 
   bool get isEmpty =>
       updates.isEmpty &&
       creates.isEmpty &&
       cancels.isEmpty &&
       asPlanned.isEmpty &&
-      notes.isEmpty;
+      notes.isEmpty &&
+      additions.isEmpty;
 
   /// The ids and keys of the events they name, and the notes' ids.
   Set<String> get eventIds => {
-    for (final u in updates) '${u['event_id']}',
+    for (final u in updates) updateFields(u).$1,
     for (final c in cancels) c.eventId,
     ...asPlanned,
     for (final n in notes) n.noteId,
@@ -66,6 +86,18 @@ class ProposalEdits {
             'note_id': n.noteId,
             'use': n.ignore ? 'ignore' : 'annotate',
             'event_id': ?n.eventId,
+          },
+      ],
+    if (additions.isNotEmpty)
+      'additions': [
+        for (final a in additions)
+          {
+            'ref': a.ref,
+            'use': a.use.name,
+            'id': ?a.id,
+            'name': ?a.name,
+            if (a.detail != null)
+              a.kind == AdditionKind.location ? 'hint' : 'context': a.detail,
           },
       ],
   };
@@ -101,48 +133,59 @@ class ProposalEditException implements Exception {
   String toString() => message;
 }
 
-/// What a proposal's events can have set: the rest are the calendar's,
-/// changed once it's confirmed.
-const _proposalFields = {'summary', 'start', 'end', 'action_ids', 'facts'};
-
-/// The names of the fields a proposal can't change, for saying so.
-const _fieldNames = {
-  'location': 'Its location (as the calendar has it)',
-  'priority': 'Its priority',
-  'judgments': 'Its judgments',
-  'is_cancelled': 'Whether it was cancelled',
+/// What a proposal's events can have set, as `update_event` takes them.
+const _proposalFields = {
+  'summary',
+  'start',
+  'end',
+  'description',
+  'location',
+  'priority',
+  'action_ids',
+  'facts',
 };
 
-/// [changes], keyed as `update_event` takes them, to [event] as an
-/// update of `amend_proposal`. A new description has to add to the old
-/// one: what it adds is annotated. A change to a field a proposal doesn't
-/// set throws a [ProposalEditException].
+/// What a proposal's events can have cleared, by `clear_fields`.
+const _clearable = {'description', 'location', 'facts'};
+
+/// Why each field a proposal won't take, won't.
+const _refused = {
+  'priority': "A proposal can't clear an event's priority: set one instead.",
+  'judgments':
+      "Judgments are made once it's confirmed, not in what "
+      'happened, to confirm.',
+  'is_cancelled': 'Cancel it instead.',
+};
+
+/// [changes], keyed as `update_event` takes them, to [event] as an update
+/// of `amend_proposal`: `{event: {id, ...}, clear_fields}` -- only the
+/// fields changed, so the rest stay as the proposal has them. A
+/// description is the event's whole description, notes and all. Null
+/// clears a field that can be; a change a proposal won't take throws a
+/// [ProposalEditException].
 Map<String, Object?> proposalUpdate(Event event, Map<String, Object?> changes) {
-  final update = <String, Object?>{'event_id': event.id};
+  final set = <String, Object?>{'id': event.id};
+  final cleared = <String>[];
   for (final MapEntry(:key, :value) in changes.entries) {
-    if (_proposalFields.contains(key)) {
-      // Empty facts remove them; null would keep them.
-      update[key] = key == 'facts' ? value ?? const {} : value;
-    } else if (key == 'description') {
-      update['annotate'] = _added(
-        event.properties['description'] as String?,
-        value as String?,
-      );
+    if (value == null && _clearable.contains(key)) {
+      cleared.add(key);
+    } else if (value != null && _proposalFields.contains(key)) {
+      set[key] = value;
     } else {
       throw ProposalEditException(
-        '${_fieldNames[key] ?? 'Its $key'} can\'t be changed in what '
-        'happened, to confirm. Change it once that\'s confirmed, or leave '
-        'a note for Claude.',
+        _refused[key] ??
+            "Its $key can't be changed in what happened, to confirm. "
+                "Change it once that's confirmed, or leave a note for Claude.",
       );
     }
   }
-  return update;
+  return {'event': set, if (cleared.isNotEmpty) 'clear_fields': cleared};
 }
 
 /// [fields], keyed as `create_event` takes them, as a create of
-/// `amend_proposal`: its description annotated. [strict]ly, a field a
-/// proposal can't set throws a [ProposalEditException]; otherwise it's
-/// left out -- for what's left of an event split to make room.
+/// `amend_proposal`: those it can take that are set. [strict]ly, any
+/// other throws a [ProposalEditException]; otherwise it's left out --
+/// for what's left of an event split to make room.
 Map<String, Object?> proposalCreate(
   Map<String, Object?> fields, {
   bool strict = true,
@@ -152,31 +195,30 @@ Map<String, Object?> proposalCreate(
     if (value == null) continue;
     if (_proposalFields.contains(key)) {
       create[key] = value;
-    } else if (key == 'description') {
-      if ('$value'.trim().isNotEmpty) create['annotate'] = value;
     } else if (strict) {
       throw ProposalEditException(
-        '${_fieldNames[key] ?? 'Its $key'} can\'t be set on an event in '
-        'what happened, to confirm. Set it once that\'s confirmed.',
+        _refused[key] ??
+            "Its $key can't be set on an event in what happened, to "
+                "confirm. Set it once that's confirmed.",
       );
     }
   }
   return create;
 }
 
-/// What [now] adds to [before]: the description can only be added to.
-String? _added(String? before, String? now) {
-  final old = (before ?? '').trimRight();
-  final changed = (now ?? '').trimRight();
-  if (changed == old) return null;
-  if (!changed.startsWith(old)) {
-    throw ProposalEditException(
-      'In what happened, to confirm, a description can only be added to. '
-      'Leave a note for Claude to change it.',
-    );
-  }
-  final added = changed.substring(old.length).trim();
-  return added.isEmpty ? null : added;
+/// An `amend_proposal` update's event id (or key), and the fields it sets
+/// -- those it clears as null.
+(String, Map<String, Object?>) updateFields(Map<String, Object?> update) {
+  final event = (update['event']! as Map).cast<String, Object?>();
+  return (
+    '${event['id']}',
+    {
+      for (final MapEntry(:key, :value) in event.entries)
+        if (key != 'id') key: value,
+      for (final key in update['clear_fields'] as List? ?? const [])
+        '$key': null,
+    },
+  );
 }
 
 /// Where proposals come from: the open one, the user's edits and notes,
@@ -318,9 +360,20 @@ class InMemoryProposalRepository implements ProposalRepository {
     this._proposal, {
     this.events,
     this.onApplied,
+    this.people,
+    this.actions,
     Map<int, Set<String>> changed = const {},
   }) : _changed = {...changed},
-       _claudeNotes = {for (final n in _proposal?.notes ?? []) n.id: n};
+       _claude = _proposal,
+       _claudeNotes = {for (final n in _proposal?.notes ?? []) n.id: n},
+       _followThrough = {
+         for (final e in _proposal?.events ?? <ProposalEvent>[])
+           if (e.followThrough.isNotEmpty) e.id: e.followThrough,
+       };
+
+  /// Who each event's cancel counts against, as the proposal had it: for
+  /// a cancel the user says counts.
+  final Map<String, List<String>> _followThrough;
 
   Proposal? _proposal;
 
@@ -328,6 +381,16 @@ class InMemoryProposalRepository implements ProposalRepository {
   final Map<String, ProposalNote> _claudeNotes;
   final EventsRepository? events;
   final void Function(Proposal applied)? onApplied;
+
+  /// Where an addition made now is made, if anywhere: people and
+  /// locations, and actions.
+  final PeopleRepository? people;
+  final ActionsRepository? actions;
+
+  /// The events' actions and facts before each addition was settled, by
+  /// ref, then event id: to put back when it's unsettled.
+  final _beforeSettling =
+      <String, Map<String, (List<String>, Map<String, Object?>?)>>{};
 
   /// The ids each revision changed, by revision.
   final Map<int, Set<String>> _changed;
@@ -395,38 +458,53 @@ class InMemoryProposalRepository implements ProposalRepository {
         final String t => DateTime.parse(t),
         _ => old,
       };
-      final description = switch (fields['annotate']) {
-        final String added => [?e.description, added].join('\n'),
-        _ => e.description,
-      };
+      // Set, cleared (null), or kept as it was.
+      Object? field(String key, Object? old) =>
+          fields.containsKey(key) ? fields[key] : old;
       final json = <String, dynamic>{
         ...e.properties,
         'id': id ?? e.id,
+        'location': field('location', e.properties['location']),
+        'priority': field('priority', e.properties['priority']),
         'start': localIsoTimestamp(time('start', e.start)),
         'end': localIsoTimestamp(time('end', e.end)),
         'summary': fields['summary'] ?? e.summary,
-        'description': description,
+        'description': field('description', e.description),
         'action_ids': fields['action_ids'] ?? e.actionIds,
-        'facts': switch (fields['facts']) {
-          final Map facts when facts.isEmpty => null,
-          final Map facts => facts,
-          _ => e.facts,
-        },
+        'facts': field('facts', e.facts),
         'status': (status ?? e.status).json,
         'planned_start': localIsoTimestamp(e.plannedStart ?? e.start),
         'planned_end': localIsoTimestamp(e.plannedEnd ?? e.end),
         'decided_by': 'user',
+        ...switch (status ?? e.status) {
+          ProposalEventStatus.cancelled => () {
+            final counts =
+                fields['counts_against_follow_through'] as bool? ??
+                e.countsAgainstFollowThrough ??
+                true;
+            return {
+              'counts_against_follow_through': counts,
+              'follow_through': counts
+                  ? (e.followThrough.isNotEmpty
+                        ? e.followThrough
+                        : _followThrough[e.id] ?? const <String>[])
+                  : const <String>[],
+            };
+          }(),
+          _ => {'counts_against_follow_through': null, 'follow_through': null},
+        },
       };
       changed.add(id ?? e.id);
       return ProposalEvent.fromJson(json)!;
     }
 
     for (final update in edits.updates) {
-      final i = indexOf('${update['event_id']}');
+      final (id, fields) = updateFields(update);
+      final i = indexOf(id);
       final e = events[i];
       events[i] = edited(
         e,
-        fields: update,
+        fields: fields,
         status: e.status == ProposalEventStatus.created
             ? ProposalEventStatus.created
             : ProposalEventStatus.adjusted,
@@ -434,10 +512,16 @@ class InMemoryProposalRepository implements ProposalRepository {
     }
     for (final cancel in edits.cancels) {
       final i = indexOf(cancel.eventId);
-      events[i] = edited(events[i], status: ProposalEventStatus.cancelled);
+      events[i] = edited(
+        events[i],
+        status: ProposalEventStatus.cancelled,
+        fields: {
+          'counts_against_follow_through': cancel.countsAgainstFollowThrough,
+        },
+      );
     }
     for (final id in edits.asPlanned) {
-      if (isNoteId(id)) continue;
+      if (isNoteId(id) || id.startsWith('new:')) continue;
       final i = indexOf(id);
       final e = events[i];
       events[i] = edited(
@@ -480,12 +564,15 @@ class InMemoryProposalRepository implements ProposalRepository {
       }
     }
     final notes = _editedNotes(current, events, edits);
+    final (additions, settled) = await _settle(current, events, edits, changed);
     final revision = current.revision + 1;
     _changed[revision] = changed;
     _proposal = current.copyWith(
       revision: revision,
       events: events,
       notes: notes,
+      additions: additions,
+      settledAdditions: settled,
       reason: 'user edit',
       byUser: true,
       userEdits: [...current.userEdits, edits.toJson()],
@@ -493,6 +580,129 @@ class InMemoryProposalRepository implements ProposalRepository {
     );
     return _proposal!;
   }
+
+  /// [current]'s additions, and those settled, after [edits] settle or
+  /// unsettle them: each made now (in [people] or [actions]), found, or
+  /// dropped, and [events] naming it by its id, or not at all, in place of
+  /// its ref -- or, unsettled, by its ref again. Those changed go in
+  /// [changed].
+  Future<(List<ProposalAddition>, List<AdditionSettled>)> _settle(
+    Proposal current,
+    List<ProposalEvent> events,
+    ProposalEdits edits,
+    Set<String> changed,
+  ) async {
+    final pending = [...current.additions];
+    final settled = [...current.settledAdditions];
+    final all = {
+      for (final a in [...?_claude?.additions, ...current.additions]) a.ref: a,
+    };
+    for (final ref in edits.asPlanned) {
+      if (!ref.startsWith('new:')) continue;
+      final was = settled.where((s) => s.ref == ref).firstOrNull;
+      if (was == null || all[ref] == null) {
+        throw McpException("amend_proposal: $ref isn't settled.");
+      }
+      settled.remove(was);
+      pending.add(all[ref]!);
+      for (final MapEntry(key: id, value: (actions, facts))
+          in (_beforeSettling.remove(ref) ?? const {}).entries) {
+        final i = events.indexWhere((e) => e.id == id);
+        if (i < 0) continue;
+        events[i] = ProposalEvent.fromJson({
+          ...events[i].properties,
+          'action_ids': actions,
+          'facts': facts,
+        })!;
+        changed.add(id);
+      }
+    }
+    for (final edit in edits.additions) {
+      final addition = pending.where((a) => a.ref == edit.ref).firstOrNull;
+      if (addition == null) {
+        throw McpException(
+          "amend_proposal: ${edit.ref} isn't one of the proposal's additions "
+          'still to settle.',
+        );
+      }
+      final name = edit.name ?? addition.name;
+      final detail = edit.detail ?? addition.detail;
+      final String? id;
+      switch (edit.use) {
+        case AdditionUse.existing:
+          id =
+              edit.id ??
+              (throw McpException('amend_proposal: say which one it is.'));
+        case AdditionUse.drop:
+          id = null;
+        case AdditionUse.create:
+          id = switch (addition.kind) {
+            AdditionKind.person => switch (people) {
+              final people? => (await people.createPerson(
+                Person(id: '', name: name, context: detail),
+              )).id,
+              null => 'person-${edit.ref.substring(4)}',
+            },
+            AdditionKind.location => switch (people) {
+              final people? => (await people.createLocation(
+                Location(id: '', name: name, hint: detail),
+              )).id,
+              null => 'location-${edit.ref.substring(4)}',
+            },
+            AdditionKind.action =>
+              await actions?.createAction(
+                    {...addition.fields, 'name': name, 'status': 'active'}
+                      ..remove('ref'),
+                  ) ??
+                  'action-${edit.ref.substring(4)}',
+          };
+      }
+      pending.remove(addition);
+      settled.add(AdditionSettled(ref: edit.ref, use: edit.use, id: id));
+      final before = _beforeSettling[edit.ref] = {};
+      for (final (i, e) in events.indexed) {
+        final facts = _named(e.facts, edit.ref, id) as Map<String, Object?>?;
+        final actions = [
+          for (final a in e.actionIds)
+            if (a != edit.ref) a else ?id,
+        ];
+        if (_sameJson(facts, e.facts) && _sameJson(actions, e.actionIds)) {
+          continue;
+        }
+        before[e.id] = (e.actionIds, e.facts);
+        events[i] = ProposalEvent.fromJson({
+          ...e.properties,
+          'action_ids': actions,
+          'facts': facts,
+        })!;
+        changed.add(e.id);
+      }
+    }
+    return (pending, settled);
+  }
+
+  /// The proposal as Claude made it.
+  final Proposal? _claude;
+
+  /// [json] -- facts -- naming [id] wherever it named [ref]; or, with no
+  /// [id], not naming it.
+  static Object? _named(Object? json, String ref, String? id) => switch (json) {
+    final Map map => {
+      for (final MapEntry(:key, :value) in map.entries)
+        if (key == ref)
+          ?id: ?_named(value, ref, id)
+        else if (value != ref || id != null)
+          '$key': _named(value, ref, id),
+    },
+    final List list => [
+      for (final v in list)
+        if (v != ref || id != null) _named(v, ref, id),
+    ],
+    final String s when s == ref => id,
+    _ => json,
+  };
+
+  static bool _sameJson(Object? a, Object? b) => jsonEncode(a) == jsonEncode(b);
 
   /// [current]'s notes, with [edits]' to them, among [events]: one
   /// annotating goes to the event named, or the one it falls within.
@@ -625,6 +835,8 @@ class InMemoryProposalRepository implements ProposalRepository {
         'start': localIsoTimestamp(e.start),
         'end': localIsoTimestamp(e.end),
         'description': e.description,
+        'location': e.properties['location'],
+        'priority': e.properties['priority'],
         'action_ids': e.actionIds,
         'facts': e.facts,
       };
@@ -637,7 +849,10 @@ class InMemoryProposalRepository implements ProposalRepository {
         case ProposalEventStatus.created:
           await events.createEvent(fields);
         case ProposalEventStatus.cancelled || ProposalEventStatus.merged:
-          await events.deleteEvent(Event(id: e.id, start: e.start, end: e.end));
+          await events.deleteEvent(
+            Event(id: e.id, start: e.start, end: e.end),
+            countsAgainstFollowThrough: e.countsAgainstFollowThrough ?? false,
+          );
         case ProposalEventStatus.onSchedule || ProposalEventStatus.planned:
       }
     }

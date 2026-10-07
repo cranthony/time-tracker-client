@@ -44,6 +44,7 @@ Future<void> main() async {
     final repository = sample?.notesRepository() ?? InMemoryNotesRepository();
     final actions = sample?.actionsRepository() ?? InMemoryActionsRepository();
     final events = sample?.eventsRepository() ?? InMemoryEventsRepository();
+    final people = sample?.peopleRepository() ?? InMemoryPeopleRepository();
     runApp(
       TimeTrackerApp(
         repository: repository,
@@ -51,6 +52,8 @@ Future<void> main() async {
         proposalsRepository: sample?.proposalRepository(
           events: events,
           notes: repository,
+          people: people,
+          actions: actions,
         ),
         actionsRepository: actions,
         outbox: NoteOutbox(
@@ -63,8 +66,7 @@ Future<void> main() async {
         ),
         traitsRepository:
             sample?.traitsRepository() ?? InMemoryTraitsRepository(),
-        peopleRepository:
-            sample?.peopleRepository() ?? InMemoryPeopleRepository(),
+        peopleRepository: people,
       ),
     );
     return;

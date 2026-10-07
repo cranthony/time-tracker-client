@@ -449,6 +449,39 @@ void main() {
         },
       ),
       (
+        'events_proposal_follow_through',
+        (tester) async {
+          // The call to Mom, dropped: it counts against her follow-through.
+          await tester.tap(find.text('Follow-through (1 of 2)'));
+          await tester.pumpAndSettle();
+        },
+      ),
+      (
+        'events_proposal_added',
+        (tester) async {
+          await tester.tap(find.text('Added (3)'));
+          await tester.pumpAndSettle();
+        },
+      ),
+      (
+        'events_proposal_cancelled',
+        (tester) async {
+          // The call to Mom, in full: who it counts against.
+          await tester.tap(find.text('Call Mom').last);
+          await tester.pumpAndSettle();
+        },
+      ),
+      (
+        'events_proposal_settle',
+        (tester) async {
+          // Settling the new person: made now, one already here, or not.
+          await tester.tap(find.text('Added (3)'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byTooltip('Settle it'));
+          await tester.pumpAndSettle();
+        },
+      ),
+      (
         'events_proposal_note_use',
         (tester) async {
           // What the first note, which sets breakfast's start, is for.
@@ -482,7 +515,13 @@ void main() {
       ),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
-        await render(tester, name, reviewing(), then: () => then(tester));
+        await render(
+          tester,
+          name,
+          reviewing(),
+          then: () => then(tester),
+          scoped: true,
+        );
       });
     }
 

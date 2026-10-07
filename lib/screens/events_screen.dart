@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/event.dart';
+import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/proposal.dart';
@@ -279,6 +280,128 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Null for the first note to review.
   int? _noteIndex;
 
+  /// Which page of the proposal's details is shown under its bar: its
+  /// notes, its cancels, or what it adds.
+  ProposalDetailPage _detailPage = ProposalDetailPage.notes;
+
+  /// The page of the proposal's details shown: [_detailPage], if it has
+  /// anything on it, or else the first that has.
+  ProposalDetailPage? get _shownPage {
+    final pages = [
+      if (_note != null) ProposalDetailPage.notes,
+      if (_cancel != null) ProposalDetailPage.followThrough,
+      if (_addition != null) ProposalDetailPage.added,
+    ];
+    return pages.contains(_detailPage) ? _detailPage : pages.firstOrNull;
+  }
+
+  /// Which of the proposal's cancels, and of what it adds, is shown.
+  int _cancelIndex = 0;
+  int _additionIndex = 0;
+
+  /// Whether the proposal's details are folded away.
+  bool _detailsCollapsed = false;
+
+  /// The cancel shown under the proposal's bar, if it has any.
+  ProposalEvent? get _cancel => switch (_proposal?.cancels) {
+    final cancels? when cancels.isNotEmpty =>
+      cancels[_cancelIndex.clamp(0, cancels.length - 1)],
+    _ => null,
+  };
+
+  /// What the proposal adds that's shown under its bar, if it adds any.
+  _Added? get _addition => switch (_additions) {
+    final added when added.isNotEmpty =>
+      added[_additionIndex.clamp(0, added.length - 1)],
+    _ => null,
+  };
+
+  /// Every addition the app's seen the open proposal make, by ref: those
+  /// it's settled leave its additions, but are still shown.
+  final _seenAdditions = <String, ProposalAddition>{};
+
+  /// What the proposal adds -- still to settle, then settled -- in the
+  /// order it first made them.
+  List<_Added> get _additions {
+    final proposal = _proposal;
+    if (proposal == null) return const [];
+    for (final a in proposal.additions) {
+      _seenAdditions.putIfAbsent(a.ref, () => a);
+    }
+    final settled = {for (final s in proposal.settledAdditions) s.ref: s};
+    final pending = {for (final a in proposal.additions) a.ref};
+    return [
+      for (final ref in {..._seenAdditions.keys, ...settled.keys})
+        if (pending.contains(ref) || settled.containsKey(ref))
+          (
+            addition:
+                _seenAdditions[ref] ??
+                ProposalAddition(
+                  ref: ref,
+                  kind: AdditionKind.person,
+                  name: ref.replaceFirst('new:', ''),
+                ),
+            settled: settled[ref],
+          ),
+    ];
+  }
+
+  /// The events of what happened that [added] is used at, given as an
+  /// action, or in their facts: by its ref, or, settled, by its id.
+  List<ProposalEvent> _usesOf(_Added added) {
+    final name = switch (added.settled) {
+      null => added.addition.ref,
+      AdditionSettled(:final id?) => id,
+      _ => null,
+    };
+    if (name == null) return const [];
+    return [
+      for (final e in _proposal?.reviewed ?? const <ProposalEvent>[])
+        if (e.live && (e.actionIds.contains(name) || _mentions(e.facts, name)))
+          e,
+    ];
+  }
+
+  /// What [settled] is named, now it's one already there, or made.
+  String? _settledName(AdditionSettled? settled, AdditionKind kind) {
+    final id = settled?.id;
+    if (id == null) return null;
+    return switch (kind) {
+      AdditionKind.person => switch (_memory.people?.withSelf
+          .where((p) => p.id == id)
+          .firstOrNull) {
+        final p? => personName(p),
+        null => null,
+      },
+      AdditionKind.location =>
+        _memory.locations?.where((l) => l.id == id).firstOrNull?.name,
+      AdditionKind.action => switch (_actionsById[id]) {
+        final a? => actionName(a),
+        null => null,
+      },
+    };
+  }
+
+  /// Whether [json] -- facts, say -- names [ref] anywhere.
+  static bool _mentions(Object? json, String ref) => switch (json) {
+    final String s => s == ref,
+    final List list => list.any((v) => _mentions(v, ref)),
+    final Map map =>
+      map.keys.contains(ref) || map.values.any((v) => _mentions(v, ref)),
+    _ => false,
+  };
+
+  /// The events outlined on the timeline: the cancel shown, or where
+  /// what's added that's shown is used.
+  Set<String> get _selectedEvents => switch (_shownPage) {
+    ProposalDetailPage.followThrough => {?_cancel?.id},
+    ProposalDetailPage.added => switch (_addition) {
+      final a? => {for (final e in _usesOf(a)) e.id},
+      null => const {},
+    },
+    ProposalDetailPage.notes || null => const {},
+  };
+
   /// The proposal's notes, after the latest one an earlier compaction
   /// used, as context: the proposal's own, or else the one the app was
   /// told of.
@@ -319,7 +442,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// The proposal's notes, as the timeline draws them.
   List<ReviewNote> get _reviewNotes {
-    final selected = _note;
+    final selected = _shownPage == ProposalDetailPage.notes ? _note : null;
     return [
       for (final note in _proposalNotes)
         ReviewNote(
@@ -337,7 +460,32 @@ class _EventsScreenState extends State<EventsScreen> {
     if (notes.isEmpty) return;
     final i = index.clamp(0, notes.length - 1);
     setState(() => _noteIndex = i);
-    final at = notes[i].time.toLocal();
+    _scrollToTime(notes[i].time);
+  }
+
+  /// Shows the [index]th of the proposal's cancels under its bar, and
+  /// scrolls the timeline to it.
+  void _goToCancel(int index) {
+    final cancels = _proposal?.cancels ?? const <ProposalEvent>[];
+    if (cancels.isEmpty) return;
+    final i = index.clamp(0, cancels.length - 1);
+    setState(() => _cancelIndex = i);
+    _scrollToTime(cancels[i].start);
+  }
+
+  /// Shows the [index]th of what the proposal adds under its bar, and
+  /// scrolls the timeline to where it's first used.
+  void _goToAddition(int index) {
+    final added = _additions;
+    if (added.isEmpty) return;
+    final i = index.clamp(0, added.length - 1);
+    setState(() => _additionIndex = i);
+    if (_usesOf(added[i]).firstOrNull case final e?) _scrollToTime(e.start);
+  }
+
+  /// Shows [time]'s day, scrolled so [time] is in the middle of the view.
+  void _scrollToTime(DateTime time) {
+    final at = time.toLocal();
     final day = _midnight(at);
     if (_pages.hasClients && day != _day) _pages.jumpToPage(_pageOf(day));
     // Once it's laid out on that day.
@@ -387,7 +535,8 @@ class _EventsScreenState extends State<EventsScreen> {
       for (final e in calendar)
         if (!ids.contains(e.id)) e,
       for (final e in here)
-        if (e.live || !covered(e)) e.toEvent(byId[e.id]),
+        if (e.live || !covered(e))
+          e.toEvent(byId[e.id], _proposal?.addedNames ?? const {}),
     ]..sort((a, b) => a.start.compareTo(b.start));
   }
 
@@ -416,6 +565,7 @@ class _EventsScreenState extends State<EventsScreen> {
         ?e.id: e,
     };
     final changed = _changedSince;
+    final selected = _selectedEvents;
     final strings = MaterialLocalizations.of(context);
     return {
       for (final e in proposal.reviewed)
@@ -423,6 +573,7 @@ class _EventsScreenState extends State<EventsScreen> {
           e,
           calendar: calendar[e.id],
           changed: changed.contains(e.id),
+          selected: selected.contains(e.id),
           time: (t) =>
               strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal())),
         ),
@@ -480,6 +631,7 @@ class _EventsScreenState extends State<EventsScreen> {
     _loadNotes(cached: true);
     _loadProposal();
     _loadSummaryCollapsed();
+    _loadDetailsCollapsed();
     // Once the scopes can be read: everyone, every location and every
     // trait, for an event's dialogs.
     WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchNames());
@@ -928,6 +1080,8 @@ class _EventsScreenState extends State<EventsScreen> {
     final outcome = await showEventSummaryDialog(
       context,
       event,
+      // What a proposal adds, named by its ref until it's made.
+      additions: _proposal?.additions ?? const [],
       save: (changes) => _approvingHistory(
         (allow) => widget.repository.updateEvent(
           event,
@@ -961,11 +1115,13 @@ class _EventsScreenState extends State<EventsScreen> {
   /// [_openEvent] does, its changes and its cancelling edits of the
   /// proposal. One the proposal cancels can be put back as planned.
   Future<void> _openReviewed(Event event) async {
-    if (event.isCancelled) return _offerAsPlanned(event);
+    if (event.isCancelled) return _openCancelled(event);
     Proposal? amended;
     final outcome = await showEventSummaryDialog(
       context,
       event,
+      // What a proposal adds, named by its ref until it's made.
+      additions: _proposal?.additions ?? const [],
       save: (changes) async {
         amended = await _amend(
           ProposalEdits(updates: [proposalUpdate(event, changes)]),
@@ -1024,50 +1180,44 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
-  /// Offers to put [event], which the open proposal says didn't happen,
-  /// back as planned.
-  Future<void> _offerAsPlanned(Event event) async {
+  /// Shows [event], which the open proposal says didn't happen: when, who
+  /// said so, and whether it counts against follow-through, and against
+  /// whom -- to say otherwise, put it back as planned, or ask Claude about.
+  Future<void> _openCancelled(Event event) async {
     final proposed = _proposal?.event(event.id);
     if (proposed == null) return;
-    final by = switch (proposed.decidedBy) {
-      DecidedBy.claude => ' Claude says so.',
-      DecidedBy.user => ' You said so.',
-      null => '',
-    };
-    final name = switch (event.summary) {
-      final s? when s.isNotEmpty => '“$s”',
-      _ => 'This event',
-    };
-    final back = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('$name didn\'t happen'),
-        content: Text(
-          'In what happened, to confirm, it '
-          '${proposed.status == ProposalEventStatus.merged ? 'was merged into another event' : 'was cancelled'}.'
-          '$by Put it back as planned?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Leave it'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Put it back'),
-          ),
-        ],
-      ),
-    );
-    if (back != true || !mounted) return;
-    await runOrShowError(
+    final choice = await showCancelledDialog(
       context,
-      title: "Couldn't put it back",
-      action: () async {
-        final amended = await _amend(ProposalEdits(asPlanned: [proposed.id]));
-        if (mounted) _amended(amended, 'Put back as planned.');
+      proposed,
+      // Saved as the switch is turned, the dialog staying open.
+      setCounts: (counts) async {
+        final amended = await _amend(
+          ProposalEdits(
+            cancels: [
+              (eventId: proposed.id, countsAgainstFollowThrough: counts),
+            ],
+          ),
+        );
+        return amended.event(proposed.id);
       },
     );
+    if (!mounted) return;
+    switch (choice) {
+      case AskAboutCancel():
+        await _noteForClaude(about: proposed.id);
+      case PutBack():
+        await runOrShowError(
+          context,
+          title: "Couldn't put it back",
+          action: () async {
+            final amended = await _amend(
+              ProposalEdits(asPlanned: [proposed.id]),
+            );
+            if (mounted) _amended(amended, 'Put back as planned.');
+          },
+        );
+      case null:
+    }
   }
 
   /// Records [edits] to the open proposal, as the user's, and shows its
@@ -2108,15 +2258,22 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Asks for a note for Claude on the open proposal, about [about] to
   /// start with -- or about the time note [aboutNote] -- and leaves it.
-  Future<void> _noteForClaude({String? about, ProposalNote? aboutNote}) async {
+  Future<void> _noteForClaude({
+    String? about,
+    ProposalNote? aboutNote,
+    ProposalAddition? aboutAddition,
+  }) async {
+    final subject = switch ((aboutNote, aboutAddition)) {
+      (final n?, _) => 'About ${_noteNames[n.id]}',
+      (_, final a?) =>
+        'About the new ${a.kind.label.toLowerCase()} “${a.name}”',
+      _ => null,
+    };
     final note = await showProposalNoteDialog(
       context,
       events: _reviewedNames,
       about: about,
-      subject: switch (aboutNote) {
-        final n? => 'About ${_noteNames[n.id]}',
-        null => null,
-      },
+      subject: subject,
     );
     if (note == null || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
@@ -2124,7 +2281,12 @@ class _EventsScreenState extends State<EventsScreen> {
       await repository.addNote(
         proposal,
         note.text,
-        eventId: aboutNote == null ? note.eventId : null,
+        // What's added is named by its ref.
+        eventId: switch ((aboutNote, aboutAddition)) {
+          (null, null) => note.eventId,
+          (_, final a?) => a.ref,
+          _ => null,
+        },
         noteId: aboutNote?.id,
       );
       await _loadProposal();
@@ -2143,7 +2305,14 @@ class _EventsScreenState extends State<EventsScreen> {
     final action = await showProposalNotesSheet(
       context,
       proposal,
-      names: _reviewedNames,
+      names: {
+        ..._reviewedNames,
+        // A note about what's added names it by its ref.
+        for (final (:addition, settled: _) in _additions)
+          addition.ref:
+              'the new ${addition.kind.label.toLowerCase()} '
+              '“${addition.name}”',
+      },
       noteNames: _noteNames,
     );
     if (!mounted) return;
@@ -2380,6 +2549,236 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
+  /// Under the proposal's bar, its details, a page each: its notes, its
+  /// cancels and whether they count against follow-through, and what it
+  /// adds -- each one at a time, stepped through.
+  Widget _buildDetails(Proposal proposal) {
+    final notes = _proposalNotes;
+    final note = _note;
+    final cancels = proposal.cancels;
+    final cancel = _cancel;
+    final added = _additions;
+    final addition = _addition;
+    int indexOf<T>(List<T> list, bool Function(T) test) =>
+        list.indexWhere(test);
+    final noteAt = note == null ? -1 : indexOf(notes, (n) => n.id == note.id);
+    final cancelAt = cancel == null
+        ? -1
+        : indexOf(cancels, (e) => e.id == cancel.id);
+    final additionAt = addition == null
+        ? -1
+        : indexOf(added, (a) => a.addition.ref == addition.addition.ref);
+    // Its pages, as it'll have them: those with something on.
+    final pages = [
+      if (note != null) ProposalDetailPage.notes,
+      if (cancel != null) ProposalDetailPage.followThrough,
+      if (addition != null) ProposalDetailPage.added,
+    ];
+    return ProposalDetails(
+      initialPage: switch (pages.indexOf(_detailPage)) {
+        -1 => 0,
+        final i => i,
+      },
+      notes: note == null
+          ? null
+          : ProposalNoteStrip(
+              note: note,
+              index: noteAt,
+              count: notes.length,
+              onPrevious: noteAt > 0 ? () => _goToNote(noteAt - 1) : null,
+              onNext: noteAt < notes.length - 1
+                  ? () => _goToNote(noteAt + 1)
+                  : null,
+              events: _reviewedSummaries,
+              // Compacted already: there to see, not to change.
+              onEdit: note.compacted ? null : () => _editNote(note),
+            ),
+      noteCount: notes.length,
+      cancels: cancel == null
+          ? null
+          : ProposalCancelStrip(
+              event: cancel,
+              index: cancelAt,
+              count: cancels.length,
+              onCounts: _proposalBusy
+                  ? null
+                  : (counts) => _setCounts(cancel, counts),
+              onPrevious: cancelAt > 0 ? () => _goToCancel(cancelAt - 1) : null,
+              onNext: cancelAt < cancels.length - 1
+                  ? () => _goToCancel(cancelAt + 1)
+                  : null,
+              // Shown, and opened: who it counts against, in full.
+              onTap: () {
+                _goToCancel(cancelAt);
+                _openCancelled(cancel.toEvent());
+              },
+            ),
+      cancelCount: cancels.length,
+      counting: cancels
+          .where((e) => e.countsAgainstFollowThrough ?? true)
+          .length,
+      adds: addition == null
+          ? null
+          : ProposalAdditionStrip(
+              addition: addition.addition,
+              settled: addition.settled,
+              settledAs: _settledName(addition.settled, addition.addition.kind),
+              index: additionAt,
+              count: added.length,
+              uses: [
+                for (final e in _usesOf(addition)) _reviewedNames[e.id] ?? e.id,
+              ],
+              onSettle: _proposalBusy ? null : () => _settle(addition),
+              onPrevious: additionAt > 0
+                  ? () => _goToAddition(additionAt - 1)
+                  : null,
+              onNext: additionAt < added.length - 1
+                  ? () => _goToAddition(additionAt + 1)
+                  : null,
+            ),
+      addCount: added.length,
+      collapsed: _detailsCollapsed,
+      onCollapsed: _setDetailsCollapsed,
+      onPage: (page) => setState(() => _detailPage = page),
+    );
+  }
+
+  /// Asks what's to become of [added], and amends the proposal so: made
+  /// now, one already there, dropped, or put back as Claude proposed it
+  /// -- or leaves a note for Claude about it.
+  Future<void> _settle(_Added added) async {
+    final a = added.addition;
+    final existing = <({String id, String name, String? detail})>[
+      ...switch (a.kind) {
+        AdditionKind.person => [
+          for (final p in _memory.people?.people ?? const <Person>[])
+            if (p.active) (id: p.id, name: p.name, detail: p.context),
+        ],
+        AdditionKind.location => [
+          for (final l in _memory.locations ?? const <Location>[])
+            (id: l.id, name: l.name, detail: l.hint),
+        ],
+        AdditionKind.action => [
+          for (final action in _memory.actions?.actions ?? const <PlanAction>[])
+            if (!action.isGroup &&
+                action.id != null &&
+                action.status != 'deleted')
+              (id: action.id!, name: actionName(action), detail: null),
+        ],
+      },
+    ];
+    final choice = await showAdditionSheet(
+      context,
+      a,
+      settled: added.settled,
+      settledAs: _settledName(added.settled, a.kind),
+      existing: existing,
+    );
+    if (choice == null || !mounted) return;
+    ProposalEdits settling(
+      AdditionUse use, {
+      String? id,
+      String? name,
+      String? detail,
+    }) => ProposalEdits(
+      additions: [
+        (
+          ref: a.ref,
+          use: use,
+          id: id,
+          name: name,
+          detail: detail,
+          kind: a.kind,
+        ),
+      ],
+    );
+    final kind = a.kind.label.toLowerCase();
+    final (edits, said) = switch (choice) {
+      CreateAddition(:final name, :final detail) => (
+        settling(AdditionUse.create, name: name, detail: detail),
+        'Made the $kind “$name”.',
+      ),
+      UseExisting(:final id) => (
+        settling(AdditionUse.existing, id: id),
+        'It’s ${existing.where((e) => e.id == id).firstOrNull?.name ?? 'one already here'}.',
+      ),
+      DropAddition() => (
+        settling(AdditionUse.drop),
+        'Dropped “${a.name}”: taken out of every event.',
+      ),
+      UnsettleAddition() => (
+        ProposalEdits(asPlanned: [a.ref]),
+        'Put back as Claude proposed it.',
+      ),
+      AskAboutAddition() => (null, null),
+    };
+    if (edits == null) return _noteForClaude(aboutAddition: a);
+    await runOrShowError(
+      context,
+      title: "Couldn't settle it",
+      action: () async {
+        final amended = await _amend(edits);
+        if (!mounted) return;
+        _amended(amended, said!);
+        // Made now: named from where it's kept.
+        if (choice is CreateAddition) {
+          _memory.newVisit();
+          unawaited(_prefetchNames());
+          unawaited(_loadActions());
+        }
+      },
+    );
+  }
+
+  /// Says whether [cancel] counts against follow-through -- [counts] --
+  /// or is a change of plan: sent again, the other way.
+  Future<void> _setCounts(ProposalEvent cancel, bool counts) async {
+    await runOrShowError(
+      context,
+      title: "Couldn't change it",
+      action: () async {
+        final amended = await _amend(
+          ProposalEdits(
+            cancels: [(eventId: cancel.id, countsAgainstFollowThrough: counts)],
+          ),
+        );
+        if (mounted) {
+          _amended(
+            amended,
+            counts
+                ? 'It counts against follow-through.'
+                : "A change of plan: it doesn't count against follow-through.",
+          );
+        }
+      },
+    );
+  }
+
+  /// Whether the proposal's details were folded away last time. Best
+  /// effort: without it, they're open.
+  Future<void> _loadDetailsCollapsed() async {
+    try {
+      final collapsed = await SharedPreferencesAsync().getBool(
+        _detailsCollapsedKey,
+      );
+      if (!mounted || collapsed == null) return;
+      setState(() => _detailsCollapsed = collapsed);
+    } catch (_) {
+      // Nowhere to keep it: they're open.
+    }
+  }
+
+  void _setDetailsCollapsed(bool collapsed) {
+    setState(() => _detailsCollapsed = collapsed);
+    try {
+      SharedPreferencesAsync()
+          .setBool(_detailsCollapsedKey, collapsed)
+          .catchError((_) {});
+    } catch (_) {
+      // Nowhere to keep it: it lasts until the app closes.
+    }
+  }
+
   Widget _buildSignIn() => FillViewport(
     child: StatusMessage(
       icon: Icons.lock_outline,
@@ -2432,21 +2831,7 @@ class _EventsScreenState extends State<EventsScreen> {
             onGoTo: _goToProposal,
             onAbandon: _abandonProposal,
           ),
-        if ((_note, _proposalNotes) case (final note?, final notes))
-          ProposalNoteStrip(
-            note: note,
-            index: notes.indexWhere((n) => n.id == note.id),
-            count: notes.length,
-            onPrevious: notes.first.id != note.id
-                ? () => _goToNote(notes.indexWhere((n) => n.id == note.id) - 1)
-                : null,
-            onNext: notes.last.id != note.id
-                ? () => _goToNote(notes.indexWhere((n) => n.id == note.id) + 1)
-                : null,
-            events: _reviewedSummaries,
-            // Compacted already: there to see, not to change.
-            onEdit: note.compacted ? null : () => _editNote(note),
-          ),
+        if (_proposal case final proposal?) _buildDetails(proposal),
         Expanded(
           child: LayoutBuilder(
             builder: (context, view) => RefreshIndicator(
@@ -2796,6 +3181,13 @@ class _EventsScreenState extends State<EventsScreen> {
     child: Card(child: child),
   );
 }
+
+/// One of the things a proposal adds, and how the user settled it, if
+/// they have.
+typedef _Added = ({ProposalAddition addition, AdditionSettled? settled});
+
+/// Where whether a proposal's details are folded away is kept.
+const _detailsCollapsedKey = 'proposal_details_collapsed';
 
 /// Where whether the day's summary is folded away is kept.
 const _summaryCollapsedKey = 'day_summary_collapsed';

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../services/mcp_client.dart';
+import '../services/server_errors.dart';
 import 'error_sheet.dart';
 import 'color_picker.dart';
 import 'durations.dart';
@@ -939,10 +940,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     builder: (context, snapshot) {
       if (snapshot.hasError) {
         return Text(
-          "Couldn't load actions. ${switch (snapshot.error) {
-            McpException(:final message) => message,
-            final e => '$e',
-          }}",
+          "Couldn't load actions. ${describeServerError(snapshot.error!).message}",
           style: TextStyle(color: Theme.of(context).colorScheme.error),
         );
       }

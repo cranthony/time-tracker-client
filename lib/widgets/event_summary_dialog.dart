@@ -6,12 +6,14 @@ import 'package:flutter/material.dart';
 import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/plan_action.dart';
+import '../models/proposal.dart';
 import '../models/note.dart';
 import '../models/person.dart';
 import '../models/recurrence.dart';
 import '../models/repeat.dart';
 import '../models/trait.dart';
 import '../services/mcp_client.dart';
+import '../services/server_errors.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
@@ -68,6 +70,7 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
   Map<String, PlanAction> actions = const {},
   Future<List<PlanAction>> Function()? loadActions,
   Future<bool> Function(String seriesId)? openSeries,
+  List<ProposalAddition> additions = const [],
 }) {
   final seriesId = event.properties['recurring_event_id'] as String?;
   final day = MaterialLocalizations.of(context).formatMediumDate(event.start);
@@ -110,6 +113,7 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
         (final open?, final id?) => () => open(id),
         _ => null,
       },
+      additions: additions,
     ),
   );
 }
@@ -280,6 +284,7 @@ class _SummaryDialog<T> extends StatefulWidget {
     this.otherEvents = const OtherEvents.none(),
     this.openSeries,
     this.facets = false,
+    this.additions = const [],
   });
 
   /// As the server sent them, with times in local time, and a series'
@@ -307,6 +312,10 @@ class _SummaryDialog<T> extends StatefulWidget {
 
   /// Whether it shows its facets: an event's, not a series'.
   final bool facets;
+
+  /// The people and locations a compaction proposal adds, which its
+  /// facts may name by their refs ("new:priya").
+  final List<ProposalAddition> additions;
 
   @override
   State<_SummaryDialog<T>> createState() => _SummaryDialogState<T>();
@@ -394,6 +403,17 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     }
     if (locations != null) {
       _locationNames = {for (final l in locations) l.id: l.name};
+    }
+    // What a proposal adds, by ref, until it's made.
+    for (final a in widget.additions) {
+      final named = '${a.name} (new)';
+      switch (a.kind) {
+        case AdditionKind.person:
+          _personNames = {..._personNames, a.ref: named};
+        case AdditionKind.location:
+          _locationNames = {..._locationNames, a.ref: named};
+        case AdditionKind.action:
+      }
     }
     if (traits != null) {
       _traitNames = {for (final t in traits) t.id: t.name};
@@ -1343,6 +1363,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           facts,
           judgments: judgments,
           traitNames: _traitNames,
+          additions: widget.additions,
         );
         if (edited == null || !mounted) return;
         final was = Facts.fromJson(widget.values['facts']) ?? const Facts();
@@ -1389,48 +1410,47 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   }
 
   /// Its actions, searched for or picked from the tree; see [ActionsPicker].
-  Widget _actionsPicker(BuildContext context, List<String> picked) =>
-      FutureBuilder(
-        future: _actionList,
-        initialData: _actionsLoaded,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Text(
-              "Couldn't load actions. ${switch (snapshot.error) {
-                McpException(:final message) => message,
-                final e => '$e',
-              }}",
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            );
-          }
-          final list = snapshot.data;
-          if (list == null) return const LinearProgressIndicator();
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ActionsPicker(
-                actions: list,
-                picked: picked,
-                leavesOnly: true,
-                onChanged: (ids) => _set('action_ids', ids),
-                marker: (action) => ActionDiamond(
-                  color: parseColor(
-                    action.effectiveColor ?? action.backgroundColor,
-                  ),
-                ),
+  Widget _actionsPicker(
+    BuildContext context,
+    List<String> picked,
+  ) => FutureBuilder(
+    future: _actionList,
+    initialData: _actionsLoaded,
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return Text(
+          "Couldn't load actions. ${describeServerError(snapshot.error!).message}",
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        );
+      }
+      final list = snapshot.data;
+      if (list == null) return const LinearProgressIndicator();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ActionsPicker(
+            actions: list,
+            picked: picked,
+            leavesOnly: true,
+            onChanged: (ids) => _set('action_ids', ids),
+            marker: (action) => ActionDiamond(
+              color: parseColor(
+                action.effectiveColor ?? action.backgroundColor,
               ),
-              Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: TextButton(
-                  onPressed: () => setState(() => _editing = null),
-                  child: const Text('Done'),
-                ),
-              ),
-            ],
-          );
-        },
+            ),
+          ),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: TextButton(
+              onPressed: () => setState(() => _editing = null),
+              child: const Text('Done'),
+            ),
+          ),
+        ],
       );
+    },
+  );
 }
 
 /// An outlined box around a property open for editing.

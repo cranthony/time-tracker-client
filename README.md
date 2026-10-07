@@ -443,11 +443,18 @@ Claude can't apply one; only confirming it in the app does.
 - **Editing it.** Moving, resizing, cancelling or adding an event in the
   band, or setting its actions, people or location, edits the proposal
   (`amend_proposal`), with the same dialogs and press-and-hold move as
-  ever, and what it does to the events in its way. A description can only
-  be added to; a cancelled one can be put back as planned. If the server
+  ever, and what it does to the events in its way. Its whole description, location and priority can be
+  changed too; a cancelled one can be put back as planned. If the server
   refuses an edit (an overlap, say), it stays in the dialog to fix, and
   the proposal loads again. Below the band is the plan, changed on the
   calendar; before it, history, changed only after asking.
+- **Its details**, under the bar, in pages swiped between and folded away
+  like the day's summary: its notes; its follow-through -- how many
+  cancels count against it, each with who it counts against, and a switch
+  to say it's a change of plan, or not -- and what it adds, each person,
+  action and location to settle: made now, one already here, or dropped,
+  or asked about. Each is stepped through one at a time, and shown on the
+  timeline.
 - **The bar.** "Confirm ... happened as shown" applies it. "Note for
   Claude" leaves a note, about an event or all of it; while one's open
   it's waiting for Claude, who answers it on its next run (or ask in a
