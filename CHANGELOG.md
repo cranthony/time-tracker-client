@@ -6,6 +6,19 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.12.0
+
+- In an event's dialog, the actions, who it was with and for, and where,
+  are picked in a sheet up from the foot of the screen, as a note's is,
+  with a search and the room to show what it finds: the actions as
+  before, from the tree; who and where in a tab each -- with you, for,
+  and where, a new location added there.
+- Who and where take the free-text location's place, in a line after a
+  person, e.g. "With Sam · @ The noodle bar"; the sparkle's row keeps
+  the notes and Claude's judgments, and opens just the notes.
+- The description is written in a sheet up from the foot, too.
+- The actions are after a raised hand, not a flag.
+
 ## 7.11.0
 
 - Every failure talking to the server is shown the same way: a sheet

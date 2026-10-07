@@ -13,7 +13,6 @@ import '../models/recurrence.dart';
 import '../models/repeat.dart';
 import '../models/trait.dart';
 import '../services/mcp_client.dart';
-import '../services/server_errors.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
@@ -22,7 +21,7 @@ import 'color_picker.dart';
 import 'event_dialog.dart' show followThroughOption;
 import 'other_events.dart';
 import 'facts_dialog.dart';
-import 'actions_picker.dart';
+import 'picker_sheet.dart';
 import 'properties_dialog.dart' show ConfirmOption, confirmationContent;
 import 'recurrence_dialog.dart';
 import 'repeat_editor.dart';
@@ -267,7 +266,7 @@ class _Removal {
 }
 
 /// The properties the dialog edits, one at a time.
-enum _Field { priority, summary, time, repeat, location, description, actions }
+enum _Field { priority, summary, time, repeat, location, description }
 
 /// The priorities offered as chips; "Other" takes any other.
 const _priorities = [0, 1, 2, 3];
@@ -589,21 +588,18 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               if (widget.series) _repeatLine(context),
               if (widget.openSeries case final open?) _seriesChip(open),
               const SizedBox(height: 8),
-              _textRow(
-                context,
-                field: _Field.location,
-                key: 'location',
-                icon: Icons.place_outlined,
-                hint: 'Add location',
-              ),
-              _textRow(
-                context,
-                field: _Field.description,
-                key: 'description',
-                icon: Icons.notes,
-                hint: 'Add description',
-                multiline: true,
-              ),
+              // An event's who and where; a series', where, as it's put.
+              if (widget.facets)
+                _whoRow(context)
+              else
+                _textRow(
+                  context,
+                  field: _Field.location,
+                  key: 'location',
+                  icon: Icons.place_outlined,
+                  hint: 'Add location',
+                ),
+              _descriptionRow(context),
               _actionsRow(context),
               if (widget.facets) _factsRow(context),
             ],
@@ -1286,10 +1282,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   ];
 
   /// Its actions, each after a diamond in the action's color, as on the
-  /// timeline; picked from a list once opened.
+  /// timeline; picked in a sheet up from the foot ([showActionsSheet]).
   Widget _actionsRow(BuildContext context) {
     final theme = Theme.of(context);
-    final editing = _editing == _Field.actions;
     final ids = _actionIds;
     final names = [
       if (!_changes.containsKey('action_ids'))
@@ -1298,60 +1293,156 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     ];
     return _row(
       context,
-      icon: Icons.flag_outlined,
-      editing: editing,
+      icon: Icons.front_hand_outlined,
       changedKey: 'action_ids',
-      onTap: editing || widget.loadActions == null
-          ? null
-          : () => _open(_Field.actions),
+      onTap: switch (_actionList) {
+        final actions? => () async {
+          setState(() => _editing = null);
+          final picked = await showActionsSheet(
+            context,
+            actions: actions,
+            loaded: _actionsLoaded,
+            picked: _actionIds,
+            marker: (action) => ActionDiamond(
+              color: parseColor(
+                action.effectiveColor ?? action.backgroundColor,
+              ),
+            ),
+          );
+          if (picked != null && mounted) _set('action_ids', picked);
+        },
+        null => null,
+      },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (ids.isEmpty && !editing)
+          if (ids.isEmpty)
             Text(
               'Add actions',
               style: theme.textTheme.bodyLarge?.copyWith(
                 color: theme.hintColor,
               ),
             ),
-          if (!editing)
-            for (final (i, id) in ids.indexed)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    ActionDiamond(
-                      color: switch (widget.actions[id]) {
-                        final action? => parseColor(
-                          action.effectiveColor ?? action.backgroundColor,
-                        ),
-                        null => null,
-                      },
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(switch (widget.actions[id]) {
-                        final action? => actionName(action),
-                        null => (i < names.length ? names[i] : null) ?? id,
-                      }, style: theme.textTheme.bodyLarge),
-                    ),
-                  ],
-                ),
+          for (final (i, id) in ids.indexed)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  ActionDiamond(
+                    color: switch (widget.actions[id]) {
+                      final action? => parseColor(
+                        action.effectiveColor ?? action.backgroundColor,
+                      ),
+                      null => null,
+                    },
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(switch (widget.actions[id]) {
+                      final action? => actionName(action),
+                      null => (i < names.length ? names[i] : null) ?? id,
+                    }, style: theme.textTheme.bodyLarge),
+                  ),
+                ],
               ),
-          if (editing) _actionsPicker(context, ids),
+            ),
         ],
       ),
     );
   }
 
-  /// Who it was with and for, and where, in a line, and the notes on
-  /// each person under it, then how many judgments the assistant made of
-  /// it; tapped to edit the facts in [showFactsDialog].
+  /// [facts] as its facts, a change if they're not as they were.
+  void _setFacts(Facts facts) {
+    final was = Facts.fromJson(widget.values['facts']) ?? const Facts();
+    setState(() {
+      if (facts == was) {
+        _changes.remove('facts');
+      } else {
+        // Null removes them: see clearableFields.
+        _changes['facts'] = facts.isEmpty ? null : facts.toJson();
+      }
+    });
+  }
+
+  /// Who it was with and for, and where, in a line, after a person;
+  /// picked in a sheet up from the foot ([showWhoWhereSheet]). Where it
+  /// was put in words, if it's not at a location.
+  Widget _whoRow(BuildContext context) {
+    final theme = Theme.of(context);
+    final facts = Facts.fromJson(_value('facts')) ?? const Facts();
+    final line = facts.describe(_personNames, _locationNames);
+    final put = switch (_value('location')) {
+      final String where when where.trim().isNotEmpty => '@ $where',
+      _ => null,
+    };
+    return _row(
+      context,
+      icon: Icons.person_outline,
+      changedKey: 'facts',
+      onTap: () async {
+        setState(() => _editing = null);
+        final edited = await showWhoWhereSheet(
+          context,
+          facts,
+          additions: widget.additions,
+        );
+        if (edited != null && mounted) _setFacts(edited);
+      },
+      child: Text(
+        switch ([
+          if (line.isNotEmpty) line,
+          if (facts.locationId == null) ?put,
+        ].join(' · ')) {
+          '' => 'Add who and where',
+          final said => said,
+        },
+        style: theme.textTheme.bodyLarge?.copyWith(
+          color: line.isEmpty && put == null ? theme.hintColor : null,
+        ),
+      ),
+    );
+  }
+
+  /// Its description, in full, or a hint; written in a sheet up from the
+  /// foot ([showTextSheet]).
+  Widget _descriptionRow(BuildContext context) {
+    final theme = Theme.of(context);
+    final value = _value('description') as String?;
+    final blank = value == null || value.trim().isEmpty;
+    return _row(
+      context,
+      icon: Icons.notes,
+      changedKey: 'description',
+      onTap: () async {
+        setState(() => _editing = null);
+        final text = await showTextSheet(
+          context,
+          title: 'Description',
+          text: value,
+          hint: 'Add description',
+        );
+        if (text == null || !mounted) return;
+        _set('description', text.isEmpty ? null : text);
+      },
+      child: Text(
+        blank ? 'Add description' : value,
+        maxLines: 6,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodyLarge?.copyWith(
+          color: blank ? theme.hintColor : null,
+        ),
+      ),
+    );
+  }
+
+  /// The notes on you and on each person there, and how many judgments
+  /// the assistant made of it; tapped to edit the notes in
+  /// [showFactsDialog].
   Widget _factsRow(BuildContext context) {
     final theme = Theme.of(context);
     final facts = Facts.fromJson(_value('facts'));
     final judgments = judgmentsFromJson(widget.values['judgments']);
-    final empty = (facts == null || facts.isEmpty) && judgments.isEmpty;
+    final empty = (facts?.notes.isEmpty ?? true) && judgments.isEmpty;
     return _row(
       context,
       icon: Icons.auto_awesome_outlined,
@@ -1364,17 +1455,10 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           judgments: judgments,
           traitNames: _traitNames,
           additions: widget.additions,
+          // Who and where, in their own row.
+          pickers: false,
         );
-        if (edited == null || !mounted) return;
-        final was = Facts.fromJson(widget.values['facts']) ?? const Facts();
-        setState(() {
-          if (edited == was) {
-            _changes.remove('facts');
-          } else {
-            // Null removes them: see clearableFields.
-            _changes['facts'] = edited.isEmpty ? null : edited.toJson();
-          }
-        });
+        if (edited != null && mounted) _setFacts(edited);
       },
       child: empty
           ? Text(
@@ -1386,9 +1470,6 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (facts?.describe(_personNames, _locationNames)
-                    case final line? when line.isNotEmpty)
-                  Text(line, style: theme.textTheme.bodyLarge),
                 for (final MapEntry(:key, :value)
                     in facts?.notes.entries ??
                         const <MapEntry<String, String>>[])
@@ -1408,49 +1489,6 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
             ),
     );
   }
-
-  /// Its actions, searched for or picked from the tree; see [ActionsPicker].
-  Widget _actionsPicker(
-    BuildContext context,
-    List<String> picked,
-  ) => FutureBuilder(
-    future: _actionList,
-    initialData: _actionsLoaded,
-    builder: (context, snapshot) {
-      if (snapshot.hasError) {
-        return Text(
-          "Couldn't load actions. ${describeServerError(snapshot.error!).message}",
-          style: TextStyle(color: Theme.of(context).colorScheme.error),
-        );
-      }
-      final list = snapshot.data;
-      if (list == null) return const LinearProgressIndicator();
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ActionsPicker(
-            actions: list,
-            picked: picked,
-            leavesOnly: true,
-            onChanged: (ids) => _set('action_ids', ids),
-            marker: (action) => ActionDiamond(
-              color: parseColor(
-                action.effectiveColor ?? action.backgroundColor,
-              ),
-            ),
-          ),
-          Align(
-            alignment: AlignmentDirectional.centerEnd,
-            child: TextButton(
-              onPressed: () => setState(() => _editing = null),
-              child: const Text('Done'),
-            ),
-          ),
-        ],
-      );
-    },
-  );
 }
 
 /// An outlined box around a property open for editing.

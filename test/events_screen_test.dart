@@ -782,6 +782,8 @@ void main() {
 
     Finder inDialog(Finder f) =>
         find.descendant(of: find.byType(AlertDialog), matching: f);
+    Finder inSheet(Finder f) =>
+        find.descendant(of: find.byType(BottomSheet), matching: f);
 
     testWidgets('shows the properties one edits, blank ones as hints', (
       tester,
@@ -793,7 +795,7 @@ void main() {
         inDialog(find.text('Wed, Sep 30 · 9:00 AM – 10:30 AM')),
         findsOneWidget,
       );
-      expect(inDialog(find.text('Add location')), findsOneWidget);
+      expect(inDialog(find.text('Add who and where')), findsOneWidget);
       expect(inDialog(find.text('Deep work')), findsOneWidget);
       expect(inDialog(find.text('Deep focus')), findsOneWidget);
       // Not in a series, so no link to one.
@@ -822,17 +824,20 @@ void main() {
       await tester.enterText(inDialog(find.byType(TextField)), 'Admin');
       await tester.pumpAndSettle();
 
-      await tester.tap(inDialog(find.text('Add location')));
+      // The description, in a sheet up from the foot.
+      await tester.tap(inDialog(find.text('Deep work')));
       await tester.pumpAndSettle();
-      await tester.enterText(inDialog(find.byType(TextField)), 'Office');
+      await tester.enterText(inSheet(find.byType(TextField)), 'At the desk');
+      await tester.tap(inSheet(find.text('Done')));
       await tester.pumpAndSettle();
+      expect(inDialog(find.text('At the desk')), findsOneWidget);
 
       // With changes, Details gives way to Cancel and Save.
       expect(find.text('Details'), findsNothing);
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(repo.saved, [
-        {'priority': 0, 'summary': 'Admin', 'location': 'Office'},
+        {'priority': 0, 'summary': 'Admin', 'description': 'At the desk'},
       ]);
       expect(find.byType(AlertDialog), findsNothing);
       expect(find.text('Saved.'), findsOneWidget);
@@ -983,15 +988,14 @@ void main() {
       final repo = _RecordingRepository([work()]);
       await open(tester, repo);
       expect(inDialog(find.byType(ActionDiamond)), findsOneWidget);
+      // Picked in a sheet up from the foot, with a search.
       await tester.ensureVisible(inDialog(find.text('Deep focus')));
       await tester.tap(inDialog(find.text('Deep focus')));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(inDialog(find.text('Exercise')));
+      expect(inSheet(find.text('Search actions')), findsOneWidget);
+      await tester.tap(inSheet(find.text('Exercise')));
       await tester.pumpAndSettle();
-      await tester.tap(inDialog(find.text('Exercise')));
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(inDialog(find.text('Done')));
-      await tester.tap(inDialog(find.text('Done')));
+      await tester.tap(inSheet(find.text('Done')));
       await tester.pumpAndSettle();
       expect(inDialog(find.byType(ActionDiamond)), findsNWidgets(2));
       await tester.tap(find.text('Save'));
@@ -1053,7 +1057,8 @@ void main() {
 
       await tester.tap(inDialog(find.text('Deep work')));
       await tester.pumpAndSettle();
-      await tester.enterText(inDialog(find.byType(TextField)), '');
+      await tester.enterText(inSheet(find.byType(TextField)), '');
+      await tester.tap(inSheet(find.text('Done')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
