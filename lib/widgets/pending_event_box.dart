@@ -387,6 +387,7 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
               tooltip: 'Drag to move the other end',
               onDragTo: widget.onMoveOther,
             ),
+            if (box.span != null) _otherButtons(colors, other, constraints),
           ],
           ..._line(
             colors,
@@ -671,6 +672,43 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
   /// line, or earlier, above it: a "+", with [arrow] pointing the way the
   /// event goes from the cursor. Tapped, by [step]; dragged, to where the
   /// other cursor goes.
+  /// On the [other] cursor's outside, beside where the cursor's are: a
+  /// "−" and a "+", shrinking and stretching the box at that end.
+  Widget _otherButtons(
+    ColorScheme colors,
+    DateTime other,
+    BoxConstraints constraints,
+  ) {
+    final foot = widget.box.cursorOnTop;
+    final y = _y(other);
+    final middle = (timelineCardsLeft + constraints.maxWidth - 44) / 2;
+    return Positioned(
+      // Under the cursor's "−" and "+".
+      left: middle - _groupWidth / 2 + 36 + 8,
+      top: foot ? y + _buttonGap : y - _buttonGap - _buttonHeight,
+      height: _buttonHeight,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _shrinkButton(
+            colors,
+            foot ? -_hour : _hour,
+            foot ? Icons.arrow_upward : Icons.arrow_downward,
+            'Shrink it an hour, at this end',
+          ),
+          const SizedBox(width: 6),
+          _stepButton(
+            colors,
+            foot ? _hour : -_hour,
+            foot ? Icons.arrow_downward : Icons.arrow_upward,
+            'Stretch it an hour, at this end: tap, or drag it',
+            from: other,
+          ),
+        ],
+      ),
+    );
+  }
+
   /// A "−", beside the "+" on its side of the cursor: the box shrunk
   /// from that end by its [step] -- later, from the top, with an [arrow]
   /// down; earlier, from the foot, with one up.
@@ -714,8 +752,9 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
     ColorScheme colors,
     Duration step,
     IconData arrow,
-    String tooltip,
-  ) {
+    String tooltip, {
+    DateTime? from,
+  }) {
     final color = colors.onPrimaryContainer;
     final icons = [
       Icon(Icons.add, size: 20, color: color),
@@ -725,7 +764,8 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
       message: tooltip,
       child: GestureDetector(
         dragStartBehavior: DragStartBehavior.down,
-        onVerticalDragStart: (_) => _dragY = _y(widget.box.cursor),
+        // From the line it's on.
+        onVerticalDragStart: (_) => _dragY = _y(from ?? widget.box.cursor),
         onVerticalDragUpdate: (details) {
           _dragY += details.delta.dy;
           widget.onDrag(step, _time(_dragY));

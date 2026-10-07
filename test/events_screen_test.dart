@@ -1117,12 +1117,12 @@ void main() {
       scale: defaultTimelineScale,
     );
 
-    /// Taps today's timeline, away from the times, at [time].
+    /// Taps today's timeline at [time]: on its events, but left of the
+    /// box's buttons.
     Future<void> tapAt(WidgetTester tester, DateTime time) async {
       final timeline = find.byKey(ValueKey(('shown', at(30, 0))));
       await tester.tapAt(
-        tester.getTopLeft(timeline) +
-            Offset(tester.getSize(timeline).width / 2, y(time)),
+        tester.getTopLeft(timeline) + Offset(timelineCardsLeft + 40, y(time)),
       );
       await tester.pumpAndSettle();
     }
@@ -1508,6 +1508,40 @@ void main() {
       await tapButton(tester, shrinkFoot);
       expect(box(tester).span, (at(30, 12), at(30, 12, 15)));
       expect(shrinking(shrinkFoot).elevation, 0);
+    });
+
+    testWidgets("the other cursor's own \"−\" and \"+\", on its outside, "
+        'shrink and stretch the box at that end', (tester) async {
+      final repo = _RecordingRepository([]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      final stretch = find.byTooltip(
+        'Stretch it an hour, at this end: tap, or drag it',
+      );
+      final shrink = find.byTooltip('Shrink it an hour, at this end');
+      // Not until there's a box.
+      expect(stretch, findsNothing);
+
+      await tapButton(tester, startHere);
+      await tapButton(tester, startHere);
+      expect(box(tester).span, (at(30, 12), at(30, 14)));
+      // The foot: below its line.
+      final line = tester.getCenter(otherHandle).dy;
+      expect(tester.getTopLeft(stretch).dy, greaterThan(line));
+      await tapButton(tester, stretch);
+      expect(box(tester).span, (at(30, 12), at(30, 15)));
+      await tapButton(tester, shrink);
+      expect(box(tester).span, (at(30, 12), at(30, 14)));
+
+      // Switched, the other cursor's the top: above its line.
+      await tapButton(tester, find.byTooltip('Switch the cursors'));
+      expect(
+        tester.getBottomLeft(stretch).dy,
+        lessThan(tester.getCenter(otherHandle).dy),
+      );
+      await tapButton(tester, stretch);
+      expect(box(tester).span, (at(30, 11), at(30, 14)));
     });
 
     testWidgets('keeping events, "+" above stretches the box up into the '

@@ -15,6 +15,8 @@ on. Add the new version's section here at the same time; CI checks both.
   after. Dragged, a "+" takes that end with it.
 - Beside each, a "−" shrinks it an hour from that end, to no less than
   a quarter hour: "−" above, from the top, and "−" below, from the foot.
+- The other cursor has a "−" and a "+" of its own, on its outside: the
+  box shrunk and stretched at that end, as by the cursor's.
 
 ## 7.8.1
 
