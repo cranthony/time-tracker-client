@@ -6,6 +6,24 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.16.0
+
+- The People pane is two sections, one over the other, each folded away
+  by tapping its head and open to start with:
+  - **Self**, with your relationship health and its last 8 days in its
+    head, and the two habits you focus on, each with its health. "All
+    habits and scores" opens your page.
+  - **Prioritized people**: the three you keep in front. "All people and
+    circles" opens everyone, as the pane listed them before.
+- A habit's star, on its page or your list of habits, focuses on it; a
+  person's menu prioritizes them. Both are kept on this device only.
+- Each person says their time with you in the summary's 24 hours and 7
+  days -- in time or as a share, back or on, as the summary is set -- and
+  the last event with them, or, looking on, the next.
+- Everyone can be sorted, either way, by relationship health, when last
+  (or next) seen, or time in the 24 hours or 7 days; Self stays first.
+- The pane's search finds anyone, prioritized or not.
+
 ## 7.15.0
 
 - A series' dialog picks who its events are with and for, and where they

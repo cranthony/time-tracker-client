@@ -25,7 +25,8 @@ import 'trait_breakdown.dart';
 /// Always, the events the user cancelled that count against their
 /// follow-through ([Person.cancelledEvents]). For Self, their [habits]
 /// too, each in its action's color: tapping one opens its page
-/// ([HabitScreen]), and "Habit" adds one. Habits are best effort: if
+/// ([HabitScreen]), its star focuses on it in the People pane, and
+/// "Habit" adds one. Habits are best effort: if
 /// they can't be loaded, there's no section for them.
 /// [onEdit] edits them, returning them as saved.
 class PersonScreen extends StatefulWidget {
@@ -329,7 +330,10 @@ class _PersonScreenState extends State<PersonScreen> {
               if (!habit.active) habitStatuses[habit.status] ?? habit.status,
             ].join(' · '),
           ),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: switch (widget.memory?.focus) {
+            final focus? => focusHabitButton(focus, habit),
+            null => const Icon(Icons.chevron_right),
+          },
           onTap: () => _openHabit(habit),
         ),
       Align(

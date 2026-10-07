@@ -10,6 +10,7 @@ import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/events_repository.dart';
 import '../services/actions_repository.dart';
+import '../services/focus_store.dart';
 import '../services/habits_repository.dart';
 import '../services/notes_repository.dart';
 import '../services/people_repository.dart';
@@ -62,6 +63,14 @@ class SampleData {
   );
 
   HabitsRepository habitsRepository() => InMemoryHabitsRepository(habits);
+
+  /// Both habits focused on, and three people prioritized. Not kept on
+  /// the device.
+  FocusStore focusStore() => FocusStore(
+    persist: false,
+    habits: const ['guitar-mindfully', 'cook-from-scratch'],
+    people: const ['sam', 'mom', 'jordan'],
+  );
 
   /// The traits. How everyone is rated by them is worked out from the
   /// events, as with the server.

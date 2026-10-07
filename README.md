@@ -42,7 +42,15 @@ tapping the date goes back to the last compaction.
   them. Tap one for its page: its parts, then its health (the last day's
   score, the mean of everyone scored by it, and its trend);
   its pencil edits it.
-- **People** (who): Self, always, then everyone else, each with a context
+- **People** (who): two sections, each folded away by tapping its head.
+  **Self** has your health and the two habits you focus on (starred on
+  a habit's page), with a way to your page. **Prioritized people** has
+  the three you keep in front (from a person's menu), each with their
+  time with you in the summary's window and the last event with them --
+  or the next, looking on; both picks are kept on the device. "All
+  people and circles" opens everyone, to search, sort (by health, when
+  last or next seen, or time in 24 hours or 7 days, either way) and
+  edit: each with a context
   that tells people of the same name apart, in any number of circles.
   Tap a circle to see only its people; tap a person for their page: who
   they are, which traits apply to them (every active one, or those
@@ -519,7 +527,8 @@ see [Try it with sample data](#try-it-with-sample-data).
 ### Visual tests
 
 `test/visual` renders the main screens with the sample data, at a phone's
-size, in light and dark: Plan (each pane, a circle's people, searches
+size, in light and dark: Plan (each pane, People looking on, everyone
+as listed and sorted, a circle's people, searches
 of people and actions, a trait's page, a trait and an action being
 edited, and its
 actions with every status, and the time summary on each page and folded
