@@ -91,6 +91,7 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
       actions: actions,
       loadActions: loadActions,
       otherEvents: otherEvents,
+      whoWhere: true,
       facets: true,
       save: save == null || event.id == null
           ? null
@@ -172,7 +173,8 @@ Future<List<Event>?> showNewEventDialog(
 
 /// Shows the recurring series [recurrence] as [showEventSummaryDialog]
 /// shows an event, with how it repeats under its summary, and its first
-/// event's times.
+/// event's times. Who its events are with and for, and where, are picked
+/// as an event's are; what happened is left to each event.
 ///
 /// "Save" first asks whether the change is for every event in the series
 /// or [fromEventId] and those after it, then sends it with [save]. With
@@ -207,6 +209,7 @@ Future<SummaryOutcome<List<Recurrence>>?> showSeriesSummaryDialog(
         'schedule': recurrence.schedule,
       },
       series: true,
+      whoWhere: true,
       actions: actions,
       loadActions: loadActions,
       save: (changes) async {
@@ -284,6 +287,7 @@ class _SummaryDialog<T> extends StatefulWidget {
     this.creating = false,
     this.otherEvents = const OtherEvents.none(),
     this.openSeries,
+    this.whoWhere = false,
     this.facets = false,
     this.additions = const [],
   });
@@ -311,7 +315,12 @@ class _SummaryDialog<T> extends StatefulWidget {
   final OtherEvents otherEvents;
   final Future<bool> Function()? openSeries;
 
-  /// Whether it shows its facets: an event's, not a series'.
+  /// Whether it shows who it's with and for, and where, from its facts,
+  /// rather than its location as it's put: an event's, or a series'.
+  final bool whoWhere;
+
+  /// Whether it shows its facets -- what happened at it: an event's, not
+  /// a series'.
   final bool facets;
 
   /// The people and locations a compaction proposal adds, which its
@@ -591,9 +600,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               if (widget.series) _repeatLine(context),
               if (widget.openSeries case final open?) _seriesChip(open),
               const SizedBox(height: 8),
-              // An event's who, and its location; a series', where, as
-              // it's put.
-              if (widget.facets) ...[
+              // Its who, and its location; a new event's, where, as it's
+              // put.
+              if (widget.whoWhere) ...[
                 _whoRow(context),
                 _whoRow(context, where: true),
               ] else

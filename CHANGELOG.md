@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.15.0
+
+- A series' dialog picks who its events are with and for, and where they
+  are, as an event's does: in a sheet up from the foot, shown after a
+  person and a pin, in place of its free-text location (still in
+  Details). What happened stays each event's own.
+
 ## 7.14.0
 
 - Habits are scored, as people are: each trait that applies to one, for
