@@ -6,6 +6,7 @@ import '../models/plan_action.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/plan_memory.dart';
+import '../services/focus_store.dart';
 import '../widgets/habit_dialog.dart';
 import '../widgets/health.dart';
 import 'person_screen.dart';
@@ -104,6 +105,8 @@ class _HabitScreenState extends State<HabitScreen> {
       appBar: AppBar(
         title: Text(habitName(_habit)),
         actions: [
+          if (widget.memory?.focus case final focus?)
+            focusHabitButton(focus, _habit),
           if (widget.onEdit != null)
             IconButton(
               tooltip: 'Edit ${habitName(_habit)}',
@@ -222,5 +225,25 @@ class _HabitScreenState extends State<HabitScreen> {
   Widget _padded(Widget child) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     child: child,
+  );
+}
+
+/// A star that focuses on [habit], keeping it in the People pane, or
+/// stops; off once [FocusStore.maxHabits] are.
+Widget focusHabitButton(FocusStore focus, Habit habit) {
+  final on = focus.isFocusHabit(habit.id);
+  return IconButton(
+    tooltip: on
+        ? "Don't focus on ${habitName(habit)}"
+        : focus.habitsFull
+        ? 'Focus on ${habitName(habit)} '
+              '(${FocusStore.maxHabits} already)'
+        : 'Focus on ${habitName(habit)}',
+    isSelected: on,
+    icon: const Icon(Icons.star_border),
+    selectedIcon: const Icon(Icons.star),
+    onPressed: on || !focus.habitsFull
+        ? () => focus.setFocusHabit(habit.id, !on)
+        : null,
   );
 }

@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/habit.dart';
 import 'package:time_tracker_client/models/note.dart';
+import 'package:time_tracker_client/models/people_times.dart';
 import 'package:time_tracker_client/models/person.dart';
+import 'package:time_tracker_client/models/time_split.dart';
 import 'package:time_tracker_client/models/trait.dart';
 import 'package:time_tracker_client/screens/locations_pane.dart';
 import 'package:time_tracker_client/screens/people_pane.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/services/focus_store.dart';
+import 'package:time_tracker_client/services/habits_repository.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/widgets/health.dart';
+import 'package:time_tracker_client/widgets/plan_summaries.dart';
 
 const _circles = [
   Circle(id: 'family', name: 'Family'),
@@ -44,9 +50,15 @@ const _caring = Trait(
   ],
 );
 
-/// Yesterday's visit to Mom, judged 9 of 10 for her: her health, 90.
-Event _visit() {
+/// Yesterday's visit to Mom, judged 9 of 10 for her: her health, 90. With
+/// [self], judged so for Self too.
+Event _visit({bool self = false}) {
   final now = DateTime.now();
+  final judged = {
+    'caring': {
+      'judgment': {'rating': 9, 'scale': 10},
+    },
+  };
   return Event.fromJson({
     'id': 'visit',
     'summary': 'Visit Mom',
@@ -55,12 +67,20 @@ Event _visit() {
     'facts': {
       'with_ids': ['mom'],
     },
-    'judgments': {
-      'mom': {
-        'caring': {
-          'judgment': {'rating': 9, 'scale': 10},
-        },
-      },
+    'judgments': {'mom': judged, if (self) selfPersonId: judged},
+  });
+}
+
+/// A call with Mom this morning.
+Event _call() {
+  final now = DateTime.now();
+  return Event.fromJson({
+    'id': 'call',
+    'summary': 'Call Mom',
+    'start': localIsoTimestamp(DateTime(now.year, now.month, now.day, 9)),
+    'end': localIsoTimestamp(DateTime(now.year, now.month, now.day, 10)),
+    'facts': {
+      'with_ids': ['mom'],
     },
   });
 }
@@ -161,11 +181,141 @@ void main() {
     });
   });
 
+  group('PeopleTimes', () {
+    final asOf = DateTime(2026, 10, 8);
+    Event event(String id, DateTime start, int hours, List<String> withIds) =>
+        Event.fromJson({
+          'id': id,
+          'summary': id,
+          'start': localIsoTimestamp(start),
+          'end': localIsoTimestamp(start.add(Duration(hours: hours))),
+          'facts': {'with_ids': withIds},
+        });
+    final events = [
+      event('old', DateTime(2026, 10, 1, 12), 1, ['sam']),
+      event('dinner', DateTime(2026, 10, 7, 18), 2, ['sam', 'mom']),
+      event('coffee', DateTime(2026, 10, 9, 8), 1, ['sam']),
+      event('call', DateTime(2026, 10, 12, 8), 1, ['sam']),
+    ];
+
+    test("split each event's time among those there, as By person does, "
+        'and find the last event with each', () {
+      final times = PeopleTimes.compute(
+        window: SummaryWindow(asOf: asOf),
+        windowEvents: events,
+        known: events,
+      );
+
+      expect(times.day('sam'), const Duration(hours: 1));
+      expect(times.week('sam'), const Duration(hours: 2));
+      expect(times.day('jo'), Duration.zero);
+      expect(times.nearest('sam')!.id, 'dinner');
+      expect(times.nearest('mom')!.id, 'dinner');
+      expect(times.nearest('jo'), isNull);
+    });
+
+    test('look on to the next, with the summary', () {
+      final times = PeopleTimes.compute(
+        window: SummaryWindow(asOf: asOf, forward: true),
+        windowEvents: events,
+        known: events,
+      );
+
+      // The coffee's a day on; the call, four.
+      expect(times.day('sam'), Duration.zero);
+      expect(times.week('sam'), const Duration(hours: 2));
+      expect(times.nearest('sam')!.id, 'coffee');
+      expect(times.nearest('mom'), isNull);
+    });
+
+    test("aren't measured until the window's events are in", () {
+      final times = PeopleTimes.compute(
+        window: SummaryWindow(asOf: asOf),
+        windowEvents: null,
+        known: events,
+      );
+
+      expect(times.measured, isFalse);
+      expect(times.day('sam'), isNull);
+      expect(times.nearest('sam')!.id, 'dinner');
+    });
+
+    test('sort people either way, those with nothing to sort by last, Self '
+        'first', () {
+      final times = PeopleTimes.compute(
+        window: SummaryWindow(asOf: asOf),
+        windowEvents: events,
+        known: events,
+      );
+      const people = [
+        defaultSelf,
+        Person(id: 'jo', name: 'Jo'),
+        Person(id: 'mom', name: 'Mom'),
+        Person(id: 'sam', name: 'Sam'),
+      ];
+      const health = {'mom': 90, 'sam': 40};
+      List<String> sorted(PeopleSort sort, {required bool ascending}) => [
+        for (final p in sortPeople(
+          people,
+          sort,
+          ascending: ascending,
+          health: (id) => health[id],
+          times: times,
+        ))
+          p.id,
+      ];
+
+      expect(sorted(PeopleSort.listed, ascending: true), [
+        selfPersonId,
+        'jo',
+        'mom',
+        'sam',
+      ]);
+      expect(sorted(PeopleSort.health, ascending: true), [
+        selfPersonId,
+        'sam',
+        'mom',
+        'jo',
+      ]);
+      expect(sorted(PeopleSort.health, ascending: false), [
+        selfPersonId,
+        'mom',
+        'sam',
+        'jo',
+      ]);
+      expect(sorted(PeopleSort.week, ascending: false), [
+        selfPersonId,
+        'sam',
+        'mom',
+        'jo',
+      ]);
+      // Sam and Mom were last seen at the same dinner: as listed.
+      expect(sorted(PeopleSort.seen, ascending: false), [
+        selfPersonId,
+        'mom',
+        'sam',
+        'jo',
+      ]);
+    });
+  });
+
   group('PeoplePane', () {
-    Future<InMemoryPeopleRepository> pump(
+    /// Midnight today: the summary's window ends, or starts, there.
+    DateTime today() {
+      final now = DateTime.now();
+      return DateTime(now.year, now.month, now.day);
+    }
+
+    Future<(InMemoryPeopleRepository, PlanMemory)> pump(
       WidgetTester tester, {
       List<Person> people = _people,
       List<Circle> circles = _circles,
+      List<String> prioritized = const [],
+      List<Habit> habits = const [],
+      List<String> focusHabits = const [],
+      bool forward = false,
+      bool durations = true,
+      bool selfJudged = false,
     }) async {
       tester.view.physicalSize = const Size(800, 2400);
       tester.view.devicePixelRatio = 1;
@@ -174,13 +324,18 @@ void main() {
         people: people,
         circles: circles,
       );
+      final events = [_visit(self: selfJudged), _call()];
       // Scored by how caring their events were.
       final memory = PlanMemory(
-        eventStore: EventStore(
-          repository: InMemoryEventsRepository([_visit()]),
+        eventStore: EventStore(repository: InMemoryEventsRepository(events)),
+        focus: FocusStore(
+          persist: false,
+          people: prioritized,
+          habits: focusHabits,
         ),
       )..traits = const [_caring];
       await memory.eventStore!.warm();
+      final window = SummaryWindow(asOf: today(), forward: forward);
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -189,30 +344,198 @@ void main() {
                 repository: repository,
                 memory: memory,
                 traits: InMemoryTraitsRepository(traits: _traits),
+                habits: InMemoryHabitsRepository(habits),
                 actions: const {'call': 'Call'},
+                summary: SummaryView(
+                  window: window,
+                  lastCompaction: null,
+                  dayOffset: 0,
+                  collapsed: true,
+                  durations: durations,
+                  onDays: (_) {},
+                  onForward: (_) {},
+                  onCollapsed: (_) {},
+                  onDurations: (_) {},
+                  events: events,
+                ),
               ),
             ),
           ),
         ),
       );
       await tester.pumpAndSettle();
-      return repository;
+      return (repository, memory);
     }
+
+    /// Opens everyone, from the pane.
+    Future<void> openAll(WidgetTester tester) async {
+      await tester.tap(find.text('All people and circles'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('is Self, then the people prioritized, each section open '
+        'until folded away', (tester) async {
+      await pump(tester, prioritized: ['mom']);
+
+      expect(find.text('Self'), findsOneWidget);
+      expect(find.text('Prioritized people'), findsOneWidget);
+      expect(find.text('All habits and scores'), findsOneWidget);
+      expect(find.text('Mom'), findsOneWidget);
+      // Only those prioritized.
+      expect(find.text('Sam'), findsNothing);
+
+      await tester.tap(find.text('Prioritized people'));
+      await tester.pumpAndSettle();
+      expect(find.text('Mom'), findsNothing);
+      expect(find.text('All people and circles'), findsNothing);
+
+      await tester.tap(find.text('Self'));
+      await tester.pumpAndSettle();
+      expect(find.text('All habits and scores'), findsNothing);
+
+      await tester.tap(find.text('Prioritized people'));
+      await tester.pumpAndSettle();
+      expect(find.text('Mom'), findsOneWidget);
+    });
+
+    testWidgets("Self's head has their health and its trend", (tester) async {
+      await pump(tester, selfJudged: true);
+
+      final head = find.ancestor(
+        of: find.text('Self'),
+        matching: find.byType(InkWell),
+      );
+      expect(
+        find.descendant(of: head, matching: find.byType(HealthDot)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: head, matching: find.byType(TrendSparkline)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a person says their time with you and when you last saw '
+        'them, as the summary measures it', (tester) async {
+      await pump(tester, prioritized: ['mom']);
+
+      expect(find.text('24h 2h · 7d 2h'), findsOneWidget);
+      expect(find.textContaining('Last: Visit Mom · '), findsOneWidget);
+    });
+
+    testWidgets('as shares, and the next time, looking on', (tester) async {
+      await pump(tester, prioritized: ['mom'], forward: true, durations: false);
+
+      expect(find.text('+24h 4% · +7d 1%'), findsOneWidget);
+      expect(find.textContaining('Next: Call Mom · '), findsOneWidget);
+    });
+
+    testWidgets('shows the habits focused on, under Self', (tester) async {
+      const guitar = Habit(id: 'h1', name: 'Practice', actionId: 'guitar');
+      await pump(
+        tester,
+        habits: const [
+          guitar,
+          Habit(id: 'h2', name: 'Walk', actionId: 'w'),
+        ],
+        focusHabits: ['h1'],
+      );
+
+      expect(find.text('Practice'), findsOneWidget);
+      expect(find.text('Walk'), findsNothing);
+    });
+
+    testWidgets('says how to prioritize people, with none', (tester) async {
+      await pump(tester);
+
+      expect(find.textContaining('Prioritize up to 3 people'), findsOneWidget);
+    });
 
     testWidgets('shows Self even when no one else is there', (tester) async {
       await pump(tester, people: const [], circles: const []);
 
       expect(find.text('Self'), findsOneWidget);
-      expect(find.text('You'), findsOneWidget);
       expect(
         find.text('Tap + to add the people you want to spend time with.'),
         findsOneWidget,
       );
     });
 
+    testWidgets('finds anyone by search', (tester) async {
+      await pump(tester);
+
+      await tester.enterText(find.byType(TextField).first, 'salsa');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sam'), findsOneWidget);
+      expect(find.text('Prioritized people'), findsNothing);
+    });
+
+    testWidgets('prioritizes up to three people from their menu', (
+      tester,
+    ) async {
+      final (_, memory) = await pump(tester, prioritized: ['sam', 'jordan']);
+      await openAll(tester);
+
+      await tester.tap(find.byTooltip('More for Mom'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Prioritize'));
+      await tester.pumpAndSettle();
+      expect(memory.focus.people, ['sam', 'jordan', 'mom']);
+
+      await tester.tap(find.byTooltip('Show archived people'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('More for Casey'));
+      await tester.pumpAndSettle();
+      expect(find.text('Prioritize (3 already)'), findsOneWidget);
+      await tester.tap(find.text('Prioritize (3 already)'));
+      await tester.pumpAndSettle();
+      expect(memory.focus.people, ['sam', 'jordan', 'mom']);
+
+      // Off the menu, and back to the pane.
+      await tester.tapAt(const Offset(4, 300));
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('Mom'), findsOneWidget);
+    });
+
+    testWidgets('sorts everyone, either way', (tester) async {
+      await pump(tester);
+      await openAll(tester);
+
+      List<String> shown() =>
+          [
+            for (final name in ['Self', 'Mom', 'Sam', 'Jordan'])
+              if (find.text(name).evaluate().isNotEmpty) name,
+          ]..sort(
+            (a, b) => tester
+                .getTopLeft(find.text(a))
+                .dy
+                .compareTo(tester.getTopLeft(find.text(b)).dy),
+          );
+
+      expect(shown(), ['Self', 'Mom', 'Sam', 'Jordan']);
+      await tester.tap(find.byTooltip('Sort people'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Time in 7d'));
+      await tester.pumpAndSettle();
+      // Mom's two hours, then no one's.
+      expect(shown().take(2), ['Self', 'Mom']);
+      expect(find.text('By time in 7d, descending'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Sort people'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Time in 7d'));
+      await tester.pumpAndSettle();
+      expect(find.text('By time in 7d, ascending'), findsOneWidget);
+      expect(shown().last, 'Mom');
+    });
+
     testWidgets("lists everyone with their context, circles and health, "
         'archived only when asked', (tester) async {
       await pump(tester);
+      await openAll(tester);
 
       expect(find.text('Self'), findsOneWidget);
       expect(find.text('from salsa · Family, Dance friends'), findsOneWidget);
@@ -238,12 +561,14 @@ void main() {
         people: const [Person(id: 'sam', name: 'Sam')],
         circles: const [],
       );
+      await openAll(tester);
 
       expect(find.byType(HealthDot), findsNothing);
     });
 
     testWidgets('shows only the people in a circle picked', (tester) async {
       await pump(tester);
+      await openAll(tester);
 
       await tester.tap(find.widgetWithText(FilterChip, 'Dance friends'));
       await tester.pumpAndSettle();
@@ -257,7 +582,7 @@ void main() {
 
     testWidgets('adds a person to circles, with the traits that apply and '
         'their own parts for one', (tester) async {
-      final repository = await pump(tester);
+      final (repository, _) = await pump(tester);
 
       await tester.tap(find.byTooltip('Add a person or circle'));
       await tester.pumpAndSettle();
@@ -301,6 +626,7 @@ void main() {
           {'kind': 'follow_through', 'look_back_days': 14},
         ],
       });
+      await openAll(tester);
       expect(find.text('Priya'), findsOneWidget);
     });
 
@@ -321,20 +647,23 @@ void main() {
       expect(find.text("Couldn't save"), findsOneWidget);
     });
 
-    testWidgets("Self can't be archived", (tester) async {
+    testWidgets("Self can't be archived, or prioritized", (tester) async {
       await pump(tester);
+      await openAll(tester);
 
       await tester.tap(find.byTooltip('More for Self'));
       await tester.pumpAndSettle();
 
       expect(find.text('Edit'), findsOneWidget);
       expect(find.text('Archive'), findsNothing);
+      expect(find.text('Prioritize'), findsNothing);
     });
 
     testWidgets('adds a circle, and deletes one, keeping its people', (
       tester,
     ) async {
-      final repository = await pump(tester);
+      final (repository, _) = await pump(tester);
+      await openAll(tester);
 
       await tester.tap(find.byTooltip('Add a person or circle'));
       await tester.pumpAndSettle();

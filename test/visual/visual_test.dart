@@ -17,6 +17,7 @@ import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
 import 'package:time_tracker_client/screens/plan_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
+import 'package:time_tracker_client/services/habits_repository.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/theme.dart';
@@ -68,7 +69,10 @@ void main() {
                   repository: sample.traitsRepository(),
                   child: PeopleScope(
                     repository: sample.peopleRepository(),
-                    child: app,
+                    child: HabitsScope(
+                      repository: sample.habitsRepository(),
+                      child: app,
+                    ),
                   ),
                 )
               : app,
@@ -84,7 +88,9 @@ void main() {
       }
     }
 
+    // The sample's habits focused on and people prioritized.
     Widget plan() => PlanScreen(
+      memory: PlanMemory(focus: sample.focusStore()),
       outbox: _idleActionOutbox(),
       repository: sample.actionsRepository(),
       eventsRepository: sample.eventsRepository(),
@@ -140,16 +146,54 @@ void main() {
       });
     }
 
-    // One circle's people.
-    testWidgets('plan circle ($mode)', (tester) async {
+    // Everyone, as listed and sorted by the time in the last 7 days; and
+    // one circle's people.
+    for (final (name, sort, circle) in [
+      ('people_all', null, null),
+      ('people_sorted', 'Time in 7d', null),
+      ('plan_circle', null, 'Dance friends'),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          plan(),
+          scoped: true,
+          then: () async {
+            await openPane(tester, 'People');
+            await tester.scrollUntilVisible(
+              find.text('All people and circles'),
+              300,
+              scrollable: find.byType(Scrollable).last,
+            );
+            await tester.tap(find.text('All people and circles'));
+            await tester.pumpAndSettle();
+            if (sort != null) {
+              await tester.tap(find.byTooltip('Sort people'));
+              await tester.pumpAndSettle();
+              await tester.tap(find.text(sort));
+              await tester.pumpAndSettle();
+            }
+            if (circle != null) {
+              await tester.tap(find.widgetWithText(FilterChip, circle));
+              await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
+
+    // The People pane looking on: each person's next event, and the
+    // time in the next 24 hours and 7 days.
+    testWidgets('plan_people_next ($mode)', (tester) async {
       await render(
         tester,
-        'plan_circle',
+        'plan_people_next',
         plan(),
         scoped: true,
         then: () async {
           await openPane(tester, 'People');
-          await tester.tap(find.widgetWithText(FilterChip, 'Dance friends'));
+          await tester.tap(find.text('Next'));
           await tester.pumpAndSettle();
         },
       );

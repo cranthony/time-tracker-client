@@ -11,6 +11,7 @@ import 'package:time_tracker_client/screens/habit_screen.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/services/focus_store.dart';
 import 'package:time_tracker_client/services/habits_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
@@ -489,6 +490,32 @@ void main() {
         findsOneWidget,
       );
     });
+  });
+
+  testWidgets('a habit is focused on by its star, two at most', (tester) async {
+    final memory = PlanMemory(
+      focus: FocusStore(persist: false, habits: ['h2']),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HabitScreen(habit: _mindfully, memory: memory),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Focus on Practice mindfully'));
+    await tester.pump();
+    expect(memory.focus.habits, ['h2', 'h1']);
+    expect(find.byTooltip("Don't focus on Practice mindfully"), findsOneWidget);
+
+    memory.focus.setFocusHabit('h1', false);
+    memory.focus.setFocusHabit('h3', true);
+    await tester.pump();
+    expect(
+      find.byTooltip('Focus on Practice mindfully (2 already)'),
+      findsOneWidget,
+    );
+    await tester.tap(find.byTooltip('Focus on Practice mindfully (2 already)'));
+    expect(memory.focus.habits, ['h2', 'h3']);
   });
 
   group('A habit, scored', () {

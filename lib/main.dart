@@ -17,6 +17,7 @@ import 'screens/home_screen.dart';
 import 'services/event_store.dart';
 import 'services/actions_repository.dart';
 import 'services/events_repository.dart';
+import 'services/focus_store.dart';
 import 'services/habits_repository.dart';
 import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
@@ -70,6 +71,7 @@ Future<void> main() async {
         peopleRepository: people,
         habitsRepository:
             sample?.habitsRepository() ?? InMemoryHabitsRepository(),
+        focus: sample?.focusStore(),
       ),
     );
     return;
@@ -154,6 +156,7 @@ class TimeTrackerApp extends StatefulWidget {
     this.peopleRepository,
     this.habitsRepository,
     this.proposalsRepository,
+    this.focus,
   });
 
   final NotesRepository repository;
@@ -173,6 +176,10 @@ class TimeTrackerApp extends StatefulWidget {
   /// Self's habits, for every screen below (see [HabitsScope]); without
   /// it, they aren't offered.
   final HabitsRepository? habitsRepository;
+
+  /// The habits focused on and people prioritized; by default, those
+  /// kept on the device.
+  final FocusStore? focus;
   final EventsRepository eventsRepository;
   final ActionsRepository actionsRepository;
   final NoteOutbox outbox;
@@ -201,6 +208,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       repository: widget.eventsRepository,
       cache: widget.cache,
     ),
+    focus: (widget.focus ?? FocusStore())..load(),
   );
 
   @override
