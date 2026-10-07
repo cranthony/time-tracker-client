@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/plan_action.dart';
-import 'event_room.dart';
+import 'other_events.dart';
 import 'properties_dialog.dart';
 
 /// Shows every property of [event], as the server sent it, under its
@@ -18,7 +18,7 @@ import 'properties_dialog.dart';
 /// that saved a change to the series (returning true), this closes,
 /// returning null.
 ///
-/// New times that would overlap an event in [room] can't be saved.
+/// New times that would overlap an event in [otherEvents] can't be saved.
 ///
 /// With [cancel] too, "Cancel event" cancels it after asking -- and asks
 /// whether that counts against follow-through (see
@@ -29,7 +29,7 @@ Future<List<Event>?> showEventDialog(
   Future<List<Event>> Function(Event event, Map<String, Object?> changes)? save,
   Future<List<Event>> Function(Event event, bool countsAgainstFollowThrough)?
   cancel,
-  EventRoom room = const EventRoom.none(),
+  OtherEvents otherEvents = const OtherEvents.none(),
   Future<List<PlanAction>> Function()? actions,
   Future<bool> Function(String seriesId)? openSeries,
 }) {
@@ -91,7 +91,7 @@ Future<List<Event>?> showEventDialog(
           end.isAtSameMomentAs(event.end)) {
         return null;
       }
-      return switch (room.overlapping(start, end)) {
+      return switch (otherEvents.overlapping(start, end)) {
         final other? =>
           'It would overlap ${switch (other.summary) {
             final s? when s.isNotEmpty => '"$s"',

@@ -18,6 +18,8 @@ import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
+import 'package:time_tracker_client/widgets/new_event_box.dart';
+import 'package:time_tracker_client/widgets/other_events.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/durations.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
@@ -218,7 +220,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Lunch'), findsNothing);
     // Nothing that day: its empty timeline, to tap to add one.
-    expect(find.text('No events.\nTap a time to add one.'), findsOneWidget);
+    expect(find.text('No events.\nTap + to add one.'), findsOneWidget);
   });
 
   testWidgets('swiping left or right steps a day', (tester) async {
@@ -1108,131 +1110,340 @@ void main() {
     Finder inDialog(Finder f) =>
         find.descendant(of: find.byType(AlertDialog), matching: f);
 
+    double y(DateTime time) => timelineOffset(
+      time,
+      day: at(30, 0),
+      dayEnd: at(31, 0),
+      scale: defaultTimelineScale,
+    );
+
     /// Taps today's timeline, away from the times, at [time].
     Future<void> tapAt(WidgetTester tester, DateTime time) async {
       final timeline = find.byType(DayTimeline);
-      final y = timelineOffset(
-        time,
-        day: at(30, 0),
-        dayEnd: at(31, 0),
-        scale: defaultTimelineScale,
-      );
       await tester.tapAt(
         tester.getTopLeft(timeline) +
-            Offset(tester.getSize(timeline).width / 2, y),
+            Offset(tester.getSize(timeline).width / 2, y(time)),
       );
       await tester.pumpAndSettle();
     }
 
-    testWidgets('tapping between events opens a blank one there, up to the '
-        'next', (tester) async {
+    final startHere = find.byTooltip(
+      'An hour later: tap to move the other end, or drag it',
+    );
+    final endHere = find.byTooltip(
+      'An hour earlier: tap to move the other end, or drag it',
+    );
+
+    /// Taps "+", which puts the cursor at now: noon.
+    Future<void> plus(WidgetTester tester) async {
+      await tester.tap(find.byTooltip('New event'));
+      await tester.pumpAndSettle();
+    }
+
+    /// Taps [button] on the cursor, scrolled into view.
+    Future<void> tapButton(WidgetTester tester, Finder button) async {
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+    }
+
+    /// Lets a second go by: the overwriting pulse never settles.
+    Future<void> settle(WidgetTester tester) async {
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    }
+
+    Future<void> continueToDialog(WidgetTester tester) async {
+      await tester.tap(find.byTooltip('Continue'));
+      await settle(tester);
+    }
+
+    Future<void> drag(WidgetTester tester, Finder button, Duration by) async {
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.drag(
+        button,
+        Offset(0, by.inMinutes * defaultTimelineScale),
+        warnIfMissed: false,
+      );
+      await settle(tester);
+    }
+
+    /// Drags the cursor, by its handle, [by].
+    Future<void> moveLine(WidgetTester tester, Duration by) async {
+      await drag(tester, find.byTooltip('Drag to move the cursor'), by);
+    }
+
+    final otherHandle = find.byTooltip('Drag to move the other end');
+
+    FloatingActionButton continueButton(WidgetTester tester) =>
+        tester.widget<FloatingActionButton>(
+          find.ancestor(
+            of: find.byIcon(Icons.check),
+            matching: find.byType(FloatingActionButton),
+          ),
+        );
+
+    /// The box, as it's drawn.
+    NewEventBox box(WidgetTester tester) =>
+        tester.widget<NewEventBoxView>(find.byType(NewEventBoxView)).box;
+
+    /// Whether the box takes time from events already there.
+    bool overwrites(WidgetTester tester) =>
+        tester.widget<NewEventBoxView>(find.byType(NewEventBoxView)).overwrites;
+
+    testWidgets('tapping a blank space does nothing', (tester) async {
       final repo = _RecordingRepository([
         Event(id: 'w', start: at(30, 9), end: at(30, 10, 30), summary: 'Work'),
-        Event(id: 'l', start: at(30, 12), end: at(30, 13), summary: 'Lunch'),
       ]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await tapAt(tester, at(30, 11, 20));
 
-      // From the quarter hour, cut short by Lunch.
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byType(NewEventBoxView), findsNothing);
+      // No zooming buttons: pinching zooms.
+      expect(find.byTooltip('Zoom in'), findsNothing);
+      expect(find.byTooltip('Zoom out'), findsNothing);
+    });
+
+    testWidgets('+ puts a cursor at now; starting there and continuing '
+        'opens one there', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 'w', start: at(30, 9), end: at(30, 10, 30), summary: 'Work'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+
+      expect(box(tester).cursor, at(30, 12));
+      expect(box(tester).span, isNull);
+      // "+" is now cancel and continue -- continue waiting for an event.
+      expect(find.byTooltip('New event'), findsNothing);
+      expect(find.byTooltip('Cancel'), findsOneWidget);
+      expect(continueButton(tester).onPressed, isNull);
+
+      await tapButton(tester, startHere);
+      // An hour, to a second cursor.
+      expect(box(tester).other, at(30, 13));
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
+      expect(continueButton(tester).onPressed, isNotNull);
+
+      await continueToDialog(tester);
       expect(
-        inDialog(find.text('Wed, Sep 30 · 11:15 AM – 12:00 PM')),
+        inDialog(find.text('Wed, Sep 30 · 12:00 PM – 1:00 PM')),
         findsOneWidget,
       );
       expect(inDialog(find.text('Add location')), findsOneWidget);
-      expect(inDialog(find.text('Add description')), findsOneWidget);
-      expect(find.byTooltip('Cancel event'), findsNothing);
-      expect(find.text('Details'), findsNothing);
-      // Its summary, open to type; it can't be made without one.
-      final summary = inDialog(find.byType(TextField));
-      expect(tester.widget<TextField>(summary).controller!.text, isEmpty);
       final create = find.widgetWithText(FilledButton, 'Create');
       expect(tester.widget<FilledButton>(create).onPressed, isNull);
-
-      await tester.enterText(summary, 'Admin');
+      await tester.enterText(inDialog(find.byType(TextField)), 'Admin');
       await tester.pumpAndSettle();
       await tester.tap(create);
       await tester.pumpAndSettle();
+
       expect(repo.created, [
         {
-          'start': localIsoTimestamp(at(30, 11, 15)),
-          'end': localIsoTimestamp(at(30, 12)),
+          'start': localIsoTimestamp(at(30, 12)),
+          'end': localIsoTimestamp(at(30, 13)),
           'summary': 'Admin',
         },
       ]);
-      expect(find.byType(AlertDialog), findsNothing);
       expect(find.text('Event created.'), findsOneWidget);
       expect(find.text('Admin'), findsOneWidget);
+      // Done: "+" again.
+      expect(find.byType(NewEventBoxView), findsNothing);
+      expect(find.byTooltip('New event'), findsOneWidget);
     });
 
-    testWidgets('starts after the event before, and + stops at the next', (
-      tester,
-    ) async {
+    testWidgets('keeping events, the box fits into free time: up to the next '
+        'event, out of one a cursor is in, and moved whole to the nearest '
+        'free time it fits', (tester) async {
       final repo = _RecordingRepository([
-        Event(id: 'w', start: at(30, 9), end: at(30, 10, 35), summary: 'Work'),
-        Event(id: 'l', start: at(30, 12), end: at(30, 13), summary: 'Lunch'),
+        Event(
+          id: 'l',
+          start: at(30, 11, 30),
+          end: at(30, 12, 30),
+          summary: 'Lunch',
+        ),
+        Event(id: 't', start: at(30, 14), end: at(30, 15), summary: 'Tea'),
       ]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
-      await tapAt(tester, at(30, 10, 44));
-      // Not from 10:30, inside Work.
-      expect(
-        inDialog(find.text('Wed, Sep 30 · 10:35 AM – 11:35 AM')),
-        findsOneWidget,
+      // At noon, in Lunch.
+      await plus(tester);
+      expect(box(tester).cursor, at(30, 12));
+
+      // Out of Lunch, an hour.
+      await tapButton(tester, startHere);
+      expect(box(tester).span, (at(30, 12, 30), at(30, 13, 30)));
+      expect(continueButton(tester).onPressed, isNotNull);
+      // Then up to Tea, no further.
+      await tapButton(tester, startHere);
+      expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
+      expect(overwrites(tester), isFalse);
+
+      // Moved whole into Tea, by a tap on it: its size kept, as near as it
+      // fits -- after Tea.
+      await tapAt(tester, at(30, 14, 30));
+      expect(box(tester).span, (at(30, 15), at(30, 16, 30)));
+      // Its handle, back to before Tea.
+      await drag(
+        tester,
+        find.byTooltip('Drag to move the event'),
+        const Duration(hours: -2),
       );
-      await tester.enterText(inDialog(find.byType(TextField)), 'Admin');
-      await tester.tap(inDialog(find.textContaining('Sep 30 ·')));
+      expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
+
+      // Overwriting, it can cover Tea; keeping again, it's out of the way.
+      await tapButton(tester, find.byTooltip('Keep events: tap to change'));
+      await tester.tap(find.text('Overwrite events'));
+      await settle(tester);
+      await drag(tester, otherHandle, const Duration(hours: 1));
+      expect(box(tester).span, (at(30, 12, 30), at(30, 15)));
+      expect(overwrites(tester), isTrue);
+      final mode = find.byTooltip('Overwrite events: tap to change');
+      await tester.ensureVisible(mode);
+      await settle(tester);
+      await tester.tap(mode);
+      await settle(tester);
+      await tester.tap(find.text('Keep events'));
       await tester.pumpAndSettle();
-      for (var i = 0; i < 4; i++) {
-        await tester.tap(find.byTooltip('End 15 min later'));
-        await tester.pumpAndSettle();
-      }
+      expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
+    });
+
+    testWidgets('dragging a button makes the event up to where it goes; each '
+        "cursor's handle moves its end, and the shadow's both", (tester) async {
+      final repo = _RecordingRepository([]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+
+      await drag(tester, startHere, const Duration(hours: 2));
+      expect(box(tester).span, (at(30, 12), at(30, 14)));
+      // Each end alone.
+      await drag(tester, otherHandle, const Duration(minutes: -30));
+      expect(box(tester).span, (at(30, 12), at(30, 13, 30)));
+      await moveLine(tester, const Duration(minutes: 30));
+      expect(box(tester).span, (at(30, 12, 30), at(30, 13, 30)));
+      // Both together.
+      await drag(
+        tester,
+        find.byTooltip('Drag to move the event'),
+        const Duration(hours: -1),
+      );
+      expect(box(tester).span, (at(30, 11, 30), at(30, 12, 30)));
+
+      // Ending at the first cursor instead.
+      await drag(tester, endHere, const Duration(minutes: -90));
+      expect(box(tester).span, (at(30, 10), at(30, 11, 30)));
+
+      await continueToDialog(tester);
       expect(
-        inDialog(find.text('Wed, Sep 30 · 10:35 AM – 12:00 PM')),
+        inDialog(find.text('Wed, Sep 30 · 10:00 AM – 11:30 AM')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('overwriting: tinged red where it would, and saved in one go, '
+        'shortening, cancelling and splitting what was there', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 'a', start: at(30, 11), end: at(30, 12, 30), summary: 'A'),
+        Event(id: 'b', start: at(30, 13), end: at(30, 13, 30), summary: 'B'),
+        Event(id: 'c', start: at(30, 14), end: at(30, 17), summary: 'C'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+
+      // Picked from the drop-down, each said what it does.
+      await tester.tap(find.byTooltip('Keep events: tap to change'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('never overlaps them'), findsOneWidget);
+      expect(
+        find.textContaining('shortened, split or removed'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Overwrite events'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Overwrite events: tap to change'), findsOneWidget);
+
+      await drag(tester, startHere, const Duration(hours: 3));
+      expect(box(tester).span, (at(30, 12), at(30, 15)));
+      expect(overwrites(tester), isTrue);
+
+      await continueToDialog(tester);
+      await tester.enterText(inDialog(find.byType(TextField)), 'Party');
+      await settle(tester);
       await tester.tap(find.text('Create'));
+      // Done, so no pulse.
       await tester.pumpAndSettle();
-      expect(repo.created, [
-        {
-          'start': localIsoTimestamp(at(30, 10, 35)),
-          'end': localIsoTimestamp(at(30, 12)),
-          'summary': 'Admin',
-        },
-      ]);
-    });
 
-    testWidgets('on an empty day, lasts an hour; Cancel makes nothing', (
-      tester,
-    ) async {
-      final repo = _RecordingRepository([]);
-      await tester.pumpWidget(app(repo));
-      await tester.pumpAndSettle();
-      await tapAt(tester, at(30, 14, 5));
+      expect(repo.created.first['summary'], 'Party');
+      // A shortened, B cancelled (just a change of plan), C's start moved.
+      expect(repo.saved, [
+        {'end': localIsoTimestamp(at(30, 12))},
+        {'start': localIsoTimestamp(at(30, 15))},
+      ]);
+      expect(repo.deleted, [('b', false)]);
       expect(
-        inDialog(find.text('Wed, Sep 30 · 2:00 PM – 3:00 PM')),
+        find.text('Event created. 3 other events changed to make room.'),
         findsOneWidget,
       );
-      await tester.enterText(inDialog(find.byType(TextField)), 'Gym');
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
-      expect(repo.created, isEmpty);
-      expect(find.byType(AlertDialog), findsNothing);
     });
 
-    testWidgets('tapping the "No events." card opens one there', (
+    testWidgets('each tap moves the other cursor an hour, later or earlier', (
       tester,
     ) async {
       final repo = _RecordingRepository([]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
-      // It lets the tap through, to the timeline under it.
-      await tester.tap(
-        find.text('No events.\nTap a time to add one.'),
-        warnIfMissed: false,
-      );
+      await plus(tester);
+
+      // Two below: two hours, from the cursor.
+      await tapButton(tester, startHere);
+      await tapButton(tester, startHere);
+      expect(box(tester).span, (at(30, 12), at(30, 14)));
+      // Three above: an hour, to it.
+      await tapButton(tester, endHere);
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
+      await tapButton(tester, endHere);
+      // The cursors together: nothing between them.
+      expect(box(tester).other, at(30, 12));
+      expect(box(tester).span, isNull);
+      expect(continueButton(tester).onPressed, isNull);
+      await tapButton(tester, endHere);
+      expect(box(tester).span, (at(30, 11), at(30, 12)));
+    });
+
+    testWidgets('Cancel makes nothing', (tester) async {
+      final repo = _RecordingRepository([]);
+      await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
-      expect(find.text('Create'), findsOneWidget);
+      await plus(tester);
+      await tapButton(tester, startHere);
+      await tester.tap(find.byTooltip('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NewEventBoxView), findsNothing);
+      expect(repo.created, isEmpty);
+    });
+
+    testWidgets("while the cursor's up, tapping an event doesn't open it, "
+        'but moves the box there', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 'w', start: at(30, 14), end: at(30, 16), summary: 'Work'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      // Clear of the cursor's buttons, at noon.
+      await tapAt(tester, at(30, 15, 10));
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(box(tester).cursor, at(30, 15, 15));
     });
 
     testWidgets('tapping an event still opens it', (tester) async {
@@ -1250,19 +1461,61 @@ void main() {
       tester,
     ) async {
       final repo = _RecordingRepository([])
-        ..error = McpException('Overlaps a fixed-time event');
+        ..error = McpException('Overlaps another event');
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
-      await tapAt(tester, at(30, 14));
+      await plus(tester);
+      await tapButton(tester, startHere);
+      await continueToDialog(tester);
       await tester.enterText(inDialog(find.byType(TextField)), 'Gym');
       await tester.pumpAndSettle();
       await tester.tap(find.text('Create'));
       await tester.pumpAndSettle();
       expect(
-        find.text("Couldn't save. Overlaps a fixed-time event"),
+        find.text("Couldn't save. Overlaps another event"),
         findsOneWidget,
       );
       expect(inDialog(find.text('Gym')), findsOneWidget);
+    });
+
+    test('McpEventsRepository overwrites in one update_event batch', () async {
+      final client = _RecurrenceClient();
+      await McpEventsRepository(client).createOver(
+        {
+          'start': localIsoTimestamp(at(30, 12)),
+          'end': localIsoTimestamp(at(30, 13)),
+          'summary': 'Party',
+        },
+        Overwrite(
+          cancels: [Event(id: 'b', start: at(30, 12), end: at(30, 12, 30))],
+          updates: [
+            (
+              Event(id: 'a', start: at(30, 11), end: at(30, 12, 30)),
+              {'end': localIsoTimestamp(at(30, 12))},
+            ),
+          ],
+        ),
+        allowCompactedChanges: true,
+      );
+      expect(client.name, 'update_event');
+      expect(client.arguments, {
+        'creates': [
+          {
+            'start': localIsoTimestamp(at(30, 12)),
+            'end': localIsoTimestamp(at(30, 13)),
+            'summary': 'Party',
+          },
+        ],
+        'updates': [
+          {
+            'event': {'id': 'a', 'end': localIsoTimestamp(at(30, 12))},
+          },
+        ],
+        'cancels': [
+          {'event_id': 'b', 'counts_against_follow_through': false},
+        ],
+        'allow_compacted_changes': true,
+      });
     });
 
     test('McpEventsRepository sends create_event its fields set', () async {
@@ -1782,7 +2035,7 @@ void main() {
 
       await tester.tap(find.text('Events'));
       await tester.pumpAndSettle();
-      expect(find.text('No events.\nTap a time to add one.'), findsOneWidget);
+      expect(find.text('No events.\nTap + to add one.'), findsOneWidget);
 
       // The bar's, not the day summary's.
       await tester.tap(

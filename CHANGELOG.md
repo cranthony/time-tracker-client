@@ -6,6 +6,29 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.2.0
+
+- Events are added from a **+** on the Events page, in place of the zoom
+  buttons (pinch to zoom); tapping a blank space does nothing. The +
+  puts a cursor at now (or the middle of what's in view). In its middle,
+  a + with an arrow down, below it, puts a second cursor an hour later
+  each tap, and a + with an arrow up, above it, an hour earlier -- or
+  either is dragged to where the second cursor goes. The event is
+  always between the two cursors, in a box; each cursor's handle, at its
+  right, moves it alone, and a bigger, fainter handle in the box moves
+  it whole, as does tapping the timeline -- an event too, which doesn't
+  open while the box is up. ✓ opens the new event; ✕ stops.
+- Beside them, a drop-down picks whether the new event keeps clear of
+  the events already there or overwrites them. Keeping them, the box
+  fits into free time: a cursor in an event moves out of it, an end
+  stops at the next event, and the box moved whole goes to the nearest
+  free time it fits in that day (or fills the nearest, if none's long
+  enough).
+  Overwriting, its shadow is tinged red and slowly pulses where it would
+  take time from events, and saving shortens, splits or cancels them (as
+  a change of plan, not against follow-through) in the same batch as the
+  new event.
+
 ## 7.1.2
 
 - Traits judged from what matters to a person (the seeded Thoughtful, for

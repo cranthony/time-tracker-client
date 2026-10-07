@@ -33,6 +33,13 @@ const _eventBandWidth =
     _bandWidth - 2 * _bandPadding - _gutterWidth - _stripWidth;
 const _cardsLeft = _eventBandLeft + _eventBandWidth + _gutterWidth;
 
+/// How far from a [DayTimeline]'s left its events' cards start: right of
+/// the times and the bands.
+const timelineCardsLeft = _cardsLeft;
+
+/// How wide a [DayTimeline]'s column of times is.
+const timelineTimesWidth = _timeWidth;
+
 /// How wide the line round each event is, in its color.
 const _outlineWidth = 1.25;
 
