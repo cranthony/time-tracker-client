@@ -18,6 +18,7 @@ import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
+import 'package:time_tracker_client/widgets/error_sheet.dart';
 import 'package:time_tracker_client/widgets/pending_event_box.dart';
 import 'package:time_tracker_client/widgets/other_events.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
@@ -519,13 +520,17 @@ void main() {
       await tester.tap(find.text('Save 1 change'));
       await tester.pumpAndSettle();
 
-      expect(
-        find.text(
-          "Couldn't save. Tool update_event failed: "
-          'Overlaps a fixed-time event',
+      expect(find.text("Couldn't save"), findsOneWidget);
+      expect(find.text('Overlaps a fixed-time event'), findsOneWidget);
+      // A refusal: nothing to try again until something changes.
+      expect(find.text('Try again'), findsNothing);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(ErrorSheet),
+          matching: find.text('Close'),
         ),
-        findsOneWidget,
       );
+      await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsOneWidget);
       expect(find.text('Save 1 change'), findsOneWidget);
 
@@ -1098,10 +1103,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
-      expect(
-        find.text("Couldn't save. Overlaps a fixed-time event"),
-        findsOneWidget,
-      );
+      expect(find.text("Couldn't save"), findsOneWidget);
+      expect(find.text('Overlaps a fixed-time event'), findsOneWidget);
       expect(find.text('Save'), findsOneWidget);
     });
   });
@@ -2029,10 +2032,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Create'));
       await tester.pumpAndSettle();
-      expect(
-        find.text("Couldn't save. Overlaps another event"),
-        findsOneWidget,
-      );
+      expect(find.text("Couldn't save"), findsOneWidget);
+      expect(find.text('Overlaps another event'), findsOneWidget);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
       expect(inDialog(find.text('Gym')), findsOneWidget);
     });
 
@@ -2499,7 +2502,7 @@ void main() {
     await tester.tap(find.text('Sign in'));
     await tester.pumpAndSettle();
     expect(find.text('Sign in to see your events.'), findsNothing);
-    expect(find.textContaining('Could not load events.'), findsOneWidget);
+    expect(find.textContaining("Couldn't load events."), findsOneWidget);
     expect(find.textContaining('token revoked'), findsOneWidget);
   });
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/plan_action.dart';
 import '../services/mcp_client.dart';
+import 'error_sheet.dart';
 import 'color_picker.dart';
 import 'priority_chip.dart';
 
@@ -79,7 +80,6 @@ class _ActionDialogState extends State<_ActionDialog> {
   );
 
   bool _saving = false;
-  String? _error;
 
   PlanAction get _action => widget.action;
   bool get _editable => widget.save != null;
@@ -143,25 +143,23 @@ class _ActionDialogState extends State<_ActionDialog> {
 
   Future<void> _save() async {
     final navigator = Navigator.of(context);
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+    setState(() => _saving = true);
     try {
       await widget.save!(_action, Map.of(_changes));
       navigator.pop();
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _error = switch (e) {
-          SignInRequiredException() =>
-            'You were signed out. Sign in again from the Plan page, then '
-                'try again.',
-          McpException(:final message) => message,
-          _ => '$e',
-        };
-      });
+      setState(() => _saving = false);
+      await showErrorSheet(
+        context,
+        title: "Couldn't save",
+        error: e,
+        message: e is SignInRequiredException
+            ? 'You were signed out. Sign in again from the Plan page, then '
+                  'try again.'
+            : null,
+        onRetry: _save,
+      );
     }
   }
 
@@ -224,11 +222,6 @@ class _ActionDialogState extends State<_ActionDialog> {
                   ),
                 ),
               ),
-              if (_error case final error?)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(error, style: TextStyle(color: colors.error)),
-                ),
             ],
           ),
         ),

@@ -2,14 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/person.dart';
 import '../models/trait.dart';
-import '../services/mcp_client.dart';
+import 'error_sheet.dart';
 import 'parts_editor.dart';
-
-/// What an [McpException], or anything else thrown, says, for a dialog.
-String _describe(Object e) => switch (e) {
-  McpException(:final message) => message,
-  _ => '$e',
-};
 
 /// Adds a person (with no [person]) or edits one: their name, a context
 /// that tells them apart from others of the same name, the [circles]
@@ -75,7 +69,6 @@ class _PersonDialogState extends State<_PersonDialog> {
   /// Their own parts, by trait id.
   late final _parts = <String, List<Part>>{...?widget.person?.traits.parts};
   bool _saving = false;
-  String? _error;
 
   bool get _isSelf => widget.person?.isSelf ?? false;
 
@@ -111,18 +104,18 @@ class _PersonDialogState extends State<_PersonDialog> {
 
   Future<void> _save() async {
     final navigator = Navigator.of(context);
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+    setState(() => _saving = true);
     try {
       navigator.pop(await widget.save(_fields));
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _error = _describe(e);
-      });
+      setState(() => _saving = false);
+      await showErrorSheet(
+        context,
+        title: "Couldn't save",
+        error: e,
+        onRetry: _save,
+      );
     }
   }
 
@@ -156,14 +149,6 @@ class _PersonDialogState extends State<_PersonDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (_error case final error?)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: SelectableText(
-                    "Couldn't save. $error",
-                    style: TextStyle(color: theme.colorScheme.error),
-                  ),
-                ),
               TextField(
                 controller: _name,
                 autofocus: widget.person == null,
@@ -448,7 +433,6 @@ class _NamedDialog extends StatefulWidget {
 class _NamedDialogState extends State<_NamedDialog> {
   late final _name = TextEditingController(text: widget.name);
   late final _detail = TextEditingController(text: widget.detail);
-  String? _error;
 
   @override
   void dispose() {
@@ -463,7 +447,14 @@ class _NamedDialogState extends State<_NamedDialog> {
       await action();
       navigator.pop(true);
     } catch (e) {
-      if (mounted) setState(() => _error = _describe(e));
+      if (mounted) {
+        await showErrorSheet(
+          context,
+          title: "Couldn't save",
+          error: e,
+          onRetry: () => _run(action),
+        );
+      }
     }
   }
 
@@ -491,7 +482,6 @@ class _NamedDialogState extends State<_NamedDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final named = _name.text.trim().isNotEmpty;
     return AlertDialog(
       title: Text(
@@ -503,14 +493,6 @@ class _NamedDialogState extends State<_NamedDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (_error case final error?)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  "Couldn't save. $error",
-                  style: TextStyle(color: theme.colorScheme.error),
-                ),
-              ),
             TextField(
               controller: _name,
               autofocus: widget.name == null,

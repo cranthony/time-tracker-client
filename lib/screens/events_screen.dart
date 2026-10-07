@@ -10,7 +10,6 @@ import '../models/note.dart';
 import '../models/proposal.dart';
 import '../models/recurrence.dart';
 import '../outbox/note_outbox.dart';
-import '../outbox/save_error.dart';
 import '../services/actions_repository.dart';
 import '../services/event_store.dart';
 import '../services/events_repository.dart';
@@ -26,6 +25,7 @@ import '../widgets/day_header.dart';
 import '../widgets/day_summary.dart';
 import '../widgets/pending_event_box.dart';
 import '../widgets/day_timeline.dart';
+import '../widgets/error_sheet.dart';
 import '../widgets/event_dialog.dart';
 import '../widgets/other_events.dart';
 import '../widgets/event_summary_dialog.dart';
@@ -1060,17 +1060,14 @@ class _EventsScreenState extends State<EventsScreen> {
       ),
     );
     if (back != true || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final amended = await _amend(ProposalEdits(asPlanned: [proposed.id]));
-      _amended(amended, 'Put back as planned.');
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text("Couldn't put it back: ${describeSaveError(e)}"),
-        ),
-      );
-    }
+    await runOrShowError(
+      context,
+      title: "Couldn't put it back",
+      action: () async {
+        final amended = await _amend(ProposalEdits(asPlanned: [proposed.id]));
+        if (mounted) _amended(amended, 'Put back as planned.');
+      },
+    );
   }
 
   /// Records [edits] to the open proposal, as the user's, and shows its
@@ -1256,9 +1253,15 @@ class _EventsScreenState extends State<EventsScreen> {
         );
       }
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text("Couldn't move it: ${describeSaveError(e)}")),
-      );
+      // The box is still up, as it was: try again from it.
+      if (mounted) {
+        await showErrorSheet(
+          context,
+          title: "Couldn't move it",
+          error: e,
+          onRetry: _finishMoving,
+        );
+      }
       return;
     }
     if (!mounted) return;
@@ -1772,17 +1775,14 @@ class _EventsScreenState extends State<EventsScreen> {
     try {
       recurrence = await widget.repository.recurrence(seriesId);
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            "Couldn't load the series. ${switch (e) {
-              SignInRequiredException() => 'Sign in again, then try again.',
-              McpException(:final message) => message,
-              _ => '$e',
-            }}",
-          ),
-        ),
-      );
+      if (mounted) {
+        await showErrorSheet(
+          context,
+          title: "Couldn't load the series",
+          error: e,
+          onRetry: () => _openSeries(seriesId, event),
+        );
+      }
       return false;
     }
     if (!mounted || event.id == null) return false;
@@ -1872,38 +1872,42 @@ class _EventsScreenState extends State<EventsScreen> {
     final proposal = _proposal;
     final repository = widget.proposals;
     if (proposal == null || repository == null || _proposalBusy) return;
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _proposalBusy = true);
+    Object? error;
     try {
       await action(proposal, repository);
     } catch (e) {
+      error = e;
       await _loadProposal();
-      final now = _proposal?.revision;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            now != null && now != proposal.revision
-                ? 'It changed since you looked: this is revision $now. '
-                      'Review it, then try again.'
-                : '$failed ${describeSaveError(e)}',
-          ),
-        ),
-      );
     } finally {
       if (mounted) setState(() => _proposalBusy = false);
     }
+    if (error == null || !mounted) return;
+    final now = _proposal?.revision;
+    final changed = now != null && now != proposal.revision;
+    await showErrorSheet(
+      context,
+      title: failed,
+      error: error,
+      message: changed
+          ? 'It changed since you looked: this is revision $now. Review it, '
+                'then try again.'
+          : null,
+      // Not one that changed: that's to review first.
+      onRetry: changed ? null : () => _onProposal(failed, action),
+    );
   }
 
   /// Confirms the open proposal, as shown.
   Future<void> _confirmProposal() => _onProposal(
-    "Couldn't confirm it:",
+    "Couldn't confirm it",
     (proposal, repository) async =>
         _confirmed(proposal, await repository.confirm(proposal)),
   );
 
   /// Resumes the apply of the open proposal, where it stopped.
   Future<void> _finishProposal() => _onProposal(
-    "Couldn't finish it:",
+    "Couldn't finish it",
     (proposal, repository) async =>
         _confirmed(proposal, await repository.finish(proposal)),
   );
@@ -2071,7 +2075,6 @@ class _EventsScreenState extends State<EventsScreen> {
               ?.id,
     );
     if (choice == null || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     final (edits, said) = switch (choice) {
       AnnotateNote(:final eventId) => (
         ProposalEdits(
@@ -2093,14 +2096,14 @@ class _EventsScreenState extends State<EventsScreen> {
       AskClaudeAboutNote() => (null, null),
     };
     if (edits == null) return _noteForClaude(aboutNote: note);
-    try {
-      final amended = await _amend(edits);
-      if (mounted) _amended(amended, said!);
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text("Couldn't change it: ${describeSaveError(e)}")),
-      );
-    }
+    await runOrShowError(
+      context,
+      title: "Couldn't change it",
+      action: () async {
+        final amended = await _amend(edits);
+        if (mounted) _amended(amended, said!);
+      },
+    );
   }
 
   /// Asks for a note for Claude on the open proposal, about [about] to
@@ -2117,7 +2120,7 @@ class _EventsScreenState extends State<EventsScreen> {
     );
     if (note == null || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    await _onProposal("Couldn't leave the note:", (proposal, repository) async {
+    await _onProposal("Couldn't leave the note", (proposal, repository) async {
       await repository.addNote(
         proposal,
         note.text,
@@ -2147,7 +2150,7 @@ class _EventsScreenState extends State<EventsScreen> {
     final messenger = ScaffoldMessenger.of(context);
     switch (action) {
       case WithdrawNote(:final feedback):
-        await _onProposal("Couldn't withdraw it:", (_, repository) async {
+        await _onProposal("Couldn't withdraw it", (_, repository) async {
           await repository.withdrawNote(feedback.id);
           await _loadProposal();
           messenger.showSnackBar(
@@ -2187,7 +2190,7 @@ class _EventsScreenState extends State<EventsScreen> {
       ),
     );
     if (sure != true || !mounted) return;
-    await _onProposal("Couldn't abandon it:", (proposal, repository) async {
+    await _onProposal("Couldn't abandon it", (proposal, repository) async {
       await repository.abandon(proposal);
       if (!mounted) return;
       setState(() => _proposal = null);
@@ -2237,16 +2240,24 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   Future<void> _signIn() async {
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _signingIn = true);
+    Object? error;
     try {
       await widget.onSignIn!();
       unawaited(_loadNotes());
       await _refresh();
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Sign-in failed: $e')));
+      error = e;
     } finally {
       if (mounted) setState(() => _signingIn = false);
+    }
+    if (error != null && mounted) {
+      await showErrorSheet(
+        context,
+        title: "Couldn't sign in",
+        error: error,
+        onRetry: _signIn,
+      );
     }
   }
 
@@ -2393,9 +2404,11 @@ class _EventsScreenState extends State<EventsScreen> {
         // The last events loaded, or kept from last time, are still
         // shown, under this.
         if (_error != null && events != null && events.isNotEmpty)
-          StatusMessage(
-            icon: Icons.cloud_off,
-            text: 'Could not load events. These may be out of date.\n$_error',
+          LoadError(
+            what: 'events',
+            error: _error!,
+            stale: true,
+            onRetry: _refresh,
           ),
         if (events != null)
           DaySummary(
@@ -2575,10 +2588,7 @@ class _EventsScreenState extends State<EventsScreen> {
     final days = stacked ? [from, day, next] : [day];
     final message = switch (events) {
       _ when day == _day && _error != null && (events?.isEmpty ?? true) =>
-        StatusMessage(
-          icon: Icons.cloud_off,
-          text: 'Could not load events.\n$_error',
-        ),
+        LoadError(what: 'events', error: _error!, onRetry: _refresh),
       null => const Padding(
         padding: EdgeInsets.all(16),
         child: CircularProgressIndicator(),

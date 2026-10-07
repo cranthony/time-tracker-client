@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/trait.dart';
-import '../services/mcp_client.dart';
+import 'error_sheet.dart';
 import 'parts_editor.dart';
 
 /// Creates a trait (with no [trait]) or edits one -- its name, definition,
@@ -44,7 +44,6 @@ class _TraitDialogState extends State<_TraitDialog> {
   late List<Part> _parts = [...?widget.trait?.parts];
 
   bool _saving = false;
-  String? _error;
 
   @override
   void dispose() {
@@ -65,21 +64,18 @@ class _TraitDialogState extends State<_TraitDialog> {
 
   Future<void> _save() async {
     final navigator = Navigator.of(context);
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+    setState(() => _saving = true);
     try {
       navigator.pop(await widget.save(_trait));
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _error = switch (e) {
-          McpException(:final message) => message,
-          _ => '$e',
-        };
-      });
+      setState(() => _saving = false);
+      await showErrorSheet(
+        context,
+        title: "Couldn't save",
+        error: e,
+        onRetry: _save,
+      );
     }
   }
 
@@ -96,14 +92,6 @@ class _TraitDialogState extends State<_TraitDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (_error case final error?)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: SelectableText(
-                    "Couldn't save. $error",
-                    style: TextStyle(color: theme.colorScheme.error),
-                  ),
-                ),
               TextField(
                 controller: _name,
                 maxLength: 50,

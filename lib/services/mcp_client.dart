@@ -1,10 +1,21 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'server_errors.dart';
+
 class McpException implements Exception {
-  McpException(this.message);
+  McpException(this.message, {this.statusCode, this.serverMessage});
   final String message;
+
+  /// The HTTP status the server answered with, when it wasn't a 200.
+  final int? statusCode;
+
+  /// What the server said, when a tool refused: its own words, for the
+  /// user (see `describeServerError`).
+  final String? serverMessage;
+
   @override
   String toString() => 'McpException: $message';
 }
@@ -29,9 +40,25 @@ abstract class McpAuth {
 ///
 /// It supports just enough of the protocol to call tools: the `initialize`
 /// handshake, session ids, JSON or SSE-framed responses, and bearer auth.
+///
+/// It also retries what's safe to, so callers don't: a session the server
+/// forgot is started again, and a call that fails before it reaches the
+/// server -- the connection refused, the handshake dropped -- is sent
+/// again, whatever the tool. A call that fails after it was sent (the
+/// connection reset, a timeout, a 502/503/504) may have done its work
+/// already, so it's only sent again for a tool that only reads (see
+/// [readsOnly]); for any other, the user decides, from the error sheet.
 class McpClient {
-  McpClient({required this.endpoint, this.auth, http.Client? httpClient})
-    : _http = httpClient ?? http.Client();
+  McpClient({
+    required this.endpoint,
+    this.auth,
+    http.Client? httpClient,
+    this.retryDelays = const [
+      Duration(milliseconds: 500),
+      Duration(seconds: 1),
+      Duration(seconds: 2),
+    ],
+  }) : _http = httpClient ?? http.Client();
 
   static const _protocolVersion = '2025-06-18';
 
@@ -39,23 +66,61 @@ class McpClient {
   final McpAuth? auth;
   final http.Client _http;
 
+  /// How long to wait before each retry of a call that failed in a way
+  /// that may well pass (see the class docs): one try more than there are
+  /// delays.
+  final List<Duration> retryDelays;
+
   String? _sessionId;
   bool _initialized = false;
   int _nextId = 1;
 
+  /// Whether the tool [name] only reads, so calling it again is always
+  /// safe.
+  static bool readsOnly(String name) =>
+      name.startsWith('get_') ||
+      name.startsWith('list_') ||
+      const {'prepare_judgments'}.contains(name);
+
   /// Calls [name] with [arguments] and returns the tool's result, decoded
-  /// from JSON where possible.
+  /// from JSON where possible -- retried as the class docs say.
   Future<Object?> callTool(
     String name, [
     Map<String, Object?> arguments = const {},
   ]) async {
+    final safe = readsOnly(name);
+    for (var attempt = 0; ; attempt++) {
+      // Whether the call's been sent: before it, any failure is safe to
+      // retry. Per call: calls run side by side.
+      final sent = [false];
+      try {
+        return await _callOnce(name, arguments, sent);
+      } catch (e) {
+        final again =
+            attempt < retryDelays.length &&
+            (!sent.first || neverSent(e) || (safe && isTransient(e)));
+        if (!again || !(e is http.ClientException || isTransient(e))) {
+          rethrow;
+        }
+        await Future<void>.delayed(retryDelays[attempt]);
+      }
+    }
+  }
+
+  Future<Object?> _callOnce(
+    String name,
+    Map<String, Object?> arguments,
+    List<bool> sent,
+  ) async {
     await _ensureInitialized();
+    sent.first = true;
     final result = await _request('tools/call', {
       'name': name,
       'arguments': arguments,
     });
     if (result['isError'] == true) {
-      throw McpException('Tool $name failed: ${_textContent(result)}');
+      final said = _textContent(result);
+      throw McpException('Tool $name failed: $said', serverMessage: said);
     }
     // FastMCP wraps non-object return values as {"result": ...}.
     final structured = result['structuredContent'];
@@ -97,8 +162,9 @@ class McpClient {
       'params': params,
     });
 
-    // A session that expired server-side: start over once.
-    if (response.statusCode == 404 &&
+    // A session the server forgot (it expired, or the server restarted):
+    // it ran nothing, so start over and send it again, once.
+    if (_sessionLost(response) &&
         _sessionId != null &&
         method != 'initialize') {
       _sessionId = null;
@@ -109,6 +175,7 @@ class McpClient {
     if (response.statusCode != 200) {
       throw McpException(
         '$method: HTTP ${response.statusCode} ${response.body}',
+        statusCode: response.statusCode,
       );
     }
 
@@ -119,6 +186,11 @@ class McpClient {
     }
     return (message['result'] as Map).cast<String, dynamic>();
   }
+
+  static bool _sessionLost(http.Response response) =>
+      response.statusCode == 404 ||
+      (response.statusCode == 400 &&
+          response.body.toLowerCase().contains('session'));
 
   Future<http.Response> _post(
     Map<String, Object?> body, {

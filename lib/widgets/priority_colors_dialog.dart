@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../outbox/save_error.dart';
+import 'error_sheet.dart';
 import 'color_picker.dart';
 
 /// Each priority's color, as [priorityPalette] has them, any of which can
@@ -18,7 +18,6 @@ class PriorityColorsDialog extends StatefulWidget {
 class _PriorityColorsDialogState extends State<PriorityColorsDialog> {
   /// The priority being saved, if one is.
   int? _saving;
-  String? _error;
 
   Future<void> _change(int priority) async {
     var picked = priorityColor(priority);
@@ -53,14 +52,14 @@ class _PriorityColorsDialogState extends State<PriorityColorsDialog> {
         colorToHex(color) == colorToHex(priorityColor(priority))) {
       return;
     }
-    setState(() {
-      _saving = priority;
-      _error = null;
-    });
+    if (!mounted) return;
+    setState(() => _saving = priority);
     try {
-      await widget.onSave(priority, colorToHex(color));
-    } catch (e) {
-      if (mounted) setState(() => _error = describeSaveError(e));
+      await runOrShowError(
+        context,
+        title: "Couldn't save the color",
+        action: () => widget.onSave(priority, colorToHex(color)),
+      );
     } finally {
       if (mounted) setState(() => _saving = null);
     }
@@ -104,11 +103,6 @@ class _PriorityColorsDialogState extends State<PriorityColorsDialog> {
             ],
           ),
         ),
-        if (_error case final error?)
-          Text(
-            "Couldn't save the color. $error",
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
       ],
     ),
     actions: [

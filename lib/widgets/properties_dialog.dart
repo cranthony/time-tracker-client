@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../services/mcp_client.dart';
+import 'error_sheet.dart';
 import 'color_picker.dart';
 import 'durations.dart';
 import 'actions_picker.dart';
@@ -447,15 +448,16 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       navigator.pop(saved);
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _error = switch (e) {
-          SignInRequiredException() =>
-            'You were signed out. ${widget.signInHint}',
-          McpException(:final message) => message,
-          _ => '$e',
-        };
-      });
+      setState(() => _saving = false);
+      await showErrorSheet(
+        context,
+        title: "Couldn't save",
+        error: e,
+        message: e is SignInRequiredException
+            ? 'You were signed out. ${widget.signInHint}'
+            : null,
+        onRetry: () => _save(changes),
+      );
     }
   }
 

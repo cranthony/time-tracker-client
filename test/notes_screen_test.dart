@@ -297,7 +297,7 @@ void main() {
     await tester.tap(find.text('Sign in'));
     await tester.pumpAndSettle();
     expect(find.text('Sign in to see your notes.'), findsNothing);
-    expect(find.textContaining('Could not load notes.'), findsOneWidget);
+    expect(find.textContaining("Couldn't load notes."), findsOneWidget);
     expect(find.textContaining('token revoked'), findsOneWidget);
   });
 
@@ -376,10 +376,8 @@ void main() {
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('Could not change the note: That note was compacted'),
-      findsOneWidget,
-    );
+    expect(find.text("Couldn't change the note"), findsOneWidget);
+    expect(find.text('That note was compacted'), findsOneWidget);
     expect(find.text('Standup'), findsOneWidget);
   });
 

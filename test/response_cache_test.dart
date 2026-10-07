@@ -181,7 +181,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Old'), findsOneWidget);
       expect(
-        find.textContaining('Could not load events. These may be out of date.'),
+        find.textContaining("Couldn't load events. These may be out of date."),
         findsOneWidget,
       );
       expect(refreshing(), findsNothing);

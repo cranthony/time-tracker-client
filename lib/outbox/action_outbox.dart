@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/plan_action.dart';
 import '../services/actions_repository.dart';
-import '../services/mcp_client.dart';
+import '../services/server_errors.dart';
 import 'outbox.dart';
 import 'pending_action_save.dart';
 
@@ -182,7 +182,8 @@ class ActionOutbox extends Outbox<PendingActionSave, String?> {
 
   /// The server's refusals wait to be retried; the rest are tried again.
   @override
-  bool retries(Object error) => error is! McpException;
+  bool retries(Object error) =>
+      describeServerError(error).kind != FailureKind.refused;
 
   @override
   void failed(PendingActionSave item) => _emit(ActionSaveFailed(item));

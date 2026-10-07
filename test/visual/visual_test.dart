@@ -2,8 +2,11 @@
 // and dark, at a phone's size, and writes them to build/screenshots/. See
 // flutter_test_config.dart, and "Visual tests" in README.md.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/outbox/action_outbox.dart';
 import 'package:time_tracker_client/demo/sample_data.dart';
@@ -24,6 +27,7 @@ import 'package:time_tracker_client/widgets/day_summary.dart';
 import 'package:time_tracker_client/widgets/time_summary.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/actions_picker.dart';
+import 'package:time_tracker_client/widgets/error_sheet.dart';
 
 /// A fixed moment, so every run renders the same thing.
 final _now = DateTime(2026, 10, 2, 13, 30);
@@ -93,6 +97,27 @@ void main() {
       await tester.tap(find.widgetWithText(Tab, pane));
       await tester.pumpAndSettle();
     }
+
+    // A call to the server that failed, as every failure is shown: here,
+    // one that trying again may fix.
+    testWidgets('error sheet ($mode)', (tester) async {
+      await render(
+        tester,
+        'error_sheet',
+        plan(),
+        then: () async {
+          unawaited(
+            showErrorSheet(
+              tester.element(find.byType(PlanScreen)),
+              title: "Couldn't move it",
+              error: http.ClientException('Connection reset by peer'),
+              onRetry: () {},
+            ),
+          );
+          await tester.pumpAndSettle();
+        },
+      );
+    });
 
     // The page as it opens: its tabs, over the Actions pane.
     testWidgets('plan ($mode)', (tester) async {
