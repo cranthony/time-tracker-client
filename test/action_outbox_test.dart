@@ -43,7 +43,7 @@ class FlakyActions extends InMemoryActionsRepository {
     PlanAction action,
     Map<String, Object?> changes,
   ) async {
-    calls.add('update ${action.id} $changes');
+    calls.add('update ${action.isGroup ? 'group ' : ''}${action.id} $changes');
     if (failWith case final error?) throw error;
     await super.updateAction(action, changes);
     if (loseResponses) throw http.ClientException('connection reset');
@@ -97,7 +97,7 @@ void main() {
     box.start();
 
     final shownAs = box.create({'name': 'Running', 'parent_id': null});
-    box.update('cook', {'priority': 2});
+    box.update('cook', {'priority': 2}, group: false);
     expect(box.saves.map((s) => s.actionId), [shownAs, 'cook']);
     await settled(box);
 
@@ -121,10 +121,10 @@ void main() {
 
   test('what was saved while the actions were fetched is kept after', () async {
     final box = outbox();
-    box.update('cook', {'priority': 2});
+    box.update('cook', {'priority': 2}, group: false);
     await box.flush();
     final fetched = box.fetching();
-    box.update('cook', {'priority': 3});
+    box.update('cook', {'priority': 3}, group: false);
     await box.flush();
     expect(box.wantsFetch, isTrue);
 
@@ -151,15 +151,18 @@ void main() {
 
   test('a save to an action with one waiting joins it, to be sent as one', () {
     final box = outbox();
-    box.update('cook', {'name': 'Cooking at home', 'priority': 1});
-    box.update('cook', {'priority': 2});
+    box.update('cook', {
+      'name': 'Cooking at home',
+      'priority': 1,
+    }, group: false);
+    box.update('cook', {'priority': 2}, group: false);
     expect(box.saves.single.changes, {
       'name': 'Cooking at home',
       'priority': 2,
     });
 
     // As when what failed is edited: these stand in for them.
-    box.update('cook', {'name': 'Home cooking'}, replace: true);
+    box.update('cook', {'name': 'Home cooking'}, group: false, replace: true);
     expect(box.saves.single.changes, {'name': 'Home cooking'});
   });
 
@@ -196,11 +199,11 @@ void main() {
       server.failWith = McpException('Try later.');
       final box = outbox();
       box.start();
-      box.update('cook', {'name': 'Cooking at home'});
+      box.update('cook', {'name': 'Cooking at home'}, group: false);
       await settled(box);
 
       server.failWith = null;
-      box.update('cook', {'priority': 2});
+      box.update('cook', {'priority': 2}, group: false);
       await settled(box);
       expect(
         server.calls.last,
@@ -282,7 +285,7 @@ void main() {
   test('waits to sign in, then sends when retried', () async {
     server.failWith = SignInRequiredException();
     final box = outbox();
-    box.update('cook', {'priority': 2});
+    box.update('cook', {'priority': 2}, group: false);
     final result = await box.flush();
     expect(result.needsSignIn, isTrue);
     expect(box.needsSignIn, isTrue);
@@ -298,7 +301,7 @@ void main() {
   test('the background task sends what the app kept', () async {
     final app = outbox();
     final shownAs = app.create({'name': 'Running', 'parent_id': null});
-    app.update('cook', {'priority': 2});
+    app.update('cook', {'priority': 2}, group: false);
     await app.refresh();
     expect(store.items.map((s) => s.actionId), [shownAs, 'cook']);
 
@@ -335,11 +338,56 @@ void main() {
     expect(box.saves, isEmpty);
   });
 
+  test('a save to a group is sent as one', () async {
+    final meals = await server.createAction({'name': 'Meals', 'kind': 'group'});
+    server.calls.clear();
+    final box = outbox();
+    box.update(meals, {'priority': 2}, group: true);
+    await box.flush();
+    expect(server.calls, ['update group $meals {priority: 2}']);
+    expect(box.saves, isEmpty);
+  });
+
+  test(
+    "a save kept without saying whether it's to a group looks it up",
+    () async {
+      final meals = await server.createAction({
+        'name': 'Meals',
+        'kind': 'group',
+      });
+      server.calls.clear();
+      store.items = [
+        PendingActionSave(
+          id: 'a',
+          actionId: meals,
+          isNew: false,
+          changes: const {'priority': 2},
+        ),
+        const PendingActionSave(
+          id: 'b',
+          actionId: 'cook',
+          isNew: false,
+          changes: {'priority': 1},
+        ),
+      ];
+      final box = outbox();
+      await box.refresh();
+      await box.flush(ignoreBackoff: true);
+      expect(server.calls, [
+        'actions',
+        'update group $meals {priority: 2}',
+        'actions',
+        'update cook {priority: 1}',
+      ]);
+      expect(box.saves, isEmpty);
+    },
+  );
+
   test('discards what waits for an action', () async {
     server.failWith = McpException('No.');
     final box = outbox();
     box.start();
-    box.update('cook', {'priority': 2});
+    box.update('cook', {'priority': 2}, group: false);
     await settled(box);
 
     box.discard('cook');
@@ -360,6 +408,7 @@ void main() {
         'measure': {'kind': 'duration', 'target_min': 600},
         'note': null,
       },
+      group: true,
       attempts: 2,
       lastError: 'offline',
       nextAttemptAt: DateTime.utc(2026, 10, 4, 9, 0, 20),

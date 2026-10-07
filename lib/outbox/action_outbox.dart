@@ -63,13 +63,14 @@ class ActionOutbox extends Outbox<PendingActionSave, String?> {
   }
 
   /// Saves [changes], keyed as `update_action` takes them, to the action with
-  /// [actionId]. If it has a save waiting, or that failed, these join it,
+  /// [actionId], which, if [group], is a group. If it has a save waiting, or that failed, these join it,
   /// and it's sent (again) with all of them; with [replace], these stand
   /// in for its changes instead, as when what failed is edited. That's
   /// also how a new action that failed is changed before trying again.
   void update(
     String actionId,
     Map<String, Object?> changes, {
+    required bool group,
     bool replace = false,
   }) {
     final added = PendingActionSave(
@@ -77,6 +78,7 @@ class ActionOutbox extends Outbox<PendingActionSave, String?> {
       actionId: actionId,
       isNew: false,
       changes: changes,
+      group: group,
     );
     _changeAndSend((saves) {
       final i = saves.lastIndexWhere(
@@ -146,8 +148,15 @@ class ActionOutbox extends Outbox<PendingActionSave, String?> {
     required bool maybeSaved,
   }) async {
     if (!item.isNew) {
+      final group = item.group ?? await _isGroup(item.actionId);
       await _repository
-          .updateAction(PlanAction(id: item.actionId), item.changes)
+          .updateAction(
+            PlanAction(
+              id: item.actionId,
+              properties: {if (group) 'kind': 'group'},
+            ),
+            item.changes,
+          )
           .timeout(Outbox.requestTimeout);
       return null;
     }
@@ -160,6 +169,15 @@ class ActionOutbox extends Outbox<PendingActionSave, String?> {
     return _repository
         .createAction(item.changes)
         .timeout(Outbox.requestTimeout);
+  }
+
+  /// Whether the action with [id] is a group, as the server has it: for a
+  /// save kept without saying.
+  Future<bool> _isGroup(String id) async {
+    final actions =
+        await _repository.cachedActions() ??
+        await _repository.actions().timeout(Outbox.requestTimeout);
+    return actions.actions.any((a) => a.id == id && a.isGroup);
   }
 
   /// The server's refusals wait to be retried; the rest are tried again.
