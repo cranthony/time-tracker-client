@@ -131,6 +131,8 @@ void main() {
                 ],
                 day: day,
                 actions: const {},
+                // Its priorities.
+                initialPage: 2,
                 durations: durations,
                 onDurations: (value) => setState(() => durations = value),
               ),

@@ -14,8 +14,8 @@ Claude has a **compaction proposal** open -- what it says happened since the
 last compaction -- it's a band over the timeline, each change marked, to
 confirm: edits to the events in it edit the proposal, not the calendar, and
 a bar above confirms it as shown or leaves a note for Claude to revise it
-(see [Compaction proposals](#compaction-proposals)). Above them, a summary shows how the day's time is split by priority;
-swipe it to see the top actions, or the top-level groups. A **Plan** page
+(see [Compaction proposals](#compaction-proposals)). Above them, a summary shows how the day's time is split by its top
+actions; swipe it to see the top-level groups, or the time by priority. A **Plan** page
 has four panes, swiped between or picked from its tabs, each with a search
 of its own. Landing on it loads every pane at once, and it shows what it
 had last time while it loads again. The Actions, People and Locations

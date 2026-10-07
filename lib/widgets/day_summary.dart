@@ -93,9 +93,9 @@ List<SummarySlice> actionShares(
   ];
 }
 
-/// A day's time at a glance, above its timeline: its share for each
-/// priority, for the top actions, and for the top-level actions they're
-/// under, and the time with nothing scheduled. Swiping it, or tapping a
+/// A day's time at a glance, above its timeline: its share for the top
+/// actions, for the top-level actions they're under, and for each
+/// priority, in that order, and the time with nothing scheduled. Swiping it, or tapping a
 /// title, turns between them, its chevron folds it away, and the button
 /// by that turns its percentages into durations and back.
 class DaySummary extends StatelessWidget {
@@ -128,7 +128,7 @@ class DaySummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => TimeSummary(
-    titles: const ['Priorities', 'Actions', 'Top-level groups'],
+    titles: const ['Actions', 'Top-level', 'Priorities'],
     initialPage: initialPage,
     collapsed: collapsed,
     onCollapsed: onCollapsed,
@@ -136,9 +136,9 @@ class DaySummary extends StatelessWidget {
     onDurations: onDurations,
     pages: [
       for (final slices in [
-        priorityShares(events, day),
         actionShares(events, day, actions),
         actionShares(events, day, actions, topLevel: true),
+        priorityShares(events, day),
       ])
         SummaryBar.single(slices: slices),
     ],
