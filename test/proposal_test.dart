@@ -267,50 +267,81 @@ void main() {
       'description': 'Green',
     });
 
-    test('an update sets summary, times, actions and facts', () {
+    test('an update is the event, as update_event takes it: only what '
+        'changed, set, and what was cleared', () {
       expect(
         proposalUpdate(tea, {
           'summary': 'Chai',
           'start': iso(9, 15),
           'action_ids': ['drink'],
+          'location': 'The café',
+          'priority': 1,
           'facts': null,
         }),
         {
-          'event_id': 'tea',
-          'summary': 'Chai',
-          'start': iso(9, 15),
-          'action_ids': ['drink'],
-          // Empty facts remove them.
-          'facts': const <String, Object?>{},
+          'event': {
+            'id': 'tea',
+            'summary': 'Chai',
+            'start': iso(9, 15),
+            'action_ids': ['drink'],
+            'location': 'The café',
+            'priority': 1,
+          },
+          'clear_fields': ['facts'],
         },
       );
     });
 
-    test('a description can only be added to: the addition is annotated', () {
-      expect(proposalUpdate(tea, {'description': 'Green\nwith honey'}), {
-        'event_id': 'tea',
-        'annotate': 'with honey',
+    test('a description is the whole of it, changed as the user likes', () {
+      expect(proposalUpdate(tea, {'description': 'Black, no sugar'}), {
+        'event': {'id': 'tea', 'description': 'Black, no sugar'},
       });
-      expect(
-        () => proposalUpdate(tea, {'description': 'Black'}),
-        throwsA(isA<ProposalEditException>()),
-      );
+      expect(proposalUpdate(tea, {'description': null}), {
+        'event': {'id': 'tea'},
+        'clear_fields': ['description'],
+      });
     });
 
-    test("what a proposal doesn't set is refused", () {
+    test("what a proposal won't take is refused", () {
       expect(
-        () => proposalUpdate(tea, {'priority': 1}),
+        () => proposalUpdate(tea, {'priority': null}),
         throwsA(
           isA<ProposalEditException>().having(
             (e) => e.message,
             'message',
-            contains("Its priority can't be changed"),
+            contains("can't clear an event's priority"),
           ),
         ),
       );
       expect(
-        () => proposalCreate({'summary': 'Tea', 'location': 'Cafe'}),
+        () => proposalUpdate(tea, {'judgments': null}),
         throwsA(isA<ProposalEditException>()),
+      );
+      expect(
+        () => proposalCreate({
+          'summary': 'Tea',
+          'judgments': <String, Object?>{},
+        }),
+        throwsA(isA<ProposalEditException>()),
+      );
+      expect(
+        proposalCreate({
+          'summary': 'Tea',
+          'start': iso(9),
+          'end': iso(10),
+          'location': 'The café',
+          'priority': 2,
+          'description': 'Green',
+          'facts': null,
+        }),
+        {
+          'summary': 'Tea',
+          'start': iso(9),
+          'end': iso(10),
+          'location': 'The café',
+          'priority': 2,
+          'description': 'Green',
+        },
       );
     });
 
@@ -345,12 +376,19 @@ void main() {
       );
       expect(edits.toJson(), {
         'updates': [
-          {'event_id': 'tea', 'end': iso(9, 30)},
+          {
+            'event': {'id': 'tea', 'end': iso(9, 30)},
+          },
         ],
         'creates': [
           {'summary': 'Email', 'start': iso(9, 30), 'end': iso(10)},
-          // Where the split one was is its; its location the calendar's.
-          {'summary': 'Work', 'start': iso(10, 30), 'end': iso(11)},
+          // What's left of the one split: where it was, what it was.
+          {
+            'summary': 'Work',
+            'location': 'Office',
+            'start': iso(10, 30),
+            'end': iso(11),
+          },
         ],
         'cancels': [
           {'event_id': 'work', 'counts_against_follow_through': false},
@@ -868,7 +906,9 @@ void main() {
 
       expect(proposals.amends.single.toJson(), {
         'updates': [
-          {'event_id': 'work', 'summary': 'Admin'},
+          {
+            'event': {'id': 'work', 'summary': 'Admin'},
+          },
         ],
       });
       expect(proposals.proposal!.event('work')!.summary, 'Admin');
@@ -880,6 +920,44 @@ void main() {
       );
       expect(find.text('Admin'), findsOneWidget);
       expect(find.text('Renamed · you'), findsOneWidget);
+    });
+
+    testWidgets("an event's priority, location and whole description are "
+        'edited in the proposal too', (tester) async {
+      await open(tester);
+      await tap(tester, find.text('Work'));
+      await tap(tester, inDialog(find.text('No priority')));
+      await tap(tester, inDialog(find.text('P1')));
+      await tap(tester, inDialog(find.text('Add location')));
+      await tester.enterText(find.byType(TextField), 'Office');
+      await tester.pumpAndSettle();
+      await tap(tester, inDialog(find.text('Add description')));
+      await tester.enterText(find.byType(TextField), 'Invoices, mostly');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(proposals.amends.single.toJson(), {
+        'updates': [
+          {
+            'event': {
+              'id': 'work',
+              'priority': 1,
+              'location': 'Office',
+              'description': 'Invoices, mostly',
+            },
+          },
+        ],
+      });
+      final work = proposals.proposal!.event('work')!;
+      expect(work.properties['location'], 'Office');
+      expect(work.description, 'Invoices, mostly');
+      // Drawn at the priority it's given.
+      final drawn = tester
+          .widget<DayTimeline>(find.byType(DayTimeline))
+          .events
+          .firstWhere((e) => e.id == 'work');
+      expect(drawn.effectivePriority, 1);
     });
 
     testWidgets('an edit the proposal refuses stays in the dialog, and the '
@@ -930,8 +1008,8 @@ void main() {
       await tester.tap(find.byTooltip('Move it here'));
       await tester.pumpAndSettle();
 
-      final update = proposals.amends.single.updates.single;
-      expect(update['event_id'], 'tea');
+      final (id, update) = updateFields(proposals.amends.single.updates.single);
+      expect(id, 'tea');
       expect(
         DateTime.parse(update['start'] as String).isAtSameMomentAs(at(8)),
         isTrue,
@@ -1062,7 +1140,9 @@ void main() {
           proposal,
           ProposalEdits(
             updates: [
-              {'event_id': 'work', 'end': iso(11)},
+              {
+                'event': {'id': 'work', 'end': iso(11)},
+              },
             ],
           ),
         );

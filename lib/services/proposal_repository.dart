@@ -61,7 +61,7 @@ class ProposalEdits {
 
   /// The ids and keys of the events they name, and the notes' ids.
   Set<String> get eventIds => {
-    for (final u in updates) '${u['event_id']}',
+    for (final u in updates) updateFields(u).$1,
     for (final c in cancels) c.eventId,
     ...asPlanned,
     for (final n in notes) n.noteId,
@@ -133,48 +133,59 @@ class ProposalEditException implements Exception {
   String toString() => message;
 }
 
-/// What a proposal's events can have set: the rest are the calendar's,
-/// changed once it's confirmed.
-const _proposalFields = {'summary', 'start', 'end', 'action_ids', 'facts'};
-
-/// The names of the fields a proposal can't change, for saying so.
-const _fieldNames = {
-  'location': 'Its location (as the calendar has it)',
-  'priority': 'Its priority',
-  'judgments': 'Its judgments',
-  'is_cancelled': 'Whether it was cancelled',
+/// What a proposal's events can have set, as `update_event` takes them.
+const _proposalFields = {
+  'summary',
+  'start',
+  'end',
+  'description',
+  'location',
+  'priority',
+  'action_ids',
+  'facts',
 };
 
-/// [changes], keyed as `update_event` takes them, to [event] as an
-/// update of `amend_proposal`. A new description has to add to the old
-/// one: what it adds is annotated. A change to a field a proposal doesn't
-/// set throws a [ProposalEditException].
+/// What a proposal's events can have cleared, by `clear_fields`.
+const _clearable = {'description', 'location', 'facts'};
+
+/// Why each field a proposal won't take, won't.
+const _refused = {
+  'priority': "A proposal can't clear an event's priority: set one instead.",
+  'judgments':
+      "Judgments are made once it's confirmed, not in what "
+      'happened, to confirm.',
+  'is_cancelled': 'Cancel it instead.',
+};
+
+/// [changes], keyed as `update_event` takes them, to [event] as an update
+/// of `amend_proposal`: `{event: {id, ...}, clear_fields}` -- only the
+/// fields changed, so the rest stay as the proposal has them. A
+/// description is the event's whole description, notes and all. Null
+/// clears a field that can be; a change a proposal won't take throws a
+/// [ProposalEditException].
 Map<String, Object?> proposalUpdate(Event event, Map<String, Object?> changes) {
-  final update = <String, Object?>{'event_id': event.id};
+  final set = <String, Object?>{'id': event.id};
+  final cleared = <String>[];
   for (final MapEntry(:key, :value) in changes.entries) {
-    if (_proposalFields.contains(key)) {
-      // Empty facts remove them; null would keep them.
-      update[key] = key == 'facts' ? value ?? const {} : value;
-    } else if (key == 'description') {
-      update['annotate'] = _added(
-        event.properties['description'] as String?,
-        value as String?,
-      );
+    if (value == null && _clearable.contains(key)) {
+      cleared.add(key);
+    } else if (value != null && _proposalFields.contains(key)) {
+      set[key] = value;
     } else {
       throw ProposalEditException(
-        '${_fieldNames[key] ?? 'Its $key'} can\'t be changed in what '
-        'happened, to confirm. Change it once that\'s confirmed, or leave '
-        'a note for Claude.',
+        _refused[key] ??
+            "Its $key can't be changed in what happened, to confirm. "
+                "Change it once that's confirmed, or leave a note for Claude.",
       );
     }
   }
-  return update;
+  return {'event': set, if (cleared.isNotEmpty) 'clear_fields': cleared};
 }
 
 /// [fields], keyed as `create_event` takes them, as a create of
-/// `amend_proposal`: its description annotated. [strict]ly, a field a
-/// proposal can't set throws a [ProposalEditException]; otherwise it's
-/// left out -- for what's left of an event split to make room.
+/// `amend_proposal`: those it can take that are set. [strict]ly, any
+/// other throws a [ProposalEditException]; otherwise it's left out --
+/// for what's left of an event split to make room.
 Map<String, Object?> proposalCreate(
   Map<String, Object?> fields, {
   bool strict = true,
@@ -184,31 +195,30 @@ Map<String, Object?> proposalCreate(
     if (value == null) continue;
     if (_proposalFields.contains(key)) {
       create[key] = value;
-    } else if (key == 'description') {
-      if ('$value'.trim().isNotEmpty) create['annotate'] = value;
     } else if (strict) {
       throw ProposalEditException(
-        '${_fieldNames[key] ?? 'Its $key'} can\'t be set on an event in '
-        'what happened, to confirm. Set it once that\'s confirmed.',
+        _refused[key] ??
+            "Its $key can't be set on an event in what happened, to "
+                "confirm. Set it once that's confirmed.",
       );
     }
   }
   return create;
 }
 
-/// What [now] adds to [before]: the description can only be added to.
-String? _added(String? before, String? now) {
-  final old = (before ?? '').trimRight();
-  final changed = (now ?? '').trimRight();
-  if (changed == old) return null;
-  if (!changed.startsWith(old)) {
-    throw ProposalEditException(
-      'In what happened, to confirm, a description can only be added to. '
-      'Leave a note for Claude to change it.',
-    );
-  }
-  final added = changed.substring(old.length).trim();
-  return added.isEmpty ? null : added;
+/// An `amend_proposal` update's event id (or key), and the fields it sets
+/// -- those it clears as null.
+(String, Map<String, Object?>) updateFields(Map<String, Object?> update) {
+  final event = (update['event']! as Map).cast<String, Object?>();
+  return (
+    '${event['id']}',
+    {
+      for (final MapEntry(:key, :value) in event.entries)
+        if (key != 'id') key: value,
+      for (final key in update['clear_fields'] as List? ?? const [])
+        '$key': null,
+    },
+  );
 }
 
 /// Where proposals come from: the open one, the user's edits and notes,
@@ -448,23 +458,20 @@ class InMemoryProposalRepository implements ProposalRepository {
         final String t => DateTime.parse(t),
         _ => old,
       };
-      final description = switch (fields['annotate']) {
-        final String added => [?e.description, added].join('\n'),
-        _ => e.description,
-      };
+      // Set, cleared (null), or kept as it was.
+      Object? field(String key, Object? old) =>
+          fields.containsKey(key) ? fields[key] : old;
       final json = <String, dynamic>{
         ...e.properties,
         'id': id ?? e.id,
+        'location': field('location', e.properties['location']),
+        'priority': field('priority', e.properties['priority']),
         'start': localIsoTimestamp(time('start', e.start)),
         'end': localIsoTimestamp(time('end', e.end)),
         'summary': fields['summary'] ?? e.summary,
-        'description': description,
+        'description': field('description', e.description),
         'action_ids': fields['action_ids'] ?? e.actionIds,
-        'facts': switch (fields['facts']) {
-          final Map facts when facts.isEmpty => null,
-          final Map facts => facts,
-          _ => e.facts,
-        },
+        'facts': field('facts', e.facts),
         'status': (status ?? e.status).json,
         'planned_start': localIsoTimestamp(e.plannedStart ?? e.start),
         'planned_end': localIsoTimestamp(e.plannedEnd ?? e.end),
@@ -492,11 +499,12 @@ class InMemoryProposalRepository implements ProposalRepository {
     }
 
     for (final update in edits.updates) {
-      final i = indexOf('${update['event_id']}');
+      final (id, fields) = updateFields(update);
+      final i = indexOf(id);
       final e = events[i];
       events[i] = edited(
         e,
-        fields: update,
+        fields: fields,
         status: e.status == ProposalEventStatus.created
             ? ProposalEventStatus.created
             : ProposalEventStatus.adjusted,
@@ -827,6 +835,8 @@ class InMemoryProposalRepository implements ProposalRepository {
         'start': localIsoTimestamp(e.start),
         'end': localIsoTimestamp(e.end),
         'description': e.description,
+        'location': e.properties['location'],
+        'priority': e.properties['priority'],
         'action_ids': e.actionIds,
         'facts': e.facts,
       };

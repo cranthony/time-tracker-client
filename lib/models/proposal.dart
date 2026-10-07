@@ -192,6 +192,10 @@ class ProposalEvent {
           'action_names': [for (final id in actionIds) added[id]]
         else if (calendar != null && !_sameIds(calendar.actionIds, actionIds))
           'action_names': null,
+        // Its own priority, as the proposal has it, over what its actions
+        // gave it on the calendar.
+        if (properties['priority'] case final int priority)
+          'effective_priority': priority,
         'is_cancelled': !live,
       });
 

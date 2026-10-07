@@ -443,8 +443,8 @@ Claude can't apply one; only confirming it in the app does.
 - **Editing it.** Moving, resizing, cancelling or adding an event in the
   band, or setting its actions, people or location, edits the proposal
   (`amend_proposal`), with the same dialogs and press-and-hold move as
-  ever, and what it does to the events in its way. A description can only
-  be added to; a cancelled one can be put back as planned. If the server
+  ever, and what it does to the events in its way. Its whole description, location and priority can be
+  changed too; a cancelled one can be put back as planned. If the server
   refuses an edit (an overlap, say), it stays in the dialog to fix, and
   the proposal loads again. Below the band is the plan, changed on the
   calendar; before it, history, changed only after asking.

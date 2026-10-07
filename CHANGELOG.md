@@ -23,6 +23,9 @@ on. Add the new version's section here at the same time; CI checks both.
   events it's at, outlined. Settle it: make it now (corrected, if need
   be), say it's one already here, or drop it; put it back as Claude
   proposed it; or ask Claude about it.
+- An event in what happened, to confirm, takes the same edits as one in
+  the plan: its whole description -- not only added to -- its location
+  and its priority too. A priority can be set, not cleared.
 - In an event's dialogs, and on its card, what a proposal adds is named,
   marked new, and offered among the people and locations to pick.
 
