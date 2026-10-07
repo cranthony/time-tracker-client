@@ -197,6 +197,28 @@ class OtherEvents {
     return Overwrite(cancels: cancels, updates: updates, creates: creates);
   }
 
+  /// What a new event from [start] to [end] takes from the others when
+  /// they're cancelled rather than trimmed: every one it touches,
+  /// cancelled whole.
+  Overwrite cancelling(DateTime start, DateTime end) => Overwrite(
+    cancels: [
+      for (final other in events)
+        if (other.start.isBefore(end) && other.end.isAfter(start)) other,
+    ],
+  );
+
+  /// From [start] to [end], stretched to take in every event it touches:
+  /// what [cancelling] takes away.
+  (DateTime, DateTime) touching(DateTime start, DateTime end) {
+    var (from, to) = (start, end);
+    for (final other in events) {
+      if (!other.start.isBefore(end) || !other.end.isAfter(start)) continue;
+      if (other.start.isBefore(from)) from = other.start;
+      if (other.end.isAfter(to)) to = other.end;
+    }
+    return (from, to);
+  }
+
   /// What's left of [event] from [start] to [end], as a new event: what
   /// was done there and who it was with, not what was said of it.
   static Map<String, Object?> _rest(Event event, DateTime start, DateTime end) {

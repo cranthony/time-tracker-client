@@ -64,6 +64,15 @@ abstract class EventsRepository {
     bool allowCompactedChanges = false,
   });
 
+  /// Makes the changes [over] says to the events in a stretch of time --
+  /// cancelling, shortening and splitting them -- without a new event:
+  /// all in one `update_event` batch, the cancels as changes of plan.
+  /// Returns the events the server changed.
+  Future<List<Event>> makeRoom(
+    Overwrite over, {
+    bool allowCompactedChanges = false,
+  });
+
   /// Cancels [event], with `delete_event` -- the one way the server
   /// cancels an event (`update_event` won't). With
   /// [countsAgainstFollowThrough], the server records it against the
@@ -177,12 +186,28 @@ class McpEventsRepository implements EventsRepository {
     Map<String, Object?> fields,
     Overwrite over, {
     bool allowCompactedChanges = false,
+  }) => _change(
+    over,
+    created: {for (final MapEntry(:key, :value) in fields.entries) key: ?value},
+    allowCompactedChanges: allowCompactedChanges,
+  );
+
+  @override
+  Future<List<Event>> makeRoom(
+    Overwrite over, {
+    bool allowCompactedChanges = false,
+  }) => _change(over, allowCompactedChanges: allowCompactedChanges);
+
+  /// [over]'s changes, and [created] if there's a new event, as one
+  /// `update_event` batch.
+  Future<List<Event>> _change(
+    Overwrite over, {
+    Map<String, Object?>? created,
+    required bool allowCompactedChanges,
   }) async {
     final result = await _client.callTool('update_event', {
-      'creates': [
-        {for (final MapEntry(:key, :value) in fields.entries) key: ?value},
-        ...over.creates,
-      ],
+      if (created != null || over.creates.isNotEmpty)
+        'creates': [?created, ...over.creates],
       if (over.updates.isNotEmpty)
         'updates': [
           for (final (event, changes) in over.updates)
@@ -360,8 +385,13 @@ class InMemoryEventsRepository implements EventsRepository {
     Map<String, Object?> fields,
     Overwrite over, {
     bool allowCompactedChanges = false,
+  }) async => [...await createEvent(fields), ...await makeRoom(over)];
+
+  @override
+  Future<List<Event>> makeRoom(
+    Overwrite over, {
+    bool allowCompactedChanges = false,
   }) async => [
-    ...await createEvent(fields),
     for (final (event, changes) in over.updates)
       ...await updateEvent(event, changes),
     for (final event in over.cancels) ...await deleteEvent(event),
