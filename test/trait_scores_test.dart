@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/habit.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/trait.dart';
@@ -545,6 +546,217 @@ void main() {
       expect(scores.eventsBehind(scores.rating('sam')!.traits.single).keys, [
         'dinner',
       ]);
+    });
+  });
+
+  group('habits', () {
+    // Guitar, a group: Play guitar and Practice guitar. And Walk.
+    const parents = {'play': 'guitar', 'practice': 'guitar'};
+    String? parentOf(String id) => parents[id];
+    const guitar = Habit(id: 'h', name: 'Practice', actionId: 'guitar');
+
+    TraitScore score(
+      List<Part> parts,
+      List<Event> events, {
+      Habit habit = guitar,
+    }) => scoreSubject(
+      Subject.habit(habit),
+      [_trait(parts)],
+      _start,
+      _end,
+      events,
+      parentOf: parentOf,
+    ).single;
+
+    test("read their judgments under habit:<id>, of Self's events in "
+        'their group', () {
+      final events = [
+        _event(
+          'practice',
+          1,
+          actions: ['practice'],
+          judgments: _judged('habit:h', 2),
+        ),
+        _event('play', 2, actions: ['play'], judgments: _judged('habit:h', 0)),
+        // Out of it, though judged for it.
+        _event('walk', 3, actions: ['walk'], judgments: _judged('habit:h', 0)),
+        // Self's judgment, not the habit's.
+        _event(
+          'self',
+          4,
+          actions: ['practice'],
+          judgments: _judged(selfPersonId, 0),
+        ),
+      ];
+
+      final over = score([_judgment], events);
+      expect(over.score, 50);
+      expect(over.parts.single.eventIds, ['practice', 'play']);
+      // On one action alone, only its events.
+      expect(
+        score(
+          [_judgment],
+          events,
+          habit: const Habit(id: 'h', name: 'Practice', actionId: 'practice'),
+        ).score,
+        100,
+      );
+    });
+
+    test("count their events; a part's own action narrows them, never "
+        'widens them', () {
+      final events = [
+        _event('practice', 1, actions: ['practice']),
+        _event('play', 2, actions: ['play']),
+        _event('walk', 3, actions: ['walk']),
+      ];
+
+      expect(
+        score([
+          {'kind': 'count', 'target': 2},
+        ], events).score,
+        100,
+      );
+      expect(
+        score([
+          {'kind': 'count', 'target': 2, 'action': 'practice'},
+        ], events).score,
+        50,
+      );
+      expect(
+        score([
+          {'kind': 'count', 'target': 2, 'action': 'walk'},
+        ], events).score,
+        0,
+      );
+    });
+
+    test('follow through by their own cancellations', () {
+      final habit = guitar.withCancelledEvents([
+        CancelledEvent(
+          start: _start.add(const Duration(hours: 19)),
+          end: _start.add(const Duration(hours: 20)),
+          actionIds: const ['practice'],
+        ),
+      ]);
+
+      final scored = score(
+        [
+          {'kind': 'follow_through'},
+        ],
+        [
+          _event('walk', 0.5, actions: ['walk']),
+        ],
+        habit: habit,
+      );
+      expect(scored.score, 75);
+      expect(scored.parts.single.said, '1 cancelled (−25) that day, from 100');
+      // Without its own, nothing's cancelled.
+      expect(
+        score([
+          {'kind': 'follow_through'},
+        ], const []).score,
+        100,
+      );
+    });
+
+    test("leave out parts for someone: they're always with you", () {
+      final events = [
+        _event(
+          'practice',
+          1,
+          actions: ['practice'],
+          judgments: {
+            'habit:h': {
+              't': {
+                'judgment#2': {'rating': 2, 'scale': 2},
+              },
+            },
+          },
+        ),
+      ];
+
+      final scored = score([
+        {..._judgment, 'engagement_type': 'for'},
+        _judgment,
+      ], events);
+      // Keyed among all its parts, as the server judges them.
+      expect([for (final p in scored.parts) p.key], ['judgment#2']);
+      expect(scored.score, 100);
+      expect(
+        scoreSubject(
+          Subject.habit(guitar),
+          [
+            _trait([
+              {..._judgment, 'engagement_type': 'for'},
+            ]),
+          ],
+          _start,
+          _end,
+          events,
+          parentOf: parentOf,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('are scored beside people, but not in a trait\'s day', () {
+      final today = DateTime(2026, 10, 8);
+      final scores = TraitScores.compute(
+        traits: [
+          _trait([_judgment]),
+          const Trait(
+            id: 'for',
+            name: 'For',
+            parts: [
+              {
+                'kind': 'judgment',
+                'engagement_type': 'for',
+                'rubric': 'For them?',
+                'ratings': {'0': 'No', '1': 'Yes'},
+              },
+            ],
+          ),
+        ],
+        people: const [_self],
+        habits: [
+          guitar,
+          const Habit(
+            id: 'old',
+            name: 'Old',
+            actionId: 'guitar',
+            status: 'archived',
+          ),
+        ],
+        events: [
+          Event.fromJson({
+            'id': 'practice',
+            'start': localIsoTimestamp(DateTime(2026, 10, 6, 18)),
+            'end': localIsoTimestamp(DateTime(2026, 10, 6, 19)),
+            'action_ids': ['practice'],
+            'judgments': {
+              ..._judged('habit:h', 1),
+              ..._judged(selfPersonId, 2),
+            },
+          }),
+          Event.fromJson({
+            'id': 'walk',
+            'start': localIsoTimestamp(DateTime(2026, 10, 6, 20)),
+            'end': localIsoTimestamp(DateTime(2026, 10, 6, 21)),
+            'action_ids': ['walk'],
+          }),
+        ],
+        today: today,
+        parentOf: parentOf,
+      );
+
+      expect(scores.health('habit:h'), 50);
+      expect(scores.healthTrend('habit:h').last, 50);
+      expect(scores.rating('habit:h')!.leftOut, ['For']);
+      expect(scores.health('habit:old'), isNull);
+      expect(scores.history.last.people, {selfPersonId: 100});
+      expect(scores.digest('habit:h').eventsCounted, 1);
+      expect(scores.digest('habit:h').actions.single.label, 'practice');
     });
   });
 }

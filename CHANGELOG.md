@@ -6,6 +6,22 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.14.0
+
+- Habits are scored, as people are: each trait that applies to one, for
+  each of the last 7 days, from your events with its action -- or any
+  action under its group, as the tree is now -- Claude's judgments of
+  them for the habit, and the cancellations that count against it. A
+  part that reads events done for someone is left out, and a trait with
+  no other part isn't scored for it.
+- A habit's page shows its health -- on track, needing attention or off
+  track -- with its last 8 days; each trait's score, with its trend,
+  tapping one for how it was reached; and its events.
+- An event's notes name Claude's judgments of it for a habit by the
+  habit: "Practice guitar (habit)".
+- People score as before; a trait's health is still everyone's mean,
+  without the habits.
+
 ## 7.13.0
 
 - Habits: what you want to do well, each about one action -- or every

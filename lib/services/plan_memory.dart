@@ -61,8 +61,9 @@ class PlanMemory extends ChangeNotifier {
   static const scoredDays = 7;
 
   /// Everyone's traits scored for each of the last [scoredDays] days, from
-  /// [eventStore]'s events; null until the traits and people are loaded.
-  /// Worked out again only when something it's from changes.
+  /// [eventStore]'s events -- Self's habits' too, once they're loaded --
+  /// null until the traits and people are loaded. Worked out again only
+  /// when something it's from changes.
   TraitScores? get scores {
     final traits = this.traits, people = this.people, store = _eventStore;
     if (traits == null || people == null || store == null) return null;
@@ -73,6 +74,7 @@ class PlanMemory extends ChangeNotifier {
       people,
       actions,
       DateTime(now.year, now.month, now.day),
+      habits,
     );
     if (_scores case (final kept, final scores) when _same(kept, key)) {
       return scores;
@@ -86,6 +88,7 @@ class PlanMemory extends ChangeNotifier {
     final scores = TraitScores.compute(
       traits: traits,
       people: people.withSelf,
+      habits: habits ?? const [],
       events: store.between(
         span?.$1 ?? today,
         span == null ? today : span.$2.add(const Duration(days: 1)),
@@ -106,7 +109,8 @@ class PlanMemory extends ChangeNotifier {
       identical(a.$2, b.$2) &&
       identical(a.$3, b.$3) &&
       identical(a.$4, b.$4) &&
-      a.$5 == b.$5;
+      a.$5 == b.$5 &&
+      identical(a.$6, b.$6);
 
   /// The saved notes not yet compacted; null until they're loaded.
   List<Note>? notes;
@@ -211,16 +215,17 @@ class PlanMemory extends ChangeNotifier {
     );
   }
 
-  /// Loads everyone, every location and every trait -- from what was kept
-  /// from the app's last run, then afresh -- for what names them: an
-  /// event's people, location and judgments. Best effort; [onLoaded] is
-  /// called as each comes in.
+  /// Loads everyone, every location, every trait and Self's habits --
+  /// from what was kept from the app's last run, then afresh -- for what
+  /// names them: an event's people, location and judgments. Best effort;
+  /// [onLoaded] is called as each comes in.
   Future<void> prefetchNames({
     TraitsRepository? traits,
     PeopleRepository? people,
+    HabitsRepository? habits,
     VoidCallback? onLoaded,
   }) async {
-    await loadKept(traits: traits, people: people);
+    await loadKept(traits: traits, people: people, habits: habits);
     onLoaded?.call();
     Future<void> quietly(Future<void>? loading) async {
       try {
@@ -235,6 +240,7 @@ class PlanMemory extends ChangeNotifier {
       quietly(traits == null ? null : loadTraits(traits)),
       quietly(people == null ? null : loadPeople(people)),
       quietly(people == null ? null : loadLocations(people)),
+      quietly(habits == null ? null : loadHabits(habits)),
     ]);
   }
 
@@ -308,6 +314,8 @@ class PlanMemory extends ChangeNotifier {
         if (t.status == 'active') ...t.parts,
       for (final p in this.people?.withSelf ?? const <Person>[])
         for (final parts in p.traits.parts.values) ...parts,
+      for (final h in this.habits ?? const <Habit>[])
+        for (final parts in h.traits.parts.values) ...parts,
     ]);
     await quietly(
       store.warm(back: scoredDays + reached.back + 1, ahead: reached.ahead),
@@ -369,4 +377,11 @@ class PlanMemoryScope extends InheritedWidget {
       memory != oldWidget.memory;
 }
 
-typedef _ScoresKey = (int, List<Trait>, PeopleList, ActionList?, DateTime);
+typedef _ScoresKey = (
+  int,
+  List<Trait>,
+  PeopleList,
+  ActionList?,
+  DateTime,
+  List<Habit>?,
+);

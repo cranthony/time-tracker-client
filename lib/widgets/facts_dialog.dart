@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/facts.dart';
+import '../models/habit.dart';
 import '../models/person.dart';
 import '../models/proposal.dart';
 import '../services/people_repository.dart';
@@ -231,7 +232,7 @@ class _FactsDialogState extends State<_FactsDialog> {
                     ),
                     for (final j in widget.judgments)
                       Text(
-                        '${_name(everyone, j.personId)} · '
+                        '${_name(everyone, j.personId, _habits)} · '
                         '${widget.traitNames[j.traitId] ?? j.traitId}: '
                         '${j.rating}${j.scale == null ? '' : ' of ${j.scale}'}'
                         '${j.reasoning == null ? '' : ' — ${j.reasoning}'}',
@@ -284,11 +285,24 @@ class _FactsDialogState extends State<_FactsDialog> {
     );
   }
 
-  static String _name(List<Person> people, String id) =>
-      switch (people.where((p) => p.id == id).firstOrNull) {
-        final p? => personName(p),
-        null => id,
+  /// Self's habits, as far as they're loaded, for the judgments of them.
+  List<Habit> get _habits =>
+      PlanMemoryScope.of(context)?.habits ?? const <Habit>[];
+
+  /// Who [id] names, among [people], or which of [habits]: "Practice
+  /// guitar (habit)".
+  static String _name(List<Person> people, String id, List<Habit> habits) {
+    if (habitIdOf(id) case final habitId?) {
+      return switch (habits.where((h) => h.id == habitId).firstOrNull) {
+        final h? => '${habitName(h)} (habit)',
+        null => 'A habit',
       };
+    }
+    return switch (people.where((p) => p.id == id).firstOrNull) {
+      final p? => personName(p),
+      null => id,
+    };
+  }
 
   /// Everyone in [people], as chips, those in [picked] selected; picking
   /// one takes them out of [other], since no one is both there and not.

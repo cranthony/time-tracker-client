@@ -165,6 +165,9 @@ class _PersonScreenState extends State<PersonScreen> {
         habit: habit,
         actions: widget.actions,
         traits: _traitList,
+        memory: widget.memory,
+        personNames: widget.personNames,
+        locationNames: widget.locationNames,
         onEdit: _editHabit,
       ),
     ),
@@ -343,68 +346,15 @@ class _PersonScreenState extends State<PersonScreen> {
     ];
   }
 
-  List<Widget> _traits(BuildContext context) {
-    final theme = Theme.of(context);
-    final scores = _scores;
-    if (scores == null) return [_padded(const LinearProgressIndicator())];
-    final rating = scores.rating(_person.id);
-    if (rating == null || rating.traits.isEmpty) {
-      return [
-        _padded(
-          Text(
-            'Not rated: no active trait applies to them.',
-            style: TextStyle(color: theme.hintColor),
-          ),
-        ),
-      ];
-    }
-    return [
-      _padded(
-        Text(
-          '${rating.rating ?? 'Skipped'}'
-          '${rating.day == null ? '' : ' · ${rating.day}'}',
-          style: theme.textTheme.headlineSmall,
-        ),
-      ),
-      for (final score in rating.traits)
-        ListTile(
-          title: Text(
-            score.weight == 1 ? score.name : '${score.name} ×${score.weight}',
-          ),
-          subtitle: Text(
-            [
-              for (final part in score.parts)
-                '${_partLabel(part)} ${part.score ?? '–'}',
-            ].join(' · '),
-          ),
-          trailing: Text(
-            score.score == null ? '–' : '${score.score}',
-            style: theme.textTheme.titleMedium,
-          ),
-          onTap: () => showTraitParts(
-            context,
-            score,
-            labels: [for (final part in score.parts) _partLabel(part)],
-            title: rating.day,
-            events: scores.eventsBehind(score),
-            personNames: widget.personNames,
-            locationNames: widget.locationNames,
-          ),
-        ),
-      if (rating.leftOut.isNotEmpty)
-        _padded(
-          Text(
-            'Not rated: ${rating.leftOut.join(', ')} (off, archived, or not '
-            'theirs).',
-            style: theme.textTheme.bodySmall,
-          ),
-        ),
-    ];
-  }
-
-  /// A part's name: a judgment's rubric, else its kind's.
-  static String _partLabel(PartScore part) =>
-      part.rubric ?? partKinds[part.kind]?.label ?? part.key;
+  List<Widget> _traits(BuildContext context) => traitScoreTiles(
+    context,
+    _scores,
+    _person.id,
+    whom: 'them',
+    why: 'off, archived, or not theirs',
+    personNames: widget.personNames,
+    locationNames: widget.locationNames,
+  );
 
   List<Widget> _history(ThemeData theme) {
     final digest = _scores?.digest(_person.id);
@@ -437,35 +387,14 @@ class _PersonScreenState extends State<PersonScreen> {
     ];
   }
 
-  List<Widget> _timeline(ThemeData theme) {
-    final digest = _scores?.digest(_person.id);
-    if (digest == null) return [_padded(const LinearProgressIndicator())];
-    if (digest.events.isEmpty) {
-      return [_padded(const Text('No events in this window.'))];
-    }
-    return [
-      for (final event in digest.events.reversed)
-        ListTile(
-          dense: true,
-          title: Text('${event['summary'] ?? '(no title)'}'),
-          subtitle: Text(
-            [
-              _when(event),
-              if ((event['action_ids'] as List?)?.isNotEmpty ?? false)
-                [
-                  for (final id in event['action_ids'] as List)
-                    widget.actionNames['$id'] ?? '$id',
-                ].join(', '),
-              if (Facts.fromJson(event['facts']) case final facts?
-                  when !facts.isEmpty) ...[
-                facts.describe(widget.personNames, widget.locationNames),
-                if (facts.notes[_person.id] case final note?) '“$note”',
-              ],
-            ].where((line) => line.isNotEmpty).join('\n'),
-          ),
-        ),
-    ];
-  }
+  List<Widget> _timeline(ThemeData theme) => eventTiles(
+    context,
+    _scores?.digest(_person.id),
+    noteOf: _person.id,
+    actionNames: widget.actionNames,
+    personNames: widget.personNames,
+    locationNames: widget.locationNames,
+  );
 
   /// The events the user cancelled that count against their
   /// follow-through.
@@ -478,14 +407,6 @@ class _PersonScreenState extends State<PersonScreen> {
     traitList: _traitList,
     actionNames: widget.actionNames,
   );
-
-  String _when(Map<String, dynamic> event) {
-    final start = DateTime.tryParse('${event['start']}')?.toLocal();
-    if (start == null) return '';
-    final localizations = MaterialLocalizations.of(context);
-    return '${localizations.formatMediumDate(start)}, '
-        '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(start))}';
-  }
 
   Widget _heading(ThemeData theme, String text) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
@@ -589,6 +510,155 @@ List<Widget> cancelledTiles(
               'Counts against '
                   '${c.traitIds.map((id) => traitList[id]?.name ?? id).join(', ')}',
           ].join('\n'),
+        ),
+      ),
+  ];
+}
+
+/// [subjectId]'s scores of the last day from [scores] -- a person's, or a
+/// habit's: its rating, then each trait's score and its parts', with the
+/// trait's trend over the days scored if [trends], tapping one showing
+/// how it was reached ([showTraitParts]); and the traits not rated.
+/// [whom] says who they are, "them" or "it"; [why], why a trait
+/// isn't rated for them.
+List<Widget> traitScoreTiles(
+  BuildContext context,
+  TraitScores? scores,
+  String subjectId, {
+  required String whom,
+  required String why,
+  bool trends = false,
+  HealthScale scale = HealthScale.relationship,
+  Map<String?, String> personNames = const {},
+  Map<String?, String> locationNames = const {},
+}) {
+  final theme = Theme.of(context);
+  Widget padded(Widget child) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    child: child,
+  );
+  if (scores == null) return [padded(const LinearProgressIndicator())];
+  final rating = scores.rating(subjectId);
+  if (rating == null || rating.traits.isEmpty) {
+    return [
+      padded(
+        Text(
+          'Not rated: no active trait applies to $whom.',
+          style: TextStyle(color: theme.hintColor),
+        ),
+      ),
+    ];
+  }
+  String label(PartScore part) =>
+      part.rubric ?? partKinds[part.kind]?.label ?? part.key;
+  List<int?> trend(String traitId) => [
+    for (final day in scores.days)
+      scores
+          .rating(subjectId, day)
+          ?.traits
+          .where((t) => t.traitId == traitId)
+          .firstOrNull
+          ?.score,
+  ];
+  return [
+    padded(
+      Text(
+        '${rating.rating ?? 'Skipped'}'
+        '${rating.day == null ? '' : ' · ${rating.day}'}',
+        style: theme.textTheme.headlineSmall,
+      ),
+    ),
+    for (final score in rating.traits)
+      ListTile(
+        title: Text(
+          score.weight == 1 ? score.name : '${score.name} ×${score.weight}',
+        ),
+        subtitle: Text(
+          [
+            for (final part in score.parts)
+              '${label(part)} ${part.score ?? '–'}',
+          ].join(' · '),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (trends)
+              if (trend(score.traitId) case final days
+                  when days.nonNulls.length > 1) ...[
+                TrendSparkline(trend: days, scale: scale),
+                const SizedBox(width: 8),
+              ],
+            Text(
+              score.score == null ? '–' : '${score.score}',
+              style: theme.textTheme.titleMedium,
+            ),
+          ],
+        ),
+        onTap: () => showTraitParts(
+          context,
+          score,
+          labels: [for (final part in score.parts) label(part)],
+          title: rating.day,
+          events: scores.eventsBehind(score),
+          personNames: personNames,
+          locationNames: locationNames,
+        ),
+      ),
+    if (rating.leftOut.isNotEmpty)
+      padded(
+        Text(
+          'Not rated: ${rating.leftOut.join(', ')} ($why).',
+          style: theme.textTheme.bodySmall,
+        ),
+      ),
+  ];
+}
+
+/// The events in [digest], latest first: each one's title, when, what
+/// was done, and who and where, with its note on [noteOf].
+List<Widget> eventTiles(
+  BuildContext context,
+  PersonDigest? digest, {
+  String? noteOf,
+  Map<String?, String> actionNames = const {},
+  Map<String?, String> personNames = const {},
+  Map<String?, String> locationNames = const {},
+}) {
+  Widget padded(Widget child) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    child: child,
+  );
+  if (digest == null) return [padded(const LinearProgressIndicator())];
+  if (digest.events.isEmpty) {
+    return [padded(const Text('No events in this window.'))];
+  }
+  final localizations = MaterialLocalizations.of(context);
+  String when(Map<String, dynamic> event) {
+    final start = DateTime.tryParse('${event['start']}')?.toLocal();
+    if (start == null) return '';
+    return '${localizations.formatMediumDate(start)}, '
+        '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(start))}';
+  }
+
+  return [
+    for (final event in digest.events.reversed)
+      ListTile(
+        dense: true,
+        title: Text('${event['summary'] ?? '(no title)'}'),
+        subtitle: Text(
+          [
+            when(event),
+            if ((event['action_ids'] as List?)?.isNotEmpty ?? false)
+              [
+                for (final id in event['action_ids'] as List)
+                  actionNames['$id'] ?? '$id',
+              ].join(', '),
+            if (Facts.fromJson(event['facts']) case final facts?
+                when !facts.isEmpty) ...[
+              facts.describe(personNames, locationNames),
+              if (facts.notes[noteOf] case final note?) '“$note”',
+            ],
+          ].where((line) => line.isNotEmpty).join('\n'),
         ),
       ),
   ];

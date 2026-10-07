@@ -1,4 +1,5 @@
-/// Scoring a person's traits for a day, from their events: each part
+/// Scoring a subject's traits for a day -- a person's, or one of Self's
+/// habits' -- from their events: each part
 /// 0-100, each trait the weighted mean of its parts (leaving out any with
 /// nothing to rate it by), over a trailing window that ends with the day.
 /// A port of the server's utilities/trait_scores.py, worked out in the
@@ -10,9 +11,16 @@
 /// for them while they weren't there). A part reads one or the other by
 /// its `engagement_type`.
 ///
+/// **A habit's events** are Self's with its action, or with any action
+/// under its group, worked out from the action tree as it is now. Its
+/// judgments are those under `habit:<id>`. The user is at every one, so
+/// its parts that read events done for someone are left out; a trait
+/// with no others isn't scored for it.
+///
 /// **Their cancellations** aren't read off the calendar: they're the ones
-/// the server recorded for each person when the user cancelled an event
-/// they were to be at, or for ([Person.cancelledEvents]).
+/// the server recorded for each person, or habit, when the user cancelled
+/// an event they were to be at, or for ([Person.cancelledEvents],
+/// [Habit.cancelledEvents]).
 ///
 /// | kind             | scores                                              |
 /// | ---------------- | --------------------------------------------------- |
@@ -41,6 +49,7 @@ import 'dart:math' as math;
 
 import 'event.dart';
 import 'facts.dart';
+import 'habit.dart';
 import 'person.dart';
 import 'trait.dart';
 
@@ -74,15 +83,61 @@ List<String> partKeys(List<Part> parts) {
   ];
 }
 
-/// The active traits that apply to [person] -- those their traits select,
-/// by default all -- each with its parts for them (their own, if they
-/// replace the trait's).
-List<(Trait, List<Part>)> traitsFor(Person person, List<Trait> traits) => [
+/// Who or what is scored: a person (Self among them), by their id, or
+/// one of Self's habits, by `habit:<id>` -- which traits apply to them,
+/// with their own parts for any, the cancellations recorded against
+/// them, and, for a habit, the action or group whose events are its.
+class Subject {
+  const Subject({
+    required this.id,
+    this.traits = const PersonTraits(),
+    this.cancelledEvents = const [],
+    this.active = true,
+    this.scope,
+  });
+
+  factory Subject.person(Person person) => Subject(
+    id: person.id,
+    traits: person.traits,
+    cancelledEvents: person.cancelledEvents,
+    active: person.active,
+  );
+
+  factory Subject.habit(Habit habit) => Subject(
+    id: habit.subject,
+    traits: habit.traits,
+    cancelledEvents: habit.cancelledEvents,
+    active: habit.active,
+    scope: habit.actionId,
+  );
+
+  /// Who their judgments on an event are of.
+  final String id;
+  final PersonTraits traits;
+  final List<CancelledEvent> cancelledEvents;
+
+  /// Whether they're scored.
+  final bool active;
+
+  /// For a habit, the action or group whose events are its; null for a
+  /// person.
+  final String? scope;
+
+  bool get isHabit => scope != null;
+
+  /// Whether [part] reads their events: a habit's are all "with".
+  bool reads(Part part) => !isHabit || part['engagement_type'] != 'for';
+}
+
+/// The active traits that apply to [subject] -- those their traits
+/// select, by default all -- each with its parts for them (their own, if
+/// they replace the trait's).
+List<(Trait, List<Part>)> traitsFor(Subject subject, List<Trait> traits) => [
   for (final trait in traits)
     if (trait.status == 'active' &&
         trait.id != null &&
-        person.traits.applies(trait.id!))
-      (trait, person.traits.parts[trait.id] ?? trait.parts),
+        subject.traits.applies(trait.id!))
+      (trait, subject.traits.parts[trait.id] ?? trait.parts),
 ];
 
 /// How many days before a day's end, and after it, [parts] read events.
@@ -125,21 +180,48 @@ List<TraitScore> scorePerson(
   DateTime end,
   List<Event> events, {
   String? Function(String id)? parentOf,
+}) => scoreSubject(
+  Subject.person(person),
+  traits,
+  start,
+  end,
+  events,
+  parentOf: parentOf,
+);
+
+/// [subject]'s score of each trait that applies to them, as
+/// [scorePerson]'s: a habit's from its events, leaving out the parts it
+/// doesn't read, and any trait left with none.
+List<TraitScore> scoreSubject(
+  Subject subject,
+  List<Trait> traits,
+  DateTime start,
+  DateTime end,
+  List<Event> events, {
+  String? Function(String id)? parentOf,
 }) => [
-  for (final (trait, parts) in traitsFor(person, traits))
-    () {
-      final keys = partKeys(parts);
-      final scores = [
-        for (var i = 0; i < parts.length; i++)
-          _part(person, trait.id!, parts[i], keys[i], end, events, parentOf),
-      ];
-      return TraitScore(
-        traitId: trait.id!,
-        name: trait.name,
-        score: _weightedMean([for (final p in scores) (p.score, p.weight)]),
-        parts: scores,
-      );
-    }(),
+  for (final (trait, parts) in traitsFor(subject, traits))
+    if (_read(subject, parts) case final read when read.isNotEmpty)
+      () {
+        // Keyed among all its parts, as its judgments are.
+        final keys = partKeys(parts);
+        final scores = [
+          for (final i in read)
+            _part(subject, trait.id!, parts[i], keys[i], end, events, parentOf),
+        ];
+        return TraitScore(
+          traitId: trait.id!,
+          name: trait.name,
+          score: _weightedMean([for (final p in scores) (p.score, p.weight)]),
+          parts: scores,
+        );
+      }(),
+];
+
+/// Which of [parts] [subject] reads, by index.
+List<int> _read(Subject subject, List<Part> parts) => [
+  for (var i = 0; i < parts.length; i++)
+    if (subject.reads(parts[i])) i,
 ];
 
 /// The weighted mean of [scores] with a score; null if none has one.
@@ -153,8 +235,19 @@ int? _weightedMean(List<(int?, num)> scores) {
   return (rated.fold<num>(0, (sum, s) => sum + s.$1 * s.$2) / total).round();
 }
 
-/// The events [personId] took part in by [engagement].
-List<Event> _engaged(String personId, String engagement, List<Event> events) {
+/// The events [subject] took part in by [engagement]: for a habit, those
+/// in its scope.
+List<Event> _engaged(
+  Subject subject,
+  String engagement,
+  List<Event> events,
+  String? Function(String id)? parentOf,
+) {
+  final personId = subject.id;
+  if (subject.scope case final scope?) {
+    if (engagement != 'with' || scope.isEmpty) return const [];
+    return _ofAction(events, scope, parentOf);
+  }
   if (engagement == 'with' && personId == selfPersonId) return events;
   return [
     for (final e in events)
@@ -202,7 +295,7 @@ num _num(Object? value, num fallback) => value is num ? value : fallback;
 String _g(num n) => n == n.roundToDouble() ? '${n.round()}' : '$n';
 
 PartScore _part(
-  Person person,
+  Subject subject,
   String traitId,
   Part part,
   String key,
@@ -225,7 +318,7 @@ PartScore _part(
   final weight = _num(part['weight'], 1);
   final rubric = part['rubric'] as String?;
   final engagement = part['engagement_type'] as String? ?? 'with';
-  var engaged = _engaged(person.id, engagement, events);
+  var engaged = _engaged(subject, engagement, events, parentOf);
 
   PartScore score(int? value, String said, List<Event> behind) => PartScore(
     key: key,
@@ -249,7 +342,7 @@ PartScore _part(
           e.properties['judgments'],
           eventId: e.id,
         )) {
-          if (j.personId == person.id &&
+          if (j.personId == subject.id &&
               j.traitId == traitId &&
               j.part == key &&
               (j.scale ?? 0) > 0) {
@@ -315,7 +408,7 @@ PartScore _part(
     default: // follow_through
       engaged = _ofAction(engaged, part['action'] as String?, parentOf);
       final dropped = [
-        for (final c in person.cancelledEvents)
+        for (final c in subject.cancelledEvents)
           if (c.engagement == engagement &&
               _isOf(c.actionIds, part['action'] as String?, parentOf))
             c,
@@ -516,7 +609,8 @@ String _ago(Duration gap) {
 /// over, from the events the app has: each person's rating of a day (the
 /// mean of their traits' scores), each trait's (the mean of everyone's
 /// scores of it), and each person's history -- what was done at their
-/// events and where. Worked out once, from what was loaded; work it out
+/// events and where. Self's habits are scored as people are, by
+/// `habit:<id>`, but not counted in a trait's score of a day. Worked out once, from what was loaded; work it out
 /// again when that changes.
 class TraitScores {
   TraitScores._(
@@ -528,12 +622,15 @@ class TraitScores {
     this._events,
   );
 
-  /// Scores [people] (Self among them) by [traits] for the [days] days
-  /// before [today]'s, from [events]. [parentOf] gives an action's group.
-  /// [windowDays] is how far back [events] go, for [digest] to say.
+  /// Scores [people] (Self among them), and Self's [habits], by [traits]
+  /// for the [days] days before [today]'s, from [events]. [parentOf]
+  /// gives an action's group, as it is now: a habit's events are worked
+  /// out from it. [windowDays] is how far back [events] go, for [digest]
+  /// to say.
   factory TraitScores.compute({
     required List<Trait> traits,
     required List<Person> people,
+    List<Habit> habits = const [],
     required List<Event> events,
     required DateTime today,
     String? Function(String id)? parentOf,
@@ -552,15 +649,25 @@ class TraitScores {
     ];
     final ratings = <String, List<TraitsRating>>{};
     final eventsOf = <String, List<Event>>{};
-    for (final person in people) {
-      if (!person.active) continue;
-      ratings[person.id] = [
+    final subjects = [
+      for (final person in people) Subject.person(person),
+      for (final habit in habits) Subject.habit(habit),
+    ];
+    for (final subject in subjects) {
+      if (!subject.active) continue;
+      ratings[subject.id] = [
         for (var i = 0; i < starts.length; i++)
-          _rate(person, traits, starts[i], keys[i], kept, parentOf),
+          _rate(subject, traits, starts[i], keys[i], kept, parentOf),
       ];
-      eventsOf[person.id] = [
-        for (final e in kept)
-          if (e.start.isBefore(today) && _involves(person.id, e)) e,
+      final involved = subject.isHabit
+          ? _engaged(subject, 'with', kept, parentOf)
+          : [
+              for (final e in kept)
+                if (_involves(subject.id, e)) e,
+            ];
+      eventsOf[subject.id] = [
+        for (final e in involved)
+          if (e.start.isBefore(today)) e,
       ];
     }
     final history = <TraitDay>[];
@@ -569,6 +676,7 @@ class TraitScores {
       for (var i = 0; i < keys.length; i++) {
         final scores = <String, int>{};
         for (final MapEntry(key: id, value: rated) in ratings.entries) {
+          if (habitIdOf(id) != null) continue;
           final score = rated[i].traits
               .where((t) => t.traitId == trait.id)
               .firstOrNull
@@ -591,7 +699,7 @@ class TraitScores {
   }
 
   static TraitsRating _rate(
-    Person person,
+    Subject subject,
     List<Trait> traits,
     DateTime start,
     String day,
@@ -599,8 +707,8 @@ class TraitScores {
     String? Function(String id)? parentOf,
   ) {
     final end = DateTime(start.year, start.month, start.day + 1);
-    final scores = scorePerson(
-      person,
+    final scores = scoreSubject(
+      subject,
       traits,
       start,
       end,
@@ -612,7 +720,12 @@ class TraitScores {
       traits: scores,
       leftOut: [
         for (final t in traits)
-          if (t.status != 'active' || !person.traits.applies(t.id ?? ''))
+          if (t.status != 'active' ||
+              !subject.traits.applies(t.id ?? '') ||
+              // A habit's, with no part it reads.
+              (subject.isHabit &&
+                  t.id != null &&
+                  !scores.any((s) => s.traitId == t.id)))
             t.name,
       ],
       day: day,
