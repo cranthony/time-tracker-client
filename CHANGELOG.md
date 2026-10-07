@@ -12,10 +12,10 @@ on. Add the new version's section here at the same time; CI checks both.
   buttons (pinch to zoom); tapping a blank space does nothing. Drag the
   + onto the timeline to put a cursor where it's dropped, or tap it for
   one at now (or the middle of what's in view). In the cursor's middle,
-  a + with an arrow down, below it, starts an event there, and a + with
-  an arrow up, above it, ends one there: tap one for an hour, or drag it
-  to where the other end goes, which puts a second cursor there. The
-  event is always between the two cursors; each cursor's handle, at its
+  a + with an arrow down, below it, puts a second cursor an hour later
+  each tap, and a + with an arrow up, above it, an hour earlier -- or
+  either is dragged to where the second cursor goes. The event is
+  always between the two cursors; each cursor's handle, at its
   right, moves it alone, and a bigger, fainter handle in the event moves
   both. While the cursor's up, tapping an event moves the cursor there
   rather than opening it. ✓ opens the new event; ✕ stops.

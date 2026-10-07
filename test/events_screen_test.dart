@@ -1128,9 +1128,11 @@ void main() {
     }
 
     final startHere = find.byTooltip(
-      'Start here: tap, or drag to where it ends',
+      'An hour later: tap to move the other end, or drag it',
     );
-    final endHere = find.byTooltip('End here: tap, or drag to where it starts');
+    final endHere = find.byTooltip(
+      'An hour earlier: tap to move the other end, or drag it',
+    );
 
     /// Taps "+", which puts the cursor at now: noon.
     Future<void> plus(WidgetTester tester) async {
@@ -1434,6 +1436,30 @@ void main() {
         find.text('Event created. 3 other events changed to make room.'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('each tap moves the other cursor an hour, later or earlier', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+
+      // Two below: two hours, from the cursor.
+      await tapButton(tester, startHere);
+      await tapButton(tester, startHere);
+      expect(cursor(tester).shadow, (at(30, 12), at(30, 14)));
+      // Three above: an hour, to it.
+      await tapButton(tester, endHere);
+      expect(cursor(tester).shadow, (at(30, 12), at(30, 13)));
+      await tapButton(tester, endHere);
+      // The cursors together: nothing between them.
+      expect(cursor(tester).other, at(30, 12));
+      expect(cursor(tester).shadow, isNull);
+      expect(continueButton(tester).onPressed, isNull);
+      await tapButton(tester, endHere);
+      expect(cursor(tester).shadow, (at(30, 11), at(30, 12)));
     });
 
     testWidgets('Cancel makes nothing', (tester) async {

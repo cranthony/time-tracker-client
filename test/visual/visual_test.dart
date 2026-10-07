@@ -421,7 +421,7 @@ void main() {
             }
             if (drag != 0) {
               final start = find.byTooltip(
-                'Start here: tap, or drag to where it ends',
+                'An hour later: tap to move the other end, or drag it',
               );
               await tester.drag(
                 start,

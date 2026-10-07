@@ -1349,13 +1349,16 @@ class _EventsScreenState extends State<EventsScreen> {
                                         other: _nearestQuarter(to),
                                       ),
                                     ),
+                                    // An hour further each tap, from
+                                    // the first cursor to start with.
                                     onTap: (end) => setState(
                                       () => _creating = creating.copy(
-                                        other: end == CursorEnd.start
-                                            ? creating.at.add(_newEventLength)
-                                            : creating.at.subtract(
-                                                _newEventLength,
-                                              ),
+                                        other: (creating.other ?? creating.at)
+                                            .add(
+                                              end == CursorEnd.start
+                                                  ? _newEventLength
+                                                  : -_newEventLength,
+                                            ),
                                       ),
                                     ),
                                     onDrag: _dragEnd,

@@ -61,9 +61,10 @@ enum CursorEnd { start, end }
 
 /// The cursors a new event is made between, over a [DayTimeline] for
 /// [day] at [scale]. The first, at [at], has in its middle a button below
-/// it to start an event there and one above it to end one there --
-/// tapped for an hour, or dragged to where its other end goes, which puts
-/// the second cursor, [other], there -- and the [mode] to pick. Each
+/// it, which moves the second cursor, [other], an hour later each tap,
+/// and one above it, an hour earlier -- an hour from the first cursor to
+/// start with -- or puts it where either's dragged to; and the [mode] to
+/// pick. Each
 /// cursor is a line across the timeline with its time at its left and a
 /// handle at its right, which moves it alone. The event, [shadow], is
 /// shaded between them -- tinged red and slowly pulsing where it
@@ -112,7 +113,8 @@ class CreateCursor extends StatefulWidget {
   /// The second cursor's handle dragged to a time.
   final ValueChanged<DateTime>? onMoveOther;
 
-  /// A button tapped: the event to start, or end, at [at].
+  /// A button tapped: the second cursor an hour later, for [CursorEnd.start],
+  /// or earlier.
   final ValueChanged<CursorEnd> onTap;
 
   /// A button dragged to a time: the event to have [end] at [at], and its
@@ -228,14 +230,14 @@ class _CreateCursorState extends State<CreateCursor>
                       colors,
                       CursorEnd.end,
                       Icons.arrow_upward,
-                      'End here: tap, or drag to where it starts',
+                      'An hour earlier: tap to move the other end, or drag it',
                     ),
                     const SizedBox(height: 2 * _buttonGap),
                     _endButton(
                       colors,
                       CursorEnd.start,
                       Icons.arrow_downward,
-                      'Start here: tap, or drag to where it ends',
+                      'An hour later: tap to move the other end, or drag it',
                     ),
                   ],
                 ),
