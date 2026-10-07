@@ -383,7 +383,8 @@ void main() {
     // the events it cancels whole; the choice between them; the new
     // event, overwriting, with its trash to clear the time instead; and,
     // keeping events, the arrow from where the box was put to where it
-    // was moved, part way through.
+    // was moved, part way through; and trimming and pushing, pushing, and
+    // splitting and pushing, the events pushed outlined where they go.
     for (final (name, overwrite, move, drag, dialog, open, arrow) in [
       ('events_new_cursor', null, 0, 0, false, false, false),
       ('events_new_dragged', null, 0, 150, false, false, false),
@@ -409,6 +410,9 @@ void main() {
       ('events_new_modes', null, 0, 0, true, false, false),
       ('events_new_clear', 'Overwrite and trim', 0, 150, false, true, false),
       ('events_new_moved', null, 0, 150, false, false, true),
+      ('events_new_trim_push', 'Trim and push', 0, 150, false, false, false),
+      ('events_new_push', 'Push', 0, 150, false, false, false),
+      ('events_new_split_push', 'Split and push', 0, 150, false, false, false),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
         await render(
@@ -429,6 +433,8 @@ void main() {
               await tester.pumpAndSettle();
             }
             if (overwrite != null) {
+              await tester.ensureVisible(find.text(overwrite));
+              await settle();
               await tester.tap(find.text(overwrite));
               await settle();
             }
