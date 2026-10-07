@@ -83,10 +83,22 @@ Future<CreateMode?> showCreateModeDialog(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Its icon beside its radio, ahead of the text, to pick out.
             for (final mode in CreateMode.values)
-              RadioListTile<CreateMode>(
-                value: mode,
-                secondary: Icon(mode.icon),
+              ListTile(
+                onTap: () => Navigator.of(context).pop(mode),
+                contentPadding: const EdgeInsetsDirectional.only(
+                  start: 12,
+                  end: 24,
+                ),
+                titleAlignment: ListTileTitleAlignment.top,
+                leading: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Radio<CreateMode>(value: mode),
+                    Icon(mode.icon),
+                  ],
+                ),
                 title: Text(mode.label),
                 subtitle: Text(mode.description),
               ),
