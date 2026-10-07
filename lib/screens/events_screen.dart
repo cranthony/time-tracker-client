@@ -696,9 +696,6 @@ class _EventsScreenState extends State<EventsScreen> {
     except: event?.id,
   );
 
-  /// The new event's length, unless the next event starts sooner.
-  static const _newEventLength = Duration(hours: 1);
-
   /// [time] at the nearest quarter hour.
   static DateTime _nearestQuarter(DateTime time) {
     final minutes = time.hour * 60 + time.minute + (time.second >= 30 ? 1 : 0);
@@ -774,20 +771,18 @@ class _EventsScreenState extends State<EventsScreen> {
     null => false,
   };
 
-  /// The cursor's button for [end] dragged to [to]: the other cursor
-  /// there, at least a quarter hour before or after the cursor.
-  void _dragEnd(CursorEnd end, DateTime to) => _changeBox((box) {
+  /// A button on the cursor, its [step] later or earlier, dragged to
+  /// [to]: the other cursor there, at least a quarter hour from the
+  /// cursor on [step]'s side.
+  void _dragStep(Duration step, DateTime to) => _changeBox((box) {
     final cursor = box.cursor;
     final quarter = _nearestQuarter(to);
-    return box.withOther(
-      end == CursorEnd.start
-          ? (quarter.isBefore(cursor.add(OtherEvents.shortest))
-                ? cursor.add(OtherEvents.shortest)
-                : quarter)
-          : (quarter.isAfter(cursor.subtract(OtherEvents.shortest))
-                ? cursor.subtract(OtherEvents.shortest)
-                : quarter),
-    );
+    if (step.isNegative) {
+      final latest = cursor.subtract(OtherEvents.shortest);
+      return box.withOther(quarter.isAfter(latest) ? latest : quarter);
+    }
+    final earliest = cursor.add(OtherEvents.shortest);
+    return box.withOther(quarter.isBefore(earliest) ? earliest : quarter);
   });
 
   /// Opens the new event, as shaded between the cursors.
@@ -1284,18 +1279,14 @@ class _EventsScreenState extends State<EventsScreen> {
                                     (box) => box.movedTo(_nearestQuarter(to)),
                                     moved: true,
                                   ),
-                                  // An hour further each tap, from the
+                                  // A step further each tap, from the
                                   // cursor to start with.
-                                  onTap: (end) => _changeBox(
+                                  onTap: (step) => _changeBox(
                                     (box) => box.withOther(
-                                      (box.other ?? box.cursor).add(
-                                        end == CursorEnd.start
-                                            ? _newEventLength
-                                            : -_newEventLength,
-                                      ),
+                                      (box.other ?? box.cursor).add(step),
                                     ),
                                   ),
-                                  onDrag: _dragEnd,
+                                  onDrag: _dragStep,
                                   onPickMode: _pickCreateMode,
                                 ),
                               ),

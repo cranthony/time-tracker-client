@@ -56,10 +56,6 @@ Future<CreateMode?> showCreateModeDialog(
   ),
 );
 
-/// Which way from the [NewEventBox.cursor] a button moves its other end:
-/// later ([start]: the event starts at the cursor) or earlier ([end]).
-enum CursorEnd { start, end }
-
 /// A new event as it's being made: a box between two cursors -- the one
 /// it was started from, with the buttons ([cursor]), and, once one's been
 /// used, the [other] -- holding the event ([span]).
@@ -164,13 +160,13 @@ class NewEventBoxView extends StatefulWidget {
   /// time given.
   final ValueChanged<DateTime> onMoveBox;
 
-  /// A button tapped: the other cursor an hour later, for
-  /// [CursorEnd.start], or earlier.
-  final ValueChanged<CursorEnd> onTap;
+  /// A button tapped: the other cursor moved by its [step] -- an hour
+  /// later, below the cursor, or earlier, above it.
+  final ValueChanged<Duration> onTap;
 
-  /// A button dragged to a time: the other cursor there, the event to
-  /// have its [end] at the cursor.
-  final void Function(CursorEnd end, DateTime to) onDrag;
+  /// A button dragged to a time: the other cursor there, on the side of
+  /// the cursor its [step] goes.
+  final void Function(Duration step, DateTime to) onDrag;
   final VoidCallback onPickMode;
 
   @override
@@ -244,16 +240,16 @@ class _NewEventBoxViewState extends State<NewEventBoxView> {
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _endButton(
+                    _stepButton(
                       colors,
-                      CursorEnd.end,
+                      -_hour,
                       Icons.arrow_upward,
                       'An hour earlier: tap to move the other end, or drag it',
                     ),
                     const SizedBox(height: 2 * _buttonGap),
-                    _endButton(
+                    _stepButton(
                       colors,
-                      CursorEnd.start,
+                      _hour,
                       Icons.arrow_downward,
                       'An hour later: tap to move the other end, or drag it',
                     ),
@@ -385,13 +381,16 @@ class _NewEventBoxViewState extends State<NewEventBoxView> {
   static const _buttonHeight = 44.0;
   static const _buttonGap = 3.0;
 
-  /// The button moving the other cursor [end]'s way: a "+", with [arrow]
-  /// pointing the way the event goes from the cursor -- up, above the
-  /// line; down, below it. Tapped for an hour; dragged to where the other
-  /// cursor goes.
-  Widget _endButton(
+  /// How far a tap on a button moves the other cursor.
+  static const _hour = Duration(hours: 1);
+
+  /// The button moving the other cursor by [step] -- later, below the
+  /// line, or earlier, above it: a "+", with [arrow] pointing the way the
+  /// event goes from the cursor. Tapped, by [step]; dragged, to where the
+  /// other cursor goes.
+  Widget _stepButton(
     ColorScheme colors,
-    CursorEnd end,
+    Duration step,
     IconData arrow,
     String tooltip,
   ) {
@@ -407,7 +406,7 @@ class _NewEventBoxViewState extends State<NewEventBoxView> {
         onVerticalDragStart: (_) => _dragY = _y(widget.box.cursor),
         onVerticalDragUpdate: (details) {
           _dragY += details.delta.dy;
-          widget.onDrag(end, _time(_dragY));
+          widget.onDrag(step, _time(_dragY));
         },
         child: Material(
           color: colors.primaryContainer,
@@ -417,16 +416,14 @@ class _NewEventBoxViewState extends State<NewEventBoxView> {
           elevation: 2,
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
-            onTap: () => widget.onTap(end),
+            onTap: () => widget.onTap(step),
             child: SizedBox(
               width: 40,
               height: _buttonHeight,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 // The arrow away from the line, the "+" by it.
-                children: end == CursorEnd.end
-                    ? icons.reversed.toList()
-                    : icons,
+                children: step.isNegative ? icons.reversed.toList() : icons,
               ),
             ),
           ),
