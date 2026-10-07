@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.7.0
+
+- While a new event's being made, or one moved, on the Events page, the
+  day before is stacked above the day shown, and the day after below --
+  shaded, with a line at each midnight saying which day's which -- so
+  the box can run across midnight, and events can be pushed on into the
+  next day. What's on screen stays where it is as they come and go.
+
 ## 7.6.0
 
 - Pressing and holding an event on the Events page moves it: the box a

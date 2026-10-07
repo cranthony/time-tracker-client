@@ -226,9 +226,12 @@ class _EventsScreenState extends State<EventsScreen> {
   /// first event, or now: once its events are shown.
   bool _scrollPending = true;
 
-  /// How tall the timeline is, with the days on it: clear of the now and
-  /// zoom buttons at the foot, with room for an event drawn past midnight.
-  double get _height => timelineHeight(_day, _scale) + 170;
+  /// How tall the timeline is, with the days on it: clear of the
+  /// buttons at the foot, with room for an event drawn past midnight.
+  double get _height => timelineSpanHeight(_from, _to, _scale) + _pastFoot;
+
+  /// What's below the last day on the timeline.
+  static const _pastFoot = 170.0;
 
   /// The day shown's events, if they're loaded.
   List<Event>? get _shown => _store.day(_day);
@@ -348,8 +351,8 @@ class _EventsScreenState extends State<EventsScreen> {
         day: _day,
         top: timelineTime(
           _scroll.position.pixels,
-          day: _day,
-          dayEnd: _dayEnd,
+          day: _from,
+          dayEnd: _to,
           scale: _scale,
         ),
         scale: _scale,
@@ -457,6 +460,46 @@ class _EventsScreenState extends State<EventsScreen> {
 
   DateTime get _dayEnd => _dayAfter(_day);
 
+  /// The days on the timeline, while the box is up: the day shown, with
+  /// the day before it stacked above, and the day after below -- to make
+  /// or move events across midnight. Otherwise, just the day shown.
+  (DateTime, DateTime) _stacked(DateTime day) => _box == null
+      ? (day, _dayAfter(day))
+      : (
+          DateTime(day.year, day.month, day.day - 1),
+          DateTime(day.year, day.month, day.day + 2),
+        );
+
+  /// Puts the box up, or away ([box] null): the day before stacked
+  /// above the day shown, or taken away, the timeline scrolled to keep
+  /// what's on screen where it is.
+  void _setBox(PendingEventBox? box) {
+    final was = _box != null;
+    _box = box;
+    final stacked = box != null;
+    if (stacked == was || !_scroll.hasClients) return;
+    final before = DateTime(_day.year, _day.month, _day.day - 1);
+    final by = _day.difference(before).inMinutes * _scale;
+    final pixels = _scroll.position.pixels;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      _scroll.jumpTo(
+        (pixels + (stacked ? by : -by)).clamp(
+          0,
+          _scroll.position.maxScrollExtent,
+        ),
+      );
+    });
+  }
+
+  /// Where the days stacked on the timeline start, and end.
+  DateTime get _from => _stacked(_day).$1;
+  DateTime get _to => _stacked(_day).$2;
+
+  /// How far down the timeline [time] is, on the days stacked on it.
+  double _offset(DateTime time) =>
+      timelineOffset(time, day: _from, dayEnd: _to, scale: _scale);
+
   /// Scrolls the timeline to where it was left, if it's going back
   /// there, or else to now, on today, or else to the first event, once
   /// it's laid out.
@@ -467,12 +510,7 @@ class _EventsScreenState extends State<EventsScreen> {
       _scrollPending = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!_scroll.hasClients) return;
-        final y = timelineOffset(
-          top,
-          day: _day,
-          dayEnd: _dayEnd,
-          scale: _scale,
-        );
+        final y = _offset(top);
         _scroll.jumpTo(y.clamp(0, _scroll.position.maxScrollExtent));
       });
       return;
@@ -488,9 +526,7 @@ class _EventsScreenState extends State<EventsScreen> {
     final at = today ? now : starts.firstOrNull ?? _day;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
-      final y =
-          timelineOffset(at, day: _day, dayEnd: _dayEnd, scale: _scale) -
-          (today ? 120 : 24);
+      final y = _offset(at) - (today ? 120 : 24);
       _scroll.jumpTo(y.clamp(0, _scroll.position.maxScrollExtent));
     });
   }
@@ -506,13 +542,9 @@ class _EventsScreenState extends State<EventsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
       final position = _scroll.position;
+      final (from, to) = _stacked(today);
       final y =
-          timelineOffset(
-            now,
-            day: today,
-            dayEnd: _dayAfter(today),
-            scale: _scale,
-          ) -
+          timelineOffset(now, day: from, dayEnd: to, scale: _scale) -
           position.viewportDimension / 3;
       _scroll.jumpTo(y.clamp(0, position.maxScrollExtent));
     });
@@ -527,12 +559,7 @@ class _EventsScreenState extends State<EventsScreen> {
     if (_scroll.hasClients) {
       final position = _scroll.position;
       final at = focus ?? position.viewportDimension / 2;
-      final pad = timelineOffset(
-        _day,
-        day: _day,
-        dayEnd: _dayEnd,
-        scale: _scale,
-      );
+      final pad = _offset(_from);
       // From where an earlier zoom this frame will put it, if one will.
       final from = _scrollTo ?? position.pixels;
       final first = _scrollTo == null;
@@ -729,12 +756,12 @@ class _EventsScreenState extends State<EventsScreen> {
       at = now;
     } else if (_scroll.hasClients) {
       final middle = _scroll.offset + _scroll.position.viewportDimension / 2;
-      at = timelineTime(middle, day: _day, dayEnd: _dayEnd, scale: _scale);
+      at = timelineTime(middle, day: _from, dayEnd: _to, scale: _scale);
     } else {
       at = _day.add(const Duration(hours: 9));
     }
     setState(() {
-      _box = PendingEventBox(_nearestQuarter(at));
+      _setBox(PendingEventBox(_nearestQuarter(at)));
       _keptMove = null;
     });
   }
@@ -745,7 +772,7 @@ class _EventsScreenState extends State<EventsScreen> {
     if (event.isCancelled) return;
     setState(() {
       _moving = event;
-      _box = PendingEventBox(event.start, other: event.end);
+      _setBox(PendingEventBox(event.start, other: event.end));
       _keptMove = null;
       _modeBeforeMove = _createMode;
       _createMode = CreateMode.push;
@@ -786,7 +813,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Puts the box away -- the new event or the move done, or dropped.
   void _endBox() => setState(() {
-    _box = null;
+    _setBox(null);
     _moving = null;
     if (_modeBeforeMove case final mode?) _createMode = mode;
     _modeBeforeMove = null;
@@ -867,8 +894,8 @@ class _EventsScreenState extends State<EventsScreen> {
       final (from, to) = others.fitMoved(
         start,
         box.length,
-        from: _day,
-        to: _dayEnd,
+        from: _from,
+        to: _to,
       );
       return box.at(from, to);
     }
@@ -896,8 +923,8 @@ class _EventsScreenState extends State<EventsScreen> {
       other = others.pushFit(
         cursor,
         other,
-        from: _day,
-        to: _dayEnd,
+        from: _from,
+        to: _to,
         inside: _createMode.inside,
       );
     }
@@ -961,9 +988,7 @@ class _EventsScreenState extends State<EventsScreen> {
     final at = box.span == null
         ? box.cursor
         : box.span!.$1.add(box.length ~/ 2);
-    final y =
-        timelineOffset(at, day: _day, dayEnd: _dayEnd, scale: _scale) -
-        position.viewportDimension / 2;
+    final y = _offset(at) - position.viewportDimension / 2;
     _scroll.animateTo(
       y.clamp(0, position.maxScrollExtent),
       duration: const Duration(milliseconds: 400),
@@ -1574,7 +1599,11 @@ class _EventsScreenState extends State<EventsScreen> {
                         child: Stack(
                           children: [
                             Positioned.fill(
-                              child: TimelineAxis(day: _day, scale: _scale),
+                              child: TimelineAxis(
+                                day: _from,
+                                dayEnd: _to,
+                                scale: _scale,
+                              ),
                             ),
                             Positioned.fill(
                               child: PageView.builder(
@@ -1593,8 +1622,8 @@ class _EventsScreenState extends State<EventsScreen> {
                             if (_box case final box?)
                               Positioned.fill(
                                 child: PendingEventBoxView(
-                                  day: _day,
-                                  dayEnd: _dayEnd,
+                                  day: _from,
+                                  dayEnd: _to,
                                   scale: _scale,
                                   box: box,
                                   mode: _createMode,
@@ -1642,8 +1671,8 @@ class _EventsScreenState extends State<EventsScreen> {
                                   key: ValueKey(move.id),
                                   from: move.from,
                                   to: move.to,
-                                  day: _day,
-                                  dayEnd: _dayEnd,
+                                  day: _from,
+                                  dayEnd: _to,
                                   scale: _scale,
                                 ),
                               ),
@@ -1661,73 +1690,197 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  /// [day]'s page: its events, over the [TimelineAxis], or why they
-  /// can't be shown, in the middle of the [view] tall part of it on
-  /// screen.
+  /// [day]'s page: its events, over the [TimelineAxis], with the day
+  /// before's stacked above, and the day after's below, shaded; or why
+  /// its events can't be shown, in the middle of the [view] tall part of
+  /// it on screen.
   Widget _buildDay(BuildContext context, DateTime day, double view) {
     // The app's, so a day sliding in is drawn as it slides, not after.
     final events = _store.day(day);
-    if (day == _day && _error != null && (events == null || events.isEmpty)) {
-      return _inView(
-        view,
+    final (from, to) = _stacked(day);
+    double offset(DateTime time) =>
+        timelineOffset(time, day: from, dayEnd: to, scale: _scale);
+    // Above each day's midnight on the timeline, what's drawn for its
+    // labels: where the days meet, the one above is cut off there.
+    final pad = offset(from);
+    final next = _dayAfter(day);
+    final stacked = from != day;
+    final days = stacked ? [from, day, next] : [day];
+    final message = switch (events) {
+      _ when day == _day && _error != null && (events?.isEmpty ?? true) =>
         StatusMessage(
           icon: Icons.cloud_off,
           text: 'Could not load events.\n$_error',
         ),
-      );
-    } else if (events == null) {
-      return _inView(
-        view,
-        const Padding(
-          padding: EdgeInsets.all(16),
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-    // Drawn past the page's foot, if an event's drawn past midnight.
-    final timeline = OverflowBox(
-      alignment: Alignment.topCenter,
-      minHeight: 0,
-      maxHeight: double.infinity,
-      child: DayTimeline(
-        events: events,
-        day: day,
-        actions: _actionsById,
-        scale: _scale,
-        now: widget.clock(),
-        lastCompaction: _lastCompaction,
-        pendingNotes: _pendingNotes,
-        // While the cursor's up, events don't open: a tap on one goes to
-        // the timeline under it, and moves the cursor there.
-        onTap: _box == null ? _openEvent : null,
-        // Pressed and held, it's moved: the box around it.
-        onLongPress: _box == null ? _startMoving : null,
-        faded: _moving?.id,
-        // The box moved there, its size intact.
-        onTapTime: _box == null
-            ? null
-            : (time) => _changeBox(
-                (box) => box.movedTo(_nearestQuarter(time)),
-                moved: true,
-              ),
-        axis: false,
+      null => const Padding(
+        padding: EdgeInsets.all(16),
+        child: CircularProgressIndicator(),
       ),
-    );
-    if (events.isNotEmpty) return timeline;
-    // Still tapped through, to add one anywhere.
+      [] => const StatusMessage(
+        icon: Icons.event_busy,
+        text: 'No events.\nTap + to add one.',
+      ),
+      _ => null,
+    };
     return Stack(
       children: [
-        Positioned.fill(child: timeline),
-        IgnorePointer(
-          child: _inView(
-            view,
-            const StatusMessage(
-              icon: Icons.event_busy,
-              text: 'No events.\nTap + to add one.',
+        for (final d in days)
+          Positioned(
+            left: 0,
+            right: 0,
+            top: offset(d) - pad,
+            height: timelineHeight(d, _scale),
+            child: _stackedDay(
+              d,
+              // Drawn from its midnight to the next, but at the top of
+              // them all, and past the foot -- an event drawn past
+              // midnight.
+              clipTop: d == days.first ? 0 : pad,
+              clipBottom: d == days.last ? -_pastFoot : pad,
+              shaded: d != day,
             ),
           ),
-        ),
+        // Where the days meet: which is which.
+        if (stacked) ...[
+          _daysMeet(context, offset(day), above: from),
+          _daysMeet(context, offset(next), below: next),
+        ],
+        if (message != null)
+          // Still tapped through, to add one anywhere.
+          IgnorePointer(
+            ignoring: events != null,
+            child: _inView(view, message),
+          ),
       ],
+    );
+  }
+
+  /// [day]'s events, on a timeline stacked with others: cut off
+  /// [clipTop] from its top and [clipBottom] from its foot, where it
+  /// meets the days either side of it, and [shaded] if it's not the day
+  /// shown.
+  Widget _stackedDay(
+    DateTime day, {
+    required double clipTop,
+    required double clipBottom,
+    required bool shaded,
+  }) {
+    final events = _store.day(day);
+    return ClipRect(
+      clipper: _InsetClipper(top: clipTop, bottom: clipBottom),
+      child: Stack(
+        children: [
+          if (events != null)
+            // Drawn past its foot, if an event's drawn past midnight -- and
+            // cut off there, where the next day's drawn.
+            OverflowBox(
+              alignment: Alignment.topCenter,
+              minHeight: 0,
+              maxHeight: double.infinity,
+              child: DayTimeline(
+                // The day the page is for, to tell from those stacked with
+                // it.
+                key: shaded ? null : ValueKey(('shown', day)),
+                events: events,
+                day: day,
+                actions: _actionsById,
+                scale: _scale,
+                now: widget.clock(),
+                lastCompaction: _lastCompaction,
+                pendingNotes: _pendingNotes,
+                // While the cursor's up, events don't open: a tap on one
+                // goes to the timeline under it, and moves the cursor
+                // there.
+                onTap: _box == null ? _openEvent : null,
+                // Pressed and held, it's moved: the box around it.
+                onLongPress: _box == null ? _startMoving : null,
+                faded: _moving?.id,
+                // The box moved there, its size intact.
+                onTapTime: _box == null
+                    ? null
+                    : (time) => _changeBox(
+                        (box) => box.movedTo(_nearestQuarter(time)),
+                        moved: true,
+                      ),
+                axis: false,
+              ),
+            ),
+          if (shaded)
+            // The days either side, under a shadow: there to see, and to
+            // make or move events across midnight into, but not the day
+            // shown.
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ColoredBox(
+                  color: Theme.of(context).colorScheme.surface
+                      .withValues(alpha: 0.55),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// The line at midnight, [y] down the timeline, where the days meet:
+  /// the day [above] it named above it, or the day [below] it, below.
+  Widget _daysMeet(
+    BuildContext context,
+    double y, {
+    DateTime? above,
+    DateTime? below,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    final day = above ?? below!;
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: y - 24,
+      height: 48,
+      child: IgnorePointer(
+        child: Stack(
+          children: [
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 23.5,
+              height: 1,
+              child: ColoredBox(color: colors.outline),
+            ),
+            Positioned(
+              left: 4,
+              top: above != null ? 2 : 27,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: colors.surfaceContainerHighest,
+                  border: Border.all(color: colors.outline),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      above != null ? Icons.arrow_upward : Icons.arrow_downward,
+                      size: 12,
+                      color: colors.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 2),
+                    Text(
+                      MaterialLocalizations.of(context).formatMediumDate(day),
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1757,3 +1910,19 @@ const _summaryCollapsedKey = 'day_summary_collapsed';
 
 /// Where whether the day's summary shows durations is kept.
 const _summaryDurationsKey = 'day_summary_durations';
+
+/// Clips [top] off the top of what it's given, and [bottom] off its foot.
+class _InsetClipper extends CustomClipper<Rect> {
+  const _InsetClipper({required this.top, required this.bottom});
+
+  final double top;
+  final double bottom;
+
+  @override
+  Rect getClip(Size size) =>
+      Rect.fromLTRB(0, top, size.width, math.max(top, size.height - bottom));
+
+  @override
+  bool shouldReclip(_InsetClipper old) =>
+      old.top != top || old.bottom != bottom;
+}
