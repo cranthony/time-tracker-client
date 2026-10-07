@@ -27,6 +27,13 @@ enum CreateMode {
     'Every event the new one touches is cancelled, whole.',
     Icons.event_busy,
   ),
+  push(
+    'Push',
+    'Like Keep, the cursor snaps out of events -- but it can sit between '
+        'two that meet. The events after it are pushed along, into free '
+        'time, to make room -- as far as the day has room.',
+    Icons.keyboard_double_arrow_down,
+  ),
   trimPush(
     'Trim and push',
     'An event the new one starts inside of is cut short there; the events '
@@ -34,13 +41,6 @@ enum CreateMode {
         'far as the day has room.',
     // Drawn: scissors over a push (see [CreateModeIcon]).
     null,
-  ),
-  push(
-    'Push',
-    'Like Keep, the cursor snaps out of events -- but it can sit between '
-        'two that meet. The events after it are pushed along, into free '
-        'time, to make room -- as far as the day has room.',
-    Icons.keyboard_double_arrow_down,
   ),
   splitPush(
     'Split and push',
