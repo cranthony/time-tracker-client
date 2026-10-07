@@ -943,7 +943,7 @@ void main() {
       await tester.tap(find.byTooltip('New event'));
       await tester.pumpAndSettle();
       final startHere = find.byTooltip(
-        'An hour later: tap to move the other end, or drag it',
+        'An hour later: tap to stretch it down, or drag its foot',
       );
       await tap(tester, startHere);
       // Moved whole, to 8.
