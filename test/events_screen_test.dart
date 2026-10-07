@@ -1128,10 +1128,10 @@ void main() {
     }
 
     final startHere = find.byTooltip(
-      'An hour later: tap to move the other end, or drag it',
+      'An hour later: tap to stretch it down, or drag its foot',
     );
     final endHere = find.byTooltip(
-      'An hour earlier: tap to move the other end, or drag it',
+      'An hour earlier: tap to stretch it up, or drag its top',
     );
 
     /// Taps "+", which puts the cursor at now: noon.
@@ -1403,13 +1403,13 @@ void main() {
       );
       expect(box(tester).span, (at(30, 11, 30), at(30, 12, 30)));
 
-      // Ending at the first cursor instead.
+      // Its top dragged up, from the cursor, to 10.
       await drag(tester, endHere, const Duration(minutes: -90));
-      expect(box(tester).span, (at(30, 10), at(30, 11, 30)));
+      expect(box(tester).span, (at(30, 10), at(30, 12, 30)));
 
       await continueToDialog(tester);
       expect(
-        inDialog(find.text('Wed, Sep 30 · 10:00 AM – 11:30 AM')),
+        inDialog(find.text('Wed, Sep 30 · 10:00 AM – 12:30 PM')),
         findsOneWidget,
       );
     });
@@ -1477,28 +1477,62 @@ void main() {
       );
     });
 
-    testWidgets('each tap moves the other cursor an hour, later or earlier', (
-      tester,
-    ) async {
+    testWidgets('each "+" stretches the box an hour, from its top or its '
+        'foot, and each "−" shrinks it an hour, from that end', (tester) async {
       final repo = _RecordingRepository([]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await plus(tester);
+      final shrinkTop = find.byTooltip('Shrink it an hour, from the top');
+      final shrinkFoot = find.byTooltip('Shrink it an hour, from the foot');
+      // Nothing to shrink yet.
+      Material shrinking(Finder button) => tester.widget<Material>(
+        find.descendant(of: button, matching: find.byType(Material)),
+      );
+      expect(shrinking(shrinkTop).elevation, 0);
 
       // Two below: two hours, from the cursor.
       await tapButton(tester, startHere);
       await tapButton(tester, startHere);
       expect(box(tester).span, (at(30, 12), at(30, 14)));
-      // Three above: an hour, to it.
+      // One above: an hour more, at the top -- the cursor going with it.
       await tapButton(tester, endHere);
+      expect(box(tester).span, (at(30, 11), at(30, 14)));
+      expect(box(tester).cursor, at(30, 11));
+      // Shrunk from the top, and from the foot.
+      await tapButton(tester, shrinkTop);
+      expect(box(tester).span, (at(30, 12), at(30, 14)));
+      await tapButton(tester, shrinkFoot);
       expect(box(tester).span, (at(30, 12), at(30, 13)));
+      // No shorter than a quarter hour.
+      await tapButton(tester, shrinkFoot);
+      expect(box(tester).span, (at(30, 12), at(30, 12, 15)));
+      expect(shrinking(shrinkFoot).elevation, 0);
+    });
+
+    testWidgets('keeping events, "+" above stretches the box up into the '
+        'free time before it, no further than the event before', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([
+        Event(id: 'w', start: at(30, 9), end: at(30, 10, 30), summary: 'Work'),
+        Event(id: 's', start: at(30, 12), end: at(30, 13), summary: 'Siesta'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text('Siesta'));
+      await tester.pumpAndSettle();
+      await tapButton(tester, find.byTooltip('Push: tap to change'));
+      await tester.tap(find.text('Keep events'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+
       await tapButton(tester, endHere);
-      // The cursors together: nothing between them.
-      expect(box(tester).other, at(30, 12));
-      expect(box(tester).span, isNull);
-      expect(continueButton(tester).onPressed, isNull);
+      expect(box(tester).span, (at(30, 11), at(30, 13)));
       await tapButton(tester, endHere);
-      expect(box(tester).span, (at(30, 11), at(30, 12)));
+      // Up to Work's end.
+      expect(box(tester).span, (at(30, 10, 30), at(30, 13)));
     });
 
     testWidgets('overwriting and cancelling: the shadow covers every event '

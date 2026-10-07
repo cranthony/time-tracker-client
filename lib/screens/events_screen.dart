@@ -1479,16 +1479,57 @@ class _EventsScreenState extends State<EventsScreen> {
   /// A button on the cursor, its [step] later or earlier, dragged to
   /// [to]: the other cursor there, at least a quarter hour from the
   /// cursor on [step]'s side.
-  void _dragStep(Duration step, DateTime to) => _changeBox((box) {
-    final cursor = box.cursor;
+  void _dragStep(Duration step, DateTime to) {
+    final box = _box;
+    if (box == null) return;
     final quarter = _nearestQuarter(to);
+    final (top, foot) = box.span ?? (box.cursor, box.cursor);
     if (step.isNegative) {
-      final latest = cursor.subtract(OtherEvents.shortest);
-      return box.withOther(quarter.isAfter(latest) ? latest : quarter);
+      final latest = foot.subtract(OtherEvents.shortest);
+      _changeEdge(box.withTop(quarter.isAfter(latest) ? latest : quarter));
+    } else {
+      final earliest = top.add(OtherEvents.shortest);
+      _changeEdge(
+        box.withFoot(quarter.isBefore(earliest) ? earliest : quarter),
+      );
     }
-    final earliest = cursor.add(OtherEvents.shortest);
-    return box.withOther(quarter.isBefore(earliest) ? earliest : quarter);
-  });
+  }
+
+  /// The box stretched an hour by a "+": earlier, at its top, for a
+  /// [step] back, or later, at its foot -- from the cursor, to start with.
+  void _stretch(Duration step) {
+    final box = _box;
+    if (box == null) return;
+    final (top, foot) = box.span ?? (box.cursor, box.cursor);
+    _changeEdge(
+      step.isNegative
+          ? box.withTop(top.add(step))
+          : box.withFoot(foot.add(step)),
+    );
+  }
+
+  /// The box shrunk an hour by a "−": from its top, for a [step] on, or
+  /// from its foot -- no shorter than a quarter hour.
+  void _shrink(Duration step) {
+    final box = _box;
+    final span = box?.span;
+    if (box == null || span == null) return;
+    final (top, foot) = span;
+    if (step.isNegative) {
+      final to = foot.add(step);
+      final earliest = top.add(OtherEvents.shortest);
+      _changeEdge(box.withFoot(to.isBefore(earliest) ? earliest : to));
+    } else {
+      final to = top.add(step);
+      final latest = foot.subtract(OtherEvents.shortest);
+      _changeEdge(box.withTop(to.isAfter(latest) ? latest : to));
+    }
+  }
+
+  /// The box changed to [changed], one end of it moved: kept in free time
+  /// from its other end.
+  void _changeEdge(PendingEventBox changed) =>
+      _changeBox((_) => changed, fromOther: changed.cursor != _box?.cursor);
 
   /// Opens the new event, as shaded between the cursors.
   Future<void> _continueCreating() async {
@@ -2479,13 +2520,14 @@ class _EventsScreenState extends State<EventsScreen> {
                                     (box) => box.movedTo(_nearestQuarter(to)),
                                     moved: true,
                                   ),
-                                  // A step further each tap, from the
-                                  // cursor to start with.
-                                  onTap: (step) => _changeBox(
-                                    (box) => box.withOther(
-                                      (box.other ?? box.cursor).add(step),
-                                    ),
-                                  ),
+                                  onTap: _stretch,
+                                  onShrink: switch (box.span) {
+                                    (final start, final end)
+                                        when end.difference(start) >
+                                            OtherEvents.shortest =>
+                                      _shrink,
+                                    _ => null,
+                                  },
                                   onDrag: _dragStep,
                                   onPickMode: _pickCreateMode,
                                 ),
