@@ -6,9 +6,10 @@ record a new one; tap a note to change its description or time, or to
 delete it. An **Events** page, from the bar at the bottom, shows a day's
 events from your calendar; tap one to see or edit it, including the actions
 done at it and what happened: who it was with and for, where, and notes.
-Its **+** puts a cursor on the timeline: start an event there or end it
-there, tapping or dragging to its other end, either keeping clear of the
-events already there or overwriting them; then ✓ to fill it in. Above them, a summary shows how the day's time is split by priority;
+Its **+**, dragged onto the timeline (or tapped), puts a cursor there:
+start an event there or end it there, tapping or dragging to its other
+end, either keeping clear of the events already there or overwriting
+them; drag either end's handle to adjust it; then ✓ to fill it in. Above them, a summary shows how the day's time is split by priority;
 swipe it to see the top actions, or the top-level groups. A **Plan** page
 has four panes, swiped between or picked from its tabs, each with a search
 of its own. Landing on it loads every pane at once, and it shows what it

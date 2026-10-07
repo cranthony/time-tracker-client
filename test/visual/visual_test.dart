@@ -397,7 +397,9 @@ void main() {
               }
             }
 
-            await tester.tap(find.byTooltip('New event'));
+            await tester.tap(
+              find.byTooltip('New event: tap, or drag onto the timeline'),
+            );
             await tester.pumpAndSettle();
             if (overwrite || dialog) {
               await tester.tap(find.byTooltip('Keep events: tap to change'));

@@ -9,11 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 ## 7.2.0
 
 - Events are added from a **+** on the Events page, in place of the zoom
-  buttons (pinch to zoom); tapping a blank space does nothing. The +
-  puts a cursor across the timeline -- at now, or the middle of what's
-  in view -- with buttons to start an event there or end it there: tap
-  one for an hour, or drag it to where the other end goes. Drag the
-  line, or tap a blank time, to move it. ✓ opens the new event; ✕ stops.
+  buttons (pinch to zoom); tapping a blank space does nothing. Drag the
+  + onto the timeline to put a cursor where it's dropped, or tap it for
+  one at now (or the middle of what's in view). In the cursor's middle
+  are buttons to start an event there or end it there: tap one for an
+  hour, or drag it to where the other end goes. The cursor's handle, at
+  its right, moves it; a second cursor at the event's other end has a
+  handle of its own, to make it longer or shorter. ✓ opens the new
+  event; ✕ stops.
 - Beside them, a drop-down picks whether the new event keeps clear of
   the events already there or overwrites them. Overwriting, its shadow
   is tinged red and slowly pulses where it would take time from events,

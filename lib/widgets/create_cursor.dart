@@ -60,11 +60,13 @@ Future<CreateMode?> showCreateModeDialog(
 enum CursorEnd { start, end }
 
 /// The cursor a new event is made from, over a [DayTimeline] for [day]
-/// at [scale]: a line across it at [at], with the time beside it; on it,
-/// buttons to start the event there and to end it there -- tapped, or
-/// dragged to where its other end goes -- and the [mode] to pick; and the
-/// event as it would be, [span], shaded, tinged red and slowly pulsing
-/// where it [overwrites] events. Dragging the line moves it.
+/// at [scale]: a line across it at [at], with the time at its left and a
+/// handle at its right to drag it by; in its middle, buttons to start the
+/// event there and to end it there -- tapped, or dragged to where its
+/// other end goes -- and the [mode] to pick; and the event as it would
+/// be, [span], shaded, tinged red and slowly pulsing where it [overwrites]
+/// events, with a second line at its other end, and a handle to drag
+/// that end by.
 class CreateCursor extends StatefulWidget {
   const CreateCursor({
     super.key,
@@ -78,6 +80,7 @@ class CreateCursor extends StatefulWidget {
     required this.onDrag,
     required this.onPickMode,
     this.span,
+    this.anchor = CursorEnd.start,
     this.overwrites = false,
   });
 
@@ -90,18 +93,22 @@ class CreateCursor extends StatefulWidget {
 
   /// The new event as it would be, if it's been made.
   final (DateTime, DateTime)? span;
+
+  /// Which end of [span] the cursor is: the second line is at the other.
+  final CursorEnd anchor;
   final CreateMode mode;
 
   /// Whether [span] takes time from events already there.
   final bool overwrites;
 
-  /// The line dragged to a time.
+  /// The cursor's handle dragged to a time.
   final ValueChanged<DateTime> onMove;
 
   /// A button tapped: the event to start, or end, at [at].
   final ValueChanged<CursorEnd> onTap;
 
-  /// A button dragged to a time: the event's other end.
+  /// A button, or the second line's handle, dragged to a time: the
+  /// event's other end, [end] being the cursor's.
   final void Function(CursorEnd end, DateTime to) onDrag;
   final VoidCallback onPickMode;
 
@@ -174,83 +181,122 @@ class _CreateCursorState extends State<CreateCursor>
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        if (widget.span case (final start, final end))
+        if (widget.span case (final start, final end)) ...[
           _shadow(colors, start, end),
-        // The line, dragged to move it.
+          // The other end, dragged to make it longer or shorter.
+          ..._line(
+            colors,
+            widget.anchor == CursorEnd.start ? end : start,
+            tooltip: widget.anchor == CursorEnd.start
+                ? 'Drag to change where it ends'
+                : 'Drag to change where it starts',
+            onDragTo: (to) => widget.onDrag(widget.anchor, to),
+          ),
+        ],
+        ..._line(
+          colors,
+          widget.at,
+          tooltip: 'Drag to move the cursor',
+          onDragTo: widget.onMove,
+        ),
+        // In the middle of the cursor, clear of its handle.
         Positioned(
-          left: 0,
-          right: 0,
-          top: y - 14,
-          height: 28,
+          left: timelineCardsLeft,
+          right: 44,
+          top: y - 20,
+          height: 40,
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _endButton(
+                  colors,
+                  CursorEnd.start,
+                  Icons.vertical_align_top,
+                  'Start here: tap, or drag to where it ends',
+                ),
+                const SizedBox(width: 6),
+                _endButton(
+                  colors,
+                  CursorEnd.end,
+                  Icons.vertical_align_bottom,
+                  'End here: tap, or drag to where it starts',
+                ),
+                const SizedBox(width: 6),
+                _modeButton(colors),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// A line across the timeline at [time], with the time at its left and,
+  /// at its right, a handle that's dragged to [onDragTo] a time. Only the
+  /// handle takes a touch: a tap elsewhere goes to the timeline.
+  List<Widget> _line(
+    ColorScheme colors,
+    DateTime time, {
+    required String tooltip,
+    required ValueChanged<DateTime> onDragTo,
+  }) {
+    final y = _y(time);
+    return [
+      Positioned(
+        left: timelineTimesWidth - 4,
+        right: 0,
+        top: y - 1,
+        height: 2,
+        child: IgnorePointer(child: ColoredBox(color: colors.primary)),
+      ),
+      Positioned(
+        left: 4,
+        top: y - 10,
+        height: 20,
+        child: IgnorePointer(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: colors.primary,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              _clock(time),
+              style: TextStyle(
+                color: colors.onPrimary,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+      Positioned(
+        right: 4,
+        top: y - 16,
+        width: 32,
+        height: 32,
+        child: Tooltip(
+          message: tooltip,
           child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
             // From where the finger went down, so the line follows it.
             dragStartBehavior: DragStartBehavior.down,
             onVerticalDragStart: (_) => _dragY = y,
             onVerticalDragUpdate: (details) {
               _dragY += details.delta.dy;
-              widget.onMove(_time(_dragY));
+              onDragTo(_time(_dragY));
             },
-            child: Stack(
-              alignment: Alignment.centerLeft,
-              children: [
-                Positioned(
-                  left: timelineTimesWidth - 4,
-                  right: 0,
-                  child: Container(height: 2, color: colors.primary),
-                ),
-                Positioned(
-                  left: 4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colors.primary,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      _clock(widget.at),
-                      style: TextStyle(
-                        color: colors.onPrimary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            child: Material(
+              color: colors.primary,
+              shape: const StadiumBorder(),
+              elevation: 2,
+              child: Icon(Icons.drag_handle, size: 20, color: colors.onPrimary),
             ),
           ),
         ),
-        Positioned(
-          right: 8,
-          top: y - 20,
-          height: 40,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _endButton(
-                colors,
-                CursorEnd.start,
-                Icons.vertical_align_top,
-                'Start here: tap, or drag to where it ends',
-              ),
-              const SizedBox(width: 6),
-              _endButton(
-                colors,
-                CursorEnd.end,
-                Icons.vertical_align_bottom,
-                'End here: tap, or drag to where it starts',
-              ),
-              const SizedBox(width: 6),
-              _modeButton(colors),
-            ],
-          ),
-        ),
-      ],
-    );
+      ),
+    ];
   }
 
   Widget _shadow(ColorScheme colors, DateTime start, DateTime end) {
@@ -269,7 +315,8 @@ class _CreateCursorState extends State<CreateCursor>
             final color = widget.overwrites ? tinge : colors.primary;
             final alpha = widget.overwrites ? 0.16 + 0.22 * _pulse.value : 0.2;
             return Container(
-              padding: const EdgeInsets.all(4),
+              // Clear of the handles at the right.
+              padding: const EdgeInsets.fromLTRB(4, 4, 36, 4),
               // In its corner, solid, to read over the events under it.
               alignment: Alignment.bottomRight,
               decoration: BoxDecoration(

@@ -158,6 +158,13 @@ class _EventsScreenState extends State<EventsScreen> {
   /// overwrites them.
   CreateMode _createMode = CreateMode.keep;
 
+  /// Whether the cursor is following the "+" being dragged: let go off
+  /// the timeline, it goes.
+  bool _seeding = false;
+
+  /// The timeline's days, for where a "+" dropped on them is.
+  final _timelineKey = GlobalKey();
+
   /// Why the day shown couldn't be loaded, if it couldn't.
   Object? _error;
   bool _needsSignIn = false;
@@ -710,6 +717,25 @@ class _EventsScreenState extends State<EventsScreen> {
     return DateTime(time.year, time.month, time.day, 0, quarters * 15);
   }
 
+  /// The cursor at [global], on the screen, where the "+" being dragged
+  /// is over the timeline.
+  void _seedAt(Offset global) {
+    final box = _timelineKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final time = timelineTime(
+      box.globalToLocal(global).dy,
+      day: _day,
+      dayEnd: _dayEnd,
+      scale: _scale,
+    );
+    setState(() {
+      if (_creating == null) _seeding = true;
+      _creating = (_creating ?? _Creating(time)).copy(
+        at: _nearestQuarter(time),
+      );
+    });
+  }
+
   /// Starts making a new event: a cursor across the day shown, at now if
   /// that's today, or else the middle of what's in view.
   void _startCreating() {
@@ -1105,7 +1131,8 @@ class _EventsScreenState extends State<EventsScreen> {
       ),
       floatingActionButton: _needsSignIn
           ? null
-          : _creating != null
+          // While the "+" is dragged, it stays: it's what's dragged.
+          : _creating != null && !_seeding
           ? Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1134,11 +1161,29 @@ class _EventsScreenState extends State<EventsScreen> {
                   child: const Icon(Icons.my_location),
                 ),
                 const SizedBox(height: 12),
-                FloatingActionButton(
-                  heroTag: 'new',
-                  tooltip: 'New event',
-                  onPressed: _startCreating,
-                  child: const Icon(Icons.add),
+                // Tapped, or dragged onto the timeline to put the cursor
+                // where it's dropped.
+                Draggable<_NewEventSeed>(
+                  data: const _NewEventSeed(),
+                  dragAnchorStrategy: pointerDragAnchorStrategy,
+                  feedback: const _PlusFeedback(),
+                  childWhenDragging: const Opacity(
+                    opacity: 0.3,
+                    child: FloatingActionButton(
+                      heroTag: null,
+                      onPressed: null,
+                      child: Icon(Icons.add),
+                    ),
+                  ),
+                  onDragEnd: (_) {
+                    if (_seeding && mounted) setState(() => _seeding = false);
+                  },
+                  child: FloatingActionButton(
+                    heroTag: 'new',
+                    tooltip: 'New event: tap, or drag onto the timeline',
+                    onPressed: _startCreating,
+                    child: const Icon(Icons.add),
+                  ),
                 ),
               ],
             ),
@@ -1208,53 +1253,71 @@ class _EventsScreenState extends State<EventsScreen> {
                     controller: _scroll,
                     physics: noDrag ?? const AlwaysScrollableScrollPhysics(),
                     children: [
-                      SizedBox(
-                        height: _height,
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: TimelineAxis(day: _day, scale: _scale),
-                            ),
-                            Positioned.fill(
-                              child: PageView.builder(
-                                controller: _pages,
-                                physics: _creating != null
-                                    ? const NeverScrollableScrollPhysics()
-                                    : noDrag,
-                                onPageChanged: (page) => _show(_dayAt(page)),
-                                itemBuilder: (context, page) => _buildDay(
-                                  context,
-                                  _dayAt(page),
-                                  view.maxHeight,
-                                ),
-                              ),
-                            ),
-                            if (_creating case final creating?)
+                      DragTarget<_NewEventSeed>(
+                        // The cursor follows the +, and stays where it's
+                        // dropped.
+                        onMove: (details) => _seedAt(details.offset),
+                        onLeave: (_) {
+                          if (!_seeding) return;
+                          setState(() {
+                            _creating = null;
+                            _seeding = false;
+                          });
+                        },
+                        onAcceptWithDetails: (details) {
+                          _seedAt(details.offset);
+                          setState(() => _seeding = false);
+                        },
+                        builder: (context, _, _) => SizedBox(
+                          key: _timelineKey,
+                          height: _height,
+                          child: Stack(
+                            children: [
                               Positioned.fill(
-                                child: CreateCursor(
-                                  day: _day,
-                                  dayEnd: _dayEnd,
-                                  scale: _scale,
-                                  at: creating.at,
-                                  span: _span,
-                                  mode: _createMode,
-                                  overwrites: _overwrites,
-                                  onMove: (to) => setState(
-                                    () => _creating = creating.copy(
-                                      at: _nearestQuarter(to),
-                                    ),
+                                child: TimelineAxis(day: _day, scale: _scale),
+                              ),
+                              Positioned.fill(
+                                child: PageView.builder(
+                                  controller: _pages,
+                                  physics: _creating != null
+                                      ? const NeverScrollableScrollPhysics()
+                                      : noDrag,
+                                  onPageChanged: (page) => _show(_dayAt(page)),
+                                  itemBuilder: (context, page) => _buildDay(
+                                    context,
+                                    _dayAt(page),
+                                    view.maxHeight,
                                   ),
-                                  onTap: (end) => setState(
-                                    () => _creating = creating.copy(
-                                      anchor: end,
-                                      length: _newEventLength,
-                                    ),
-                                  ),
-                                  onDrag: _dragEnd,
-                                  onPickMode: _pickCreateMode,
                                 ),
                               ),
-                          ],
+                              if (_creating case final creating?)
+                                Positioned.fill(
+                                  child: CreateCursor(
+                                    day: _day,
+                                    dayEnd: _dayEnd,
+                                    scale: _scale,
+                                    at: creating.at,
+                                    span: _span,
+                                    anchor: creating.anchor,
+                                    mode: _createMode,
+                                    overwrites: _overwrites,
+                                    onMove: (to) => setState(
+                                      () => _creating = creating.copy(
+                                        at: _nearestQuarter(to),
+                                      ),
+                                    ),
+                                    onTap: (end) => setState(
+                                      () => _creating = creating.copy(
+                                        anchor: end,
+                                        length: _newEventLength,
+                                      ),
+                                    ),
+                                    onDrag: _dragEnd,
+                                    onPickMode: _pickCreateMode,
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -1373,4 +1436,31 @@ class _Creating {
         anchor: anchor ?? this.anchor,
         length: length ?? this.length,
       );
+}
+
+/// What the "+" carries, dragged onto the timeline.
+class _NewEventSeed {
+  const _NewEventSeed();
+}
+
+/// The "+" as it's dragged: centered on the finger.
+class _PlusFeedback extends StatelessWidget {
+  const _PlusFeedback();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return FractionalTranslation(
+      translation: const Offset(-0.5, -0.5),
+      child: Material(
+        color: theme.colorScheme.primaryContainer,
+        elevation: 6,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: SizedBox.square(
+          dimension: 56,
+          child: Icon(Icons.add, color: theme.colorScheme.onPrimaryContainer),
+        ),
+      ),
+    );
+  }
 }
