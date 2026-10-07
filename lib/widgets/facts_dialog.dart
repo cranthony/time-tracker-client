@@ -207,7 +207,7 @@ class _FactsDialogState extends State<_FactsDialog> {
                     _chips(
                       theme,
                       'For',
-                      "Who it was done for, while they weren't there",
+                      "Who it was for, who wasn't there",
                       others,
                       _for,
                       _with,

@@ -324,7 +324,7 @@ Future<Facts?> showWhoWhereSheet(
                         setState,
                         for_,
                         with_,
-                        "Who it was for, while they weren't",
+                        "Who it was for, who wasn't there",
                       ),
                     ],
                   ),
