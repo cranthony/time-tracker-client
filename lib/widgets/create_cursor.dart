@@ -59,14 +59,16 @@ Future<CreateMode?> showCreateModeDialog(
 /// Which end of a new event the cursor is.
 enum CursorEnd { start, end }
 
-/// The cursor a new event is made from, over a [DayTimeline] for [day]
-/// at [scale]: a line across it at [at], with the time at its left and a
-/// handle at its right to drag it by; in its middle, buttons to start the
-/// event there and to end it there -- tapped, or dragged to where its
-/// other end goes -- and the [mode] to pick; and the event as it would
-/// be, [span], shaded, tinged red and slowly pulsing where it [overwrites]
-/// events, with a second line at its other end, and a handle to drag
-/// that end by.
+/// The cursors a new event is made between, over a [DayTimeline] for
+/// [day] at [scale]. The first, at [at], has in its middle a button below
+/// it to start an event there and one above it to end one there --
+/// tapped for an hour, or dragged to where its other end goes, which puts
+/// the second cursor, [other], there -- and the [mode] to pick. Each
+/// cursor is a line across the timeline with its time at its left and a
+/// handle at its right, which moves it alone. The event, [shadow], is
+/// shaded between them -- tinged red and slowly pulsing where it
+/// [overwrites] events -- with a handle of its own in its middle that
+/// moves both cursors together.
 class CreateCursor extends StatefulWidget {
   const CreateCursor({
     super.key,
@@ -79,8 +81,10 @@ class CreateCursor extends StatefulWidget {
     required this.onTap,
     required this.onDrag,
     required this.onPickMode,
-    this.span,
-    this.anchor = CursorEnd.start,
+    this.other,
+    this.onMoveOther,
+    this.shadow,
+    this.onShift,
     this.overwrites = false,
   });
 
@@ -88,28 +92,36 @@ class CreateCursor extends StatefulWidget {
   final DateTime dayEnd;
   final double scale;
 
-  /// Where the line is.
+  /// Where the first cursor is: the one with the buttons.
   final DateTime at;
 
-  /// The new event as it would be, if it's been made.
-  final (DateTime, DateTime)? span;
+  /// Where the second cursor is, once there's an event.
+  final DateTime? other;
 
-  /// Which end of [span] the cursor is: the second line is at the other.
-  final CursorEnd anchor;
+  /// The new event, between the cursors; null while there's none, or no
+  /// room for it.
+  final (DateTime, DateTime)? shadow;
   final CreateMode mode;
 
-  /// Whether [span] takes time from events already there.
+  /// Whether [shadow] takes time from events already there.
   final bool overwrites;
 
-  /// The cursor's handle dragged to a time.
+  /// The first cursor's handle dragged to a time.
   final ValueChanged<DateTime> onMove;
+
+  /// The second cursor's handle dragged to a time.
+  final ValueChanged<DateTime>? onMoveOther;
 
   /// A button tapped: the event to start, or end, at [at].
   final ValueChanged<CursorEnd> onTap;
 
-  /// A button, or the second line's handle, dragged to a time: the
-  /// event's other end, [end] being the cursor's.
+  /// A button dragged to a time: the event to have [end] at [at], and its
+  /// other end there.
   final void Function(CursorEnd end, DateTime to) onDrag;
+
+  /// The shadow's handle dragged: both cursors moved together, the first
+  /// to the time given.
+  final ValueChanged<DateTime>? onShift;
   final VoidCallback onPickMode;
 
   @override
@@ -181,18 +193,17 @@ class _CreateCursorState extends State<CreateCursor>
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        if (widget.span case (final start, final end)) ...[
+        if (widget.shadow case (final start, final end)) ...[
           _shadow(colors, start, end),
-          // The other end, dragged to make it longer or shorter.
+          _shadowHandle(colors, start, end),
+        ],
+        if (widget.other case final other?)
           ..._line(
             colors,
-            widget.anchor == CursorEnd.start ? end : start,
-            tooltip: widget.anchor == CursorEnd.start
-                ? 'Drag to change where it ends'
-                : 'Drag to change where it starts',
-            onDragTo: (to) => widget.onDrag(widget.anchor, to),
+            other,
+            tooltip: 'Drag to move the other end',
+            onDragTo: (to) => widget.onMoveOther?.call(to),
           ),
-        ],
         ..._line(
           colors,
           widget.at,
@@ -235,6 +246,50 @@ class _CreateCursorState extends State<CreateCursor>
           ),
         ),
       ],
+    );
+  }
+
+  /// The shadow's own handle, in its middle: bigger than the cursors',
+  /// and fainter, to move the whole event by.
+  Widget _shadowHandle(ColorScheme colors, DateTime start, DateTime end) {
+    final middle = (_y(start) + _y(end)) / 2;
+    final color = widget.overwrites
+        ? Color.lerp(colors.primary, Colors.red, 0.6)!
+        : colors.primary;
+    return Positioned(
+      left: timelineCardsLeft,
+      right: 8,
+      top: middle - 20,
+      height: 40,
+      // Right of the middle, clear of the cursor's buttons there.
+      child: Align(
+        alignment: const Alignment(0.6, 0),
+        child: Tooltip(
+          message: 'Drag to move the event',
+          child: GestureDetector(
+            dragStartBehavior: DragStartBehavior.down,
+            onVerticalDragStart: (_) => _dragY = _y(widget.at),
+            onVerticalDragUpdate: (details) {
+              _dragY += details.delta.dy;
+              widget.onShift?.call(_time(_dragY));
+            },
+            child: Container(
+              width: 72,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.18),
+                border: Border.all(color: color.withValues(alpha: 0.35)),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Icon(
+                Icons.unfold_more,
+                size: 28,
+                color: color.withValues(alpha: 0.7),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

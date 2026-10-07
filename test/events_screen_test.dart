@@ -1176,6 +1176,16 @@ void main() {
       await drag(tester, find.byTooltip('Drag to move the cursor'), by);
     }
 
+    final otherHandle = find.byTooltip('Drag to move the other end');
+
+    FloatingActionButton continueButton(WidgetTester tester) =>
+        tester.widget<FloatingActionButton>(
+          find.ancestor(
+            of: find.byIcon(Icons.check),
+            matching: find.byType(FloatingActionButton),
+          ),
+        );
+
     CreateCursor cursor(WidgetTester tester) =>
         tester.widget<CreateCursor>(find.byType(CreateCursor));
 
@@ -1195,36 +1205,33 @@ void main() {
     });
 
     testWidgets('+ puts a cursor at now; starting there and continuing '
-        'opens one there, up to the next', (tester) async {
+        'opens one there', (tester) async {
       final repo = _RecordingRepository([
         Event(id: 'w', start: at(30, 9), end: at(30, 10, 30), summary: 'Work'),
-        Event(
-          id: 'l',
-          start: at(30, 12, 30),
-          end: at(30, 13, 30),
-          summary: 'Lunch',
-        ),
       ]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await plus(tester);
 
       expect(cursor(tester).at, at(30, 12));
-      expect(cursor(tester).span, isNull);
-      // "+" is now cancel and continue.
+      expect(cursor(tester).shadow, isNull);
+      // "+" is now cancel and continue -- continue waiting for an event.
       expect(
         find.byTooltip('New event: tap, or drag onto the timeline'),
         findsNothing,
       );
       expect(find.byTooltip('Cancel'), findsOneWidget);
+      expect(continueButton(tester).onPressed, isNull);
 
       await tapButton(tester, startHere);
-      // An hour, but cut short by Lunch.
-      expect(cursor(tester).span, (at(30, 12), at(30, 12, 30)));
+      // An hour, to a second cursor.
+      expect(cursor(tester).other, at(30, 13));
+      expect(cursor(tester).shadow, (at(30, 12), at(30, 13)));
+      expect(continueButton(tester).onPressed, isNotNull);
 
       await continueToDialog(tester);
       expect(
-        inDialog(find.text('Wed, Sep 30 · 12:00 PM – 12:30 PM')),
+        inDialog(find.text('Wed, Sep 30 · 12:00 PM – 1:00 PM')),
         findsOneWidget,
       );
       expect(inDialog(find.text('Add location')), findsOneWidget);
@@ -1238,7 +1245,7 @@ void main() {
       expect(repo.created, [
         {
           'start': localIsoTimestamp(at(30, 12)),
-          'end': localIsoTimestamp(at(30, 12, 30)),
+          'end': localIsoTimestamp(at(30, 13)),
           'summary': 'Admin',
         },
       ]);
@@ -1252,32 +1259,43 @@ void main() {
       );
     });
 
-    testWidgets('keeping events, a start inside one moves to its end, and an '
-        'end inside one to its start; tapping or dragging the line moves '
-        'the cursor', (tester) async {
+    testWidgets("keeping events, there's no event while one's between the "
+        'cursors, and ✓ waits for room; tapping moves the cursor', (
+      tester,
+    ) async {
       final repo = _RecordingRepository([
-        Event(id: 'w', start: at(30, 9), end: at(30, 10, 35), summary: 'Work'),
-        Event(id: 'l', start: at(30, 12), end: at(30, 13), summary: 'Lunch'),
+        Event(
+          id: 'l',
+          start: at(30, 12, 30),
+          end: at(30, 13, 30),
+          summary: 'Lunch',
+        ),
       ]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await plus(tester);
 
-      // Tapping a blank time moves it there.
+      await tapButton(tester, startHere);
+      // Lunch is between them: nothing shaded, and nothing to continue.
+      expect(cursor(tester).other, at(30, 13));
+      expect(cursor(tester).shadow, isNull);
+      expect(continueButton(tester).onPressed, isNull);
+      expect(
+        find.byTooltip('Continue: first, make room between the cursors'),
+        findsOneWidget,
+      );
+
+      // The other end, by its handle, clear of Lunch.
+      await drag(tester, otherHandle, const Duration(minutes: -30));
+      expect(cursor(tester).shadow, (at(30, 12), at(30, 12, 30)));
+      expect(continueButton(tester).onPressed, isNotNull);
+      expect(cursor(tester).overwrites, isFalse);
+
+      // Tapping a blank time moves the first cursor alone.
       await tapAt(tester, at(30, 15, 10));
       expect(cursor(tester).at, at(30, 15, 15));
-      // Dragged into Work, by its line.
-      await moveLine(tester, const Duration(hours: -5));
-      expect(cursor(tester).at, at(30, 10, 15));
-      await tapButton(tester, startHere);
-      expect(cursor(tester).span, (at(30, 10, 35), at(30, 11, 35)));
-
-      // Into Lunch.
-      await moveLine(tester, const Duration(hours: 2, minutes: 15));
-      expect(cursor(tester).at, at(30, 12, 30));
-      await tapButton(tester, endHere);
-      expect(cursor(tester).span, (at(30, 11), at(30, 12)));
-      expect(cursor(tester).overwrites, isFalse);
+      expect(cursor(tester).other, at(30, 12, 30));
+      expect(cursor(tester).shadow, isNull);
     });
 
     testWidgets('dragging the + onto the timeline puts the cursor where it '
@@ -1338,35 +1356,35 @@ void main() {
       );
     });
 
-    testWidgets('dragging a button makes the event up to where it goes', (
-      tester,
-    ) async {
+    testWidgets('dragging a button makes the event up to where it goes; each '
+        "cursor's handle moves its end, and the shadow's both", (tester) async {
       final repo = _RecordingRepository([]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await plus(tester);
 
       await drag(tester, startHere, const Duration(hours: 2));
-      expect(cursor(tester).span, (at(30, 12), at(30, 14)));
-      // Its end has a line of its own, dragged by its handle.
+      expect(cursor(tester).shadow, (at(30, 12), at(30, 14)));
+      // Each end alone.
+      await drag(tester, otherHandle, const Duration(minutes: -30));
+      expect(cursor(tester).shadow, (at(30, 12), at(30, 13, 30)));
+      await moveLine(tester, const Duration(minutes: 30));
+      expect(cursor(tester).shadow, (at(30, 12, 30), at(30, 13, 30)));
+      // Both together.
       await drag(
         tester,
-        find.byTooltip('Drag to change where it ends'),
-        const Duration(minutes: -30),
+        find.byTooltip('Drag to move the event'),
+        const Duration(hours: -1),
       );
-      expect(cursor(tester).span, (at(30, 12), at(30, 13, 30)));
+      expect(cursor(tester).shadow, (at(30, 11, 30), at(30, 12, 30)));
+
+      // Ending at the first cursor instead.
       await drag(tester, endHere, const Duration(minutes: -90));
-      expect(cursor(tester).span, (at(30, 10, 30), at(30, 12)));
-      await drag(
-        tester,
-        find.byTooltip('Drag to change where it starts'),
-        const Duration(minutes: -30),
-      );
-      expect(cursor(tester).span, (at(30, 10), at(30, 12)));
+      expect(cursor(tester).shadow, (at(30, 10), at(30, 11, 30)));
 
       await continueToDialog(tester);
       expect(
-        inDialog(find.text('Wed, Sep 30 · 10:00 AM – 12:00 PM')),
+        inDialog(find.text('Wed, Sep 30 · 10:00 AM – 11:30 AM')),
         findsOneWidget,
       );
     });
@@ -1395,7 +1413,7 @@ void main() {
       expect(find.byTooltip('Overwrite events: tap to change'), findsOneWidget);
 
       await drag(tester, startHere, const Duration(hours: 3));
-      expect(cursor(tester).span, (at(30, 12), at(30, 15)));
+      expect(cursor(tester).shadow, (at(30, 12), at(30, 15)));
       expect(cursor(tester).overwrites, isTrue);
 
       await continueToDialog(tester);
@@ -1465,6 +1483,7 @@ void main() {
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await plus(tester);
+      await tapButton(tester, startHere);
       await continueToDialog(tester);
       await tester.enterText(inDialog(find.byType(TextField)), 'Gym');
       await tester.pumpAndSettle();

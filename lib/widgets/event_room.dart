@@ -68,29 +68,6 @@ class EventRoom {
     return (moved, end);
   }
 
-  /// [end] moved out of any event it's inside of, to its start, and the
-  /// start [length] before it, or later if the event before ends later:
-  /// [moveStart]'s mirror, for an event ending at [end].
-  (DateTime, DateTime) moveEnd(DateTime end, Duration length) {
-    var moved = end;
-    for (var inside = _ending(moved); inside != null; inside = _ending(moved)) {
-      moved = inside.start;
-    }
-    var start = moved.subtract(length);
-    if (earliestStart(moved) case final before? when before.isAfter(start)) {
-      start = before;
-    }
-    return (start, moved);
-  }
-
-  /// The event it would end inside of, at [end].
-  Event? _ending(DateTime end) {
-    for (final other in others) {
-      if (other.start.isBefore(end) && other.end.isAfter(end)) return other;
-    }
-    return null;
-  }
-
   /// What a new event from [start] to [end] takes from the others to fit,
   /// overwriting them: each it covers whole is cancelled; each it covers
   /// one end of is shortened to it; and one it falls inside of is split

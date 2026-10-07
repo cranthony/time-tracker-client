@@ -644,14 +644,26 @@ class _EventsScreenState extends State<EventsScreen> {
     if (day == _day) return;
     setState(() {
       if (_creating case final creating?) {
-        _creating = creating.copy(
-          at: DateTime(
-            day.year,
-            day.month,
-            day.day,
-            creating.at.hour,
-            creating.at.minute,
-          ),
+        DateTime onDay(DateTime t) =>
+            DateTime(day.year, day.month, day.day, t.hour, t.minute);
+        _creating = _Creating(
+          onDay(creating.at),
+          other: switch (creating.other) {
+            final other? => onDay(other).add(
+              Duration(
+                days: DateTime(other.year, other.month, other.day)
+                    .difference(
+                      DateTime(
+                        creating.at.year,
+                        creating.at.month,
+                        creating.at.day,
+                      ),
+                    )
+                    .inDays,
+              ),
+            ),
+            null => null,
+          },
         );
       }
       _day = day;
@@ -752,29 +764,23 @@ class _EventsScreenState extends State<EventsScreen> {
     setState(() => _creating = _Creating(_nearestQuarter(at)));
   }
 
-  /// The new event, as it would be: from the cursor for its length, or to
-  /// the cursor -- kept clear of the events already there unless they're
-  /// to be overwritten; null until a button on the cursor's been used.
+  /// The new event: between the two cursors, once there are two, and
+  /// they're apart.
   (DateTime, DateTime)? get _span => switch (_creating) {
-    _Creating(:final at, :final anchor, length: final length?) => _fit(
-      at,
-      anchor,
-      length,
-    ),
+    _Creating(:final at, other: final other?) when other != at =>
+      at.isBefore(other) ? (at, other) : (other, at),
     _ => null,
   };
 
-  (DateTime, DateTime) _fit(DateTime at, CursorEnd anchor, Duration length) {
-    if (_createMode == CreateMode.overwrite) {
-      return anchor == CursorEnd.start
-          ? (at, at.add(length))
-          : (at.subtract(length), at);
-    }
-    final room = _roomFor(null);
-    return anchor == CursorEnd.start
-        ? room.moveStart(at, length)
-        : room.moveEnd(at, length);
-  }
+  /// The new event, if it can be made: keeping events, only if none is
+  /// between the cursors.
+  (DateTime, DateTime)? get _fitting => switch (_span) {
+    (final start, final end)
+        when _createMode == CreateMode.overwrite ||
+            _roomFor(null).overlapping(start, end) == null =>
+      (start, end),
+    _ => null,
+  };
 
   /// Whether the new event takes time from events already there.
   bool get _overwrites => switch (_span) {
@@ -784,27 +790,43 @@ class _EventsScreenState extends State<EventsScreen> {
     null => false,
   };
 
-  /// The cursor's button for [end] dragged to [to]: the event from the
-  /// cursor to there, at least a quarter hour.
+  /// The first cursor's button for [end] dragged to [to]: the second
+  /// cursor there, at least a quarter hour before or after it.
   void _dragEnd(CursorEnd end, DateTime to) {
     final creating = _creating;
     if (creating == null) return;
     final at = creating.at;
     final quarter = _nearestQuarter(to);
-    var length = end == CursorEnd.start
-        ? quarter.difference(at)
-        : at.difference(quarter);
-    if (length < EventRoom.shortest) length = EventRoom.shortest;
-    setState(() => _creating = creating.copy(anchor: end, length: length));
+    final other = end == CursorEnd.start
+        ? (quarter.isBefore(at.add(EventRoom.shortest))
+              ? at.add(EventRoom.shortest)
+              : quarter)
+        : (quarter.isAfter(at.subtract(EventRoom.shortest))
+              ? at.subtract(EventRoom.shortest)
+              : quarter);
+    setState(() => _creating = creating.copy(other: other));
   }
 
-  /// Opens the new event, from the cursor: as shaded, or else for
-  /// [_newEventLength] from the cursor.
-  Future<void> _continueCreating() async {
+  /// The shadow's handle dragged: both cursors moved, the first to the
+  /// quarter hour nearest [to], and the second with it.
+  void _shift(DateTime to) {
     final creating = _creating;
-    if (creating == null) return;
-    final (start, end) =
-        _span ?? _fit(creating.at, CursorEnd.start, _newEventLength);
+    final other = creating?.other;
+    if (creating == null || other == null) return;
+    final at = _nearestQuarter(to);
+    setState(
+      () => _creating = creating.copy(
+        at: at,
+        other: other.add(at.difference(creating.at)),
+      ),
+    );
+  }
+
+  /// Opens the new event, as shaded between the cursors.
+  Future<void> _continueCreating() async {
+    final fitting = _fitting;
+    if (fitting == null) return;
+    final (start, end) = fitting;
     final room = _roomFor(null);
     final overwrite = _createMode == CreateMode.overwrite;
     final created = await showNewEventDialog(
@@ -1143,11 +1165,27 @@ class _EventsScreenState extends State<EventsScreen> {
                   child: const Icon(Icons.close),
                 ),
                 const SizedBox(width: 12),
-                FloatingActionButton(
-                  heroTag: 'continue-new',
-                  tooltip: 'Continue',
-                  onPressed: _continueCreating,
-                  child: const Icon(Icons.check),
+                // Only with an event to make.
+                Builder(
+                  builder: (context) {
+                    final colors = Theme.of(context).colorScheme;
+                    final ready = _fitting != null;
+                    return FloatingActionButton(
+                      heroTag: 'continue-new',
+                      tooltip: ready
+                          ? 'Continue'
+                          : _span == null
+                          ? 'Continue: first, start or end an event here'
+                          : 'Continue: first, make room between the cursors',
+                      onPressed: ready ? _continueCreating : null,
+                      backgroundColor: ready
+                          ? null
+                          : colors.surfaceContainerHighest,
+                      foregroundColor: ready ? null : colors.outline,
+                      elevation: ready ? null : 0,
+                      child: const Icon(Icons.check),
+                    );
+                  },
                 ),
               ],
             )
@@ -1297,8 +1335,8 @@ class _EventsScreenState extends State<EventsScreen> {
                                     dayEnd: _dayEnd,
                                     scale: _scale,
                                     at: creating.at,
-                                    span: _span,
-                                    anchor: creating.anchor,
+                                    other: creating.other,
+                                    shadow: _fitting,
                                     mode: _createMode,
                                     overwrites: _overwrites,
                                     onMove: (to) => setState(
@@ -1306,13 +1344,22 @@ class _EventsScreenState extends State<EventsScreen> {
                                         at: _nearestQuarter(to),
                                       ),
                                     ),
+                                    onMoveOther: (to) => setState(
+                                      () => _creating = creating.copy(
+                                        other: _nearestQuarter(to),
+                                      ),
+                                    ),
                                     onTap: (end) => setState(
                                       () => _creating = creating.copy(
-                                        anchor: end,
-                                        length: _newEventLength,
+                                        other: end == CursorEnd.start
+                                            ? creating.at.add(_newEventLength)
+                                            : creating.at.subtract(
+                                                _newEventLength,
+                                              ),
                                       ),
                                     ),
                                     onDrag: _dragEnd,
+                                    onShift: _shift,
                                     onPickMode: _pickCreateMode,
                                   ),
                                 ),
@@ -1423,21 +1470,17 @@ const _summaryCollapsedKey = 'day_summary_collapsed';
 /// Where whether the day's summary shows durations is kept.
 const _summaryDurationsKey = 'day_summary_durations';
 
-/// A new event being made: the cursor, at [at], and once a button on it's
-/// been used, which end of the event it is and how long the event is.
+/// A new event being made: the cursor with the buttons, at [at], and once
+/// one's been used, the second cursor, at [other]: the event's between
+/// them.
 class _Creating {
-  const _Creating(this.at, {this.anchor = CursorEnd.start, this.length});
+  const _Creating(this.at, {this.other});
 
   final DateTime at;
-  final CursorEnd anchor;
-  final Duration? length;
+  final DateTime? other;
 
-  _Creating copy({DateTime? at, CursorEnd? anchor, Duration? length}) =>
-      _Creating(
-        at ?? this.at,
-        anchor: anchor ?? this.anchor,
-        length: length ?? this.length,
-      );
+  _Creating copy({DateTime? at, DateTime? other}) =>
+      _Creating(at ?? this.at, other: other ?? this.other);
 }
 
 /// What the "+" carries, dragged onto the timeline.

@@ -376,14 +376,16 @@ void main() {
       await render(tester, 'events', events());
     });
 
-    // Making an event: the cursor at now, from "+"; the event dragged
-    // from it, keeping clear of the next; overwriting, tinged red; and
-    // the choice between them.
-    for (final (name, overwrite, drag, dialog) in [
-      ('events_new_cursor', false, 0, false),
-      ('events_new_dragged', false, 150, false),
-      ('events_new_overwrite', true, 150, false),
-      ('events_new_modes', false, 0, true),
+    // Making an event: the cursor at now, from "+"; dragged out over
+    // events, keeping them -- no room, so nothing shaded; moved to a free
+    // stretch, and dragged out there; overwriting, tinged red; and the
+    // choice between them.
+    for (final (name, overwrite, move, drag, dialog) in [
+      ('events_new_cursor', false, 0, 0, false),
+      ('events_new_dragged', false, 0, 150, false),
+      ('events_new_kept', false, 180, 60, false),
+      ('events_new_overwrite', true, 0, 150, false),
+      ('events_new_modes', false, 0, 0, true),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
         await render(
@@ -408,6 +410,14 @@ void main() {
             if (overwrite) {
               await tester.tap(find.text('Overwrite events'));
               await tester.pumpAndSettle();
+            }
+            if (move != 0) {
+              await tester.drag(
+                find.byTooltip('Drag to move the cursor'),
+                Offset(0, move * defaultTimelineScale),
+                warnIfMissed: false,
+              );
+              await settle();
             }
             if (drag != 0) {
               final start = find.byTooltip(

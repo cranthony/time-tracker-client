@@ -63,19 +63,6 @@ void main() {
     expect(room.overlapping(at(8, 50), at(11)), isNull);
   });
 
-  test('an event ending inside another ends where it starts, and starts no '
-      'earlier than the one before ends', () {
-    // Inside b: ends at 11; an hour before, but a ends at 8:50.
-    expect(room.moveEnd(at(11, 30), const Duration(hours: 1)), (
-      at(10),
-      at(11),
-    ));
-    expect(room.moveEnd(at(9, 30), const Duration(hours: 1)), (
-      at(8, 50),
-      at(9, 30),
-    ));
-  });
-
   test('overwriting cancels what it covers, shortens what it overlaps, and '
       'splits what it falls inside of', () {
     final room = EventRoom([

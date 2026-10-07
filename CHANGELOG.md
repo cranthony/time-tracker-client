@@ -14,16 +14,18 @@ on. Add the new version's section here at the same time; CI checks both.
   one at now (or the middle of what's in view). In the cursor's middle,
   a + with an arrow down, below it, starts an event there, and a + with
   an arrow up, above it, ends one there: tap one for an hour, or drag it
-  to where the other end goes. The cursor's handle, at
-  its right, moves it; a second cursor at the event's other end has a
-  handle of its own, to make it longer or shorter. While the cursor's
-  up, tapping an event moves the cursor there rather than opening it.
-  ✓ opens the new event; ✕ stops.
+  to where the other end goes, which puts a second cursor there. The
+  event is always between the two cursors; each cursor's handle, at its
+  right, moves it alone, and a bigger, fainter handle in the event moves
+  both. While the cursor's up, tapping an event moves the cursor there
+  rather than opening it. ✓ opens the new event; ✕ stops.
 - Beside them, a drop-down picks whether the new event keeps clear of
-  the events already there or overwrites them. Overwriting, its shadow
-  is tinged red and slowly pulses where it would take time from events,
-  and saving shortens, splits or cancels them (as a change of plan, not
-  against follow-through) in the same batch as the new event.
+  the events already there or overwrites them. Keeping them, with one
+  between the cursors there's no room: nothing's shaded, and ✓ waits.
+  Overwriting, its shadow is tinged red and slowly pulses where it would
+  take time from events, and saving shortens, splits or cancels them (as
+  a change of plan, not against follow-through) in the same batch as the
+  new event.
 
 ## 7.1.1
 
