@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/event.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
+import '../models/proposal.dart';
 import '../models/recurrence.dart';
 import '../outbox/note_outbox.dart';
 import '../outbox/save_error.dart';
@@ -18,6 +19,7 @@ import '../services/events_place.dart';
 import '../services/notes_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
+import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
@@ -27,6 +29,7 @@ import '../widgets/day_timeline.dart';
 import '../widgets/event_dialog.dart';
 import '../widgets/other_events.dart';
 import '../widgets/event_summary_dialog.dart';
+import '../widgets/proposal_review.dart';
 import '../widgets/recurrence_dialog.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
@@ -51,6 +54,15 @@ import '../widgets/status_message.dart';
 /// Where it was left, the day, time and zoom, is kept in its
 /// [placeStore], and it opens there again if it's back within
 /// [EventsPlace.keptFor]; otherwise on today.
+///
+/// While a compaction proposal is open (from [proposals]), what it says
+/// happened, from the last compaction to its `through`, is shown in a
+/// band over the days, to confirm, each event marked with what it does
+/// to it; and a [ProposalBar] above confirms it, or leaves notes for
+/// Claude. Changes to the events in the band -- moving, resizing,
+/// cancelling or adding one, or setting its actions or facts -- edit the
+/// proposal, not the calendar. The events after it are the plan, changed
+/// as ever.
 class EventsScreen extends StatefulWidget {
   const EventsScreen({
     super.key,
@@ -64,10 +76,20 @@ class EventsScreen extends StatefulWidget {
     this.version,
     this.placeStore,
     this.memory,
+    this.proposals,
+    this.proposalSeen,
     DateTime Function()? clock,
   }) : clock = clock ?? DateTime.now;
 
   final EventsRepository repository;
+
+  /// Where the open compaction proposal comes from, to review; null for
+  /// none.
+  final ProposalRepository? proposals;
+
+  /// Where the revision of the proposal last seen is kept, to show what's
+  /// changed since; by default, on the device.
+  final ProposalSeenStore? proposalSeen;
 
   /// Where to keep where it was left; null always to open on today.
   final EventsPlaceStore? placeStore;
@@ -233,8 +255,179 @@ class _EventsScreenState extends State<EventsScreen> {
   /// What's below the last day on the timeline.
   static const _pastFoot = 170.0;
 
+  /// The open compaction proposal, once it's loaded; null without one.
+  Proposal? _proposal;
+
+  /// Where the revision of the proposal last seen is kept.
+  late final ProposalSeenStore _seen;
+
+  /// The revision of [_proposal] seen before this visit -- what's changed
+  /// since is highlighted -- and the proposal it's of.
+  int? _since;
+  String? _sinceOf;
+
+  /// The events the user's own edits changed this visit: not highlighted
+  /// as changed since they looked.
+  final _editedHere = <String>{};
+
+  /// Whether the proposal's being confirmed, or a note left: its bar
+  /// can't be used meanwhile.
+  bool _proposalBusy = false;
+
+  /// Which of the proposal's notes is shown under its bar, and
+  /// highlighted on the timeline.
+  /// Null for the first note to review.
+  int? _noteIndex;
+
+  /// The proposal's notes, after the latest one an earlier compaction
+  /// used, as context: the proposal's own, or else the one the app was
+  /// told of.
+  List<ProposalNote> get _proposalNotes {
+    final proposal = _proposal;
+    if (proposal == null) return const [];
+    final notes = proposal.notes;
+    final latest = _memory.compaction?.latestCompacted;
+    if (latest == null ||
+        notes.any((n) => n.compacted) ||
+        !latest.timestamp.isBefore(proposal.windowStart)) {
+      return notes;
+    }
+    return [
+      ProposalNote(
+        id: latest.id ?? 'compacted',
+        time: latest.timestamp,
+        text: latest.description,
+        compacted: true,
+      ),
+      ...notes,
+    ];
+  }
+
+  /// The note shown under the proposal's bar: [_noteIndex], or else the
+  /// first to review.
+  ProposalNote? get _note {
+    final notes = _proposalNotes;
+    if (notes.isEmpty) return null;
+    final i =
+        _noteIndex ??
+        switch (notes.indexWhere((n) => !n.compacted)) {
+          -1 => 0,
+          final first => first,
+        };
+    return notes[i.clamp(0, notes.length - 1)];
+  }
+
+  /// The proposal's notes, as the timeline draws them.
+  List<ReviewNote> get _reviewNotes {
+    final selected = _note;
+    return [
+      for (final note in _proposalNotes)
+        ReviewNote(
+          time: note.time,
+          kind: reviewNoteKind(note),
+          selected: note.id == selected?.id,
+        ),
+    ];
+  }
+
+  /// Shows the [index]th of the proposal's notes under its bar, and
+  /// scrolls the timeline to it, in the middle of the view.
+  void _goToNote(int index) {
+    final notes = _proposalNotes;
+    if (notes.isEmpty) return;
+    final i = index.clamp(0, notes.length - 1);
+    setState(() => _noteIndex = i);
+    final at = notes[i].time.toLocal();
+    final day = _midnight(at);
+    if (_pages.hasClients && day != _day) _pages.jumpToPage(_pageOf(day));
+    // Once it's laid out on that day.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      final position = _scroll.position;
+      final y =
+          timelineOffset(at, day: day, dayEnd: _dayAfter(day), scale: _scale) -
+          position.viewportDimension / 2;
+      _scroll.animateTo(
+        y.clamp(0, position.maxScrollExtent),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
   /// The day shown's events, if they're loaded.
-  List<Event>? get _shown => _store.day(_day);
+  List<Event>? get _shown => _eventsOn(_day);
+
+  /// [day]'s events, if they're loaded, as they're shown: in what an
+  /// open proposal says happened, as it says.
+  List<Event>? _eventsOn(DateTime day) => switch (_store.day(day)) {
+    final events? => _withProposal(events, day, _dayAfter(day)),
+    null => null,
+  };
+
+  /// [calendar], the calendar's events from [from] to [to], with those
+  /// that the open proposal says happened as it says: a new one added,
+  /// and a cancelled one shown cancelled -- unless another is in its place.
+  List<Event> _withProposal(List<Event> calendar, DateTime from, DateTime to) {
+    final reviewed = _proposal?.reviewed ?? const <ProposalEvent>[];
+    if (reviewed.isEmpty) return calendar;
+    final ids = {for (final e in reviewed) e.id};
+    final byId = {for (final e in calendar) ?e.id: e};
+    final here = [
+      for (final e in reviewed)
+        if (e.start.isBefore(to) && e.end.isAfter(from)) e,
+    ];
+    bool covered(ProposalEvent e) => here.any(
+      (other) =>
+          other.live &&
+          other.start.isBefore(e.end) &&
+          other.end.isAfter(e.start),
+    );
+    return [
+      for (final e in calendar)
+        if (!ids.contains(e.id)) e,
+      for (final e in here)
+        if (e.live || !covered(e)) e.toEvent(byId[e.id]),
+    ]..sort((a, b) => a.start.compareTo(b.start));
+  }
+
+  /// Whether [event] is in what the open proposal says happened: changed
+  /// in it, not on the calendar.
+  bool _inReview(Event event) => _proposal?.event(event.id)?.reviewed ?? false;
+
+  /// Whether an event from [start] to [end] would be in what the open
+  /// proposal says happened.
+  bool _reviews(DateTime start, DateTime end) =>
+      _proposal?.covers(start, end) ?? false;
+
+  /// The events changed since the user last looked at the proposal.
+  Set<String> get _changedSince =>
+      (_proposal?.changedSince ?? const {}).difference(_editedHere);
+
+  /// What the open proposal does to each of its events, to mark them.
+  Map<String, EventMark> get _marks {
+    final proposal = _proposal;
+    if (proposal == null) return const {};
+    final calendar = {
+      for (final e in _store.between(
+        proposal.windowStart.subtract(const Duration(days: 1)),
+        proposal.through.add(const Duration(days: 1)),
+      ))
+        ?e.id: e,
+    };
+    final changed = _changedSince;
+    final strings = MaterialLocalizations.of(context);
+    return {
+      for (final e in proposal.reviewed)
+        e.id: proposalMark(
+          e,
+          calendar: calendar[e.id],
+          changed: changed.contains(e.id),
+          time: (t) =>
+              strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal())),
+        ),
+    };
+  }
 
   /// Whether the day shown is kept from last time, or may be out of date,
   /// and is being loaded again.
@@ -266,6 +459,7 @@ class _EventsScreenState extends State<EventsScreen> {
     _memory
       ..useEvents(EventStore(repository: widget.repository))
       ..addListener(_memoryChanged);
+    _seen = widget.proposalSeen ?? ProposalSeenStore();
     _day = _firstDay = _midnight(widget.clock());
     _lifecycle = AppLifecycleListener(onHide: _savePlace);
     final store = widget.placeStore;
@@ -284,6 +478,7 @@ class _EventsScreenState extends State<EventsScreen> {
     _loadActions();
     widget.outbox?.addListener(_outboxChanged);
     _loadNotes(cached: true);
+    _loadProposal();
     _loadSummaryCollapsed();
     // Once the scopes can be read: everyone, every location and every
     // trait, for an event's dialogs.
@@ -326,6 +521,38 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
+  /// Loads the open compaction proposal, if there is one: the first time,
+  /// what's changed since the revision the user last saw, to highlight.
+  /// Best effort: without it, it's shown as it was.
+  Future<void> _loadProposal() async {
+    final repository = widget.proposals;
+    if (repository == null) return;
+    try {
+      var proposal = await repository.current(sinceRevision: _since);
+      if (proposal != null && proposal.id != _sinceOf) {
+        _sinceOf = proposal.id;
+        _since = await _seen.seen(proposal.id);
+        if (_since case final since? when since < proposal.revision) {
+          proposal = await repository.current(sinceRevision: since);
+        }
+        // Never seen: nothing's changed since. From now on, what changes
+        // while it's open is.
+        _since ??= proposal?.revision;
+      }
+      if (!mounted) return;
+      setState(() => _proposal = proposal);
+    } catch (_) {
+      // Shown as it was.
+    }
+  }
+
+  /// Keeps the proposal's revision as seen, for next time.
+  void _sawProposal() {
+    if (_proposal case final proposal?) {
+      _seen.saw(proposal.id, proposal.revision);
+    }
+  }
+
   /// Goes back to where it was left, when the app was last open, if
   /// that's to be kept.
   Future<void> _loadPlace(EventsPlaceStore store) async {
@@ -344,6 +571,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Keeps where it is, for [EventsPlaceStore], while the timeline's
   /// still laid out to say.
   void _savePlace() {
+    _sawProposal();
     final store = widget.placeStore;
     if (store == null || _placePending || !_scroll.hasClients) return;
     store.save(
@@ -696,6 +924,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Opens [event]'s summary, and from it, its details.
   Future<void> _openEvent(Event event) async {
+    if (_inReview(event)) return _openReviewed(event);
     final outcome = await showEventSummaryDialog(
       context,
       event,
@@ -728,17 +957,187 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
-  /// Every event loaded, but [event], for keeping its times clear of.
-  OtherEvents _otherEvents(Event? event) => OtherEvents(
-    {
-      for (final e in _store.between(
-        DateTime(_day.year, _day.month, _day.day - 3),
-        DateTime(_day.year, _day.month, _day.day + 4),
-      ))
-        e.id ?? e: e,
-    }.values,
-    except: event?.id,
-  );
+  /// Opens [event], one in what the open proposal says happened, as
+  /// [_openEvent] does, its changes and its cancelling edits of the
+  /// proposal. One the proposal cancels can be put back as planned.
+  Future<void> _openReviewed(Event event) async {
+    if (event.isCancelled) return _offerAsPlanned(event);
+    Proposal? amended;
+    final outcome = await showEventSummaryDialog(
+      context,
+      event,
+      save: (changes) async {
+        amended = await _amend(
+          ProposalEdits(updates: [proposalUpdate(event, changes)]),
+        );
+        return const [];
+      },
+      cancel: (counts) async {
+        amended = await _amend(
+          ProposalEdits(
+            cancels: [(eventId: event.id!, countsAgainstFollowThrough: counts)],
+          ),
+        );
+        return const [];
+      },
+      otherEvents: _otherEvents(event),
+      actions: _actionsById,
+      loadActions: _actions,
+    );
+    if (!mounted) return;
+    switch (outcome) {
+      case SummarySaved():
+        _amended(amended!, 'Changed in what happened, to confirm.');
+      case SummaryDetails():
+        await _openReviewedDetails(event);
+      case null:
+    }
+  }
+
+  /// Opens every one of [event]'s properties, as [_openEventDetails]
+  /// does, for one in what the open proposal says happened: its changes
+  /// edit the proposal.
+  Future<void> _openReviewedDetails(Event event) async {
+    Proposal? amended;
+    final updated = await showEventDialog(
+      context,
+      event,
+      save: (event, changes) async {
+        amended = await _amend(
+          ProposalEdits(updates: [proposalUpdate(event, changes)]),
+        );
+        return const [];
+      },
+      cancel: (event, counts) async {
+        amended = await _amend(
+          ProposalEdits(
+            cancels: [(eventId: event.id!, countsAgainstFollowThrough: counts)],
+          ),
+        );
+        return const [];
+      },
+      otherEvents: _otherEvents(event),
+      actions: _actions,
+    );
+    if (updated != null && mounted) {
+      _amended(amended!, 'Changed in what happened, to confirm.');
+    }
+  }
+
+  /// Offers to put [event], which the open proposal says didn't happen,
+  /// back as planned.
+  Future<void> _offerAsPlanned(Event event) async {
+    final proposed = _proposal?.event(event.id);
+    if (proposed == null) return;
+    final by = switch (proposed.decidedBy) {
+      DecidedBy.claude => ' Claude says so.',
+      DecidedBy.user => ' You said so.',
+      null => '',
+    };
+    final name = switch (event.summary) {
+      final s? when s.isNotEmpty => '“$s”',
+      _ => 'This event',
+    };
+    final back = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('$name didn\'t happen'),
+        content: Text(
+          'In what happened, to confirm, it '
+          '${proposed.status == ProposalEventStatus.merged ? 'was merged into another event' : 'was cancelled'}.'
+          '$by Put it back as planned?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Leave it'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Put it back'),
+          ),
+        ],
+      ),
+    );
+    if (back != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final amended = await _amend(ProposalEdits(asPlanned: [proposed.id]));
+      _amended(amended, 'Put back as planned.');
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text("Couldn't put it back: ${describeSaveError(e)}"),
+        ),
+      );
+    }
+  }
+
+  /// Records [edits] to the open proposal, as the user's, and shows its
+  /// new revision. If they're refused -- they'd overlap, say -- loads it
+  /// again and rethrows, the edits left where they were made, as a draft.
+  Future<Proposal> _amend(ProposalEdits edits) async {
+    final proposal = _proposal;
+    final repository = widget.proposals;
+    if (proposal == null || repository == null) {
+      throw StateError('No proposal is open.');
+    }
+    try {
+      final amended = await repository.amend(proposal, edits);
+      if (mounted) {
+        setState(() {
+          _editedHere
+            ..addAll(edits.eventIds)
+            // The keys of the events they made.
+            ..addAll({
+              for (final e in amended.events ?? const <ProposalEvent>[])
+                if (proposal.event(e.id) == null) e.id,
+            });
+          _proposal = amended.copyWith(changedSince: proposal.changedSince);
+        });
+      }
+      return amended;
+    } catch (_) {
+      unawaited(_loadProposal());
+      rethrow;
+    }
+  }
+
+  /// Says [said] of an edit to the proposal that made [amended], and
+  /// which of Claude's newer changes it replaced.
+  void _amended(Proposal amended, String said) {
+    final replaced = [
+      for (final id in amended.replaced)
+        switch (amended.event(id)?.summary) {
+          final s? when s.isNotEmpty => '“$s”',
+          _ => 'an event',
+        },
+    ];
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          replaced.isEmpty
+              ? said
+              : "$said It replaced Claude's newer change to "
+                    '${replaced.join(', ')}.',
+        ),
+      ),
+    );
+  }
+
+  /// Every event loaded, but [event], for keeping its times clear of: in
+  /// what an open proposal says happened, as it says.
+  OtherEvents _otherEvents(Event? event) {
+    final from = DateTime(_day.year, _day.month, _day.day - 3);
+    final to = DateTime(_day.year, _day.month, _day.day + 4);
+    return OtherEvents(
+      {
+        for (final e in _withProposal(_store.between(from, to), from, to))
+          e.id ?? e: e,
+      }.values,
+      except: event?.id,
+    );
+  }
 
   /// [time] at the nearest quarter hour.
   static DateTime _nearestQuarter(DateTime time) {
@@ -831,27 +1230,31 @@ class _EventsScreenState extends State<EventsScreen> {
         ? _overwrite(_otherEvents(event), start, end)
         : const Overwrite();
     final messenger = ScaffoldMessenger.of(context);
-    final List<Event> changed;
+    final times = {
+      'start': localIsoTimestamp(start),
+      'end': localIsoTimestamp(end),
+    };
+    // In what happened, to confirm: the proposal's changed.
+    final review = _inReview(event) || _reviews(start, end);
+    var changed = const <Event>[];
+    Proposal? amended;
     try {
-      changed = await _approvingHistory(
-        (allow) => widget.repository.makeRoom(
-          Overwrite(
-            updates: [
-              (
-                event,
-                {
-                  'start': localIsoTimestamp(start),
-                  'end': localIsoTimestamp(end),
-                },
-              ),
-              ...inTheWay.updates,
-            ],
-            cancels: inTheWay.cancels,
-            creates: inTheWay.creates,
+      if (review) {
+        amended = await _amend(
+          ProposalEdits.over(inTheWay, updates: [proposalUpdate(event, times)]),
+        );
+      } else {
+        changed = await _approvingHistory(
+          (allow) => widget.repository.makeRoom(
+            Overwrite(
+              updates: [(event, times), ...inTheWay.updates],
+              cancels: inTheWay.cancels,
+              creates: inTheWay.creates,
+            ),
+            allowCompactedChanges: allow,
           ),
-          allowCompactedChanges: allow,
-        ),
-      );
+        );
+      }
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text("Couldn't move it: ${describeSaveError(e)}")),
@@ -861,6 +1264,15 @@ class _EventsScreenState extends State<EventsScreen> {
     if (!mounted) return;
     _endBox();
     final others = inTheWay.count;
+    if (amended != null) {
+      return _amended(
+        amended,
+        others == 0
+            ? 'Moved in what happened, to confirm.'
+            : 'Moved in what happened, to confirm. ${_events(others)} '
+                  'changed to make room.',
+      );
+    }
     messenger.showSnackBar(
       SnackBar(
         content: Text(
@@ -872,6 +1284,8 @@ class _EventsScreenState extends State<EventsScreen> {
     );
     _store.putEvents(changed);
     _fresh.clear();
+    // The proposal is planned from the calendar as it is now.
+    unawaited(_loadProposal());
     await _refresh();
   }
 
@@ -1086,22 +1500,36 @@ class _EventsScreenState extends State<EventsScreen> {
     final later = _later;
     final inTheWay = _overwrite(others, start, end);
     var cleared = false;
+    // In what happened, to confirm: made in the proposal.
+    final review = _reviews(start, end);
+    Proposal? amended;
+    Overwrite inTheWayOf(Map<String, Object?> fields) => _overwrite(
+      others,
+      DateTime.parse(fields['start'] as String),
+      DateTime.parse(fields['end'] as String),
+      later: later,
+    );
     final created = await showNewEventDialog(
       context,
       start: start,
       end: end,
       // Overwriting, its times needn't keep clear of anything.
       otherEvents: overwrite ? const OtherEvents.none() : others,
-      create: overwrite
+      create: review
+          ? (fields) async {
+              amended = await _amend(
+                ProposalEdits.over(
+                  overwrite ? inTheWayOf(fields) : const Overwrite(),
+                  creates: [proposalCreate(fields)],
+                ),
+              );
+              return const [];
+            }
+          : overwrite
           ? (fields) => _approvingHistory(
               (allow) => widget.repository.createOver(
                 fields,
-                _overwrite(
-                  others,
-                  DateTime.parse(fields['start'] as String),
-                  DateTime.parse(fields['end'] as String),
-                  later: later,
-                ),
+                inTheWayOf(fields),
                 allowCompactedChanges: allow,
               ),
             )
@@ -1133,8 +1561,12 @@ class _EventsScreenState extends State<EventsScreen> {
                 final mode when mode.pushes => 'Make room',
                 _ => 'Clear the time',
               },
-              run: () {
+              run: () async {
                 cleared = true;
+                if (review) {
+                  amended = await _amend(ProposalEdits.over(inTheWay));
+                  return const [];
+                }
                 return _approvingHistory(
                   (allow) => widget.repository.makeRoom(
                     inTheWay,
@@ -1148,6 +1580,15 @@ class _EventsScreenState extends State<EventsScreen> {
     );
     if (created == null || !mounted) return;
     _endBox();
+    if (amended case final amended?) {
+      return _amended(
+        amended,
+        cleared
+            ? 'Time cleared in what happened, to confirm: '
+                  '${_events(inTheWay.count)} changed.'
+            : 'Added to what happened, to confirm.',
+      );
+    }
     final changed = created.length - 1;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1163,6 +1604,7 @@ class _EventsScreenState extends State<EventsScreen> {
     );
     _store.putEvents(created);
     _fresh.clear();
+    unawaited(_loadProposal());
     await _refresh();
     await _loadActions();
   }
@@ -1260,6 +1702,7 @@ class _EventsScreenState extends State<EventsScreen> {
     // other days too.
     _store.putEvents(updated);
     _fresh.clear();
+    unawaited(_loadProposal());
     await _refresh();
     // Its actions may have changed, and with them its diamonds.
     await _loadActions();
@@ -1376,6 +1819,360 @@ class _EventsScreenState extends State<EventsScreen> {
     _fresh.clear();
     await _refresh();
     return true;
+  }
+
+  /// Runs [action] on the open proposal, its bar busy meanwhile; if it
+  /// fails, loads the proposal again and says why, after [failed].
+  Future<void> _onProposal(
+    String failed,
+    Future<void> Function(Proposal proposal, ProposalRepository repository)
+    action,
+  ) async {
+    final proposal = _proposal;
+    final repository = widget.proposals;
+    if (proposal == null || repository == null || _proposalBusy) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _proposalBusy = true);
+    try {
+      await action(proposal, repository);
+    } catch (e) {
+      await _loadProposal();
+      final now = _proposal?.revision;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            now != null && now != proposal.revision
+                ? 'It changed since you looked: this is revision $now. '
+                      'Review it, then try again.'
+                : '$failed ${describeSaveError(e)}',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _proposalBusy = false);
+    }
+  }
+
+  /// Confirms the open proposal, as shown.
+  Future<void> _confirmProposal() => _onProposal(
+    "Couldn't confirm it:",
+    (proposal, repository) async =>
+        _confirmed(proposal, await repository.confirm(proposal)),
+  );
+
+  /// Resumes the apply of the open proposal, where it stopped.
+  Future<void> _finishProposal() => _onProposal(
+    "Couldn't finish it:",
+    (proposal, repository) async =>
+        _confirmed(proposal, await repository.finish(proposal)),
+  );
+
+  /// Shows what confirming [proposal], or finishing it, came to: applied,
+  /// it's history; rechecked, or rebuilt, a new revision to confirm; or
+  /// handed to Claude.
+  Future<void> _confirmed(Proposal proposal, ProposalOutcome outcome) async {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final next = outcome.proposal;
+    switch (outcome.status) {
+      case ProposalOutcomeStatus.applied:
+        _sawProposal();
+        setState(() {
+          _proposal = null;
+          _editedHere.clear();
+        });
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Confirmed: what happened '
+              '${windowLabel(context, proposal.windowStart, proposal.through)} '
+              'is recorded.',
+            ),
+          ),
+        );
+        _fresh.clear();
+        // The last compaction is its through now.
+        unawaited(_loadNotes());
+        await _refresh();
+      case ProposalOutcomeStatus.rechecked:
+        // What the recheck changed, from the revision confirmed.
+        final again =
+            await widget.proposals!.current(sinceRevision: proposal.revision) ??
+            next;
+        if (again == null || !mounted) return;
+        setState(() {
+          _proposal = again.copyWith(
+            changedSince: {...proposal.changedSince, ...again.changedSince},
+          );
+          // Not while it's asked.
+          _proposalBusy = false;
+        });
+        final confirm = await showRecheckedDialog(
+          context,
+          again,
+          message: outcome.message,
+          names: [
+            for (final id in again.changedSince) again.event(id)?.summary ?? id,
+          ],
+        );
+        if (confirm && mounted) await _confirmProposal();
+      case ProposalOutcomeStatus.rebuilt:
+        setState(() => _proposal = next ?? _proposal);
+        unawaited(_loadProposal());
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              outcome.message ??
+                  "Some of it couldn't be applied, so it's been planned "
+                      'again from the calendar as it is: review it, then '
+                      'confirm again.',
+            ),
+          ),
+        );
+      case ProposalOutcomeStatus.abandoned:
+        setState(() => _proposal = null);
+        messenger.showSnackBar(
+          SnackBar(content: Text(outcome.message ?? 'It was abandoned.')),
+        );
+      case ProposalOutcomeStatus.needsClaude:
+        setState(() {
+          _proposal = next ?? _proposal;
+          _proposalBusy = false;
+        });
+        unawaited(_loadProposal());
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Claude needs to look at it'),
+            content: Text(
+              outcome.message ??
+                  "It can't be planned as it is any more, so it's gone to "
+                      "Claude with a note saying why. It'll come back "
+                      'revised, to confirm.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+    }
+  }
+
+  /// The open proposal's events, by id, named for notes about them.
+  Map<String, String> get _reviewedNames {
+    final strings = MaterialLocalizations.of(context);
+    String time(DateTime t) =>
+        strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()));
+    return {
+      for (final e in _proposal?.reviewed ?? const <ProposalEvent>[])
+        e.id:
+            '${switch (e.summary) {
+              final s? when s.isNotEmpty => s,
+              _ => '(no summary)',
+            }}, ${time(e.start)}',
+    };
+  }
+
+  /// The open proposal's events, by id, by summary.
+  Map<String, String> get _reviewedSummaries => {
+    for (final e in _proposal?.reviewed ?? const <ProposalEvent>[])
+      e.id: switch (e.summary) {
+        final s? when s.isNotEmpty => s,
+        _ => '(no summary)',
+      },
+  };
+
+  /// The open proposal's time notes, by id, named for notes about them:
+  /// "the 11:05 AM note, “Coffee's cold”".
+  Map<String, String> get _noteNames {
+    final strings = MaterialLocalizations.of(context);
+    return {
+      for (final n in _proposalNotes)
+        n.id:
+            'the ${strings.formatTimeOfDay(TimeOfDay.fromDateTime(n.time.toLocal()))} '
+            'note${n.text == null ? '' : ', “${n.text}”'}',
+    };
+  }
+
+  /// Asks what [note] is for, and edits the proposal so: added to the
+  /// event it falls within or another of its day's, left out, or put back
+  /// as Claude had it -- or leaves a note for Claude about it.
+  Future<void> _editNote(ProposalNote note) async {
+    final proposal = _proposal;
+    if (proposal == null) return;
+    final day = _midnight(note.time.toLocal());
+    final live = [
+      for (final e in proposal.reviewed)
+        if (e.live && e.start.isBefore(_dayAfter(day)) && e.end.isAfter(day)) e,
+    ];
+    final summaries = _reviewedSummaries;
+    final strings = MaterialLocalizations.of(context);
+    String time(DateTime t) =>
+        strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()));
+    final choice = await showNoteUseSheet(
+      context,
+      note,
+      events: {
+        for (final e in live) e.id: '${summaries[e.id]}, ${time(e.start)}',
+      },
+      // Annotated with no event named, a note goes to the event whose edge
+      // it sets, or else the one it falls within.
+      fallsIn:
+          note.edgeOf ??
+          live
+              .where(
+                (e) => !e.start.isAfter(note.time) && e.end.isAfter(note.time),
+              )
+              .firstOrNull
+              ?.id,
+    );
+    if (choice == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final (edits, said) = switch (choice) {
+      AnnotateNote(:final eventId) => (
+        ProposalEdits(
+          notes: [(noteId: note.id, ignore: false, eventId: eventId)],
+        ),
+        'Note added to ${switch (summaries[eventId]) {
+          final name? => '“$name”',
+          null => 'the event it falls within',
+        }}, in what happened, to confirm.',
+      ),
+      IgnoreNote() => (
+        ProposalEdits(notes: [(noteId: note.id, ignore: true, eventId: null)]),
+        'Note left out of what happened, to confirm.',
+      ),
+      NoteAsClaudeHadIt() => (
+        ProposalEdits(asPlanned: [note.id]),
+        'Note put back as Claude had it.',
+      ),
+      AskClaudeAboutNote() => (null, null),
+    };
+    if (edits == null) return _noteForClaude(aboutNote: note);
+    try {
+      final amended = await _amend(edits);
+      if (mounted) _amended(amended, said!);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text("Couldn't change it: ${describeSaveError(e)}")),
+      );
+    }
+  }
+
+  /// Asks for a note for Claude on the open proposal, about [about] to
+  /// start with -- or about the time note [aboutNote] -- and leaves it.
+  Future<void> _noteForClaude({String? about, ProposalNote? aboutNote}) async {
+    final note = await showProposalNoteDialog(
+      context,
+      events: _reviewedNames,
+      about: about,
+      subject: switch (aboutNote) {
+        final n? => 'About ${_noteNames[n.id]}',
+        null => null,
+      },
+    );
+    if (note == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    await _onProposal("Couldn't leave the note:", (proposal, repository) async {
+      await repository.addNote(
+        proposal,
+        note.text,
+        eventId: aboutNote == null ? note.eventId : null,
+        noteId: aboutNote?.id,
+      );
+      await _loadProposal();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text("Note left. It's waiting for Claude to answer."),
+        ),
+      );
+    });
+  }
+
+  /// Shows the open proposal's notes for Claude, and Claude's replies.
+  Future<void> _showProposalNotes() async {
+    final proposal = _proposal;
+    if (proposal == null) return;
+    final action = await showProposalNotesSheet(
+      context,
+      proposal,
+      names: _reviewedNames,
+      noteNames: _noteNames,
+    );
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    switch (action) {
+      case WithdrawNote(:final feedback):
+        await _onProposal("Couldn't withdraw it:", (_, repository) async {
+          await repository.withdrawNote(feedback.id);
+          await _loadProposal();
+          messenger.showSnackBar(
+            const SnackBar(content: Text('Note withdrawn.')),
+          );
+        });
+      case AddNote():
+        await _noteForClaude();
+      case null:
+    }
+  }
+
+  /// Gives up the open proposal, after asking.
+  Future<void> _abandonProposal() async {
+    final proposal = _proposal;
+    if (proposal == null) return;
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Abandon it?'),
+        content: Text(
+          'What happened '
+          '${windowLabel(context, proposal.windowStart, proposal.through)} '
+          "isn't confirmed from it, and your edits and notes to it are "
+          'dropped. Claude proposes it again on its next run.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep it'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Abandon it'),
+          ),
+        ],
+      ),
+    );
+    if (sure != true || !mounted) return;
+    await _onProposal("Couldn't abandon it:", (proposal, repository) async {
+      await repository.abandon(proposal);
+      if (!mounted) return;
+      setState(() => _proposal = null);
+    });
+  }
+
+  /// Shows the start of what the open proposal says happened.
+  void _goToProposal() {
+    final proposal = _proposal;
+    if (proposal == null) return;
+    final from = proposal.windowStart.toLocal();
+    final day = _midnight(from);
+    if (_pages.hasClients && day != _day) _pages.jumpToPage(_pageOf(day));
+    // Once it's laid out on that day.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      final y =
+          timelineOffset(
+            from,
+            day: day,
+            dayEnd: _dayAfter(day),
+            scale: _scale,
+          ) -
+          48;
+      _scroll.jumpTo(y.clamp(0, _scroll.position.maxScrollExtent));
+    });
   }
 
   /// Slides [days] on, from the day shown or the one it's sliding to.
@@ -1569,11 +2366,39 @@ class _EventsScreenState extends State<EventsScreen> {
             durations: _summaryDurations,
             onDurations: _setSummaryDurations,
           ),
+        if (_proposal case final proposal?)
+          ProposalBar(
+            proposal: proposal,
+            busy: _proposalBusy,
+            changes: _changedSince.length,
+            onConfirm: _confirmProposal,
+            onNote: _noteForClaude,
+            onNotes: _showProposalNotes,
+            onRetry: _finishProposal,
+            onGoTo: _goToProposal,
+            onAbandon: _abandonProposal,
+          ),
+        if ((_note, _proposalNotes) case (final note?, final notes))
+          ProposalNoteStrip(
+            note: note,
+            index: notes.indexWhere((n) => n.id == note.id),
+            count: notes.length,
+            onPrevious: notes.first.id != note.id
+                ? () => _goToNote(notes.indexWhere((n) => n.id == note.id) - 1)
+                : null,
+            onNext: notes.last.id != note.id
+                ? () => _goToNote(notes.indexWhere((n) => n.id == note.id) + 1)
+                : null,
+            events: _reviewedSummaries,
+            // Compacted already: there to see, not to change.
+            onEdit: note.compacted ? null : () => _editNote(note),
+          ),
         Expanded(
           child: LayoutBuilder(
             builder: (context, view) => RefreshIndicator(
               onRefresh: () {
                 unawaited(_loadNotes());
+                unawaited(_loadProposal());
                 return _refresh();
               },
               child: NotificationListener<ScrollEndNotification>(
@@ -1696,7 +2521,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// it on screen.
   Widget _buildDay(BuildContext context, DateTime day, double view) {
     // The app's, so a day sliding in is drawn as it slides, not after.
-    final events = _store.day(day);
+    final events = _eventsOn(day);
     final (from, to) = _stacked(day);
     double offset(DateTime time) =>
         timelineOffset(time, day: from, dayEnd: to, scale: _scale);
@@ -1765,7 +2590,8 @@ class _EventsScreenState extends State<EventsScreen> {
     required double clipBottom,
     required bool shaded,
   }) {
-    final events = _store.day(day);
+    final events = _eventsOn(day);
+    final proposal = _proposal;
     return ClipRect(
       clipper: _InsetClipper(top: clipTop, bottom: clipBottom),
       child: Stack(
@@ -1787,7 +2613,17 @@ class _EventsScreenState extends State<EventsScreen> {
                 scale: _scale,
                 now: widget.clock(),
                 lastCompaction: _lastCompaction,
-                pendingNotes: _pendingNotes,
+                // In a proposal's window, its notes, drawn as it says.
+                pendingNotes: [
+                  for (final t in _pendingNotes)
+                    if (!(proposal?.covers(
+                          t,
+                          t.add(const Duration(seconds: 1)),
+                        ) ??
+                        false))
+                      t,
+                ],
+                reviewNotes: _reviewNotes,
                 // While the cursor's up, events don't open: a tap on one
                 // goes to the timeline under it, and moves the cursor
                 // there.
@@ -1795,6 +2631,10 @@ class _EventsScreenState extends State<EventsScreen> {
                 // Pressed and held, it's moved: the box around it.
                 onLongPress: _box == null ? _startMoving : null,
                 faded: _moving?.id,
+                review: proposal == null
+                    ? null
+                    : (from: proposal.windowStart, through: proposal.through),
+                marks: _marks,
                 // The box moved there, its size intact.
                 onTapTime: _box == null
                     ? null

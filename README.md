@@ -9,7 +9,12 @@ done at it and what happened: who it was with and for, where, and notes.
 Its **+** puts a cursor at now, which a tap on the timeline moves:
 start an event there or end it there, tapping or dragging to its other
 end, either keeping clear of the events already there or overwriting
-them; drag either end's handle to adjust it; then ✓ to fill it in. Above them, a summary shows how the day's time is split by priority;
+them; drag either end's handle to adjust it; then ✓ to fill it in. While
+Claude has a **compaction proposal** open -- what it says happened since the
+last compaction -- it's a band over the timeline, each change marked, to
+confirm: edits to the events in it edit the proposal, not the calendar, and
+a bar above confirms it as shown or leaves a note for Claude to revise it
+(see [Compaction proposals](#compaction-proposals)). Above them, a summary shows how the day's time is split by priority;
 swipe it to see the top actions, or the top-level groups. A **Plan** page
 has four panes, swiped between or picked from its tabs, each with a search
 of its own. Landing on it loads every pane at once, and it shows what it
@@ -414,6 +419,46 @@ got the note after all, so a lost response doesn't create a duplicate.
 - **Chrome:** it retries while the tab is open. A closed tab keeps the notes
   and sends them the next time you open the app.
 
+## Compaction proposals
+
+A scheduled Claude routine compacts notes into the calendar as a
+*proposal*: "this is what happened from the last compaction to
+`through`" ([the server's design](https://github.com/cranthony/time-tracking-google-calendar-mcp/blob/claude/compaction-proposals/docs/compaction-proposals.md)).
+Claude can't apply one; only confirming it in the app does.
+
+- **The band.** On the Events page, the proposal's window is tinted and
+  outlined, headed "What happened -- to confirm" and ending at a
+  "through" line. Each event in it says what the proposal does to it --
+  moved (and from where), new, cancelled, renamed, new actions or facts
+  -- and whether Claude or you decided it; one as planned is plain. Those
+  changed since the revision you last saw (kept on the device) have a dot.
+  Its notes are lines across it, each with a badge: ↳ added to an event,
+  ⇕ setting an event's start or end, ⊘ left out. Under the bar is one of
+  them -- its time, text and what became of it -- highlighted on the
+  timeline, with arrows to step to the note before or after -- back to
+  the latest note the last compaction used, with a ✓, as context. Its pencil
+  says what the note is for -- added to the event it falls within (or
+  whose start or end it sets), to another of its day's, or left out --
+  puts it back as Claude had it, or asks Claude about it.
+- **Editing it.** Moving, resizing, cancelling or adding an event in the
+  band, or setting its actions, people or location, edits the proposal
+  (`amend_proposal`), with the same dialogs and press-and-hold move as
+  ever, and what it does to the events in its way. A description can only
+  be added to; a cancelled one can be put back as planned. If the server
+  refuses an edit (an overlap, say), it stays in the dialog to fix, and
+  the proposal loads again. Below the band is the plan, changed on the
+  calendar; before it, history, changed only after asking.
+- **The bar.** "Confirm ... happened as shown" applies it. "Note for
+  Claude" leaves a note, about an event or all of it; while one's open
+  it's waiting for Claude, who answers it on its next run (or ask in a
+  conversation), and it can't be confirmed. "Notes" shows them, Claude's
+  replies beside them, and withdraws an open one. If the calendar changed
+  since it was planned, it says what changed and asks to confirm again; if
+  it can't be planned any more, it's handed to Claude; if applying it
+  stopped partway, Retry finishes it. Its menu goes to it, or abandons it.
+
+The sample data has one open, so `SAMPLE_DATA=true` shows it.
+
 ## Development
 
 ```sh
@@ -445,7 +490,9 @@ of people and actions, a trait's page, a trait and an action being
 edited, and its
 actions with every status, and the time summary on each page and folded
 away), a person's page, Events (with each page of its day summary, folded away,
-and what happened at an event) and Notes.
+what happened at an event, and a compaction proposal: the band, its
+start, a note stepped to, its notes for Claude, and waiting for Claude)
+and Notes.
 It writes them, at 2x and with the real fonts (Roboto and Material
 Icons, from the Flutter SDK), to `build/screenshots/`. This is the quick
 way to see a UI change without running the app:

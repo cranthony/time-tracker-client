@@ -3,6 +3,7 @@ import '../models/facts.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/person.dart';
+import '../models/proposal.dart';
 import '../models/recurrence.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
@@ -10,6 +11,7 @@ import '../services/events_repository.dart';
 import '../services/actions_repository.dart';
 import '../services/notes_repository.dart';
 import '../services/people_repository.dart';
+import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
 
 /// A realistic day of notes, events and a plan -- traits, people and
@@ -544,6 +546,7 @@ class SampleData {
   List<Note> get notes => [
     Note(timestamp: _at(7, 50), description: 'Running a little late'),
     Note(timestamp: _at(9, 40), description: 'Started on the plan page'),
+    Note(timestamp: _at(11, 5), description: "Coffee's gone cold again"),
     Note(timestamp: _at(12, 15), description: 'Lunch with Sam, finally'),
   ];
 
@@ -833,6 +836,195 @@ class SampleData {
   /// When notes were last compacted, which actions' recent time is
   /// counted up to.
   DateTime get lastCompaction => _at(7, 30);
+
+  // ------------------------------------------------------------- Proposal
+
+  /// The open compaction proposal's id.
+  static const proposalId = '5a3f9c1e0b27';
+
+  /// The open compaction proposal: what Claude says happened from the
+  /// last compaction to 1:30 PM, from [notes] -- breakfast later than
+  /// planned, then an email that wasn't planned -- as the user edited it,
+  /// cancelling the texts, and as Claude revised it for the user's note,
+  /// starting lunch later and work running until then. Its third
+  /// revision; [proposalChanges] says what each changed.
+  Proposal get proposal {
+    final byId = {for (final e in events) e.id: e};
+    Map<String, Object?> event(
+      String id,
+      String status, {
+      DateTime? start,
+      DateTime? end,
+      String? by,
+      String? description,
+      List<String>? actions,
+    }) {
+      final planned = byId[id];
+      return {
+        ...?planned?.properties,
+        'id': id,
+        'start': localIsoTimestamp(start ?? planned!.start),
+        'end': localIsoTimestamp(end ?? planned!.end),
+        'action_ids': ?actions,
+        'description': ?description,
+        'status': status,
+        if (planned != null) ...{
+          'planned_start': localIsoTimestamp(planned.start),
+          'planned_end': localIsoTimestamp(planned.end),
+        },
+        'decided_by': ?by,
+      };
+    }
+
+    return Proposal.fromJson({
+      'id': proposalId,
+      'revision': 3,
+      'state': 'awaiting_review',
+      'window_start': localIsoTimestamp(lastCompaction),
+      'through': localIsoTimestamp(_at(13, 30)),
+      'by': 'claude',
+      'reason': 'revised for notes',
+      'events': [
+        {
+          ...event('morning_today', 'on_schedule'),
+          'history_until': localIsoTimestamp(lastCompaction),
+        },
+        event(
+          'breakfast',
+          'adjusted',
+          start: _at(7, 50),
+          end: _at(8, 20),
+          by: 'claude',
+        ),
+        {
+          'id': '${proposalId}c1',
+          'summary': 'Email',
+          'start': localIsoTimestamp(_at(8, 20)),
+          'end': localIsoTimestamp(_at(8, 45)),
+          'action_ids': ['email'],
+          'action_names': [_names['email']],
+          'status': 'new',
+          'decided_by': 'claude',
+        },
+        event(
+          'work',
+          'adjusted',
+          start: _at(8, 45),
+          end: _at(12, 15),
+          by: 'claude',
+          description: 'Notes:\n- 9:40 Started on the plan page',
+        ),
+        event('lunch', 'adjusted', start: _at(12, 15), by: 'claude'),
+        event('call', 'on_schedule'),
+        event('texts', 'cancelled', by: 'user'),
+        event('scroll', 'on_schedule'),
+        for (final id in ['class', 'dinner', 'guitar', 'bed'])
+          event(id, 'planned'),
+      ],
+      // What each note is for: setting an edge, added to an event, or --
+      // as Claude has it -- left out.
+      'notes': [
+        for (final (i, note) in notes.indexed)
+          if (note.timestamp.isBefore(_at(13, 30)))
+            {
+              'id': '${localIsoTimestamp(note.timestamp)}#${i + 1}',
+              'timestamp': localIsoTimestamp(note.timestamp),
+              'description': note.description,
+              ...switch ((note.timestamp.hour, note.timestamp.minute)) {
+                (7, 50) => {
+                  'use': 'edge',
+                  'event_id': 'breakfast',
+                  'edge_of': 'breakfast',
+                },
+                (9, 40) => {'use': 'annotates', 'event_id': 'work'},
+                (12, 15) => {
+                  'use': 'edge',
+                  'event_id': 'lunch',
+                  'edge_of': 'lunch',
+                },
+                _ => {'use': 'ignored', 'decided_by': 'claude'},
+              },
+            },
+      ],
+      // How it words the edges notes set; and the latest note the last
+      // compaction used, as context.
+      'timeline': {
+        'notes': [
+          {
+            'id': '${localIsoTimestamp(latestCompacted.timestamp)}#0',
+            'time': localIsoTimestamp(latestCompacted.timestamp),
+            'text': latestCompacted.description,
+            'compacted': true,
+          },
+          for (final (i, note) in notes.indexed)
+            if (note.timestamp.isBefore(_at(13, 30)))
+              {
+                'id': '${localIsoTimestamp(note.timestamp)}#${i + 1}',
+                'time': localIsoTimestamp(note.timestamp),
+                'text': note.description,
+                'anchors': switch ((
+                  note.timestamp.hour,
+                  note.timestamp.minute,
+                )) {
+                  (7, 50) => ['start of Breakfast'],
+                  (12, 15) => [
+                    'end of Time Tracker: plan page',
+                    'start of Lunch with Sam',
+                  ],
+                  _ => <String>[],
+                },
+              },
+        ],
+        'text': '',
+      },
+      'feedback': [
+        {
+          'id': '${proposalId}f1',
+          'text': 'Lunch started late, around 12:15',
+          'event_id': 'lunch',
+          'by': 'user',
+          'created': localIsoTimestamp(_at(12, 40)),
+          'status': 'answered',
+          'reply': 'Moved lunch to start at 12:15, and work to run until then.',
+          'answered_in': 3,
+        },
+      ],
+      'user_edits': [
+        {
+          'id': '${proposalId}u1',
+          'edit': {
+            'cancels': [
+              {'event_id': 'texts', 'counts_against_follow_through': false},
+            ],
+          },
+          'status': 'active',
+          'base_revision': 1,
+        },
+      ],
+    });
+  }
+
+  /// What each revision of [proposal] changed, by revision.
+  Map<int, Set<String>> get proposalChanges => const {
+    2: {'texts'},
+    3: {'lunch', 'work'},
+  };
+
+  /// [proposal], to review: confirming it writes it to [events] and
+  /// makes its through the last compaction in [notes].
+  ProposalRepository proposalRepository({
+    EventsRepository? events,
+    NotesRepository? notes,
+  }) => InMemoryProposalRepository(
+    proposal,
+    events: events,
+    changed: proposalChanges,
+    onApplied: (applied) {
+      if (notes is InMemoryNotesRepository) {
+        notes.status = CompactionStatus(lastCompaction: applied.through);
+      }
+    },
+  );
 
   /// The last compacted note: before [notes], which aren't yet.
   Note get latestCompacted => Note(

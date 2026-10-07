@@ -326,6 +326,15 @@ List<T> placeLabels<T>(
 /// then it's drawn over one drawn apart, and covers the axis' times its
 /// own labels would overlap.
 ///
+/// A compaction proposal's [review], what happened to confirm, is a
+/// tinted band, outlined, headed "What happened -- to confirm" where it
+/// starts and ending at a line labeled with its `through`. Each event in
+/// [marks] -- the proposal's -- is tinted too, and says under its summary
+/// what the proposal does to it; one changed since the user last looked
+/// stands out. Its notes ([reviewNotes]) are drawn over the events, each
+/// with a badge saying what became of it, and the one [ReviewNote.selected]
+/// highlighted.
+///
 /// Tapping an event calls [onTap] with it, and pressing and holding it,
 /// [onLongPress]; tapping anywhere else calls [onTapTime] with the time
 /// there.
@@ -344,6 +353,9 @@ class DayTimeline extends StatelessWidget {
     this.onTapTime,
     this.faded,
     this.axis = true,
+    this.review,
+    this.marks = const {},
+    this.reviewNotes = const [],
   });
 
   final List<Event> events;
@@ -374,6 +386,16 @@ class DayTimeline extends StatelessWidget {
   /// Whether to draw its [TimelineAxis] under it.
   final bool axis;
 
+  /// What a compaction proposal says happened, to confirm: from its
+  /// window's start to its `through`.
+  final ({DateTime from, DateTime through})? review;
+
+  /// What the proposal says of each of its events, by id.
+  final Map<String, EventMark> marks;
+
+  /// The proposal's notes.
+  final List<ReviewNote> reviewNotes;
+
   /// Midnight at the end of the day.
   DateTime get dayEnd => DateTime(day.year, day.month, day.day + 1);
 
@@ -398,12 +420,15 @@ class DayTimeline extends StatelessWidget {
       summary: text.titleSmall,
       action: text.bodySmall,
       chip: text.labelSmall,
+      mark: text.labelSmall?.copyWith(fontWeight: FontWeight.w500),
     );
     final summaryLine = lineHeight(styles.summary);
     final actionLine = math.max(lineHeight(styles.action), 10.0);
+    final markLine = lineHeight(styles.mark);
     double minHeight(Event event) =>
         _cardPadding.vertical +
         summaryLine +
+        (marks[event.id]?.label == null ? 0 : markLine) +
         event.actionIds.length * actionLine +
         // Slack for rounding, so the text never overflows.
         2;
@@ -501,6 +526,17 @@ class DayTimeline extends StatelessWidget {
       edgeColor: colors.onSurface,
       coverColor: theme.scaffoldBackgroundColor,
     );
+    final band = switch (review) {
+      final review? => _reviewBand(
+        context,
+        day: day,
+        dayEnd: dayEnd,
+        from: review.from,
+        through: review.through,
+        y: y,
+      ),
+      null => null,
+    };
     return LayoutBuilder(
       builder: (context, constraints) {
         final cardWidth = math.max(0.0, constraints.maxWidth - _cardsLeft - 8);
@@ -532,7 +568,9 @@ class DayTimeline extends StatelessWidget {
                 width: constraints.maxWidth,
                 height: height,
                 child: Stack(
+                  clipBehavior: Clip.none,
                   children: [
+                    ...?band?.under,
                     for (final (i, placement) in placements.indexed)
                       Positioned(
                         left: _cardsLeft,
@@ -559,12 +597,17 @@ class DayTimeline extends StatelessWidget {
                               ? null
                               : () => onLongPress!(placement.event),
                           faded: faded != null && placement.event.id == faded,
+                          mark: marks[placement.event.id],
                           timeLabel: (t) => MaterialLocalizations.of(context)
                               .formatTimeOfDay(
                                 TimeOfDay.fromDateTime(t.toLocal()),
                               ),
                         ),
                       ),
+                    ...?band?.over,
+                    for (final note in reviewNotes)
+                      if (yIfToday(note.time) case final y?)
+                        ..._reviewNote(context, note, y),
                   ],
                 ),
               ),
@@ -574,6 +617,240 @@ class DayTimeline extends StatelessWidget {
       },
     );
   }
+}
+
+/// The part of a proposal's review band, [from] to [through], on [day]:
+/// [under] the events, its tint and outline; [over] them, its heading
+/// where it starts and its `through` where it ends. Null if it's not on
+/// the day.
+({List<Widget> under, List<Widget> over})? _reviewBand(
+  BuildContext context, {
+  required DateTime day,
+  required DateTime dayEnd,
+  required DateTime from,
+  required DateTime through,
+  required double Function(DateTime) y,
+}) {
+  if (!from.isBefore(dayEnd) || !through.isAfter(day)) return null;
+  final colors = reviewColors(Theme.of(context).colorScheme);
+  final starts = !from.isBefore(day);
+  final ends = through.isBefore(dayEnd);
+  final top = y(starts ? from : day);
+  final bottom = y(ends ? through : dayEnd);
+  final time = MaterialLocalizations.of(context)
+      .formatTimeOfDay(TimeOfDay.fromDateTime(through.toLocal()));
+  // A tab on the band's edge: above it at the top, below it at the foot.
+  Widget tab(String text, String label, {required bool below}) => IgnorePointer(
+    child: Semantics(
+      label: label,
+      child: ExcludeSemantics(
+        child: Container(
+          height: _tabHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: colors.line,
+            borderRadius: BorderRadius.vertical(
+              top: below ? Radius.zero : const Radius.circular(6),
+              bottom: below ? const Radius.circular(6) : Radius.zero,
+            ),
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: _bandFontSize,
+              fontWeight: FontWeight.w600,
+              color: colors.onLine,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  final line = BorderSide(color: colors.line, width: 2);
+  return (
+    under: [
+      Positioned(
+        left: _timeWidth - 4,
+        right: 2,
+        top: top,
+        height: math.max(0, bottom - top),
+        child: IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.tint,
+              border: Border(
+                left: line,
+                right: line,
+                top: starts ? line : BorderSide.none,
+                bottom: ends ? line : BorderSide.none,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
+    over: [
+      if (starts)
+        Positioned(
+          right: 2,
+          top: top - _tabHeight,
+          child: tab(
+            'What happened — to confirm',
+            'What happened, to confirm, from here',
+            below: false,
+          ),
+        ),
+      if (ends)
+        Positioned(
+          right: 2,
+          top: bottom,
+          child: tab(
+            'through $time',
+            'What happened, to confirm, through $time',
+            below: true,
+          ),
+        ),
+    ],
+  );
+}
+
+/// A proposal's [note], at [y]: a line across, over the events, in the
+/// highlight if it's selected, and on the priority band a badge saying
+/// what became of it.
+List<Widget> _reviewNote(BuildContext context, ReviewNote note, double y) {
+  final colors = Theme.of(context).colorScheme;
+  final color = note.selected
+      ? colors.primary
+      : note.kind == ReviewNoteKind.ignored ||
+            note.kind == ReviewNoteKind.compacted
+      ? colors.outline
+      : colors.tertiary;
+  final halo = note.selected ? 14.0 : 0.0;
+  const badge = 18.0;
+  return [
+    Positioned(
+      left: _timeWidth,
+      right: 0,
+      top: y - halo / 2 - 1,
+      height: halo + 2 + (note.selected ? 1 : 0),
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: note.selected
+                ? colors.primary.withValues(alpha: 0.18)
+                : null,
+          ),
+          child: Center(
+            child: Container(
+              height: note.selected ? 3 : 2,
+              color: color.withValues(alpha: note.selected ? 1 : 0.85),
+            ),
+          ),
+        ),
+      ),
+    ),
+    Positioned(
+      left: _timeWidth + (_bandWidth - badge) / 2,
+      top: y - badge / 2,
+      child: IgnorePointer(
+        child: Semantics(
+          label: 'Note: ${note.kind.description}',
+          child: Container(
+            width: badge,
+            height: badge,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: colors.surface, width: 1.5),
+            ),
+            child: Icon(note.kind.icon, size: 11, color: colors.surface),
+          ),
+        ),
+      ),
+    ),
+  ];
+}
+
+/// What became of a note in a compaction proposal.
+enum ReviewNoteKind {
+  /// Its text was added to an event.
+  annotated(Icons.subdirectory_arrow_right, 'added to an event'),
+
+  /// It sets an event's start or end, and isn't added to one.
+  setsEdge(Icons.vertical_align_center, "sets an event's start or end"),
+
+  /// Claude left it out: it's added to no event.
+  ignored(Icons.do_not_disturb_alt, 'not added to any event'),
+
+  /// None of those.
+  other(Icons.sticky_note_2_outlined, 'not used'),
+
+  /// An earlier compaction used it: there as context.
+  compacted(Icons.check, 'compacted earlier');
+
+  const ReviewNoteKind(this.icon, this.description);
+
+  final IconData icon;
+  final String description;
+}
+
+/// A note in a compaction proposal, at [time], as [DayTimeline] draws it:
+/// what became of it, and whether it's the one [selected].
+class ReviewNote {
+  const ReviewNote({
+    required this.time,
+    required this.kind,
+    this.selected = false,
+  });
+
+  final DateTime time;
+  final ReviewNoteKind kind;
+  final bool selected;
+}
+
+/// How tall the tabs on a review band's edges are.
+const _tabHeight = 15.0;
+
+/// The colors of a proposal's review band: its [tint], and the [line]
+/// round it, with text [onLine]; an event in it is [card], and one
+/// changed since the user last looked, [changed]: stronger.
+({Color tint, Color line, Color onLine, Color card, Color changed})
+reviewColors(ColorScheme colors) => (
+  tint: colors.tertiaryContainer.withValues(alpha: 0.35),
+  line: colors.tertiary,
+  onLine: colors.onTertiary,
+  card: Color.alphaBlend(
+    colors.tertiaryContainer.withValues(alpha: 0.45),
+    colors.surfaceContainerHigh,
+  ),
+  changed: colors.tertiaryContainer,
+);
+
+/// What a compaction proposal says of an event in it: a [label] of what
+/// it does to it, if it does anything -- "Moved, was 7:45–8:15" -- after
+/// an [icon], if it has one; and whether that's [changed] since the user
+/// last looked, marked with a dot.
+class EventMark {
+  const EventMark({this.label, this.icon, this.changed = false});
+
+  final String? label;
+  final IconData? icon;
+  final bool changed;
+}
+
+/// A dot, marking an event changed since the user last looked.
+class _Dot extends StatelessWidget {
+  const _Dot({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 7,
+    height: 7,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
 }
 
 /// The color of a note not yet compacted, and its label: the last
@@ -632,11 +909,13 @@ class _CardStyles {
     required this.summary,
     required this.action,
     required this.chip,
+    required this.mark,
   });
 
   final TextStyle? summary;
   final TextStyle? action;
   final TextStyle? chip;
+  final TextStyle? mark;
 }
 
 /// An event: its summary, then its actions, each after a diamond.
@@ -652,6 +931,7 @@ class _EventCard extends StatelessWidget {
     required this.onLongPress,
     required this.faded,
     required this.timeLabel,
+    this.mark,
   });
 
   final TimelinePlacement placement;
@@ -674,6 +954,9 @@ class _EventCard extends StatelessWidget {
   /// Whether it's drawn faintly: being moved from here.
   final bool faded;
   final String Function(DateTime) timeLabel;
+
+  /// What a compaction proposal says of it, if it's in one.
+  final EventMark? mark;
 
   Color? _colorOf(String id) => switch (actions[id]) {
     final action? => parseColor(
@@ -702,13 +985,23 @@ class _EventCard extends StatelessWidget {
     final card = Semantics(
       label:
           '$summary, ${timeLabel(event.start)} to ${timeLabel(event.end)}'
-          '${cancelled ? ', cancelled' : ''}',
+          '${cancelled ? ', cancelled' : ''}'
+          '${switch (mark) {
+            null => '',
+            EventMark(:final label?, :final changed) => '. To confirm: $label'
+                '${changed ? ', changed since you looked' : ''}',
+            _ => '. To confirm',
+          }}',
       button: onTap != null,
       onLongPress: onLongPress,
       onLongPressHint: onLongPress == null ? null : 'Move',
       excludeSemantics: true,
       child: Material(
-        color: colors.surfaceContainerHigh,
+        color: switch (mark) {
+          null => colors.surfaceContainerHigh,
+          EventMark(changed: true) => reviewColors(colors).changed,
+          _ => reviewColors(colors).card,
+        },
         // Square on the left, where its fill from the band meets it, and
         // where it meets another event.
         shape: RoundedRectangleBorder(
@@ -780,6 +1073,35 @@ class _EventCard extends StatelessWidget {
                             ),
                           ],
                         ),
+                        if (mark case EventMark(
+                          :final label?,
+                          :final icon,
+                          :final changed,
+                        ))
+                          Row(
+                            children: [
+                              if (changed) ...[
+                                _Dot(color: colors.tertiary),
+                                const SizedBox(width: 4),
+                              ],
+                              if (icon != null) ...[
+                                Icon(icon, size: 12, color: colors.tertiary),
+                                const SizedBox(width: 2),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: styles.mark?.copyWith(
+                                    color: changed
+                                        ? colors.onTertiaryContainer
+                                        : colors.tertiary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         for (final (i, id) in ids.indexed)
                           Row(
                             children: [

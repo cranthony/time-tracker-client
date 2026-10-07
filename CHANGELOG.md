@@ -6,6 +6,43 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.8.0
+
+- Compaction proposals, on the Events page. While Claude has one open --
+  what it says happened since the last compaction -- it's a band over the
+  timeline, tinted and outlined, to confirm, ending at a line saying
+  through when. Each event in it says what the proposal does to it --
+  moved, and where it was; new; cancelled; renamed; new actions or facts
+  -- and whether Claude or you decided it. Those changed since you last
+  looked have a dot.
+- Its notes are drawn across the band, over the events, each with a
+  badge saying what became of it: added to an event, setting an event's
+  start or end, or left out. Under the bar, one of them -- its time, its
+  text and what became of it -- is highlighted on the timeline, and
+  arrows go to the note before or after it, scrolling to it. Before the
+  first, as context, is the latest note the last compaction used, with a
+  check: there to see, not to change.
+- Saying what a note is for: its pencil (or tapping it) asks. Add it to
+  the event it falls within -- or, for one that sets an event's start or
+  end, to that event -- or to another of its day's; leave it out; put it
+  back as Claude had it; or ask Claude about it, in a note for Claude
+  about that note. Which you said, and which Claude did, is shown with
+  it. A note's edge stays where it is whatever it's added to.
+- Edits to the events in the band edit the proposal, not the calendar:
+  moving (pressing and holding, too), resizing, cancelling or adding one,
+  or setting its actions, people or location, with what that does to the
+  events in its way. A cancelled one can be put back as planned. One the
+  server refuses stays in its dialog, to fix.
+- A bar above the timeline confirms it ("Confirm ... happened as shown"),
+  or leaves a note for Claude, about one of its events or all of it.
+  While a note's open it's waiting for Claude, and can't be confirmed;
+  its notes show Claude's replies, and an open one can be withdrawn. If
+  the calendar changed since it was planned, it says what changed and
+  asks to confirm again; if it can't be planned any more, it's handed to
+  Claude; if applying it stopped partway, Retry finishes it. Its menu
+  goes to it, or abandons it.
+- The sample data has a proposal open.
+
 ## 7.7.0
 
 - While a new event's being made, or one moved, on the Events page, the
