@@ -9,6 +9,7 @@ import '../models/trait_scores.dart';
 import '../services/habits_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
+import '../widgets/focus_buttons.dart';
 import '../widgets/habit_dialog.dart';
 import '../widgets/health.dart';
 import 'habit_screen.dart';
@@ -145,9 +146,10 @@ class _PersonScreenState extends State<PersonScreen> {
   /// Adds a habit (with no [habit]) or edits one; returns it as saved.
   Future<Habit?> _editHabit(Habit? habit) async {
     final repository = widget.habits!;
-    final saved = await showHabitDialog(
+    final saved = await showHabitEditor(
       context,
       habit: habit,
+      focus: widget.memory?.focus,
       actions: widget.actions,
       traits: [..._traitList.values],
       save: (fields) => habit == null
@@ -208,6 +210,8 @@ class _PersonScreenState extends State<PersonScreen> {
       appBar: AppBar(
         title: Text(personName(_person)),
         actions: [
+          if (widget.memory?.focus case final focus? when !_person.isSelf)
+            prioritizeButton(focus, _person),
           if (widget.onEdit != null)
             IconButton(
               tooltip: 'Edit ${personName(_person)}',
