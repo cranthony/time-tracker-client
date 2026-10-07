@@ -6,20 +6,20 @@ import '../models/note.dart';
 ///
 /// Overlaps it already has are left alone: only the times being changed
 /// are kept clear.
-class EventRoom {
+class OtherEvents {
   /// The [events] other than the one with id [except], and not cancelled.
-  EventRoom(Iterable<Event> events, {String? except})
-    : others = [
+  OtherEvents(Iterable<Event> events, {String? except})
+    : events = [
         for (final event in events)
           if (!event.isCancelled && (except == null || event.id != except))
             event,
       ]..sort((a, b) => a.start.compareTo(b.start));
 
   /// No other events: nothing to keep clear of.
-  const EventRoom.none() : others = const [];
+  const OtherEvents.none() : events = const [];
 
   /// Sorted by start.
-  final List<Event> others;
+  final List<Event> events;
 
   /// The shortest the quick buttons make an event.
   static const shortest = Duration(minutes: 15);
@@ -28,7 +28,7 @@ class EventRoom {
   /// start. Null if none does.
   DateTime? earliestStart(DateTime start) {
     DateTime? earliest;
-    for (final other in others) {
+    for (final other in events) {
       if (!other.end.isAfter(start) &&
           (earliest == null || other.end.isAfter(earliest))) {
         earliest = other.end;
@@ -40,7 +40,7 @@ class EventRoom {
   /// The start of the first event that starts at or after [end]: how late
   /// it can end. Null if none does.
   DateTime? latestEnd(DateTime end) {
-    for (final other in others) {
+    for (final other in events) {
       if (!other.start.isBefore(end)) return other.start;
     }
     return null;
@@ -48,7 +48,7 @@ class EventRoom {
 
   /// The event it would start inside of, at [start].
   Event? _around(DateTime start) {
-    for (final other in others) {
+    for (final other in events) {
       if (!other.start.isAfter(start) && other.end.isAfter(start)) {
         return other;
       }
@@ -68,6 +68,109 @@ class EventRoom {
     return (moved, end);
   }
 
+  /// A box from [anchor] to [toward] -- either way -- fitted into free
+  /// time: [anchor] moved out of any event it's in, to that event's edge
+  /// on [toward]'s side, the box keeping its length; then its other end
+  /// no further than the next event that way. Its ends meet if there's no
+  /// free time there.
+  (DateTime, DateTime) fitFrom(DateTime anchor, DateTime toward) {
+    if (anchor == toward) return (anchor, toward);
+    final later = toward.isAfter(anchor);
+    final length = toward.difference(anchor);
+    var from = anchor;
+    for (
+      var e = _covering(from, later);
+      e != null;
+      e = _covering(from, later)
+    ) {
+      from = later ? e.end : e.start;
+    }
+    var to = from.add(length);
+    if (later) {
+      if (latestEnd(from) case final next? when next.isBefore(to)) to = next;
+    } else {
+      if (earliestStart(from) case final last? when last.isAfter(to)) {
+        to = last;
+      }
+    }
+    return (from, to);
+  }
+
+  /// The event a box from [time], [later] or earlier, would start inside
+  /// of.
+  Event? _covering(DateTime time, bool later) {
+    for (final e in events) {
+      final inside = later
+          ? !e.start.isAfter(time) && e.end.isAfter(time)
+          : e.start.isBefore(time) && !e.end.isBefore(time);
+      if (inside) return e;
+    }
+    return null;
+  }
+
+  /// A box from [start] for [length], moved as little as it can be to
+  /// free time it fits in between [from] and [to] (the day); if no free
+  /// time there is long enough, the nearest there is, filled.
+  (DateTime, DateTime) fitMoved(
+    DateTime start,
+    Duration length, {
+    required DateTime from,
+    required DateTime to,
+  }) {
+    final gaps = [
+      for (final (gapFrom, gapTo) in _gaps())
+        if ((gapTo == null || gapTo.isAfter(from)) &&
+            (gapFrom == null || gapFrom.isBefore(to)))
+          (
+            gapFrom == null || gapFrom.isBefore(from) ? from : gapFrom,
+            gapTo == null || gapTo.isAfter(to) ? to : gapTo,
+          ),
+    ];
+    if (gaps.isEmpty) return (start, start);
+    (DateTime, DateTime)? best;
+    Duration? moved;
+    for (final (gapFrom, gapTo) in gaps) {
+      if (gapTo.difference(gapFrom) < length) continue;
+      var at = start;
+      if (at.isBefore(gapFrom)) at = gapFrom;
+      if (at.add(length).isAfter(gapTo)) at = gapTo.subtract(length);
+      final by = at.difference(start).abs();
+      if (moved == null || by < moved) {
+        best = (at, at.add(length));
+        moved = by;
+      }
+    }
+    if (best != null) return best;
+    // None long enough.
+    Duration away((DateTime, DateTime) gap) {
+      final (gapFrom, gapTo) = gap;
+      if (start.isBefore(gapFrom)) return gapFrom.difference(start);
+      if (start.isAfter(gapTo)) return start.difference(gapTo);
+      return Duration.zero;
+    }
+
+    return gaps.reduce((a, b) => away(b) < away(a) ? b : a);
+  }
+
+  /// The free times between the events, in order: from and to, null for
+  /// none before the first event, or after the last.
+  List<(DateTime?, DateTime?)> _gaps() {
+    final gaps = <(DateTime?, DateTime?)>[];
+    DateTime? free;
+    var first = true;
+    for (final e in events) {
+      if (first) {
+        gaps.add((null, e.start));
+        first = false;
+      } else if (free != null && e.start.isAfter(free)) {
+        gaps.add((free, e.start));
+      }
+      if (free == null || e.end.isAfter(free)) free = e.end;
+    }
+    gaps.add((free, null));
+    return gaps;
+  }
+
   /// What a new event from [start] to [end] takes from the others to fit,
   /// overwriting them: each it covers whole is cancelled; each it covers
   /// one end of is shortened to it; and one it falls inside of is split
@@ -76,7 +179,7 @@ class EventRoom {
     final cancels = <Event>[];
     final updates = <(Event, Map<String, Object?>)>[];
     final creates = <Map<String, Object?>>[];
-    for (final other in others) {
+    for (final other in events) {
       if (!other.start.isBefore(end) || !other.end.isAfter(start)) continue;
       final before = other.start.isBefore(start);
       final after = other.end.isAfter(end);
@@ -116,7 +219,7 @@ class EventRoom {
   /// [end], or the start of the first event between [start] and it, if
   /// one is.
   DateTime fitEnd(DateTime start, DateTime end) {
-    for (final other in others) {
+    for (final other in events) {
       if (!other.start.isBefore(start) && other.start.isBefore(end)) {
         return other.start;
       }
@@ -126,7 +229,7 @@ class EventRoom {
 
   /// The first event that [start] to [end] would overlap, if any.
   Event? overlapping(DateTime start, DateTime end) {
-    for (final other in others) {
+    for (final other in events) {
       if (other.start.isBefore(end) && other.end.isAfter(start)) return other;
     }
     return null;
@@ -197,7 +300,7 @@ class EventRoom {
 }
 
 /// What a new event takes from the events already there, to overwrite
-/// them ([EventRoom.overwrite]): those to cancel, the changes to the
+/// them ([OtherEvents.overwrite]): those to cancel, the changes to the
 /// times of those to shorten, and the new events left of those it splits.
 class Overwrite {
   const Overwrite({

@@ -21,10 +21,10 @@ import '../services/traits_repository.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
 import '../widgets/day_summary.dart';
-import '../widgets/create_cursor.dart';
+import '../widgets/new_event_box.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/event_dialog.dart';
-import '../widgets/event_room.dart';
+import '../widgets/other_events.dart';
 import '../widgets/event_summary_dialog.dart';
 import '../widgets/recurrence_dialog.dart';
 import '../widgets/refreshing_bar.dart';
@@ -150,9 +150,9 @@ class _EventsScreenState extends State<EventsScreen> {
   /// are loaded, to be ready to slide in.
   final _fresh = <DateTime>{};
 
-  /// The cursor a new event is being made from, while one is: the "+"
-  /// starts it, and its "✓" opens the new event.
-  _Creating? _creating;
+  /// The new event being made, while one is: the "+" starts it, and its
+  /// "✓" opens it.
+  NewEventBox? _box;
 
   /// Whether a new event keeps clear of the events already there, or
   /// overwrites them.
@@ -643,32 +643,16 @@ class _EventsScreenState extends State<EventsScreen> {
   void _show(DateTime day) {
     if (day == _day) return;
     setState(() {
-      if (_creating case final creating?) {
-        DateTime onDay(DateTime t) =>
-            DateTime(day.year, day.month, day.day, t.hour, t.minute);
-        _creating = _Creating(
-          onDay(creating.at),
-          other: switch (creating.other) {
-            final other? => onDay(other).add(
-              Duration(
-                days: DateTime(other.year, other.month, other.day)
-                    .difference(
-                      DateTime(
-                        creating.at.year,
-                        creating.at.month,
-                        creating.at.day,
-                      ),
-                    )
-                    .inDays,
-              ),
-            ),
-            null => null,
-          },
+      if (_box case final box?) {
+        final cursor = box.cursor;
+        _box = box.movedTo(
+          DateTime(day.year, day.month, day.day, cursor.hour, cursor.minute),
         );
       }
       _day = day;
       _error = null;
       _fresh.removeWhere((d) => (_pageOf(d) - _pageOf(day)).abs() > 3);
+      if (_box case final box?) _box = _kept(box, moved: true);
     });
     _refresh(reloadShown: !_fresh.contains(day));
   }
@@ -692,7 +676,7 @@ class _EventsScreenState extends State<EventsScreen> {
           allowCompactedChanges: allow,
         ),
       ),
-      room: _roomFor(event),
+      otherEvents: _otherEvents(event),
       actions: _actionsById,
       loadActions: _actions,
       openSeries: (seriesId) => _openSeries(seriesId, event),
@@ -708,7 +692,7 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// Every event loaded, but [event], for keeping its times clear of.
-  EventRoom _roomFor(Event? event) => EventRoom(
+  OtherEvents _otherEvents(Event? event) => OtherEvents(
     {
       for (final e in _store.between(
         DateTime(_day.year, _day.month, _day.day - 3),
@@ -741,10 +725,8 @@ class _EventsScreenState extends State<EventsScreen> {
       scale: _scale,
     );
     setState(() {
-      if (_creating == null) _seeding = true;
-      _creating = (_creating ?? _Creating(time)).copy(
-        at: _nearestQuarter(time),
-      );
+      if (_box == null) _seeding = true;
+      _box = NewEventBox(_nearestQuarter(time));
     });
   }
 
@@ -761,85 +743,95 @@ class _EventsScreenState extends State<EventsScreen> {
     } else {
       at = _day.add(const Duration(hours: 9));
     }
-    setState(() => _creating = _Creating(_nearestQuarter(at)));
+    setState(() => _box = NewEventBox(_nearestQuarter(at)));
   }
 
-  /// The new event: between the two cursors, once there are two, and
-  /// they're apart.
-  (DateTime, DateTime)? get _span => switch (_creating) {
-    _Creating(:final at, other: final other?) when other != at =>
-      at.isBefore(other) ? (at, other) : (other, at),
-    _ => null,
-  };
-
-  /// The new event, if it can be made: keeping events, only if none is
-  /// between the cursors.
-  (DateTime, DateTime)? get _fitting => switch (_span) {
-    (final start, final end)
-        when _createMode == CreateMode.overwrite ||
-            _roomFor(null).overlapping(start, end) == null =>
-      (start, end),
-    _ => null,
-  };
-
-  /// Whether the new event takes time from events already there.
-  bool get _overwrites => switch (_span) {
-    (final start, final end) =>
-      _createMode == CreateMode.overwrite &&
-          _roomFor(null).overlapping(start, end) != null,
-    null => false,
-  };
-
-  /// The first cursor's button for [end] dragged to [to]: the second
-  /// cursor there, at least a quarter hour before or after it.
-  void _dragEnd(CursorEnd end, DateTime to) {
-    final creating = _creating;
-    if (creating == null) return;
-    final at = creating.at;
-    final quarter = _nearestQuarter(to);
-    final other = end == CursorEnd.start
-        ? (quarter.isBefore(at.add(EventRoom.shortest))
-              ? at.add(EventRoom.shortest)
-              : quarter)
-        : (quarter.isAfter(at.subtract(EventRoom.shortest))
-              ? at.subtract(EventRoom.shortest)
-              : quarter);
-    setState(() => _creating = creating.copy(other: other));
+  /// [box], keeping events, fitted into free time (see [OtherEvents]):
+  /// [moved] whole, as near as it fits; or from its [NewEventBox.cursor] --
+  /// or, [fromOther], its other cursor -- out of any event it's in, and to
+  /// no further than the next event. Overwriting, as it is.
+  NewEventBox _kept(
+    NewEventBox box, {
+    bool moved = false,
+    bool fromOther = false,
+  }) {
+    final other = box.other;
+    if (_createMode == CreateMode.overwrite || other == null) return box;
+    final others = _otherEvents(null);
+    if (moved) {
+      final start = box.span?.$1 ?? box.cursor;
+      final (from, to) = others.fitMoved(
+        start,
+        box.length,
+        from: _day,
+        to: _dayEnd,
+      );
+      return box.at(from, to);
+    }
+    if (fromOther) {
+      final (fitted, cursor) = others.fitFrom(other, box.cursor);
+      return NewEventBox(cursor, other: fitted);
+    }
+    final (cursor, fitted) = others.fitFrom(box.cursor, other);
+    return NewEventBox(cursor, other: fitted);
   }
 
-  /// The shadow's handle dragged: both cursors moved, the first to the
-  /// quarter hour nearest [to], and the second with it.
-  void _shift(DateTime to) {
-    final creating = _creating;
-    final other = creating?.other;
-    if (creating == null || other == null) return;
-    final at = _nearestQuarter(to);
+  /// Changes the box to what [change] makes of it, kept in free time
+  /// (see [_kept]).
+  void _changeBox(
+    NewEventBox Function(NewEventBox box) change, {
+    bool moved = false,
+    bool fromOther = false,
+  }) {
+    final box = _box;
+    if (box == null) return;
     setState(
-      () => _creating = creating.copy(
-        at: at,
-        other: other.add(at.difference(creating.at)),
-      ),
+      () => _box = _kept(change(box), moved: moved, fromOther: fromOther),
     );
   }
 
+  /// Whether the new event takes time from events already there.
+  bool get _overwrites => switch (_box?.span) {
+    (final start, final end) =>
+      _createMode == CreateMode.overwrite &&
+          _otherEvents(null).overlapping(start, end) != null,
+    null => false,
+  };
+
+  /// The cursor's button for [end] dragged to [to]: the other cursor
+  /// there, at least a quarter hour before or after the cursor.
+  void _dragEnd(CursorEnd end, DateTime to) => _changeBox((box) {
+    final cursor = box.cursor;
+    final quarter = _nearestQuarter(to);
+    return box.withOther(
+      end == CursorEnd.start
+          ? (quarter.isBefore(cursor.add(OtherEvents.shortest))
+                ? cursor.add(OtherEvents.shortest)
+                : quarter)
+          : (quarter.isAfter(cursor.subtract(OtherEvents.shortest))
+                ? cursor.subtract(OtherEvents.shortest)
+                : quarter),
+    );
+  });
+
   /// Opens the new event, as shaded between the cursors.
   Future<void> _continueCreating() async {
-    final fitting = _fitting;
-    if (fitting == null) return;
-    final (start, end) = fitting;
-    final room = _roomFor(null);
+    final span = _box?.span;
+    if (span == null) return;
+    final (start, end) = span;
+    final others = _otherEvents(null);
     final overwrite = _createMode == CreateMode.overwrite;
     final created = await showNewEventDialog(
       context,
       start: start,
       end: end,
       // Overwriting, its times needn't keep clear of anything.
-      room: overwrite ? const EventRoom.none() : room,
+      otherEvents: overwrite ? const OtherEvents.none() : others,
       create: overwrite
           ? (fields) => _approvingHistory(
               (allow) => widget.repository.createOver(
                 fields,
-                room.overwrite(
+                others.overwrite(
                   DateTime.parse(fields['start'] as String),
                   DateTime.parse(fields['end'] as String),
                 ),
@@ -851,7 +843,7 @@ class _EventsScreenState extends State<EventsScreen> {
       loadActions: _actions,
     );
     if (created == null || !mounted) return;
-    setState(() => _creating = null);
+    setState(() => _box = null);
     final changed = created.length - 1;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -871,7 +863,10 @@ class _EventsScreenState extends State<EventsScreen> {
 
   Future<void> _pickCreateMode() async {
     final mode = await showCreateModeDialog(context, _createMode);
-    if (mode != null && mounted) setState(() => _createMode = mode);
+    if (mode == null || !mounted) return;
+    setState(() => _createMode = mode);
+    // Keeping events now: out of their way.
+    _changeBox((box) => box);
   }
 
   /// Runs [change] -- and if the server refuses it because it changes
@@ -928,7 +923,7 @@ class _EventsScreenState extends State<EventsScreen> {
           allowCompactedChanges: allow,
         ),
       ),
-      room: _roomFor(event),
+      otherEvents: _otherEvents(event),
       actions: _actions,
       openSeries: (seriesId) => _openSeries(seriesId, event),
     );
@@ -1154,14 +1149,14 @@ class _EventsScreenState extends State<EventsScreen> {
       floatingActionButton: _needsSignIn
           ? null
           // While the "+" is dragged, it stays: it's what's dragged.
-          : _creating != null && !_seeding
+          : _box != null && !_seeding
           ? Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 FloatingActionButton(
                   heroTag: 'cancel-new',
                   tooltip: 'Cancel',
-                  onPressed: () => setState(() => _creating = null),
+                  onPressed: () => setState(() => _box = null),
                   child: const Icon(Icons.close),
                 ),
                 const SizedBox(width: 12),
@@ -1169,14 +1164,13 @@ class _EventsScreenState extends State<EventsScreen> {
                 Builder(
                   builder: (context) {
                     final colors = Theme.of(context).colorScheme;
-                    final ready = _fitting != null;
+                    final ready = _box?.span != null;
                     return FloatingActionButton(
                       heroTag: 'continue-new',
                       tooltip: ready
                           ? 'Continue'
-                          : _span == null
-                          ? 'Continue: first, start or end an event here'
-                          : 'Continue: first, make room between the cursors',
+                          : 'Continue: first, make an event between the '
+                                'cursors',
                       onPressed: ready ? _continueCreating : null,
                       backgroundColor: ready
                           ? null
@@ -1298,7 +1292,7 @@ class _EventsScreenState extends State<EventsScreen> {
                         onLeave: (_) {
                           if (!_seeding) return;
                           setState(() {
-                            _creating = null;
+                            _box = null;
                             _seeding = false;
                           });
                         },
@@ -1317,7 +1311,7 @@ class _EventsScreenState extends State<EventsScreen> {
                               Positioned.fill(
                                 child: PageView.builder(
                                   controller: _pages,
-                                  physics: _creating != null
+                                  physics: _box != null
                                       ? const NeverScrollableScrollPhysics()
                                       : noDrag,
                                   onPageChanged: (page) => _show(_dayAt(page)),
@@ -1328,41 +1322,40 @@ class _EventsScreenState extends State<EventsScreen> {
                                   ),
                                 ),
                               ),
-                              if (_creating case final creating?)
+                              if (_box case final box?)
                                 Positioned.fill(
-                                  child: CreateCursor(
+                                  child: NewEventBoxView(
                                     day: _day,
                                     dayEnd: _dayEnd,
                                     scale: _scale,
-                                    at: creating.at,
-                                    other: creating.other,
-                                    shadow: _fitting,
+                                    box: box,
                                     mode: _createMode,
                                     overwrites: _overwrites,
-                                    onMove: (to) => setState(
-                                      () => _creating = creating.copy(
-                                        at: _nearestQuarter(to),
-                                      ),
+                                    onMoveCursor: (to) => _changeBox(
+                                      (box) =>
+                                          box.withCursor(_nearestQuarter(to)),
+                                      fromOther: true,
                                     ),
-                                    onMoveOther: (to) => setState(
-                                      () => _creating = creating.copy(
-                                        other: _nearestQuarter(to),
-                                      ),
+                                    onMoveOther: (to) => _changeBox(
+                                      (box) =>
+                                          box.withOther(_nearestQuarter(to)),
                                     ),
-                                    // An hour further each tap, from
-                                    // the first cursor to start with.
-                                    onTap: (end) => setState(
-                                      () => _creating = creating.copy(
-                                        other: (creating.other ?? creating.at)
-                                            .add(
-                                              end == CursorEnd.start
-                                                  ? _newEventLength
-                                                  : -_newEventLength,
-                                            ),
+                                    onMoveBox: (to) => _changeBox(
+                                      (box) => box.movedTo(_nearestQuarter(to)),
+                                      moved: true,
+                                    ),
+                                    // An hour further each tap, from the
+                                    // cursor to start with.
+                                    onTap: (end) => _changeBox(
+                                      (box) => box.withOther(
+                                        (box.other ?? box.cursor).add(
+                                          end == CursorEnd.start
+                                              ? _newEventLength
+                                              : -_newEventLength,
+                                        ),
                                       ),
                                     ),
                                     onDrag: _dragEnd,
-                                    onShift: _shift,
                                     onPickMode: _pickCreateMode,
                                   ),
                                 ),
@@ -1419,11 +1412,13 @@ class _EventsScreenState extends State<EventsScreen> {
         pendingNotes: _pendingNotes,
         // While the cursor's up, events don't open: a tap on one goes to
         // the timeline under it, and moves the cursor there.
-        onTap: _creating == null ? _openEvent : null,
-        onTapTime: _creating == null
+        onTap: _box == null ? _openEvent : null,
+        // The box moved there, its size intact.
+        onTapTime: _box == null
             ? null
-            : (time) => setState(
-                () => _creating = _creating!.copy(at: _nearestQuarter(time)),
+            : (time) => _changeBox(
+                (box) => box.movedTo(_nearestQuarter(time)),
+                moved: true,
               ),
         axis: false,
       ),
@@ -1472,19 +1467,6 @@ const _summaryCollapsedKey = 'day_summary_collapsed';
 
 /// Where whether the day's summary shows durations is kept.
 const _summaryDurationsKey = 'day_summary_durations';
-
-/// A new event being made: the cursor with the buttons, at [at], and once
-/// one's been used, the second cursor, at [other]: the event's between
-/// them.
-class _Creating {
-  const _Creating(this.at, {this.other});
-
-  final DateTime at;
-  final DateTime? other;
-
-  _Creating copy({DateTime? at, DateTime? other}) =>
-      _Creating(at ?? this.at, other: other ?? this.other);
-}
 
 /// What the "+" carries, dragged onto the timeline.
 class _NewEventSeed {

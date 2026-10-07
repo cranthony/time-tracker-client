@@ -377,9 +377,9 @@ void main() {
     });
 
     // Making an event: the cursor at now, from "+"; dragged out over
-    // events, keeping them -- no room, so nothing shaded; moved to a free
-    // stretch, and dragged out there; overwriting, tinged red; and the
-    // choice between them.
+    // events, keeping them -- fitted into the free time there; moved to a
+    // free stretch, and dragged out there; overwriting, tinged red; and
+    // the choice between them.
     for (final (name, overwrite, move, drag, dialog) in [
       ('events_new_cursor', false, 0, 0, false),
       ('events_new_dragged', false, 0, 150, false),

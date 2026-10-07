@@ -2,7 +2,7 @@ import '../models/event.dart';
 import '../models/note.dart';
 import '../models/recurrence.dart';
 import '../models/repeat.dart';
-import '../widgets/event_room.dart';
+import '../widgets/other_events.dart';
 import 'mcp_client.dart';
 
 /// The fields `update_event` and `update_recurrence` can remove, by

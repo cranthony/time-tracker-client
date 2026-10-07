@@ -18,8 +18,8 @@ import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
-import 'package:time_tracker_client/widgets/create_cursor.dart';
-import 'package:time_tracker_client/widgets/event_room.dart';
+import 'package:time_tracker_client/widgets/new_event_box.dart';
+import 'package:time_tracker_client/widgets/other_events.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/durations.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
@@ -1188,8 +1188,13 @@ void main() {
           ),
         );
 
-    CreateCursor cursor(WidgetTester tester) =>
-        tester.widget<CreateCursor>(find.byType(CreateCursor));
+    /// The box, as it's drawn.
+    NewEventBox box(WidgetTester tester) =>
+        tester.widget<NewEventBoxView>(find.byType(NewEventBoxView)).box;
+
+    /// Whether the box takes time from events already there.
+    bool overwrites(WidgetTester tester) =>
+        tester.widget<NewEventBoxView>(find.byType(NewEventBoxView)).overwrites;
 
     testWidgets('tapping a blank space does nothing', (tester) async {
       final repo = _RecordingRepository([
@@ -1200,7 +1205,7 @@ void main() {
       await tapAt(tester, at(30, 11, 20));
 
       expect(find.byType(AlertDialog), findsNothing);
-      expect(find.byType(CreateCursor), findsNothing);
+      expect(find.byType(NewEventBoxView), findsNothing);
       // No zooming buttons: pinching zooms.
       expect(find.byTooltip('Zoom in'), findsNothing);
       expect(find.byTooltip('Zoom out'), findsNothing);
@@ -1215,8 +1220,8 @@ void main() {
       await tester.pumpAndSettle();
       await plus(tester);
 
-      expect(cursor(tester).at, at(30, 12));
-      expect(cursor(tester).shadow, isNull);
+      expect(box(tester).cursor, at(30, 12));
+      expect(box(tester).span, isNull);
       // "+" is now cancel and continue -- continue waiting for an event.
       expect(
         find.byTooltip('New event: tap, or drag onto the timeline'),
@@ -1227,8 +1232,8 @@ void main() {
 
       await tapButton(tester, startHere);
       // An hour, to a second cursor.
-      expect(cursor(tester).other, at(30, 13));
-      expect(cursor(tester).shadow, (at(30, 12), at(30, 13)));
+      expect(box(tester).other, at(30, 13));
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
       expect(continueButton(tester).onPressed, isNotNull);
 
       await continueToDialog(tester);
@@ -1254,50 +1259,67 @@ void main() {
       expect(find.text('Event created.'), findsOneWidget);
       expect(find.text('Admin'), findsOneWidget);
       // Done: "+" again.
-      expect(find.byType(CreateCursor), findsNothing);
+      expect(find.byType(NewEventBoxView), findsNothing);
       expect(
         find.byTooltip('New event: tap, or drag onto the timeline'),
         findsOneWidget,
       );
     });
 
-    testWidgets("keeping events, there's no event while one's between the "
-        'cursors, and ✓ waits for room; tapping moves the cursor', (
-      tester,
-    ) async {
+    testWidgets('keeping events, the box fits into free time: up to the next '
+        'event, out of one a cursor is in, and moved whole to the nearest '
+        'free time it fits', (tester) async {
       final repo = _RecordingRepository([
         Event(
           id: 'l',
-          start: at(30, 12, 30),
-          end: at(30, 13, 30),
+          start: at(30, 11, 30),
+          end: at(30, 12, 30),
           summary: 'Lunch',
         ),
+        Event(id: 't', start: at(30, 14), end: at(30, 15), summary: 'Tea'),
       ]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
+      // At noon, in Lunch.
       await plus(tester);
+      expect(box(tester).cursor, at(30, 12));
 
+      // Out of Lunch, an hour.
       await tapButton(tester, startHere);
-      // Lunch is between them: nothing shaded, and nothing to continue.
-      expect(cursor(tester).other, at(30, 13));
-      expect(cursor(tester).shadow, isNull);
-      expect(continueButton(tester).onPressed, isNull);
-      expect(
-        find.byTooltip('Continue: first, make room between the cursors'),
-        findsOneWidget,
-      );
-
-      // The other end, by its handle, clear of Lunch.
-      await drag(tester, otherHandle, const Duration(minutes: -30));
-      expect(cursor(tester).shadow, (at(30, 12), at(30, 12, 30)));
+      expect(box(tester).span, (at(30, 12, 30), at(30, 13, 30)));
       expect(continueButton(tester).onPressed, isNotNull);
-      expect(cursor(tester).overwrites, isFalse);
+      // Then up to Tea, no further.
+      await tapButton(tester, startHere);
+      expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
+      expect(overwrites(tester), isFalse);
 
-      // Tapping a blank time moves the first cursor alone.
-      await tapAt(tester, at(30, 15, 10));
-      expect(cursor(tester).at, at(30, 15, 15));
-      expect(cursor(tester).other, at(30, 12, 30));
-      expect(cursor(tester).shadow, isNull);
+      // Moved whole into Tea, by a tap on it: its size kept, as near as it
+      // fits -- after Tea.
+      await tapAt(tester, at(30, 14, 30));
+      expect(box(tester).span, (at(30, 15), at(30, 16, 30)));
+      // Its handle, back to before Tea.
+      await drag(
+        tester,
+        find.byTooltip('Drag to move the event'),
+        const Duration(hours: -2),
+      );
+      expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
+
+      // Overwriting, it can cover Tea; keeping again, it's out of the way.
+      await tapButton(tester, find.byTooltip('Keep events: tap to change'));
+      await tester.tap(find.text('Overwrite events'));
+      await settle(tester);
+      await drag(tester, otherHandle, const Duration(hours: 1));
+      expect(box(tester).span, (at(30, 12, 30), at(30, 15)));
+      expect(overwrites(tester), isTrue);
+      final mode = find.byTooltip('Overwrite events: tap to change');
+      await tester.ensureVisible(mode);
+      await settle(tester);
+      await tester.tap(mode);
+      await settle(tester);
+      await tester.tap(find.text('Keep events'));
+      await tester.pumpAndSettle();
+      expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
     });
 
     testWidgets('dragging the + onto the timeline puts the cursor where it '
@@ -1318,14 +1340,14 @@ void main() {
       await plus.moveTo(over(at(30, 13)));
       await tester.pump();
       // Following it, and the + still there to drag.
-      expect(cursor(tester).at, at(30, 13));
+      expect(box(tester).cursor, at(30, 13));
       expect(find.byTooltip('Cancel'), findsNothing);
       await plus.moveTo(over(at(30, 12, 20)));
       await tester.pump();
       await plus.up();
       await tester.pumpAndSettle();
 
-      expect(cursor(tester).at, at(30, 12, 15));
+      expect(box(tester).cursor, at(30, 12, 15));
       expect(find.byTooltip('Cancel'), findsOneWidget);
     });
 
@@ -1344,14 +1366,14 @@ void main() {
       );
       await plus.moveTo(tester.getCenter(timeline));
       await tester.pump();
-      expect(find.byType(CreateCursor), findsOneWidget);
+      expect(find.byType(NewEventBoxView), findsOneWidget);
       // Up to the app bar, and let go.
       await plus.moveTo(tester.getCenter(find.byTooltip('Next day')));
       await tester.pump();
       await plus.up();
       await tester.pumpAndSettle();
 
-      expect(find.byType(CreateCursor), findsNothing);
+      expect(find.byType(NewEventBoxView), findsNothing);
       expect(
         find.byTooltip('New event: tap, or drag onto the timeline'),
         findsOneWidget,
@@ -1366,23 +1388,23 @@ void main() {
       await plus(tester);
 
       await drag(tester, startHere, const Duration(hours: 2));
-      expect(cursor(tester).shadow, (at(30, 12), at(30, 14)));
+      expect(box(tester).span, (at(30, 12), at(30, 14)));
       // Each end alone.
       await drag(tester, otherHandle, const Duration(minutes: -30));
-      expect(cursor(tester).shadow, (at(30, 12), at(30, 13, 30)));
+      expect(box(tester).span, (at(30, 12), at(30, 13, 30)));
       await moveLine(tester, const Duration(minutes: 30));
-      expect(cursor(tester).shadow, (at(30, 12, 30), at(30, 13, 30)));
+      expect(box(tester).span, (at(30, 12, 30), at(30, 13, 30)));
       // Both together.
       await drag(
         tester,
         find.byTooltip('Drag to move the event'),
         const Duration(hours: -1),
       );
-      expect(cursor(tester).shadow, (at(30, 11, 30), at(30, 12, 30)));
+      expect(box(tester).span, (at(30, 11, 30), at(30, 12, 30)));
 
       // Ending at the first cursor instead.
       await drag(tester, endHere, const Duration(minutes: -90));
-      expect(cursor(tester).shadow, (at(30, 10), at(30, 11, 30)));
+      expect(box(tester).span, (at(30, 10), at(30, 11, 30)));
 
       await continueToDialog(tester);
       expect(
@@ -1415,8 +1437,8 @@ void main() {
       expect(find.byTooltip('Overwrite events: tap to change'), findsOneWidget);
 
       await drag(tester, startHere, const Duration(hours: 3));
-      expect(cursor(tester).shadow, (at(30, 12), at(30, 15)));
-      expect(cursor(tester).overwrites, isTrue);
+      expect(box(tester).span, (at(30, 12), at(30, 15)));
+      expect(overwrites(tester), isTrue);
 
       await continueToDialog(tester);
       await tester.enterText(inDialog(find.byType(TextField)), 'Party');
@@ -1449,17 +1471,17 @@ void main() {
       // Two below: two hours, from the cursor.
       await tapButton(tester, startHere);
       await tapButton(tester, startHere);
-      expect(cursor(tester).shadow, (at(30, 12), at(30, 14)));
+      expect(box(tester).span, (at(30, 12), at(30, 14)));
       // Three above: an hour, to it.
       await tapButton(tester, endHere);
-      expect(cursor(tester).shadow, (at(30, 12), at(30, 13)));
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
       await tapButton(tester, endHere);
       // The cursors together: nothing between them.
-      expect(cursor(tester).other, at(30, 12));
-      expect(cursor(tester).shadow, isNull);
+      expect(box(tester).other, at(30, 12));
+      expect(box(tester).span, isNull);
       expect(continueButton(tester).onPressed, isNull);
       await tapButton(tester, endHere);
-      expect(cursor(tester).shadow, (at(30, 11), at(30, 12)));
+      expect(box(tester).span, (at(30, 11), at(30, 12)));
     });
 
     testWidgets('Cancel makes nothing', (tester) async {
@@ -1471,12 +1493,12 @@ void main() {
       await tester.tap(find.byTooltip('Cancel'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(CreateCursor), findsNothing);
+      expect(find.byType(NewEventBoxView), findsNothing);
       expect(repo.created, isEmpty);
     });
 
     testWidgets("while the cursor's up, tapping an event doesn't open it, "
-        'but moves the cursor there', (tester) async {
+        'but moves the box there', (tester) async {
       final repo = _RecordingRepository([
         Event(id: 'w', start: at(30, 14), end: at(30, 16), summary: 'Work'),
       ]);
@@ -1487,7 +1509,7 @@ void main() {
       await tapAt(tester, at(30, 15, 10));
 
       expect(find.byType(AlertDialog), findsNothing);
-      expect(cursor(tester).at, at(30, 15, 15));
+      expect(box(tester).cursor, at(30, 15, 15));
     });
 
     testWidgets('tapping an event still opens it', (tester) async {
