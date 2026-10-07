@@ -9,6 +9,7 @@ class PendingActionSave implements OutboxItem<PendingActionSave> {
     required this.actionId,
     required this.isNew,
     required this.changes,
+    this.group,
     this.attempts = 0,
     this.lastError,
     this.nextAttemptAt,
@@ -30,6 +31,11 @@ class PendingActionSave implements OutboxItem<PendingActionSave> {
   /// takes them; else its changes, keyed as `update_action` takes them, a
   /// null clearing that property.
   final Map<String, Object?> changes;
+
+  /// Whether the action it changes is a group, which the server changes
+  /// with its own tool. Null for a save kept before this was, which is
+  /// looked up when it's sent.
+  final bool? group;
 
   @override
   final int attempts;
@@ -66,6 +72,7 @@ class PendingActionSave implements OutboxItem<PendingActionSave> {
         actionId: actionId,
         isNew: isNew,
         changes: changes,
+        group: group,
         attempts: attempts,
       );
 
@@ -81,6 +88,7 @@ class PendingActionSave implements OutboxItem<PendingActionSave> {
     actionId: actionId,
     isNew: isNew,
     changes: changes,
+    group: group,
     attempts: attempts ?? this.attempts,
     lastError: lastError == null ? this.lastError : lastError(),
     nextAttemptAt: nextAttemptAt == null ? this.nextAttemptAt : nextAttemptAt(),
@@ -95,6 +103,7 @@ class PendingActionSave implements OutboxItem<PendingActionSave> {
         actionId: json['goal_id'] as String,
         isNew: json['is_new'] as bool? ?? false,
         changes: (json['changes'] as Map).cast<String, Object?>(),
+        group: json['is_group'] as bool?,
         attempts: json['attempts'] as int? ?? 0,
         lastError: json['last_error'] as String?,
         nextAttemptAt: _date(json['next_attempt_at']),
@@ -107,6 +116,7 @@ class PendingActionSave implements OutboxItem<PendingActionSave> {
     'goal_id': actionId,
     'is_new': isNew,
     'changes': changes,
+    'is_group': ?group,
     'attempts': attempts,
     'last_error': ?lastError,
     'next_attempt_at': ?nextAttemptAt?.toUtc().toIso8601String(),
