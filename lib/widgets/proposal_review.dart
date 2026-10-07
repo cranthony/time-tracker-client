@@ -40,10 +40,12 @@ EventMark proposalMark(
   final what = switch (event.status) {
     ProposalEventStatus.created => ['New'],
     ProposalEventStatus.cancelled => [
-      if (event.countsAgainstFollowThrough ?? true)
+      if (!(event.countsAgainstFollowThrough ?? true))
+        'Cancelled, a change of plan'
+      else if (event.followThrough.isEmpty)
         'Cancelled, counts against follow-through'
       else
-        'Cancelled, a change of plan',
+        'Cancelled, counts against ${event.followThrough.join(', ')}',
     ],
     ProposalEventStatus.merged => ['Merged'],
     ProposalEventStatus.adjusted => [
@@ -1524,6 +1526,126 @@ Future<NoteUseChoice?> showNoteUseSheet(
           ],
         ],
       ),
+    );
+  },
+);
+
+/// What the user did from [showCancelledDialog].
+sealed class CancelledChoice {
+  const CancelledChoice();
+}
+
+/// Put it back as planned.
+final class PutBack extends CancelledChoice {
+  const PutBack();
+}
+
+/// Say whether it [counts] against follow-through.
+final class SetCounts extends CancelledChoice {
+  const SetCounts(this.counts);
+  final bool counts;
+}
+
+/// Leave a note for Claude about it.
+final class AskAboutCancel extends CancelledChoice {
+  const AskAboutCancel();
+}
+
+/// Shows [event], which the proposal says didn't happen -- cancelled, or
+/// merged into another -- when it was, who said so, and, cancelled,
+/// whether that counts against follow-through, and against whom, in full,
+/// with a switch to say otherwise. It can be put back as planned, or asked
+/// about in a note for Claude.
+Future<CancelledChoice?> showCancelledDialog(
+  BuildContext context,
+  ProposalEvent event,
+) => showDialog<CancelledChoice>(
+  context: context,
+  builder: (context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final name = switch (event.summary) {
+      final s? when s.isNotEmpty => '“$s”',
+      _ => 'This event',
+    };
+    final merged = event.status == ProposalEventStatus.merged;
+    final counts = event.countsAgainstFollowThrough ?? true;
+    final small = theme.textTheme.bodySmall?.copyWith(
+      color: colors.onSurfaceVariant,
+    );
+    return AlertDialog(
+      title: Text("$name didn't happen"),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${_time(context, event.start)} – ${_time(context, event.end)}'
+              ' · ${merged ? 'Merged into another event' : 'Cancelled'}'
+              '${switch (event.decidedBy) {
+                DecidedBy.claude => ' by Claude',
+                DecidedBy.user => ' by you',
+                null => '',
+              }}',
+              style: small,
+            ),
+            if (!merged) ...[
+              const SizedBox(height: 16),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Counts against follow-through'),
+                subtitle: Text(
+                  counts
+                      ? 'A commitment dropped'
+                      : 'A change of plan: no one’s follow-through',
+                ),
+                value: counts,
+                onChanged: (on) => Navigator.of(context).pop(SetCounts(on)),
+              ),
+              if (counts) ...[
+                const SizedBox(height: 4),
+                Text(
+                  event.followThrough.isEmpty
+                      ? 'No one’s follow-through tracks it.'
+                      : 'It counts against:',
+                  style: theme.textTheme.titleSmall,
+                ),
+                for (final who in event.followThrough)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.person_outline,
+                          size: 18,
+                          color: colors.error,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(who)),
+                      ],
+                    ),
+                  ),
+              ],
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(const AskAboutCancel()),
+          child: const Text('Note for Claude'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(const PutBack()),
+          child: const Text('Put it back'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Done'),
+        ),
+      ],
     );
   },
 );

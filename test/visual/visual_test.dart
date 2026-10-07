@@ -439,6 +439,14 @@ void main() {
         },
       ),
       (
+        'events_proposal_cancelled',
+        (tester) async {
+          // The call to Mom, in full: who it counts against.
+          await tester.tap(find.text('Call Mom').last);
+          await tester.pumpAndSettle();
+        },
+      ),
+      (
         'events_proposal_settle',
         (tester) async {
           // Settling the new person: made now, one already here, or not.

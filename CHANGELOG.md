@@ -15,7 +15,9 @@ on. Add the new version's section here at the same time; CI checks both.
 - Follow-through: how many of its cancels count against follow-through,
   of how many. Each cancel says whether it does, and against whom -- or
   that it's a change of plan -- outlined on the timeline; its switch
-  says otherwise.
+  says otherwise. Tapping a cancelled event, or a cancel there, shows it
+  in full: when, who said so, and everyone it counts against, with the
+  switch, putting it back as planned, and a note for Claude about it.
 - Added: each person, action and location it adds -- named, not by the
   ref it goes by until it's made -- with what tells it apart, and the
   events it's at, outlined. Settle it: make it now (corrected, if need

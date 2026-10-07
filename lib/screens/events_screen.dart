@@ -1115,7 +1115,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// [_openEvent] does, its changes and its cancelling edits of the
   /// proposal. One the proposal cancels can be put back as planned.
   Future<void> _openReviewed(Event event) async {
-    if (event.isCancelled) return _offerAsPlanned(event);
+    if (event.isCancelled) return _openCancelled(event);
     Proposal? amended;
     final outcome = await showEventSummaryDialog(
       context,
@@ -1180,52 +1180,32 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
-  /// Offers to put [event], which the open proposal says didn't happen,
-  /// back as planned.
-  Future<void> _offerAsPlanned(Event event) async {
+  /// Shows [event], which the open proposal says didn't happen: when, who
+  /// said so, and whether it counts against follow-through, and against
+  /// whom -- to say otherwise, put it back as planned, or ask Claude about.
+  Future<void> _openCancelled(Event event) async {
     final proposed = _proposal?.event(event.id);
     if (proposed == null) return;
-    final by = switch (proposed.decidedBy) {
-      DecidedBy.claude => ' Claude says so.',
-      DecidedBy.user => ' You said so.',
-      null => '',
-    };
-    final name = switch (event.summary) {
-      final s? when s.isNotEmpty => '“$s”',
-      _ => 'This event',
-    };
-    final back = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('$name didn\'t happen'),
-        content: Text(
-          'In what happened, to confirm, it '
-          '${proposed.status == ProposalEventStatus.merged ? 'was merged into another event' : 'was cancelled'}.'
-          '$by Put it back as planned?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Leave it'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Put it back'),
-          ),
-        ],
-      ),
-    );
-    if (back != true || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final amended = await _amend(ProposalEdits(asPlanned: [proposed.id]));
-      _amended(amended, 'Put back as planned.');
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text("Couldn't put it back: ${describeSaveError(e)}"),
-        ),
-      );
+    final choice = await showCancelledDialog(context, proposed);
+    if (!mounted) return;
+    switch (choice) {
+      case SetCounts(:final counts):
+        await _setCounts(proposed, counts);
+      case AskAboutCancel():
+        await _noteForClaude(about: proposed.id);
+      case PutBack():
+        final messenger = ScaffoldMessenger.of(context);
+        try {
+          final amended = await _amend(ProposalEdits(asPlanned: [proposed.id]));
+          _amended(amended, 'Put back as planned.');
+        } catch (e) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text("Couldn't put it back: ${describeSaveError(e)}"),
+            ),
+          );
+        }
+      case null:
     }
   }
 
@@ -2602,7 +2582,11 @@ class _EventsScreenState extends State<EventsScreen> {
               onNext: cancelAt < cancels.length - 1
                   ? () => _goToCancel(cancelAt + 1)
                   : null,
-              onTap: () => _goToCancel(cancelAt),
+              // Shown, and opened: who it counts against, in full.
+              onTap: () {
+                _goToCancel(cancelAt);
+                _openCancelled(cancel.toEvent());
+              },
             ),
       cancelCount: cancels.length,
       counting: cancels

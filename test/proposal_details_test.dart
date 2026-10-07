@@ -269,6 +269,52 @@ void main() {
       expect(find.text('Follow-through (2 of 2)'), findsOneWidget);
     });
 
+    testWidgets('tapping a cancel shows it in full: when, who said so, and '
+        'who it counts against; its switch, and putting it back', (
+      tester,
+    ) async {
+      await open(tester);
+      expect(
+        find.text('Cancelled, counts against Mom (Reliable) · Claude'),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(find.text('Call Mom').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Call Mom').last);
+      await tester.pumpAndSettle();
+      expect(find.text("“Call Mom” didn't happen"), findsOneWidget);
+      expect(
+        find.text('10:00 AM – 10:30 AM · Cancelled by Claude'),
+        findsOneWidget,
+      );
+      expect(find.text('It counts against:'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Mom (Reliable)'),
+        ),
+        findsOneWidget,
+      );
+
+      // A change of plan, after all.
+      await tester.tap(find.byType(SwitchListTile));
+      await tester.pumpAndSettle();
+      expect(proposals.amends.last.toJson(), {
+        'cancels': [
+          {'event_id': 'call', 'counts_against_follow_through': false},
+        ],
+      });
+      expect(find.text('Follow-through (0 of 2)'), findsOneWidget);
+
+      // Put back as planned.
+      await tester.tap(find.text('Call Mom').last);
+      await tester.pumpAndSettle();
+      expect(find.text('It counts against:'), findsNothing);
+      await tester.tap(find.text('Put it back'));
+      await tester.pumpAndSettle();
+      expect(proposals.amends.last.asPlanned, ['call']);
+    });
+
     testWidgets('what it adds is named, not by its ref; and settled: made '
         'now, corrected, one already here, dropped, or put back', (
       tester,
