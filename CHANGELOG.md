@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.4.0
+
+- Keeping events, when the new event's box is moved to fit into free
+  time, an arrow points from where it was put to where it went, then
+  fades.
+- While making an event, a button above ✕ and ✓ scrolls the box back
+  into the middle of the view.
+
 ## 7.3.1
 
 - Changing a group's priority, or anything else about it, is saved: it

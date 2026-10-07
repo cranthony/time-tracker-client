@@ -380,16 +380,35 @@ void main() {
     // events, keeping them -- fitted into the free time there; moved to a
     // free stretch, and dragged out there; overwriting and trimming,
     // tinged red; overwriting and cancelling, the shadow stretched over
-    // the events it cancels whole; the choice between them; and the new
-    // event, overwriting, with its trash to clear the time instead.
-    for (final (name, overwrite, move, drag, dialog, open) in [
-      ('events_new_cursor', null, 0, 0, false, false),
-      ('events_new_dragged', null, 0, 150, false, false),
-      ('events_new_kept', null, 180, 60, false, false),
-      ('events_new_overwrite', 'Overwrite and trim', 0, 150, false, false),
-      ('events_new_cancel', 'Overwrite and cancel', 0, 150, false, false),
-      ('events_new_modes', null, 0, 0, true, false),
-      ('events_new_clear', 'Overwrite and trim', 0, 150, false, true),
+    // the events it cancels whole; the choice between them; the new
+    // event, overwriting, with its trash to clear the time instead; and,
+    // keeping events, the arrow from where the box was put to where it
+    // was moved, part way through.
+    for (final (name, overwrite, move, drag, dialog, open, arrow) in [
+      ('events_new_cursor', null, 0, 0, false, false, false),
+      ('events_new_dragged', null, 0, 150, false, false, false),
+      ('events_new_kept', null, 180, 60, false, false, false),
+      (
+        'events_new_overwrite',
+        'Overwrite and trim',
+        0,
+        150,
+        false,
+        false,
+        false,
+      ),
+      (
+        'events_new_cancel',
+        'Overwrite and cancel',
+        0,
+        150,
+        false,
+        false,
+        false,
+      ),
+      ('events_new_modes', null, 0, 0, true, false, false),
+      ('events_new_clear', 'Overwrite and trim', 0, 150, false, true, false),
+      ('events_new_moved', null, 0, 150, false, false, true),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
         await render(
@@ -431,6 +450,17 @@ void main() {
                 warnIfMissed: false,
               );
               await settle();
+            }
+            if (arrow) {
+              // Moved whole, by its handle, into the events above.
+              await tester.drag(
+                find.byTooltip('Drag to move the event'),
+                Offset(0, -90 * defaultTimelineScale),
+                warnIfMissed: false,
+              );
+              // Its first frame, and part way through.
+              await tester.pump();
+              await tester.pump(const Duration(milliseconds: 500));
             }
             if (open) {
               await tester.tap(find.byTooltip('Continue'));

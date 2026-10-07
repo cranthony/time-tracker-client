@@ -577,3 +577,124 @@ class _NewEventShadowState extends State<NewEventShadow>
 String clockTime(BuildContext context, DateTime time) =>
     MaterialLocalizations.of(context)
         .formatTimeOfDay(TimeOfDay.fromDateTime(time.toLocal()));
+
+/// Where keeping events moved a [NewEventBox]: a pointed arrow down the
+/// timeline for [day] at [scale], [from] where it was put [to] where it
+/// fits, that draws out to its point and then fades away. It takes no
+/// touches.
+class KeptMoveArrow extends StatefulWidget {
+  const KeptMoveArrow({
+    super.key,
+    required this.from,
+    required this.to,
+    required this.day,
+    required this.dayEnd,
+    required this.scale,
+  });
+
+  final DateTime from;
+  final DateTime to;
+  final DateTime day;
+  final DateTime dayEnd;
+  final double scale;
+
+  @override
+  State<KeptMoveArrow> createState() => _KeptMoveArrowState();
+}
+
+class _KeptMoveArrowState extends State<KeptMoveArrow>
+    with SingleTickerProviderStateMixin {
+  late final _shown = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  )..forward();
+
+  @override
+  void dispose() {
+    _shown.dispose();
+    super.dispose();
+  }
+
+  double _y(DateTime time) => timelineOffset(
+    time,
+    day: widget.day,
+    dayEnd: widget.dayEnd,
+    scale: widget.scale,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _shown,
+        builder: (context, _) {
+          final t = _shown.value;
+          if (t == 1) return const SizedBox.shrink();
+          return CustomPaint(
+            size: Size.infinite,
+            painter: _ArrowPainter(
+              from: _y(widget.from),
+              to: _y(widget.to),
+              color: color,
+              // Drawn out over the first quarter; held; faded over the
+              // last half.
+              drawn: Curves.easeOut.transform((t * 4).clamp(0.0, 1.0)),
+              opacity:
+                  1 - Curves.easeIn.transform(((t - 0.5) * 2).clamp(0.0, 1.0)),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ArrowPainter extends CustomPainter {
+  _ArrowPainter({
+    required this.from,
+    required this.to,
+    required this.color,
+    required this.drawn,
+    required this.opacity,
+  });
+
+  final double from;
+  final double to;
+  final Color color;
+  final double drawn;
+  final double opacity;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Too short to point anywhere.
+    if ((to - from).abs() < 12) return;
+    // Left of the box's middle, clear of its buttons and handles.
+    final x = timelineCardsLeft + (size.width - timelineCardsLeft - 8) * 0.2;
+    final paint = Paint()
+      ..color = color.withValues(alpha: color.a * opacity)
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    // Where it was put: a ring.
+    canvas.drawCircle(Offset(x, from), 6, paint..strokeWidth = 3);
+    final down = to > from ? 1.0 : -1.0;
+    final start = from + down * 8;
+    final tip = start + (to - start) * drawn;
+    canvas.drawLine(Offset(x, start), Offset(x, tip), paint..strokeWidth = 4);
+    final head = Path()
+      ..moveTo(x, tip + down * 4)
+      ..lineTo(x - 10, tip - down * 12)
+      ..lineTo(x + 10, tip - down * 12)
+      ..close();
+    canvas.drawPath(head, Paint()..color = paint.color);
+  }
+
+  @override
+  bool shouldRepaint(_ArrowPainter old) =>
+      old.from != from ||
+      old.to != to ||
+      old.color != color ||
+      old.drawn != drawn ||
+      old.opacity != opacity;
+}
