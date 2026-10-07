@@ -229,6 +229,11 @@ const judgmentFacts = <String, JudgmentFact>{
         '"with" one',
     lookback: false,
   ),
+  'what_matters': (
+    label: 'What matters',
+    hint: "What's important to them, as their page says",
+    lookback: false,
+  ),
 };
 
 /// How far a history fact looks back unless it says.
