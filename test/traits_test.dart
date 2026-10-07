@@ -4,6 +4,7 @@ import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/facts.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
+import 'package:time_tracker_client/models/recurrence.dart';
 import 'package:time_tracker_client/models/trait.dart';
 
 import 'dart:async';
@@ -861,6 +862,74 @@ void main() {
 
     expect(edited?.withIds, ['sam']);
     expect(edited?.forIds, isEmpty);
+  });
+
+  testWidgets("a series' who and where are picked as an event's are, and "
+      'saved for its events', (tester) async {
+    Map<String, Object?>? saved;
+    final series = Recurrence.fromJson({
+      'id': 's1',
+      'summary': 'Standup',
+      'start': '2026-10-05T09:00:00',
+      'end': '2026-10-05T10:00:00',
+      'repeat': {
+        'every': 'week',
+        'weekdays': ['mon'],
+      },
+      'location': 'Room 4',
+      'facts': {'location_id': 'home'},
+    });
+    final people = InMemoryPeopleRepository(
+      people: const [Person(id: 'sam', name: 'Sam')],
+      locations: const [Location(id: 'home', name: 'Home')],
+    );
+    await tester.pumpWidget(
+      PeopleScope(
+        repository: people,
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showSeriesSummaryDialog(
+                context,
+                series,
+                fromEventId: 's1_20261012',
+                fromEventStart: DateTime(2026, 10, 12, 9),
+                save: (changes, scope) async {
+                  saved = changes;
+                  return [series];
+                },
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    // Where by its name, not as it's put; what happened is each event's.
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Room 4'), findsNothing);
+    expect(find.text('Add what happened'), findsNothing);
+    await tester.tap(find.text('Add who'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(CheckboxListTile, 'Sam'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+    await tester.pumpAndSettle();
+    expect(find.text('With Sam'), findsOneWidget);
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All events'));
+    await tester.pumpAndSettle();
+
+    expect(saved, {
+      'facts': {
+        'location_id': 'home',
+        'with_ids': ['sam'],
+      },
+    });
   });
 
   testWidgets('a new location is added from what happened', (tester) async {

@@ -996,6 +996,7 @@ class SampleData {
       'schedule': 'Every week on Mon, Tue, Wed, Thu, Fri',
       'action_ids': ['get_up'],
       'action_names': [_names['get_up']],
+      'facts': {'location_id': 'home'},
     }),
   ];
 
