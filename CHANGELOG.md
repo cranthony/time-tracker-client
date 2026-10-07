@@ -8,17 +8,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 ## 7.12.0
 
-- In an event's dialog, the actions, who it was with and for, and where,
-  are picked in a sheet up from the foot of the screen, as a note's is,
-  with a search and the room to show what it finds: the actions as
-  before, from the tree; who and where in a tab each -- with, for, and
-  where, a new location added there.
-- Who and where take the free-text location's place, in a line after a
-  person, e.g. "With Sam · @ The noodle bar"; the row of notes -- now
-  after a note and pencil, not sparkles -- keeps the notes and Claude's
+- In an event's dialog, its actions, who it was with and for, and its
+  location are picked in a sheet up from the foot of the screen, as a
+  note's is, with a search and the room to show what it finds: the
+  actions as before, from the tree; who in a tab each -- with, and for;
+  and the location from the list, a new one added there.
+- Who takes the free-text location's place, in a line after a person,
+  e.g. "With Sam · For Priya"; and the location, by its name after a
+  pin. The free-text location isn't shown. The row of notes -- now after
+  a note and pencil, not sparkles -- keeps the notes and Claude's
   judgments, and opens just the notes.
-- Where can still be put in words -- the event's own location, an
-  address, say -- in the sheet's Where tab.
 - The description is written in a sheet up from the foot, too.
 - The actions are after a check, not a flag.
 

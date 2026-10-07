@@ -819,7 +819,8 @@ void main() {
       });
     }
 
-    // Lunch's summary: who and where after a person, its description,
+    // Lunch's summary: who after a person, its location after a pin, its
+    // description,
     // its actions after a check, and its notes; and its description,
     // written in a sheet up from the foot.
     for (final (name, describe) in [
@@ -854,7 +855,7 @@ void main() {
       });
     }
 
-    // Who lunch was with, and where: picked in a sheet up from the foot.
+    // Who lunch was with: picked in a sheet up from the foot.
     testWidgets('event facts ($mode)', (tester) async {
       await render(
         tester,
@@ -866,10 +867,29 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.text('Lunch with Sam'));
           await tester.pumpAndSettle();
-          final facts = find.text('With Sam · @ The noodle bar');
+          final facts = find.text('With Sam');
           await tester.ensureVisible(facts);
           await tester.pumpAndSettle();
           await tester.tap(facts);
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
+    // Where lunch was: its location, picked in a sheet up from the foot,
+    // with a new one to add above the list.
+    testWidgets('event_location ($mode)', (tester) async {
+      await render(
+        tester,
+        'event_location',
+        events(),
+        scoped: true,
+        then: () async {
+          await tester.ensureVisible(find.text('Lunch with Sam'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Lunch with Sam'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('The noodle bar'));
           await tester.pumpAndSettle();
         },
       );

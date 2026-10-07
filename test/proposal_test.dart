@@ -922,20 +922,12 @@ void main() {
       expect(find.text('Renamed · you'), findsOneWidget);
     });
 
-    testWidgets("an event's priority, location and whole description are "
+    testWidgets("an event's priority and whole description are "
         'edited in the proposal too', (tester) async {
       await open(tester);
       await tap(tester, find.text('Work'));
       await tap(tester, inDialog(find.text('No priority')));
       await tap(tester, inDialog(find.text('P1')));
-      // Where, in words, in the who-and-where sheet's Where tab.
-      await tap(tester, inDialog(find.text('Add who and where')));
-      await tap(tester, find.widgetWithText(Tab, 'Where'));
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Where, in words'),
-        'Office',
-      );
-      await tap(tester, find.widgetWithText(FilledButton, 'Done'));
       // The description, in a sheet of its own.
       await tap(tester, inDialog(find.text('Add description')));
       await tester.enterText(
@@ -946,7 +938,6 @@ void main() {
         'Invoices, mostly',
       );
       await tap(tester, find.widgetWithText(FilledButton, 'Done'));
-      expect(inDialog(find.text('@ Office')), findsOneWidget);
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
 
@@ -956,14 +947,12 @@ void main() {
             'event': {
               'id': 'work',
               'priority': 1,
-              'location': 'Office',
               'description': 'Invoices, mostly',
             },
           },
         ],
       });
       final work = proposals.proposal!.event('work')!;
-      expect(work.properties['location'], 'Office');
       expect(work.description, 'Invoices, mostly');
       // Drawn at the priority it's given.
       final drawn = tester

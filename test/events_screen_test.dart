@@ -795,7 +795,8 @@ void main() {
         inDialog(find.text('Wed, Sep 30 · 9:00 AM – 10:30 AM')),
         findsOneWidget,
       );
-      expect(inDialog(find.text('Add who and where')), findsOneWidget);
+      expect(inDialog(find.text('Add who')), findsOneWidget);
+      expect(inDialog(find.text('Add location')), findsOneWidget);
       expect(inDialog(find.text('Deep work')), findsOneWidget);
       expect(inDialog(find.text('Deep focus')), findsOneWidget);
       // Not in a series, so no link to one.

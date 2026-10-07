@@ -176,22 +176,20 @@ class _TextSheetFieldState extends State<_TextSheetField> {
   );
 }
 
-/// Picks who an event was with, who it was for, and where it was, in a
-/// [showPickerSheet], a tab for each: each a search over a [ListPicker].
-/// The rest of [facts] -- the notes -- kept. Where can be put in words
-/// too, as the event's [place]: its free-text location. Returns them;
-/// null if dismissed. The people and locations come from the
-/// [PeopleScope], as
-/// [showFactsDialog]'s do, with those a compaction proposal adds -- its
-/// [additions], by their refs, marked new; a new location can be added
-/// from here.
-Future<({Facts facts, String? place})?> showWhoWhereSheet(
+/// Picks who an event was with and who it was for, in a
+/// [showPickerSheet], a tab each -- or, [where], where it was, its
+/// location -- each a search over a [ListPicker]. The rest of [facts] --
+/// the notes, and the other of who or where -- kept. Returns them; null
+/// if dismissed. The people and locations come from the [PeopleScope],
+/// as [showFactsDialog]'s do, with those a compaction proposal adds --
+/// its [additions], by their refs, marked new; a new location can be
+/// added from here.
+Future<Facts?> showWhoWhereSheet(
   BuildContext context,
   Facts facts, {
-  String? place,
+  bool where = false,
   List<ProposalAddition> additions = const [],
 }) {
-  var said = place ?? '';
   final addedPeople = [
     for (final a in additions)
       if (a.kind == AdditionKind.person)
@@ -207,162 +205,133 @@ Future<({Facts facts, String? place})?> showWhoWhereSheet(
   var location = facts.locationId;
   final repository = PeopleScope.of(context);
   final memory = PlanMemoryScope.of(context);
-  var people = _people(repository, memory);
+  final people = _people(repository, memory);
   var locations = _locations(repository, memory);
-  return showPickerSheet<({Facts facts, String? place})>(
-    context,
-    title: 'Who and where',
-    result: () => (
-      facts: Facts(
-        locationId: location,
-        withIds: [...with_],
-        forIds: [...for_],
-        notes: {
-          for (final MapEntry(:key, :value) in facts.notes.entries)
-            if (key == selfPersonId || with_.contains(key)) key: value,
-        },
-      ),
-      place: said.trim().isEmpty ? null : said.trim(),
+
+  // Who it was with, or for: everyone to pick from, [picked] picked;
+  // picking one takes them out of [other], since no one is both.
+  Widget pick(
+    StateSetter setState,
+    Set<String> picked,
+    Set<String> other,
+    String hint,
+  ) => FutureBuilder(
+    future: people,
+    initialData: memory?.people,
+    builder: (context, snapshot) => ListPicker<Person>(
+      items: [
+        for (final p in snapshot.data?.withSelf ?? const <Person>[])
+          if (!p.isSelf &&
+              (p.active || with_.contains(p.id) || for_.contains(p.id)))
+            p,
+        // Without the list, at least who's already there.
+        if (snapshot.data == null)
+          for (final id in {...with_, ...for_})
+            if (!addedPeople.any((p) => p.id == id)) Person(id: id, name: id),
+        ...addedPeople,
+      ],
+      id: (p) => p.id,
+      label: (p) => personName(p, context: true),
+      picked: [...picked],
+      hint: hint,
+      empty: 'No one yet: add people on the Plan page.',
+      onChanged: (ids) => setState(() {
+        picked
+          ..clear()
+          ..addAll(ids);
+        other.removeAll(ids);
+      }),
     ),
-    body: (context, setState) => DefaultTabController(
-      length: 3,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const TabBar(
-            tabs: [
-              Tab(text: 'With'),
-              Tab(text: 'For'),
-              Tab(text: 'Where'),
-            ],
-          ),
-          Expanded(
-            child: FutureBuilder(
-              future: people,
-              initialData: memory?.people,
-              builder: (context, snapshot) {
-                final everyone = [
-                  for (final p in snapshot.data?.withSelf ?? const <Person>[])
-                    if (!p.isSelf &&
-                        (p.active ||
-                            with_.contains(p.id) ||
-                            for_.contains(p.id)))
-                      p,
-                  // Without the list, at least who's already there.
-                  if (snapshot.data == null)
-                    for (final id in {...with_, ...for_})
-                      if (!addedPeople.any((p) => p.id == id))
-                        Person(id: id, name: id),
-                  ...addedPeople,
-                ];
-                Widget pick(
-                  Set<String> picked,
-                  Set<String> other,
-                  String hint,
-                ) => ListPicker<Person>(
-                  items: everyone,
-                  id: (p) => p.id,
-                  label: (p) => personName(p, context: true),
-                  picked: [...picked],
-                  hint: hint,
-                  empty: 'No one yet: add people on the Plan page.',
-                  // No one is both there and not.
-                  onChanged: (ids) => setState(() {
-                    picked
-                      ..clear()
-                      ..addAll(ids);
-                    other.removeAll(ids);
-                  }),
-                );
-                return TabBarView(
-                  children: [
-                    pick(with_, for_, 'Who was there'),
-                    pick(for_, with_, "Who it was for, while they weren't"),
-                    // A location, or where in words: the event's own.
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: _PlaceField(
-                            text: place,
-                            onChanged: (text) => said = text,
-                          ),
-                        ),
-                        Expanded(
-                          child: FutureBuilder(
-                            future: locations,
-                            initialData: memory?.locations,
-                            builder: (context, snapshot) {
-                              final known = [
-                                ...snapshot.data ?? const <Location>[],
-                                ...addedLocations,
-                              ];
-                              return ListPicker<Location>(
-                                items: [
-                                  ...known,
-                                  if (location != null &&
-                                      !known.any((l) => l.id == location))
-                                    Location(id: location!, name: location!),
-                                ],
-                                id: (l) => l.id,
-                                label: (l) => l.name,
-                                detail: (l) => l.hint,
-                                picked: [?location],
-                                single: true,
-                                hint: 'Where it was',
-                                empty: 'No locations yet.',
-                                onChanged: (ids) =>
-                                    setState(() => location = ids.firstOrNull),
-                                extra: repository == null
-                                    ? null
-                                    : ListTile(
-                                        leading: const Icon(
-                                          Icons.add_location_alt,
-                                        ),
-                                        title: const Text('New location…'),
-                                        onTap: () async {
-                                          final created =
-                                              await showLocationDialog(
-                                                context,
-                                                save: (fields) =>
-                                                    repository.createLocation(
-                                                      Location(
-                                                        id: '',
-                                                        name:
-                                                            fields['name']
-                                                                as String,
-                                                        hint:
-                                                            fields['hint']
-                                                                as String?,
-                                                      ),
-                                                    ),
-                                              );
-                                          if (created == null) return;
-                                          setState(() {
-                                            location = created.id;
-                                            locations = _locations(
-                                              repository,
-                                              memory,
-                                              again: true,
-                                            );
-                                          });
-                                        },
-                                      ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
+  );
+
+  // Where it was: a location, or a new one.
+  Widget place(StateSetter setState) => FutureBuilder(
+    future: locations,
+    initialData: memory?.locations,
+    builder: (context, snapshot) {
+      final known = [...snapshot.data ?? const <Location>[], ...addedLocations];
+      return ListPicker<Location>(
+        items: [
+          ...known,
+          if (location != null && !known.any((l) => l.id == location))
+            Location(id: location!, name: location!),
+        ],
+        id: (l) => l.id,
+        label: (l) => l.name,
+        detail: (l) => l.hint,
+        picked: [?location],
+        single: true,
+        hint: 'Where it was',
+        empty: 'No locations yet.',
+        onChanged: (ids) => setState(() => location = ids.firstOrNull),
+        extra: repository == null
+            ? null
+            : ListTile(
+                leading: const Icon(Icons.add_location_alt),
+                title: const Text('New location…'),
+                onTap: () async {
+                  final created = await showLocationDialog(
+                    context,
+                    save: (fields) => repository.createLocation(
+                      Location(
+                        id: '',
+                        name: fields['name'] as String,
+                        hint: fields['hint'] as String?,
+                      ),
                     ),
+                  );
+                  if (created == null) return;
+                  setState(() {
+                    location = created.id;
+                    locations = _locations(repository, memory, again: true);
+                  });
+                },
+              ),
+      );
+    },
+  );
+
+  return showPickerSheet<Facts>(
+    context,
+    title: where ? 'Location' : 'Who',
+    result: () => Facts(
+      locationId: location,
+      withIds: [...with_],
+      forIds: [...for_],
+      notes: {
+        for (final MapEntry(:key, :value) in facts.notes.entries)
+          if (key == selfPersonId || with_.contains(key)) key: value,
+      },
+    ),
+    body: (context, setState) => where
+        ? place(setState)
+        : DefaultTabController(
+            length: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const TabBar(
+                  tabs: [
+                    Tab(text: 'With'),
+                    Tab(text: 'For'),
                   ],
-                );
-              },
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      pick(setState, with_, for_, 'Who was there'),
+                      pick(
+                        setState,
+                        for_,
+                        with_,
+                        "Who it was for, while they weren't",
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
-    ),
   );
 }
 
@@ -402,8 +371,9 @@ Future<T> _kept<T>(Future<void> loading, T? Function() kept) async {
 /// Picks from a flat list of [items], as [ActionsPicker] does from the
 /// actions: those [picked] as chips on top, a search over them, and the
 /// list under it, each with a check. With [single], picking one replaces
-/// any other, and there are no chips. [extra] goes at the foot of the
-/// list: a way to add one, say.
+/// any other, and there are no chips. [extra] goes between the search
+/// and the list, kept in view as the list scrolls: a way to add one,
+/// say.
 class ListPicker<T> extends StatefulWidget {
   const ListPicker({
     super.key,
@@ -529,6 +499,8 @@ class _ListPickerState<T> extends State<ListPicker<T>> {
             },
           ),
         ),
+        // Above the list, not in it: always to hand.
+        ?widget.extra,
         Expanded(
           child: ListView(
             children: [
@@ -556,46 +528,10 @@ class _ListPickerState<T> extends State<ListPicker<T>> {
                   },
                   onChanged: (on) => _toggle(widget.id(item), on ?? false),
                 ),
-              ?widget.extra,
             ],
           ),
         ),
       ],
     );
   }
-}
-
-/// Where an event was, in words: its free-text location, with a
-/// controller of its own, as the sheet's kept.
-class _PlaceField extends StatefulWidget {
-  const _PlaceField({required this.text, required this.onChanged});
-
-  final String? text;
-  final ValueChanged<String> onChanged;
-
-  @override
-  State<_PlaceField> createState() => _PlaceFieldState();
-}
-
-class _PlaceFieldState extends State<_PlaceField> {
-  late final _controller = TextEditingController(text: widget.text);
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => TextField(
-    controller: _controller,
-    textCapitalization: TextCapitalization.sentences,
-    decoration: const InputDecoration(
-      isDense: true,
-      border: OutlineInputBorder(),
-      labelText: 'Where, in words',
-      hintText: 'An address, or anywhere not a location',
-    ),
-    onChanged: widget.onChanged,
-  );
 }

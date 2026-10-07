@@ -588,10 +588,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               if (widget.series) _repeatLine(context),
               if (widget.openSeries case final open?) _seriesChip(open),
               const SizedBox(height: 8),
-              // An event's who and where; a series', where, as it's put.
-              if (widget.facets)
-                _whoRow(context)
-              else
+              // An event's who, and its location; a series', where, as
+              // it's put.
+              if (widget.facets) ...[
+                _whoRow(context),
+                _whoRow(context, where: true),
+              ] else
                 _textRow(
                   context,
                   field: _Field.location,
@@ -1364,43 +1366,39 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     });
   }
 
-  /// Who it was with and for, and where, in a line, after a person;
-  /// picked in a sheet up from the foot ([showWhoWhereSheet]). Where it
-  /// was put in words, if it's not at a location.
-  Widget _whoRow(BuildContext context) {
+  /// Who it was with and for, in a line after a person -- or, [where],
+  /// its location, after a pin; picked in a sheet up from the foot
+  /// ([showWhoWhereSheet]).
+  Widget _whoRow(BuildContext context, {bool where = false}) {
     final theme = Theme.of(context);
     final facts = Facts.fromJson(_value('facts')) ?? const Facts();
-    final line = facts.describe(_personNames, _locationNames);
-    final put = switch (_value('location')) {
-      final String where when where.trim().isNotEmpty => '@ $where',
-      _ => null,
-    };
+    final line = where
+        ? switch (facts.locationId) {
+            final id? => _locationNames[id] ?? id,
+            null => '',
+          }
+        : Facts(
+            withIds: facts.withIds,
+            forIds: facts.forIds,
+          ).describe(_personNames);
     return _row(
       context,
-      icon: Icons.person_outline,
+      icon: where ? Icons.place_outlined : Icons.person_outline,
       changedKey: 'facts',
       onTap: () async {
         setState(() => _editing = null);
         final edited = await showWhoWhereSheet(
           context,
           facts,
-          place: _value('location') as String?,
+          where: where,
           additions: widget.additions,
         );
-        if (edited == null || !mounted) return;
-        _setFacts(edited.facts);
-        _set('location', edited.place);
+        if (edited != null && mounted) _setFacts(edited);
       },
       child: Text(
-        switch ([
-          if (line.isNotEmpty) line,
-          if (facts.locationId == null) ?put,
-        ].join(' · ')) {
-          '' => 'Add who and where',
-          final said => said,
-        },
+        line.isEmpty ? (where ? 'Add location' : 'Add who') : line,
         style: theme.textTheme.bodyLarge?.copyWith(
-          color: line.isEmpty && put == null ? theme.hintColor : null,
+          color: line.isEmpty ? theme.hintColor : null,
         ),
       ),
     );

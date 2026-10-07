@@ -698,10 +698,10 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
 
-    expect(find.text('@ Home'), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
     expect(find.text('1 judgment by Claude'), findsOneWidget);
-    // Who and where, in a sheet: a tab each.
-    await tester.tap(find.text('@ Home'));
+    // Who, in a sheet: with, and for, a tab each.
+    await tester.tap(find.text('Add who'));
     await tester.pumpAndSettle();
     // Self is at every event: not to pick.
     expect(find.widgetWithText(CheckboxListTile, 'Self'), findsNothing);
@@ -712,7 +712,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     await tester.pumpAndSettle();
-    expect(find.text('With Sam · For Priya · @ Home'), findsOneWidget);
+    expect(find.text('With Sam · For Priya'), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
 
     // The notes, and the judgments, under the sparkle.
     await tester.tap(find.text('1 judgment by Claude'));
@@ -812,11 +813,14 @@ void main() {
 
     // Asked for, but not answered: named from what's loaded.
     expect(people.calls, ['people', 'locations']);
-    expect(find.text('With Sam · @ Home'), findsOneWidget);
-    await tester.tap(find.text('With Sam · @ Home'));
+    expect(find.text('With Sam'), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
+    await tester.tap(find.text('With Sam'));
     await tester.pumpAndSettle();
     expect(find.widgetWithText(CheckboxListTile, 'Sam'), findsOneWidget);
-    await tester.tap(find.widgetWithText(Tab, 'Where'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Home'));
     await tester.pumpAndSettle();
     expect(find.widgetWithText(CheckboxListTile, 'Home'), findsOneWidget);
     // Asked once, not again for the facts.
@@ -890,9 +894,7 @@ void main() {
     );
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add who and where'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(Tab, 'Where'));
+    await tester.tap(find.text('Add location'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('New location…'));
     await tester.pumpAndSettle();
