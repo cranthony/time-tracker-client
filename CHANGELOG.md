@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.1.2
+
+- Traits judged from what matters to a person (the seeded Thoughtful, for
+  one) are scored again: the app knows the server's "what matters" fact
+  (time-tracking-google-calendar-mcp#139), so it no longer leaves their
+  judgments out as having a fact it doesn't know. The trait editor can
+  pick it too.
+
 ## 7.1.1
 
 - An action picker opens at once: the Events page's pickers list the

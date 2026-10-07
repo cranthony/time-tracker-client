@@ -220,6 +220,22 @@ void main() {
         ),
         'a lookback must be a whole number of days, 1 or more.',
       );
+      expect(
+        partProblem(
+          judgment({
+            'facts': ['action', 'person_notes', 'what_matters'],
+          }),
+        ),
+        isNull,
+      );
+      expect(
+        partProblem(
+          judgment({
+            'facts': ['mood'],
+          }),
+        ),
+        "it has a fact the app doesn't know.",
+      );
     });
   });
 
