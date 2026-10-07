@@ -20,6 +20,11 @@ on. Add the new version's section here at the same time; CI checks both.
     there, and the rest of it pushed along after the new one.
   The box pushes the way it goes from its cursor: later, or earlier.
   Its trash makes the room without a new event.
+- In the drop-down's dialog, each way's icon is beside its radio, ahead
+  of its name, and only the one picked says what it does: tapping
+  another picks it, and tapping it again, or Done, settles on it. Trim
+  and push has scissors over its push, and Split and push a zipper
+  coming open over its.
 
 ## 7.4.0
 

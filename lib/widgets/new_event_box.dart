@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'create_mode_icon.dart';
 import 'day_timeline.dart';
 import 'other_events.dart';
 
@@ -31,7 +32,8 @@ enum CreateMode {
     'An event the new one starts inside of is cut short there; the events '
         'after it are pushed along, into free time, to make room -- as '
         'far as the day has room.',
-    Icons.vertical_align_bottom,
+    // Drawn: scissors over a push (see [CreateModeIcon]).
+    null,
   ),
   push(
     'Push',
@@ -45,14 +47,17 @@ enum CreateMode {
     'An event the new one starts inside of is split there, and the rest '
         'of it pushed along after the new one, with the events after it, '
         'into free time -- as far as the day has room.',
-    Icons.call_split,
+    // Drawn: a zipper coming open over a push (see [CreateModeIcon]).
+    null,
   );
 
   const CreateMode(this.label, this.description, this.icon);
 
   final String label;
   final String description;
-  final IconData icon;
+
+  /// Its Material icon; null where [CreateModeIcon] draws its own.
+  final IconData? icon;
 
   /// Whether it changes the events in the way.
   bool get overwrites => this != keep;
@@ -104,7 +109,7 @@ Future<CreateMode?> showCreateModeDialog(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Radio<CreateMode>(value: mode),
-                        Icon(mode.icon),
+                        CreateModeIcon(mode),
                       ],
                     ),
                     title: Text(mode.label),
@@ -543,7 +548,7 @@ class _NewEventBoxViewState extends State<NewEventBoxView> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(widget.mode.icon, size: 22),
+              CreateModeIcon(widget.mode, size: 22),
               const Icon(Icons.arrow_drop_down, size: 20),
             ],
           ),
