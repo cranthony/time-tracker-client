@@ -552,8 +552,48 @@ class SampleData {
 
   /// The weeks before and after today, other than today itself: a
   /// routine each day, then the events with people their histories have,
-  /// and some plans.
-  List<Event> get week => [
+  /// and some plans -- each taking its time out of the routine, as making
+  /// it in the app would, so that none overlap.
+  List<Event> get week {
+    final oneOffs = _oneOffs;
+    return [
+      for (final event in _routine) ..._around(event, oneOffs),
+      ...oneOffs,
+    ];
+  }
+
+  /// [event], with the time [others] take cut out of it: shortened, split
+  /// around them, or gone -- a piece of it shorter than a quarter hour
+  /// dropped.
+  static List<Event> _around(Event event, List<Event> others) {
+    var pieces = [(event.start, event.end)];
+    for (final other in others) {
+      pieces = [
+        for (final (start, end) in pieces)
+          if (!other.start.isBefore(end) || !other.end.isAfter(start))
+            (start, end)
+          else ...[
+            if (other.start.isAfter(start)) (start, other.start),
+            if (other.end.isBefore(end)) (other.end, end),
+          ],
+      ];
+    }
+    pieces.removeWhere(
+      (piece) => piece.$2.difference(piece.$1) < const Duration(minutes: 15),
+    );
+    return [
+      for (final (i, (start, end)) in pieces.indexed)
+        Event.fromJson({
+          ...event.toJson(),
+          if (i > 0) 'id': '${event.id}-$i',
+          'start': localIsoTimestamp(start),
+          'end': localIsoTimestamp(end),
+        }),
+    ];
+  }
+
+  /// The routine each day of the weeks before and after today.
+  List<Event> get _routine => [
     for (var day = -8; day <= 7; day++)
       if (day != 0) ...[
         // Tonight's sleep is today's last event; last night's, its first.
@@ -600,6 +640,10 @@ class SampleData {
           actions: ['watch_tv'],
         ),
       ],
+  ];
+
+  /// The events with people their histories have, and some plans.
+  List<Event> get _oneOffs => [
     for (final e in _past)
       if (e.daysAgo > 0)
         _event(

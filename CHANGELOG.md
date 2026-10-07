@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.8.1
+
+- The sample data's events no longer overlap: the events with people,
+  and the plans, take their time out of each day's routine -- Work split
+  around a call, TV cut short by guitar practice, and the like.
+
 ## 7.8.0
 
 - Compaction proposals, on the Events page. While Claude has one open --
