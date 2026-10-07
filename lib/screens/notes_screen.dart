@@ -9,6 +9,7 @@ import '../outbox/pending_note.dart';
 import '../services/mcp_client.dart';
 import '../services/notes_repository.dart';
 import '../services/plan_memory.dart';
+import '../widgets/error_sheet.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
 import '../widgets/note_dialog.dart';
@@ -187,14 +188,11 @@ class _NotesScreenState extends State<NotesScreen> {
       _dialogOpen = false;
     }
     if (note == null || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await widget.outbox.add(note);
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not keep the note: $e')),
-      );
-    }
+    await runOrShowError(
+      context,
+      title: "Couldn't keep the note",
+      action: () => widget.outbox.add(note!),
+    );
   }
 
   Future<void> _editNote(Note note) async {
@@ -213,9 +211,19 @@ class _NotesScreenState extends State<NotesScreen> {
         edited != null && !edited.timestamp.isAtSameMomentAs(note.timestamp);
     final described = edited != null && edited.description != note.description;
     if (edited != null && !retimed && !described) return;
+    await _changeNote(note, result);
+  }
 
+  /// Saves the user's [result] for [note]: its change, or its deletion.
+  Future<void> _changeNote(Note note, NoteDialogResult result) async {
+    final id = note.id!;
+    final edited = result is SaveNote ? result.note : null;
+    final retimed =
+        edited != null && !edited.timestamp.isAtSameMomentAs(note.timestamp);
+    final described = edited != null && edited.description != note.description;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _changing.add(id));
+    Object? error;
     try {
       switch (result) {
         case SaveNote():
@@ -245,13 +253,20 @@ class _NotesScreenState extends State<NotesScreen> {
           );
       }
     } catch (e) {
-      final action = result is DeleteNote ? 'delete' : 'change';
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not $action the note: ${_describe(e)}')),
-      );
+      error = e;
     } finally {
       if (mounted) setState(() => _changing.remove(id));
       await _load();
+    }
+    if (error != null && mounted) {
+      await showErrorSheet(
+        context,
+        title: result is DeleteNote
+            ? "Couldn't delete the note"
+            : "Couldn't change the note",
+        error: error,
+        onRetry: () => _changeNote(note, result),
+      );
     }
   }
 
@@ -275,16 +290,24 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 
   Future<void> _signIn() async {
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _signingIn = true);
+    Object? error;
     try {
       await widget.onSignIn!();
       unawaited(widget.outbox.retryNow());
       await _load();
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Sign-in failed: $e')));
+      error = e;
     } finally {
       if (mounted) setState(() => _signingIn = false);
+    }
+    if (error != null && mounted) {
+      await showErrorSheet(
+        context,
+        title: "Couldn't sign in",
+        error: error,
+        onRetry: _signIn,
+      );
     }
   }
 
@@ -381,11 +404,11 @@ class _NotesScreenState extends State<NotesScreen> {
               ),
       );
     } else if (_error != null) {
-      banner = StatusMessage(
-        icon: Icons.cloud_off,
-        text: notes == null
-            ? 'Could not load notes.\n$_error'
-            : 'Could not load notes. These may be out of date.\n$_error',
+      banner = LoadError(
+        what: 'notes',
+        error: _error!,
+        stale: notes != null,
+        onRetry: _refresh,
       );
     } else if (notes == null && rows.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -663,16 +686,6 @@ class _PendingNoteTile extends StatelessWidget {
     );
   }
 }
-
-/// [e] for a person: a tool's own error message, without the wrapping.
-String _describe(Object e) => switch (e) {
-  SignInRequiredException() => 'sign in first',
-  McpException(:final message) => message.replaceFirst(
-    RegExp(r'^Tool \w+ failed: '),
-    '',
-  ),
-  _ => '$e',
-};
 
 String _time(BuildContext context, Note note) =>
     MaterialLocalizations.of(context)

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/proposal.dart';
-import '../services/mcp_client.dart';
+import 'error_sheet.dart';
 import 'day_timeline.dart';
 import 'time_summary.dart';
 
@@ -1575,15 +1575,11 @@ class _CancelledDialogState extends State<_CancelledDialog> {
   /// The event as it is now: after the switch, as the proposal has it.
   late ProposalEvent _event = widget.event;
   bool _saving = false;
-  String? _error;
 
   Future<void> _setCounts(bool counts) async {
     final setCounts = widget.setCounts;
     if (setCounts == null) return;
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+    setState(() => _saving = true);
     try {
       final now = await setCounts(counts);
       if (!mounted) return;
@@ -1593,13 +1589,13 @@ class _CancelledDialogState extends State<_CancelledDialog> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _error = switch (e) {
-          McpException(:final message) => message,
-          _ => '$e',
-        };
-      });
+      setState(() => _saving = false);
+      await showErrorSheet(
+        context,
+        title: "Couldn't change it",
+        error: e,
+        onRetry: () => _setCounts(counts),
+      );
     }
   }
 
@@ -1635,19 +1631,6 @@ class _CancelledDialogState extends State<_CancelledDialog> {
               }}',
               style: small,
             ),
-            if (_error case final error?)
-              Container(
-                margin: const EdgeInsets.only(top: 12),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: colors.errorContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  "Couldn't change it. $error",
-                  style: TextStyle(color: colors.onErrorContainer),
-                ),
-              ),
             if (!merged) ...[
               const SizedBox(height: 16),
               SwitchListTile(

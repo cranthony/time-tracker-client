@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../models/trait.dart';
-import '../services/mcp_client.dart';
+import '../widgets/status_message.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
+import '../widgets/error_sheet.dart';
 import '../widgets/health.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/trait_dialog.dart';
@@ -132,20 +133,14 @@ class TraitsPaneState extends State<TraitsPane> {
   }
 
   Future<void> _setStatus(Trait trait, String status) async {
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await widget.repository.updateTrait(trait.id!, {'status': status});
-      await reload();
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(switch (e) {
-            McpException(:final message) => "Couldn't save. $message",
-            _ => "Couldn't save. $e",
-          }),
-        ),
-      );
-    }
+    await runOrShowError(
+      context,
+      title: "Couldn't save ${trait.name}",
+      action: () async {
+        await widget.repository.updateTrait(trait.id!, {'status': status});
+        await reload();
+      },
+    );
   }
 
   @override
@@ -189,15 +184,7 @@ class TraitsPaneState extends State<TraitsPane> {
           padding: const EdgeInsets.only(bottom: 24),
           children: switch ((_traits, _error)) {
             (null, final error?) => [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  "Couldn't load the traits. ${switch (error) {
-                    McpException(:final message) => message,
-                    _ => '$error',
-                  }}",
-                ),
-              ),
+              LoadError(what: 'the traits', error: error, onRetry: reload),
             ],
             (null, _) => const [LinearProgressIndicator()],
             _ => [

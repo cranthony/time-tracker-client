@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/person.dart';
-import '../services/mcp_client.dart';
+import '../widgets/status_message.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../widgets/person_dialog.dart';
@@ -118,15 +118,7 @@ class LocationsPaneState extends State<LocationsPane> {
           padding: const EdgeInsets.only(bottom: 24),
           children: switch ((locations, _error)) {
             (null, final error?) => [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  "Couldn't load the locations. ${switch (error) {
-                    McpException(:final message) => message,
-                    _ => '$error',
-                  }}",
-                ),
-              ),
+              LoadError(what: 'the locations', error: error, onRetry: reload),
             ],
             (null, _) => const [LinearProgressIndicator()],
             (final locations?, _) => [

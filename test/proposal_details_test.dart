@@ -323,8 +323,8 @@ void main() {
       expect(proposals.amends.last.asPlanned, ['call']);
     });
 
-    testWidgets("a change the server refuses is said in the dialog, and "
-        "the switch stays as it was", (tester) async {
+    testWidgets("a change the server refuses is said in the error sheet, "
+        "and the switch stays as it was", (tester) async {
       await open(tester);
       proposals.error = McpException('amend_proposal: the call is history');
       await tester.ensureVisible(find.text('Call Mom').last);
@@ -333,10 +333,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byType(SwitchListTile));
       await tester.pumpAndSettle();
-      expect(
-        find.text("Couldn't change it. amend_proposal: the call is history"),
-        findsOneWidget,
-      );
+      expect(find.text("Couldn't change it"), findsOneWidget);
+      expect(find.text('amend_proposal: the call is history'), findsOneWidget);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
       expect(
         tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
         isTrue,

@@ -13,9 +13,11 @@ import '../models/recurrence.dart';
 import '../models/repeat.dart';
 import '../models/trait.dart';
 import '../services/mcp_client.dart';
+import '../services/server_errors.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
+import 'error_sheet.dart';
 import 'color_picker.dart';
 import 'event_dialog.dart' show followThroughOption;
 import 'other_events.dart';
@@ -507,16 +509,17 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       navigator.pop(SummarySaved<T>(saved as T));
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _error = switch (e) {
-          SignInRequiredException() =>
-            'You were signed out. Sign in again from the Events page, then '
-                'try again.',
-          McpException(:final message) => message,
-          _ => '$e',
-        };
-      });
+      setState(() => _saving = false);
+      await showErrorSheet(
+        context,
+        title: "Couldn't save",
+        error: e,
+        message: e is SignInRequiredException
+            ? 'You were signed out. Sign in again from the Events page, then '
+                  'try again.'
+            : null,
+        onRetry: () => _run(action),
+      );
     }
   }
 
@@ -1407,48 +1410,47 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   }
 
   /// Its actions, searched for or picked from the tree; see [ActionsPicker].
-  Widget _actionsPicker(BuildContext context, List<String> picked) =>
-      FutureBuilder(
-        future: _actionList,
-        initialData: _actionsLoaded,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Text(
-              "Couldn't load actions. ${switch (snapshot.error) {
-                McpException(:final message) => message,
-                final e => '$e',
-              }}",
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            );
-          }
-          final list = snapshot.data;
-          if (list == null) return const LinearProgressIndicator();
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ActionsPicker(
-                actions: list,
-                picked: picked,
-                leavesOnly: true,
-                onChanged: (ids) => _set('action_ids', ids),
-                marker: (action) => ActionDiamond(
-                  color: parseColor(
-                    action.effectiveColor ?? action.backgroundColor,
-                  ),
-                ),
+  Widget _actionsPicker(
+    BuildContext context,
+    List<String> picked,
+  ) => FutureBuilder(
+    future: _actionList,
+    initialData: _actionsLoaded,
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return Text(
+          "Couldn't load actions. ${describeServerError(snapshot.error!).message}",
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        );
+      }
+      final list = snapshot.data;
+      if (list == null) return const LinearProgressIndicator();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ActionsPicker(
+            actions: list,
+            picked: picked,
+            leavesOnly: true,
+            onChanged: (ids) => _set('action_ids', ids),
+            marker: (action) => ActionDiamond(
+              color: parseColor(
+                action.effectiveColor ?? action.backgroundColor,
               ),
-              Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: TextButton(
-                  onPressed: () => setState(() => _editing = null),
-                  child: const Text('Done'),
-                ),
-              ),
-            ],
-          );
-        },
+            ),
+          ),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: TextButton(
+              onPressed: () => setState(() => _editing = null),
+              child: const Text('Done'),
+            ),
+          ),
+        ],
       );
+    },
+  );
 }
 
 /// An outlined box around a property open for editing.

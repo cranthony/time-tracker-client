@@ -220,7 +220,10 @@ void main() {
     before.start();
     before.create({'name': 'Running', 'parent_id': null});
     await settled(before);
-    expect(before.saves.single.lastError, 'No connection to the server');
+    expect(
+      before.saves.single.lastError,
+      "Couldn't reach the server, or the connection dropped.",
+    );
     expect(before.saves.single.attempts, 1);
     expect(before.saves.single.refused, isFalse);
 

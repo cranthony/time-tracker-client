@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import '../models/person.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
-import '../services/mcp_client.dart';
+import '../widgets/status_message.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
+import '../widgets/error_sheet.dart';
 import '../widgets/color_picker.dart' show contrastingColor;
 import '../widgets/health.dart';
 import '../widgets/person_dialog.dart';
@@ -168,20 +169,14 @@ class PeoplePaneState extends State<PeoplePane> {
   }
 
   Future<void> _setStatus(Person person, String status) async {
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await widget.repository.updatePerson(person.id, {'status': status});
-      await reload();
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(switch (e) {
-            McpException(:final message) => "Couldn't save. $message",
-            _ => "Couldn't save. $e",
-          }),
-        ),
-      );
-    }
+    await runOrShowError(
+      context,
+      title: "Couldn't save ${person.name}",
+      action: () async {
+        await widget.repository.updatePerson(person.id, {'status': status});
+        await reload();
+      },
+    );
   }
 
   void _open(Person person) {
@@ -256,15 +251,7 @@ class PeoplePaneState extends State<PeoplePane> {
           padding: const EdgeInsets.only(bottom: 24),
           children: switch ((people, _error)) {
             (null, final error?) => [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  "Couldn't load people. ${switch (error) {
-                    McpException(:final message) => message,
-                    _ => '$error',
-                  }}",
-                ),
-              ),
+              LoadError(what: 'people', error: error, onRetry: reload),
               // Self is there regardless.
               _tile(context, defaultSelf, const []),
             ],

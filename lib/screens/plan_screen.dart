@@ -9,7 +9,7 @@ import '../models/plan_action.dart';
 import '../models/person.dart';
 import '../outbox/action_outbox.dart';
 import '../outbox/pending_action_save.dart';
-import '../outbox/save_error.dart';
+import '../services/server_errors.dart';
 import '../services/event_store.dart';
 import '../services/events_repository.dart';
 import '../services/actions_repository.dart';
@@ -21,6 +21,7 @@ import '../services/traits_repository.dart';
 import 'locations_pane.dart';
 import 'people_pane.dart';
 import 'traits_pane.dart';
+import '../widgets/error_sheet.dart';
 import '../widgets/action_dialog.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
@@ -380,17 +381,16 @@ class _PlanScreenState extends State<PlanScreen> {
                   .where((g) => g.id == save.actionId)
                   .firstOrNull
                   ?.name;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "Couldn't save ${name ?? 'an action'}. ${save.lastError}"
-              "${save.refused ? '' : ' Trying again soon.'}",
-            ),
-            action: SnackBarAction(
-              label: 'Retry',
-              onPressed: () => widget.outbox.retry(save.actionId),
-            ),
+        // Saved in the background: its error's already in words.
+        showErrorSheet(
+          context,
+          title: "Couldn't save ${name ?? 'an action'}",
+          failure: ServerFailure(
+            save.refused ? FailureKind.refused : FailureKind.connection,
+            '${save.lastError}${save.refused ? '' : ' Trying again soon.'}',
           ),
+          onRetry: () => widget.outbox.retry(save.actionId),
+          retryRefusal: true,
         );
       case ActionSaveFailed():
         break;
@@ -452,18 +452,16 @@ class _PlanScreenState extends State<PlanScreen> {
     ];
     if (ids.join(',') == before.join(',')) return;
     setState(() => _fromServer = _withSiblingOrder(actions, ids));
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final saved = await widget.repository.reorderActions(ids);
-      if (mounted) setState(() => _fromServer = saved);
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text("Couldn't save the new order. ${describeSaveError(e)}"),
-        ),
-      );
-      await _load();
-    }
+    final saved = await runOrShowError(
+      context,
+      title: "Couldn't save the new order",
+      action: () async {
+        final saved = await widget.repository.reorderActions(ids);
+        if (mounted) setState(() => _fromServer = saved);
+      },
+    );
+    // Put back as it was.
+    if (!saved) await _load();
   }
 
   /// Shows each priority's color, to change; reloads the actions after a
@@ -662,16 +660,24 @@ class _PlanScreenState extends State<PlanScreen> {
   }
 
   Future<void> _signIn() async {
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _signingIn = true);
+    Object? error;
     try {
       await widget.onSignIn!();
       unawaited(widget.outbox.retryNow());
       await _load();
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Sign-in failed: $e')));
+      error = e;
     } finally {
       if (mounted) setState(() => _signingIn = false);
+    }
+    if (error != null && mounted) {
+      await showErrorSheet(
+        context,
+        title: "Couldn't sign in",
+        error: error,
+        onRetry: _signIn,
+      );
     }
   }
 
@@ -888,12 +894,7 @@ class _PlanScreenState extends State<PlanScreen> {
   List<Widget> _actionTiles(BuildContext context) {
     final actions = _actions;
     if (_error != null && (actions == null || actions.actions.isEmpty)) {
-      return [
-        StatusMessage(
-          icon: Icons.cloud_off,
-          text: 'Could not load actions.\n$_error',
-        ),
-      ];
+      return [LoadError(what: 'actions', error: _error!, onRetry: _load)];
     }
     if (actions == null) return const [LinearProgressIndicator()];
     final tree = _Tree(actions, _shown, _expanded, query: _query);
@@ -911,10 +912,7 @@ class _PlanScreenState extends State<PlanScreen> {
     return [
       // The last actions loaded, or kept from last time, are still shown.
       if (_error != null)
-        StatusMessage(
-          icon: Icons.cloud_off,
-          text: 'Could not load actions. These may be out of date.\n$_error',
-        ),
+        LoadError(what: 'actions', error: _error!, stale: true, onRetry: _load),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
         child: Wrap(

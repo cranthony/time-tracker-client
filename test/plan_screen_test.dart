@@ -176,7 +176,7 @@ void main() {
     await tester.tap(find.text('Sign in'));
     await tester.pumpAndSettle();
     expect(find.text('Sign in to see your plan.'), findsNothing);
-    expect(find.textContaining('Could not load actions.'), findsOneWidget);
+    expect(find.textContaining("Couldn't load actions."), findsOneWidget);
     expect(find.textContaining('token revoked'), findsOneWidget);
   });
 
@@ -669,7 +669,10 @@ void main() {
     await addAction(tester, 'Running');
     repo.fail(McpException('No room for it.'));
     await tester.pumpAndSettle();
-    expect(find.text("Couldn't save Running. No room for it."), findsOneWidget);
+    expect(find.text("Couldn't save Running"), findsOneWidget);
+    expect(find.text('No room for it.'), findsOneWidget);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
     // Still there, with an error in place of its menu.
     expect(shownNames(tester), contains('Running'));
     expect(find.byTooltip('Not saved: No room for it.'), findsOneWidget);
@@ -706,11 +709,13 @@ void main() {
     await addAction(tester, 'Running');
     repo.fail(McpException('No room for it.'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Retry'));
+    await tester.tap(find.text('Try again'));
     await settle(tester);
     expect(repo.sent, ['create Running', 'create Running']);
     expect(find.byTooltip('Saving…'), findsOneWidget);
     repo.fail(McpException('Still no room.'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Not saved: Still no room.'));
@@ -793,6 +798,8 @@ void main() {
     await tester.tap(find.text('Save 1 change'));
     await settle(tester);
     repo.fail(McpException('Try later.'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
     // Kept, though the actions were fetched again.
     expect(shownNames(tester), contains('Parties'));

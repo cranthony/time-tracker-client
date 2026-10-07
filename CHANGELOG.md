@@ -6,6 +6,27 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.11.0
+
+- Every failure talking to the server is shown the same way: a sheet
+  that slides up from the bottom, saying what couldn't be done and why
+  in plain words -- couldn't reach the server, it took too long, it's
+  having trouble, it said no (in its own words), or you were signed
+  out. When trying again might help, it offers to. It replaces the
+  error snackbars, and the errors written inside dialogs (a dialog
+  stays open, as you left it, under the sheet). Something saved in the
+  background that failed says so in the same sheet.
+- A page that couldn't load says so the same way everywhere, with a
+  "Try again" button.
+- Retries are handled in one place, the connection to the server: a
+  session the server forgot is started again, and a call that never
+  reached the server is sent again, for any call. One that may have
+  reached it -- the connection reset, a timeout, the server having
+  trouble -- is sent again, up to three times, only if it only reads;
+  for one that changes something, you decide, from the sheet.
+- Background saves treat the server having trouble (a 502, 503 or 504)
+  as something to try again, not a refusal.
+
 ## 7.10.0
 
 - Under a compaction proposal's bar, its details, in pages swiped or

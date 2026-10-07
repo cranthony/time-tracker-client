@@ -318,7 +318,7 @@ void main() {
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining("Couldn't save."), findsOneWidget);
+      expect(find.text("Couldn't save"), findsOneWidget);
     });
 
     testWidgets("Self can't be archived", (tester) async {
