@@ -9,9 +9,8 @@ on. Add the new version's section here at the same time; CI checks both.
 ## 7.2.0
 
 - Events are added from a **+** on the Events page, in place of the zoom
-  buttons (pinch to zoom); tapping a blank space does nothing. Drag the
-  + onto the timeline to put a cursor where it's dropped, or tap it for
-  one at now (or the middle of what's in view). In the cursor's middle,
+  buttons (pinch to zoom); tapping a blank space does nothing. The +
+  puts a cursor at now (or the middle of what's in view). In its middle,
   a + with an arrow down, below it, puts a second cursor an hour later
   each tap, and a + with an arrow up, above it, an hour earlier -- or
   either is dragged to where the second cursor goes. The event is

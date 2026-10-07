@@ -6,7 +6,7 @@ record a new one; tap a note to change its description or time, or to
 delete it. An **Events** page, from the bar at the bottom, shows a day's
 events from your calendar; tap one to see or edit it, including the actions
 done at it and what happened: who it was with and for, where, and notes.
-Its **+**, dragged onto the timeline (or tapped), puts a cursor there:
+Its **+** puts a cursor at now, which a tap on the timeline moves:
 start an event there or end it there, tapping or dragging to its other
 end, either keeping clear of the events already there or overwriting
 them; drag either end's handle to adjust it; then ✓ to fill it in. Above them, a summary shows how the day's time is split by priority;

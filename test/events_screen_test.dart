@@ -1136,9 +1136,7 @@ void main() {
 
     /// Taps "+", which puts the cursor at now: noon.
     Future<void> plus(WidgetTester tester) async {
-      await tester.tap(
-        find.byTooltip('New event: tap, or drag onto the timeline'),
-      );
+      await tester.tap(find.byTooltip('New event'));
       await tester.pumpAndSettle();
     }
 
@@ -1223,10 +1221,7 @@ void main() {
       expect(box(tester).cursor, at(30, 12));
       expect(box(tester).span, isNull);
       // "+" is now cancel and continue -- continue waiting for an event.
-      expect(
-        find.byTooltip('New event: tap, or drag onto the timeline'),
-        findsNothing,
-      );
+      expect(find.byTooltip('New event'), findsNothing);
       expect(find.byTooltip('Cancel'), findsOneWidget);
       expect(continueButton(tester).onPressed, isNull);
 
@@ -1260,10 +1255,7 @@ void main() {
       expect(find.text('Admin'), findsOneWidget);
       // Done: "+" again.
       expect(find.byType(NewEventBoxView), findsNothing);
-      expect(
-        find.byTooltip('New event: tap, or drag onto the timeline'),
-        findsOneWidget,
-      );
+      expect(find.byTooltip('New event'), findsOneWidget);
     });
 
     testWidgets('keeping events, the box fits into free time: up to the next '
@@ -1320,64 +1312,6 @@ void main() {
       await tester.tap(find.text('Keep events'));
       await tester.pumpAndSettle();
       expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
-    });
-
-    testWidgets('dragging the + onto the timeline puts the cursor where it '
-        'lands, following it there', (tester) async {
-      final repo = _RecordingRepository([]);
-      await tester.pumpWidget(app(repo));
-      await tester.pumpAndSettle();
-
-      final timeline = find.byType(DayTimeline);
-      final x = tester.getTopLeft(timeline).dx + 200;
-      Offset over(DateTime time) =>
-          Offset(x, tester.getTopLeft(timeline).dy + y(time));
-      final plus = await tester.startGesture(
-        tester.getCenter(
-          find.byTooltip('New event: tap, or drag onto the timeline'),
-        ),
-      );
-      await plus.moveTo(over(at(30, 13)));
-      await tester.pump();
-      // Following it, and the + still there to drag.
-      expect(box(tester).cursor, at(30, 13));
-      expect(find.byTooltip('Cancel'), findsNothing);
-      await plus.moveTo(over(at(30, 12, 20)));
-      await tester.pump();
-      await plus.up();
-      await tester.pumpAndSettle();
-
-      expect(box(tester).cursor, at(30, 12, 15));
-      expect(find.byTooltip('Cancel'), findsOneWidget);
-    });
-
-    testWidgets('the + dragged off the timeline puts no cursor', (
-      tester,
-    ) async {
-      final repo = _RecordingRepository([]);
-      await tester.pumpWidget(app(repo));
-      await tester.pumpAndSettle();
-
-      final timeline = find.byType(DayTimeline);
-      final plus = await tester.startGesture(
-        tester.getCenter(
-          find.byTooltip('New event: tap, or drag onto the timeline'),
-        ),
-      );
-      await plus.moveTo(tester.getCenter(timeline));
-      await tester.pump();
-      expect(find.byType(NewEventBoxView), findsOneWidget);
-      // Up to the app bar, and let go.
-      await plus.moveTo(tester.getCenter(find.byTooltip('Next day')));
-      await tester.pump();
-      await plus.up();
-      await tester.pumpAndSettle();
-
-      expect(find.byType(NewEventBoxView), findsNothing);
-      expect(
-        find.byTooltip('New event: tap, or drag onto the timeline'),
-        findsOneWidget,
-      );
     });
 
     testWidgets('dragging a button makes the event up to where it goes; each '

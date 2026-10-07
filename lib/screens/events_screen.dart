@@ -158,13 +158,6 @@ class _EventsScreenState extends State<EventsScreen> {
   /// overwrites them.
   CreateMode _createMode = CreateMode.keep;
 
-  /// Whether the cursor is following the "+" being dragged: let go off
-  /// the timeline, it goes.
-  bool _seeding = false;
-
-  /// The timeline's days, for where a "+" dropped on them is.
-  final _timelineKey = GlobalKey();
-
   /// Why the day shown couldn't be loaded, if it couldn't.
   Object? _error;
   bool _needsSignIn = false;
@@ -713,23 +706,6 @@ class _EventsScreenState extends State<EventsScreen> {
     return DateTime(time.year, time.month, time.day, 0, quarters * 15);
   }
 
-  /// The cursor at [global], on the screen, where the "+" being dragged
-  /// is over the timeline.
-  void _seedAt(Offset global) {
-    final box = _timelineKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null) return;
-    final time = timelineTime(
-      box.globalToLocal(global).dy,
-      day: _day,
-      dayEnd: _dayEnd,
-      scale: _scale,
-    );
-    setState(() {
-      if (_box == null) _seeding = true;
-      _box = NewEventBox(_nearestQuarter(time));
-    });
-  }
-
   /// Starts making a new event: a cursor across the day shown, at now if
   /// that's today, or else the middle of what's in view.
   void _startCreating() {
@@ -1148,8 +1124,7 @@ class _EventsScreenState extends State<EventsScreen> {
       ),
       floatingActionButton: _needsSignIn
           ? null
-          // While the "+" is dragged, it stays: it's what's dragged.
-          : _box != null && !_seeding
+          : _box != null
           ? Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1193,29 +1168,11 @@ class _EventsScreenState extends State<EventsScreen> {
                   child: const Icon(Icons.my_location),
                 ),
                 const SizedBox(height: 12),
-                // Tapped, or dragged onto the timeline to put the cursor
-                // where it's dropped.
-                Draggable<_NewEventSeed>(
-                  data: const _NewEventSeed(),
-                  dragAnchorStrategy: pointerDragAnchorStrategy,
-                  feedback: const _PlusFeedback(),
-                  childWhenDragging: const Opacity(
-                    opacity: 0.3,
-                    child: FloatingActionButton(
-                      heroTag: null,
-                      onPressed: null,
-                      child: Icon(Icons.add),
-                    ),
-                  ),
-                  onDragEnd: (_) {
-                    if (_seeding && mounted) setState(() => _seeding = false);
-                  },
-                  child: FloatingActionButton(
-                    heroTag: 'new',
-                    tooltip: 'New event: tap, or drag onto the timeline',
-                    onPressed: _startCreating,
-                    child: const Icon(Icons.add),
-                  ),
+                FloatingActionButton(
+                  heroTag: 'new',
+                  tooltip: 'New event',
+                  onPressed: _startCreating,
+                  child: const Icon(Icons.add),
                 ),
               ],
             ),
@@ -1285,82 +1242,64 @@ class _EventsScreenState extends State<EventsScreen> {
                     controller: _scroll,
                     physics: noDrag ?? const AlwaysScrollableScrollPhysics(),
                     children: [
-                      DragTarget<_NewEventSeed>(
-                        // The cursor follows the +, and stays where it's
-                        // dropped.
-                        onMove: (details) => _seedAt(details.offset),
-                        onLeave: (_) {
-                          if (!_seeding) return;
-                          setState(() {
-                            _box = null;
-                            _seeding = false;
-                          });
-                        },
-                        onAcceptWithDetails: (details) {
-                          _seedAt(details.offset);
-                          setState(() => _seeding = false);
-                        },
-                        builder: (context, _, _) => SizedBox(
-                          key: _timelineKey,
-                          height: _height,
-                          child: Stack(
-                            children: [
-                              Positioned.fill(
-                                child: TimelineAxis(day: _day, scale: _scale),
-                              ),
-                              Positioned.fill(
-                                child: PageView.builder(
-                                  controller: _pages,
-                                  physics: _box != null
-                                      ? const NeverScrollableScrollPhysics()
-                                      : noDrag,
-                                  onPageChanged: (page) => _show(_dayAt(page)),
-                                  itemBuilder: (context, page) => _buildDay(
-                                    context,
-                                    _dayAt(page),
-                                    view.maxHeight,
-                                  ),
+                      SizedBox(
+                        height: _height,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: TimelineAxis(day: _day, scale: _scale),
+                            ),
+                            Positioned.fill(
+                              child: PageView.builder(
+                                controller: _pages,
+                                physics: _box != null
+                                    ? const NeverScrollableScrollPhysics()
+                                    : noDrag,
+                                onPageChanged: (page) => _show(_dayAt(page)),
+                                itemBuilder: (context, page) => _buildDay(
+                                  context,
+                                  _dayAt(page),
+                                  view.maxHeight,
                                 ),
                               ),
-                              if (_box case final box?)
-                                Positioned.fill(
-                                  child: NewEventBoxView(
-                                    day: _day,
-                                    dayEnd: _dayEnd,
-                                    scale: _scale,
-                                    box: box,
-                                    mode: _createMode,
-                                    overwrites: _overwrites,
-                                    onMoveCursor: (to) => _changeBox(
-                                      (box) =>
-                                          box.withCursor(_nearestQuarter(to)),
-                                      fromOther: true,
-                                    ),
-                                    onMoveOther: (to) => _changeBox(
-                                      (box) =>
-                                          box.withOther(_nearestQuarter(to)),
-                                    ),
-                                    onMoveBox: (to) => _changeBox(
-                                      (box) => box.movedTo(_nearestQuarter(to)),
-                                      moved: true,
-                                    ),
-                                    // An hour further each tap, from the
-                                    // cursor to start with.
-                                    onTap: (end) => _changeBox(
-                                      (box) => box.withOther(
-                                        (box.other ?? box.cursor).add(
-                                          end == CursorEnd.start
-                                              ? _newEventLength
-                                              : -_newEventLength,
-                                        ),
+                            ),
+                            if (_box case final box?)
+                              Positioned.fill(
+                                child: NewEventBoxView(
+                                  day: _day,
+                                  dayEnd: _dayEnd,
+                                  scale: _scale,
+                                  box: box,
+                                  mode: _createMode,
+                                  overwrites: _overwrites,
+                                  onMoveCursor: (to) => _changeBox(
+                                    (box) =>
+                                        box.withCursor(_nearestQuarter(to)),
+                                    fromOther: true,
+                                  ),
+                                  onMoveOther: (to) => _changeBox(
+                                    (box) => box.withOther(_nearestQuarter(to)),
+                                  ),
+                                  onMoveBox: (to) => _changeBox(
+                                    (box) => box.movedTo(_nearestQuarter(to)),
+                                    moved: true,
+                                  ),
+                                  // An hour further each tap, from the
+                                  // cursor to start with.
+                                  onTap: (end) => _changeBox(
+                                    (box) => box.withOther(
+                                      (box.other ?? box.cursor).add(
+                                        end == CursorEnd.start
+                                            ? _newEventLength
+                                            : -_newEventLength,
                                       ),
                                     ),
-                                    onDrag: _dragEnd,
-                                    onPickMode: _pickCreateMode,
                                   ),
+                                  onDrag: _dragEnd,
+                                  onPickMode: _pickCreateMode,
                                 ),
-                            ],
-                          ),
+                              ),
+                          ],
                         ),
                       ),
                     ],
@@ -1467,30 +1406,3 @@ const _summaryCollapsedKey = 'day_summary_collapsed';
 
 /// Where whether the day's summary shows durations is kept.
 const _summaryDurationsKey = 'day_summary_durations';
-
-/// What the "+" carries, dragged onto the timeline.
-class _NewEventSeed {
-  const _NewEventSeed();
-}
-
-/// The "+" as it's dragged: centered on the finger.
-class _PlusFeedback extends StatelessWidget {
-  const _PlusFeedback();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return FractionalTranslation(
-      translation: const Offset(-0.5, -0.5),
-      child: Material(
-        color: theme.colorScheme.primaryContainer,
-        elevation: 6,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: SizedBox.square(
-          dimension: 56,
-          child: Icon(Icons.add, color: theme.colorScheme.onPrimaryContainer),
-        ),
-      ),
-    );
-  }
-}
