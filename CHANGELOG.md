@@ -16,8 +16,9 @@ on. Add the new version's section here at the same time; CI checks both.
   an arrow up, above it, ends one there: tap one for an hour, or drag it
   to where the other end goes. The cursor's handle, at
   its right, moves it; a second cursor at the event's other end has a
-  handle of its own, to make it longer or shorter. ✓ opens the new
-  event; ✕ stops.
+  handle of its own, to make it longer or shorter. While the cursor's
+  up, tapping an event moves the cursor there rather than opening it.
+  ✓ opens the new event; ✕ stops.
 - Beside them, a drop-down picks whether the new event keeps clear of
   the events already there or overwrites them. Overwriting, its shadow
   is tinged red and slowly pulses where it would take time from events,

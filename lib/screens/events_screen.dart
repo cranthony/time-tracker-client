@@ -1367,7 +1367,9 @@ class _EventsScreenState extends State<EventsScreen> {
         now: widget.clock(),
         lastCompaction: _lastCompaction,
         pendingNotes: _pendingNotes,
-        onTap: _openEvent,
+        // While the cursor's up, events don't open: a tap on one goes to
+        // the timeline under it, and moves the cursor there.
+        onTap: _creating == null ? _openEvent : null,
         onTapTime: _creating == null
             ? null
             : (time) => setState(

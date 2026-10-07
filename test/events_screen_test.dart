@@ -1431,6 +1431,21 @@ void main() {
       expect(repo.created, isEmpty);
     });
 
+    testWidgets("while the cursor's up, tapping an event doesn't open it, "
+        'but moves the cursor there', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 'w', start: at(30, 14), end: at(30, 16), summary: 'Work'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      // Clear of the cursor's buttons, at noon.
+      await tapAt(tester, at(30, 15, 10));
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(cursor(tester).at, at(30, 15, 15));
+    });
+
     testWidgets('tapping an event still opens it', (tester) async {
       final repo = _RecordingRepository([
         Event(id: 'w', start: at(30, 11), end: at(30, 13), summary: 'Work'),
