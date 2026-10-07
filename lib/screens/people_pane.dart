@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../models/person.dart';
+import '../models/plan_action.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../widgets/status_message.dart';
+import '../services/habits_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
@@ -21,7 +23,8 @@ import 'person_screen.dart';
 /// with its last 8 days. Above them, the circles, each with its own
 /// health: tapping one shows only the people in it, and "Edit" beside it
 /// edits it. Tapping a person opens their page ([PersonScreen]); their
-/// menu edits or archives them. "+" adds a person or a circle. Archived
+/// menu edits or archives them; Self says how many habits they have.
+/// "+" adds a person or a circle. Archived
 /// people are shown only when asked for. The search finds people by
 /// name, context, circle and what matters to them. Above it all, with a
 /// [summary] to measure, the time with people in its window: by person,
@@ -36,8 +39,10 @@ class PeoplePane extends StatefulWidget {
     this.summary,
     this.traits,
     this.onPeople,
+    this.habits,
     this.actionNames = const {},
     this.actions = const {},
+    this.actionList = const [],
     this.locationNames = const {},
   });
 
@@ -51,11 +56,17 @@ class PeoplePane extends StatefulWidget {
   final TraitsRepository? traits;
   final ValueChanged<PeopleList>? onPeople;
 
+  /// Self's habits, on their page.
+  final HabitsRepository? habits;
+
   /// Names actions by id, for a person's history.
   final Map<String?, String> actionNames;
 
   /// The actions and groups a person's own parts can count, by id.
   final Map<String, String> actions;
+
+  /// Every action and group, for Self's habits.
+  final List<PlanAction> actionList;
 
   /// Names locations by id, for where a person's events were.
   final Map<String?, String> locationNames;
@@ -194,6 +205,8 @@ class PeoplePaneState extends State<PeoplePane> {
           },
           actionNames: widget.actionNames,
           locationNames: widget.locationNames,
+          habits: widget.habits,
+          actions: widget.actionList,
           onEdit: () async {
             await _editPerson(person);
             return _people?.withSelf
@@ -392,6 +405,10 @@ class PeoplePaneState extends State<PeoplePane> {
       ),
       subtitle: switch ([
         if (person.isSelf) 'You',
+        if (person.isSelf)
+          if (widget.memory.habits?.where((h) => h.active).length case final n?
+              when n > 0)
+            n == 1 ? '1 habit' : '$n habits',
         ?person.context,
         if (names.isNotEmpty) names.join(', '),
         if (muted) personStatuses[person.status] ?? person.status,

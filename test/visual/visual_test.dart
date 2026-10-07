@@ -245,6 +245,63 @@ void main() {
       });
     }
 
+    // Self's page, scrolled to their habits; a habit's page; and one
+    // being edited.
+    for (final (name, open, edit) in [
+      ('self_habits', false, false),
+      ('habit', true, false),
+      ('habit_dialog', true, true),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        final people = (await tester.runAsync(
+          sample.peopleRepository().people,
+        ))!;
+        final memory = PlanMemory(
+          eventStore: EventStore(repository: sample.eventsRepository()),
+        );
+        await tester.runAsync(
+          () => memory.warmScores(
+            traits: sample.traitsRepository(),
+            people: sample.peopleRepository(),
+            actions: sample.actionsRepository(),
+            habits: sample.habitsRepository(),
+          ),
+        );
+        await render(
+          tester,
+          name,
+          PersonScreen(
+            person: people.self,
+            traits: sample.traitsRepository(),
+            memory: memory,
+            circles: people.circles,
+            personNames: {for (final p in people.withSelf) p.id: personName(p)},
+            actionNames: {for (final g in sample.actions) g.id: g.name ?? ''},
+            habits: sample.habitsRepository(),
+            actions: sample.actions,
+          ),
+          then: () async {
+            await tester.scrollUntilVisible(
+              find.text('Habits'),
+              300,
+              scrollable: find.byType(Scrollable).first,
+            );
+            // Its heading at the top.
+            unawaited(
+              Scrollable.ensureVisible(tester.element(find.text('Habits'))),
+            );
+            await tester.pumpAndSettle();
+            if (!open) return;
+            await tester.tap(find.text('Practice guitar mindfully'));
+            await tester.pumpAndSettle();
+            if (!edit) return;
+            await tester.tap(find.byTooltip('Edit Practice guitar mindfully'));
+            await tester.pumpAndSettle();
+          },
+        );
+      });
+    }
+
     // The Actions section alone, as the rest are when folded away.
     testWidgets('actions ($mode)', (tester) async {
       await render(tester, 'actions', plan());

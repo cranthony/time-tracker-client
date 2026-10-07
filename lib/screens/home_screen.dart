@@ -8,6 +8,7 @@ import '../services/actions_repository.dart';
 import '../services/event_store.dart';
 import '../services/events_place.dart';
 import '../services/events_repository.dart';
+import '../services/habits_repository.dart';
 import '../services/notes_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
@@ -97,6 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
       traits: TraitsScope.of(context),
       people: PeopleScope.of(context),
       actions: widget.actionsRepository,
+      habits: HabitsScope.of(context),
     );
   }
 

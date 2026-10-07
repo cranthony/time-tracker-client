@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../models/event.dart';
+import '../models/habit.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/person.dart';
@@ -9,6 +10,7 @@ import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import 'event_store.dart';
 import 'actions_repository.dart';
+import 'habits_repository.dart';
 import 'notes_repository.dart';
 import 'people_repository.dart';
 import 'traits_repository.dart';
@@ -16,8 +18,8 @@ import 'traits_repository.dart';
 /// What the app has loaded, kept while it runs -- above every route
 /// ([PlanMemoryScope]), across switching between Notes, Events and Plan
 /// -- once for every page, so each comes back as it was, not empty, while
-/// it asks the server again: the actions, traits, people and locations,
-/// the notes not yet compacted and when notes were last compacted, and
+/// it asks the server again: the actions, traits, people, habits and
+/// locations, the notes not yet compacted and when notes were last compacted, and
 /// the events (in [eventStore]). What the repositories kept from the
 /// app's last run fills in what this run hasn't loaded yet ([loadKept]). The Events page fills in its people, locations and traits too
 /// ([prefetchNames]), for an event's dialogs to name them at once.
@@ -38,6 +40,10 @@ class PlanMemory extends ChangeNotifier {
   List<Trait>? traits;
   PeopleList? people;
   List<Location>? locations;
+
+  /// Self's habits, whatever their status; null until they're loaded, or
+  /// if the server has none to give (see [loadHabits]).
+  List<Habit>? habits;
 
   /// The calendar's events, kept day by day, that the traits are scored
   /// from; null until there's somewhere to load them from.
@@ -172,6 +178,18 @@ class PlanMemory extends ChangeNotifier {
         people = await repository.people();
       }, again: again);
 
+  /// Loads Self's habits, this visit; [again] asks again. Best effort:
+  /// a server without habits, or one that can't give them, leaves them
+  /// as they were -- habits are never what stops a page.
+  Future<void> loadHabits(HabitsRepository repository, {bool again = false}) =>
+      load('habits', () async {
+        try {
+          habits = await repository.habits();
+        } catch (_) {
+          // None, or what's kept.
+        }
+      }, again: again);
+
   /// Loads every location, this visit; [again] asks again.
   Future<void> loadLocations(
     PeopleRepository repository, {
@@ -254,13 +272,20 @@ class PlanMemory extends ChangeNotifier {
   /// and ahead as the traits' parts read from each day scored -- the week
   /// either side of today afresh, and only what isn't kept from further
   /// out. Best effort: what can't be loaded is scored without.
+  /// Habits are loaded with them.
   Future<void> warmScores({
     TraitsRepository? traits,
     PeopleRepository? people,
     ActionsRepository? actions,
+    HabitsRepository? habits,
   }) => load('scores', () async {
     _warmed = true;
-    await loadKept(traits: traits, people: people, actions: actions);
+    await loadKept(
+      traits: traits,
+      people: people,
+      actions: actions,
+      habits: habits,
+    );
     notifyListeners();
     Future<void> quietly(Future<void>? loading) async {
       try {
@@ -274,6 +299,7 @@ class PlanMemory extends ChangeNotifier {
       quietly(traits == null ? null : loadTraits(traits)),
       quietly(people == null ? null : loadPeople(people)),
       quietly(actions == null ? null : loadActions(actions)),
+      quietly(habits == null ? null : loadHabits(habits)),
     ]);
     final store = _eventStore;
     if (store == null) return;
@@ -295,6 +321,7 @@ class PlanMemory extends ChangeNotifier {
     PeopleRepository? people,
     ActionsRepository? actions,
     NotesRepository? notes,
+    HabitsRepository? habits,
   }) async {
     // Each awaited first, then kept only if nothing's there yet: a load
     // finishing meanwhile, or another call, may have filled it.
@@ -313,6 +340,7 @@ class PlanMemory extends ChangeNotifier {
       ),
       keep(people?.cachedPeople(), (v) => this.people ??= v),
       keep(people?.cachedLocations(), (v) => locations ??= v),
+      keep(habits?.cachedHabits(), (v) => this.habits ??= v),
       keep(actions?.cachedActions(), (v) => this.actions ??= v),
       keep(notes?.cachedUncompactedNotes(), (v) => this.notes ??= v),
       keep(notes?.cachedCompactionStatus(), (v) => compaction ??= v),

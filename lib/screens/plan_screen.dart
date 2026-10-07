@@ -12,6 +12,7 @@ import '../outbox/pending_action_save.dart';
 import '../services/server_errors.dart';
 import '../services/event_store.dart';
 import '../services/events_repository.dart';
+import '../services/habits_repository.dart';
 import '../services/actions_repository.dart';
 import '../services/mcp_client.dart';
 import '../services/notes_repository.dart';
@@ -204,6 +205,7 @@ class _PlanScreenState extends State<PlanScreen> {
   Future<void> _prefetch() async {
     final traits = TraitsScope.of(context);
     final people = PeopleScope.of(context);
+    final habits = HabitsScope.of(context);
     // On its own, without the home screen to load the events the traits
     // are scored from as the app opens: loads them here.
     if (!_memory.warmed && widget.eventsRepository != null) {
@@ -212,10 +214,11 @@ class _PlanScreenState extends State<PlanScreen> {
           traits: traits,
           people: people,
           actions: widget.repository,
+          habits: habits,
         ),
       );
     }
-    await _memory.loadKept(traits: traits, people: people);
+    await _memory.loadKept(traits: traits, people: people, habits: habits);
     if (mounted) setState(() {});
     Future<void> quietly(Future<void>? loading) async {
       try {
@@ -230,6 +233,7 @@ class _PlanScreenState extends State<PlanScreen> {
       quietly(traits == null ? null : _memory.loadTraits(traits)),
       quietly(people == null ? null : _memory.loadPeople(people)),
       quietly(people == null ? null : _memory.loadLocations(people)),
+      quietly(habits == null ? null : _memory.loadHabits(habits)),
     ]);
   }
 
@@ -722,8 +726,10 @@ class _PlanScreenState extends State<PlanScreen> {
             summary: _summaryView,
             traits: traits,
             onPeople: (_) => setState(() {}),
+            habits: HabitsScope.of(context),
             actionNames: _actionNames,
             actions: _actionChoices,
+            actionList: _actions?.actions ?? const [],
             locationNames: _locationNames,
           ),
         ),
