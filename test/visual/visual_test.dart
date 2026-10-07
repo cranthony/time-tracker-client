@@ -245,11 +245,12 @@ void main() {
       });
     }
 
-    // Self's page, scrolled to their habits; a habit's page; and one
-    // being edited.
+    // Self's page, scrolled to their habits; a habit's page, with its
+    // scores; how one trait's was reached; and one being edited.
     for (final (name, open, edit) in [
       ('self_habits', false, false),
       ('habit', true, false),
+      ('habit_trait', true, false),
       ('habit_dialog', true, true),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
@@ -294,6 +295,10 @@ void main() {
             if (!open) return;
             await tester.tap(find.text('Practice guitar mindfully'));
             await tester.pumpAndSettle();
+            if (name == 'habit_trait') {
+              await tester.tap(find.widgetWithText(ListTile, 'Present').last);
+              await tester.pumpAndSettle();
+            }
             if (!edit) return;
             await tester.tap(find.byTooltip('Edit Practice guitar mindfully'));
             await tester.pumpAndSettle();

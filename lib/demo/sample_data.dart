@@ -34,7 +34,8 @@ import '../services/traits_repository.dart';
 /// behind each score; and the locations those events were at. Self has
 /// two habits: practicing guitar mindfully, over the Guitar group, with
 /// a rubric and cadence of its own; and cooking from scratch, over one
-/// action, held to every trait.
+/// action, held to every trait -- with Claude's judgments of their
+/// recent events.
 class SampleData {
   SampleData(this.now);
 
@@ -475,6 +476,13 @@ class SampleData {
         selfPersonId: 'Folded them together; talked about the new job',
         'sam': 'Nervous about the new team',
       },
+      habitJudgments: {
+        'cook-from-scratch': {
+          'creative': (2, 'Dumplings, folded by hand'),
+          'present': (3, 'Unhurried, talking all the while'),
+          'adventurous': (1, 'Dumplings were new; the kitchen, not'),
+        },
+      },
       judgments: {
         'creative': (2, 'Made dinner together from scratch'),
         'present': (3, 'Long, unhurried talk'),
@@ -551,9 +559,28 @@ class SampleData {
       actions: ['practice_guitar'],
       location: 'home',
       notes: {selfPersonId: 'Wrote a new chord progression'},
+      habitJudgments: {
+        'guitar-mindfully': {
+          'present': (3, 'Slow work on one new progression'),
+        },
+      },
       judgments: {
         'creative': (3, 'Something new of my own'),
         'present': (3, 'An hour without the phone'),
+      },
+    ),
+    _PastEvent(
+      'guitar_songs',
+      'Practice guitar',
+      5,
+      21,
+      actions: ['practice_guitar'],
+      location: 'home',
+      notes: {selfPersonId: 'Played through the usual songs'},
+      habitJudgments: {
+        'guitar-mindfully': {
+          'present': (1, 'Played through songs already known'),
+        },
       },
     ),
     _PastEvent(
@@ -889,6 +916,33 @@ class SampleData {
               part: keys[i],
               rating: rating,
               scale: judgmentRatings(part).last.score,
+              reasoning: why,
+            ),
+          );
+        }
+      }
+    }
+    for (final MapEntry(key: habitId, value: ratings)
+        in e.habitJudgments.entries) {
+      final habit = habits.firstWhere((h) => h.id == habitId);
+      for (final trait in traits) {
+        final (rating, why) = ratings[trait.id] ?? (null, null);
+        if (rating == null || !habit.traits.applies(trait.id!)) continue;
+        final parts = habit.traits.parts[trait.id] ?? trait.parts;
+        final keys = partKeys(parts);
+        for (var i = 0; i < parts.length; i++) {
+          // A habit's events are all "with".
+          if (parts[i]['kind'] != 'judgment' ||
+              parts[i]['engagement_type'] == 'for') {
+            continue;
+          }
+          judged.add(
+            Judgment(
+              personId: habit.subject,
+              traitId: trait.id!,
+              part: keys[i],
+              rating: rating,
+              scale: judgmentRatings(parts[i]).last.score,
               reasoning: why,
             ),
           );
@@ -1324,6 +1378,7 @@ class _PastEvent {
     this.location,
     this.notes = const {},
     this.judgments = const {},
+    this.habitJudgments = const {},
   });
 
   final String key;
@@ -1338,6 +1393,10 @@ class _PastEvent {
   final String? location;
   final Map<String, String> notes;
   final Map<String, (int, String)> judgments;
+
+  /// Claude's judgments of it for Self's habits, by habit id, then trait
+  /// id.
+  final Map<String, Map<String, (int, String)>> habitJudgments;
 
   Facts get facts => Facts(
     locationId: location,

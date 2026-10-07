@@ -14,6 +14,7 @@ import '../outbox/note_outbox.dart';
 import '../services/actions_repository.dart';
 import '../services/event_store.dart';
 import '../services/events_repository.dart';
+import '../services/habits_repository.dart';
 import '../services/mcp_client.dart';
 import '../services/events_place.dart';
 import '../services/notes_repository.dart';
@@ -590,8 +591,8 @@ class _EventsScreenState extends State<EventsScreen> {
     if (mounted) setState(() {});
   }
 
-  /// Loads everyone, every location and every trait, for an event's
-  /// dialogs to name at once. Best effort.
+  /// Loads everyone, every location, every trait and Self's habits, for
+  /// an event's dialogs to name at once. Best effort.
   Future<void> _prefetchNames() async {
     if (!mounted) return;
     final memory = _memory;
@@ -600,6 +601,7 @@ class _EventsScreenState extends State<EventsScreen> {
     await memory.prefetchNames(
       traits: TraitsScope.of(context),
       people: PeopleScope.of(context),
+      habits: HabitsScope.of(context),
     );
   }
 

@@ -12,6 +12,7 @@ import '../models/person.dart';
 import '../models/recurrence.dart';
 import '../models/repeat.dart';
 import '../models/trait.dart';
+import '../services/habits_repository.dart';
 import '../services/mcp_client.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
@@ -368,6 +369,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       await memory.prefetchNames(
         traits: traits,
         people: repository,
+        habits: HabitsScope.of(context),
         onLoaded: () {
           if (mounted) {
             setState(

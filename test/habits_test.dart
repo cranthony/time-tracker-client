@@ -1,16 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/facts.dart';
 import 'package:time_tracker_client/models/habit.dart';
+import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/trait.dart';
 import 'package:time_tracker_client/screens/habit_screen.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
+import 'package:time_tracker_client/services/event_store.dart';
+import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/habits_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/response_cache.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
+import 'package:time_tracker_client/widgets/facts_dialog.dart';
 
 /// Creative › Guitar › Play guitar and Practice guitar, and Walk.
 final _actions = [
@@ -480,6 +486,114 @@ void main() {
       expect((await repository.habits()).single.status, 'archived');
       expect(
         find.text('Your events with any action in it · Archived'),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('A habit, scored', () {
+    /// Yesterday's practice, judged fully present for the habit.
+    Event practice() {
+      final now = DateTime.now();
+      return Event.fromJson({
+        'id': 'practice',
+        'summary': 'Practice guitar',
+        'start': localIsoTimestamp(
+          DateTime(now.year, now.month, now.day - 1, 19),
+        ),
+        'end': localIsoTimestamp(
+          DateTime(now.year, now.month, now.day - 1, 20),
+        ),
+        'action_ids': ['practice'],
+        'judgments': {
+          'habit:h1': {
+            'present': {
+              'judgment': {
+                'rating': 3,
+                'scale': 3,
+                'reasoning': 'One thing, slowly',
+              },
+            },
+          },
+        },
+      });
+    }
+
+    testWidgets("shows its health, each trait's score, and its events", (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final memory =
+          PlanMemory(
+              eventStore: EventStore(
+                repository: InMemoryEventsRepository([practice()]),
+              ),
+            )
+            ..traits = _traits
+            ..people = const PeopleList()
+            ..actions = ActionList(actions: _actions);
+      await memory.eventStore!.warm();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PersonScreen(
+            person: defaultSelf,
+            traits: InMemoryTraitsRepository(traits: _traits),
+            memory: memory,
+            habits: InMemoryHabitsRepository([_mindfully]),
+            actions: _actions,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Practice mindfully'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Health'), findsOneWidget);
+      expect(find.text('on track'), findsOneWidget);
+      expect(find.text('How present was I? 100'), findsOneWidget);
+      expect(find.text('Practice guitar'), findsOneWidget);
+
+      await tester.tap(find.text('How present was I? 100'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Rated 3: One thing, slowly'), findsOneWidget);
+    });
+
+    testWidgets("its judgments are named by it in an event's notes", (
+      tester,
+    ) async {
+      final memory = PlanMemory()..habits = [_mindfully];
+      await tester.pumpWidget(
+        MaterialApp(
+          // Above the navigator, as in the app, for the dialog to find.
+          builder: (context, child) =>
+              PlanMemoryScope(memory: memory, child: child!),
+          home: Material(
+            child: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showFactsDialog(
+                  context,
+                  null,
+                  judgments: judgmentsFromJson(
+                    practice().properties['judgments'],
+                  ),
+                  traitNames: const {'present': 'Present'},
+                  pickers: false,
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Practice mindfully (habit) · Present: 3 of 3 — One thing, slowly',
+        ),
         findsOneWidget,
       );
     });

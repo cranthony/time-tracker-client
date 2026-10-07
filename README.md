@@ -58,9 +58,10 @@ The app works out the traits' scores itself, from the calendar's events
 and Claude's judgments of them, as the server's scoring does: each
 person's score of each trait for each of the last 7 days, each trait's
 health (everyone's mean), and each person's relationship health (gray,
-disconnected, to green, healthy) and history. Follow-through counts the events the user cancelled that
-count against each person, which the server lists with them; a person's
-page lists them too. As it opens, the app asks
+disconnected, to green, healthy) and history; and each of Self's habits'
+scores and health (on track to off track). Follow-through counts the events the user cancelled that
+count against each person or habit, which the server lists with them; their
+pages list them too. As it opens, the app asks
 for the week either side of today, and for any day further back (or
 ahead) the traits read that it hasn't kept from an earlier run; the
 Events page shares those days, and its saves change the scores at once.
@@ -482,11 +483,15 @@ Claude judges its events beside everyone's, under `habit:<id>`, and the
 events cancelled that count against its follow-through are listed with
 it, as a person's are; to judge past events, ask Claude.
 
-Self's page lists them, with "Habit" to add one; each has a page of its
-own, and a pencil to edit it. They come from the server's `get_habits`,
+The app scores them as it scores people, from those events and
+judgments: a habit's page shows its health, each trait's score and
+trend, how each was reached, and its events. An event's notes name its
+judgments for a habit by the habit. Self's page lists them, with "Habit"
+to add one; each has a page of its own, and a pencil to edit it. They come from the server's `get_habits`,
 `create_habit` and `update_habit`; a server without them shows none, and
 nothing else changes. The sample data has two: one on the Guitar group
-with parts of its own, one on Cook lunch or dinner with every trait.
+with parts of its own, one on Cook lunch or dinner with every trait,
+each with Claude's judgments of a few of its events.
 
 ## Development
 
@@ -518,8 +523,8 @@ size, in light and dark: Plan (each pane, a circle's people, searches
 of people and actions, a trait's page, a trait and an action being
 edited, and its
 actions with every status, and the time summary on each page and folded
-away), a person's page, Self's habits, a habit's page and one being
-edited, Events (with each page of its day summary, folded away,
+away), a person's page, Self's habits, a habit's page, how one of its scores
+was reached and one being edited, Events (with each page of its day summary, folded away,
 what happened at an event, and a compaction proposal: the band, its
 start, a note stepped to, its notes for Claude, and waiting for Claude)
 and Notes.
