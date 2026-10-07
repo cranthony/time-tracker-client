@@ -206,7 +206,7 @@ void main() {
       repo.gate.complete();
       await tester.pumpAndSettle();
       // Nothing that day: its empty timeline.
-      expect(find.text('No events.\nTap a time to add one.'), findsOneWidget);
+      expect(find.text('No events.\nTap + to add one.'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 

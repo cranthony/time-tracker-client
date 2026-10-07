@@ -88,8 +88,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Previous day'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Zoom in'));
-      await tester.pumpAndSettle();
+      // 1.5 to 2.
+      await _pinch(tester, 120, 160);
       timeline(tester).jumpTo(
         timelineOffset(at(29, 8), day: at(29, 0), dayEnd: at(30, 0), scale: 2),
       );
@@ -140,4 +140,21 @@ void main() {
       expect(find.text('Today'), findsNWidgets(2));
     });
   });
+}
+
+/// Pinches the Events page's timeline from [from] to [to] pixels apart:
+/// zooming by [to] / [from].
+Future<void> _pinch(WidgetTester tester, double from, double to) async {
+  final center = tester.getCenter(find.byType(ListView).first);
+  final a = await tester.startGesture(center - Offset(from / 2, 0));
+  final b = await tester.startGesture(center + Offset(from / 2, 0));
+  for (var i = 1; i <= 8; i++) {
+    final apart = from + (to - from) * i / 8;
+    await a.moveTo(center - Offset(apart / 2, 0));
+    await b.moveTo(center + Offset(apart / 2, 0));
+    await tester.pump();
+  }
+  await a.up();
+  await b.up();
+  await tester.pumpAndSettle();
 }

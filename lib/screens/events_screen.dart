@@ -21,6 +21,7 @@ import '../services/traits_repository.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
 import '../widgets/day_summary.dart';
+import '../widgets/create_cursor.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/event_dialog.dart';
 import '../widgets/event_room.dart';
@@ -148,6 +149,14 @@ class _EventsScreenState extends State<EventsScreen> {
   /// are loaded again when shown. The day shown and those either side
   /// are loaded, to be ready to slide in.
   final _fresh = <DateTime>{};
+
+  /// The cursor a new event is being made from, while one is: the "+"
+  /// starts it, and its "✓" opens the new event.
+  _Creating? _creating;
+
+  /// Whether a new event keeps clear of the events already there, or
+  /// overwrites them.
+  CreateMode _createMode = CreateMode.keep;
 
   /// Why the day shown couldn't be loaded, if it couldn't.
   Object? _error;
@@ -493,13 +502,6 @@ class _EventsScreenState extends State<EventsScreen> {
     setState(() {});
   }
 
-  /// The zoom level the zoom-in button goes to, or zoom-out with
-  /// [direction] -1: the next of [timelineScales] past this one; null at
-  /// the end.
-  double? _nextScale(int direction) => direction > 0
-      ? timelineScales.where((s) => s > _scale + 1e-6).firstOrNull
-      : timelineScales.where((s) => s < _scale - 1e-6).lastOrNull;
-
   /// Zooms to [next], keeping the time [focus] down the screen (the
   /// middle, by default) where it is.
   void _zoomTo(double next, {double? focus}) {
@@ -634,6 +636,17 @@ class _EventsScreenState extends State<EventsScreen> {
   void _show(DateTime day) {
     if (day == _day) return;
     setState(() {
+      if (_creating case final creating?) {
+        _creating = creating.copy(
+          at: DateTime(
+            day.year,
+            day.month,
+            day.day,
+            creating.at.hour,
+            creating.at.minute,
+          ),
+        );
+      }
       _day = day;
       _error = null;
       _fresh.removeWhere((d) => (_pageOf(d) - _pageOf(day)).abs() > 3);
@@ -690,46 +703,127 @@ class _EventsScreenState extends State<EventsScreen> {
   /// The new event's length, unless the next event starts sooner.
   static const _newEventLength = Duration(hours: 1);
 
-  /// Opens a new, blank event at [time], tapped on [day]'s timeline: from
-  /// the quarter hour it's in, or the end of the event before if that's
-  /// later, for [_newEventLength] or up to the next event, whichever is
-  /// sooner.
-  Future<void> _createAt(DateTime day, DateTime time) async {
+  /// [time] at the nearest quarter hour.
+  static DateTime _nearestQuarter(DateTime time) {
+    final minutes = time.hour * 60 + time.minute + (time.second >= 30 ? 1 : 0);
+    final quarters = (minutes / 15).round();
+    return DateTime(time.year, time.month, time.day, 0, quarters * 15);
+  }
+
+  /// Starts making a new event: a cursor across the day shown, at now if
+  /// that's today, or else the middle of what's in view.
+  void _startCreating() {
+    final now = widget.clock();
+    DateTime at;
+    if (!now.isBefore(_day) && now.isBefore(_dayEnd)) {
+      at = now;
+    } else if (_scroll.hasClients) {
+      final middle = _scroll.offset + _scroll.position.viewportDimension / 2;
+      at = timelineTime(middle, day: _day, dayEnd: _dayEnd, scale: _scale);
+    } else {
+      at = _day.add(const Duration(hours: 9));
+    }
+    setState(() => _creating = _Creating(_nearestQuarter(at)));
+  }
+
+  /// The new event, as it would be: from the cursor for its length, or to
+  /// the cursor -- kept clear of the events already there unless they're
+  /// to be overwritten; null until a button on the cursor's been used.
+  (DateTime, DateTime)? get _span => switch (_creating) {
+    _Creating(:final at, :final anchor, length: final length?) => _fit(
+      at,
+      anchor,
+      length,
+    ),
+    _ => null,
+  };
+
+  (DateTime, DateTime) _fit(DateTime at, CursorEnd anchor, Duration length) {
+    if (_createMode == CreateMode.overwrite) {
+      return anchor == CursorEnd.start
+          ? (at, at.add(length))
+          : (at.subtract(length), at);
+    }
     final room = _roomFor(null);
-    final (start, end) = room.moveStart(
-      DateTime(
-        time.year,
-        time.month,
-        time.day,
-        time.hour,
-        time.minute - time.minute % 15,
-      ),
-      _newEventLength,
-    );
+    return anchor == CursorEnd.start
+        ? room.moveStart(at, length)
+        : room.moveEnd(at, length);
+  }
+
+  /// Whether the new event takes time from events already there.
+  bool get _overwrites => switch (_span) {
+    (final start, final end) =>
+      _createMode == CreateMode.overwrite &&
+          _roomFor(null).overlapping(start, end) != null,
+    null => false,
+  };
+
+  /// The cursor's button for [end] dragged to [to]: the event from the
+  /// cursor to there, at least a quarter hour.
+  void _dragEnd(CursorEnd end, DateTime to) {
+    final creating = _creating;
+    if (creating == null) return;
+    final at = creating.at;
+    final quarter = _nearestQuarter(to);
+    var length = end == CursorEnd.start
+        ? quarter.difference(at)
+        : at.difference(quarter);
+    if (length < EventRoom.shortest) length = EventRoom.shortest;
+    setState(() => _creating = creating.copy(anchor: end, length: length));
+  }
+
+  /// Opens the new event, from the cursor: as shaded, or else for
+  /// [_newEventLength] from the cursor.
+  Future<void> _continueCreating() async {
+    final creating = _creating;
+    if (creating == null) return;
+    final (start, end) =
+        _span ?? _fit(creating.at, CursorEnd.start, _newEventLength);
+    final room = _roomFor(null);
+    final overwrite = _createMode == CreateMode.overwrite;
     final created = await showNewEventDialog(
       context,
       start: start,
       end: end,
-      room: room,
-      create: widget.repository.createEvent,
+      // Overwriting, its times needn't keep clear of anything.
+      room: overwrite ? const EventRoom.none() : room,
+      create: overwrite
+          ? (fields) => _approvingHistory(
+              (allow) => widget.repository.createOver(
+                fields,
+                room.overwrite(
+                  DateTime.parse(fields['start'] as String),
+                  DateTime.parse(fields['end'] as String),
+                ),
+                allowCompactedChanges: allow,
+              ),
+            )
+          : widget.repository.createEvent,
       actions: _actionsById,
       loadActions: _actions,
     );
     if (created == null || !mounted) return;
-    final moved = created.length - 1;
+    setState(() => _creating = null);
+    final changed = created.length - 1;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          moved <= 0
+          changed <= 0
               ? 'Event created.'
-              : 'Event created. $moved other event${moved == 1 ? '' : 's'} '
-                    'moved to make room.',
+              : 'Event created. $changed other event${changed == 1 ? '' : 's'} '
+                    'changed to make room.',
         ),
       ),
     );
+    _store.putEvents(created);
     _fresh.clear();
     await _refresh();
     await _loadActions();
+  }
+
+  Future<void> _pickCreateMode() async {
+    final mode = await showCreateModeDialog(context, _createMode);
+    if (mode != null && mounted) setState(() => _createMode = mode);
   }
 
   /// Runs [change] -- and if the server refuses it because it changes
@@ -1011,6 +1105,25 @@ class _EventsScreenState extends State<EventsScreen> {
       ),
       floatingActionButton: _needsSignIn
           ? null
+          : _creating != null
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton(
+                  heroTag: 'cancel-new',
+                  tooltip: 'Cancel',
+                  onPressed: () => setState(() => _creating = null),
+                  child: const Icon(Icons.close),
+                ),
+                const SizedBox(width: 12),
+                FloatingActionButton(
+                  heroTag: 'continue-new',
+                  tooltip: 'Continue',
+                  onPressed: _continueCreating,
+                  child: const Icon(Icons.check),
+                ),
+              ],
+            )
           : Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1020,25 +1133,12 @@ class _EventsScreenState extends State<EventsScreen> {
                   onPressed: _goToNow,
                   child: const Icon(Icons.my_location),
                 ),
-                const SizedBox(height: 8),
-                FloatingActionButton.small(
-                  heroTag: 'zoom-in',
-                  tooltip: 'Zoom in',
-                  onPressed: switch (_nextScale(1)) {
-                    final next? => () => _zoomTo(next),
-                    null => null,
-                  },
-                  child: const Icon(Icons.zoom_in),
-                ),
-                const SizedBox(height: 8),
-                FloatingActionButton.small(
-                  heroTag: 'zoom-out',
-                  tooltip: 'Zoom out',
-                  onPressed: switch (_nextScale(-1)) {
-                    final next? => () => _zoomTo(next),
-                    null => null,
-                  },
-                  child: const Icon(Icons.zoom_out),
+                const SizedBox(height: 12),
+                FloatingActionButton(
+                  heroTag: 'new',
+                  tooltip: 'New event',
+                  onPressed: _startCreating,
+                  child: const Icon(Icons.add),
                 ),
               ],
             ),
@@ -1118,7 +1218,9 @@ class _EventsScreenState extends State<EventsScreen> {
                             Positioned.fill(
                               child: PageView.builder(
                                 controller: _pages,
-                                physics: noDrag,
+                                physics: _creating != null
+                                    ? const NeverScrollableScrollPhysics()
+                                    : noDrag,
                                 onPageChanged: (page) => _show(_dayAt(page)),
                                 itemBuilder: (context, page) => _buildDay(
                                   context,
@@ -1127,6 +1229,31 @@ class _EventsScreenState extends State<EventsScreen> {
                                 ),
                               ),
                             ),
+                            if (_creating case final creating?)
+                              Positioned.fill(
+                                child: CreateCursor(
+                                  day: _day,
+                                  dayEnd: _dayEnd,
+                                  scale: _scale,
+                                  at: creating.at,
+                                  span: _span,
+                                  mode: _createMode,
+                                  overwrites: _overwrites,
+                                  onMove: (to) => setState(
+                                    () => _creating = creating.copy(
+                                      at: _nearestQuarter(to),
+                                    ),
+                                  ),
+                                  onTap: (end) => setState(
+                                    () => _creating = creating.copy(
+                                      anchor: end,
+                                      length: _newEventLength,
+                                    ),
+                                  ),
+                                  onDrag: _dragEnd,
+                                  onPickMode: _pickCreateMode,
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -1178,7 +1305,11 @@ class _EventsScreenState extends State<EventsScreen> {
         lastCompaction: _lastCompaction,
         pendingNotes: _pendingNotes,
         onTap: _openEvent,
-        onTapTime: (time) => _createAt(day, time),
+        onTapTime: _creating == null
+            ? null
+            : (time) => setState(
+                () => _creating = _creating!.copy(at: _nearestQuarter(time)),
+              ),
         axis: false,
       ),
     );
@@ -1192,7 +1323,7 @@ class _EventsScreenState extends State<EventsScreen> {
             view,
             const StatusMessage(
               icon: Icons.event_busy,
-              text: 'No events.\nTap a time to add one.',
+              text: 'No events.\nTap + to add one.',
             ),
           ),
         ),
@@ -1226,3 +1357,20 @@ const _summaryCollapsedKey = 'day_summary_collapsed';
 
 /// Where whether the day's summary shows durations is kept.
 const _summaryDurationsKey = 'day_summary_durations';
+
+/// A new event being made: the cursor, at [at], and once a button on it's
+/// been used, which end of the event it is and how long the event is.
+class _Creating {
+  const _Creating(this.at, {this.anchor = CursorEnd.start, this.length});
+
+  final DateTime at;
+  final CursorEnd anchor;
+  final Duration? length;
+
+  _Creating copy({DateTime? at, CursorEnd? anchor, Duration? length}) =>
+      _Creating(
+        at ?? this.at,
+        anchor: anchor ?? this.anchor,
+        length: length ?? this.length,
+      );
+}

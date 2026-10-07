@@ -6,6 +6,20 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.2.0
+
+- Events are added from a **+** on the Events page, in place of the zoom
+  buttons (pinch to zoom); tapping a blank space does nothing. The +
+  puts a cursor across the timeline -- at now, or the middle of what's
+  in view -- with buttons to start an event there or end it there: tap
+  one for an hour, or drag it to where the other end goes. Drag the
+  line, or tap a blank time, to move it. ✓ opens the new event; ✕ stops.
+- Beside them, a drop-down picks whether the new event keeps clear of
+  the events already there or overwrites them. Overwriting, its shadow
+  is tinged red and slowly pulses where it would take time from events,
+  and saving shortens, splits or cancels them (as a change of plan, not
+  against follow-through) in the same batch as the new event.
+
 ## 7.1.1
 
 - An action picker opens at once: the Events page's pickers list the

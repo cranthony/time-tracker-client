@@ -1,4 +1,5 @@
 import '../models/event.dart';
+import '../models/note.dart';
 
 /// The other events an event's times are kept clear of, so that changing
 /// them never makes it overlap one.
@@ -65,6 +66,74 @@ class EventRoom {
     var end = moved.add(length);
     if (latestEnd(moved) case final next? when next.isBefore(end)) end = next;
     return (moved, end);
+  }
+
+  /// [end] moved out of any event it's inside of, to its start, and the
+  /// start [length] before it, or later if the event before ends later:
+  /// [moveStart]'s mirror, for an event ending at [end].
+  (DateTime, DateTime) moveEnd(DateTime end, Duration length) {
+    var moved = end;
+    for (var inside = _ending(moved); inside != null; inside = _ending(moved)) {
+      moved = inside.start;
+    }
+    var start = moved.subtract(length);
+    if (earliestStart(moved) case final before? when before.isAfter(start)) {
+      start = before;
+    }
+    return (start, moved);
+  }
+
+  /// The event it would end inside of, at [end].
+  Event? _ending(DateTime end) {
+    for (final other in others) {
+      if (other.start.isBefore(end) && other.end.isAfter(end)) return other;
+    }
+    return null;
+  }
+
+  /// What a new event from [start] to [end] takes from the others to fit,
+  /// overwriting them: each it covers whole is cancelled; each it covers
+  /// one end of is shortened to it; and one it falls inside of is split
+  /// around it, the part after it made a new event.
+  Overwrite overwrite(DateTime start, DateTime end) {
+    final cancels = <Event>[];
+    final updates = <(Event, Map<String, Object?>)>[];
+    final creates = <Map<String, Object?>>[];
+    for (final other in others) {
+      if (!other.start.isBefore(end) || !other.end.isAfter(start)) continue;
+      final before = other.start.isBefore(start);
+      final after = other.end.isAfter(end);
+      if (before && after) {
+        updates.add((other, {'end': localIsoTimestamp(start)}));
+        creates.add(_rest(other, end, other.end));
+      } else if (before) {
+        updates.add((other, {'end': localIsoTimestamp(start)}));
+      } else if (after) {
+        updates.add((other, {'start': localIsoTimestamp(end)}));
+      } else {
+        cancels.add(other);
+      }
+    }
+    return Overwrite(cancels: cancels, updates: updates, creates: creates);
+  }
+
+  /// What's left of [event] from [start] to [end], as a new event: what
+  /// was done there and who it was with, not what was said of it.
+  static Map<String, Object?> _rest(Event event, DateTime start, DateTime end) {
+    const kept = {
+      'summary',
+      'description',
+      'location',
+      'action_ids',
+      'priority',
+      'facts',
+    };
+    return {
+      for (final MapEntry(:key, :value) in event.properties.entries)
+        if (kept.contains(key) && value != null) key: value,
+      'start': localIsoTimestamp(start),
+      'end': localIsoTimestamp(end),
+    };
   }
 
   /// [end], or the start of the first event between [start] and it, if
@@ -148,4 +217,24 @@ class EventRoom {
     }
     return to.isAfter(end) ? to : null;
   }
+}
+
+/// What a new event takes from the events already there, to overwrite
+/// them ([EventRoom.overwrite]): those to cancel, the changes to the
+/// times of those to shorten, and the new events left of those it splits.
+class Overwrite {
+  const Overwrite({
+    this.cancels = const [],
+    this.updates = const [],
+    this.creates = const [],
+  });
+
+  final List<Event> cancels;
+  final List<(Event, Map<String, Object?>)> updates;
+  final List<Map<String, Object?>> creates;
+
+  /// How many events it changes.
+  int get count => cancels.length + updates.length;
+
+  bool get isEmpty => count == 0;
 }

@@ -2,6 +2,7 @@ import '../models/event.dart';
 import '../models/note.dart';
 import '../models/recurrence.dart';
 import '../models/repeat.dart';
+import '../widgets/event_room.dart';
 import 'mcp_client.dart';
 
 /// The fields `update_event` and `update_recurrence` can remove, by
@@ -49,6 +50,19 @@ abstract class EventsRepository {
   /// server changed: the new one. It's refused if it would overlap
   /// another event.
   Future<List<Event>> createEvent(Map<String, Object?> fields);
+
+  /// Creates an event with [fields], as [createEvent], overwriting the
+  /// events in its way as [over] says, all in one `update_event` batch:
+  /// those it covers cancelled (as a change of plan, not against
+  /// follow-through), shortened, or split. Returns the events the server
+  /// changed, the new one first. Refused, changing nothing, if it would
+  /// still overlap one -- or, without [allowCompactedChanges], change one
+  /// compaction settled.
+  Future<List<Event>> createOver(
+    Map<String, Object?> fields,
+    Overwrite over, {
+    bool allowCompactedChanges = false,
+  });
 
   /// Cancels [event], with `delete_event` -- the one way the server
   /// cancels an event (`update_event` won't). With
@@ -156,6 +170,34 @@ class McpEventsRepository implements EventsRepository {
       for (final r in result as List)
         Recurrence.fromJson((r as Map).cast<String, dynamic>()),
     ];
+  }
+
+  @override
+  Future<List<Event>> createOver(
+    Map<String, Object?> fields,
+    Overwrite over, {
+    bool allowCompactedChanges = false,
+  }) async {
+    final result = await _client.callTool('update_event', {
+      'creates': [
+        {for (final MapEntry(:key, :value) in fields.entries) key: ?value},
+        ...over.creates,
+      ],
+      if (over.updates.isNotEmpty)
+        'updates': [
+          for (final (event, changes) in over.updates)
+            {
+              'event': {'id': event.id, ...changes},
+            },
+        ],
+      if (over.cancels.isNotEmpty)
+        'cancels': [
+          for (final event in over.cancels)
+            {'event_id': event.id, 'counts_against_follow_through': false},
+        ],
+      if (allowCompactedChanges) 'allow_compacted_changes': true,
+    });
+    return _changed(result);
   }
 
   @override
@@ -312,6 +354,19 @@ class InMemoryEventsRepository implements EventsRepository {
     _events.add(created);
     return [created];
   }
+
+  @override
+  Future<List<Event>> createOver(
+    Map<String, Object?> fields,
+    Overwrite over, {
+    bool allowCompactedChanges = false,
+  }) async => [
+    ...await createEvent(fields),
+    for (final (event, changes) in over.updates)
+      ...await updateEvent(event, changes),
+    for (final event in over.cancels) ...await deleteEvent(event),
+    for (final rest in over.creates) ...await createEvent(rest),
+  ];
 
   /// Each event [deleteEvent] cancelled, by id, with whether it counted
   /// against follow-through.

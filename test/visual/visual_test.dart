@@ -376,6 +376,53 @@ void main() {
       await render(tester, 'events', events());
     });
 
+    // Making an event: the cursor at now, from "+"; the event dragged
+    // from it, keeping clear of the next; overwriting, tinged red; and
+    // the choice between them.
+    for (final (name, overwrite, drag, dialog) in [
+      ('events_new_cursor', false, 0, false),
+      ('events_new_dragged', false, 150, false),
+      ('events_new_overwrite', true, 150, false),
+      ('events_new_modes', false, 0, true),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          events(),
+          then: () async {
+            Future<void> settle() async {
+              for (var i = 0; i < 12; i++) {
+                await tester.pump(const Duration(milliseconds: 100));
+              }
+            }
+
+            await tester.tap(find.byTooltip('New event'));
+            await tester.pumpAndSettle();
+            if (overwrite || dialog) {
+              await tester.tap(find.byTooltip('Keep events: tap to change'));
+              await tester.pumpAndSettle();
+            }
+            if (overwrite) {
+              await tester.tap(find.text('Overwrite events'));
+              await tester.pumpAndSettle();
+            }
+            if (drag != 0) {
+              final start = find.byTooltip(
+                'Start here: tap, or drag to where it ends',
+              );
+              await tester.drag(
+                start,
+                Offset(0, drag * defaultTimelineScale),
+                warnIfMissed: false,
+              );
+              await settle();
+            }
+          },
+        );
+      });
+    }
+
     // The day's summary swiped once, to its actions, and twice, to its
     // top-level ones.
     for (final (name, swipes) in [
@@ -433,6 +480,7 @@ void main() {
 
     // Zoomed all the way out, the whole day; zoomed in, around the
     // events too short for their text and a note not yet compacted.
+    // Pinched out past the least zoom, and in to three times as tall.
     for (final (name, zoom) in [
       ('events_zoomed_out', -3),
       ('events_zoomed_in', 2),
@@ -443,10 +491,10 @@ void main() {
           name,
           events(),
           then: () async {
-            final button = find.byTooltip(zoom < 0 ? 'Zoom out' : 'Zoom in');
-            for (var i = 0; i < zoom.abs(); i++) {
-              await tester.tap(button);
-              await tester.pumpAndSettle();
+            if (zoom < 0) {
+              await _pinch(tester, 200, 40);
+            } else {
+              await _pinch(tester, 50, 100);
             }
             if (zoom > 0) {
               await tester.ensureVisible(find.text('Lunch with Sam'));
@@ -586,3 +634,20 @@ ActionOutbox _idleActionOutbox() => ActionOutbox(
 final _list = find
     .descendant(of: find.byType(ListView), matching: find.byType(Scrollable))
     .first;
+
+/// Pinches the Events page's timeline from [from] to [to] pixels apart:
+/// zooming by [to] / [from].
+Future<void> _pinch(WidgetTester tester, double from, double to) async {
+  final center = tester.getCenter(find.byType(ListView).first);
+  final a = await tester.startGesture(center - Offset(from / 2, 0));
+  final b = await tester.startGesture(center + Offset(from / 2, 0));
+  for (var i = 1; i <= 8; i++) {
+    final apart = from + (to - from) * i / 8;
+    await a.moveTo(center - Offset(apart / 2, 0));
+    await b.moveTo(center + Offset(apart / 2, 0));
+    await tester.pump();
+  }
+  await a.up();
+  await b.up();
+  await tester.pumpAndSettle();
+}
