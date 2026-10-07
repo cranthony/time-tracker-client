@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../models/facts.dart';
+import '../models/habit.dart';
 import '../models/person.dart';
+import '../models/plan_action.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
+import '../services/habits_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
+import '../widgets/habit_dialog.dart';
 import '../widgets/health.dart';
+import 'habit_screen.dart';
 import 'trait_breakdown.dart';
 
 /// A person -- Self included -- on one page: who they are (their context
@@ -18,7 +23,10 @@ import 'trait_breakdown.dart';
 /// (the actions done and locations of their events, with how often and
 /// when), and a timeline of those events with what happened at each.
 /// Always, the events the user cancelled that count against their
-/// follow-through ([Person.cancelledEvents]).
+/// follow-through ([Person.cancelledEvents]). For Self, their [habits]
+/// too, each in its action's color: tapping one opens its page
+/// ([HabitScreen]), and "Habit" adds one. Habits are best effort: if
+/// they can't be loaded, there's no section for them.
 /// [onEdit] edits them, returning them as saved.
 class PersonScreen extends StatefulWidget {
   const PersonScreen({
@@ -30,6 +38,8 @@ class PersonScreen extends StatefulWidget {
     this.personNames = const {},
     this.actionNames = const {},
     this.locationNames = const {},
+    this.habits,
+    this.actions = const [],
     this.onEdit,
   });
 
@@ -48,6 +58,12 @@ class PersonScreen extends StatefulWidget {
 
   /// Names locations by id, for where their events were.
   final Map<String?, String> locationNames;
+
+  /// Self's habits, if they're offered.
+  final HabitsRepository? habits;
+
+  /// Every action and group, for a habit's.
+  final List<PlanAction> actions;
   final Future<Person?> Function()? onEdit;
 
   @override
@@ -64,11 +80,28 @@ class _PersonScreenState extends State<PersonScreen> {
   TraitScores? get _scores => widget.memory?.scores;
   bool get _scored => widget.memory != null;
 
+  /// Self's habits, loaded here when there's no [PersonScreen.memory] to
+  /// keep them.
+  List<Habit>? _ownHabits;
+
+  /// Self's habits, but those deleted; null if they couldn't be loaded,
+  /// or aren't theirs to have.
+  List<Habit>? get _habits => !_person.isSelf || widget.habits == null
+      ? null
+      : switch (widget.memory?.habits ?? _ownHabits) {
+          final habits? => [
+            for (final h in habits)
+              if (h.status != 'deleted') h,
+          ],
+          null => null,
+        };
+
   @override
   void initState() {
     super.initState();
     widget.memory?.addListener(_rescored);
     _loadTraitList();
+    _loadHabits();
   }
 
   @override
@@ -86,10 +119,56 @@ class _PersonScreenState extends State<PersonScreen> {
   Future<void> _load() async {
     await Future.wait([
       _loadTraitList(),
+      _loadHabits(again: true),
       if (widget.memory?.eventStore case final store?)
         store.warm().catchError((Object _) {}),
     ]);
   }
+
+  /// Self's habits, if they're offered. Best effort.
+  Future<void> _loadHabits({bool again = false}) async {
+    final repository = widget.habits;
+    if (!_person.isSelf || repository == null) return;
+    if (widget.memory case final memory?) {
+      await memory.loadHabits(repository, again: again);
+      return;
+    }
+    try {
+      final habits = await repository.habits();
+      if (mounted) setState(() => _ownHabits = habits);
+    } catch (_) {
+      // No habits section, then.
+    }
+  }
+
+  /// Adds a habit (with no [habit]) or edits one; returns it as saved.
+  Future<Habit?> _editHabit(Habit? habit) async {
+    final repository = widget.habits!;
+    final saved = await showHabitDialog(
+      context,
+      habit: habit,
+      actions: widget.actions,
+      traits: [..._traitList.values],
+      save: (fields) => habit == null
+          ? repository.createHabit(
+              Habit.fromJson({'id': '', 'action_id': '', ...fields}),
+            )
+          : repository.updateHabit(habit.id, fields),
+    );
+    if (saved != null) await _loadHabits(again: true);
+    return saved;
+  }
+
+  void _openHabit(Habit habit) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => HabitScreen(
+        habit: habit,
+        actions: widget.actions,
+        traits: _traitList,
+        onEdit: _editHabit,
+      ),
+    ),
+  );
 
   Future<void> _loadTraitList() async {
     try {
@@ -178,6 +257,10 @@ class _PersonScreenState extends State<PersonScreen> {
             _heading(theme, 'Traits'),
             ..._applies(theme),
             if (_scored) ..._traits(context),
+            if (_habits case final habits?) ...[
+              _heading(theme, 'Habits'),
+              ..._habitTiles(theme, habits),
+            ],
             _heading(
               theme,
               _person.isSelf ? 'What matters to you' : 'What matters to them',
@@ -204,32 +287,59 @@ class _PersonScreenState extends State<PersonScreen> {
   }
 
   /// Which traits apply to them, and their own parts for any.
-  List<Widget> _applies(ThemeData theme) {
-    final traits = _person.traits;
-    String name(String id) => _traitList[id]?.name ?? id;
+  List<Widget> _applies(ThemeData theme) => traitsApplied(
+    theme,
+    _person.traits,
+    traitList: _traitList,
+    actionNames: widget.actionNames,
+  );
+
+  /// Each of Self's habits, in its action's color, and a button to add
+  /// one.
+  List<Widget> _habitTiles(ThemeData theme, List<Habit> habits) {
+    final byId = {for (final a in widget.actions) a.id: a};
     return [
-      _padded(
-        Text(switch (traits.select) {
-          null => 'Every active trait',
-          final ids when ids.isEmpty => 'None',
-          final ids => ids.map(name).join(', '),
-        }, style: theme.textTheme.bodyMedium),
-      ),
-      for (final MapEntry(:key, :value) in traits.parts.entries)
-        ListTile(
-          dense: true,
-          title: Text('${name(key)}, their own'),
-          subtitle: Text(
-            [
-              for (final part in value)
-                describePart(part, {
-                  for (final MapEntry(:key, :value)
-                      in widget.actionNames.entries)
-                    key: value,
-                }),
-            ].join('\n'),
+      if (habits.isEmpty)
+        _padded(
+          Text(
+            'None yet. A habit holds your events with one action, or any '
+            'in a group, to traits of their own: practicing guitar '
+            'mindfully, say.',
+            style: TextStyle(color: theme.hintColor),
           ),
         ),
+      for (final habit in habits)
+        ListTile(
+          leading: actionDot(byId[habit.actionId], size: 16),
+          title: Text(
+            habitName(habit),
+            style: habit.active ? null : TextStyle(color: theme.hintColor),
+          ),
+          subtitle: Text(
+            [
+              byId[habit.actionId]?.path ??
+                  habit.actionPath ??
+                  switch (byId[habit.actionId]) {
+                    final a? => actionName(a),
+                    null => habit.actionId,
+                  },
+              if (!habit.active) habitStatuses[habit.status] ?? habit.status,
+            ].join(' · '),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _openHabit(habit),
+        ),
+      Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: TextButton.icon(
+            onPressed: () => _editHabit(null),
+            icon: const Icon(Icons.add),
+            label: const Text('Habit'),
+          ),
+        ),
+      ),
     ];
   }
 
@@ -358,63 +468,16 @@ class _PersonScreenState extends State<PersonScreen> {
   }
 
   /// The events the user cancelled that count against their
-  /// follow-through, newest first: when each was planned, what was to be
-  /// done, whether they were to be there or it was for them, and when
-  /// and how it was cancelled, with the traits it counted against.
-  List<Widget> _cancelled(ThemeData theme) {
-    final cancelled = _person.cancelledEvents;
-    if (cancelled.isEmpty) {
-      return [
-        _padded(
-          Text(
-            'Nothing cancelled that counts against '
-            '${_person.isSelf ? 'your' : 'their'} follow-through.',
-            style: TextStyle(color: theme.hintColor),
-          ),
-        ),
-      ];
-    }
-    final localizations = MaterialLocalizations.of(context);
-    String at(DateTime t) =>
-        '${localizations.formatMediumDate(t)}, '
-        '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(t))}';
-    return [
-      for (final c in cancelled)
-        ListTile(
-          dense: true,
-          leading: Icon(Icons.event_busy, color: theme.colorScheme.error),
-          title: Text(c.summary ?? '(no title)'),
-          subtitle: Text(
-            [
-              [
-                'Planned for ${at(c.start)}',
-                if (c.engagement == 'for')
-                  'for ${_person.isSelf ? 'you' : 'them'}'
-                else if (!_person.isSelf)
-                  'with them',
-              ].join(', '),
-              if (c.actionIds.isNotEmpty)
-                [for (final id in c.actionIds) widget.actionNames[id] ?? id]
-                    .join(', '),
-              [
-                switch (c.cancelledAt) {
-                  final day? =>
-                    'Cancelled ${localizations.formatMediumDate(day)}',
-                  null => 'Cancelled',
-                },
-                if (c.byCompaction)
-                  "— it didn't happen"
-                else if (c.source == 'delete_event')
-                  '— deleted',
-              ].join(' '),
-              if (c.traitIds.isNotEmpty)
-                'Counts against '
-                    '${c.traitIds.map((id) => _traitList[id]?.name ?? id).join(', ')}',
-            ].join('\n'),
-          ),
-        ),
-    ];
-  }
+  /// follow-through.
+  List<Widget> _cancelled(ThemeData theme) => cancelledTiles(
+    context,
+    _person.cancelledEvents,
+    whose: _person.isSelf ? 'your' : 'their',
+    whom: _person.isSelf ? 'you' : 'them',
+    withWhom: _person.isSelf ? null : 'with them',
+    traitList: _traitList,
+    actionNames: widget.actionNames,
+  );
 
   String _when(Map<String, dynamic> event) {
     final start = DateTime.tryParse('${event['start']}')?.toLocal();
@@ -433,4 +496,100 @@ class _PersonScreenState extends State<PersonScreen> {
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     child: child,
   );
+}
+
+/// Which traits apply -- [traits.select], every active one by default --
+/// named from [traitList], and [own] parts for any: a person's, or a
+/// habit's. [actionNames] names the actions a part counts.
+List<Widget> traitsApplied(
+  ThemeData theme,
+  PersonTraits traits, {
+  required Map<String, Trait> traitList,
+  required Map<String?, String> actionNames,
+  String own = 'their own',
+}) {
+  String name(String id) => traitList[id]?.name ?? id;
+  return [
+    Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Text(switch (traits.select) {
+        null => 'Every active trait',
+        final ids when ids.isEmpty => 'None',
+        final ids => ids.map(name).join(', '),
+      }, style: theme.textTheme.bodyMedium),
+    ),
+    for (final MapEntry(:key, :value) in traits.parts.entries)
+      ListTile(
+        dense: true,
+        title: Text('${name(key)}, $own'),
+        subtitle: Text(
+          [for (final part in value) describePart(part, actionNames)]
+              .join('\n'),
+        ),
+      ),
+  ];
+}
+
+/// The events the user [cancelled] that count against [whose]
+/// follow-through ("your", "their", "its"), newest first: when each was
+/// planned, what was to be done, whether it was for [whom] or [withWhom],
+/// and when and how it was cancelled, with the traits (from [traitList])
+/// it counted against.
+List<Widget> cancelledTiles(
+  BuildContext context,
+  List<CancelledEvent> cancelled, {
+  required String whose,
+  required String whom,
+  String? withWhom,
+  required Map<String, Trait> traitList,
+  required Map<String?, String> actionNames,
+}) {
+  final theme = Theme.of(context);
+  if (cancelled.isEmpty) {
+    return [
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Text(
+          'Nothing cancelled that counts against $whose follow-through.',
+          style: TextStyle(color: theme.hintColor),
+        ),
+      ),
+    ];
+  }
+  final localizations = MaterialLocalizations.of(context);
+  String at(DateTime t) =>
+      '${localizations.formatMediumDate(t)}, '
+      '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(t))}';
+  return [
+    for (final c in cancelled)
+      ListTile(
+        dense: true,
+        leading: Icon(Icons.event_busy, color: theme.colorScheme.error),
+        title: Text(c.summary ?? '(no title)'),
+        subtitle: Text(
+          [
+            [
+              'Planned for ${at(c.start)}',
+              if (c.engagement == 'for') 'for $whom' else ?withWhom,
+            ].join(', '),
+            if (c.actionIds.isNotEmpty)
+              [for (final id in c.actionIds) actionNames[id] ?? id].join(', '),
+            [
+              switch (c.cancelledAt) {
+                final day? =>
+                  'Cancelled ${localizations.formatMediumDate(day)}',
+                null => 'Cancelled',
+              },
+              if (c.byCompaction)
+                "— it didn't happen"
+              else if (c.source == 'delete_event')
+                '— deleted',
+            ].join(' '),
+            if (c.traitIds.isNotEmpty)
+              'Counts against '
+                  '${c.traitIds.map((id) => traitList[id]?.name ?? id).join(', ')}',
+          ].join('\n'),
+        ),
+      ),
+  ];
 }

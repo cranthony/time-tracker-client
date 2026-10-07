@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/person.dart';
 import '../models/trait.dart';
 import 'error_sheet.dart';
-import 'parts_editor.dart';
+import 'traits_field.dart';
 
 /// Adds a person (with no [person]) or edits one: their name, a context
 /// that tells them apart from others of the same name, the [circles]
@@ -60,14 +60,8 @@ class _PersonDialogState extends State<_PersonDialog> {
   late final _circleIds = {...?widget.person?.circleIds};
   late String _status = widget.person?.status ?? 'active';
 
-  /// The traits picked; null for every active one.
-  late List<String>? _select = switch (widget.person?.traits.select) {
-    final ids? => [...ids],
-    null => null,
-  };
-
-  /// Their own parts, by trait id.
-  late final _parts = <String, List<Part>>{...?widget.person?.traits.parts};
+  /// Which traits apply to them, and their own parts for any.
+  late PersonTraits _traits = widget.person?.traits ?? const PersonTraits();
   bool _saving = false;
 
   bool get _isSelf => widget.person?.isSelf ?? false;
@@ -82,14 +76,6 @@ class _PersonDialogState extends State<_PersonDialog> {
 
   String? _text(TextEditingController c) =>
       c.text.trim().isEmpty ? null : c.text.trim();
-
-  PersonTraits get _traits => PersonTraits(
-    select: _select,
-    parts: {
-      for (final MapEntry(:key, :value) in _parts.entries)
-        if (_select?.contains(key) ?? true) key: value,
-    },
-  );
 
   Map<String, Object?> get _fields => {
     'name': _name.text.trim(),
@@ -117,19 +103,6 @@ class _PersonDialogState extends State<_PersonDialog> {
         onRetry: _save,
       );
     }
-  }
-
-  Future<void> _editParts(Trait trait) async {
-    final edited = await showPartsDialog(
-      context,
-      title: '${trait.name} for ${_text(_name) ?? 'them'}',
-      explanation:
-          "Their own parts for ${trait.name}, in place of the trait's: "
-          'their own cadence, say.',
-      parts: _parts[trait.id] ?? trait.parts,
-      actions: widget.actions,
-    );
-    if (edited != null) setState(() => _parts[trait.id!] = edited);
   }
 
   @override
@@ -224,7 +197,17 @@ class _PersonDialogState extends State<_PersonDialog> {
                   ),
                 ),
               ),
-              ..._traitFields(theme),
+              TraitsField(
+                traits: widget.traits,
+                value: _traits,
+                actions: widget.actions,
+                partsTitle: (trait) =>
+                    '${trait.name} for ${_text(_name) ?? 'them'}',
+                partsExplanation: (trait) =>
+                    "Their own parts for ${trait.name}, in place of the "
+                    "trait's: their own cadence, say.",
+                onChanged: (traits) => _traits = traits,
+              ),
               if (!_isSelf && widget.person != null) ...[
                 const SizedBox(height: 16),
                 SegmentedButton<String>(
@@ -269,78 +252,6 @@ class _PersonDialogState extends State<_PersonDialog> {
         ),
       ],
     );
-  }
-
-  /// Which traits apply to them, each with their own parts, if any.
-  List<Widget> _traitFields(ThemeData theme) {
-    if (widget.traits.isEmpty) return const [];
-    final all = _select == null;
-    final shown = [
-      for (final t in widget.traits)
-        if (t.id != null &&
-            (t.status == 'active' || (_select?.contains(t.id) ?? false)))
-          t,
-    ];
-    return [
-      Padding(
-        padding: const EdgeInsets.only(top: 16),
-        child: Text('Traits', style: theme.textTheme.titleSmall),
-      ),
-      SwitchListTile(
-        dense: true,
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Every active trait'),
-        subtitle: const Text('Including any added later.'),
-        value: all,
-        onChanged: (on) => setState(
-          () => _select = on ? null : [for (final t in shown) t.id!],
-        ),
-      ),
-      for (final trait in shown)
-        if (all || _select!.contains(trait.id))
-          ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: all
-                ? null
-                : Checkbox(
-                    value: true,
-                    onChanged: (_) => setState(() => _select!.remove(trait.id)),
-                  ),
-            title: Text(trait.name),
-            subtitle: Text(switch (_parts[trait.id]) {
-              final own? =>
-                'Their own: '
-                    '${own.map((p) => describePart(p, widget.actions)).join('; ')}',
-              null => "The trait's parts",
-            }),
-            trailing: Wrap(
-              children: [
-                if (_parts.containsKey(trait.id))
-                  IconButton(
-                    tooltip: "Use ${trait.name}'s parts",
-                    icon: const Icon(Icons.undo),
-                    onPressed: () => setState(() => _parts.remove(trait.id)),
-                  ),
-                IconButton(
-                  tooltip: 'Their own ${trait.name} parts',
-                  icon: const Icon(Icons.tune),
-                  onPressed: () => _editParts(trait),
-                ),
-              ],
-            ),
-          )
-        else
-          ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: Checkbox(
-              value: false,
-              onChanged: (_) => setState(() => _select!.add(trait.id!)),
-            ),
-            title: Text(trait.name, style: TextStyle(color: theme.hintColor)),
-          ),
-    ];
   }
 }
 

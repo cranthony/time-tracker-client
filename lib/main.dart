@@ -17,6 +17,7 @@ import 'screens/home_screen.dart';
 import 'services/event_store.dart';
 import 'services/actions_repository.dart';
 import 'services/events_repository.dart';
+import 'services/habits_repository.dart';
 import 'services/mcp_client.dart';
 import 'services/notes_repository.dart';
 import 'services/people_repository.dart';
@@ -67,6 +68,8 @@ Future<void> main() async {
         traitsRepository:
             sample?.traitsRepository() ?? InMemoryTraitsRepository(),
         peopleRepository: people,
+        habitsRepository:
+            sample?.habitsRepository() ?? InMemoryHabitsRepository(),
       ),
     );
     return;
@@ -96,6 +99,7 @@ Future<void> main() async {
       cache: cache,
       traitsRepository: McpTraitsRepository(client, cache: cache),
       peopleRepository: McpPeopleRepository(client, cache: cache),
+      habitsRepository: McpHabitsRepository(client, cache: cache),
     ),
   );
 }
@@ -148,6 +152,7 @@ class TimeTrackerApp extends StatefulWidget {
     this.cache,
     this.traitsRepository,
     this.peopleRepository,
+    this.habitsRepository,
     this.proposalsRepository,
   });
 
@@ -164,6 +169,10 @@ class TimeTrackerApp extends StatefulWidget {
   /// People and their circles, for every screen below (see
   /// [PeopleScope]); without it, they aren't offered.
   final PeopleRepository? peopleRepository;
+
+  /// Self's habits, for every screen below (see [HabitsScope]); without
+  /// it, they aren't offered.
+  final HabitsRepository? habitsRepository;
   final EventsRepository eventsRepository;
   final ActionsRepository actionsRepository;
   final NoteOutbox outbox;
@@ -262,6 +271,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       // Above the navigator, so every route and dialog finds it.
       builder: (context, child) {
         Widget scoped = PlanMemoryScope(memory: _planMemory, child: child!);
+        if (widget.habitsRepository case final habits?) {
+          scoped = HabitsScope(repository: habits, child: scoped);
+        }
         if (widget.peopleRepository case final people?) {
           scoped = PeopleScope(repository: people, child: scoped);
         }

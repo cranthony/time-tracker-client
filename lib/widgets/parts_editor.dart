@@ -443,14 +443,16 @@ class _PartDraft {
 }
 
 /// Edits [parts] in a dialog titled [title], with [explanation] above
-/// them, refusing to save while they're empty or a part is wrong. Returns
-/// the parts, or null if it was called off.
+/// them, refusing to save while they're empty or a part is wrong. Below
+/// them, [warnings] says what's amiss with them that doesn't stop them
+/// being saved. Returns the parts, or null if it was called off.
 Future<List<Part>?> showPartsDialog(
   BuildContext context, {
   required String title,
   String? explanation,
   required List<Part> parts,
   Map<String, String> actions = const {},
+  List<String> Function(List<Part> parts)? warnings,
 }) => showDialog<List<Part>>(
   context: context,
   builder: (_) => _PartsDialog(
@@ -458,6 +460,7 @@ Future<List<Part>?> showPartsDialog(
     explanation: explanation,
     parts: parts,
     actions: actions,
+    warnings: warnings,
   ),
 );
 
@@ -467,12 +470,14 @@ class _PartsDialog extends StatefulWidget {
     required this.explanation,
     required this.parts,
     required this.actions,
+    required this.warnings,
   });
 
   final String title;
   final String? explanation;
   final List<Part> parts;
   final Map<String, String> actions;
+  final List<String> Function(List<Part> parts)? warnings;
 
   @override
   State<_PartsDialog> createState() => _PartsDialogState();
@@ -503,6 +508,16 @@ class _PartsDialogState extends State<_PartsDialog> {
                 actions: widget.actions,
                 onChanged: (parts) => setState(() => _parts = parts),
               ),
+              for (final warning in widget.warnings?.call(_parts) ?? const [])
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    warning,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.tertiary,
+                    ),
+                  ),
+                ),
               if (problem != null)
                 Text(problem, style: TextStyle(color: theme.colorScheme.error)),
             ],

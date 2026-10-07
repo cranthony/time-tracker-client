@@ -1,5 +1,6 @@
 import '../models/event.dart';
 import '../models/facts.dart';
+import '../models/habit.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/person.dart';
@@ -9,6 +10,7 @@ import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/events_repository.dart';
 import '../services/actions_repository.dart';
+import '../services/habits_repository.dart';
 import '../services/notes_repository.dart';
 import '../services/people_repository.dart';
 import '../services/proposal_repository.dart';
@@ -29,7 +31,10 @@ import '../services/traits_repository.dart';
 /// circles, from healthy to disconnected (and one archived), each rated by
 /// five traits made of judgments and cadences -- Self by four, Sam with a
 /// cadence of their own -- with Claude's judgments of their recent events
-/// behind each score; and the locations those events were at.
+/// behind each score; and the locations those events were at. Self has
+/// two habits: practicing guitar mindfully, over the Guitar group, with
+/// a rubric and cadence of its own; and cooking from scratch, over one
+/// action, held to every trait.
 class SampleData {
   SampleData(this.now);
 
@@ -54,6 +59,8 @@ class SampleData {
     circles: circles,
     locations: locations,
   );
+
+  HabitsRepository habitsRepository() => InMemoryHabitsRepository(habits);
 
   /// The traits. How everyone is rated by them is worked out from the
   /// events, as with the server.
@@ -352,12 +359,73 @@ class SampleData {
       actions: ['shallow_talk', 'eat_snack'],
       source: 'delete_event',
     );
+    final practice = cancelled(
+      'practice-guitar',
+      'Practice guitar',
+      3,
+      19,
+      actions: ['practice_guitar'],
+      source: 'compaction c-17',
+    );
     return {
       'dad': [visit],
       'sam': [coffee],
       selfPersonId: [coffee, visit],
+      habitSubject('guitar-mindfully'): [practice],
     };
   }();
+
+  // --------------------------------------------------------------- Habits
+
+  /// Self's habits: one over a group, with parts of its own, and one
+  /// over a single action, held to every trait.
+  List<Habit> get habits => [
+    Habit.fromJson({
+      'id': 'guitar-mindfully',
+      'name': 'Practice guitar mindfully',
+      'action_id': 'guitar',
+      'action_path': 'Creative › Guitar',
+      'note':
+          'Slow, deliberate practice: one thing at a time, the phone in '
+          'another room.',
+      'traits': const PersonTraits(
+        select: ['present', 'reliable'],
+        parts: {
+          'present': [
+            {
+              'kind': 'judgment',
+              'rubric': 'How focused was the practice?',
+              'ratings': {
+                '0': 'Noodled, or on my phone',
+                '1': 'Played through things I know',
+                '2': 'Worked on one thing',
+                '3': 'Slow, deliberate work at the edge of what I can do',
+              },
+              'facts': ['action', 'general_notes'],
+            },
+          ],
+          'reliable': [
+            {
+              'kind': 'count',
+              'action': 'practice_guitar',
+              'target': 3,
+              'interval_days': 7,
+              'noun': 'practices',
+            },
+            {'kind': 'follow_through'},
+          ],
+        },
+      ).toJson(),
+      'cancelled_events': _cancelled[habitSubject('guitar-mindfully')],
+    }),
+    Habit.fromJson({
+      'id': 'cook-from-scratch',
+      'name': 'Cook from scratch',
+      'action_id': 'cook_lunch_dinner',
+      'action_path': 'Creative › Cooking › Cook lunch or dinner',
+      'note': 'Real meals, not reheating.',
+    }),
+  ];
 
   // ------------------------------------------------------------- History
 

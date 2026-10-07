@@ -48,7 +48,8 @@ tapping the date goes back to the last compaction.
   they are, which traits apply to them (every active one, or those
   picked, with their own parts for any) and what matters to them. The
   summary splits the time by who it was with, or by circle (people in
-  none are "Individuals").
+  none are "Individuals"). Self's page has their habits too (see
+  [Habits](#habits)).
 - **Locations** (where): the places events happen, each with a hint the
   assistant recognizes it by. The summary splits the time by where it
   was.
@@ -466,6 +467,27 @@ Claude can't apply one; only confirming it in the app does.
 
 The sample data has one open, so `SAMPLE_DATA=true` shows it.
 
+## Habits
+
+A habit is something you want to do well -- practicing guitar mindfully,
+cooking from scratch -- about one action, or every action under one
+group: its events are yours with that action, worked out from the tree
+as it is when they're judged or scored, so moving an action between
+groups moves it in or out. Like a person, it's held to traits: every
+active one unless it picks some, each with its own parts if it likes (a
+rubric for this habit alone). You're at every one of its events, so a
+part that reads events done for someone doesn't apply; one that counts
+an action names one in it, and the editor warns of one that doesn't.
+Claude judges its events beside everyone's, under `habit:<id>`, and the
+events cancelled that count against its follow-through are listed with
+it, as a person's are; to judge past events, ask Claude.
+
+Self's page lists them, with "Habit" to add one; each has a page of its
+own, and a pencil to edit it. They come from the server's `get_habits`,
+`create_habit` and `update_habit`; a server without them shows none, and
+nothing else changes. The sample data has two: one on the Guitar group
+with parts of its own, one on Cook lunch or dinner with every trait.
+
 ## Development
 
 ```sh
@@ -483,7 +505,7 @@ server.
 for trying the app without a server. Its traits are made of facets and
 cadences; its people, Self and six others in five circles, run from
 healthy to disconnected, with Claude's judgments of their recent events
-behind each score; its actions are a tree of groups three levels deep,
+behind each score; Self has two habits; its actions are a tree of groups three levels deep,
 with every status, their own and inherited colors, and health ratings,
 including skipped periods, periods not yet assessed, and a proposed
 rating. It's dated relative to today, so it never goes stale. To run the app with it,
@@ -496,7 +518,8 @@ size, in light and dark: Plan (each pane, a circle's people, searches
 of people and actions, a trait's page, a trait and an action being
 edited, and its
 actions with every status, and the time summary on each page and folded
-away), a person's page, Events (with each page of its day summary, folded away,
+away), a person's page, Self's habits, a habit's page and one being
+edited, Events (with each page of its day summary, folded away,
 what happened at an event, and a compaction proposal: the band, its
 start, a note stepped to, its notes for Claude, and waiting for Claude)
 and Notes.

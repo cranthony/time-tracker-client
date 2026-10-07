@@ -6,6 +6,23 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.13.0
+
+- Habits: what you want to do well, each about one action -- or every
+  action under a group -- and held to traits, as a person is: every
+  active trait, or those picked, with parts of its own for any (a rubric
+  for this habit alone, say). You're at every one of its events, so a
+  part that reads events done for someone is left out, and one that
+  counts an action outside it is warned of.
+- Self's page lists them, each in its action's color, under Habits;
+  "Habit" adds one. Tapping one opens its page: its action or group,
+  what it's for, its traits, and what was cancelled that counts against
+  its follow-through. Its pencil edits it -- its name, action or group,
+  note, traits and status.
+- Self, in the People pane, says how many habits they have.
+- Habits come from the server's habit tools. A server without them shows
+  none, and nothing else changes. Scores come later.
+
 ## 7.12.0
 
 - In an event's dialog, its actions, who it was with and for, and its
