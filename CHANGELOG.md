@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.18.0
+
+- A trait is added or edited on a page of its own, as a person or a
+  habit is, with room for its definition and its parts. So are someone's
+  own parts for a trait, or a habit's.
+- Time spent's target is in hours and minutes: written as you'd say it
+  ("1h 30m", "90m", "1:30"), or set with steppers, an hour or 15 minutes
+  at a time. It's still kept in minutes.
+
 ## 7.17.0
 
 - A person is prioritized by a star, as a habit is focused on: on their

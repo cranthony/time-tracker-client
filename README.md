@@ -41,7 +41,8 @@ tapping the date goes back to the last compaction.
   or group. Every part reads the events with someone, or those done for
   them. Tap one for its page: its parts, then its health (the last day's
   score, the mean of everyone scored by it, and its trend);
-  its pencil edits it.
+  its pencil edits it, on a page of its own. Time spent's target is
+  written, or stepped, in hours and minutes.
 - **People** (who): two sections, each folded away by tapping its head.
   **Self** has your health and the two habits you focus on (starred on
   a habit's page), with a way to your page. **Prioritized people** has
@@ -530,7 +531,7 @@ see [Try it with sample data](#try-it-with-sample-data).
 
 `test/visual` renders the main screens with the sample data, at a phone's
 size, in light and dark: Plan (each pane, People looking on, everyone
-as listed and sorted, a person being edited, a circle's people, searches
+as listed and sorted, a person being edited, a Time spent part's target, a circle's people, searches
 of people and actions, a trait's page, a trait and an action being
 edited, and its
 actions with every status, and the time summary on each page and folded

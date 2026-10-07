@@ -1,26 +1,27 @@
 import 'package:flutter/material.dart';
 
 import '../models/trait.dart';
+import 'edit_page.dart';
 import 'error_sheet.dart';
 import 'parts_editor.dart';
 
-/// Creates a trait (with no [trait]) or edits one -- its name, definition,
-/// status and parts -- checking it as the server does ([traitProblem]),
+/// Creates a trait (with no [trait]) or edits one, on a page of its own
+/// ([EditPage]) -- its name, definition, status and parts -- checking it as the server does ([traitProblem]),
 /// then saving it with [save], which gets it whole. Returns what [save]
 /// returned, or null if it was called off. [actions] names the actions
 /// a cadence part can count, by id.
-Future<Trait?> showTraitDialog(
+Future<Trait?> showTraitEditor(
   BuildContext context, {
   Trait? trait,
   required Future<Trait> Function(Trait trait) save,
   Map<String, String> actions = const {},
-}) => showDialog<Trait>(
-  context: context,
-  builder: (_) => _TraitDialog(trait: trait, save: save, actions: actions),
+}) => showEditPage<Trait>(
+  context,
+  _TraitEditor(trait: trait, save: save, actions: actions),
 );
 
-class _TraitDialog extends StatefulWidget {
-  const _TraitDialog({
+class _TraitEditor extends StatefulWidget {
+  const _TraitEditor({
     required this.trait,
     required this.save,
     required this.actions,
@@ -31,10 +32,10 @@ class _TraitDialog extends StatefulWidget {
   final Map<String, String> actions;
 
   @override
-  State<_TraitDialog> createState() => _TraitDialogState();
+  State<_TraitEditor> createState() => _TraitEditorState();
 }
 
-class _TraitDialogState extends State<_TraitDialog> {
+class _TraitEditorState extends State<_TraitEditor> {
   late final _name = TextEditingController(text: widget.trait?.name);
   late final _definition = TextEditingController(
     text: widget.trait?.definition,
@@ -83,91 +84,68 @@ class _TraitDialogState extends State<_TraitDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final problem = traitProblem(_trait);
-    return AlertDialog(
-      title: Text(widget.trait == null ? 'New trait' : 'Edit trait'),
-      content: SizedBox(
-        width: 460,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _name,
-                maxLength: 50,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
-              TextField(
-                controller: _definition,
-                minLines: 1,
-                maxLines: 4,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  labelText: 'Definition',
-                  hintText: 'What it means, in a sentence or two',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 12),
-              SegmentedButton<String>(
-                showSelectedIcon: false,
-                segments: [
-                  for (final MapEntry(:key, :value) in traitStatuses.entries)
-                    ButtonSegment(value: key, label: Text(value)),
-                ],
-                selected: {_status},
-                onSelectionChanged: (picked) =>
-                    setState(() => _status = picked.single),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(switch (_status) {
-                  'off' => "Kept, but not rated for now.",
-                  'archived' => 'Retired: not rated. Its history is kept.',
-                  _ => 'Rated for everyone, Self included.',
-                }, style: theme.textTheme.bodySmall),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(top: 16, bottom: 4),
-                child: Text('Parts', style: theme.textTheme.titleSmall),
-              ),
-              Text(
-                "Its score for a person is the weighted mean of its parts', "
-                'each scored over the events with or for them, leaving out '
-                'a part with nothing to score it by.',
-                style: theme.textTheme.bodySmall,
-              ),
-              PartsEditor(
-                parts: _parts,
-                actions: widget.actions,
-                onChanged: (parts) => setState(() => _parts = parts),
-              ),
-              if (problem != null)
-                Text(problem, style: TextStyle(color: theme.colorScheme.error)),
-            ],
+    return EditPage(
+      title: widget.trait == null ? 'New trait' : 'Edit ${widget.trait!.name}',
+      problem: problem,
+      saving: _saving,
+      onSave: _save,
+      children: [
+        TextField(
+          controller: _name,
+          maxLength: 50,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Name',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        TextField(
+          controller: _definition,
+          minLines: 3,
+          maxLines: null,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            labelText: 'Definition',
+            hintText: 'What it means, in a sentence or two',
+            border: OutlineInputBorder(),
+            isDense: true,
           ),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+        const SizedBox(height: 12),
+        SegmentedButton<String>(
+          showSelectedIcon: false,
+          segments: [
+            for (final MapEntry(:key, :value) in traitStatuses.entries)
+              ButtonSegment(value: key, label: Text(value)),
+          ],
+          selected: {_status},
+          onSelectionChanged: (picked) =>
+              setState(() => _status = picked.single),
         ),
-        FilledButton(
-          onPressed: _saving || problem != null ? null : _save,
-          child: _saving
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Save'),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(switch (_status) {
+            'off' => "Kept, but not rated for now.",
+            'archived' => 'Retired: not rated. Its history is kept.',
+            _ => 'Rated for everyone, Self included.',
+          }, style: theme.textTheme.bodySmall),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 16, bottom: 4),
+          child: Text('Parts', style: theme.textTheme.titleSmall),
+        ),
+        Text(
+          "Its score for a person is the weighted mean of its parts', "
+          'each scored over the events with or for them, leaving out '
+          'a part with nothing to score it by.',
+          style: theme.textTheme.bodySmall,
+        ),
+        PartsEditor(
+          parts: _parts,
+          actions: widget.actions,
+          onChanged: (parts) => setState(() => _parts = parts),
         ),
       ],
     );

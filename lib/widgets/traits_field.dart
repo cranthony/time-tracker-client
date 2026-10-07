@@ -7,8 +7,8 @@ import 'parts_editor.dart';
 /// Which of [traits] apply -- every active one, or those picked -- each
 /// with its own parts in place of the trait's, if it has any: a person's,
 /// or a habit's. Starts from [value], and calls [onChanged] with them
-/// after every change. A trait's tune button edits its own parts in a
-/// dialog titled [partsTitle], with [partsExplanation] above them and
+/// after every change. A trait's tune button edits its own parts on a
+/// page of its own titled [partsTitle], with [partsExplanation] above them and
 /// [warnings] below; [actions] names the actions and groups a part can
 /// count. [own] is whose they are: "Their own", "Its own". Shows nothing
 /// without [traits].
@@ -63,7 +63,7 @@ class _TraitsFieldState extends State<TraitsField> {
   }
 
   Future<void> _editParts(Trait trait) async {
-    final edited = await showPartsDialog(
+    final edited = await showPartsEditor(
       context,
       title: widget.partsTitle(trait),
       explanation: widget.partsExplanation(trait),

@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 /// habit -- in place of a crowded dialog: [title] in its bar, with
 /// [actions] before Save, and its fields ([children]) down the page, no
 /// wider than reads well. [problem], if there's one, is said under them,
-/// and Save is off while there's one, or while [saving]. Its close button
-/// calls it off.
+/// and Save ([saveLabel]) is off while there's one, or while [saving].
+/// Its close button calls it off.
 class EditPage extends StatelessWidget {
   const EditPage({
     super.key,
@@ -15,6 +15,7 @@ class EditPage extends StatelessWidget {
     this.actions = const [],
     this.problem,
     this.saving = false,
+    this.saveLabel = 'Save',
   });
 
   final String title;
@@ -23,6 +24,7 @@ class EditPage extends StatelessWidget {
   final List<Widget> actions;
   final String? problem;
   final bool saving;
+  final String saveLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +38,7 @@ class EditPage extends StatelessWidget {
             padding: const EdgeInsetsDirectional.only(start: 4, end: 12),
             child: FilledButton(
               onPressed: saving || problem != null ? null : onSave,
-              child: const Text('Save'),
+              child: Text(saveLabel),
             ),
           ),
         ],

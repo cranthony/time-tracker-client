@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/trait.dart';
+import 'duration_field.dart';
+import 'edit_page.dart';
 
 /// Edits a trait's parts -- each one's kind, settings, weight and whether
 /// it reads events with someone or for them -- as cards, with "Add part"
@@ -145,6 +147,15 @@ class _PartsEditorState extends State<PartsEditor> {
             for (final field in kind?.fields ?? const [])
               if (field.field == 'action')
                 _actionPicker(draft)
+              else if (field.field == 'target_min')
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, right: 8),
+                  child: DurationField(
+                    controller: draft.controller('target_min'),
+                    label: 'Target',
+                    onChanged: _changed,
+                  ),
+                )
               else
                 _input(
                   draft.controller(field.field),
@@ -442,20 +453,21 @@ class _PartDraft {
   }
 }
 
-/// Edits [parts] in a dialog titled [title], with [explanation] above
-/// them, refusing to save while they're empty or a part is wrong. Below
-/// them, [warnings] says what's amiss with them that doesn't stop them
-/// being saved. Returns the parts, or null if it was called off.
-Future<List<Part>?> showPartsDialog(
+/// Edits [parts] on a page of its own ([EditPage]) titled [title], with
+/// [explanation] above them, refusing to be done while they're empty or
+/// a part is wrong. Below them, [warnings] says what's amiss with them
+/// that doesn't stop them being saved. Returns the parts, or null if it
+/// was called off.
+Future<List<Part>?> showPartsEditor(
   BuildContext context, {
   required String title,
   String? explanation,
   required List<Part> parts,
   Map<String, String> actions = const {},
   List<String> Function(List<Part> parts)? warnings,
-}) => showDialog<List<Part>>(
-  context: context,
-  builder: (_) => _PartsDialog(
+}) => showEditPage<List<Part>>(
+  context,
+  _PartsPage(
     title: title,
     explanation: explanation,
     parts: parts,
@@ -464,8 +476,8 @@ Future<List<Part>?> showPartsDialog(
   ),
 );
 
-class _PartsDialog extends StatefulWidget {
-  const _PartsDialog({
+class _PartsPage extends StatefulWidget {
+  const _PartsPage({
     required this.title,
     required this.explanation,
     required this.parts,
@@ -480,61 +492,40 @@ class _PartsDialog extends StatefulWidget {
   final List<String> Function(List<Part> parts)? warnings;
 
   @override
-  State<_PartsDialog> createState() => _PartsDialogState();
+  State<_PartsPage> createState() => _PartsPageState();
 }
 
-class _PartsDialogState extends State<_PartsDialog> {
+class _PartsPageState extends State<_PartsPage> {
   late List<Part> _parts = widget.parts;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final problem = _parts.isEmpty
-        ? 'Give it at least one part.'
-        : partsProblem(_parts);
-    return AlertDialog(
-      title: Text(widget.title),
-      content: SizedBox(
-        width: 460,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.explanation case final explanation?)
-                Text(explanation, style: theme.textTheme.bodySmall),
-              PartsEditor(
-                parts: widget.parts,
-                actions: widget.actions,
-                onChanged: (parts) => setState(() => _parts = parts),
+    return EditPage(
+      title: widget.title,
+      saveLabel: 'Done',
+      problem: _parts.isEmpty
+          ? 'Give it at least one part.'
+          : partsProblem(_parts),
+      onSave: () => Navigator.of(context).pop(_parts),
+      children: [
+        if (widget.explanation case final explanation?)
+          Text(explanation, style: theme.textTheme.bodySmall),
+        PartsEditor(
+          parts: widget.parts,
+          actions: widget.actions,
+          onChanged: (parts) => setState(() => _parts = parts),
+        ),
+        for (final warning in widget.warnings?.call(_parts) ?? const [])
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              warning,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.tertiary,
               ),
-              for (final warning in widget.warnings?.call(_parts) ?? const [])
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    warning,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.tertiary,
-                    ),
-                  ),
-                ),
-              if (problem != null)
-                Text(problem, style: TextStyle(color: theme.colorScheme.error)),
-            ],
+            ),
           ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: problem == null
-              ? () => Navigator.of(context).pop(_parts)
-              : null,
-          child: const Text('Done'),
-        ),
       ],
     );
   }
