@@ -1119,7 +1119,7 @@ void main() {
 
     /// Taps today's timeline, away from the times, at [time].
     Future<void> tapAt(WidgetTester tester, DateTime time) async {
-      final timeline = find.byType(DayTimeline);
+      final timeline = find.byKey(ValueKey(('shown', at(30, 0))));
       await tester.tapAt(
         tester.getTopLeft(timeline) +
             Offset(tester.getSize(timeline).width / 2, y(time)),
@@ -1344,7 +1344,7 @@ void main() {
 
       // Put in Tea, it's moved before it: an arrow from the middle of where
       // it was put to the middle of where it went.
-      final timeline = find.byType(DayTimeline);
+      final timeline = find.byKey(ValueKey(('shown', at(30, 0))));
       await tester.tapAt(
         tester.getTopLeft(timeline) +
             Offset(tester.getSize(timeline).width / 2, y(at(30, 14))),
@@ -1707,20 +1707,22 @@ void main() {
 
     testWidgets('splitting and pushing: the rest of the event the cursor is '
         "inside of goes after the new one, pushing the rest -- only as far "
-        "as the day has room", (tester) async {
+        "as the days on the timeline have room", (tester) async {
       final repo = _RecordingRepository([
         Event(id: 'k', start: at(30, 11), end: at(30, 13), summary: 'Class'),
-        Event(id: 'f', start: at(30, 13), end: at(30, 23, 30), summary: 'Long'),
+        // On to 11:30 PM tomorrow, the last of the days on the timeline.
+        Event(id: 'f', start: at(30, 13), end: at(30, 47, 30), summary: 'Long'),
       ]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await plus(tester);
       await pickMode(tester, 'Split and push');
       await tapPulsing(tester, startHere);
-      // An hour would push Long past midnight: half an hour, no more.
+      // An hour would push Long past tomorrow's midnight, off the days on
+      // the timeline: half an hour, no more.
       expect(box(tester).span, (at(30, 12), at(30, 12, 30)));
       expect(pushed(tester), [
-        (start: at(30, 13, 30), end: at(30, 24), label: 'Long'),
+        (start: at(30, 13, 30), end: at(30, 48), label: 'Long'),
         (start: at(30, 12, 30), end: at(30, 13, 30), label: 'Event (the rest)'),
       ]);
       expect(overwrites(tester), isFalse);
@@ -1734,7 +1736,7 @@ void main() {
         {'end': localIsoTimestamp(at(30, 12))},
         {
           'start': localIsoTimestamp(at(30, 13, 30)),
-          'end': localIsoTimestamp(at(30, 24)),
+          'end': localIsoTimestamp(at(30, 48)),
         },
       ]);
       expect(
@@ -1815,7 +1817,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.longPress(find.text('Tea'));
       await tester.pumpAndSettle();
-      final top = tester.getTopLeft(find.byType(DayTimeline)).dy;
+      final top = tester
+          .getTopLeft(find.byKey(ValueKey(('shown', at(30, 0)))))
+          .dy;
       final label = find.text('Moving “Tea”');
       // Above the cursor, at noon, the box going down from it.
       expect(box(tester).cursor, at(30, 12));
@@ -1860,6 +1864,48 @@ void main() {
       await tester.pumpAndSettle();
       expect(repo.saved, isEmpty);
       expect(find.byType(PendingEventBoxView), findsNothing);
+    });
+
+    testWidgets('while the box is up, the days either side are stacked '
+        'above and below, without moving what is on screen; a new event '
+        'can cross midnight', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 't', start: at(30, 12), end: at(30, 13), summary: 'Tea'),
+        Event(id: 'y', start: at(29, 20), end: at(29, 21), summary: 'Late'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      final tea = tester.getTopLeft(find.text('Tea')).dy;
+      // Just the day shown.
+      expect(find.text('Late'), findsNothing);
+      expect(find.byType(DayTimeline), findsOneWidget);
+
+      await plus(tester);
+      expect(find.byType(DayTimeline), findsNWidgets(3));
+      expect(find.text('Late'), findsOneWidget);
+      expect(find.textContaining('Sep 29'), findsOneWidget);
+      expect(find.textContaining('Oct 1'), findsOneWidget);
+      // Tea where it was.
+      expect(tester.getTopLeft(find.text('Tea')).dy, moreOrLessEquals(tea));
+
+      // From 11 PM, two hours: on into tomorrow.
+      await tester.drag(find.byType(ListView), const Offset(0, -900));
+      await tester.pumpAndSettle();
+      await tapAt(tester, at(30, 23));
+      await tapButton(tester, startHere);
+      await tapButton(tester, startHere);
+      expect(box(tester).span, (at(30, 23), at(31, 1)));
+      await continueToDialog(tester);
+      await tester.enterText(inDialog(find.byType(TextField)), 'Late show');
+      await settle(tester);
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+      expect(repo.created.single['start'], localIsoTimestamp(at(30, 23)));
+      expect(repo.created.single['end'], localIsoTimestamp(at(31, 1)));
+
+      // Put away, just the day shown again.
+      expect(find.byType(DayTimeline), findsOneWidget);
+      expect(find.text('Late'), findsNothing);
     });
 
     testWidgets('Cancel makes nothing', (tester) async {
@@ -2449,7 +2495,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     List<DateTime> marked() =>
-        tester.widget<DayTimeline>(find.byType(DayTimeline).first).pendingNotes
+        tester
+            .widget<DayTimeline>(
+              find.byKey(ValueKey(('shown', at(30, 0)))).first,
+            )
+            .pendingNotes
           ..sort();
     expect(marked(), [at(29, 22), at(30, 8)]);
 
