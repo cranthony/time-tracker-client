@@ -29,6 +29,14 @@ on. Add the new version's section here at the same time; CI checks both.
   a change of plan, not against follow-through) in the same batch as the
   new event.
 
+## 7.1.2
+
+- Traits judged from what matters to a person (the seeded Thoughtful, for
+  one) are scored again: the app knows the server's "what matters" fact
+  (time-tracking-google-calendar-mcp#139), so it no longer leaves their
+  judgments out as having a fact it doesn't know. The trait editor can
+  pick it too.
+
 ## 7.1.1
 
 - An action picker opens at once: the Events page's pickers list the
