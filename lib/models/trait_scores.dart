@@ -52,6 +52,7 @@ import 'facts.dart';
 import 'habit.dart';
 import 'person.dart';
 import 'trait.dart';
+import '../widgets/durations.dart' show formatMinutes;
 
 /// How far a judgment, count or duration looks back unless it says.
 const defaultWindowDays = 30;
@@ -489,7 +490,7 @@ double _days(Duration d) => d.inMicroseconds / Duration.microsecondsPerDay;
   if (kind == 'duration') {
     target = part['target_min'] as num;
     value = (at) => _minutesIn(events, at.subtract(interval), at);
-    said = '${value(end).round()} of ${_g(target)} minutes';
+    said = '${formatMinutes(value(end))} of ${formatMinutes(target)}';
   } else {
     target = _num(part['target'], 1);
     value = (at) => events

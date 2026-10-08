@@ -150,7 +150,7 @@ void main() {
             ],
           ),
         ),
-        'Part 2: target, minutes is needed.',
+        'Part 2: target time is needed.',
       );
       expect(partProblem(const {'kind': 'facet'}), 'pick a kind.');
       expect(
@@ -256,7 +256,7 @@ void main() {
           'target_min': 60,
           'interval_days': 7,
         }),
-        '60 min of events every 7 days',
+        '1h of events every 7 days',
       );
     });
 

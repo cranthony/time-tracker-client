@@ -290,7 +290,7 @@ void main() {
     );
 
     expect(score.score, 75);
-    expect(score.parts.single.said, '180 of 240 minutes in the last 7 days');
+    expect(score.parts.single.said, '3h of 4h in the last 7 days');
   });
 
   group('follow-through', () {

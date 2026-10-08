@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.21.0
+
+- A Time spent part says its target in hours and minutes -- "1h 20m of
+  guitar every 7 days" -- and so does how its score was reached: "45m of
+  1h 20m in the last 7 days". Its field is "Target time", and its hint no
+  longer speaks of minutes.
+
 ## 7.20.0
 
 - Changes to events, and to the open compaction proposal, no longer wait
