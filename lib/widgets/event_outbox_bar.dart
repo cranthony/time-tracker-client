@@ -4,16 +4,29 @@ import '../models/event.dart';
 import '../models/plan_action.dart';
 import '../outbox/event_outbox.dart';
 import '../services/plan_memory.dart';
+import 'event_names.dart';
 import 'event_summary_dialog.dart';
 
 /// A line at the foot of the screen while changes to events wait in
 /// [outbox] to be saved: how many, and whether they're being sent,
 /// paused, waiting to try again, or stopped at one the server refused.
-/// Tapping it shows them ([showEventOutboxSheet]). Nothing, with none.
+/// Tapping it shows them ([showEventOutboxSheet]), naming the events a
+/// refusal's about from [lookup], each to [onShow]. Nothing, with none.
 class EventOutboxBar extends StatelessWidget {
-  const EventOutboxBar({super.key, required this.outbox});
+  const EventOutboxBar({
+    super.key,
+    required this.outbox,
+    this.lookup,
+    this.onShow,
+  });
 
   final EventOutbox outbox;
+
+  /// The event with an id, if it's known: to name it in a refusal.
+  final Event? Function(String id)? lookup;
+
+  /// Shows an event a refusal names, on the timeline.
+  final ValueChanged<Event>? onShow;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -56,7 +69,12 @@ class EventOutboxBar extends StatelessWidget {
       return Material(
         color: background,
         child: InkWell(
-          onTap: () => showEventOutboxSheet(context, outbox),
+          onTap: () => showEventOutboxSheet(
+            context,
+            outbox,
+            lookup: lookup,
+            onShow: onShow,
+          ),
           child: SafeArea(
             top: false,
             bottom: false,
@@ -89,28 +107,46 @@ class EventOutboxBar extends StatelessWidget {
 /// sent: each with how it's going -- sending, next, waiting its turn, to
 /// be tried again, or refused, and why -- to edit (a change to one event,
 /// a new one, or a cancel), approve as changing history, or drop. Above
-/// them, pausing or resuming the queue, and trying again now.
-Future<void> showEventOutboxSheet(BuildContext context, EventOutbox outbox) =>
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.6,
-        builder: (context, controller) => ListenableBuilder(
-          listenable: outbox,
-          builder: (context, _) =>
-              _OutboxList(outbox: outbox, controller: controller),
-        ),
+/// them, pausing or resuming the queue, and trying again now. Event ids
+/// in why one was refused are named, from the change itself or else
+/// [lookup] ([nameEvents]); those found can be shown on the timeline
+/// ([onShow]), closing the sheet.
+Future<void> showEventOutboxSheet(
+  BuildContext context,
+  EventOutbox outbox, {
+  Event? Function(String id)? lookup,
+  ValueChanged<Event>? onShow,
+}) => showModalBottomSheet<void>(
+  context: context,
+  isScrollControlled: true,
+  showDragHandle: true,
+  builder: (context) => DraggableScrollableSheet(
+    expand: false,
+    initialChildSize: 0.6,
+    builder: (context, controller) => ListenableBuilder(
+      listenable: outbox,
+      builder: (context, _) => _OutboxList(
+        outbox: outbox,
+        controller: controller,
+        lookup: lookup,
+        onShow: onShow,
       ),
-    );
+    ),
+  ),
+);
 
 class _OutboxList extends StatelessWidget {
-  const _OutboxList({required this.outbox, required this.controller});
+  const _OutboxList({
+    required this.outbox,
+    required this.controller,
+    this.lookup,
+    this.onShow,
+  });
 
   final EventOutbox outbox;
   final ScrollController controller;
+  final Event? Function(String id)? lookup;
+  final ValueChanged<Event>? onShow;
 
   @override
   Widget build(BuildContext context) {
@@ -159,7 +195,13 @@ class _OutboxList extends StatelessWidget {
             ),
           ),
         for (final (i, write) in pending.indexed)
-          _WriteTile(outbox: outbox, write: write, first: i == 0),
+          _WriteTile(
+            outbox: outbox,
+            write: write,
+            first: i == 0,
+            lookup: lookup,
+            onShow: onShow,
+          ),
         if (pending.isNotEmpty && !outbox.paused)
           Align(
             alignment: AlignmentDirectional.centerStart,
@@ -182,11 +224,28 @@ class _WriteTile extends StatelessWidget {
     required this.outbox,
     required this.write,
     required this.first,
+    this.lookup,
+    this.onShow,
   });
 
   final EventOutbox outbox;
   final PendingEventWrite write;
   final bool first;
+  final Event? Function(String id)? lookup;
+  final ValueChanged<Event>? onShow;
+
+  /// The event with [id]: one this change is of, or in its way, as it
+  /// was shown when it was made; or else [lookup]'s.
+  Event? _event(String id) {
+    for (final e in [
+      ?write.event,
+      ...write.over.cancels,
+      for (final (e, _) in write.over.updates) e,
+    ]) {
+      if (e.id == id) return e;
+    }
+    return lookup?.call(id);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -195,13 +254,25 @@ class _WriteTile extends StatelessWidget {
     final strings = MaterialLocalizations.of(context);
     String at(DateTime t) =>
         strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()));
+    // Its error, the events in it named: on their day, if it's not today.
+    final today = DateUtils.dateOnly(DateTime.now());
+    final named = switch (write.lastError) {
+      final error? => nameEvents(
+        error,
+        lookup: _event,
+        time: (t) => DateUtils.isSameDay(t.toLocal(), today)
+            ? at(t)
+            : '${strings.formatShortMonthDay(t.toLocal())}, ${at(t)}',
+      ),
+      null => null,
+    };
     final status = switch (write) {
       _ when sending => 'Sending…',
-      PendingEventWrite(refused: true, :final lastError) =>
-        "Couldn't save: ${lastError ?? 'the server said no'}. Nothing after "
-            "it is sent till it's changed, approved, or dropped.",
-      PendingEventWrite(:final nextAttemptAt?, :final lastError) =>
-        "Couldn't send it${lastError == null ? '' : ' ($lastError)'}: "
+      PendingEventWrite(refused: true) =>
+        "Couldn't save: ${named?.text ?? 'the server said no'}. Nothing "
+            "after it is sent till it's changed, approved, or dropped.",
+      PendingEventWrite(:final nextAttemptAt?) =>
+        "Couldn't send it${named == null ? '' : ' (${named.text})'}: "
             'trying again at ${at(nextAttemptAt)}.',
       _ when first && outbox.paused => 'Next, once resumed.',
       _ when first => 'Next.',
@@ -233,6 +304,30 @@ class _WriteTile extends StatelessWidget {
               ),
               isThreeLine: true,
             ),
+            if (named != null && named.events.isNotEmpty && onShow != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    for (final event in named.events)
+                      ActionChip(
+                        avatar: const Icon(Icons.visibility_outlined),
+                        label: Text(
+                          'Show ${switch (event.summary) {
+                            final s? when s.trim().isNotEmpty => '“${s.trim()}”',
+                            _ => 'it',
+                          }}',
+                        ),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          onShow!(event);
+                        },
+                      ),
+                  ],
+                ),
+              ),
             if (!sending)
               Wrap(
                 alignment: WrapAlignment.end,

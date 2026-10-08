@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.27.0
+
+- A change the server refused names the events it's about, in place of
+  their ids: "“Breakfast” (7:00 AM)", on its day if that's not today,
+  or "an event at 9:15 AM" for one the app hasn't loaded (a series'
+  instance says when it was to start). Each event named has a "Show"
+  button that closes the sheet, goes to it on the Events page and
+  rings it, pulsing, for a moment.
+
 ## 7.26.0
 
 - A person's page sums up their events: how many in its window and

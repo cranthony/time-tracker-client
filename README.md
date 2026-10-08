@@ -492,6 +492,8 @@ itself after 5s, 10s, 20s and 40s, then every minute. One the server
 refuses (an overlap, say) stops the queue there, saying why, since what
 comes after may depend on it: fix it, try again, or drop it. One refused
 as changing history can be approved from there (**Change history**).
+Why it was refused names the events it's about rather than their ids,
+each with **Show**, to go to it on the timeline, ringed.
 
 What a waiting change changes can't change again until it's saved: an
 event it cancels or adds not at all, and the fields it sets (its title,

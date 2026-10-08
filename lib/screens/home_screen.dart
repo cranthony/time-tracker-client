@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../models/event.dart';
 import '../outbox/action_outbox.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/note_outbox.dart';
@@ -77,6 +78,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// showing; broadcast, since each one listens anew.
   final _toNotes = StreamController<DateTime>.broadcast();
 
+  /// Events to show on the Events page, from a refusal naming them.
+  final _toEvents = StreamController<Event>.broadcast();
+
   /// Where Events was left, to go back there.
   final _eventsPlace = EventsPlaceStore();
 
@@ -110,10 +114,18 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// Switches to Events, and shows [event] there.
+  void _showEvent(Event event) {
+    setState(() => _tab = _Tab.events);
+    // Once the events screen is built and listening.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _toEvents.add(event));
+  }
+
   @override
   void dispose() {
     _addNoteRequests?.cancel();
     _toNotes.close();
+    _toEvents.close();
     super.dispose();
   }
 
@@ -144,6 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
           memory: _planMemory,
           proposals: widget.proposalsRepository,
           eventOutbox: widget.eventOutbox,
+          showEventRequests: _toEvents.stream,
         ),
         _Tab.plan => PlanScreen(
           repository: widget.actionsRepository,
@@ -161,7 +174,11 @@ class _HomeScreenState extends State<HomeScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (widget.eventOutbox case final outbox?)
-            EventOutboxBar(outbox: outbox),
+            EventOutboxBar(
+              outbox: outbox,
+              lookup: (id) => _planMemory.eventStore?.event(id),
+              onShow: _showEvent,
+            ),
           _navigation(),
         ],
       ),
