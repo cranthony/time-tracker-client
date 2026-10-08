@@ -556,6 +556,15 @@ Claude can't apply one; only confirming it in the app does.
   refuses an edit (an overlap, say), it stays in the dialog to fix, and
   the proposal loads again. Below the band is the plan, changed on the
   calendar; before it, history, changed only after asking.
+- **Extending it.** Its "through" tab, with a pencil, extends what
+  happened past where Claude's revision ran to: the end's cursor, its
+  anchor fixed at Claude's end, dragged, stepped to its next stop
+  ("+", "−"), or typed in (its settings, which also say what it stops
+  at) -- never back past where it ends, nor past now -- then
+  **Extend**. The notes it takes in are added to the events they fall
+  within, as yours: their badge is a person with a "+", and they say
+  so. The stretch you added is tinted apart, headed "extended by you".
+  Claude's next revision runs to now, past it.
 - **Its details**, under the bar, in pages swiped between and folded away
   like the day's summary: its notes; its follow-through -- how many
   cancels count against it, each with who it counts against, and a switch

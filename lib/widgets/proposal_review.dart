@@ -629,18 +629,29 @@ Future<bool> showRecheckedDialog(
     false;
 
 /// What became of [note], as the timeline marks it.
-ReviewNoteKind reviewNoteKind(ProposalNote note) => switch (note.use) {
-  _ when note.compacted => ReviewNoteKind.compacted,
-  NoteUse.edge => ReviewNoteKind.setsEdge,
-  NoteUse.annotates => ReviewNoteKind.annotated,
-  NoteUse.ignored => ReviewNoteKind.ignored,
-  NoteUse.unused => ReviewNoteKind.other,
-};
+ReviewNoteKind reviewNoteKind(ProposalNote note, {Proposal? of}) =>
+    switch (note.use) {
+      _ when note.compacted => ReviewNoteKind.compacted,
+      // Taken in by the user's extending it, and left as that put it.
+      NoteUse.annotates
+          when (of?.inExtension(note.time) ?? false) &&
+              note.decidedBy == DecidedBy.user =>
+        ReviewNoteKind.extended,
+      NoteUse.edge => ReviewNoteKind.setsEdge,
+      NoteUse.annotates => ReviewNoteKind.annotated,
+      NoteUse.ignored => ReviewNoteKind.ignored,
+      NoteUse.unused => ReviewNoteKind.other,
+    };
 
 /// What the proposal does with [note], in words, and who said so: "Sets
 /// the start of Breakfast", "Added to “Work” · you", "Left out · Claude".
 /// [events] names the events, by id or key.
-String noteFate(ProposalNote note, {Map<String, String> events = const {}}) {
+/// [extended]: whether the user took it in, extending the proposal.
+String noteFate(
+  ProposalNote note, {
+  Map<String, String> events = const {},
+  bool extended = false,
+}) {
   if (note.compacted) return 'Compacted earlier';
   final event = events[note.eventId] ?? note.annotates;
   // The edge it sets, whatever else it's for.
@@ -663,6 +674,7 @@ String noteFate(ProposalNote note, {Map<String, String> events = const {}}) {
     ?what,
     ?switch (note.decidedBy) {
       DecidedBy.claude => 'Claude',
+      DecidedBy.user when extended => 'you, extending what happened',
       DecidedBy.user => 'you',
       null => null,
     },
@@ -789,10 +801,14 @@ class ProposalNoteStrip extends StatelessWidget {
     this.onPrevious,
     this.onNext,
     this.onEdit,
+    this.extended = false,
   });
 
   final ProposalNote note;
   final Map<String, String> events;
+
+  /// Whether the user took it in, extending the proposal.
+  final bool extended;
   final int index;
   final int count;
   final VoidCallback? onPrevious;
@@ -802,7 +818,12 @@ class ProposalNoteStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final kind = reviewNoteKind(note);
+    final kind =
+        extended &&
+            note.use == NoteUse.annotates &&
+            note.decidedBy == DecidedBy.user
+        ? ReviewNoteKind.extended
+        : reviewNoteKind(note);
     return _DetailRow(
       badge: kind.icon,
       what: 'note',
@@ -817,7 +838,7 @@ class ProposalNoteStrip extends StatelessWidget {
           TextSpan(text: note.text ?? '(no text)'),
         ],
       ),
-      says: noteFate(note, events: events),
+      says: noteFate(note, events: events, extended: extended),
       saysColor:
           kind == ReviewNoteKind.ignored || kind == ReviewNoteKind.compacted
           ? colors.onSurfaceVariant

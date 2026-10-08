@@ -33,6 +33,13 @@ void main() {
       expect(s.next(at(9, 15), later: false), at(9, 10));
     });
 
+    test("from the server's times, in UTC: on from the line it's on", () {
+      final utc = at(9).toUtc();
+      final s = stops(edges: [utc]);
+      expect(s.next(utc, later: true), at(9, 15));
+      expect(s.next(utc, later: false), at(8, 45));
+    });
+
     test('with no grid, a minute at a time; none past the ends', () {
       expect(stops(grid: null).next(at(9), later: true), at(9, 1));
       expect(stops().next(at(0), later: false), isNull);

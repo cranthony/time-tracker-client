@@ -60,8 +60,10 @@ class CursorStops {
   /// The next stop [later] than [time] -- or earlier -- if there's one
   /// before the ends.
   DateTime? next(DateTime time, {required bool later}) {
+    // On the grid of the day as it's lived: local time.
+    time = time.toLocal();
     var line = _line(time, later: later);
-    if (line == time) {
+    if (line.isAtSameMomentAs(time)) {
       line = _line(time.add(Duration(minutes: later ? 1 : -1)), later: later);
     }
     final mark = later
@@ -78,6 +80,7 @@ class CursorStops {
   /// Where a cursor dragged to [time] stops: at an edge or a note within
   /// [reach] of it, the nearest; or else on the grid's nearest line.
   DateTime nearest(DateTime time, {required Duration reach}) {
+    time = time.toLocal();
     DateTime? best;
     for (final mark in _marks) {
       final gap = mark.difference(time).abs();

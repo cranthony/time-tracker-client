@@ -4,6 +4,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/outbox/pending_event_write.dart';
+import 'package:time_tracker_client/widgets/window_cursor.dart';
 import 'package:time_tracker_client/widgets/cursor_snap.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/models/event.dart';
@@ -571,6 +573,49 @@ void main() {
     );
   });
 
+  group('extending it', () {
+    test("says where Claude's revision ran to, and what the user added", () {
+      final p = Proposal.fromJson({
+        ...proposalJson(),
+        'through': iso(12),
+        'claude_through': iso(11),
+      });
+      expect(p.claudeThrough!.isAtSameMomentAs(at(11)), isTrue);
+      expect(p.extended, isTrue);
+      expect(p.inExtension(at(11, 30)), isTrue);
+      expect(p.inExtension(at(11)), isFalse);
+      // From a server that doesn't say: not extended.
+      expect(Proposal.fromJson(proposalJson()).extended, isFalse);
+    });
+
+    test(
+      "an edit's through is sent, kept while it waits, and shown at once",
+      () {
+        final edits = ProposalEdits(through: at(12, 30));
+        expect(edits.isEmpty, isFalse);
+        expect(edits.toJson(), {'through': iso(12, 30)});
+        expect(
+          ProposalEdits.fromJson(edits.toJson()).through!
+              .isAtSameMomentAs(at(12, 30)),
+          isTrue,
+        );
+        final waiting = PendingEventWrite(
+          id: 'w1',
+          kind: EventWriteKind.amend,
+          label: 'Extend',
+          made: now,
+          proposalId: 'abc123def456',
+          edits: edits,
+        );
+        final shown = waiting.projectProposal(
+          Proposal.fromJson(proposalJson()),
+        );
+        expect(shown.through.isAtSameMomentAs(at(12, 30)), isTrue);
+        expect(shown.claudeThrough!.isAtSameMomentAs(at(12)), isTrue);
+      },
+    );
+  });
+
   group('reviewing on the Events page', () {
     Finder inDialog(Finder f) =>
         find.descendant(of: find.byType(AlertDialog), matching: f);
@@ -603,7 +648,8 @@ void main() {
             settings:
                 AppSettings(persist: false, grid: const Duration(hours: 1))
                   ..setSnap(CursorRole.anchor, const {})
-                  ..setSnap(CursorRole.end, const {}),
+                  ..setSnap(CursorRole.end, const {})
+                  ..setSnap(CursorRole.windowEnd, const {}),
             child: EventsScreen(
               repository: events,
               serverLabel: 'offline demo',
@@ -622,6 +668,52 @@ void main() {
       FilledButton,
       'Confirm 8:00 AM – 12:00 PM happened as shown',
     );
+
+    testWidgets("its through tab extends it: the end's cursor, stepped, "
+        'then saved, the stretch added marked', (tester) async {
+      await open(
+        tester,
+        json: {
+          ...proposalJson(),
+          'through': iso(11),
+          'claude_through': iso(11),
+        },
+      );
+      await tester.tap(find.byTooltip('Extend what happened'));
+      await tester.pumpAndSettle();
+      expect(find.byType(WindowCursorView), findsOneWidget);
+      expect(find.text('11:00 AM anchor'), findsOneWidget);
+      // Nothing to extend yet.
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Extend'))
+            .onPressed,
+        isNull,
+      );
+
+      await tester.tap(find.byTooltip('Extend it later'));
+      await tester.pumpAndSettle();
+      expect(find.text('12:00 PM end'), findsOneWidget);
+      // No further than now.
+      expect(
+        tester
+            .widget<Material>(
+              find.descendant(
+                of: find.byTooltip('Extend it later'),
+                matching: find.byType(Material),
+              ),
+            )
+            .elevation,
+        0,
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Extend'));
+      await tester.pumpAndSettle();
+
+      expect(proposals.amends.single.through, at(12));
+      expect(proposals.amends.single.toJson().keys, ['through']);
+      expect(find.byType(WindowCursorView), findsNothing);
+      expect(find.text('extended by you'), findsOneWidget);
+    });
 
     Future<void> tap(WidgetTester tester, Finder finder) async {
       await tester.ensureVisible(finder);

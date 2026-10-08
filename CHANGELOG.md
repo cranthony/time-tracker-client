@@ -6,6 +6,22 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.31.0
+
+- A compaction proposal can be extended from the app, past where
+  Claude's revision ran to: tap its "through" tab, now with a pencil,
+  for the end's cursor -- its anchor fixed at Claude's end -- drag it,
+  step it to its next stop, or type its time in its settings, and
+  **Extend**. It's never cut short, nor extended past now. The notes it
+  takes in are added to the events they fall within, as yours, with a
+  badge of their own and saying so; the stretch is tinted apart,
+  headed "extended by you". Needs the server's `amend_proposal`
+  `through` and `claude_through`.
+- Fixed: a cursor on an event from the server -- moving it, say -- didn't
+  step: its "+" and "−" did nothing, as its stops were worked out in
+  local time and the server's times are in UTC. And keeping events, a
+  "+" against one is greyed out again.
+
 ## 7.30.0
 
 - A new or moved event's cursors are its **anchor**, where it was

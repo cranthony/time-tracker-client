@@ -197,6 +197,10 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     if (kind != EventWriteKind.amend || proposalId != proposal.id) {
       return proposal;
     }
+    if (edits.through case final through?
+        when through.isAfter(proposal.through)) {
+      proposal = proposal.copyWith(through: through);
+    }
     final events = [...?proposal.events];
     ProposalEvent? edited(ProposalEvent e, Map<String, Object?> json) =>
         ProposalEvent.fromJson({
