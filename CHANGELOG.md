@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.22.0
+
+- The People pane has no search: with Self and three people on it, there's
+  nothing to search for. Everyone's page, from "All people and circles",
+  keeps its search.
+- The pane's second section, the three people you prioritize, is now
+  just "People", and its "+", adding a person or a circle, is in that
+  heading.
+
 ## 7.21.0
 
 - A Time spent part says its target in hours and minutes -- "1h 20m of

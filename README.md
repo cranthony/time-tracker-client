@@ -16,10 +16,10 @@ confirm: edits to the events in it edit the proposal, not the calendar, and
 a bar above confirms it as shown or leaves a note for Claude to revise it
 (see [Compaction proposals](#compaction-proposals)). Above them, a summary shows how the day's time is split by its top
 actions; swipe it to see the top-level groups, or the time by priority. A **Plan** page
-has four panes, swiped between or picked from its tabs, each with a search
-of its own. Landing on it loads every pane at once, and it shows what it
+has four panes, swiped between or picked from its tabs, each but People
+with a search of its own. Landing on it loads every pane at once, and it shows what it
 had last time while it loads again. The Actions, People and Locations
-panes each have a summary, above the search, of the time in the 24 hours
+panes each have a summary, at the top, of the time in the 24 hours
 and 7 days before the last compaction -- or after it, with "Next" -- worked
 out from the events; its arrows move the window a day at a time, and
 tapping the date goes back to the last compaction.
@@ -45,12 +45,14 @@ tapping the date goes back to the last compaction.
   written, or stepped, in hours and minutes.
 - **People** (who): two sections, each folded away by tapping its head.
   **Self** has your health and the two habits you focus on (starred on
-  a habit's page), with a way to your page. **Prioritized people** has
+  a habit's page), with a way to your page. **People** has
   the three you keep in front (starred on a person's page, or from their
   menu), each with their
   time with you in the summary's window and the last event with them --
   or the next, looking on; both picks are kept on the device. "All
-  people and circles" opens everyone, to search, sort (by health, when
+  people and circles" opens everyone -- there's no search on the pane
+  itself, with so few on it; its "+" is in People's head --
+  to search, sort (by health, when
   last or next seen, or time in 24 hours or 7 days, either way) and
   edit, on a page of its own: each with a context
   that tells people of the same name apart, in any number of circles.

@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 
 /// One of the Plan page's panes -- Actions, Traits, People, Locations --
 /// that it swipes between: its [summary], if it has one, then a search,
-/// with the pane's [actions] beside it, over its [child], which fills the
-/// rest. The pane
+/// with the pane's [actions] beside it -- or, without [onSearch], the
+/// actions alone, at the end, and nothing with none -- over its [child],
+/// which fills the rest. The pane
 /// is kept alive while swiped away, so it keeps its search and what it
 /// loaded.
 class PlanPane extends StatefulWidget {
   const PlanPane({
     super.key,
-    required this.searchHint,
-    required this.onSearch,
+    this.searchHint = 'Search',
+    this.onSearch,
     this.actions = const [],
     this.summary,
     required this.child,
@@ -22,8 +23,9 @@ class PlanPane extends StatefulWidget {
   /// What the search searches, e.g. "Search people".
   final String searchHint;
 
-  /// Called with the search as it's typed; "" once it's cleared.
-  final ValueChanged<String> onSearch;
+  /// Called with the search as it's typed; "" once it's cleared. Null
+  /// for no search: a pane with too little in it to need one.
+  final ValueChanged<String>? onSearch;
 
   /// Buttons for the pane, after the search.
   final List<Widget> actions;
@@ -54,49 +56,53 @@ class _PlanPaneState extends State<PlanPane>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ?widget.summary,
-        Material(
-          color: theme.colorScheme.surfaceContainerLow,
-          child: Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 4, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _search,
-                    textInputAction: TextInputAction.search,
-                    decoration: InputDecoration(
-                      hintText: widget.searchHint,
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: _search.text.isEmpty
-                          ? null
-                          : IconButton(
-                              tooltip: 'Clear the search',
-                              icon: const Icon(Icons.close),
-                              onPressed: () {
-                                _search.clear();
-                                setState(() {});
-                                widget.onSearch('');
-                              },
-                            ),
-                      isDense: true,
-                      filled: true,
-                      fillColor: theme.colorScheme.surfaceContainerHighest,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
+        if (widget.onSearch != null || widget.actions.isNotEmpty)
+          Material(
+            color: theme.colorScheme.surfaceContainerLow,
+            child: Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 4, 8),
+              child: Row(
+                children: [
+                  if (widget.onSearch == null)
+                    const Spacer()
+                  else
+                    Expanded(
+                      child: TextField(
+                        controller: _search,
+                        textInputAction: TextInputAction.search,
+                        decoration: InputDecoration(
+                          hintText: widget.searchHint,
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _search.text.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Clear the search',
+                                  icon: const Icon(Icons.close),
+                                  onPressed: () {
+                                    _search.clear();
+                                    setState(() {});
+                                    widget.onSearch?.call('');
+                                  },
+                                ),
+                          isDense: true,
+                          filled: true,
+                          fillColor: theme.colorScheme.surfaceContainerHighest,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                        onChanged: (text) {
+                          setState(() {});
+                          widget.onSearch?.call(text);
+                        },
                       ),
                     ),
-                    onChanged: (text) {
-                      setState(() {});
-                      widget.onSearch(text);
-                    },
-                  ),
-                ),
-                ...widget.actions,
-              ],
+                  ...widget.actions,
+                ],
+              ),
             ),
           ),
-        ),
         Expanded(child: widget.child),
       ],
     );

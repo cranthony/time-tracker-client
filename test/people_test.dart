@@ -379,13 +379,13 @@ void main() {
       await pump(tester, prioritized: ['mom']);
 
       expect(find.text('Self'), findsOneWidget);
-      expect(find.text('Prioritized people'), findsOneWidget);
+      expect(find.text('People'), findsOneWidget);
       expect(find.text('All habits and scores'), findsOneWidget);
       expect(find.text('Mom'), findsOneWidget);
       // Only those prioritized.
       expect(find.text('Sam'), findsNothing);
 
-      await tester.tap(find.text('Prioritized people'));
+      await tester.tap(find.text('People'));
       await tester.pumpAndSettle();
       expect(find.text('Mom'), findsNothing);
       expect(find.text('All people and circles'), findsNothing);
@@ -394,7 +394,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('All habits and scores'), findsNothing);
 
-      await tester.tap(find.text('Prioritized people'));
+      await tester.tap(find.text('People'));
       await tester.pumpAndSettle();
       expect(find.text('Mom'), findsOneWidget);
     });
@@ -462,14 +462,20 @@ void main() {
       );
     });
 
-    testWidgets('finds anyone by search', (tester) async {
+    testWidgets('has no search, with so few: everyone has theirs', (
+      tester,
+    ) async {
       await pump(tester);
 
+      expect(find.byType(TextField), findsNothing);
+      // Adding stays.
+      expect(find.byTooltip('Add a person or circle'), findsOneWidget);
+
+      await openAll(tester);
       await tester.enterText(find.byType(TextField).first, 'salsa');
       await tester.pumpAndSettle();
-
       expect(find.text('Sam'), findsOneWidget);
-      expect(find.text('Prioritized people'), findsNothing);
+      expect(find.text('Mom'), findsNothing);
     });
 
     testWidgets('prioritizes someone by the star on their page, or as '
