@@ -216,8 +216,8 @@ class EventStore extends ChangeNotifier {
     _saveTimer = Timer(saveDelay, () => unawaited(_save()));
   }
 
-  /// Keeps the days, now: those within a year of today.
-  @visibleForTesting
+  /// Keeps the days, now: those within a year of today. A background
+  /// fetch waits for it, rather than the save a change sets off.
   Future<void> save() {
     _saveTimer?.cancel();
     return _save();

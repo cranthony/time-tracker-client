@@ -6,6 +6,21 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.23.0
+
+- On Android, the app fetches in the background, so what it shows is
+  fresh when it opens: 10 minutes after each time Claude's routines run
+  (compacting notes, answering the notes left on a proposal), and
+  otherwise every 6 hours. Each fetch gets the notes and when they were
+  last compacted, every action, trait, person, location and habit, and
+  the week either side of today's events.
+- The routines' times come from the server (`get_compaction_schedule_
+  hints`), where the routines set them; the app only shows them. A
+  "Background updates" page, from the menu, lists them -- each with when
+  the app updates after it -- says plainly that it otherwise updates every
+  6 hours, and when the next update is, and what the last did. A server
+  without the times leaves just the 6-hourly updates.
+
 ## 7.22.0
 
 - The People pane has no search: with Self and three people on it, there's
