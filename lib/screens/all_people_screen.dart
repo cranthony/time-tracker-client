@@ -106,7 +106,7 @@ class _AllPeopleScreenState extends State<AllPeopleScreen> {
         actions: [
           PopupMenuButton<PeopleSort>(
             tooltip: 'Sort people',
-            icon: const Icon(Icons.sort),
+            icon: const Icon(Icons.swap_vert),
             onSelected: _sortBy,
             itemBuilder: (_) => [
               for (final sort in PeopleSort.values)

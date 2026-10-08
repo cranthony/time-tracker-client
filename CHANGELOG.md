@@ -14,6 +14,8 @@ on. Add the new version's section here at the same time; CI checks both.
 - The pane's second section, the three people you prioritize, is now
   just "People", and its "+", adding a person or a circle, is in that
   heading.
+- Everyone's page sorts from a button of an up and a down arrow, not one
+  that looked like it lined up text.
 
 ## 7.21.0
 
