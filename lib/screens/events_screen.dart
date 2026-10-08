@@ -30,6 +30,7 @@ import '../widgets/pending_event_box.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/event_dialog.dart';
+import '../widgets/follow_through_dialog.dart';
 import '../widgets/other_events.dart';
 import '../widgets/event_summary_dialog.dart';
 import '../widgets/proposal_review.dart';
@@ -1494,9 +1495,13 @@ class _EventsScreenState extends State<EventsScreen> {
     if (event == null || span == null) return;
     final (start, end) = span;
     if (start == event.start && end == event.end) return _endBox();
-    final inTheWay = _createMode.overwrites
+    final makingRoom = _createMode.overwrites
         ? _overwrite(_otherEvents(event), start, end)
         : const Overwrite();
+    final asked = await askFollowThrough(context, makingRoom.cancels);
+    // Called off: the box stays up, as it was.
+    if (asked == null || !mounted) return;
+    final inTheWay = makingRoom.counting(asked);
     final messenger = ScaffoldMessenger.of(context);
     final times = {
       'start': localIsoTimestamp(start),
@@ -1520,6 +1525,7 @@ class _EventsScreenState extends State<EventsScreen> {
               updates: [(event, times), ...inTheWay.updates],
               cancels: inTheWay.cancels,
               creates: inTheWay.creates,
+              countsAgainst: inTheWay.countsAgainst,
             ),
             allowHistory: allow,
             label: inTheWay.isEmpty
@@ -1829,6 +1835,15 @@ class _EventsScreenState extends State<EventsScreen> {
       DateTime.parse(fields['end'] as String),
       later: later,
     );
+
+    // Asked of what it cancels; called off, the dialog stays open.
+    Future<Overwrite> askedInTheWayOf(Map<String, Object?> fields) async {
+      final over = inTheWayOf(fields);
+      final asked = await askFollowThrough(context, over.cancels);
+      if (asked == null) throw const CalledOff();
+      return over.counting(asked);
+    }
+
     final created = await showNewEventDialog(
       context,
       start: start,
@@ -1839,7 +1854,7 @@ class _EventsScreenState extends State<EventsScreen> {
           ? (fields) async {
               amended = await _amend(
                 ProposalEdits.over(
-                  overwrite ? inTheWayOf(fields) : const Overwrite(),
+                  overwrite ? await askedInTheWayOf(fields) : const Overwrite(),
                   creates: [proposalCreate(fields)],
                 ),
                 label: 'Add ${_nameOf(fields)}, to what happened',
@@ -1847,14 +1862,14 @@ class _EventsScreenState extends State<EventsScreen> {
               return const [];
             }
           : overwrite
-          ? (fields) => _approvingHistory(
-              at: start,
-              (allow) => _writes.createOver(
-                fields,
-                inTheWayOf(fields),
-                allowHistory: allow,
-              ),
-            )
+          ? (fields) async {
+              final over = await askedInTheWayOf(fields);
+              return _approvingHistory(
+                at: start,
+                (allow) =>
+                    _writes.createOver(fields, over, allowHistory: allow),
+              );
+            }
           : _writes.create,
       // Overwriting events, the trash makes no new event, but just
       // clears the time of them.
@@ -1884,10 +1899,13 @@ class _EventsScreenState extends State<EventsScreen> {
                 _ => 'Clear the time',
               },
               run: () async {
+                final asked = await askFollowThrough(context, inTheWay.cancels);
+                if (asked == null) throw const CalledOff();
+                final over = inTheWay.counting(asked);
                 cleared = true;
                 if (review) {
                   amended = await _amend(
-                    ProposalEdits.over(inTheWay),
+                    ProposalEdits.over(over),
                     label: 'Clear time in what happened',
                   );
                   return const [];
@@ -1895,7 +1913,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 return _approvingHistory(
                   at: start,
                   (allow) => _writes.makeRoom(
-                    inTheWay,
+                    over,
                     allowHistory: allow,
                     label: 'Clear time of ${_events(inTheWay.count)}',
                   ),

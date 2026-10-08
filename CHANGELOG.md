@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.24.0
+
+- Making room no longer cancels events without asking whether that
+  counts against follow-through. Moving or adding an event over others,
+  or clearing their time, in "Overwrite and trim" or "Overwrite and
+  cancel", asks first: each event it would cancel is listed, as a change
+  of plan unless you turn it on as a commitment dropped. "Keep them"
+  calls the change off, leaving it as it was. The same goes in a
+  compaction proposal's band.
+
 ## 7.23.0
 
 - On Android, the app fetches in the background, so what it shows is

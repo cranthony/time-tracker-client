@@ -66,7 +66,8 @@ abstract class EventsRepository {
 
   /// Makes the changes [over] says to the events in a stretch of time --
   /// cancelling, shortening and splitting them -- without a new event:
-  /// all in one `update_event` batch, the cancels as changes of plan.
+  /// all in one `update_event` batch, the cancels counting against
+  /// follow-through as [Overwrite.countsAgainst] says.
   /// Returns the events the server changed.
   Future<List<Event>> makeRoom(
     Overwrite over, {
@@ -218,7 +219,10 @@ class McpEventsRepository implements EventsRepository {
       if (over.cancels.isNotEmpty)
         'cancels': [
           for (final event in over.cancels)
-            {'event_id': event.id, 'counts_against_follow_through': false},
+            {
+              'event_id': event.id,
+              'counts_against_follow_through': over.counts(event),
+            },
         ],
       if (allowCompactedChanges) 'allow_compacted_changes': true,
     });
@@ -394,7 +398,11 @@ class InMemoryEventsRepository implements EventsRepository {
   }) async => [
     for (final (event, changes) in over.updates)
       ...await updateEvent(event, changes),
-    for (final event in over.cancels) ...await deleteEvent(event),
+    for (final event in over.cancels)
+      ...await deleteEvent(
+        event,
+        countsAgainstFollowThrough: over.counts(event),
+      ),
     for (final rest in over.creates) ...await createEvent(rest),
   ];
 
