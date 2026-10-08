@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 
-/// The app bar's menu: About, and Sign out when [onSignOut] is set.
+import '../screens/background_updates_screen.dart';
+import '../services/background_refresh.dart';
+
+/// The app bar's menu: Background updates, when the app has them (a
+/// [BackgroundRefreshScope] above), About, and Sign out when [onSignOut]
+/// is set.
 class AppMenu extends StatelessWidget {
   const AppMenu({
     super.key,
@@ -18,8 +23,14 @@ class AppMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final refresh = BackgroundRefresh.of(context);
     return PopupMenuButton<_MenuItem>(
       onSelected: (item) => switch (item) {
+        _MenuItem.updates => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => BackgroundUpdatesScreen(refresh: refresh!),
+          ),
+        ),
         _MenuItem.about => showAboutDialog(
           context: context,
           applicationName: 'Time Tracker',
@@ -29,6 +40,11 @@ class AppMenu extends StatelessWidget {
         _MenuItem.signOut => onSignOut!(),
       },
       itemBuilder: (_) => [
+        if (refresh != null)
+          const PopupMenuItem(
+            value: _MenuItem.updates,
+            child: Text('Background updates'),
+          ),
         const PopupMenuItem(value: _MenuItem.about, child: Text('About')),
         if (onSignOut != null)
           const PopupMenuItem(
@@ -40,4 +56,4 @@ class AppMenu extends StatelessWidget {
   }
 }
 
-enum _MenuItem { about, signOut }
+enum _MenuItem { updates, about, signOut }

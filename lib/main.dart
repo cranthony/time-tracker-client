@@ -20,6 +20,7 @@ import 'platform/add_note_shortcut.dart';
 import 'screens/home_screen.dart';
 import 'services/event_store.dart';
 import 'services/actions_repository.dart';
+import 'services/background_refresh.dart';
 import 'services/events_repository.dart';
 import 'services/focus_store.dart';
 import 'services/habits_repository.dart';
@@ -29,6 +30,7 @@ import 'services/people_repository.dart';
 import 'services/plan_memory.dart';
 import 'services/proposal_repository.dart';
 import 'services/response_cache.dart';
+import 'services/schedule_hints_repository.dart';
 import 'services/traits_repository.dart';
 import 'theme.dart';
 
@@ -82,6 +84,11 @@ Future<void> main() async {
         habitsRepository:
             sample?.habitsRepository() ?? InMemoryHabitsRepository(),
         focus: sample?.focusStore(),
+        backgroundRefresh: BackgroundRefresh(
+          repository: sample?.scheduleHintsRepository(),
+          // The offline demo has nothing to fetch.
+          supported: false,
+        ),
       ),
     );
     return;
@@ -120,32 +127,59 @@ Future<void> main() async {
       traitsRepository: McpTraitsRepository(client, cache: cache),
       peopleRepository: McpPeopleRepository(client, cache: cache),
       habitsRepository: McpHabitsRepository(client, cache: cache),
+      backgroundRefresh: BackgroundRefresh(
+        repository: McpScheduleHintsRepository(client, cache: cache),
+      ),
     ),
   );
 }
 
-/// Runs WorkManager's background task (Android) that saves pending notes,
-/// action saves, and changes to events.
+/// Runs WorkManager's background tasks (Android): the one that saves
+/// pending notes, action saves, and changes to events; and the background
+/// fetch ([_refreshInBackground]).
 @pragma('vm:entry-point')
-void backgroundDispatcher() => BackgroundSync.run(() {
+void backgroundDispatcher() =>
+    BackgroundSync.run(refresh: _refreshInBackground, () {
+      final client = _client(_authSession(interactive: false));
+      return [
+        NoteOutbox(
+          store: PrefsOutboxStore.notes(),
+          repository: McpNotesRepository(client),
+        ),
+        ActionOutbox(
+          store: PrefsOutboxStore.actions(),
+          repository: McpActionsRepository(client),
+        ),
+        EventOutbox(
+          store: PrefsOutboxStore.events(),
+          events: McpEventsRepository(client),
+          proposals: McpProposalRepository(client),
+          persistPause: true,
+        ),
+      ];
+    });
+
+/// Fetches what the app keeps, into what it keeps (see [refreshCaches]),
+/// says how it went, and schedules the next: after the routines' next
+/// time, or the fallback.
+Future<void> _refreshInBackground() async {
   final client = _client(_authSession(interactive: false));
-  return [
-    NoteOutbox(
-      store: PrefsOutboxStore.notes(),
-      repository: McpNotesRepository(client),
-    ),
-    ActionOutbox(
-      store: PrefsOutboxStore.actions(),
-      repository: McpActionsRepository(client),
-    ),
-    EventOutbox(
-      store: PrefsOutboxStore.events(),
-      events: McpEventsRepository(client),
-      proposals: McpProposalRepository(client),
-      persistPause: true,
-    ),
-  ];
-});
+  final cache = PrefsResponseCache();
+  final hints = McpScheduleHintsRepository(client, cache: cache);
+  final record = await refreshCaches(
+    hints: hints,
+    notes: McpNotesRepository(client, cache: cache),
+    actions: McpActionsRepository(client, cache: cache),
+    traits: McpTraitsRepository(client, cache: cache),
+    people: McpPeopleRepository(client, cache: cache),
+    habits: McpHabitsRepository(client, cache: cache),
+    events: EventStore(repository: McpEventsRepository(client), cache: cache),
+  );
+  await record.save();
+  final now = DateTime.now();
+  final next = nextRefresh(now, (await hints.cachedHints())?.hints ?? const []);
+  await BackgroundSync.scheduleRefresh(next.at.difference(now), fromTask: true);
+}
 
 AuthSession _authSession({required bool interactive}) => AuthSession(
   oauth: OAuthClient(
@@ -180,6 +214,7 @@ class TimeTrackerApp extends StatefulWidget {
     this.traitsRepository,
     this.peopleRepository,
     this.habitsRepository,
+    this.backgroundRefresh,
     this.proposalsRepository,
     this.focus,
   });
@@ -201,6 +236,10 @@ class TimeTrackerApp extends StatefulWidget {
   /// Self's habits, for every screen below (see [HabitsScope]); without
   /// it, they aren't offered.
   final HabitsRepository? habitsRepository;
+
+  /// The background fetches' times, and their schedule (see
+  /// [BackgroundRefreshScope]); without it, there are none.
+  final BackgroundRefresh? backgroundRefresh;
 
   /// The habits focused on and people prioritized; by default, those
   /// kept on the device.
@@ -247,6 +286,8 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     widget.outbox.start();
     widget.actionOutbox.start();
     _startEventOutbox();
+    // Their times, and the next fetch scheduled from them. Best effort.
+    widget.backgroundRefresh?.load().catchError((Object _) {});
     _lifecycle = AppLifecycleListener(
       onResume: _onForeground,
       onPause: _onBackground,
@@ -332,6 +373,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       // Above the navigator, so every route and dialog finds it.
       builder: (context, child) {
         Widget scoped = PlanMemoryScope(memory: _planMemory, child: child!);
+        if (widget.backgroundRefresh case final refresh?) {
+          scoped = BackgroundRefreshScope(refresh: refresh, child: scoped);
+        }
         if (widget.habitsRepository case final habits?) {
           scoped = HabitsScope(repository: habits, child: scoped);
         }

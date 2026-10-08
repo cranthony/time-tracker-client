@@ -1,6 +1,7 @@
 import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/habit.dart';
+import '../models/schedule_hints.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/person.dart';
@@ -15,6 +16,7 @@ import '../services/habits_repository.dart';
 import '../services/notes_repository.dart';
 import '../services/people_repository.dart';
 import '../services/proposal_repository.dart';
+import '../services/schedule_hints_repository.dart';
 import '../services/traits_repository.dart';
 
 /// A realistic day of notes, events and a plan -- traits, people and
@@ -63,6 +65,35 @@ class SampleData {
   );
 
   HabitsRepository habitsRepository() => InMemoryHabitsRepository(habits);
+
+  /// When Claude's routines run: compacting in the morning and evening,
+  /// and answering notes at midday.
+  ScheduleHintsRepository scheduleHintsRepository() =>
+      InMemoryScheduleHintsRepository(
+        const ScheduleHints(
+          hints: [
+            ScheduleHint(
+              id: 'h1',
+              hour: 7,
+              minute: 30,
+              label: 'Morning compaction',
+            ),
+            ScheduleHint(
+              id: 'h2',
+              hour: 12,
+              minute: 30,
+              label: 'Replies to your notes',
+            ),
+            ScheduleHint(
+              id: 'h3',
+              hour: 19,
+              minute: 0,
+              label: 'Evening compaction',
+            ),
+          ],
+          timeZone: 'America/New_York',
+        ),
+      );
 
   /// Both habits focused on, and three people prioritized. Not kept on
   /// the device.

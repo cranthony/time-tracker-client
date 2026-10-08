@@ -16,6 +16,7 @@ import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/outbox/event_outbox.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
+import 'package:time_tracker_client/screens/background_updates_screen.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
 import 'package:time_tracker_client/screens/plan_screen.dart';
@@ -24,6 +25,7 @@ import 'package:time_tracker_client/services/habits_repository.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/theme.dart';
+import 'package:time_tracker_client/services/background_refresh.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
@@ -425,6 +427,36 @@ void main() {
         );
       });
     }
+
+    // Background updates: Claude's routines' times, each with when the
+    // app updates after it; the 6-hourly fallback; and when the next and
+    // last were.
+    testWidgets('background_updates ($mode)', (tester) async {
+      await render(
+        tester,
+        'background_updates',
+        BackgroundUpdatesScreen(
+          refresh: BackgroundRefresh(
+            repository: sample.scheduleHintsRepository(),
+            supported: true,
+            clock: () => _now,
+            schedule: (_) async {},
+            lastRecord: () async => RefreshRecord(
+              at: DateTime(2026, 10, 2, 12, 43),
+              fetched: const [
+                'routine times',
+                'notes',
+                'actions',
+                'traits',
+                'people',
+                'habits',
+                'events',
+              ],
+            ),
+          ),
+        ),
+      );
+    });
 
     // The Actions section alone, as the rest are when folded away.
     testWidgets('actions ($mode)', (tester) async {

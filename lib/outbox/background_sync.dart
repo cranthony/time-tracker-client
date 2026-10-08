@@ -3,8 +3,9 @@ import 'package:workmanager/workmanager.dart';
 
 import 'outbox.dart';
 
-/// Saves pending notes and action saves while the app is in the background,
-/// on Android.
+/// Saves pending notes, action saves and changes to events while the app
+/// is in the background, on Android; and, at the times [scheduleRefresh]
+/// sets, fetches what the app keeps, so it's fresh when it opens.
 ///
 /// When the app leaves the foreground with any still pending, [schedule]
 /// asks Android's WorkManager to run a task once there's a network
@@ -19,6 +20,10 @@ class BackgroundSync {
   // Named when it only saved notes; kept, so a task already waiting is
   // the same one.
   static const _task = 'save-pending-notes';
+
+  /// The background fetch's task: one at a time, each scheduling the
+  /// next.
+  static const refreshTask = 'refresh-cache';
 
   static bool get supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -38,6 +43,25 @@ class BackgroundSync {
     ),
   );
 
+  /// Schedules the background fetch [delay] from now, once there's a
+  /// network connection, in place of one already waiting. From the fetch
+  /// itself, [fromTask], the next is queued after it, so as not to cancel
+  /// it while it runs.
+  static Future<void> scheduleRefresh(
+    Duration delay, {
+    bool fromTask = false,
+  }) => _guard(
+    () => Workmanager().registerOneOffTask(
+      refreshTask,
+      refreshTask,
+      initialDelay: delay,
+      constraints: Constraints(networkType: NetworkType.connected),
+      existingWorkPolicy: fromTask
+          ? ExistingWorkPolicy.update
+          : ExistingWorkPolicy.replace,
+    ),
+  );
+
   static Future<void> cancel() =>
       _guard(() => Workmanager().cancelByUniqueName(_task));
 
@@ -53,9 +77,18 @@ class BackgroundSync {
   }
 
   /// Call from the background dispatcher. [build] creates the outboxes,
-  /// wired to the server, without any UI.
-  static void run(List<Outbox> Function() build) {
+  /// wired to the server, without any UI; [refresh] runs the background
+  /// fetch.
+  static void run(
+    List<Outbox> Function() build, {
+    Future<void> Function()? refresh,
+  }) {
     Workmanager().executeTask((task, _) async {
+      if (task == refreshTask) {
+        // It schedules the next itself; a failed one waits for that.
+        await refresh?.call();
+        return true;
+      }
       final results = [
         for (final outbox in build()) await outbox.flush(ignoreBackoff: true),
       ];

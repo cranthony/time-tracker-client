@@ -435,6 +435,28 @@ got the note after all, so a lost response doesn't create a duplicate.
 - **Chrome:** it retries while the tab is open. A closed tab keeps the notes
   and sends them the next time you open the app.
 
+## Background updates
+
+On Android, the app fetches what it keeps while it's closed, so it's fresh
+when you open it: the notes and when they were last compacted, every
+action, trait, person, location and habit, and the week either side of
+today's events. It fetches 10 minutes after each time Claude's routines
+run -- compacting notes, answering the notes on a proposal -- and
+otherwise every 6 hours. Android's WorkManager runs each fetch around its
+time: usually within minutes, later while the phone's idle. Signed out,
+it stops till you sign in.
+
+The routines' times are **compaction schedule hints**, kept on the server
+(the Compaction Schedule tab of the calendar's metadata spreadsheet): the
+routines set them with `set_compaction_schedule_hints`, and the app reads
+them with `get_compaction_schedule_hints` -- it can't change them. They're
+in the calendar's time zone, which the app takes as the phone's. The
+**Background updates** page, from the menu, lists them, each with when the
+app updates after it; says it otherwise updates every 6 hours; and shows
+when the next update is, and what the last did. A server without the
+hints leaves just the 6-hourly updates. On the web and Windows the app
+fetches only while it's open.
+
 ## Changes waiting to save
 
 Changes to events -- editing, cancelling, adding or moving one -- and
@@ -582,7 +604,7 @@ was reached and one being edited, Events (with each page of its day summary, fol
 what happened at an event, and a compaction proposal: the band, its
 start, a note stepped to, its notes for Claude, and waiting for Claude; and
 changes waiting to save: on the timeline, their sheet, one refused, and
-an event waiting, opened)
+an event waiting, opened), the Background updates page
 and Notes.
 It writes them, at 2x and with the real fonts (Roboto and Material
 Icons, from the Flutter SDK), to `build/screenshots/`. This is the quick
