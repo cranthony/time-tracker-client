@@ -128,7 +128,8 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
 }
 
 /// Shows a new event, from [start] to [end], as [showEventSummaryDialog]
-/// shows one, blank but for its times, with its summary open to type.
+/// shows one -- who it's with and for, where it is, and its notes among
+/// the rest -- blank but for its times, with its summary open to type.
 /// "Create", once it has a summary, sends it with [create], as
 /// `create_event` takes it. Returns what [create] returned (the events the
 /// server changed), or null if it was called off. Its times are kept
@@ -144,6 +145,7 @@ Future<List<Event>?> showNewEventDialog(
   ClearTime? clear,
   Map<String, PlanAction> actions = const {},
   Future<List<PlanAction>> Function()? loadActions,
+  List<ProposalAddition> additions = const [],
 }) async {
   final values = {
     'start': localIsoTimestamp(start),
@@ -157,6 +159,10 @@ Future<List<Event>?> showNewEventDialog(
       otherEvents: otherEvents,
       actions: actions,
       loadActions: loadActions,
+      // As an event's: who and where, from its facts, and its notes.
+      whoWhere: true,
+      facets: true,
+      additions: additions,
       save: (changes) async =>
           () => create({...values, ...changes}),
       remove: switch (clear) {
