@@ -21,6 +21,7 @@ import 'error_sheet.dart';
 import 'color_picker.dart';
 import 'event_dialog.dart' show followThroughOption;
 import '../outbox/event_outbox.dart' show allWaiting;
+import 'follow_through_dialog.dart' show CalledOff;
 import 'other_events.dart';
 import 'waiting_note.dart';
 import 'facts_dialog.dart';
@@ -532,6 +533,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     try {
       final saved = await action();
       navigator.pop(SummarySaved<T>(saved as T));
+    } on CalledOff {
+      // Kept open, as it was.
+      if (mounted) setState(() => _saving = false);
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);

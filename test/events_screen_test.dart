@@ -1471,6 +1471,17 @@ void main() {
       await tester.enterText(inDialog(find.byType(TextField)), 'Party');
       await settle(tester);
       await tester.tap(find.text('Create'));
+      await settle(tester);
+      // B is cancelled to make room: asked whether that counts against
+      // follow-through. Kept, nothing's saved, and it's still open.
+      expect(find.text('Cancel an event to make room?'), findsOneWidget);
+      await tester.tap(find.text('Keep them'));
+      await settle(tester);
+      expect(repo.created, isEmpty);
+      expect(find.text('Create'), findsOneWidget);
+      await tester.tap(find.text('Create'));
+      await settle(tester);
+      await tester.tap(find.text('Cancel it'));
       // Done, so no pulse.
       await tester.pumpAndSettle();
 
@@ -1613,10 +1624,20 @@ void main() {
       await tester.enterText(inDialog(find.byType(TextField)), 'Party');
       await settle(tester);
       await tester.tap(find.text('Create'));
+      await settle(tester);
+      // A dropped, as a commitment; B, a change of plan.
+      expect(find.text('Cancel 2 events to make room?'), findsOneWidget);
+      await tester.tap(find.byType(SwitchListTile).first);
+      await settle(tester);
+      expect(
+        find.textContaining('Counts against follow-through'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Cancel them'));
       await tester.pumpAndSettle();
       expect(repo.created.single['summary'], 'Party');
       expect(repo.saved, isEmpty);
-      expect(repo.deleted, [('a', false), ('b', false)]);
+      expect(repo.deleted, [('a', true), ('b', false)]);
     });
 
     testWidgets("the new event's trash clears the time of the events under it, "
@@ -1652,6 +1673,10 @@ void main() {
       await settle(tester);
       expect(find.text('Clear this time of 2 events?'), findsOneWidget);
       await tester.tap(find.text('Clear the time'));
+      await settle(tester);
+      // B is cancelled: asked whether that counts.
+      expect(find.text('Cancel an event to make room?'), findsOneWidget);
+      await tester.tap(find.text('Cancel it'));
       await tester.pumpAndSettle();
 
       expect(repo.created, isEmpty);

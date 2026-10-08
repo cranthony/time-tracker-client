@@ -460,9 +460,26 @@ class Overwrite {
     this.cancels = const [],
     this.updates = const [],
     this.creates = const [],
+    this.countsAgainst = const {},
   });
 
   final List<Event> cancels;
+
+  /// The ids of [cancels] that count against follow-through: commitments
+  /// dropped, as the user said (see askFollowThrough). The rest are
+  /// changes of plan.
+  final Set<String> countsAgainst;
+
+  /// It, with [ids] of its cancels counting against follow-through.
+  Overwrite counting(Set<String> ids) => Overwrite(
+    cancels: cancels,
+    updates: updates,
+    creates: creates,
+    countsAgainst: ids,
+  );
+
+  /// Whether cancelling [event] counts against follow-through.
+  bool counts(Event event) => countsAgainst.contains(event.id);
   final List<(Event, Map<String, Object?>)> updates;
   final List<Map<String, Object?>> creates;
 
@@ -479,6 +496,7 @@ class Overwrite {
         {'event': e.toJson(), 'changes': changes},
     ],
     'creates': creates,
+    if (countsAgainst.isNotEmpty) 'counts_against': [...countsAgainst],
   };
 
   factory Overwrite.fromJson(Map<String, dynamic> json) {
@@ -496,6 +514,9 @@ class Overwrite {
         for (final c in json['creates'] as List? ?? [])
           (c as Map).cast<String, Object?>(),
       ],
+      countsAgainst: {
+        for (final id in json['counts_against'] as List? ?? []) '$id',
+      },
     );
   }
 }

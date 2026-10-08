@@ -73,7 +73,11 @@ health (everyone's mean), and each person's relationship health (gray,
 disconnected, to green, healthy) and history; and each of Self's habits'
 scores and health (on track to off track). Follow-through counts the events the user cancelled that
 count against each person or habit, which the server lists with them; their
-pages list them too. As it opens, the app asks
+pages list them too. Every way the app cancels an event asks whether it
+counts: cancelling it, and making room for another -- each event a move,
+a new event or clearing time would cancel is listed, a change of plan
+unless turned on. Deleting a series from an event on is a change of plan,
+as the server keeps it. As it opens, the app asks
 for the week either side of today, and for any day further back (or
 ahead) the traits read that it hasn't kept from an earlier run; the
 Events page shares those days, and its saves change the scores at once.

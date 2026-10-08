@@ -146,7 +146,8 @@ class ProposalEdits {
   }
 
   /// [over]'s changes to the events in a new or moved event's way, as
-  /// edits: the cancels as changes of plan.
+  /// edits: the cancels counting against follow-through as
+  /// [Overwrite.countsAgainst] says.
   factory ProposalEdits.over(
     Overwrite over, {
     List<Map<String, Object?>> updates = const [],
@@ -163,7 +164,7 @@ class ProposalEdits {
     ],
     cancels: [
       for (final event in over.cancels)
-        (eventId: event.id!, countsAgainstFollowThrough: false),
+        (eventId: event.id!, countsAgainstFollowThrough: over.counts(event)),
     ],
   );
 }
