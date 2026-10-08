@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../outbox/action_outbox.dart';
+import '../outbox/event_outbox.dart';
 import '../outbox/note_outbox.dart';
 import '../services/actions_repository.dart';
 import '../services/event_store.dart';
@@ -14,6 +15,7 @@ import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
+import '../widgets/event_outbox_bar.dart';
 import 'events_screen.dart';
 import 'notes_screen.dart';
 import 'plan_screen.dart';
@@ -29,6 +31,7 @@ class HomeScreen extends StatefulWidget {
     required this.actionsRepository,
     required this.outbox,
     required this.actionOutbox,
+    this.eventOutbox,
     this.proposalsRepository,
     this.onSignIn,
     this.onSignOut,
@@ -45,6 +48,11 @@ class HomeScreen extends StatefulWidget {
   final ActionsRepository actionsRepository;
   final NoteOutbox outbox;
   final ActionOutbox actionOutbox;
+
+  /// Changes to events, and the proposal, waiting to be saved: a line at
+  /// the foot of every page says so while there are any. Without it,
+  /// each is saved as it's made.
+  final EventOutbox? eventOutbox;
   final Future<void> Function()? onSignIn;
   final Future<void> Function()? onSignOut;
 
@@ -135,6 +143,7 @@ class _HomeScreenState extends State<HomeScreen> {
           placeStore: _eventsPlace,
           memory: _planMemory,
           proposals: widget.proposalsRepository,
+          eventOutbox: widget.eventOutbox,
         ),
         _Tab.plan => PlanScreen(
           repository: widget.actionsRepository,
@@ -148,29 +157,38 @@ class _HomeScreenState extends State<HomeScreen> {
           version: widget.version,
         ),
       },
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab.index,
-        onDestinationSelected: (i) => setState(() => _tab = _Tab.values[i]),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.edit_note_outlined),
-            selectedIcon: Icon(Icons.edit_note),
-            label: 'Notes',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.event_outlined),
-            selectedIcon: Icon(Icons.event),
-            label: 'Events',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.explore_outlined),
-            selectedIcon: Icon(Icons.explore),
-            label: 'Plan',
-          ),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (widget.eventOutbox case final outbox?)
+            EventOutboxBar(outbox: outbox),
+          _navigation(),
         ],
       ),
     );
   }
+
+  Widget _navigation() => NavigationBar(
+    selectedIndex: _tab.index,
+    onDestinationSelected: (i) => setState(() => _tab = _Tab.values[i]),
+    destinations: const [
+      NavigationDestination(
+        icon: Icon(Icons.edit_note_outlined),
+        selectedIcon: Icon(Icons.edit_note),
+        label: 'Notes',
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.event_outlined),
+        selectedIcon: Icon(Icons.event),
+        label: 'Events',
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.explore_outlined),
+        selectedIcon: Icon(Icons.explore),
+        label: 'Plan',
+      ),
+    ],
+  );
 }
 
 enum _Tab { notes, events, plan }

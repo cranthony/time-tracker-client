@@ -470,4 +470,32 @@ class Overwrite {
   int get count => cancels.length + updates.length;
 
   bool get isEmpty => count == 0;
+
+  /// It as it's kept, waiting to be sent: each event whole, as it was.
+  Map<String, Object?> toJson() => {
+    'cancels': [for (final e in cancels) e.toJson()],
+    'updates': [
+      for (final (e, changes) in updates)
+        {'event': e.toJson(), 'changes': changes},
+    ],
+    'creates': creates,
+  };
+
+  factory Overwrite.fromJson(Map<String, dynamic> json) {
+    Event event(Object? e) => Event.fromJson((e as Map).cast());
+    return Overwrite(
+      cancels: [for (final e in json['cancels'] as List? ?? []) event(e)],
+      updates: [
+        for (final u in json['updates'] as List? ?? [])
+          (
+            event((u as Map)['event']),
+            (u['changes'] as Map).cast<String, Object?>(),
+          ),
+      ],
+      creates: [
+        for (final c in json['creates'] as List? ?? [])
+          (c as Map).cast<String, Object?>(),
+      ],
+    );
+  }
 }

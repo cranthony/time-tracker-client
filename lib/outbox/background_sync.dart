@@ -61,7 +61,8 @@ class BackgroundSync {
       ];
       // Returning false has WorkManager retry later. Nothing will change
       // without the user signing in, so stop in that case.
-      return results.every((r) => r.remaining == 0) ||
+      // Nor will anything be sent past a write the server refused.
+      return results.every((r) => r.remaining == 0 || r.blocked) ||
           results.any((r) => r.needsSignIn);
     });
   }

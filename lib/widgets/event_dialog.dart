@@ -23,6 +23,9 @@ import 'properties_dialog.dart';
 /// With [cancel] too, "Cancel event" cancels it after asking -- and asks
 /// whether that counts against follow-through (see
 /// [followThroughOption]) -- returning what [cancel] returned.
+///
+/// What of it's [waiting] for a change to be saved -- its fields, or all
+/// of it -- can't be changed, and says so (see [waitsFor]).
 Future<List<Event>?> showEventDialog(
   BuildContext context,
   Event event, {
@@ -32,6 +35,7 @@ Future<List<Event>?> showEventDialog(
   OtherEvents otherEvents = const OtherEvents.none(),
   Future<List<PlanAction>> Function()? actions,
   Future<bool> Function(String seriesId)? openSeries,
+  Set<String> waiting = const {},
 }) {
   final typed = event.toJson();
   final strings = MaterialLocalizations.of(context);
@@ -114,6 +118,7 @@ Future<List<Event>?> showEventDialog(
             option: followThroughOption,
           ),
     signInHint: 'Sign in again from the Events page, then try again.',
+    waiting: waiting,
   );
 }
 

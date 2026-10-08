@@ -102,6 +102,49 @@ class ProposalEdits {
       ],
   };
 
+  /// Them as [toJson] wrote them, as they're kept waiting to be sent.
+  factory ProposalEdits.fromJson(Map<String, dynamic> json) {
+    List<Map<String, Object?>> maps(String key) => [
+      for (final m in json[key] as List? ?? []) (m as Map).cast(),
+    ];
+    return ProposalEdits(
+      updates: maps('updates'),
+      creates: maps('creates'),
+      cancels: [
+        for (final c in maps('cancels'))
+          (
+            eventId: '${c['event_id']}',
+            countsAgainstFollowThrough:
+                c['counts_against_follow_through'] == true,
+          ),
+      ],
+      asPlanned: [for (final id in json['as_planned'] as List? ?? []) '$id'],
+      notes: [
+        for (final n in maps('notes'))
+          (
+            noteId: '${n['note_id']}',
+            ignore: n['use'] == 'ignore',
+            eventId: n['event_id'] as String?,
+          ),
+      ],
+      additions: [
+        for (final a in maps('additions'))
+          (
+            ref: '${a['ref']}',
+            use: AdditionUse.values.byName('${a['use']}'),
+            id: a['id'] as String?,
+            name: a['name'] as String?,
+            detail: (a['hint'] ?? a['context']) as String?,
+            // Only where a detail goes: a location's hint, else a
+            // person's context.
+            kind: a.containsKey('hint')
+                ? AdditionKind.location
+                : AdditionKind.person,
+          ),
+      ],
+    );
+  }
+
   /// [over]'s changes to the events in a new or moved event's way, as
   /// edits: the cancels as changes of plan.
   factory ProposalEdits.over(

@@ -20,7 +20,9 @@ import '../services/traits_repository.dart';
 import 'error_sheet.dart';
 import 'color_picker.dart';
 import 'event_dialog.dart' show followThroughOption;
+import '../outbox/event_outbox.dart' show allWaiting;
 import 'other_events.dart';
+import 'waiting_note.dart';
 import 'facts_dialog.dart';
 import 'picker_sheet.dart';
 import 'plow_icon.dart';
@@ -61,7 +63,9 @@ final class SummaryDetails<T> extends SummaryOutcome<T> {
 /// chip calls [openSeries] with the series' id; if that saved a change
 /// (returning true), this closes, returning null. "Details" closes it
 /// with [SummaryDetails]. Changing its times keeps them clear of the
-/// events in [otherEvents].
+/// events in [otherEvents]. What of it's [waiting] for a change to be
+/// saved -- its fields, or with [allWaiting], all of it -- can't be
+/// changed, and says so.
 Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
   BuildContext context,
   Event event, {
@@ -72,6 +76,7 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
   Future<List<PlanAction>> Function()? loadActions,
   Future<bool> Function(String seriesId)? openSeries,
   List<ProposalAddition> additions = const [],
+  Set<String> waiting = const {},
 }) {
   final seriesId = event.properties['recurring_event_id'] as String?;
   final day = MaterialLocalizations.of(context).formatMediumDate(event.start);
@@ -116,6 +121,7 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
         _ => null,
       },
       additions: additions,
+      waiting: waiting,
     ),
   );
 }
@@ -290,7 +296,12 @@ class _SummaryDialog<T> extends StatefulWidget {
     this.whoWhere = false,
     this.facets = false,
     this.additions = const [],
+    this.waiting = const {},
   });
+
+  /// What of it waits for a change to be saved, and so can't change; see
+  /// [waitsFor].
+  final Set<String> waiting;
 
   /// As the server sent them, with times in local time, and a series'
   /// repeat as a [Repeat].
@@ -434,7 +445,10 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   bool _saving = false;
   String? _error;
 
-  bool get _editable => widget.save != null;
+  bool get _editable => widget.save != null && !widget.waiting.contains('*');
+
+  /// Whether [key] waits for a change to be saved.
+  bool _waits(String key) => waitsFor(widget.waiting, key);
 
   @override
   void initState() {
@@ -593,6 +607,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                     style: TextStyle(color: theme.colorScheme.onErrorContainer),
                   ),
                 ),
+              if (widget.waiting.isNotEmpty)
+                WaitingNote(waiting: widget.waiting),
               _topRow(context),
               if (_editing == _Field.priority) _priorityEditor(context),
               _summary(context),
@@ -731,7 +747,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               ? "Priority, from its actions"
               : 'Priority',
           child: InkWell(
-            onTap: _editable && !_saving ? () => _open(_Field.priority) : null,
+            onTap: _editable && !_saving && !_waits('priority')
+                ? () => _open(_Field.priority)
+                : null,
             borderRadius: BorderRadius.circular(6),
             child: Padding(padding: const EdgeInsets.all(4), child: chip),
           ),
@@ -853,7 +871,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     }
     final summary = _value('summary') as String?;
     return InkWell(
-      onTap: _editable && !_saving ? () => _open(_Field.summary) : null,
+      onTap: _editable && !_saving && !_waits('summary')
+          ? () => _open(_Field.summary)
+          : null,
       borderRadius: BorderRadius.circular(6),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(4, 4, 4, 2),
@@ -897,7 +917,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               '${strings.formatMediumDate(end)}, ${time(end)}';
     final editing = _editing == _Field.time;
     final line = InkWell(
-      onTap: _editable && !_saving ? () => _open(_Field.time) : null,
+      onTap: _editable && !_saving && !_waits('start')
+          ? () => _open(_Field.time)
+          : null,
       borderRadius: BorderRadius.circular(6),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -1210,11 +1232,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     String? changedKey,
   }) {
     final theme = Theme.of(context);
+    final waits = changedKey != null && _waits(changedKey);
     return Column(
       children: [
         Divider(height: 1, color: theme.colorScheme.outlineVariant),
         InkWell(
-          onTap: _editable && !_saving ? onTap : null,
+          onTap: _editable && !_saving && !waits ? onTap : null,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
             child: Row(
@@ -1231,6 +1254,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(child: child),
+                if (waits) const WaitingMark(),
                 if (changedKey != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),

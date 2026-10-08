@@ -10,7 +10,10 @@ import 'package:http/http.dart' as http;
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/outbox/action_outbox.dart';
 import 'package:time_tracker_client/demo/sample_data.dart';
+import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
+import 'package:time_tracker_client/outbox/event_outbox.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
@@ -29,6 +32,7 @@ import 'package:time_tracker_client/widgets/time_summary.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/actions_picker.dart';
 import 'package:time_tracker_client/widgets/error_sheet.dart';
+import 'package:time_tracker_client/widgets/event_outbox_bar.dart';
 import 'package:time_tracker_client/widgets/parts_editor.dart';
 
 /// A fixed moment, so every run renders the same thing.
@@ -568,6 +572,83 @@ void main() {
     testWidgets('events ($mode)', (tester) async {
       await render(tester, 'events', events());
     });
+
+    // Changes waiting to save, made while paused: lunch renamed and run
+    // late, and the call with Mom cancelled -- each marked on the
+    // timeline, the bar at the foot saying so; the bar's sheet of them;
+    // lunch, waiting, opened; and the first refused by the server,
+    // stopping the queue.
+    for (final (name, refused, step) in [
+      ('events_waiting', false, ''),
+      ('outbox_sheet', false, 'sheet'),
+      ('event_waiting', false, 'open'),
+      ('outbox_refused', true, 'sheet'),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        final repository = sample.eventsRepository();
+        Event event(String id) => sample.events.firstWhere((e) => e.id == id);
+        final outbox = EventOutbox(
+          store: InMemoryOutboxStore()
+            ..items = [
+              PendingEventWrite(
+                id: 'w1',
+                kind: EventWriteKind.update,
+                label: 'Change “Lunch with Sam”',
+                made: _now.subtract(const Duration(minutes: 20)),
+                event: event('lunch'),
+                changes: {
+                  'summary': 'Lunch with Sam & Priya',
+                  'end': localIsoTimestamp(DateTime(2026, 10, 2, 13, 15)),
+                },
+                refused: refused,
+                lastError: refused
+                    ? 'it would overlap “Call Mom”, 1:00 PM – 1:30 PM'
+                    : null,
+              ),
+              PendingEventWrite(
+                id: 'w2',
+                kind: EventWriteKind.cancel,
+                label: 'Cancel “Call Mom”',
+                made: _now.subtract(const Duration(minutes: 5)),
+                event: event('call'),
+              ),
+            ],
+          events: repository,
+        )..setPaused(!refused);
+        addTearDown(outbox.dispose);
+        await render(
+          tester,
+          name,
+          Scaffold(
+            body: EventsScreen(
+              repository: repository,
+              notesRepository: sample.notesRepository(),
+              actionsRepository: sample.actionsRepository(),
+              eventOutbox: outbox,
+              serverLabel: 'sample',
+              clock: () => _now,
+            ),
+            bottomNavigationBar: EventOutboxBar(outbox: outbox),
+          ),
+          then: () async {
+            unawaited(outbox.refresh());
+            await tester.pumpAndSettle();
+            switch (step) {
+              case 'sheet':
+                await tester.tap(find.byType(EventOutboxBar));
+                await tester.pumpAndSettle();
+              case 'open':
+                await tester.ensureVisible(
+                  find.text('Lunch with Sam & Priya').first,
+                );
+                await tester.pumpAndSettle();
+                await tester.tap(find.text('Lunch with Sam & Priya').first);
+                await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
 
     // A compaction proposal open: what happened, to confirm, in a band
     // ending at its through, each change marked -- those since the

@@ -55,6 +55,11 @@ abstract interface class OutboxItem<T extends OutboxItem<T>> {
 /// [send] sends an item, giving an [R] (e.g. the id the server gave it);
 /// [failed] says when sending one didn't go well.
 ///
+/// With [inOrder], nothing is sent past an item that's waiting: one the
+/// server refused stops the queue there until it's retried or dropped,
+/// as what comes after may depend on it. While [paused], nothing is sent
+/// at all.
+///
 /// What's saved, here or by the background task, stays in [justSaved]
 /// until a fetch of what the server has, started after it was saved, is
 /// in (see [fetching]), so whatever shows the items can show it until
@@ -156,6 +161,29 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   @protected
   List<T> order(List<T> items) => items;
 
+  /// Whether items go strictly in [order]: none is sent before those
+  /// ahead of it are saved, so one refused, or waiting to be tried again,
+  /// holds up the rest. Otherwise any that's due is sent.
+  @protected
+  bool get inOrder => false;
+
+  /// Whether sending is paused: nothing is sent until it's resumed.
+  bool get paused => _paused;
+  bool _paused = false;
+
+  /// Pauses sending, or resumes it. A request already in flight still
+  /// finishes.
+  void setPaused(bool paused) {
+    if (paused == _paused) return;
+    _paused = paused;
+    _notify();
+    if (paused) {
+      _timer?.cancel();
+    } else {
+      schedule(immediately: true);
+    }
+  }
+
   /// Called when a round of sending starts, e.g. to forget what was
   /// fetched for the last one.
   @protected
@@ -224,11 +252,18 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   Future<FlushResult> _flush(bool ignoreBackoff) async {
     flushStarting();
     while (true) {
+      if (_paused) break;
       await refresh();
       final now = _clock();
-      final next = _items
-          .where((item) => _isDue(item, now, ignoreBackoff))
-          .firstOrNull;
+      final next = inOrder
+          // The first: if it isn't due, nothing is.
+          ? _items
+                .take(1)
+                .where((item) => _isDue(item, now, ignoreBackoff))
+                .firstOrNull
+          : _items
+                .where((item) => _isDue(item, now, ignoreBackoff))
+                .firstOrNull;
       if (next == null) break;
 
       // Claimed before the first await, so dropping it is refused from
@@ -289,6 +324,8 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
           );
           await _replace(kept);
           failed(kept);
+          // In order, what's after it waits for it.
+          if (inOrder) break;
           continue;
         }
         final attempts = next.attempts + 1;
@@ -314,6 +351,7 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   FlushResult _result() => FlushResult(
     remaining: _items.where((item) => !item.refused).length,
     needsSignIn: _needsSignIn,
+    blocked: inOrder && (_items.firstOrNull?.refused ?? false),
   );
 
   bool _isDue(T item, DateTime now, bool ignoreBackoff) {
@@ -334,10 +372,10 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   @protected
   void schedule({bool immediately = false}) {
     _timer?.cancel();
-    if (!_running || _needsSignIn) return;
+    if (!_running || _needsSignIn || _paused) return;
     final now = _clock();
     DateTime? next = immediately && hasUnsent ? now : null;
-    for (final item in _items) {
+    for (final item in inOrder ? _items.take(1) : _items) {
       if (item.refused) continue;
       final at = _inFlightElsewhere(item, now)
           // Look again soon: the background task may finish it any moment.
@@ -389,10 +427,18 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
 }
 
 class FlushResult {
-  const FlushResult({required this.remaining, required this.needsSignIn});
+  const FlushResult({
+    required this.remaining,
+    required this.needsSignIn,
+    this.blocked = false,
+  });
 
   /// How many items are left to send, not counting those the server
   /// refused, which wait to be retried.
   final int remaining;
   final bool needsSignIn;
+
+  /// Whether, in order, the items left wait behind one the server
+  /// refused: nothing will be sent until someone deals with it.
+  final bool blocked;
 }
