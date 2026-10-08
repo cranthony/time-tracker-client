@@ -88,6 +88,19 @@ class EventStore extends ChangeNotifier {
       ..sort((a, b) => a.start.compareTo(b.start));
   }
 
+  /// The event here with [id], as last asked for; null if it isn't here.
+  Event? event(String id) {
+    ({DateTime at, Event event})? found;
+    for (final kept in _days.values) {
+      for (final e in kept.events) {
+        if (e.id == id && (found == null || kept.at.isAfter(found.at))) {
+          found = (at: kept.at, event: e);
+        }
+      }
+    }
+    return found?.event;
+  }
+
   /// The first and last days here, if any are.
   (DateTime, DateTime)? get span {
     if (_days.isEmpty) return null;

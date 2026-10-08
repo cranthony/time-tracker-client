@@ -620,6 +620,56 @@ void main() {
       expect(find.text('Try again'), findsOneWidget);
       expect(find.text('Edit'), findsOneWidget);
     });
+
+    testWidgets('a refusal names the events it mentions, each to show', (
+      tester,
+    ) async {
+      const id = 'lunch0123456789abcdefgh';
+      final server = _Server([_event(id, 'Lunch', 12, 13)]);
+      final outbox = _outbox(server)..setPaused(true);
+      addTearDown(outbox.dispose);
+      final shown = <Event>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: EventsScreen(
+              repository: server,
+              serverLabel: 'test',
+              eventOutbox: outbox,
+              clock: () => _at(9),
+            ),
+            bottomNavigationBar: EventOutboxBar(
+              outbox: outbox,
+              onShow: shown.add,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await rename(tester, 'Lunch', 'Long lunch');
+      server.refuse = McpException(
+        "update_event: '$id' would overlap 2k2j75c3mjlhqr3e8sibgrfjpq",
+      );
+      outbox.setPaused(false);
+      unawaited(outbox.flush());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(EventOutboxBar));
+      await tester.pumpAndSettle();
+
+      // On its day, not being today.
+      expect(
+        find.textContaining(
+          'update_event: “Lunch” (Sep 30, 12:00 PM) would overlap an event.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining(id), findsNothing);
+      await tester.tap(find.text('Show “Lunch”'));
+      await tester.pumpAndSettle();
+      expect(shown.single.id, id);
+      // The sheet's closed, to see it.
+      expect(find.text('Changes waiting to save'), findsNothing);
+    });
   });
 }
 

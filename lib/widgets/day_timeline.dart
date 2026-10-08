@@ -375,7 +375,7 @@ List<T> placeLabels<T>(
 ///
 /// Tapping an event calls [onTap] with it, and pressing and holding it,
 /// [onLongPress]; tapping anywhere else calls [onTapTime] with the time
-/// there.
+/// there. The [highlighted] event is ringed, pulsing.
 class DayTimeline extends StatelessWidget {
   const DayTimeline({
     super.key,
@@ -390,6 +390,7 @@ class DayTimeline extends StatelessWidget {
     this.onLongPress,
     this.onTapTime,
     this.faded,
+    this.highlighted,
     this.axis = true,
     this.review,
     this.marks = const {},
@@ -417,6 +418,9 @@ class DayTimeline extends StatelessWidget {
 
   /// The id of an event to draw faintly: one being moved from there.
   final String? faded;
+
+  /// The id of an event to pick out: ringed, pulsing.
+  final String? highlighted;
 
   /// Called with the time at a tap that isn't on an event.
   final ValueChanged<DateTime>? onTapTime;
@@ -642,6 +646,16 @@ class DayTimeline extends StatelessWidget {
                               ),
                         ),
                       ),
+                    for (final placement in placements)
+                      if (highlighted != null &&
+                          placement.event.id == highlighted)
+                        Positioned(
+                          left: _cardsLeft - 3,
+                          top: placement.top - 3,
+                          width: cardWidth + 6,
+                          height: placement.bottom - placement.top + 6,
+                          child: const IgnorePointer(child: _Highlight()),
+                        ),
                     for (final overlap in eventOverlaps(
                       events,
                       day: day,
@@ -757,6 +771,48 @@ class DayTimeline extends StatelessWidget {
         ),
     ],
   );
+}
+
+/// A ring round an event, in the primary color, pulsing: to pick it out.
+class _Highlight extends StatefulWidget {
+  const _Highlight();
+
+  @override
+  State<_Highlight> createState() => _HighlightState();
+}
+
+class _HighlightState extends State<_Highlight>
+    with SingleTickerProviderStateMixin {
+  late final _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 600),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return Semantics(
+      label: 'Shown',
+      child: AnimatedBuilder(
+        animation: _pulse,
+        builder: (context, _) => DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(_cardRadius + 3),
+            border: Border.all(
+              color: color.withValues(alpha: 0.5 + 0.5 * _pulse.value),
+              width: 3,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Where events overlap, from [top] to [bottom]: a red tint over them,
