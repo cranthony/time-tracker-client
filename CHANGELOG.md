@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.26.0
+
+- A person's page sums up their events: how many in its window and
+  their time, the most recent and the oldest. "All events" opens every
+  one on a page of its own. The events cancelled against their
+  follow-through are summed up the same way -- how many, the time they
+  were planned for, the most recent and the oldest -- with "All
+  cancelled events" for the lot.
+- On the timeline, where events overlap, that time is tinted red and
+  labeled "overlap". It only shows them; nothing else changes.
+
 ## 7.25.0
 
 - A new event's dialog has what an event's has: who it's with and for,

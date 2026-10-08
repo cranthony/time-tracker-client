@@ -6,7 +6,8 @@ record a new one; tap a note to change its description or time, or to
 delete it. An **Events** page, from the bar at the bottom, shows a day's
 events from your calendar; tap one to see or edit it, including the actions
 done at it and what happened: who it was with and for, where, and notes.
-Its **+** puts a cursor at now, which a tap on the timeline moves:
+Where events overlap, the timeline tints that time red and labels it
+"overlap". Its **+** puts a cursor at now, which a tap on the timeline moves:
 start an event there or end it there, tapping or dragging to its other
 end, either keeping clear of the events already there or overwriting
 them; drag either end's handle to adjust it; then ✓ to fill it in. While
@@ -58,7 +59,11 @@ tapping the date goes back to the last compaction.
   that tells people of the same name apart, in any number of circles.
   Tap a circle to see only its people; tap a person for their page: who
   they are, which traits apply to them (every active one, or those
-  picked, with their own parts for any) and what matters to them. The
+  picked, with their own parts for any) and what matters to them; and,
+  once scored, their events in brief -- how many and their time, the
+  most recent and the oldest -- and those cancelled against their
+  follow-through likewise, each with a button, "All events" or "All
+  cancelled events", to a page of them all. The
   summary splits the time by who it was with, or by circle (people in
   none are "Individuals"). Self's page has their habits too (see
   [Habits](#habits)).
@@ -604,7 +609,8 @@ of people and actions, a trait's page, a trait and an action being
 edited, and its
 actions with every status, and the time summary on each page and folded
 away), a person's page, Self's habits, a habit's page, how one of its scores
-was reached and one being edited, Events (with each page of its day summary, folded away,
+was reached and one being edited, Events (with each page of its day summary, folded away, events that
+overlap,
 what happened at an event, and a compaction proposal: the band, its
 start, a note stepped to, its notes for Claude, and waiting for Claude; and
 changes waiting to save: on the timeline, their sheet, one refused, and

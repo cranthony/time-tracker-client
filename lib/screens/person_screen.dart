@@ -9,9 +9,11 @@ import '../models/trait_scores.dart';
 import '../services/habits_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
+import '../widgets/durations.dart';
 import '../widgets/focus_buttons.dart';
 import '../widgets/habit_dialog.dart';
 import '../widgets/health.dart';
+import 'event_list_screen.dart';
 import 'habit_screen.dart';
 import 'trait_breakdown.dart';
 
@@ -395,18 +397,33 @@ class _PersonScreenState extends State<PersonScreen> {
     ];
   }
 
-  List<Widget> _timeline(ThemeData theme) => eventTiles(
+  /// Their events in brief -- how many, their time, the most recent and
+  /// the oldest -- with "All events" opening the lot on a page of its
+  /// own.
+  List<Widget> _timeline(ThemeData theme) => eventsSummary(
     context,
     _scores?.digest(_person.id),
     noteOf: _person.id,
     actionNames: widget.actionNames,
     personNames: widget.personNames,
     locationNames: widget.locationNames,
+    onAll: () => _openList(
+      'Events',
+      (context) => eventTiles(
+        context,
+        _scores?.digest(_person.id),
+        noteOf: _person.id,
+        actionNames: widget.actionNames,
+        personNames: widget.personNames,
+        locationNames: widget.locationNames,
+      ),
+    ),
   );
 
   /// The events the user cancelled that count against their
-  /// follow-through.
-  List<Widget> _cancelled(ThemeData theme) => cancelledTiles(
+  /// follow-through, in brief as their events are, with "All cancelled
+  /// events" opening the lot.
+  List<Widget> _cancelled(ThemeData theme) => cancelledSummary(
     context,
     _person.cancelledEvents,
     whose: _person.isSelf ? 'your' : 'their',
@@ -414,7 +431,32 @@ class _PersonScreenState extends State<PersonScreen> {
     withWhom: _person.isSelf ? null : 'with them',
     traitList: _traitList,
     actionNames: widget.actionNames,
+    onAll: () => _openList(
+      'Cancelled',
+      (context) => cancelledTiles(
+        context,
+        _person.cancelledEvents,
+        whose: _person.isSelf ? 'your' : 'their',
+        whom: _person.isSelf ? 'you' : 'them',
+        withWhom: _person.isSelf ? null : 'with them',
+        traitList: _traitList,
+        actionNames: widget.actionNames,
+      ),
+    ),
   );
+
+  /// A page of [title] listing what [tiles] builds, built again as
+  /// they're scored again.
+  void _openList(String title, List<Widget> Function(BuildContext) tiles) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => EventListScreen(
+            title: '$title · ${personName(_person)}',
+            listenable: widget.memory,
+            tiles: tiles,
+          ),
+        ),
+      );
 
   Widget _heading(ThemeData theme, String text) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
@@ -485,41 +527,160 @@ List<Widget> cancelledTiles(
       ),
     ];
   }
+  return [
+    for (final c in cancelled)
+      cancelledTile(
+        context,
+        c,
+        whom: whom,
+        withWhom: withWhom,
+        traitList: traitList,
+        actionNames: actionNames,
+      ),
+  ];
+}
+
+/// One event the user cancelled, [c]: when it was planned, what was to
+/// be done, whether it was for [whom] or [withWhom], and when and how it
+/// was cancelled, with the traits (from [traitList]) it counted against.
+Widget cancelledTile(
+  BuildContext context,
+  CancelledEvent c, {
+  required String whom,
+  String? withWhom,
+  required Map<String, Trait> traitList,
+  required Map<String?, String> actionNames,
+}) {
+  final theme = Theme.of(context);
   final localizations = MaterialLocalizations.of(context);
   String at(DateTime t) =>
       '${localizations.formatMediumDate(t)}, '
       '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(t))}';
+  return ListTile(
+    dense: true,
+    leading: Icon(Icons.event_busy, color: theme.colorScheme.error),
+    title: Text(c.summary ?? '(no title)'),
+    subtitle: Text(
+      [
+        [
+          'Planned for ${at(c.start)}',
+          if (c.engagement == 'for') 'for $whom' else ?withWhom,
+        ].join(', '),
+        if (c.actionIds.isNotEmpty)
+          [for (final id in c.actionIds) actionNames[id] ?? id].join(', '),
+        [
+          switch (c.cancelledAt) {
+            final day? => 'Cancelled ${localizations.formatMediumDate(day)}',
+            null => 'Cancelled',
+          },
+          if (c.byCompaction)
+            "— it didn't happen"
+          else if (c.source == 'delete_event')
+            '— deleted',
+        ].join(' '),
+        if (c.traitIds.isNotEmpty)
+          'Counts against '
+              '${c.traitIds.map((id) => traitList[id]?.name ?? id).join(', ')}',
+      ].join('\n'),
+    ),
+  );
+}
+
+/// The events the user [cancelled] that count against [whose]
+/// follow-through, in brief: how many, the time they'd have taken, and
+/// the most recent and the oldest (as [cancelledTile]s), with [onAll] --
+/// "All cancelled events" -- to see the lot.
+List<Widget> cancelledSummary(
+  BuildContext context,
+  List<CancelledEvent> cancelled, {
+  required String whose,
+  required String whom,
+  String? withWhom,
+  required Map<String, Trait> traitList,
+  required Map<String?, String> actionNames,
+  required VoidCallback onAll,
+}) {
+  if (cancelled.isEmpty) {
+    return cancelledTiles(
+      context,
+      cancelled,
+      whose: whose,
+      whom: whom,
+      traitList: traitList,
+      actionNames: actionNames,
+    );
+  }
+  final byStart = [...cancelled]..sort((a, b) => a.start.compareTo(b.start));
+  final time = byStart.fold(
+    Duration.zero,
+    (sum, c) => c.end.isAfter(c.start) ? sum + c.end.difference(c.start) : sum,
+  );
+  Widget tile(CancelledEvent c) => cancelledTile(
+    context,
+    c,
+    whom: whom,
+    withWhom: withWhom,
+    traitList: traitList,
+    actionNames: actionNames,
+  );
+  return _summary(
+    context,
+    count: byStart.length,
+    line: '${byStart.length} cancelled · ${formatDuration(time)} planned',
+    latest: tile(byStart.last),
+    oldest: tile(byStart.first),
+    allLabel: 'All cancelled events',
+    allIcon: Icons.event_busy_outlined,
+    onAll: onAll,
+  );
+}
+
+/// [line] -- how many there were, and their time -- then the [latest]
+/// and the [oldest] of them, or just one if there's [count] one, and a
+/// button, [allLabel], to see them all.
+List<Widget> _summary(
+  BuildContext context, {
+  required int count,
+  required String line,
+  required Widget latest,
+  required Widget oldest,
+  required String allLabel,
+  required IconData allIcon,
+  required VoidCallback onAll,
+}) {
+  final theme = Theme.of(context);
+  Widget label(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+    child: Text(
+      text,
+      style: theme.textTheme.labelMedium?.copyWith(color: theme.hintColor),
+    ),
+  );
   return [
-    for (final c in cancelled)
-      ListTile(
-        dense: true,
-        leading: Icon(Icons.event_busy, color: theme.colorScheme.error),
-        title: Text(c.summary ?? '(no title)'),
-        subtitle: Text(
-          [
-            [
-              'Planned for ${at(c.start)}',
-              if (c.engagement == 'for') 'for $whom' else ?withWhom,
-            ].join(', '),
-            if (c.actionIds.isNotEmpty)
-              [for (final id in c.actionIds) actionNames[id] ?? id].join(', '),
-            [
-              switch (c.cancelledAt) {
-                final day? =>
-                  'Cancelled ${localizations.formatMediumDate(day)}',
-                null => 'Cancelled',
-              },
-              if (c.byCompaction)
-                "— it didn't happen"
-              else if (c.source == 'delete_event')
-                '— deleted',
-            ].join(' '),
-            if (c.traitIds.isNotEmpty)
-              'Counts against '
-                  '${c.traitIds.map((id) => traitList[id]?.name ?? id).join(', ')}',
-          ].join('\n'),
+    Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Text(line, style: theme.textTheme.bodyMedium),
+    ),
+    if (count == 1) ...[
+      label('The only one'),
+      latest,
+    ] else ...[
+      label('Most recent'),
+      latest,
+      label('Oldest'),
+      oldest,
+    ],
+    Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: TextButton.icon(
+          onPressed: onAll,
+          icon: Icon(allIcon),
+          label: Text(allLabel),
         ),
       ),
+    ),
   ];
 }
 
@@ -640,6 +801,73 @@ List<Widget> eventTiles(
   if (digest.events.isEmpty) {
     return [padded(const Text('No events in this window.'))];
   }
+  return [
+    for (final event in digest.events.reversed)
+      eventTile(
+        context,
+        event,
+        noteOf: noteOf,
+        actionNames: actionNames,
+        personNames: personNames,
+        locationNames: locationNames,
+      ),
+  ];
+}
+
+/// The events in [digest] in brief: how many in its window and their
+/// time, and the most recent and the oldest (as [eventTile]s), with
+/// [onAll] -- "All events" -- to see the lot ([eventTiles]).
+List<Widget> eventsSummary(
+  BuildContext context,
+  PersonDigest? digest, {
+  String? noteOf,
+  Map<String?, String> actionNames = const {},
+  Map<String?, String> personNames = const {},
+  Map<String?, String> locationNames = const {},
+  required VoidCallback onAll,
+}) {
+  if (digest == null || digest.events.isEmpty) {
+    return eventTiles(context, digest);
+  }
+  final events = digest.events;
+  final time = events.fold(Duration.zero, (sum, e) {
+    final start = DateTime.tryParse('${e['start']}');
+    final end = DateTime.tryParse('${e['end']}');
+    if (start == null || end == null || !end.isAfter(start)) return sum;
+    return sum + end.difference(start);
+  });
+  Widget tile(Map<String, dynamic> event) => eventTile(
+    context,
+    event,
+    noteOf: noteOf,
+    actionNames: actionNames,
+    personNames: personNames,
+    locationNames: locationNames,
+  );
+  return _summary(
+    context,
+    count: events.length,
+    line:
+        '${events.length} ${events.length == 1 ? 'event' : 'events'} in '
+        'the last ${digest.windowDays} days · ${formatDuration(time)}',
+    latest: tile(events.last),
+    oldest: tile(events.first),
+    allLabel: 'All events',
+    allIcon: Icons.event_note_outlined,
+    onAll: onAll,
+  );
+}
+
+/// One event, as the server sent it: its title, when, what was done,
+/// and who and where, with its note on [noteOf].
+Widget eventTile(
+  BuildContext context,
+  Map<String, dynamic> event, {
+  String? noteOf,
+  Map<String?, String> actionNames = const {},
+  Map<String?, String> personNames = const {},
+  Map<String?, String> locationNames = const {},
+}) {
   final localizations = MaterialLocalizations.of(context);
   String when(Map<String, dynamic> event) {
     final start = DateTime.tryParse('${event['start']}')?.toLocal();
@@ -648,26 +876,23 @@ List<Widget> eventTiles(
         '${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(start))}';
   }
 
-  return [
-    for (final event in digest.events.reversed)
-      ListTile(
-        dense: true,
-        title: Text('${event['summary'] ?? '(no title)'}'),
-        subtitle: Text(
+  return ListTile(
+    dense: true,
+    title: Text('${event['summary'] ?? '(no title)'}'),
+    subtitle: Text(
+      [
+        when(event),
+        if ((event['action_ids'] as List?)?.isNotEmpty ?? false)
           [
-            when(event),
-            if ((event['action_ids'] as List?)?.isNotEmpty ?? false)
-              [
-                for (final id in event['action_ids'] as List)
-                  actionNames['$id'] ?? '$id',
-              ].join(', '),
-            if (Facts.fromJson(event['facts']) case final facts?
-                when !facts.isEmpty) ...[
-              facts.describe(personNames, locationNames),
-              if (facts.notes[noteOf] case final note?) '“$note”',
-            ],
-          ].where((line) => line.isNotEmpty).join('\n'),
-        ),
-      ),
-  ];
+            for (final id in event['action_ids'] as List)
+              actionNames['$id'] ?? '$id',
+          ].join(', '),
+        if (Facts.fromJson(event['facts']) case final facts?
+            when !facts.isEmpty) ...[
+          facts.describe(personNames, locationNames),
+          if (facts.notes[noteOf] case final note?) '“$note”',
+        ],
+      ].where((line) => line.isNotEmpty).join('\n'),
+    ),
+  );
 }

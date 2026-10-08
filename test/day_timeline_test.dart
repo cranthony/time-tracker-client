@@ -92,6 +92,40 @@ void main() {
     });
   });
 
+  group('eventOverlaps', () {
+    List<(DateTime, DateTime)> overlaps(List<Event> events) => [
+      for (final o in eventOverlaps(events, day: day, dayEnd: dayEnd))
+        (o.start, o.end),
+    ];
+
+    test('finds when events are going on at once, running together those '
+        'that meet, and not those only touching', () {
+      expect(
+        overlaps([
+          event('Work', at(9), at(12)),
+          event('Call', at(10), at(10, 30)),
+          event('Standup', at(10, 15), at(11)),
+          event('Lunch', at(12), at(13)),
+          event('Gym', at(17), at(18)),
+          event('Errand', at(17, 45), at(19)),
+        ]),
+        [(at(10), at(11)), (at(17, 45), at(18))],
+      );
+    });
+
+    test("leaves out cancelled events, and what's outside the day", () {
+      expect(
+        overlaps([
+          event('Work', at(9), at(12)),
+          event('Call', at(10), at(11), cancelled: true),
+          event('Late', DateTime(2026, 9, 29, 22), at(1)),
+          event('Early', DateTime(2026, 9, 29, 23), at(0, 30)),
+        ]),
+        [(at(0), at(0, 30))],
+      );
+    });
+  });
+
   group('priorityRuns', () {
     test("is the most important event's priority, clear where there's "
         'none, with no priority counting as 2', () {
@@ -226,6 +260,32 @@ void main() {
       expect(find.text('Call Mom'), findsOneWidget);
       expect(find.text('5m'), findsOneWidget);
       expect(find.text('P0'), findsOneWidget);
+    });
+
+    testWidgets('labels where events overlap, and nowhere else', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        timeline([
+          event('Work', at(9), at(12)),
+          event('Call', at(10), at(11)),
+          event('Lunch', at(12), at(13)),
+        ]),
+      );
+      expect(find.text('overlap'), findsOneWidget);
+      // At the time the two are going on, not where the second is drawn.
+      expect(
+        tester.getTopLeft(find.text('overlap')).dy,
+        lessThan(tester.getTopLeft(find.text('Call')).dy),
+      );
+
+      await tester.pumpWidget(
+        timeline([
+          event('Work', at(9), at(12)),
+          event('Lunch', at(12), at(13)),
+        ]),
+      );
+      expect(find.text('overlap'), findsNothing);
     });
 
     testWidgets('a tap on an event says which', (tester) async {
