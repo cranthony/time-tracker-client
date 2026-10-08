@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.19.0
+
+- The Events page's day summary opens on its top actions, then the
+  top-level groups they're under -- now just "Top-level" -- then the
+  time by priority.
+
 ## 7.18.0
 
 - A trait is added or edited on a page of its own, as a person or a

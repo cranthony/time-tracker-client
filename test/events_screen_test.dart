@@ -251,16 +251,17 @@ void main() {
     ]);
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
-    expect(find.text('Priorities'), findsOneWidget);
+    // Actions first.
+    expect(find.text('Top-level'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Hide summary'));
     await tester.pumpAndSettle();
-    expect(find.text('Priorities'), findsNothing);
+    expect(find.text('Top-level'), findsNothing);
     expect(find.text('Show summary'), findsOneWidget);
 
     await tester.tap(find.text('Show summary'));
     await tester.pumpAndSettle();
-    expect(find.text('Priorities'), findsOneWidget);
+    expect(find.text('Top-level'), findsOneWidget);
     expect(find.text('Show summary'), findsNothing);
   });
 

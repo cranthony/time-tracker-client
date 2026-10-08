@@ -348,7 +348,9 @@ void main() {
       tester,
     ) async {
       await open(tester);
-      expect(find.text('Make matcha'), findsOneWidget);
+      // On its event, and in the day's summary of actions.
+      expect(find.text('Make matcha'), findsWidgets);
+      expect(find.textContaining('new:matcha'), findsNothing);
       await page(tester, 'Added (3)');
       expect(find.textContaining('Jo'), findsWidgets);
       expect(find.textContaining("Sam's friend"), findsOneWidget);
