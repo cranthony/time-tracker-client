@@ -240,6 +240,42 @@ List<PriorityRun> priorityRuns(
   return runs;
 }
 
+/// The times through the day from [day] to [dayEnd] when two or more of
+/// [events] are going on at once, in order, those that meet run
+/// together. Cancelled events don't count.
+List<({DateTime start, DateTime end})> eventOverlaps(
+  List<Event> events, {
+  required DateTime day,
+  required DateTime dayEnd,
+}) {
+  DateTime clip(DateTime t) =>
+      t.isBefore(day) ? day : (t.isAfter(dayEnd) ? dayEnd : t);
+  final live = [
+    for (final event in events)
+      if (!event.isCancelled && clip(event.end).isAfter(clip(event.start)))
+        (start: clip(event.start), end: clip(event.end)),
+  ]..sort((a, b) => a.start.compareTo(b.start));
+  final overlaps = <({DateTime start, DateTime end})>[];
+  // The latest end of those before, to find what each starts inside.
+  DateTime? reach;
+  for (final e in live) {
+    if (reach != null && e.start.isBefore(reach)) {
+      final end = e.end.isBefore(reach) ? e.end : reach;
+      if (overlaps.lastOrNull case final last?
+          when !e.start.isAfter(last.end)) {
+        overlaps[overlaps.length - 1] = (
+          start: last.start,
+          end: end.isAfter(last.end) ? end : last.end,
+        );
+      } else {
+        overlaps.add((start: e.start, end: end));
+      }
+    }
+    if (reach == null || e.end.isAfter(reach)) reach = e.end;
+  }
+  return overlaps;
+}
+
 /// The color [event] is shown in: its primary action's, if [actions] has it
 /// and it has one, or else its priority's.
 Color eventColor(Event event, Map<String, PlanAction> actions) {
@@ -315,7 +351,9 @@ List<T> placeLabels<T>(
 /// says how long it is. One pushed down by the event above it is joined
 /// to where it truly is by that fill from the band. Where an event meets
 /// the one before it in the same color, or one too close to tell apart,
-/// a hairline of the background divides them.
+/// a hairline of the background divides them. Where events overlap
+/// ([eventOverlaps]), that time is tinted red over them, labeled
+/// "overlap".
 /// [now], the [lastCompaction] and each of the [pendingNotes], if
 /// they're in the day, are marked with lines across, under the events;
 /// zoomed in past the [defaultTimelineScale], they're labeled "now",
@@ -604,6 +642,12 @@ class DayTimeline extends StatelessWidget {
                               ),
                         ),
                       ),
+                    for (final overlap in eventOverlaps(
+                      events,
+                      day: day,
+                      dayEnd: dayEnd,
+                    ))
+                      ..._overlap(context, y(overlap.start), y(overlap.end)),
                     ...?band?.over,
                     for (final note in reviewNotes)
                       if (yIfToday(note.time) case final y?)
@@ -713,6 +757,55 @@ class DayTimeline extends StatelessWidget {
         ),
     ],
   );
+}
+
+/// Where events overlap, from [top] to [bottom]: a red tint over them,
+/// edged in red, labeled "overlap" at its top right. Only to see; it
+/// takes no taps.
+List<Widget> _overlap(BuildContext context, double top, double bottom) {
+  final red = Theme.of(context).colorScheme.error;
+  final onRed = Theme.of(context).colorScheme.onError;
+  return [
+    Positioned(
+      left: _timeWidth,
+      right: 8,
+      top: top,
+      height: math.max(1, bottom - top),
+      child: IgnorePointer(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: red.withValues(alpha: 0.18),
+            border: Border.all(color: red, width: 1.5),
+          ),
+        ),
+      ),
+    ),
+    Positioned(
+      right: 8,
+      top: top,
+      child: IgnorePointer(
+        child: Container(
+          height: _tabHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: red,
+            borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(6),
+            ),
+          ),
+          child: Text(
+            'overlap',
+            style: TextStyle(
+              fontSize: _bandFontSize,
+              fontWeight: FontWeight.w600,
+              color: onRed,
+            ),
+          ),
+        ),
+      ),
+    ),
+  ];
 }
 
 /// A proposal's [note], at [y]: a line across, over the events, in the

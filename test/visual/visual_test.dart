@@ -1103,6 +1103,36 @@ void main() {
       });
     }
 
+    // Events that overlap, the time they do tinted red and labeled.
+    testWidgets('events_overlap ($mode)', (tester) async {
+      final day = DateTime(2026, 9, 30);
+      DateTime at(int hour, [int minute = 0]) =>
+          DateTime(2026, 9, 30, hour, minute);
+      Event event(String summary, DateTime start, DateTime end) =>
+          Event(summary: summary, start: start, end: end);
+      await render(
+        tester,
+        'events_overlap',
+        Scaffold(
+          body: SingleChildScrollView(
+            controller: ScrollController(
+              initialScrollOffset: 9 * 60 * defaultTimelineScale,
+            ),
+            child: DayTimeline(
+              day: day,
+              events: [
+                event('Work', at(9, 30), at(11, 30)),
+                event('Call with Sam', at(10, 30), at(11)),
+                event('Lunch with Sam', at(12), at(13)),
+                event('Dentist', at(12, 45), at(13, 30)),
+                event('Errands', at(14), at(15)),
+              ],
+            ),
+          ),
+        ),
+      );
+    });
+
     // An event's summary; then its series', with how it repeats open
     // for editing; then the series' Details.
     for (final (name, steps) in [

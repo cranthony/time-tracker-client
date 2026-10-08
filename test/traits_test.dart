@@ -569,7 +569,11 @@ void main() {
       ],
     );
 
-    Future<void> pump(WidgetTester tester, {PlanMemory? memory}) async {
+    Future<void> pump(
+      WidgetTester tester, {
+      PlanMemory? memory,
+      Person? person,
+    }) async {
       // Tall enough to show the whole page at once.
       tester.view.physicalSize = const Size(800, 2400);
       tester.view.devicePixelRatio = 1;
@@ -577,7 +581,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: PersonScreen(
-            person: sam,
+            person: person ?? sam,
             traits: traits,
             memory: memory,
             circles: const [Circle(id: 'close', name: 'Close friends')],
@@ -631,6 +635,73 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('Rated 2: A new club'), findsOneWidget);
+    });
+
+    testWidgets('sums up their events and those cancelled, each with a '
+        'page of them all', (tester) async {
+      final events = [
+        jazz,
+        _yesterday('e2', 'Dinner', withIds: ['sam'], daysAgo: 3),
+        _yesterday('e3', 'Brunch', withIds: ['sam'], daysAgo: 5),
+      ];
+      final memory = await _scoredMemory(events, people: [sam]);
+      final tea = CancelledEvent(
+        eventId: 'tea',
+        summary: 'Tea with Sam',
+        start: DateTime(2026, 9, 20, 15),
+        end: DateTime(2026, 9, 20, 15, 30),
+        cancelledAt: DateTime(2026, 9, 19),
+        source: 'delete_event',
+      );
+      final hike = CancelledEvent(
+        eventId: 'hike',
+        summary: 'Hike with Sam',
+        start: DateTime(2026, 9, 27, 9),
+        end: DateTime(2026, 9, 27, 10),
+        cancelledAt: DateTime(2026, 9, 26),
+        source: 'delete_event',
+      );
+      await pump(
+        tester,
+        memory: memory,
+        person: sam.withCancelledEvents([...sam.cancelledEvents, tea, hike]),
+      );
+
+      // Three events of 2 hours: the most recent and the oldest.
+      expect(
+        find.textContaining(RegExp(r'^3 events in the last \d+ days · 6h$')),
+        findsOneWidget,
+      );
+      expect(find.text('Most recent'), findsNWidgets(2));
+      expect(find.text('Oldest'), findsNWidgets(2));
+      expect(find.text('Jazz night'), findsOneWidget);
+      expect(find.text('Brunch'), findsOneWidget);
+      expect(find.text('Dinner'), findsNothing);
+      // Three cancelled, of 1h, 30m and 1h.
+      expect(find.text('3 cancelled · 2h 30m planned'), findsOneWidget);
+      expect(find.text('Coffee with Sam'), findsOneWidget);
+      expect(find.text('Tea with Sam'), findsOneWidget);
+      expect(find.text('Hike with Sam'), findsNothing);
+
+      await tester.tap(find.text('All events'));
+      await tester.pumpAndSettle();
+      expect(find.text('Events · Sam'), findsOneWidget);
+      for (final title in ['Jazz night', 'Dinner', 'Brunch']) {
+        expect(find.text(title), findsOneWidget);
+      }
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('All cancelled events'));
+      await tester.pumpAndSettle();
+      expect(find.text('Cancelled · Sam'), findsOneWidget);
+      for (final title in [
+        'Coffee with Sam',
+        'Tea with Sam',
+        'Hike with Sam',
+      ]) {
+        expect(find.text(title), findsOneWidget);
+      }
     });
 
     testWidgets("leaves out scores and history where they aren't worked "
@@ -1051,13 +1122,15 @@ Event _yesterday(
   String? location,
   Map<String, String> notes = const {},
   Map<String, Object?> judgments = const {},
+  int daysAgo = 1,
 }) {
   final now = DateTime.now();
+  final day = now.day - daysAgo;
   return Event.fromJson({
     'id': id,
     'summary': summary,
-    'start': localIsoTimestamp(DateTime(now.year, now.month, now.day - 1, 18)),
-    'end': localIsoTimestamp(DateTime(now.year, now.month, now.day - 1, 20)),
+    'start': localIsoTimestamp(DateTime(now.year, now.month, day, 18)),
+    'end': localIsoTimestamp(DateTime(now.year, now.month, day, 20)),
     'action_ids': actions,
     'facts': Facts(
       withIds: withIds,
