@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.25.0
+
+- A new event's dialog has what an event's has: who it's with and for,
+  and its location, each picked in a sheet, in place of the free-text
+  location, and its notes. A new event in a compaction proposal can
+  name the people and locations the proposal adds.
+
 ## 7.24.0
 
 - Making room no longer cancels events without asking whether that

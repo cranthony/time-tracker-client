@@ -1922,6 +1922,8 @@ class _EventsScreenState extends State<EventsScreen> {
             ),
       actions: _actionsById,
       loadActions: _actions,
+      // What a proposal adds, named by its ref until it's made.
+      additions: review ? _proposal?.additions ?? const [] : const [],
     );
     if (created == null || !mounted) return;
     _endBox();

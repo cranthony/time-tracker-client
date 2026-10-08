@@ -34,6 +34,7 @@ import 'package:time_tracker_client/widgets/time_summary.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/actions_picker.dart';
 import 'package:time_tracker_client/widgets/error_sheet.dart';
+import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
 import 'package:time_tracker_client/widgets/event_outbox_bar.dart';
 import 'package:time_tracker_client/widgets/parts_editor.dart';
 
@@ -1042,6 +1043,34 @@ void main() {
             tester.getTopLeft(timeline) +
                 Offset(tester.getSize(timeline).width - 20, y),
           );
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
+    // A new event's dialog: who, where and notes, as an event's.
+    testWidgets('event_new_dialog ($mode)', (tester) async {
+      await render(
+        tester,
+        'event_new_dialog',
+        Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: TextButton(
+                onPressed: () => showNewEventDialog(
+                  context,
+                  start: DateTime(_now.year, _now.month, _now.day, 17),
+                  end: DateTime(_now.year, _now.month, _now.day, 18),
+                  create: (_) async => const [],
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+        scoped: true,
+        then: () async {
+          await tester.tap(find.text('Open'));
           await tester.pumpAndSettle();
         },
       );
