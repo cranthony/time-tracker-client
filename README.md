@@ -444,6 +444,13 @@ got the note after all, so a lost response doesn't create a duplicate.
 - **Chrome:** it retries while the tab is open. A closed tab keeps the notes
   and sends them the next time you open the app.
 
+## Settings
+
+A **Settings** page, from the menu, holds what's kept on this device
+alone. For now that's the grid the Events page's cursors snap to: every
+5, 10, 15 (the default), 30 or 60 minutes from midnight, or none, to
+stop at any minute.
+
 ## Background updates
 
 On Android, the app fetches what it keeps while it's closed, so it's fresh
