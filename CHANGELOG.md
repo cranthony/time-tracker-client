@@ -6,6 +6,19 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.29.0
+
+- A cursor on the Events page stops at the next stop, not an hour on:
+  the grid's next line, or an event's edge or a note before it. "+"
+  once from a new cursor makes a quarter-hour event, or one up to the
+  next edge or note. A dragged cursor snaps to an edge or a note it
+  comes near, and otherwise to the grid. "−" never shrinks an event to
+  nothing.
+- While a cursor is up, the edges and notes it stops at are marked on
+  the timeline, pulsing -- steady with animations turned off.
+- What each cursor stops at is kept on the device, for each of a new
+  event's ends; changing it comes with the cursors' own settings.
+
 ## 7.28.0
 
 - A Settings page, from the menu: the grid the Events page's cursors

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/services/app_settings.dart';
+import 'package:time_tracker_client/widgets/cursor_snap.dart';
 import 'package:time_tracker_client/outbox/action_outbox.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
@@ -30,17 +32,24 @@ void main() {
   DateTime at(int day, int hour, [int minute = 0]) =>
       DateTime(2026, 9, day, hour, minute);
 
+  /// The settings the Events page reads: by default, a grid of an hour
+  /// and no other stops, so a cursor's "+" and "−" step an hour.
+  AppSettings? settings;
+
   Widget app(
     EventsRepository repo, {
     Future<void> Function()? onSignIn,
     ActionsRepository? actions,
   }) => MaterialApp(
-    home: EventsScreen(
-      repository: repo,
-      serverLabel: 'offline demo',
-      actionsRepository: actions,
-      onSignIn: onSignIn,
-      clock: () => now,
+    home: AppSettingsScope(
+      settings: settings ?? _hourly(),
+      child: EventsScreen(
+        repository: repo,
+        serverLabel: 'offline demo',
+        actionsRepository: actions,
+        onSignIn: onSignIn,
+        clock: () => now,
+      ),
     ),
   );
 
@@ -1393,6 +1402,9 @@ void main() {
 
     testWidgets('dragging a button makes the event up to where it goes; each '
         "cursor's handle moves its end, and the shadow's both", (tester) async {
+      // Dragged to the quarter hour.
+      settings = _quarterly();
+      addTearDown(() => settings = null);
       final repo = _RecordingRepository([]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
@@ -1498,8 +1510,9 @@ void main() {
       );
     });
 
-    testWidgets('each "+" stretches the box an hour, from its top or its '
-        'foot, and each "−" shrinks it an hour, from that end', (tester) async {
+    testWidgets('each "+" stretches the box to the next stop -- here, an '
+        'hour -- from its top or its foot, and each "−" shrinks it to the '
+        'next, from that end', (tester) async {
       final repo = _RecordingRepository([]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
@@ -1525,10 +1538,9 @@ void main() {
       expect(box(tester).span, (at(30, 12), at(30, 14)));
       await tapButton(tester, shrinkFoot);
       expect(box(tester).span, (at(30, 12), at(30, 13)));
-      // No shorter than a quarter hour.
+      // Never to the other end.
       await tapButton(tester, shrinkFoot);
-      expect(box(tester).span, (at(30, 12), at(30, 12, 15)));
-      expect(shrinking(shrinkFoot).elevation, 0);
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
     });
 
     testWidgets("the other cursor's own \"−\" and \"+\", on its outside, "
@@ -1757,8 +1769,49 @@ void main() {
       );
     });
 
+    testWidgets('"+" steps to the next stop: the grid line after it, or an '
+        "event's edge before it, as the cursor snaps to them", (tester) async {
+      Future<(DateTime, DateTime)?> stepUpTwice(AppSettings with_) async {
+        settings = with_;
+        // A fresh page each time.
+        await tester.pumpWidget(const SizedBox());
+        final repo = _RecordingRepository([
+          Event(
+            id: 'c',
+            start: at(30, 11, 20),
+            end: at(30, 11, 40),
+            summary: 'Call',
+          ),
+        ]);
+        await tester.pumpWidget(app(repo));
+        await tester.pumpAndSettle();
+        // The stops it snaps to pulse: they never settle.
+        await tester.tap(find.byTooltip('New event'));
+        await settle(tester);
+        await pickMode(tester, 'Overwrite and trim');
+        await tapPulsing(tester, endHere);
+        await tapPulsing(tester, endHere);
+        return box(tester).span;
+      }
+
+      addTearDown(() => settings = null);
+      // By default, a quarter hour, and the call's end on the way.
+      expect(await stepUpTwice(AppSettings(persist: false)), (
+        at(30, 11, 40),
+        at(30, 12),
+      ));
+      // Not snapping to edges: the grid alone.
+      final gridOnly = AppSettings(persist: false)
+        ..setSnap(CursorRole.anchor, const {})
+        ..setSnap(CursorRole.end, const {});
+      expect(await stepUpTwice(gridOnly), (at(30, 11, 30), at(30, 12)));
+    });
+
     testWidgets('pushing: the cursor snaps out of an event, to between two '
         'that meet, and the trash just makes room', (tester) async {
+      // Stepped a quarter hour at a time.
+      settings = _quarterly();
+      addTearDown(() => settings = null);
       final repo = _RecordingRepository([
         Event(
           id: 'a',
@@ -1780,7 +1833,9 @@ void main() {
       await pickMode(tester, 'Push');
       // Noon, in A, nearer its end: where A and B meet.
       expect(box(tester).cursor, at(30, 12, 15));
-      await tapPulsing(tester, startHere);
+      for (var i = 0; i < 4; i++) {
+        await tapPulsing(tester, startHere);
+      }
       expect(box(tester).span, (at(30, 12, 15), at(30, 13, 15)));
       // B pushed to 1:15-2, and C, on, to 2-3. Nothing cut.
       expect(pushed(tester), [
@@ -2026,6 +2081,9 @@ void main() {
 
     testWidgets("while the cursor's up, tapping an event doesn't open it, "
         'but moves the box there', (tester) async {
+      // Moved to the quarter hour.
+      settings = _quarterly();
+      addTearDown(() => settings = null);
       final repo = _RecordingRepository([
         Event(id: 'w', start: at(30, 14), end: at(30, 16), summary: 'Work'),
       ]);
@@ -2790,4 +2848,21 @@ class _CountingActionsRepository extends InMemoryActionsRepository {
     fetches++;
     return super.actions();
   }
+}
+
+/// A grid of an hour, and no stops at events' edges or notes: each step
+/// of a cursor an hour.
+AppSettings _hourly() {
+  final settings = AppSettings(persist: false, grid: const Duration(hours: 1));
+  for (final role in CursorRole.values) {
+    settings.setSnap(role, const {});
+  }
+  return settings;
+}
+
+/// A grid of a quarter hour, and no stops at events' edges or notes.
+AppSettings _quarterly() {
+  final settings = _hourly();
+  settings.setGrid(const Duration(minutes: 15));
+  return settings;
 }

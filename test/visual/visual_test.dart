@@ -69,6 +69,11 @@ void main() {
         final app = MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: appTheme(brightness),
+          // Still: what pulses is drawn steady, at its boldest.
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(disableAnimations: true),
+            child: child!,
+          ),
           home: screen,
         );
         await tester.pumpWidget(

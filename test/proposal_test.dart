@@ -4,6 +4,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/widgets/cursor_snap.dart';
+import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/proposal.dart';
@@ -596,13 +598,20 @@ void main() {
       );
       await tester.pumpWidget(
         MaterialApp(
-          home: EventsScreen(
-            repository: events,
-            serverLabel: 'offline demo',
-            proposals: proposals,
-            proposalSeen: ProposalSeenStore(persist: false, seen: seen),
-            notesRepository: notes,
-            clock: () => now,
+          // An hour's grid and no other stops: each step an hour.
+          home: AppSettingsScope(
+            settings:
+                AppSettings(persist: false, grid: const Duration(hours: 1))
+                  ..setSnap(CursorRole.anchor, const {})
+                  ..setSnap(CursorRole.end, const {}),
+            child: EventsScreen(
+              repository: events,
+              serverLabel: 'offline demo',
+              proposals: proposals,
+              proposalSeen: ProposalSeenStore(persist: false, seen: seen),
+              notesRepository: notes,
+              clock: () => now,
+            ),
           ),
         ),
       );

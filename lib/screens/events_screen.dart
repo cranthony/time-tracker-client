@@ -24,6 +24,7 @@ import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
+import '../widgets/cursor_snap.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
 import '../widgets/day_summary.dart';
@@ -1788,53 +1789,95 @@ class _EventsScreenState extends State<EventsScreen> {
     _ => others.overwrite(start, end),
   };
 
+  /// How near, on screen, a dragged cursor has to come to an edge or a
+  /// note to stop there.
+  static const _snapReach = 12.0;
+
+  /// What [role]'s cursor stops at: the grid set in [AppSettings], and --
+  /// as it snaps to them -- the edges of the events shown and the notes.
+  CursorStops _stops(CursorRole role) {
+    final settings = AppSettings.of(context);
+    final snap = settings.snapFor(role);
+    return CursorStops(
+      from: _from,
+      to: _to,
+      grid: settings.grid,
+      edges: snap.contains(SnapTo.events)
+          ? [
+              for (final e in _otherEvents(_moving).events) ...[e.start, e.end],
+            ]
+          : const [],
+      notes: snap.contains(SnapTo.notes)
+          ? [..._pendingNotes, for (final n in _proposalNotes) n.time]
+          : const [],
+    );
+  }
+
+  /// Whether either of the box's cursors stops at [snap].
+  bool _snapsTo(SnapTo snap) {
+    final settings = AppSettings.of(context);
+    return settings.snapFor(CursorRole.anchor).contains(snap) ||
+        settings.snapFor(CursorRole.end).contains(snap);
+  }
+
+  /// Where [role]'s cursor, dragged to [to], stops: at an edge or a note
+  /// it snaps to, if it's near one, or else on the grid.
+  DateTime _snap(DateTime to, CursorRole role) => _stops(
+    role,
+  ).nearest(to, reach: Duration(seconds: (_snapReach / _scale * 60).round()));
+
+  /// Which cursor the box's [top] end -- or its foot -- is.
+  CursorRole _roleAt(PendingEventBox box, {required bool top}) {
+    if (box.span == null) return CursorRole.end;
+    return top == box.cursorOnTop ? CursorRole.anchor : CursorRole.end;
+  }
+
   /// A button on the cursor, its [step] later or earlier, dragged to
-  /// [to]: the other cursor there, at least a quarter hour from the
-  /// cursor on [step]'s side.
+  /// [to]: that end there, where its cursor stops, and still on [step]'s
+  /// side of the other end.
   void _dragStep(Duration step, DateTime to) {
     final box = _box;
     if (box == null) return;
-    final quarter = _onGrid(to);
-    final (top, foot) = box.span ?? (box.cursor, box.cursor);
-    if (step.isNegative) {
-      final latest = foot.subtract(OtherEvents.shortest);
-      _changeEdge(box.withTop(quarter.isAfter(latest) ? latest : quarter));
+    final top = step.isNegative;
+    final at = _snap(to, _roleAt(box, top: top));
+    final (start, end) = box.span ?? (box.cursor, box.cursor);
+    if (top) {
+      if (at.isBefore(end)) _changeEdge(box.withTop(at));
     } else {
-      final earliest = top.add(OtherEvents.shortest);
-      _changeEdge(
-        box.withFoot(quarter.isBefore(earliest) ? earliest : quarter),
-      );
+      if (at.isAfter(start)) _changeEdge(box.withFoot(at));
     }
   }
 
-  /// The box stretched an hour by a "+": earlier, at its top, for a
-  /// [step] back, or later, at its foot -- from the cursor, to start with.
+  /// The box stretched by a "+": its top to the stop before it, for a
+  /// [step] back, or its foot to the stop after it -- from the cursor, to
+  /// start with.
   void _stretch(Duration step) {
     final box = _box;
     if (box == null) return;
     final (top, foot) = box.span ?? (box.cursor, box.cursor);
-    _changeEdge(
-      step.isNegative
-          ? box.withTop(top.add(step))
-          : box.withFoot(foot.add(step)),
-    );
+    if (step.isNegative) {
+      final to = _stops(_roleAt(box, top: true)).next(top, later: false);
+      if (to != null) _changeEdge(box.withTop(to));
+    } else {
+      final to = _stops(_roleAt(box, top: false)).next(foot, later: true);
+      if (to != null) _changeEdge(box.withFoot(to));
+    }
   }
 
-  /// The box shrunk an hour by a "−": from its top, for a [step] on, or
-  /// from its foot -- no shorter than a quarter hour.
+  /// The box shrunk by a "−": its top to the stop after it, for a [step]
+  /// on, or its foot to the stop before it -- never to the other end, or
+  /// past it.
   void _shrink(Duration step) {
     final box = _box;
     final span = box?.span;
     if (box == null || span == null) return;
     final (top, foot) = span;
     if (step.isNegative) {
-      final to = foot.add(step);
-      final earliest = top.add(OtherEvents.shortest);
-      _changeEdge(box.withFoot(to.isBefore(earliest) ? earliest : to));
+      final to = _stops(_roleAt(box, top: false)).next(foot, later: false);
+      if (to != null && to.isAfter(top)) _changeEdge(box.withFoot(to));
     } else {
-      final to = top.add(step);
-      final latest = foot.subtract(OtherEvents.shortest);
-      _changeEdge(box.withTop(to.isAfter(latest) ? latest : to));
+      final to = _stops(_roleAt(box, top: true)).next(top, later: true);
+      if (to != null && to.isBefore(foot)) _changeEdge(box.withTop(to));
     }
   }
 
@@ -3152,24 +3195,24 @@ class _EventsScreenState extends State<EventsScreen> {
                                     null => null,
                                   },
                                   onMoveCursor: (to) => _changeBox(
-                                    (box) => box.withCursor(_onGrid(to)),
+                                    (box) => box.withCursor(
+                                      _snap(to, CursorRole.anchor),
+                                    ),
                                     fromOther: true,
                                   ),
                                   onMoveOther: (to) => _changeBox(
-                                    (box) => box.withOther(_onGrid(to)),
+                                    (box) => box.withOther(
+                                      _snap(to, CursorRole.end),
+                                    ),
                                   ),
                                   onMoveBox: (to) => _changeBox(
-                                    (box) => box.movedTo(_onGrid(to)),
+                                    (box) => box.movedTo(
+                                      _snap(to, CursorRole.anchor),
+                                    ),
                                     moved: true,
                                   ),
                                   onTap: _stretch,
-                                  onShrink: switch (box.span) {
-                                    (final start, final end)
-                                        when end.difference(start) >
-                                            OtherEvents.shortest =>
-                                      _shrink,
-                                    _ => null,
-                                  },
+                                  onShrink: box.span == null ? null : _shrink,
                                   onDrag: _dragStep,
                                   onPickMode: _pickCreateMode,
                                 ),
@@ -3313,6 +3356,9 @@ class _EventsScreenState extends State<EventsScreen> {
                 onLongPress: _box == null ? _startMoving : null,
                 faded: _moving?.id,
                 highlighted: _highlighted,
+                // While the box is up, what its cursors stop at.
+                pulseNotes: _box != null && _snapsTo(SnapTo.notes),
+                pulseEdges: _box != null && _snapsTo(SnapTo.events),
                 review: proposal == null
                     ? null
                     : (from: proposal.windowStart, through: proposal.through),
@@ -3321,7 +3367,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 onTapTime: _box == null
                     ? null
                     : (time) => _changeBox(
-                        (box) => box.movedTo(_onGrid(time)),
+                        (box) => box.movedTo(_snap(time, CursorRole.anchor)),
                         moved: true,
                       ),
                 axis: false,

@@ -10,7 +10,11 @@ Where events overlap, the timeline tints that time red and labels it
 "overlap". Its **+** puts a cursor at now, which a tap on the timeline moves:
 start an event there or end it there, tapping or dragging to its other
 end, either keeping clear of the events already there or overwriting
-them; drag either end's handle to adjust it; then ✓ to fill it in. While
+them; drag either end's handle to adjust it; then ✓ to fill it in. A
+cursor stops on the grid set in [Settings](#settings) and, by default,
+at events' edges and notes too: its buttons step it to the next such
+stop, and dragged near one it snaps there. While it's up, the edges and
+notes it stops at are marked on the timeline, pulsing. While
 Claude has a **compaction proposal** open -- what it says happened since the
 last compaction -- it's a band over the timeline, each change marked, to
 confirm: edits to the events in it edit the proposal, not the calendar, and
@@ -449,7 +453,8 @@ got the note after all, so a lost response doesn't create a duplicate.
 A **Settings** page, from the menu, holds what's kept on this device
 alone. For now that's the grid the Events page's cursors snap to: every
 5, 10, 15 (the default), 30 or 60 minutes from midnight, or none, to
-stop at any minute.
+stop at any minute. Each cursor also stops at events' edges and notes;
+what each cursor stops at is kept on the device too.
 
 ## Background updates
 
