@@ -1039,9 +1039,7 @@ void main() {
       await open(tester);
       await tester.tap(find.byTooltip('New event'));
       await tester.pumpAndSettle();
-      final startHere = find.byTooltip(
-        'An hour later: tap to stretch it down, or drag its foot',
-      );
+      final startHere = find.byTooltip('Stretch it later');
       await tap(tester, startHere);
       // Moved whole, to 8.
       await toBand(tester);

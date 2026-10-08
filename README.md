@@ -7,14 +7,23 @@ delete it. An **Events** page, from the bar at the bottom, shows a day's
 events from your calendar; tap one to see or edit it, including the actions
 done at it and what happened: who it was with and for, where, and notes.
 Where events overlap, the timeline tints that time red and labels it
-"overlap". Its **+** puts a cursor at now, which a tap on the timeline moves:
-start an event there or end it there, tapping or dragging to its other
-end, either keeping clear of the events already there or overwriting
-them; drag either end's handle to adjust it; then ✓ to fill it in. A
-cursor stops on the grid set in [Settings](#settings) and, by default,
-at events' edges and notes too: its buttons step it to the next such
-stop, and dragged near one it snaps there. While it's up, the edges and
-notes it stops at are marked on the timeline, pulsing. While
+"overlap". Its **+** puts a cursor at now -- the event's **anchor** --
+which a tap on the timeline moves: its arrows step it, and a "+" either
+side makes the event that way, its **end** a second cursor. Each cursor
+has, on its outside, a "+" and a "−" stretching and shrinking the event
+there, a handle to drag it by, and its own settings (its icon): what it
+does with events, what it stops at, and its time, typed. The anchor
+keeps clear of the event it's in, or trims it, cancels it, or splits it,
+the rest going after the new event; the end keeps the event clear of
+others, or trims them, cancels them, or pushes them along -- earlier,
+for an event drawn upward. Keeping, a "+" against an event is greyed
+out. The switch, with an anchor on it, makes the end the anchor. Then ✓
+to fill it in. A cursor stops on the grid set in [Settings](#settings)
+and, by default, at events' edges and notes too: its buttons step it to
+the next such stop, and dragged near one it snaps there. While it's
+up, the edges and notes it stops at are marked on the timeline,
+pulsing. Pressed and held, an event is moved the same way, its anchor
+where it was grabbed, pushing to start with. While
 Claude has a **compaction proposal** open -- what it says happened since the
 last compaction -- it's a band over the timeline, each change marked, to
 confirm: edits to the events in it edit the proposal, not the calendar, and
