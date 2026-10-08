@@ -29,6 +29,7 @@ import 'package:time_tracker_client/widgets/time_summary.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/actions_picker.dart';
 import 'package:time_tracker_client/widgets/error_sheet.dart';
+import 'package:time_tracker_client/widgets/parts_editor.dart';
 
 /// A fixed moment, so every run renders the same thing.
 final _now = DateTime(2026, 10, 2, 13, 30);
@@ -200,6 +201,44 @@ void main() {
           await tester.tap(find.byTooltip('More for Sam'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('Edit'));
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
+    // A Time spent part's target, in hours and minutes, on the page that
+    // edits a person's parts.
+    testWidgets('parts_duration ($mode)', (tester) async {
+      await render(
+        tester,
+        'parts_duration',
+        Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: TextButton(
+                onPressed: () => showPartsEditor(
+                  context,
+                  title: 'Creative for Self',
+                  parts: const [
+                    {
+                      'kind': 'duration',
+                      'action': 'creative',
+                      'target_min': 150,
+                      'interval_days': 7,
+                    },
+                  ],
+                  actions: {
+                    for (final a in sample.actions)
+                      if (a.id != null) a.id!: a.name ?? '',
+                  },
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+        then: () async {
+          await tester.tap(find.text('Open'));
           await tester.pumpAndSettle();
         },
       );

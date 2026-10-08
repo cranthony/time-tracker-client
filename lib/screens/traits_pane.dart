@@ -115,7 +115,7 @@ class TraitsPaneState extends State<TraitsPane> {
   /// saved, or null if nothing was.
   Future<Trait?> _edit(Trait? trait) async {
     final repository = widget.repository;
-    final saved = await showTraitDialog(
+    final saved = await showTraitEditor(
       context,
       trait: trait,
       actions: widget.actions,
