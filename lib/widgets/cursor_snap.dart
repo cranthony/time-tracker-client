@@ -63,7 +63,7 @@ class CursorStops {
     // On the grid of the day as it's lived: local time.
     time = time.toLocal();
     var line = _line(time, later: later);
-    if (line == time) {
+    if (line.isAtSameMomentAs(time)) {
       line = _line(time.add(Duration(minutes: later ? 1 : -1)), later: later);
     }
     final mark = later

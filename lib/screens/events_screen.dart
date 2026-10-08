@@ -1989,7 +1989,8 @@ class _EventsScreenState extends State<EventsScreen> {
     final to = _stops(role).next(from, later: later);
     if (to == null) return null;
     final other = anchor ? box.other : box.cursor;
-    if (other != null && other != from) {
+    // The same moment, whether in UTC, as the server's, or local.
+    if (other != null && !other.isAtSameMomentAs(from)) {
       final towards = other.isAfter(from) == later;
       if (towards && (later ? !to.isBefore(other) : !to.isAfter(other))) {
         return null;
@@ -2011,11 +2012,13 @@ class _EventsScreenState extends State<EventsScreen> {
     final at = anchor ? box.cursor : box.other ?? box.cursor;
     // Into the box, it's free; out of it, not into an event it touches.
     final other = anchor ? box.other : box.cursor;
-    if (other != null && other != at && other.isAfter(at) == later) {
+    if (other != null &&
+        !other.isAtSameMomentAs(at) &&
+        other.isAfter(at) == later) {
       return true;
     }
     final others = _otherEvents(_moving).events;
-    return !others.any((e) => later ? e.start == at : e.end == at);
+    return !others.any((e) => (later ? e.start : e.end).isAtSameMomentAs(at));
   }
 
   /// [role]'s cursor stepped to its next stop, [later] or earlier.

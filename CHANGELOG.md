@@ -17,6 +17,10 @@ on. Add the new version's section here at the same time; CI checks both.
   badge of their own and saying so; the stretch is tinted apart,
   headed "extended by you". Needs the server's `amend_proposal`
   `through` and `claude_through`.
+- Fixed: a cursor on an event from the server -- moving it, say -- didn't
+  step: its "+" and "−" did nothing, as its stops were worked out in
+  local time and the server's times are in UTC. And keeping events, a
+  "+" against one is greyed out again.
 
 ## 7.30.0
 

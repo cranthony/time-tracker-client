@@ -2034,6 +2034,53 @@ void main() {
       expect(find.byTooltip(RegExp(r'^End: Keep\. ')), findsOneWidget);
     });
 
+    testWidgets("moving an event from the server, keeping events: its \"+\" "
+        'and "−" step it, and "+" is greyed out against the next event', (
+      tester,
+    ) async {
+      // As the app starts: a quarter hour's grid, and events' edges and
+      // notes too.
+      settings = AppSettings(persist: false);
+      // In UTC, as the server sends them.
+      final repo = _RecordingRepository([
+        Event(
+          id: 't',
+          start: at(30, 12).toUtc(),
+          end: at(30, 13).toUtc(),
+          summary: 'Tea',
+        ),
+        Event(
+          id: 'w',
+          start: at(30, 13, 30).toUtc(),
+          end: at(30, 14, 30).toUtc(),
+          summary: 'Walk',
+        ),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text('Tea'));
+      await settle(tester);
+      await pickMode(tester, 'Keep events');
+      (DateTime, DateTime) span() =>
+          (box(tester).span!.$1.toLocal(), box(tester).span!.$2.toLocal());
+
+      await tapPulsing(tester, startHere);
+      expect(span(), (at(30, 12), at(30, 13, 15)));
+      await tapPulsing(tester, startHere);
+      // Against Walk: no further, and greyed out.
+      expect(span(), (at(30, 12), at(30, 13, 30)));
+      Material button(Finder f) => tester.widget<Material>(
+        find.descendant(of: f, matching: find.byType(Material)).first,
+      );
+      expect(button(startHere).elevation, 0);
+      await tapPulsing(tester, find.byTooltip('Shrink it from the foot'));
+      expect(span(), (at(30, 12), at(30, 13, 15)));
+      await tapPulsing(tester, endHere);
+      expect(span(), (at(30, 11, 45), at(30, 13, 15)));
+      await tapPulsing(tester, find.byTooltip('Shrink it from the top'));
+      expect(span(), (at(30, 12), at(30, 13, 15)));
+    });
+
     testWidgets("the label's on the cursor, away from the box; switching "
         'the cursors turns the box around, pointing to where the cursor went', (
       tester,
