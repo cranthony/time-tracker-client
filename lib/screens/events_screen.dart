@@ -24,6 +24,7 @@ import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
+import '../widgets/window_cursor.dart';
 import '../widgets/cursor_modes.dart';
 import '../widgets/cursor_sheet.dart';
 import '../widgets/cursor_snap.dart';
@@ -323,6 +324,10 @@ class _EventsScreenState extends State<EventsScreen> {
   /// can't be used meanwhile.
   bool _proposalBusy = false;
 
+  /// Where the proposal's window is being extended to, while it is: its
+  /// end's cursor.
+  DateTime? _extendTo;
+
   /// Which of the proposal's notes is shown under its bar, and
   /// highlighted on the timeline.
   /// Null for the first note to review.
@@ -495,7 +500,7 @@ class _EventsScreenState extends State<EventsScreen> {
       for (final note in _proposalNotes)
         ReviewNote(
           time: note.time,
-          kind: reviewNoteKind(note),
+          kind: reviewNoteKind(note, of: _proposal),
           selected: note.id == selected?.id,
         ),
     ];
@@ -1862,11 +1867,109 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  /// Whether either of the box's cursors stops at [snap].
+  /// Whether a cursor that's up -- the box's, or the end of the window
+  /// being extended -- stops at [snap].
   bool _snapsTo(SnapTo snap) {
     final settings = AppSettings.of(context);
-    return settings.snapFor(CursorRole.anchor).contains(snap) ||
-        settings.snapFor(CursorRole.end).contains(snap);
+    return (_box != null &&
+            (settings.snapFor(CursorRole.anchor).contains(snap) ||
+                settings.snapFor(CursorRole.end).contains(snap))) ||
+        (_extendTo != null &&
+            settings.snapFor(CursorRole.windowEnd).contains(snap));
+  }
+
+  /// Whether the proposal's window can be extended: it's being reviewed,
+  /// nothing else is up, and there's time since it ends.
+  bool get _canExtend => switch (_proposal) {
+    final p? =>
+      p.state == ProposalState.awaitingReview &&
+          !_proposalBusy &&
+          _box == null &&
+          _extendTo == null &&
+          p.through.isBefore(widget.clock()),
+    null => false,
+  };
+
+  /// Starts extending the proposal's window: its end's cursor, where it
+  /// ends now.
+  void _startExtending() =>
+      setState(() => _extendTo = _proposal!.through.toLocal());
+
+  /// [time], kept where the window can be extended to: from where it ends
+  /// now to now.
+  DateTime _inExtensible(DateTime time) {
+    final from = _proposal!.through;
+    final now = widget.clock();
+    if (time.isBefore(from)) return from;
+    return time.isAfter(now) ? now : time;
+  }
+
+  /// Where the window's end steps to, [later] or earlier: its next stop,
+  /// if that's where it can be extended to.
+  DateTime? _extensionStep({required bool later}) {
+    final at = _extendTo;
+    if (at == null) return null;
+    final to = _stops(CursorRole.windowEnd).next(at, later: later);
+    if (to == null || _inExtensible(to) != to) return null;
+    return to;
+  }
+
+  /// The window's end, dragged to [to]: where it stops, and can be.
+  void _moveExtension(DateTime to) => setState(
+    () => _extendTo = _inExtensible(_snap(to, CursorRole.windowEnd)),
+  );
+
+  /// The window's end's settings: what it stops at, and its time.
+  Future<void> _openExtension() async {
+    final settings = AppSettings.of(context);
+    await showCursorSheet(
+      context,
+      title: 'The end of what happened',
+      snap: settings.snapFor(CursorRole.windowEnd),
+      onSnap: (snap) => settings.setSnap(CursorRole.windowEnd, snap),
+      onEditTime: () async {
+        final proposal = _proposal;
+        final at = _extendTo;
+        if (proposal == null || at == null) return;
+        final picked = await showEditTimeDialog(
+          context,
+          title: 'The end of what happened',
+          initial: at,
+          first: proposal.through,
+          last: widget.clock(),
+        );
+        if (picked != null && mounted) {
+          setState(() => _extendTo = _inExtensible(picked));
+        }
+      },
+    );
+  }
+
+  /// Extends the proposal's window to its end's cursor: the notes it
+  /// takes in added where they fall.
+  Future<void> _extend() async {
+    final to = _extendTo;
+    if (to == null) return;
+    setState(() => _extendTo = null);
+    final time = MaterialLocalizations.of(context)
+        .formatTimeOfDay(TimeOfDay.fromDateTime(to.toLocal()));
+    await runOrShowError(
+      context,
+      title: "Couldn't extend it",
+      action: () async {
+        final amended = await _amend(
+          ProposalEdits(through: to),
+          label: 'Extend what happened to $time',
+        );
+        if (mounted) {
+          _amended(
+            amended,
+            'What happened now runs to $time, to confirm: its notes there '
+            'are added where they fall.',
+          );
+        }
+      },
+    );
   }
 
   /// Where [role]'s cursor, dragged to [to], stops: at an edge or a note
@@ -2968,6 +3071,7 @@ class _EventsScreenState extends State<EventsScreen> {
                   ? () => _goToNote(noteAt + 1)
                   : null,
               events: _reviewedSummaries,
+              extended: _proposal?.inExtension(note.time) ?? false,
               // Compacted already: there to see, not to change.
               onEdit: note.compacted ? null : () => _editNote(note),
             ),
@@ -3261,6 +3365,36 @@ class _EventsScreenState extends State<EventsScreen> {
                                 ),
                               ),
                             ),
+                            if ((_extendTo, _proposal) case (
+                              final to?,
+                              final proposal?,
+                            ))
+                              Positioned.fill(
+                                child: WindowCursorView(
+                                  day: _from,
+                                  dayEnd: _to,
+                                  scale: _scale,
+                                  anchor:
+                                      proposal.claudeThrough ??
+                                      proposal.through,
+                                  end: to,
+                                  onMove: _moveExtension,
+                                  onStep: ({required later}) {
+                                    final to = _extensionStep(later: later);
+                                    if (to != null) {
+                                      setState(() => _extendTo = to);
+                                    }
+                                  },
+                                  canStep: ({required later}) =>
+                                      _extensionStep(later: later) != null,
+                                  onOpen: _openExtension,
+                                  onDone: to.isAfter(proposal.through)
+                                      ? _extend
+                                      : null,
+                                  onCancel: () =>
+                                      setState(() => _extendTo = null),
+                                ),
+                              ),
                             if (_box case final box?)
                               Positioned.fill(
                                 child: PendingEventBoxView(
@@ -3433,11 +3567,14 @@ class _EventsScreenState extends State<EventsScreen> {
                 // In a proposal's window, its notes, drawn as it says.
                 pendingNotes: [
                   for (final t in _pendingNotes)
+                    // Unless the proposal draws it: one it's just been
+                    // extended over is drawn here till it's back.
                     if (!(proposal?.covers(
-                          t,
-                          t.add(const Duration(seconds: 1)),
-                        ) ??
-                        false))
+                              t,
+                              t.add(const Duration(seconds: 1)),
+                            ) ??
+                            false) ||
+                        !(proposal?.notes.any((n) => n.time == t) ?? false))
                       t,
                 ],
                 reviewNotes: _reviewNotes,
@@ -3450,11 +3587,18 @@ class _EventsScreenState extends State<EventsScreen> {
                 faded: _moving?.id,
                 highlighted: _highlighted,
                 // While the box is up, what its cursors stop at.
-                pulseNotes: _box != null && _snapsTo(SnapTo.notes),
-                pulseEdges: _box != null && _snapsTo(SnapTo.events),
+                pulseNotes: _snapsTo(SnapTo.notes),
+                pulseEdges: _snapsTo(SnapTo.events),
                 review: proposal == null
                     ? null
-                    : (from: proposal.windowStart, through: proposal.through),
+                    : (
+                        from: proposal.windowStart,
+                        // Being extended, as far as it's going.
+                        through: _extendTo ?? proposal.through,
+                        claudeThrough:
+                            proposal.claudeThrough ?? proposal.through,
+                      ),
+                onTapThrough: _canExtend ? _startExtending : null,
                 marks: _marks,
                 // The box moved there, its size intact.
                 onTapTime: _box == null

@@ -706,7 +706,7 @@ void main() {
     // revision last seen highlighted -- under the bar to confirm it; the
     // band's start, gone to from the bar; its notes, with Claude's reply
     // beside the one it answers; and a note left, waiting for Claude.
-    Widget reviewing() => EventsScreen(
+    Widget reviewing({DateTime? now}) => EventsScreen(
       repository: sample.eventsRepository(),
       notesRepository: sample.notesRepository(),
       actionsRepository: sample.actionsRepository(),
@@ -716,11 +716,29 @@ void main() {
         seen: {SampleData.proposalId: 2},
       ),
       serverLabel: 'sample',
-      clock: () => _now,
+      clock: () => now ?? _now,
     );
+
+    // Extending what happened past where Claude's revision ran to: the
+    // end's cursor, moved on, by its fixed anchor; then saved, the stretch
+    // added marked.
+    Future<void> extending(WidgetTester tester, {required bool save}) async {
+      await tester.tap(find.byTooltip('Extend what happened'));
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 2; i++) {
+        await tester.tap(find.byTooltip('Extend it later'));
+        await tester.pumpAndSettle();
+      }
+      if (save) {
+        await tester.tap(find.widgetWithText(FilledButton, 'Extend'));
+        await tester.pumpAndSettle();
+      }
+    }
 
     for (final (name, then) in <(String, Future<void> Function(WidgetTester))>[
       ('events_proposal', (_) async {}),
+      ('events_proposal_extending', (tester) => extending(tester, save: false)),
+      ('events_proposal_extended', (tester) => extending(tester, save: true)),
       (
         'events_proposal_start',
         (tester) async {
@@ -817,7 +835,12 @@ void main() {
         await render(
           tester,
           name,
-          reviewing(),
+          // Extending, later: there's time since it ends.
+          reviewing(
+            now: name.startsWith('events_proposal_extend')
+                ? _now.add(const Duration(minutes: 75))
+                : null,
+          ),
           then: () => then(tester),
           scoped: true,
         );

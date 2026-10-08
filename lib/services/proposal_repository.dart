@@ -26,7 +26,13 @@ class ProposalEdits {
     this.asPlanned = const [],
     this.notes = const [],
     this.additions = const [],
+    this.through,
   });
+
+  /// Where to extend the proposal to: later than its `through`, no later
+  /// than now. Each note it takes in is added where it falls, unless
+  /// [notes] says otherwise.
+  final DateTime? through;
 
   final List<Map<String, Object?>> updates;
   final List<Map<String, Object?>> creates;
@@ -57,7 +63,8 @@ class ProposalEdits {
       cancels.isEmpty &&
       asPlanned.isEmpty &&
       notes.isEmpty &&
-      additions.isEmpty;
+      additions.isEmpty &&
+      through == null;
 
   /// The ids and keys of the events they name, and the notes' ids.
   Set<String> get eventIds => {
@@ -68,6 +75,7 @@ class ProposalEdits {
   };
 
   Map<String, Object?> toJson() => {
+    if (through case final t?) 'through': localIsoTimestamp(t),
     if (updates.isNotEmpty) 'updates': updates,
     if (creates.isNotEmpty) 'creates': creates,
     if (cancels.isNotEmpty)
@@ -119,6 +127,10 @@ class ProposalEdits {
           ),
       ],
       asPlanned: [for (final id in json['as_planned'] as List? ?? []) '$id'],
+      through: switch (json['through']) {
+        final String t => DateTime.parse(t),
+        _ => null,
+      },
       notes: [
         for (final n in maps('notes'))
           (
@@ -613,6 +625,10 @@ class InMemoryProposalRepository implements ProposalRepository {
     _changed[revision] = changed;
     _proposal = current.copyWith(
       revision: revision,
+      through: switch (edits.through) {
+        final t? when t.isAfter(current.through) => t,
+        _ => null,
+      },
       events: events,
       notes: notes,
       additions: additions,

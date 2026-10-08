@@ -297,6 +297,7 @@ class Proposal {
     required this.state,
     required this.windowStart,
     required this.through,
+    this.claudeThrough,
     this.events,
     this.problem,
     this.reason,
@@ -325,6 +326,18 @@ class Proposal {
 
   /// Where what happened ends, and the plan goes on.
   final DateTime through;
+
+  /// Where Claude's own revision ran to: from there to [through], the
+  /// user extended it. Null from a server that doesn't say -- or as
+  /// [through].
+  final DateTime? claudeThrough;
+
+  /// Whether the user extended it past where Claude's revision ran to.
+  bool get extended => claudeThrough?.isBefore(through) ?? false;
+
+  /// Whether [time] is in the stretch the user extended it by.
+  bool inExtension(DateTime time) =>
+      extended && time.isAfter(claudeThrough!) && !time.isAfter(through);
 
   /// Every event of its days, as it leaves them; null when it no longer
   /// plans, with [problem] saying why.
@@ -413,6 +426,10 @@ class Proposal {
       (json['window_start'] ?? json['from']) as String,
     ),
     through: DateTime.parse(json['through'] as String),
+    claudeThrough: switch (json['claude_through']) {
+      final String t => DateTime.parse(t),
+      _ => null,
+    },
     events: switch (json['events']) {
       final List events => [
         for (final e in events)
@@ -451,6 +468,7 @@ class Proposal {
 
   Proposal copyWith({
     int? revision,
+    DateTime? through,
     ProposalState? state,
     List<ProposalEvent>? events,
     List<ProposalFeedback>? feedback,
@@ -467,7 +485,9 @@ class Proposal {
     revision: revision ?? this.revision,
     state: state ?? this.state,
     windowStart: windowStart,
-    through: through,
+    through: through ?? this.through,
+    // Claude's end, kept where the user extends it.
+    claudeThrough: claudeThrough ?? this.through,
     events: events ?? this.events,
     problem: problem,
     reason: reason ?? this.reason,

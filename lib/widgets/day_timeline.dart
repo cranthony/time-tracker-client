@@ -397,6 +397,7 @@ class DayTimeline extends StatelessWidget {
     this.pulseEdges = false,
     this.axis = true,
     this.review,
+    this.onTapThrough,
     this.marks = const {},
     this.reviewNotes = const [],
   });
@@ -439,7 +440,11 @@ class DayTimeline extends StatelessWidget {
 
   /// What a compaction proposal says happened, to confirm: from its
   /// window's start to its `through`.
-  final ({DateTime from, DateTime through})? review;
+  final ({DateTime from, DateTime through, DateTime? claudeThrough})? review;
+
+  /// The [review] band's `through` tapped: to extend it. Null, it can't
+  /// be.
+  final VoidCallback? onTapThrough;
 
   /// What the proposal says of each of its events, by id.
   final Map<String, EventMark> marks;
@@ -584,6 +589,8 @@ class DayTimeline extends StatelessWidget {
         dayEnd: dayEnd,
         from: review.from,
         through: review.through,
+        claudeThrough: review.claudeThrough,
+        onTapThrough: onTapThrough,
         y: y,
       ),
       null => null,
@@ -721,10 +728,13 @@ class DayTimeline extends StatelessWidget {
   required DateTime dayEnd,
   required DateTime from,
   required DateTime through,
+  DateTime? claudeThrough,
+  VoidCallback? onTapThrough,
   required double Function(DateTime) y,
 }) {
   if (!from.isBefore(dayEnd) || !through.isAfter(day)) return null;
-  final colors = reviewColors(Theme.of(context).colorScheme);
+  final scheme = Theme.of(context).colorScheme;
+  final colors = reviewColors(scheme);
   final starts = !from.isBefore(day);
   final ends = through.isBefore(dayEnd);
   final top = y(starts ? from : day);
@@ -760,6 +770,14 @@ class DayTimeline extends StatelessWidget {
     ),
   );
   final line = BorderSide(color: colors.line, width: 2);
+  // The stretch the user extended it by, past Claude's end.
+  final extension = switch (claudeThrough) {
+    final c? when c.isBefore(through) && c.isBefore(dayEnd) => (
+      top: y(c.isBefore(day) ? day : c),
+      shows: !c.isBefore(day),
+    ),
+    _ => null,
+  };
   return (
     under: [
       Positioned(
@@ -781,8 +799,64 @@ class DayTimeline extends StatelessWidget {
           ),
         ),
       ),
+      if (extension case (:final top, shows: _))
+        Positioned(
+          left: _timeWidth - 4,
+          right: 2,
+          top: top,
+          height: math.max(0, bottom - top),
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: scheme.secondaryContainer.withValues(alpha: 0.45),
+                border: Border(
+                  left: BorderSide(color: scheme.secondary, width: 2),
+                  right: BorderSide(color: scheme.secondary, width: 2),
+                ),
+              ),
+            ),
+          ),
+        ),
     ],
     over: [
+      if (extension case (:final top, shows: true))
+        Positioned(
+          left: _timeWidth + _bandWidth + 4,
+          top: top,
+          child: IgnorePointer(
+            child: Semantics(
+              label: 'Extended by you, from here',
+              child: ExcludeSemantics(
+                child: Container(
+                  height: _tabHeight,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: scheme.secondary,
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(6),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.anchor, size: 10, color: scheme.onSecondary),
+                      const SizedBox(width: 3),
+                      Text(
+                        'extended by you',
+                        style: TextStyle(
+                          fontSize: _bandFontSize,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       if (starts)
         Positioned(
           right: 2,
@@ -797,11 +871,55 @@ class DayTimeline extends StatelessWidget {
         Positioned(
           right: 2,
           top: bottom,
-          child: tab(
-            'through $time',
-            'What happened, to confirm, through $time',
-            below: true,
-          ),
+          child: switch (onTapThrough) {
+            // Tapped, to extend it: a pencil says so.
+            final onTap? => Tooltip(
+              message: 'Extend what happened',
+              child: GestureDetector(
+                // The tab itself takes no touches: this does, over it.
+                behavior: HitTestBehavior.opaque,
+                onTap: onTap,
+                child: Semantics(
+                  button: true,
+                  label:
+                      'What happened, to confirm, through $time. Tap to '
+                      'extend it',
+                  child: ExcludeSemantics(
+                    child: Container(
+                      height: _tabHeight,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      decoration: BoxDecoration(
+                        color: colors.line,
+                        borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(6),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'through $time',
+                            style: TextStyle(
+                              fontSize: _bandFontSize,
+                              fontWeight: FontWeight.w600,
+                              color: colors.onLine,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(Icons.edit, size: 10, color: colors.onLine),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            null => tab(
+              'through $time',
+              'What happened, to confirm, through $time',
+              below: true,
+            ),
+          },
         ),
     ],
   );
@@ -1082,7 +1200,11 @@ enum ReviewNoteKind {
   other(Icons.sticky_note_2_outlined, 'not used'),
 
   /// An earlier compaction used it: there as context.
-  compacted(Icons.check, 'compacted earlier');
+  compacted(Icons.check, 'compacted earlier'),
+
+  /// Added to an event because the user extended the proposal to take
+  /// it in -- not Claude.
+  extended(Icons.person_add_alt_1, 'added when you extended it');
 
   const ReviewNoteKind(this.icon, this.description);
 
