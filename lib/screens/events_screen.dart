@@ -10,6 +10,7 @@ import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/proposal.dart';
 import '../models/recurrence.dart';
+import '../outbox/event_outbox.dart';
 import '../outbox/note_outbox.dart';
 import '../services/actions_repository.dart';
 import '../services/event_store.dart';
@@ -65,6 +66,12 @@ import '../widgets/status_message.dart';
 /// cancelling or adding one, or setting its actions or facts -- edit the
 /// proposal, not the calendar. The events after it are the plan, changed
 /// as ever.
+///
+/// With [eventOutbox], changes to events and to the proposal aren't sent
+/// before the dialog closes: they wait in it, in order, shown as made --
+/// each marked as waiting to save -- and what a change waiting changes
+/// can't be changed again till it's saved: an event it cancels or
+/// creates not at all, nor the fields it sets.
 class EventsScreen extends StatefulWidget {
   const EventsScreen({
     super.key,
@@ -73,6 +80,7 @@ class EventsScreen extends StatefulWidget {
     this.actionsRepository,
     this.notesRepository,
     this.outbox,
+    this.eventOutbox,
     this.onSignIn,
     this.onSignOut,
     this.version,
@@ -110,6 +118,10 @@ class EventsScreen extends StatefulWidget {
 
   /// The notes not saved yet, to mark them too.
   final NoteOutbox? outbox;
+
+  /// Where changes to events and the proposal wait to be saved; without
+  /// it, each is saved before its dialog closes.
+  final EventOutbox? eventOutbox;
 
   /// Which server this build talks to, for the About dialog.
   final String serverLabel;
@@ -257,8 +269,23 @@ class _EventsScreenState extends State<EventsScreen> {
   /// What's below the last day on the timeline.
   static const _pastFoot = 170.0;
 
-  /// The open compaction proposal, once it's loaded; null without one.
-  Proposal? _proposal;
+  /// The open compaction proposal as the server last gave it, once it's
+  /// loaded; null without one.
+  Proposal? _loadedProposal;
+
+  /// The open compaction proposal, as shown: with the edits of it waiting
+  /// to be saved.
+  Proposal? get _proposal =>
+      widget.eventOutbox?.projectProposal(_loadedProposal) ?? _loadedProposal;
+  set _proposal(Proposal? proposal) => _loadedProposal = proposal;
+
+  /// How changes are made: by way of [EventsScreen.eventOutbox], or at
+  /// once.
+  late final EventWrites _writes =
+      widget.eventOutbox ??
+      DirectEventWrites(widget.repository, widget.proposals);
+
+  StreamSubscription<(PendingEventWrite, Object?)>? _savedWrites;
 
   /// Where the revision of the proposal last seen is kept.
   late final ProposalSeenStore _seen;
@@ -510,9 +537,18 @@ class _EventsScreenState extends State<EventsScreen> {
   /// [day]'s events, if they're loaded, as they're shown: in what an
   /// open proposal says happened, as it says.
   List<Event>? _eventsOn(DateTime day) => switch (_store.day(day)) {
-    final events? => _withProposal(events, day, _dayAfter(day)),
+    final events? => _withProposal(
+      _waiting(events, day, _dayAfter(day)),
+      day,
+      _dayAfter(day),
+    ),
     null => null,
   };
+
+  /// [events], the calendar's from [from] to [to], with the changes
+  /// waiting to be saved made to them.
+  List<Event> _waiting(List<Event> events, DateTime from, DateTime to) =>
+      widget.eventOutbox?.project(events, from, to) ?? events;
 
   /// [calendar], the calendar's events from [from] to [to], with those
   /// that the open proposal says happened as it says: a new one added,
@@ -554,8 +590,35 @@ class _EventsScreenState extends State<EventsScreen> {
   Set<String> get _changedSince =>
       (_proposal?.changedSince ?? const {}).difference(_editedHere);
 
-  /// What the open proposal does to each of its events, to mark them.
+  /// What the open proposal does to each of its events, and which wait
+  /// for a change to be saved, to mark them.
   Map<String, EventMark> get _marks {
+    final marks = _proposalMarks;
+    final outbox = widget.eventOutbox;
+    if (outbox == null || outbox.pending.isEmpty) return marks;
+    final waiting = {
+      for (final w in outbox.pending)
+        for (final id in w.locks.keys) id: w,
+    };
+    return {
+      ...marks,
+      for (final MapEntry(key: id, value: write) in waiting.entries)
+        id: EventMark(
+          label: [
+            ?marks[id]?.label,
+            write.refused ? "Couldn't save" : 'Waiting to save',
+          ].join(' · '),
+          icon: write.refused
+              ? Icons.cloud_off_outlined
+              : Icons.cloud_upload_outlined,
+          changed: marks[id]?.changed ?? false,
+          selected: marks[id]?.selected ?? false,
+        ),
+    };
+  }
+
+  /// What the open proposal does to each of its events, to mark them.
+  Map<String, EventMark> get _proposalMarks {
     final proposal = _proposal;
     if (proposal == null) return const {};
     final calendar = {
@@ -630,6 +693,8 @@ class _EventsScreenState extends State<EventsScreen> {
     _refresh();
     _loadActions();
     widget.outbox?.addListener(_outboxChanged);
+    widget.eventOutbox?.addListener(_memoryChanged);
+    _savedWrites = widget.eventOutbox?.saved.listen(_writeSaved);
     _loadNotes(cached: true);
     _loadProposal();
     _loadSummaryCollapsed();
@@ -638,6 +703,29 @@ class _EventsScreenState extends State<EventsScreen> {
     // trait, for an event's dialogs.
     WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchNames());
     _loadSummaryDurations();
+  }
+
+  /// What [write] saved: the events it changed, shown at once, or the
+  /// proposal's new revision.
+  void _writeSaved((PendingEventWrite, Object?) saved) {
+    if (!mounted) return;
+    final (write, result) = saved;
+    switch (result) {
+      case final List<Event> events:
+        _store.putEvents(events);
+      case final Proposal amended:
+        final loaded = _loadedProposal;
+        if (loaded == null || loaded.id != amended.id) return;
+        setState(() {
+          _editedHere
+            ..addAll(write.edits.eventIds)
+            ..addAll({
+              for (final e in amended.events ?? const <ProposalEvent>[])
+                if (loaded.event(e.id) == null) e.id,
+            });
+          _proposal = amended.copyWith(changedSince: loaded.changedSince);
+        });
+    }
   }
 
   /// When each note not yet compacted was taken: those saved, and those
@@ -805,6 +893,8 @@ class _EventsScreenState extends State<EventsScreen> {
     _memory.removeListener(_memoryChanged);
     _lifecycle.dispose();
     widget.outbox?.removeListener(_outboxChanged);
+    widget.eventOutbox?.removeListener(_memoryChanged);
+    _savedWrites?.cancel();
     _pages.dispose();
     _scroll.dispose();
     super.dispose();
@@ -1085,19 +1175,20 @@ class _EventsScreenState extends State<EventsScreen> {
       // What a proposal adds, named by its ref until it's made.
       additions: _proposal?.additions ?? const [],
       save: (changes) => _approvingHistory(
-        (allow) => widget.repository.updateEvent(
-          event,
-          changes,
-          allowCompactedChanges: allow,
-        ),
+        at: event.start,
+        (allow) => _writes.update(event, changes, allowHistory: allow),
       ),
-      cancel: (counts) => _approvingHistory(
-        (allow) => widget.repository.deleteEvent(
-          event,
-          countsAgainstFollowThrough: counts,
-          allowCompactedChanges: allow,
-        ),
-      ),
+      cancel: _waitingOn(event).isNotEmpty
+          ? null
+          : (counts) => _approvingHistory(
+              at: event.start,
+              (allow) => _writes.cancel(
+                event,
+                countsAgainstFollowThrough: counts,
+                allowHistory: allow,
+              ),
+            ),
+      waiting: _waitingOn(event),
       otherEvents: _otherEvents(event),
       actions: _actionsById,
       loadActions: _actions,
@@ -1127,17 +1218,24 @@ class _EventsScreenState extends State<EventsScreen> {
       save: (changes) async {
         amended = await _amend(
           ProposalEdits(updates: [proposalUpdate(event, changes)]),
+          label: 'Change ${_named(event)}, in what happened',
         );
         return const [];
       },
-      cancel: (counts) async {
-        amended = await _amend(
-          ProposalEdits(
-            cancels: [(eventId: event.id!, countsAgainstFollowThrough: counts)],
-          ),
-        );
-        return const [];
-      },
+      cancel: _waitingOn(event).isNotEmpty
+          ? null
+          : (counts) async {
+              amended = await _amend(
+                ProposalEdits(
+                  cancels: [
+                    (eventId: event.id!, countsAgainstFollowThrough: counts),
+                  ],
+                ),
+                label: 'Cancel ${_named(event)}, in what happened',
+              );
+              return const [];
+            },
+      waiting: _waitingOn(event),
       otherEvents: _otherEvents(event),
       actions: _actionsById,
       loadActions: _actions,
@@ -1163,17 +1261,24 @@ class _EventsScreenState extends State<EventsScreen> {
       save: (event, changes) async {
         amended = await _amend(
           ProposalEdits(updates: [proposalUpdate(event, changes)]),
+          label: 'Change ${_named(event)}, in what happened',
         );
         return const [];
       },
-      cancel: (event, counts) async {
-        amended = await _amend(
-          ProposalEdits(
-            cancels: [(eventId: event.id!, countsAgainstFollowThrough: counts)],
-          ),
-        );
-        return const [];
-      },
+      cancel: _waitingOn(event).isNotEmpty
+          ? null
+          : (event, counts) async {
+              amended = await _amend(
+                ProposalEdits(
+                  cancels: [
+                    (eventId: event.id!, countsAgainstFollowThrough: counts),
+                  ],
+                ),
+                label: 'Cancel ${_named(event)}, in what happened',
+              );
+              return const [];
+            },
+      waiting: _waitingOn(event),
       otherEvents: _otherEvents(event),
       actions: _actions,
     );
@@ -1225,14 +1330,24 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Records [edits] to the open proposal, as the user's, and shows its
   /// new revision. If they're refused -- they'd overlap, say -- loads it
   /// again and rethrows, the edits left where they were made, as a draft.
-  Future<Proposal> _amend(ProposalEdits edits) async {
+  Future<Proposal> _amend(ProposalEdits edits, {String? label}) async {
     final proposal = _proposal;
     final repository = widget.proposals;
     if (proposal == null || repository == null) {
       throw StateError('No proposal is open.');
     }
+    if (_writes.queued) {
+      // Shown as made (see _proposal), till it's saved.
+      final amended = await _writes.amend(
+        _loadedProposal!,
+        edits,
+        label: label,
+      );
+      if (mounted) setState(() {});
+      return amended;
+    }
     try {
-      final amended = await repository.amend(proposal, edits);
+      final amended = await _writes.amend(proposal, edits, label: label);
       if (mounted) {
         setState(() {
           _editedHere
@@ -1281,7 +1396,11 @@ class _EventsScreenState extends State<EventsScreen> {
     final to = DateTime(_day.year, _day.month, _day.day + 4);
     return OtherEvents(
       {
-        for (final e in _withProposal(_store.between(from, to), from, to))
+        for (final e in _withProposal(
+          _waiting(_store.between(from, to), from, to),
+          from,
+          to,
+        ))
           e.id ?? e: e,
       }.values,
       except: event?.id,
@@ -1391,16 +1510,21 @@ class _EventsScreenState extends State<EventsScreen> {
       if (review) {
         amended = await _amend(
           ProposalEdits.over(inTheWay, updates: [proposalUpdate(event, times)]),
+          label: 'Move ${_named(event)}, in what happened',
         );
       } else {
         changed = await _approvingHistory(
-          (allow) => widget.repository.makeRoom(
+          at: start.isBefore(event.start) ? start : event.start,
+          (allow) => _writes.makeRoom(
             Overwrite(
               updates: [(event, times), ...inTheWay.updates],
               cancels: inTheWay.cancels,
               creates: inTheWay.creates,
             ),
-            allowCompactedChanges: allow,
+            allowHistory: allow,
+            label: inTheWay.isEmpty
+                ? 'Move ${_named(event)}'
+                : 'Move ${_named(event)}, changing ${_events(inTheWay.count)}',
           ),
         );
       }
@@ -1718,18 +1842,20 @@ class _EventsScreenState extends State<EventsScreen> {
                   overwrite ? inTheWayOf(fields) : const Overwrite(),
                   creates: [proposalCreate(fields)],
                 ),
+                label: 'Add ${_nameOf(fields)}, to what happened',
               );
               return const [];
             }
           : overwrite
           ? (fields) => _approvingHistory(
-              (allow) => widget.repository.createOver(
+              at: start,
+              (allow) => _writes.createOver(
                 fields,
                 inTheWayOf(fields),
-                allowCompactedChanges: allow,
+                allowHistory: allow,
               ),
             )
-          : widget.repository.createEvent,
+          : _writes.create,
       // Overwriting events, the trash makes no new event, but just
       // clears the time of them.
       clear: !overwrite || inTheWay.isEmpty
@@ -1760,13 +1886,18 @@ class _EventsScreenState extends State<EventsScreen> {
               run: () async {
                 cleared = true;
                 if (review) {
-                  amended = await _amend(ProposalEdits.over(inTheWay));
+                  amended = await _amend(
+                    ProposalEdits.over(inTheWay),
+                    label: 'Clear time in what happened',
+                  );
                   return const [];
                 }
                 return _approvingHistory(
-                  (allow) => widget.repository.makeRoom(
+                  at: start,
+                  (allow) => _writes.makeRoom(
                     inTheWay,
-                    allowCompactedChanges: allow,
+                    allowHistory: allow,
+                    label: 'Clear time of ${_events(inTheWay.count)}',
                   ),
                 );
               },
@@ -1785,12 +1916,12 @@ class _EventsScreenState extends State<EventsScreen> {
             : 'Added to what happened, to confirm.',
       );
     }
-    final changed = created.length - 1;
+    final changed = _writes.queued ? inTheWay.count : created.length - 1;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           cleared
-              ? 'Time cleared: ${_events(created.length)} changed.'
+              ? 'Time cleared: ${_events(inTheWay.count)} changed.'
               : changed <= 0
               ? 'Event created.'
               : 'Event created. $changed other '
@@ -1820,36 +1951,70 @@ class _EventsScreenState extends State<EventsScreen> {
   /// history (an event compaction settled), asks the user, and runs it
   /// again allowing that if they agree. Otherwise rethrows the refusal.
   Future<List<Event>> _approvingHistory(
-    Future<List<Event>> Function(bool allowCompactedChanges) change,
-  ) async {
+    Future<List<Event>> Function(bool allowCompactedChanges) change, {
+    DateTime? at,
+  }) async {
+    if (_writes.queued) {
+      // Asked now, of a change from [at], as the server will only say so
+      // once it's sent: refused then, it's asked from the changes waiting.
+      final compacted = _memory.lastCompaction;
+      final history = at != null && compacted != null && at.isBefore(compacted);
+      if (!history) return change(false);
+      if (await _approveHistory() != true) throw const HistoryKept();
+      return change(true);
+    }
     try {
       return await change(false);
     } catch (e) {
       if (!isHistoryRefusal(e) || !mounted) rethrow;
-      final approved = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Change history?'),
-          content: const Text(
-            'Compaction has already recorded this event as what happened. '
-            'Changing it rewrites that record.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Keep history'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Change it'),
-            ),
-          ],
-        ),
-      );
+      final approved = await _approveHistory();
       if (approved != true) rethrow;
       return change(true);
     }
   }
+
+  /// Asks whether to change history: an event compaction recorded.
+  Future<bool?> _approveHistory() => showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Change history?'),
+      content: const Text(
+        'Compaction has already recorded this event as what happened. '
+        'Changing it rewrites that record.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Keep history'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Change it'),
+        ),
+      ],
+    ),
+  );
+
+  /// What of [event] waits for a change to be saved: the fields it sets,
+  /// or, for all of it, [allWaiting].
+  Set<String> _waitingOn(Event event) {
+    final id = event.id;
+    final outbox = widget.eventOutbox;
+    if (id == null || outbox == null) return const {};
+    return outbox.locked(id) ?? allWaiting;
+  }
+
+  /// [event]'s title, quoted, to name it in what's waiting.
+  static String _named(Event event) => switch (event.summary) {
+    final s? when s.isNotEmpty => '“$s”',
+    _ => 'an event',
+  };
+
+  static String _nameOf(Map<String, Object?> fields) =>
+      switch (fields['summary']) {
+        final String s when s.isNotEmpty => '“$s”',
+        _ => 'an event',
+      };
 
   /// Opens every one of [event]'s properties.
   Future<void> _openEventDetails(Event event) async {
@@ -1857,19 +2022,20 @@ class _EventsScreenState extends State<EventsScreen> {
       context,
       event,
       save: (event, changes) => _approvingHistory(
-        (allow) => widget.repository.updateEvent(
-          event,
-          changes,
-          allowCompactedChanges: allow,
-        ),
+        at: event.start,
+        (allow) => _writes.update(event, changes, allowHistory: allow),
       ),
-      cancel: (event, counts) => _approvingHistory(
-        (allow) => widget.repository.deleteEvent(
-          event,
-          countsAgainstFollowThrough: counts,
-          allowCompactedChanges: allow,
-        ),
-      ),
+      cancel: _waitingOn(event).isNotEmpty
+          ? null
+          : (event, counts) => _approvingHistory(
+              at: event.start,
+              (allow) => _writes.cancel(
+                event,
+                countsAgainstFollowThrough: counts,
+                allowHistory: allow,
+              ),
+            ),
+      waiting: _waitingOn(event),
       otherEvents: _otherEvents(event),
       actions: _actions,
       openSeries: (seriesId) => _openSeries(seriesId, event),
@@ -1880,6 +2046,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Says what saving [event] did, [updated] being what the server
   /// changed, and loads the days again.
   Future<void> _saved(Event event, List<Event> updated) async {
+    if (_writes.queued) return setState(() {});
     final moved = updated.where((e) => e.id != event.id).length;
     final cancelled = updated.any((e) => e.id == event.id && e.isCancelled);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -2051,11 +2218,40 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// Confirms the open proposal, as shown.
-  Future<void> _confirmProposal() => _onProposal(
-    "Couldn't confirm it",
-    (proposal, repository) async =>
-        _confirmed(proposal, await repository.confirm(proposal)),
-  );
+  Future<void> _confirmProposal() async {
+    final waiting = [
+      for (final w
+          in widget.eventOutbox?.pending ?? const <PendingEventWrite>[])
+        if (w.kind == EventWriteKind.amend && w.proposalId == _proposal?.id) w,
+    ];
+    if (waiting.isNotEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Not yet'),
+          content: Text(
+            '${waiting.length == 1 ? 'A change' : '${waiting.length} changes'}'
+            ' to it ${waiting.length == 1 ? 'is' : 'are'} still waiting to '
+            'save. Confirm it once '
+            '${waiting.length == 1 ? "it's" : "they're"} saved, so what '
+            "you confirm is what's shown.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    return _onProposal(
+      "Couldn't confirm it",
+      (proposal, repository) async =>
+          _confirmed(proposal, await repository.confirm(proposal)),
+    );
+  }
 
   /// Resumes the apply of the open proposal, where it stopped.
   Future<void> _finishProposal() => _onProposal(

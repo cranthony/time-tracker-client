@@ -6,6 +6,7 @@ import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../services/mcp_client.dart';
 import '../services/server_errors.dart';
+import 'waiting_note.dart';
 import 'error_sheet.dart';
 import 'color_picker.dart';
 import 'durations.dart';
@@ -149,6 +150,8 @@ Widget confirmationContent(
 /// unchanged, counts as a change, so saving confirms it. [changes] opens
 /// it with those changes already made, e.g. ones that couldn't be saved
 /// before; closing it without changing them more doesn't ask first.
+/// Those [waiting] for a change to be saved can't be changed, and say so
+/// (see [waitsFor]).
 Future<R?> showPropertiesDialog<R>(
   BuildContext context, {
   required String Function(Map<String, Object?> values) title,
@@ -166,6 +169,7 @@ Future<R?> showPropertiesDialog<R>(
   Map<String, Object?> changes = const {},
   OneWayAction? oneWayAction,
   String signInHint = 'Sign in again, then try again.',
+  Set<String> waiting = const {},
 }) => showDialog<R>(
   context: context,
   builder: (context) => _PropertiesDialog<R>(
@@ -184,6 +188,7 @@ Future<R?> showPropertiesDialog<R>(
     changes: changes,
     oneWayAction: oneWayAction,
     signInHint: signInHint,
+    waiting: waiting,
   ),
 );
 
@@ -204,7 +209,10 @@ class _PropertiesDialog<R> extends StatefulWidget {
     required this.changes,
     required this.oneWayAction,
     required this.signInHint,
+    required this.waiting,
   });
+
+  final Set<String> waiting;
 
   final String Function(Map<String, Object?> values) title;
   final Map<String, Object?> properties;
@@ -260,7 +268,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
   /// Why the last save failed.
   String? _error;
 
-  bool get _editable => widget.save != null;
+  bool get _editable => widget.save != null && !widget.waiting.contains('*');
 
   @override
   void dispose() {
@@ -540,6 +548,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (widget.waiting.isNotEmpty)
+                WaitingNote(waiting: widget.waiting),
               if (_error case final error?)
                 Container(
                   margin: const EdgeInsets.only(bottom: 16),
@@ -615,7 +625,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
 
   Widget _row(BuildContext context, String key) {
     final theme = Theme.of(context);
-    final editable = _editable && widget.kinds.containsKey(key);
+    final waits = waitsFor(widget.waiting, key);
+    final editable = _editable && widget.kinds.containsKey(key) && !waits;
     final changed = _changes.containsKey(key);
     final value = _value(key);
     if (_editing == key) {
@@ -663,7 +674,9 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         : _shown(context, key, value, selectable: !editable);
     return PropertyRow(
       name: key,
-      marker: changed
+      marker: waits
+          ? const WaitingMark()
+          : changed
           ? Tooltip(
               message: 'Changed',
               child: Container(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -8,8 +10,10 @@ import 'auth/platform_receiver.dart'
     if (dart.library.js_interop) 'auth/platform_receiver_web.dart';
 import 'auth/token_store.dart';
 import 'demo/sample_data.dart';
+import 'models/event.dart';
 import 'outbox/background_sync.dart';
 import 'outbox/action_outbox.dart';
+import 'outbox/event_outbox.dart';
 import 'outbox/note_outbox.dart';
 import 'outbox/outbox_store.dart';
 import 'platform/add_note_shortcut.dart';
@@ -47,16 +51,17 @@ Future<void> main() async {
     final actions = sample?.actionsRepository() ?? InMemoryActionsRepository();
     final events = sample?.eventsRepository() ?? InMemoryEventsRepository();
     final people = sample?.peopleRepository() ?? InMemoryPeopleRepository();
+    final proposals = sample?.proposalRepository(
+      events: events,
+      notes: repository,
+      people: people,
+      actions: actions,
+    );
     runApp(
       TimeTrackerApp(
         repository: repository,
         eventsRepository: events,
-        proposalsRepository: sample?.proposalRepository(
-          events: events,
-          notes: repository,
-          people: people,
-          actions: actions,
-        ),
+        proposalsRepository: proposals,
         actionsRepository: actions,
         outbox: NoteOutbox(
           store: InMemoryOutboxStore(),
@@ -65,6 +70,11 @@ Future<void> main() async {
         actionOutbox: ActionOutbox(
           store: InMemoryOutboxStore(),
           repository: actions,
+        ),
+        eventOutbox: EventOutbox(
+          store: InMemoryOutboxStore(),
+          events: events,
+          proposals: proposals,
         ),
         traitsRepository:
             sample?.traitsRepository() ?? InMemoryTraitsRepository(),
@@ -83,11 +93,13 @@ Future<void> main() async {
   final cache = PrefsResponseCache();
   final repository = McpNotesRepository(client, cache: cache);
   final actions = McpActionsRepository(client, cache: cache);
+  final events = McpEventsRepository(client);
+  final proposals = McpProposalRepository(client);
   runApp(
     TimeTrackerApp(
       repository: repository,
-      eventsRepository: McpEventsRepository(client),
-      proposalsRepository: McpProposalRepository(client),
+      eventsRepository: events,
+      proposalsRepository: proposals,
       actionsRepository: actions,
       outbox: NoteOutbox(
         store: PrefsOutboxStore.notes(),
@@ -96,6 +108,12 @@ Future<void> main() async {
       actionOutbox: ActionOutbox(
         store: PrefsOutboxStore.actions(),
         repository: actions,
+      ),
+      eventOutbox: EventOutbox(
+        store: PrefsOutboxStore.events(),
+        events: events,
+        proposals: proposals,
+        persistPause: true,
       ),
       auth: auth,
       cache: cache,
@@ -106,8 +124,8 @@ Future<void> main() async {
   );
 }
 
-/// Runs WorkManager's background task (Android) that saves pending notes
-/// and action saves.
+/// Runs WorkManager's background task (Android) that saves pending notes,
+/// action saves, and changes to events.
 @pragma('vm:entry-point')
 void backgroundDispatcher() => BackgroundSync.run(() {
   final client = _client(_authSession(interactive: false));
@@ -119,6 +137,12 @@ void backgroundDispatcher() => BackgroundSync.run(() {
     ActionOutbox(
       store: PrefsOutboxStore.actions(),
       repository: McpActionsRepository(client),
+    ),
+    EventOutbox(
+      store: PrefsOutboxStore.events(),
+      events: McpEventsRepository(client),
+      proposals: McpProposalRepository(client),
+      persistPause: true,
     ),
   ];
 });
@@ -150,6 +174,7 @@ class TimeTrackerApp extends StatefulWidget {
     required this.actionsRepository,
     required this.outbox,
     required this.actionOutbox,
+    this.eventOutbox,
     this.auth,
     this.cache,
     this.traitsRepository,
@@ -186,6 +211,10 @@ class TimeTrackerApp extends StatefulWidget {
 
   /// PlanAction saves waiting to be sent, or that failed.
   final ActionOutbox actionOutbox;
+
+  /// Changes to events, and the open proposal, waiting to be sent, or
+  /// that failed; without it, each is saved as it's made.
+  final EventOutbox? eventOutbox;
   final AuthSession? auth;
 
   /// The server's last answers, which the repositories keep; emptied on
@@ -217,12 +246,29 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     BackgroundSync.cancel();
     widget.outbox.start();
     widget.actionOutbox.start();
+    _startEventOutbox();
     _lifecycle = AppLifecycleListener(
       onResume: _onForeground,
       onPause: _onBackground,
     );
     _addNoteShortcut.start();
     _loadVersion();
+  }
+
+  StreamSubscription<(PendingEventWrite, Object?)>? _savedWrites;
+
+  /// Starts sending the changes to events waiting, once a pause kept from
+  /// before is read; each saved goes into the events at once.
+  Future<void> _startEventOutbox() async {
+    final outbox = widget.eventOutbox;
+    if (outbox == null) return;
+    _savedWrites ??= outbox.saved.listen((saved) {
+      if (saved.$2 case final List<Event> events) {
+        _planMemory.eventStore?.putEvents(events);
+      }
+    });
+    await outbox.loadPause();
+    outbox.start();
   }
 
   /// The version from pubspec.yaml, and CI's build number, e.g. "1.1.0 (25)".
@@ -242,14 +288,19 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     widget.auth?.reload();
     widget.outbox.start();
     widget.actionOutbox.start();
+    widget.eventOutbox?.start();
   }
 
   Future<void> _onBackground() async {
     widget.actionOutbox.stop();
     widget.outbox.stop();
+    widget.eventOutbox?.stop();
     await widget.outbox.refresh();
     await widget.actionOutbox.refresh();
-    if (widget.outbox.hasUnsent || widget.actionOutbox.hasUnsent) {
+    await widget.eventOutbox?.refresh();
+    if (widget.outbox.hasUnsent ||
+        widget.actionOutbox.hasUnsent ||
+        (widget.eventOutbox?.hasUnsent ?? false)) {
       await BackgroundSync.schedule();
     }
   }
@@ -267,6 +318,8 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     _addNoteShortcut.dispose();
     widget.outbox.dispose();
     widget.actionOutbox.dispose();
+    _savedWrites?.cancel();
+    widget.eventOutbox?.dispose();
     super.dispose();
   }
 
@@ -297,6 +350,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         actionsRepository: widget.actionsRepository,
         outbox: widget.outbox,
         actionOutbox: widget.actionOutbox,
+        eventOutbox: widget.eventOutbox,
         onSignIn: widget.auth?.signIn,
         onSignOut: widget.auth == null ? null : _signOut,
         addNoteRequests: _addNoteShortcut.taps,

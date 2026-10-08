@@ -401,6 +401,8 @@ Redirect URIs it registers:
 
 ## Notes that haven't been saved yet
 
+(For changes to events, see [Changes waiting to save](#changes-waiting-to-save).)
+
 A new note is kept on the device first, and then sent to the server. If
 you're offline, the server is down, or you're signed out, the note stays in
 the list, tinted and in italics, with its status underneath:
@@ -430,6 +432,44 @@ got the note after all, so a lost response doesn't create a duplicate.
 - **Windows:** a minimised app keeps running, so it keeps retrying.
 - **Chrome:** it retries while the tab is open. A closed tab keeps the notes
   and sends them the next time you open the app.
+
+## Changes waiting to save
+
+Changes to events -- editing, cancelling, adding or moving one -- and
+edits of the open compaction proposal don't wait for the server: they're
+kept on the device, shown at once as made, marked **Waiting to save**,
+and sent in the background, strictly in the order they were made. They
+survive closing the app, and Android's background task sends them too,
+as it does notes.
+
+While any are waiting, a line at the foot of every page says so: saving,
+paused, trying again later, or stopped. Tap it to see them, oldest
+first, each with how it's going. From there:
+
+- **Pause** stops sending (kept across restarts) until **Resume**.
+- **Try again now** skips the wait after a failed attempt.
+- **Edit** changes a waiting change to an event, a new event, or a
+  cancel, in its place; a move that changed others is dropped and made
+  again instead.
+- **Drop** throws one away: what it changed goes back to how the server
+  has it.
+
+A change that couldn't be sent -- offline, say -- is tried again by
+itself after 5s, 10s, 20s and 40s, then every minute. One the server
+refuses (an overlap, say) stops the queue there, saying why, since what
+comes after may depend on it: fix it, try again, or drop it. One refused
+as changing history can be approved from there (**Change history**).
+
+What a waiting change changes can't change again until it's saved: an
+event it cancels or adds not at all, and the fields it sets (its title,
+its time, its actions) not until then. Their dialogs say so, those fields
+don't open, and a change that would touch them -- a move pushing it, say
+-- says which change it's waiting for. A proposal with edits waiting
+can't be confirmed till they're saved. Series, and notes for Claude, are
+still saved at once.
+
+A new event is checked for before it's sent again after an attempt
+nobody heard back from, so a lost response doesn't create it twice.
 
 ## Compaction proposals
 
@@ -538,7 +578,9 @@ actions with every status, and the time summary on each page and folded
 away), a person's page, Self's habits, a habit's page, how one of its scores
 was reached and one being edited, Events (with each page of its day summary, folded away,
 what happened at an event, and a compaction proposal: the band, its
-start, a note stepped to, its notes for Claude, and waiting for Claude)
+start, a note stepped to, its notes for Claude, and waiting for Claude; and
+changes waiting to save: on the timeline, their sheet, one refused, and
+an event waiting, opened)
 and Notes.
 It writes them, at 2x and with the real fonts (Roboto and Material
 Icons, from the Flutter SDK), to `build/screenshots/`. This is the quick

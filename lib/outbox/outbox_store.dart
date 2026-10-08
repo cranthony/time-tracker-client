@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'pending_action_save.dart';
+import 'pending_event_write.dart';
 import 'pending_note.dart';
 
 /// Keeps unsaved changes, of type [T], across app restarts.
@@ -41,6 +42,17 @@ class PrefsOutboxStore<T> implements OutboxStore<T> {
     key: 'goal_outbox',
     fromJson: PendingActionSave.fromJson,
     toJson: (save) => save.toJson(),
+    prefs: prefs,
+  );
+
+  /// Where changes to events, and the proposal, waiting to be saved are
+  /// kept.
+  static PrefsOutboxStore<PendingEventWrite> events({
+    SharedPreferencesAsync? prefs,
+  }) => PrefsOutboxStore(
+    key: 'event_outbox',
+    fromJson: PendingEventWrite.fromJson,
+    toJson: (write) => write.toJson(),
     prefs: prefs,
   );
 

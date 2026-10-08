@@ -6,6 +6,29 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.20.0
+
+- Changes to events, and to the open compaction proposal, no longer wait
+  for the server: a dialog closes as soon as it's saved, and the change
+  is shown at once, marked "Waiting to save", while it's sent in the
+  background -- in the order made, kept on the device across restarts,
+  and sent by Android's background task too. That covers editing,
+  cancelling, adding and moving events, and every edit of the proposal.
+- A line at the foot of every page says while any are waiting: saving,
+  paused, trying again later, or stopped at one the server refused.
+  Tapping it slides up the list of them, to pause or resume the queue,
+  try again now, edit one (a change to an event, a new one, or a cancel)
+  or drop one. One refused stops the queue there, saying why, as what
+  comes after may depend on it; one refused as changing history can be
+  approved from there.
+- What a change waiting changes can't be changed again until it's saved:
+  an event it cancels or adds not at all, and the fields it sets -- its
+  title, its time, its actions -- not until then. Its dialogs say so, and
+  those fields don't open; a change that would touch them says which
+  change it's waiting for.
+- A proposal can't be confirmed while edits of it are waiting, so what's
+  confirmed is what's shown.
+
 ## 7.19.0
 
 - The Events page's day summary opens on its top actions, then the
