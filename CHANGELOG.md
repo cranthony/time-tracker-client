@@ -6,6 +6,27 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.30.0
+
+- A new or moved event's cursors are its **anchor**, where it was
+  started, and its **end**, each with a mode of its own in place of the
+  six that went for the whole box. The anchor keeps clear of the event
+  it's in (the default), trims it, cancels it, or splits it, the rest
+  going right after the new event and pushing along what it runs into.
+  The end keeps the box out of other events (the default), trims them,
+  cancels them -- but the anchor's -- or pushes them along, earlier for
+  a box drawn upward. Each is kept for the next event; a move starts
+  out pushing.
+- Before there's a box, the anchor has an arrow either side, stepping it
+  to its next stop, and a "+" either side, making the box that way.
+  Once there's one, each cursor has on its outside a "+" and a "−", its
+  settings, and -- the anchor -- the switch, marked with an anchor,
+  that makes the end the anchor. Keeping, a "+" against an event is
+  greyed out. The cursor last touched is drawn bolder, and its buttons
+  win where two cursors' would overlap.
+- A cursor's settings, in a sheet: its mode, what it stops at besides
+  the grid, and its time, typed in a dialog with its date.
+
 ## 7.29.0
 
 - A cursor on the Events page stops at the next stop, not an hour on:

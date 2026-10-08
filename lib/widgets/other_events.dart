@@ -1,5 +1,6 @@
 import '../models/event.dart';
 import '../models/note.dart';
+import 'cursor_modes.dart';
 
 /// The other events an event's times are kept clear of, so that changing
 /// them never makes it overlap one.
@@ -304,6 +305,139 @@ class OtherEvents {
       ));
     }
     return (Overwrite(updates: updates, creates: creates), frontier);
+  }
+
+  /// The event [anchor] is strictly inside of, if any.
+  Event? inside(DateTime anchor) {
+    for (final e in events) {
+      if (e.start.isBefore(anchor) && e.end.isAfter(anchor)) return e;
+    }
+    return null;
+  }
+
+  /// What a new event from [anchor] to [end] -- either way -- does to the
+  /// others. The event [anchor] is inside of, as [anchorMode] says: left
+  /// alone, cut short there, cancelled, or split there, the rest of it
+  /// going right after the new event. The others the box reaches, as
+  /// [endMode] says: left alone, trimmed ([overwrite]), cancelled whole,
+  /// or pushed along ([pushing]). A rest put after the new event pushes
+  /// along what it runs into -- only events outside the box, which those
+  /// in it make way for already.
+  Overwrite around({
+    required DateTime anchor,
+    required DateTime end,
+    required AnchorMode anchorMode,
+    required EndMode endMode,
+  }) {
+    if (anchor == end) return const Overwrite();
+    final later = end.isAfter(anchor);
+    final (start, finish) = later ? (anchor, end) : (end, anchor);
+    final at = inside(anchor);
+    final rest = OtherEvents(events.where((e) => e != at));
+    final cancels = <Event>[];
+    final changes = <Event, Map<String, Object?>>{};
+    final creates = <Map<String, Object?>>[];
+    void change(Event e, Map<String, Object?> fields) =>
+        changes[e] = {...?changes[e], ...fields};
+
+    // The anchor's own event.
+    Duration? split;
+    if (at != null) {
+      final cut = localIsoTimestamp(anchor);
+      switch (anchorMode) {
+        case AnchorMode.keep:
+          break;
+        case AnchorMode.cancel:
+          cancels.add(at);
+        case AnchorMode.trim:
+          change(at, later ? {'end': cut} : {'start': cut});
+        case AnchorMode.splitPush:
+          change(at, later ? {'end': cut} : {'start': cut});
+          split = later
+              ? at.end.difference(anchor)
+              : anchor.difference(at.start);
+      }
+    }
+
+    // The others the box reaches.
+    switch (endMode) {
+      case EndMode.keep:
+        break;
+      case EndMode.trim:
+        final over = rest.overwrite(start, finish);
+        cancels.addAll(over.cancels);
+        for (final (e, fields) in over.updates) {
+          change(e, fields);
+        }
+        creates.addAll(over.creates);
+      case EndMode.cancel:
+        cancels.addAll(rest.cancelling(start, finish).cancels);
+      case EndMode.push:
+        break;
+    }
+
+    // Then along from the box's far end: the rest of the anchor's event
+    // first, then what's pushed.
+    if (split != null || endMode == EndMode.push) {
+      var frontier = later ? finish : start;
+      (DateTime, DateTime) place(Duration length) {
+        final piece = later
+            ? (frontier, frontier.add(length))
+            : (frontier.subtract(length), frontier);
+        frontier = later ? piece.$2 : piece.$1;
+        return piece;
+      }
+
+      if (split != null) {
+        final (from, to) = place(split);
+        creates.add(_rest(at!, from, to));
+      }
+      // Where each other event is now, cut or not.
+      (DateTime, DateTime) now(Event e) => (
+        switch (changes[e]?['start']) {
+          final String s => DateTime.parse(s),
+          _ => e.start,
+        },
+        switch (changes[e]?['end']) {
+          final String s => DateTime.parse(s),
+          _ => e.end,
+        },
+      );
+      final beyond = [
+        for (final e in rest.events)
+          if (!cancels.contains(e))
+            if (now(e) case (final s, final f)
+                when later
+                    // Pushing: all from the anchor on; else only those out
+                    // of the box.
+                    ? !s.isBefore(endMode == EndMode.push ? anchor : finish)
+                    : !f.isAfter(endMode == EndMode.push ? anchor : start))
+              e,
+      ];
+      beyond.sort(
+        (a, b) => later
+            ? now(a).$1.compareTo(now(b).$1)
+            : now(b).$2.compareTo(now(a).$2),
+      );
+      for (final e in beyond) {
+        final (s, f) = now(e);
+        final clear = later ? !s.isBefore(frontier) : !f.isAfter(frontier);
+        if (clear) break;
+        final (from, to) = place(f.difference(s));
+        change(e, {
+          'start': localIsoTimestamp(from),
+          'end': localIsoTimestamp(to),
+        });
+      }
+    }
+    return Overwrite(
+      cancels: cancels,
+      updates: [
+        for (final MapEntry(:key, :value) in changes.entries)
+          if (!cancels.contains(key)) (key, value),
+      ],
+      creates: creates,
+    );
   }
 
   /// [anchor] out of any event it's strictly inside of, to that event's

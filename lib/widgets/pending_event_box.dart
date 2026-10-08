@@ -3,138 +3,12 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-import 'create_mode_icon.dart';
+import 'cursor_modes.dart';
+import 'cursor_snap.dart';
 import 'day_timeline.dart';
-import 'other_events.dart';
-
-/// What a new event does with the events already there: keeps clear of
-/// them; overwrites them -- trimming them, or cancelling them; or pushes
-/// them along, out of its way.
-enum CreateMode {
-  keep(
-    'Keep events',
-    'The new event fits around the events already there: it never '
-        'overlaps them.',
-    Icons.lock_outline,
-  ),
-  trim(
-    'Overwrite and trim',
-    'The new event takes its time from the events already there: they '
-        'are shortened, or split around it, to make room; one it covers '
-        'whole is cancelled.',
-    Icons.content_cut,
-  ),
-  cancel(
-    'Overwrite and cancel',
-    'Every event the new one touches is cancelled, whole.',
-    Icons.event_busy,
-  ),
-  push(
-    'Push',
-    'Like Keep, the cursor snaps out of events -- but it can sit between '
-        'two that meet. The events after it are pushed along, into free '
-        'time, to make room -- as far as the day has room.',
-    Icons.keyboard_double_arrow_down,
-  ),
-  trimPush(
-    'Trim and push',
-    'An event the new one starts inside of is cut short there; the events '
-        'after it are pushed along, into free time, to make room -- as '
-        'far as the day has room.',
-    // Drawn: scissors over a push (see [CreateModeIcon]).
-    null,
-  ),
-  splitPush(
-    'Split and push',
-    'An event the new one starts inside of is split there, and the rest '
-        'of it pushed along after the new one, with the events after it, '
-        'into free time -- as far as the day has room.',
-    // Drawn: a zipper coming open over a push (see [CreateModeIcon]).
-    null,
-  );
-
-  const CreateMode(this.label, this.description, this.icon);
-
-  final String label;
-  final String description;
-
-  /// Its Material icon; null where [CreateModeIcon] draws its own.
-  final IconData? icon;
-
-  /// Whether it changes the events in the way.
-  bool get overwrites => this != keep;
-
-  /// Whether it pushes the events in the way along ([OtherEvents.pushing]).
-  bool get pushes => this == trimPush || this == push || this == splitPush;
-
-  /// What, pushing, it does with an event it starts inside of.
-  Inside get inside => this == splitPush ? Inside.split : Inside.trim;
-}
 
 /// Where a pushed event goes, to show: from [start] to [end], [label]led.
 typedef PushedEvent = ({DateTime start, DateTime end, String label});
-
-/// Asks which [CreateMode] to create in, [current] picked to start with;
-/// null if dismissed. Only the one picked says what it does: tapping
-/// another picks it, and tapping it again, or Done, settles on it.
-Future<CreateMode?> showCreateModeDialog(
-  BuildContext context,
-  CreateMode current,
-) => showDialog<CreateMode>(
-  context: context,
-  builder: (context) {
-    var picked = current;
-    return StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: const Text('Events in the way'),
-        contentPadding: const EdgeInsets.symmetric(vertical: 16),
-        content: SingleChildScrollView(
-          child: RadioGroup<CreateMode>(
-            groupValue: picked,
-            onChanged: (mode) => setState(() => picked = mode ?? picked),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Its icon beside its radio, ahead of the text, to pick
-                // out.
-                for (final mode in CreateMode.values)
-                  ListTile(
-                    onTap: () => mode == picked
-                        ? Navigator.of(context).pop(mode)
-                        : setState(() => picked = mode),
-                    contentPadding: const EdgeInsetsDirectional.only(
-                      start: 12,
-                      end: 24,
-                    ),
-                    titleAlignment: ListTileTitleAlignment.top,
-                    leading: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Radio<CreateMode>(value: mode),
-                        CreateModeIcon(mode),
-                      ],
-                    ),
-                    title: Text(mode.label),
-                    subtitle: mode == picked ? Text(mode.description) : null,
-                  ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(picked),
-            child: const Text('Done'),
-          ),
-        ],
-      ),
-    );
-  },
-);
 
 /// An event pending: a new one as it's being made, or one being moved --
 /// a box between two cursors -- the one it was started from, with the
@@ -212,16 +86,28 @@ class PendingEventBox {
   String toString() => 'PendingEventBox($cursor, other: $other)';
 }
 
-/// A [PendingEventBox], over a [DayTimeline] for [day] at [scale]. Each of
-/// its cursors is a line across the timeline, with its time at its left
-/// and a handle at its right that moves it alone. The [box]'s
-/// [PendingEventBox.cursor] has in its middle a button below it, which moves
-/// the other cursor an hour later each tap, and one above it, an hour
-/// earlier -- an hour from it to start with -- or puts the other cursor
-/// where either's dragged to; and the [mode] to pick. Between the
-/// cursors, the event is shaded ([PendingEventShadow]) -- unless [shaded] is
-/// false -- tinged red and slowly pulsing where it [overwrites] events;
-/// and in it, a bigger, fainter handle that moves the whole box.
+/// A [PendingEventBox], over a [DayTimeline] for [day] at [scale]: its
+/// [PendingEventBox.cursor] the anchor, where it was started from, and
+/// its [PendingEventBox.other] the end. Each is a line across the
+/// timeline with its time at its left, named "anchor" (with an anchor)
+/// or "end", and a handle at its right that moves it alone.
+///
+/// Before there's an end, the anchor has on each side an arrow, stepping
+/// it to its next stop that way, and a "+", making the box that way, to
+/// its next stop. Once there's a box, each cursor has on its outside --
+/// away from the box -- a "+", stretching the box at that end to its
+/// next stop, and a "−", shrinking it; a button opening its own settings
+/// ([onOpen]: its mode, what it stops at, its time); and the anchor, a
+/// switch, making the end the anchor. A step that can't go -- [canStep]
+/// says -- is greyed out.
+///
+/// The [selected] cursor -- the last touched -- is drawn bolder, and
+/// where two cursors' buttons would overlap, only its are shown.
+///
+/// Between the cursors, the event is shaded ([PendingEventShadow]) --
+/// unless [shaded] is false -- tinged red and slowly pulsing where it
+/// [overwrites] events; and in it, a bigger, fainter handle that moves the
+/// whole box.
 class PendingEventBoxView extends StatefulWidget {
   const PendingEventBoxView({
     super.key,
@@ -229,14 +115,16 @@ class PendingEventBoxView extends StatefulWidget {
     required this.dayEnd,
     required this.scale,
     required this.box,
-    required this.mode,
+    required this.anchorMode,
+    required this.endMode,
     required this.onMoveCursor,
     required this.onMoveOther,
     required this.onMoveBox,
-    required this.onTap,
-    this.onShrink,
-    required this.onDrag,
-    required this.onPickMode,
+    required this.onStep,
+    required this.onOpen,
+    this.canStep,
+    this.onSelect,
+    this.selected = CursorRole.anchor,
     this.shaded = true,
     this.overwrites = false,
     this.covers,
@@ -250,7 +138,8 @@ class PendingEventBoxView extends StatefulWidget {
   final DateTime dayEnd;
   final double scale;
   final PendingEventBox box;
-  final CreateMode mode;
+  final AnchorMode anchorMode;
+  final EndMode endMode;
 
   /// Whether the event between the cursors is shaded.
   final bool shaded;
@@ -265,41 +154,45 @@ class PendingEventBoxView extends StatefulWidget {
   /// Where the events it pushes go: each outlined there.
   final List<PushedEvent> pushed;
 
-  /// What the shadow says it is, if anything: the event it's moving.
-  /// What it is, by the cursor, on its side away from the box: the
-  /// event it's moving, if it's moving one.
+  /// What it is, by the anchor, on its side away from the box: the event
+  /// it's moving, if it's moving one.
   final String? label;
 
-  /// The cursors switched: the box going the other way from the other.
+  /// The anchor and the end switched: the end the anchor.
   final VoidCallback? onSwap;
 
   /// How many times the cursors have been switched: each time, the
-  /// cursor, where it is now, pings.
+  /// anchor, where it is now, pings.
   final int swaps;
 
-  /// The [PendingEventBox.cursor]'s handle dragged to a time.
+  /// The anchor's handle dragged to a time.
   final ValueChanged<DateTime> onMoveCursor;
 
-  /// The [PendingEventBox.other] cursor's handle dragged to a time.
+  /// The end's handle dragged to a time.
   final ValueChanged<DateTime> onMoveOther;
 
-  /// The box's handle dragged: the box moved whole, its cursor to the
+  /// The box's handle dragged: the box moved whole, its anchor to the
   /// time given.
   final ValueChanged<DateTime> onMoveBox;
 
-  /// A "+" tapped: the box stretched by its [step] -- an hour later, at
-  /// its foot, below the cursor, or earlier, at its top, above it.
-  final ValueChanged<Duration> onTap;
+  /// A cursor's button tapped: [role]'s cursor to its next stop, [later]
+  /// or earlier. Before there's an end, the anchor's "+" makes it: the
+  /// end's step from the anchor.
+  final void Function(CursorRole role, {required bool later}) onStep;
 
-  /// A "−" tapped: the box shrunk by its [step] -- an hour from its top
-  /// (later), or from its foot (earlier). Null while there's nothing to
-  /// shrink.
-  final ValueChanged<Duration>? onShrink;
+  /// Whether [role]'s cursor can step [later] (or earlier); all can, if
+  /// null.
+  final bool Function(CursorRole role, {required bool later})? canStep;
 
-  /// A "+" dragged to a time: the box's top there, or its foot, the way
-  /// its [step] goes.
-  final void Function(Duration step, DateTime to) onDrag;
-  final VoidCallback onPickMode;
+  /// A cursor's settings opened: its mode, what it stops at, its time.
+  final ValueChanged<CursorRole> onOpen;
+
+  /// A cursor touched -- dragged, or a button of it tapped: the one
+  /// [selected] now.
+  final ValueChanged<CursorRole>? onSelect;
+
+  /// The cursor last touched.
+  final CursorRole selected;
 
   @override
   State<PendingEventBoxView> createState() => _PendingEventBoxViewState();
@@ -310,7 +203,7 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
   /// Where a drag is, down the timeline.
   double _dragY = 0;
 
-  /// The cursor's ping, after the cursors are switched: twice, outward.
+  /// The anchor's ping, after the cursors are switched: twice, outward.
   late final _ping = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1200),
@@ -342,207 +235,426 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
     scale: widget.scale,
   );
 
+  /// How tall a cursor's buttons are, and how far from its line.
+  static const _buttonSize = 40.0;
+  static const _buttonGap = 4.0;
+
+  void _select(CursorRole role) => widget.onSelect?.call(role);
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final box = widget.box;
-    final y = _y(box.cursor);
-    // Whether the box goes down from the cursor, or up.
+    final anchorY = _y(box.cursor);
+    // Whether the box goes down from the anchor, or up.
     final down = box.other?.isAfter(box.cursor) ?? true;
     return LayoutBuilder(
-      builder: (context, constraints) => Stack(
-        clipBehavior: Clip.none,
-        children: [
-          if (box.span case (final start, final end) when widget.shaded)
-            Positioned(
-              left: timelineCardsLeft,
-              right: 8,
-              top: _y(widget.covers?.$1 ?? start),
-              height:
-                  (_y(widget.covers?.$2 ?? end) -
-                          _y(widget.covers?.$1 ?? start))
-                      .clamp(2.0, double.infinity),
-              child: PendingEventShadow(
-                start: start,
-                end: end,
-                overwrites: widget.overwrites,
+      builder: (context, constraints) {
+        final middle = (timelineCardsLeft + constraints.maxWidth - 44) / 2;
+        // Each cursor's buttons: where, and what.
+        final groups = <(CursorRole, Rect, Widget)>[];
+        if (box.other case final other? when box.span != null) {
+          final endY = _y(other);
+          // Each on its outside: the anchor's away from the end.
+          groups
+            ..add(
+              _group(
+                colors,
+                CursorRole.anchor,
+                anchorY,
+                above: down,
+                middle: middle,
               ),
-            ),
-          for (final pushed in widget.pushed)
-            Positioned(
-              left: timelineCardsLeft,
-              right: 8,
-              top: _y(pushed.start),
-              height: (_y(pushed.end) - _y(pushed.start)).clamp(
-                2.0,
-                double.infinity,
+            )
+            ..add(
+              _group(
+                colors,
+                CursorRole.end,
+                endY,
+                above: !down,
+                middle: middle,
               ),
-              child: PushedEventOutline(label: pushed.label),
-            ),
-          if (box.other case final other?) ...[
-            _boxHandle(colors, box.cursor, other),
+            );
+        } else {
+          groups
+            ..add(
+              _group(
+                colors,
+                CursorRole.anchor,
+                anchorY,
+                above: true,
+                middle: middle,
+                alone: true,
+              ),
+            )
+            ..add(
+              _group(
+                colors,
+                CursorRole.anchor,
+                anchorY,
+                above: false,
+                middle: middle,
+                alone: true,
+              ),
+            );
+        }
+        // Where two cursors' buttons would overlap, the selected one's.
+        bool hidden((CursorRole, Rect, Widget) g) =>
+            g.$1 != widget.selected &&
+            groups.any((o) => o.$1 == widget.selected && o.$2.overlaps(g.$2));
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            if (box.span case (final start, final end) when widget.shaded)
+              Positioned(
+                left: timelineCardsLeft,
+                right: 8,
+                top: _y(widget.covers?.$1 ?? start),
+                height:
+                    (_y(widget.covers?.$2 ?? end) -
+                            _y(widget.covers?.$1 ?? start))
+                        .clamp(2.0, double.infinity),
+                child: PendingEventShadow(
+                  start: start,
+                  end: end,
+                  overwrites: widget.overwrites,
+                ),
+              ),
+            for (final pushed in widget.pushed)
+              Positioned(
+                left: timelineCardsLeft,
+                right: 8,
+                top: _y(pushed.start),
+                height: (_y(pushed.end) - _y(pushed.start)).clamp(
+                  2.0,
+                  double.infinity,
+                ),
+                child: PushedEventOutline(label: pushed.label),
+              ),
+            if (box.other case final other?) ...[
+              _boxHandle(colors, box.cursor, other),
+              ..._line(
+                colors,
+                CursorRole.end,
+                other,
+                tooltip: 'Drag to move the end',
+                onDragTo: widget.onMoveOther,
+              ),
+            ],
             ..._line(
               colors,
-              other,
-              tooltip: 'Drag to move the other end',
-              onDragTo: widget.onMoveOther,
+              CursorRole.anchor,
+              box.cursor,
+              tooltip: 'Drag to move the anchor',
+              onDragTo: widget.onMoveCursor,
             ),
-            if (box.span != null) _otherButtons(colors, other, constraints),
-          ],
-          ..._line(
-            colors,
-            box.cursor,
-            tooltip: 'Drag to move the cursor',
-            onDragTo: widget.onMoveCursor,
-          ),
-          // In the middle of the cursor, clear of its handle: each button
-          // on the side its event goes, touching the line.
-          Positioned(
-            left: timelineCardsLeft,
-            right: 44,
-            top: y - _buttonHeight - _buttonGap,
-            height: 2 * (_buttonHeight + _buttonGap),
-            child: Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _swapButton(colors),
-                  const SizedBox(width: 8),
-                  // Beside each "+", a "−": the box shrunk from that end.
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _shrinkButton(
-                        colors,
-                        _hour,
-                        Icons.arrow_downward,
-                        'Shrink it an hour, from the top',
-                      ),
-                      const SizedBox(height: 2 * _buttonGap),
-                      _shrinkButton(
-                        colors,
-                        -_hour,
-                        Icons.arrow_upward,
-                        'Shrink it an hour, from the foot',
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 6),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _stepButton(
-                        colors,
-                        -_hour,
-                        Icons.arrow_upward,
-                        'An hour earlier: tap to stretch it up, or drag its top',
-                      ),
-                      const SizedBox(height: 2 * _buttonGap),
-                      _stepButton(
-                        colors,
-                        _hour,
-                        Icons.arrow_downward,
-                        'An hour later: tap to stretch it down, or drag its foot',
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 8),
-                  _modeButton(colors),
-                ],
-              ),
-            ),
-          ),
-          // The label, by the cursor, away from the box: from the left,
-          // up to its buttons.
-          if (widget.label case final label?)
-            Positioned(
-              left: 4,
-              top: down ? y - 34 : y + 14,
-              height: 20,
-              width: math.max(
-                0,
-                (timelineCardsLeft + constraints.maxWidth - 44) / 2 -
-                    _groupWidth / 2 -
-                    10,
-              ),
-              child: IgnorePointer(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colors.primary,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: colors.onPrimary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+            for (final group in groups)
+              if (!hidden(group))
+                Positioned.fromRect(rect: group.$2, child: group.$3),
+            // The label, by the anchor, away from the box: from the left,
+            // up to its buttons.
+            if (widget.label case final label?)
+              Positioned(
+                left: 4,
+                top: down ? anchorY - 34 : anchorY + 14,
+                height: 20,
+                width: math.max(0, middle - _groupWidth / 2 - 10),
+                child: IgnorePointer(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _pill(colors, label),
                   ),
                 ),
               ),
-            ),
-          // The cursor pinging, twice, where it is after a switch.
-          Positioned(
-            left: timelineTimesWidth - 4,
-            right: 0,
-            top: y - 30,
-            height: 60,
-            child: IgnorePointer(
-              child: AnimatedBuilder(
-                animation: _ping,
-                builder: (context, _) {
-                  if (!_ping.isAnimating) return const SizedBox.shrink();
-                  final phase = (_ping.value * 2) % 1;
-                  return Center(
-                    child: Container(
-                      height: 4 + 52 * phase,
-                      decoration: BoxDecoration(
-                        color: colors.primary.withValues(
-                          alpha: 0.35 * (1 - phase),
+            // The anchor pinging, twice, where it is after a switch.
+            Positioned(
+              left: timelineTimesWidth - 4,
+              right: 0,
+              top: anchorY - 30,
+              height: 60,
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _ping,
+                  builder: (context, _) {
+                    if (!_ping.isAnimating) return const SizedBox.shrink();
+                    final phase = (_ping.value * 2) % 1;
+                    return Center(
+                      child: Container(
+                        height: 4 + 52 * phase,
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(
+                            alpha: 0.35 * (1 - phase),
+                          ),
+                          borderRadius: BorderRadius.circular(30),
                         ),
-                        borderRadius: BorderRadius.circular(30),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// How wide a cursor's buttons are, side by side, at most.
+  static const _groupWidth = 4 * _buttonSize + 3 * 6.0;
+
+  Widget _pill(ColorScheme colors, String text, {Widget? leading}) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: colors.primary,
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ?leading,
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: colors.onPrimary,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
           ),
+        ),
+      ],
+    ),
+  );
+
+  /// [role]'s buttons, at [y], [above] its line or below -- the way that's
+  /// out of the box -- centered on [middle]: before there's a box
+  /// ([alone]), the anchor's arrow and "+" that way; else its "−", "+",
+  /// settings and, for the anchor, the switch.
+  (CursorRole, Rect, Widget) _group(
+    ColorScheme colors,
+    CursorRole role,
+    double y, {
+    required bool above,
+    required double middle,
+    bool alone = false,
+  }) {
+    // Outward: earlier above the line, later below it.
+    final later = !above;
+    final buttons = <Widget>[
+      if (alone) ...[
+        _button(
+          colors,
+          icon: later ? Icons.arrow_downward : Icons.arrow_upward,
+          tooltip: later
+              ? 'Move the anchor to its next stop, later'
+              : 'Move the anchor to its next stop, earlier',
+          enabled: widget.canStep?.call(role, later: later) ?? true,
+          onTap: () {
+            _select(role);
+            widget.onStep(role, later: later);
+          },
+        ),
+        _button(
+          colors,
+          icon: Icons.add,
+          arrow: later ? Icons.arrow_downward : Icons.arrow_upward,
+          primary: true,
+          tooltip: later ? 'Stretch it later' : 'Stretch it earlier',
+          onTap: () {
+            _select(CursorRole.end);
+            widget.onStep(CursorRole.end, later: later);
+          },
+          // Dragged, the end made where it goes.
+          onDragTo: (to) {
+            _select(CursorRole.end);
+            widget.onMoveOther(to);
+          },
+          from: y,
+        ),
+        // The anchor's settings above, and the end's -- for the box it
+        // makes -- below.
+        _settings(colors, later ? CursorRole.end : role),
+      ] else ...[
+        _button(
+          colors,
+          icon: Icons.remove,
+          arrow: later ? Icons.arrow_upward : Icons.arrow_downward,
+          tooltip: later ? 'Shrink it from the foot' : 'Shrink it from the top',
+          enabled: widget.canStep?.call(role, later: !later) ?? true,
+          onTap: () {
+            _select(role);
+            widget.onStep(role, later: !later);
+          },
+        ),
+        _button(
+          colors,
+          icon: Icons.add,
+          arrow: later ? Icons.arrow_downward : Icons.arrow_upward,
+          primary: true,
+          tooltip: later ? 'Stretch it later' : 'Stretch it earlier',
+          enabled: widget.canStep?.call(role, later: later) ?? true,
+          onTap: () {
+            _select(role);
+            widget.onStep(role, later: later);
+          },
+          // Dragged, this end where it goes.
+          onDragTo: (to) {
+            _select(role);
+            role == CursorRole.anchor
+                ? widget.onMoveCursor(to)
+                : widget.onMoveOther(to);
+          },
+          from: y,
+        ),
+        _settings(colors, role),
+        if (role == CursorRole.anchor && widget.onSwap != null)
+          _swapButton(colors),
+      ],
+    ];
+    final width = buttons.length * _buttonSize + (buttons.length - 1) * 6.0;
+    final rect = Rect.fromLTWH(
+      middle - width / 2,
+      above ? y - _buttonGap - _buttonSize : y + _buttonGap,
+      width,
+      _buttonSize,
+    );
+    return (
+      role,
+      rect,
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final (i, b) in buttons.indexed) ...[
+            if (i > 0) const SizedBox(width: 6),
+            b,
+          ],
         ],
       ),
     );
   }
 
-  /// How wide the cursor's buttons are, side by side: the switch, the
-  /// steps, and the mode.
-  static const _groupWidth = 36 + 8 + 36 + 6 + 40 + 8 + 56.0;
+  Widget _button(
+    ColorScheme colors, {
+    required IconData icon,
+    IconData? arrow,
+    required String tooltip,
+    required VoidCallback onTap,
+    bool primary = false,
+    bool enabled = true,
+    ValueChanged<DateTime>? onDragTo,
+    double? from,
+  }) {
+    final color = !enabled
+        ? colors.outline
+        : primary
+        ? colors.onPrimaryContainer
+        : colors.onSurface;
+    final button = Material(
+      color: primary && enabled
+          ? colors.primaryContainer
+          : colors.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      elevation: enabled ? 2 : 0,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: enabled ? onTap : null,
+        child: SizedBox.square(
+          dimension: _buttonSize,
+          child: arrow == null
+              ? Icon(icon, size: 22, color: color)
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, size: 18, color: color),
+                    Icon(arrow, size: 14, color: color),
+                  ],
+                ),
+        ),
+      ),
+    );
+    return Tooltip(
+      message: tooltip,
+      child: onDragTo == null || from == null
+          ? button
+          : GestureDetector(
+              dragStartBehavior: DragStartBehavior.down,
+              // From the line it's by.
+              onVerticalDragStart: (_) => _dragY = from,
+              onVerticalDragUpdate: (details) {
+                _dragY += details.delta.dy;
+                onDragTo(_time(_dragY));
+              },
+              child: button,
+            ),
+    );
+  }
 
-  /// The switch: the cursors trade places, the box going the other way.
+  /// [role]'s settings: its mode's icon, opening them.
+  Widget _settings(ColorScheme colors, CursorRole role) {
+    final (icon, label, changes) = switch (role) {
+      CursorRole.anchor => (
+        widget.anchorMode.icon,
+        widget.anchorMode.label,
+        widget.anchorMode.changes,
+      ),
+      _ => (
+        widget.endMode.icon,
+        widget.endMode.label,
+        widget.endMode != EndMode.keep,
+      ),
+    };
+    final name = role == CursorRole.anchor ? 'Anchor' : 'End';
+    return Tooltip(
+      message: '$name: $label. Tap for its settings',
+      child: Material(
+        color: changes
+            ? Color.lerp(colors.errorContainer, colors.surface, 0.2)
+            : colors.surfaceContainerHigh,
+        shape: const CircleBorder(),
+        elevation: 2,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () {
+            _select(role);
+            widget.onOpen(role);
+          },
+          child: SizedBox.square(
+            dimension: _buttonSize,
+            child: Icon(icon, size: 20, color: colors.onSurface),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The switch: the end the anchor, and the anchor the end -- an anchor
+  /// on it, to say so.
   Widget _swapButton(ColorScheme colors) => Tooltip(
-    message: 'Switch the cursors',
+    message: 'Switch the anchor to the other end',
     child: Material(
       color: colors.surfaceContainerHigh,
       shape: const CircleBorder(),
       elevation: 2,
       child: InkWell(
         customBorder: const CircleBorder(),
-        onTap: widget.onSwap,
+        onTap: () {
+          _select(CursorRole.anchor);
+          widget.onSwap!();
+        },
         child: SizedBox.square(
-          dimension: 36,
-          child: Icon(
-            Icons.swap_vert,
-            size: 22,
-            color: widget.onSwap == null ? colors.outline : colors.onSurface,
+          dimension: _buttonSize,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(Icons.swap_vert, size: 22, color: colors.onSurface),
+              Positioned(
+                right: 4,
+                bottom: 4,
+                child: Icon(Icons.anchor, size: 12, color: colors.primary),
+              ),
+            ],
           ),
         ),
       ),
@@ -568,7 +680,10 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
           message: 'Drag to move the event',
           child: GestureDetector(
             dragStartBehavior: DragStartBehavior.down,
-            onVerticalDragStart: (_) => _dragY = _y(cursor),
+            onVerticalDragStart: (_) {
+              _select(CursorRole.anchor);
+              _dragY = _y(cursor);
+            },
             onVerticalDragUpdate: (details) {
               _dragY += details.delta.dy;
               widget.onMoveBox(_time(_dragY));
@@ -593,22 +708,27 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
     );
   }
 
-  /// A cursor: a line across the timeline at [time], with the time at its
+  /// [role]'s cursor: a line across the timeline at [time] -- bolder if
+  /// it's [PendingEventBoxView.selected] -- with its time and name at its
   /// left and, at its right, a handle that's dragged to [onDragTo] a time.
   /// Only the handle takes a touch: a tap elsewhere goes to the timeline.
   List<Widget> _line(
     ColorScheme colors,
+    CursorRole role,
     DateTime time, {
     required String tooltip,
     required ValueChanged<DateTime> onDragTo,
   }) {
     final y = _y(time);
+    final selected = widget.selected == role;
+    final thickness = selected ? 3.0 : 2.0;
+    final anchor = role == CursorRole.anchor;
     return [
       Positioned(
         left: timelineTimesWidth - 4,
         right: 0,
-        top: y - 1,
-        height: 2,
+        top: y - thickness / 2,
+        height: thickness,
         child: IgnorePointer(child: ColoredBox(color: colors.primary)),
       ),
       Positioned(
@@ -616,19 +736,21 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
         top: y - 10,
         height: 20,
         child: IgnorePointer(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: colors.primary,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              clockTime(context, time),
-              style: TextStyle(
-                color: colors.onPrimary,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
+          child: Semantics(
+            label: anchor ? 'Anchor' : 'End',
+            child: _pill(
+              colors,
+              '${clockTime(context, time)} ${anchor ? 'anchor' : 'end'}',
+              leading: anchor
+                  ? Padding(
+                      padding: const EdgeInsets.only(right: 2),
+                      child: Icon(
+                        Icons.anchor,
+                        size: 12,
+                        color: colors.onPrimary,
+                      ),
+                    )
+                  : null,
             ),
           ),
         ),
@@ -643,7 +765,10 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
           child: GestureDetector(
             // From where the finger went down, so the line follows it.
             dragStartBehavior: DragStartBehavior.down,
-            onVerticalDragStart: (_) => _dragY = y,
+            onVerticalDragStart: (_) {
+              _select(role);
+              _dragY = y;
+            },
             onVerticalDragUpdate: (details) {
               _dragY += details.delta.dy;
               onDragTo(_time(_dragY));
@@ -651,173 +776,18 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView>
             child: Material(
               color: colors.primary,
               shape: const StadiumBorder(),
-              elevation: 2,
-              child: Icon(Icons.drag_handle, size: 20, color: colors.onPrimary),
-            ),
-          ),
-        ),
-      ),
-    ];
-  }
-
-  /// How tall the buttons above and below the line are, and how far
-  /// from it.
-  static const _buttonHeight = 44.0;
-  static const _buttonGap = 3.0;
-
-  /// How far a tap on a button moves the other cursor.
-  static const _hour = Duration(hours: 1);
-
-  /// The button moving the other cursor by [step] -- later, below the
-  /// line, or earlier, above it: a "+", with [arrow] pointing the way the
-  /// event goes from the cursor. Tapped, by [step]; dragged, to where the
-  /// other cursor goes.
-  /// On the [other] cursor's outside, beside where the cursor's are: a
-  /// "−" and a "+", shrinking and stretching the box at that end.
-  Widget _otherButtons(
-    ColorScheme colors,
-    DateTime other,
-    BoxConstraints constraints,
-  ) {
-    final foot = widget.box.cursorOnTop;
-    final y = _y(other);
-    final middle = (timelineCardsLeft + constraints.maxWidth - 44) / 2;
-    return Positioned(
-      // Under the cursor's "−" and "+".
-      left: middle - _groupWidth / 2 + 36 + 8,
-      top: foot ? y + _buttonGap : y - _buttonGap - _buttonHeight,
-      height: _buttonHeight,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _shrinkButton(
-            colors,
-            foot ? -_hour : _hour,
-            foot ? Icons.arrow_upward : Icons.arrow_downward,
-            'Shrink it an hour, at this end',
-          ),
-          const SizedBox(width: 6),
-          _stepButton(
-            colors,
-            foot ? _hour : -_hour,
-            foot ? Icons.arrow_downward : Icons.arrow_upward,
-            'Stretch it an hour, at this end: tap, or drag it',
-            from: other,
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// A "−", beside the "+" on its side of the cursor: the box shrunk
-  /// from that end by its [step] -- later, from the top, with an [arrow]
-  /// down; earlier, from the foot, with one up.
-  Widget _shrinkButton(
-    ColorScheme colors,
-    Duration step,
-    IconData arrow,
-    String tooltip,
-  ) {
-    final onShrink = widget.onShrink;
-    final color = onShrink == null ? colors.outline : colors.onSurface;
-    final icons = [
-      Icon(Icons.remove, size: 20, color: color),
-      Icon(arrow, size: 14, color: color),
-    ];
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: colors.surfaceContainerHigh,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        elevation: onShrink == null ? 0 : 2,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: onShrink == null ? null : () => onShrink(step),
-          child: SizedBox(
-            width: 36,
-            height: _buttonHeight,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              // The "−" away from the line, the arrow by it, the way the
-              // end goes.
-              children: step.isNegative ? icons.reversed.toList() : icons,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _stepButton(
-    ColorScheme colors,
-    Duration step,
-    IconData arrow,
-    String tooltip, {
-    DateTime? from,
-  }) {
-    final color = colors.onPrimaryContainer;
-    final icons = [
-      Icon(Icons.add, size: 20, color: color),
-      Icon(arrow, size: 14, color: color),
-    ];
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        dragStartBehavior: DragStartBehavior.down,
-        // From the line it's on.
-        onVerticalDragStart: (_) => _dragY = _y(from ?? widget.box.cursor),
-        onVerticalDragUpdate: (details) {
-          _dragY += details.delta.dy;
-          widget.onDrag(step, _time(_dragY));
-        },
-        child: Material(
-          color: colors.primaryContainer,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          elevation: 2,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: () => widget.onTap(step),
-            child: SizedBox(
-              width: 40,
-              height: _buttonHeight,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                // The arrow away from the line, the "+" by it.
-                children: step.isNegative ? icons.reversed.toList() : icons,
+              elevation: selected ? 4 : 2,
+              child: Icon(
+                anchor ? Icons.anchor : Icons.drag_handle,
+                size: 18,
+                color: colors.onPrimary,
               ),
             ),
           ),
         ),
       ),
-    );
+    ];
   }
-
-  Widget _modeButton(ColorScheme colors) => Tooltip(
-    message: '${widget.mode.label}: tap to change',
-    child: Material(
-      color: widget.mode.overwrites
-          ? Color.lerp(colors.errorContainer, colors.surface, 0.2)
-          : colors.surfaceContainerHigh,
-      shape: const StadiumBorder(),
-      elevation: 2,
-      child: InkWell(
-        customBorder: const StadiumBorder(),
-        onTap: widget.onPickMode,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CreateModeIcon(widget.mode, size: 22),
-              const Icon(Icons.arrow_drop_down, size: 20),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
 }
 
 /// The new event, shaded from [start] to [end], with its times in its

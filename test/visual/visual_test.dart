@@ -25,6 +25,7 @@ import 'package:time_tracker_client/services/habits_repository.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/theme.dart';
+import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/services/background_refresh.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
@@ -65,14 +66,16 @@ void main() {
       // flutter_test draws shadows as solid outlines; draw them for real.
       // It must be put back before the test ends.
       debugDisableShadows = false;
+      final settings = AppSettings(persist: false);
       try {
         final app = MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: appTheme(brightness),
-          // Still: what pulses is drawn steady, at its boldest.
+          // Still: what pulses is drawn steady, at its boldest. And the
+          // settings as they start, for each screen.
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(disableAnimations: true),
-            child: child!,
+            child: AppSettingsScope(settings: settings, child: child!),
           ),
           home: screen,
         );
@@ -873,30 +876,26 @@ void main() {
 
             await tester.tap(find.byTooltip('New event'));
             await tester.pumpAndSettle();
-            if (overwrite != null || dialog) {
-              await tester.tap(find.byTooltip('Keep events: tap to change'));
-              await tester.pumpAndSettle();
-            }
             if (overwrite != null) {
-              await tester.ensureVisible(find.text(overwrite));
-              await settle();
-              await tester.tap(find.text(overwrite));
-              await tester.pump();
-              await tester.tap(find.text('Done'));
-              await settle();
+              final (anchor, end) = _modes(overwrite);
+              await _pickMode(tester, 'Anchor', anchor);
+              await _pickMode(tester, 'End', end);
+            }
+            if (dialog) {
+              // The end's settings, open.
+              await tester.tap(find.byTooltip(RegExp(r'^End: ')).first);
+              await tester.pumpAndSettle();
             }
             if (move != 0) {
               await tester.drag(
-                find.byTooltip('Drag to move the cursor'),
+                find.byTooltip('Drag to move the anchor'),
                 Offset(0, move * defaultTimelineScale),
                 warnIfMissed: false,
               );
               await settle();
             }
             if (drag != 0) {
-              final start = find.byTooltip(
-                'An hour later: tap to stretch it down, or drag its foot',
-              );
+              final start = find.byTooltip('Stretch it later');
               await tester.drag(
                 start,
                 Offset(0, drag * defaultTimelineScale),
@@ -937,14 +936,12 @@ void main() {
           await tester.pumpAndSettle();
           // The cursor on to 11:30 PM; then two hours, past midnight.
           await tester.drag(
-            find.byTooltip('Drag to move the cursor'),
+            find.byTooltip('Drag to move the anchor'),
             Offset(0, 600 * defaultTimelineScale),
             warnIfMissed: false,
           );
           await tester.pumpAndSettle();
-          final later = find.byTooltip(
-            'An hour later: tap to stretch it down, or drag its foot',
-          );
+          final later = find.byTooltip('Stretch it later');
           for (var i = 0; i < 2; i++) {
             await tester.ensureVisible(later);
             await tester.pumpAndSettle();
@@ -983,13 +980,10 @@ void main() {
               // Keeping events -- pushing, there's no room earlier in the
               // day -- and turned around, part way through pointing to
               // where the cursor's gone.
-              await tester.tap(find.byTooltip('Push: tap to change'));
-              await tester.pumpAndSettle();
-              await tester.tap(find.text('Keep events'));
-              await tester.pumpAndSettle();
-              await tester.tap(find.text('Done'));
-              await tester.pumpAndSettle();
-              await tester.tap(find.byTooltip('Switch the cursors'));
+              await _pickMode(tester, 'End', 'Keep');
+              await tester.tap(
+                find.byTooltip('Switch the anchor to the other end'),
+              );
               await tester.pump();
               await tester.pump(const Duration(milliseconds: 450));
             }
@@ -1339,4 +1333,36 @@ Future<void> _pinch(WidgetTester tester, double from, double to) async {
   await a.up();
   await b.up();
   await tester.pumpAndSettle();
+}
+
+/// The anchor's and end's modes that make the old box-wide [mode].
+(String, String) _modes(String mode) => switch (mode) {
+  'Overwrite and trim' => ('Trim', 'Trim'),
+  'Overwrite and cancel' => ('Cancel', 'Cancel'),
+  'Push' => ('Keep', 'Push'),
+  'Trim and push' => ('Trim', 'Push'),
+  'Split and push' => ('Split and push', 'Push'),
+  _ => ('Keep', 'Keep'),
+};
+
+/// Picks [mode] from the sheet of [who] -- "Anchor" or "End" -- and closes
+/// it.
+Future<void> _pickMode(WidgetTester tester, String who, String mode) async {
+  Future<void> settle() async {
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
+
+  final button = find.byTooltip(RegExp('^$who: ')).first;
+  await tester.ensureVisible(button);
+  await settle();
+  await tester.tap(button);
+  await settle();
+  await tester.tap(
+    find.descendant(of: find.byType(BottomSheet), matching: find.text(mode)),
+  );
+  await settle();
+  Navigator.of(tester.element(find.byType(BottomSheet))).pop();
+  await settle();
 }

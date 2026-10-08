@@ -24,6 +24,8 @@ import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
+import '../widgets/cursor_modes.dart';
+import '../widgets/cursor_sheet.dart';
 import '../widgets/cursor_snap.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
@@ -212,17 +214,22 @@ class _EventsScreenState extends State<EventsScreen> {
   /// the cursor pings where it's gone.
   int _swaps = 0;
 
-  /// What [_createMode] was before a move, to go back to after it: a move
-  /// starts out pushing.
-  CreateMode? _modeBeforeMove;
+  /// The cursor last touched: its buttons win where they'd overlap
+  /// another's.
+  CursorRole _selected = CursorRole.anchor;
 
   /// Where keeping events last moved the box, from where it was put, to
   /// show with a [KeptMoveArrow]; [id] tells each move from the last.
   ({DateTime from, DateTime to, int id})? _keptMove;
 
-  /// Whether a new event keeps clear of the events already there, or
-  /// overwrites them.
-  CreateMode _createMode = CreateMode.keep;
+  /// What the box's anchor does with the event it's inside of, and its
+  /// end with the events the box reaches: as last picked, for a new
+  /// event; a move starts out pushing.
+  AnchorMode _anchorMode = AnchorMode.keep;
+  EndMode _endMode = EndMode.keep;
+
+  /// Whether the box changes the events in its way.
+  bool get _overwritesAny => _anchorMode.changes || _endMode != EndMode.keep;
 
   /// Why the day shown couldn't be loaded, if it couldn't.
   Object? _error;
@@ -1456,7 +1463,11 @@ class _EventsScreenState extends State<EventsScreen> {
     } else {
       at = _day.add(const Duration(hours: 9));
     }
+    final settings = AppSettings.of(context);
     setState(() {
+      _anchorMode = settings.anchorMode;
+      _endMode = settings.endMode;
+      _selected = CursorRole.anchor;
       _setBox(PendingEventBox(_onGrid(at)));
       _keptMove = null;
     });
@@ -1470,8 +1481,9 @@ class _EventsScreenState extends State<EventsScreen> {
       _moving = event;
       _setBox(PendingEventBox(event.start, other: event.end));
       _keptMove = null;
-      _modeBeforeMove = _createMode;
-      _createMode = CreateMode.push;
+      _selected = CursorRole.anchor;
+      _anchorMode = AnchorMode.keep;
+      _endMode = EndMode.push;
     });
   }
 
@@ -1511,8 +1523,6 @@ class _EventsScreenState extends State<EventsScreen> {
   void _endBox() => setState(() {
     _setBox(null);
     _moving = null;
-    if (_modeBeforeMove case final mode?) _createMode = mode;
-    _modeBeforeMove = null;
   });
 
   /// Saves the move of [_moving] to the box, and what it does to the
@@ -1523,7 +1533,7 @@ class _EventsScreenState extends State<EventsScreen> {
     if (event == null || span == null) return;
     final (start, end) = span;
     if (start == event.start && end == event.end) return _endBox();
-    final makingRoom = _createMode.overwrites
+    final makingRoom = _overwritesAny
         ? _overwrite(_otherEvents(event), start, end)
         : const Overwrite();
     final asked = await askFollowThrough(context, makingRoom.cancels);
@@ -1602,58 +1612,80 @@ class _EventsScreenState extends State<EventsScreen> {
     await _refresh();
   }
 
-  /// [box], keeping events, fitted into free time (see [OtherEvents]):
-  /// [moved] whole, as near as it fits; or from its [PendingEventBox.cursor] --
-  /// or, [fromOther], its other cursor -- out of any event it's in, and to
-  /// no further than the next event. Pushing, see [_pushKept].
-  /// Overwriting, as it is.
+  /// [box] as its cursors' modes let it be. Its anchor, kept, out of
+  /// any event it's inside of, once there's a box: to its edge on the
+  /// box's side. Kept by its end too: fitted into free time
+  /// (see [OtherEvents]) -- [moved] whole, as near as it fits; or from its
+  /// anchor -- or, [fromOther], its end -- to no further than the next
+  /// event; otherwise, up to the next event but the anchor's. Pushing, no
+  /// further than leaves the day room for what it pushes.
   PendingEventBox _kept(
     PendingEventBox box, {
     bool moved = false,
     bool fromOther = false,
   }) {
-    if (_createMode.pushes) return _pushKept(box, moved: moved);
-    final other = box.other;
-    if (_createMode.overwrites || other == null) return box;
-    final others = _otherEvents(_moving);
-    if (moved) {
-      final start = box.span?.$1 ?? box.cursor;
-      final (from, to) = others.fitMoved(
-        start,
-        box.length,
-        from: _from,
-        to: _to,
-      );
-      return box.at(from, to);
-    }
-    if (fromOther) {
-      final (fitted, cursor) = others.fitFrom(other, box.cursor);
-      return PendingEventBox(cursor, other: fitted);
-    }
-    final (cursor, fitted) = others.fitFrom(box.cursor, other);
-    return PendingEventBox(cursor, other: fitted);
-  }
-
-  /// [box], pushing events: its cursor -- for [CreateMode.push] -- out
-  /// of any event it's inside of, to its nearer edge ([moved] whole, the
-  /// other cursor with it); and its other cursor no further from it than
-  /// leaves the day room for the events it pushes.
-  PendingEventBox _pushKept(PendingEventBox box, {bool moved = false}) {
     final others = _otherEvents(_moving);
     var (cursor, other) = (box.cursor, box.other);
-    if (_createMode == CreateMode.push) {
-      final snapped = others.between(cursor);
-      if (moved) other = other?.add(snapped.difference(cursor));
+    final keepAnchor = _anchorMode == AnchorMode.keep;
+    if (keepAnchor && _endMode == EndMode.keep && other != null) {
+      if (moved) {
+        final start = box.span?.$1 ?? box.cursor;
+        final (from, to) = others.fitMoved(
+          start,
+          box.length,
+          from: _from,
+          to: _to,
+        );
+        return box.at(from, to);
+      }
+      if (fromOther) {
+        final (fitted, anchor) = others.fitFrom(other, cursor);
+        return PendingEventBox(anchor, other: fitted);
+      }
+      final (anchor, fitted) = others.fitFrom(cursor, other);
+      return PendingEventBox(anchor, other: fitted);
+    }
+    if (other == null || other == cursor) {
+      return PendingEventBox(cursor, other: other);
+    }
+    final later = other.isAfter(cursor);
+    // Kept, the anchor out of any event it's in, to its edge on the box's
+    // side -- the box with it, its length kept.
+    if (keepAnchor) {
+      var snapped = cursor;
+      for (var i = 0; i < 100; i++) {
+        final at = others.inside(snapped);
+        if (at == null) break;
+        snapped = later ? at.end : at.start;
+      }
+      other = other.add(snapped.difference(cursor));
       cursor = snapped;
     }
-    if (other != null && other != cursor) {
-      other = others.pushFit(
-        cursor,
-        other,
-        from: _from,
-        to: _to,
-        inside: _createMode.inside,
-      );
+    switch (_endMode) {
+      case EndMode.keep:
+        final at = others.inside(cursor);
+        final rest = OtherEvents(others.events.where((e) => e != at));
+        if (later) {
+          if (rest.latestEnd(cursor) case final next?
+              when next.isBefore(other)) {
+            other = next;
+          }
+        } else if (rest.earliestStart(cursor) case final last?
+            when last.isAfter(other)) {
+          other = last;
+        }
+      case EndMode.push:
+        other = others.pushFit(
+          cursor,
+          other,
+          from: _from,
+          to: _to,
+          inside: _anchorMode == AnchorMode.splitPush
+              ? Inside.split
+              : Inside.trim,
+        );
+      case EndMode.trim || EndMode.cancel:
+        break;
     }
     return PendingEventBox(cursor, other: other);
   }
@@ -1723,71 +1755,88 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  /// Whether the new event takes time from events already there:
-  /// pushing, only if it cuts one short.
-  bool get _overwrites => switch (_box?.span) {
-    (final start, final end) when _createMode.pushes =>
-      _createMode == CreateMode.trimPush &&
-          _otherEvents(_moving).events.any((e) {
-            final anchor = _later ? start : end;
-            return e.start.isBefore(anchor) && e.end.isAfter(anchor);
-          }),
-    (final start, final end) =>
-      _createMode.overwrites &&
-          _otherEvents(_moving).overlapping(start, end) != null,
-    null => false,
+  /// What the box does to the events in its way, as it is.
+  Overwrite? get _inTheWay => switch (_box?.span) {
+    (final start, final end) => _overwrite(_otherEvents(_moving), start, end),
+    null => null,
   };
 
-  /// Where the events the new one pushes go, pushing.
-  List<PushedEvent> get _pushed => switch (_box?.span) {
-    (final start, final end) when _createMode.pushes => [
-      for (final (event, changes) in _overwrite(
-        _otherEvents(_moving),
-        start,
-        end,
-      ).updates)
-        if (changes case {'start': final String from, 'end': final String to})
+  /// Whether [fields] move [event] whole, its length kept: pushing it.
+  static bool _moves(Event event, Map<String, Object?> fields) =>
+      switch ((fields['start'], fields['end'])) {
+        (final String s, final String e) =>
+          DateTime.parse(e).difference(DateTime.parse(s)) ==
+              event.end.difference(event.start),
+        _ => false,
+      };
+
+  /// Whether the new event takes time from events already there: cuts
+  /// one short, or cancels one.
+  bool get _overwrites {
+    final o = _inTheWay;
+    if (o == null) return false;
+    // Split, the anchor's event isn't lost: the rest goes after the box.
+    final split = _anchorMode == AnchorMode.splitPush
+        ? _otherEvents(_moving).inside(_box!.cursor)
+        : null;
+    return o.cancels.isNotEmpty ||
+        o.updates.any((u) => u.$1 != split && !_moves(u.$1, u.$2));
+  }
+
+  /// Where the events the new one pushes go, and the rest of one it
+  /// splits.
+  List<PushedEvent> get _pushed => switch (_inTheWay) {
+    final o? => [
+      for (final (event, changes) in o.updates)
+        if (_moves(event, changes))
           (
-            start: DateTime.parse(from).toLocal(),
-            end: DateTime.parse(to).toLocal(),
+            start: DateTime.parse(changes['start']! as String).toLocal(),
+            end: DateTime.parse(changes['end']! as String).toLocal(),
             label: event.summary ?? 'Event',
           ),
-      for (final rest in _overwrite(_otherEvents(_moving), start, end).creates)
+      for (final rest in o.creates)
         (
           start: DateTime.parse(rest['start'] as String).toLocal(),
           end: DateTime.parse(rest['end'] as String).toLocal(),
           label: '${rest['summary'] ?? 'Event'} (the rest)',
         ),
     ],
-    _ => const [],
+    null => const [],
   };
 
   /// What the shadow covers, cancelling: the box, and every event it
-  /// touches, whole. Null otherwise: just the box.
-  (DateTime, DateTime)? get _covers => switch (_box?.span) {
-    (final start, final end) when _createMode == CreateMode.cancel =>
-      _otherEvents(_moving).touching(start, end),
+  /// cancels, whole. Null otherwise: just the box.
+  (DateTime, DateTime)? get _covers => switch ((_box?.span, _inTheWay)) {
+    ((final start, final end), final o?) when o.cancels.isNotEmpty => (
+      [
+        start,
+        for (final e in o.cancels) e.start,
+      ].reduce((a, b) => a.isBefore(b) ? a : b),
+      [
+        end,
+        for (final e in o.cancels) e.end,
+      ].reduce((a, b) => a.isAfter(b) ? a : b),
+    ),
     _ => null,
   };
 
-  /// What an event from [start] to [end] does to the [others] in its way,
-  /// overwriting them: trims, or cancels, them; or pushes them, [later]
-  /// (the way the box goes, unless said).
+  /// What an event from [start] to [end] does to the [others] in its
+  /// way, as its cursors' modes say: its anchor the [start], for one
+  /// [later] (the way the box goes, unless said), or else its [end].
   Overwrite _overwrite(
     OtherEvents others,
     DateTime start,
     DateTime end, {
     bool? later,
-  }) => switch (_createMode) {
-    CreateMode.cancel => others.cancelling(start, end),
-    final mode when mode.pushes => others.pushing(
-      start,
-      end,
-      later: later ?? _later,
-      inside: mode.inside,
-    ),
-    _ => others.overwrite(start, end),
-  };
+  }) {
+    final l = later ?? _later;
+    return others.around(
+      anchor: l ? start : end,
+      end: l ? end : start,
+      anchorMode: _anchorMode,
+      endMode: _endMode,
+    );
+  }
 
   /// How near, on screen, a dragged cursor has to come to an edge or a
   /// note to stop there.
@@ -1826,65 +1875,57 @@ class _EventsScreenState extends State<EventsScreen> {
     role,
   ).nearest(to, reach: Duration(seconds: (_snapReach / _scale * 60).round()));
 
-  /// Which cursor the box's [top] end -- or its foot -- is.
-  CursorRole _roleAt(PendingEventBox box, {required bool top}) {
-    if (box.span == null) return CursorRole.end;
-    return top == box.cursorOnTop ? CursorRole.anchor : CursorRole.end;
+  /// Where [role]'s cursor steps to, [later] or earlier: its next stop,
+  /// if there is one and it doesn't reach, or pass, the other cursor.
+  /// Before there's an end, the end's step makes it, from the anchor.
+  DateTime? _stepTo(CursorRole role, {required bool later}) {
+    final box = _box;
+    if (box == null) return null;
+    final anchor = role == CursorRole.anchor;
+    final from = anchor ? box.cursor : box.other ?? box.cursor;
+    final to = _stops(role).next(from, later: later);
+    if (to == null) return null;
+    final other = anchor ? box.other : box.cursor;
+    if (other != null && other != from) {
+      final towards = other.isAfter(from) == later;
+      if (towards && (later ? !to.isBefore(other) : !to.isAfter(other))) {
+        return null;
+      }
+    }
+    return to;
   }
 
-  /// A button on the cursor, its [step] later or earlier, dragged to
-  /// [to]: that end there, where its cursor stops, and still on [step]'s
-  /// side of the other end.
-  void _dragStep(Duration step, DateTime to) {
+  /// Whether [role]'s cursor can step [later], or earlier: to a stop, and
+  /// -- keeping -- not out of free time it's at the edge of.
+  bool _canStep(CursorRole role, {required bool later}) {
     final box = _box;
-    if (box == null) return;
-    final top = step.isNegative;
-    final at = _snap(to, _roleAt(box, top: top));
-    final (start, end) = box.span ?? (box.cursor, box.cursor);
-    if (top) {
-      if (at.isBefore(end)) _changeEdge(box.withTop(at));
+    if (box == null || _stepTo(role, later: later) == null) return false;
+    final anchor = role == CursorRole.anchor;
+    final keeps = anchor
+        ? _anchorMode == AnchorMode.keep
+        : _endMode == EndMode.keep;
+    if (!keeps) return true;
+    final at = anchor ? box.cursor : box.other ?? box.cursor;
+    // Into the box, it's free; out of it, not into an event it touches.
+    final other = anchor ? box.other : box.cursor;
+    if (other != null && other != at && other.isAfter(at) == later) {
+      return true;
+    }
+    final others = _otherEvents(_moving).events;
+    return !others.any((e) => later ? e.start == at : e.end == at);
+  }
+
+  /// [role]'s cursor stepped to its next stop, [later] or earlier.
+  void _stepCursor(CursorRole role, {required bool later}) {
+    final to = _stepTo(role, later: later);
+    if (to == null) return;
+    setState(() => _selected = role);
+    if (role == CursorRole.anchor) {
+      _changeBox((box) => box.withCursor(to), fromOther: true);
     } else {
-      if (at.isAfter(start)) _changeEdge(box.withFoot(at));
+      _changeBox((box) => box.withOther(to));
     }
   }
-
-  /// The box stretched by a "+": its top to the stop before it, for a
-  /// [step] back, or its foot to the stop after it -- from the cursor, to
-  /// start with.
-  void _stretch(Duration step) {
-    final box = _box;
-    if (box == null) return;
-    final (top, foot) = box.span ?? (box.cursor, box.cursor);
-    if (step.isNegative) {
-      final to = _stops(_roleAt(box, top: true)).next(top, later: false);
-      if (to != null) _changeEdge(box.withTop(to));
-    } else {
-      final to = _stops(_roleAt(box, top: false)).next(foot, later: true);
-      if (to != null) _changeEdge(box.withFoot(to));
-    }
-  }
-
-  /// The box shrunk by a "−": its top to the stop after it, for a [step]
-  /// on, or its foot to the stop before it -- never to the other end, or
-  /// past it.
-  void _shrink(Duration step) {
-    final box = _box;
-    final span = box?.span;
-    if (box == null || span == null) return;
-    final (top, foot) = span;
-    if (step.isNegative) {
-      final to = _stops(_roleAt(box, top: false)).next(foot, later: false);
-      if (to != null && to.isAfter(top)) _changeEdge(box.withFoot(to));
-    } else {
-      final to = _stops(_roleAt(box, top: true)).next(top, later: true);
-      if (to != null && to.isBefore(foot)) _changeEdge(box.withTop(to));
-    }
-  }
-
-  /// The box changed to [changed], one end of it moved: kept in free time
-  /// from its other end.
-  void _changeEdge(PendingEventBox changed) =>
-      _changeBox((_) => changed, fromOther: changed.cursor != _box?.cursor);
 
   /// Opens the new event, as shaded between the cursors.
   Future<void> _continueCreating() async {
@@ -1892,7 +1933,7 @@ class _EventsScreenState extends State<EventsScreen> {
     if (span == null) return;
     final (start, end) = span;
     final others = _otherEvents(_moving);
-    final overwrite = _createMode.overwrites;
+    final overwrite = _overwritesAny;
     final later = _later;
     final inTheWay = _overwrite(others, start, end);
     var cleared = false;
@@ -1946,27 +1987,28 @@ class _EventsScreenState extends State<EventsScreen> {
       clear: !overwrite || inTheWay.isEmpty
           ? null
           : (
-              question: switch (_createMode) {
-                CreateMode.cancel => 'Cancel ${_events(inTheWay.count)}?',
-                final mode when mode.pushes =>
+              question: switch (_clearing(inTheWay)) {
+                _Clearing.cancels => 'Cancel ${_events(inTheWay.count)}?',
+                _Clearing.pushes =>
                   'Make room, changing ${_events(inTheWay.count)}?',
-                _ => 'Clear this time of ${_events(inTheWay.count)}?',
+                _Clearing.trims =>
+                  'Clear this time of ${_events(inTheWay.count)}?',
               },
-              explanation: switch (_createMode) {
-                CreateMode.cancel =>
-                  'Every event the new one touches is cancelled, as a '
-                      'change of plan, and no new event is made.',
-                final mode when mode.pushes =>
+              explanation: switch (_clearing(inTheWay)) {
+                _Clearing.cancels =>
+                  'Every event the new one touches is cancelled, and no '
+                      'new event is made.',
+                _Clearing.pushes =>
                   'The events in the way are pushed along, as the new one '
                       'would push them, and no new event is made.',
-                _ =>
+                _Clearing.trims =>
                   'The events under the new one are trimmed out of this '
                       'time, and no new event is made.',
               },
-              label: switch (_createMode) {
-                CreateMode.cancel => 'Cancel them',
-                final mode when mode.pushes => 'Make room',
-                _ => 'Clear the time',
+              label: switch (_clearing(inTheWay)) {
+                _Clearing.cancels => 'Cancel them',
+                _Clearing.pushes => 'Make room',
+                _Clearing.trims => 'Clear the time',
               },
               run: () async {
                 final asked = await askFollowThrough(context, inTheWay.cancels);
@@ -2029,12 +2071,60 @@ class _EventsScreenState extends State<EventsScreen> {
   /// "3 events", or "1 event".
   static String _events(int count) => '$count event${count == 1 ? '' : 's'}';
 
-  Future<void> _pickCreateMode() async {
-    final mode = await showCreateModeDialog(context, _createMode);
-    if (mode == null || !mounted) return;
-    setState(() => _createMode = mode);
-    // Keeping events now: out of their way.
-    _changeBox((box) => box);
+  /// What clearing the time does, mostly: only cancels, pushes some
+  /// along, or else trims.
+  _Clearing _clearing(Overwrite o) => o.updates.isEmpty && o.creates.isEmpty
+      ? _Clearing.cancels
+      : o.creates.isNotEmpty || o.updates.any((u) => _moves(u.$1, u.$2))
+      ? _Clearing.pushes
+      : _Clearing.trims;
+
+  /// [role]'s settings, in a sheet: its mode, what it stops at, and its
+  /// time. A new event's modes are kept for the next; a move's aren't.
+  Future<void> _openCursor(CursorRole role) async {
+    final settings = AppSettings.of(context);
+    final anchor = role == CursorRole.anchor;
+    await showCursorSheet(
+      context,
+      title: anchor ? 'Anchor' : 'End',
+      anchorMode: anchor ? _anchorMode : null,
+      endMode: anchor ? null : _endMode,
+      snap: settings.snapFor(role),
+      onAnchorMode: (mode) {
+        setState(() => _anchorMode = mode);
+        if (_moving == null) settings.setAnchorMode(mode);
+        _changeBox((box) => box);
+      },
+      onEndMode: (mode) {
+        setState(() => _endMode = mode);
+        if (_moving == null) settings.setEndMode(mode);
+        _changeBox((box) => box);
+      },
+      onSnap: (snap) => settings.setSnap(role, snap),
+      onEditTime: () => _editTime(role),
+    );
+  }
+
+  /// Asks for [role]'s cursor's time, its date and time of day, and puts
+  /// it there.
+  Future<void> _editTime(CursorRole role) async {
+    final box = _box;
+    if (box == null) return;
+    final anchor = role == CursorRole.anchor;
+    final picked = await showEditTimeDialog(
+      context,
+      title: anchor ? "The anchor's time" : "The end's time",
+      initial: anchor ? box.cursor : box.other ?? box.cursor,
+      first: _from,
+      last: _to,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _selected = role);
+    if (anchor) {
+      _changeBox((box) => box.withCursor(picked), fromOther: true);
+    } else {
+      _changeBox((box) => box.withOther(picked));
+    }
   }
 
   /// Runs [change] -- and if the server refuses it because it changes
@@ -3178,7 +3268,11 @@ class _EventsScreenState extends State<EventsScreen> {
                                   dayEnd: _to,
                                   scale: _scale,
                                   box: box,
-                                  mode: _createMode,
+                                  anchorMode: _anchorMode,
+                                  endMode: _endMode,
+                                  selected: _selected,
+                                  onSelect: (role) =>
+                                      setState(() => _selected = role),
                                   overwrites: _overwrites,
                                   covers: _covers,
                                   pushed: _pushed,
@@ -3211,10 +3305,9 @@ class _EventsScreenState extends State<EventsScreen> {
                                     ),
                                     moved: true,
                                   ),
-                                  onTap: _stretch,
-                                  onShrink: box.span == null ? null : _shrink,
-                                  onDrag: _dragStep,
-                                  onPickMode: _pickCreateMode,
+                                  onStep: _stepCursor,
+                                  canStep: _canStep,
+                                  onOpen: _openCursor,
                                 ),
                               ),
                             if ((_box, _keptMove) case (_?, final move?))
@@ -3501,3 +3594,6 @@ class _InsetClipper extends CustomClipper<Rect> {
   bool shouldReclip(_InsetClipper old) =>
       old.top != top || old.bottom != bottom;
 }
+
+/// What clearing the time does, mostly (see [_EventsScreenState._clearing]).
+enum _Clearing { cancels, pushes, trims }

@@ -1,11 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../widgets/cursor_modes.dart';
 import '../widgets/cursor_snap.dart';
 
 /// The app's settings, kept on this device only: the [grid] a cursor on
-/// the timeline snaps to, and what else each cursor stops at
-/// ([snapFor]). Listeners hear every change.
+/// the timeline snaps to, what else each cursor stops at ([snapFor]),
+/// and what a new event's anchor and end do with the events in the way
+/// ([anchorMode], [endMode]). Listeners hear every change.
 class AppSettings extends ChangeNotifier {
   /// Kept on the device with [persist]; otherwise only while the app
   /// runs. Starts with [grid], until what's kept is [load]ed.
@@ -30,6 +32,19 @@ class AppSettings extends ChangeNotifier {
 
   final _snaps = <CursorRole, Set<SnapTo>>{};
 
+  static const _anchorModeKey = 'settings_anchor_mode';
+  static const _endModeKey = 'settings_end_mode';
+  AnchorMode _anchorMode = AnchorMode.keep;
+  EndMode _endMode = EndMode.keep;
+
+  /// What a new event's anchor does with the event it's inside of, as
+  /// last picked.
+  AnchorMode get anchorMode => _anchorMode;
+
+  /// What a new event's end does with the events the box reaches, as last
+  /// picked.
+  EndMode get endMode => _endMode;
+
   final bool persist;
   Duration? _grid;
   Future<void>? _loading;
@@ -47,6 +62,14 @@ class AppSettings extends ChangeNotifier {
       if (minutes != null) {
         _grid = minutes <= 0 ? null : Duration(minutes: minutes);
       }
+      _anchorMode =
+          AnchorMode.values.asNameMap()[await prefs.getString(
+            _anchorModeKey,
+          )] ??
+          _anchorMode;
+      _endMode =
+          EndMode.values.asNameMap()[await prefs.getString(_endModeKey)] ??
+          _endMode;
       for (final role in CursorRole.values) {
         final names = await prefs.getStringList(_snapKey(role));
         if (names == null) continue;
@@ -69,6 +92,25 @@ class AppSettings extends ChangeNotifier {
     if (!persist) return;
     try {
       await SharedPreferencesAsync().setInt(_gridKey, grid?.inMinutes ?? 0);
+    } catch (_) {
+      // Kept while the app runs, then.
+    }
+  }
+
+  /// Sets what a new event's anchor does, and keeps it.
+  Future<void> setAnchorMode(AnchorMode mode) =>
+      _setString(_anchorModeKey, mode.name, () => _anchorMode = mode);
+
+  /// Sets what a new event's end does, and keeps it.
+  Future<void> setEndMode(EndMode mode) =>
+      _setString(_endModeKey, mode.name, () => _endMode = mode);
+
+  Future<void> _setString(String key, String value, VoidCallback set) async {
+    set();
+    notifyListeners();
+    if (!persist) return;
+    try {
+      await SharedPreferencesAsync().setString(key, value);
     } catch (_) {
       // Kept while the app runs, then.
     }

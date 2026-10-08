@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
+import 'package:time_tracker_client/widgets/cursor_modes.dart';
 import 'package:time_tracker_client/widgets/cursor_snap.dart';
 import 'package:time_tracker_client/outbox/action_outbox.dart';
 import 'package:time_tracker_client/models/event.dart';
@@ -35,6 +36,8 @@ void main() {
   /// The settings the Events page reads: by default, a grid of an hour
   /// and no other stops, so a cursor's "+" and "−" step an hour.
   AppSettings? settings;
+  AppSettings current() => settings ??= _hourly();
+  tearDown(() => settings = null);
 
   Widget app(
     EventsRepository repo, {
@@ -42,7 +45,7 @@ void main() {
     ActionsRepository? actions,
   }) => MaterialApp(
     home: AppSettingsScope(
-      settings: settings ?? _hourly(),
+      settings: current(),
       child: EventsScreen(
         repository: repo,
         serverLabel: 'offline demo',
@@ -1146,12 +1149,8 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    final startHere = find.byTooltip(
-      'An hour later: tap to stretch it down, or drag its foot',
-    );
-    final endHere = find.byTooltip(
-      'An hour earlier: tap to stretch it up, or drag its top',
-    );
+    final startHere = find.byTooltip('Stretch it later');
+    final endHere = find.byTooltip('Stretch it earlier');
 
     /// Taps "+", which puts the cursor at now: noon.
     Future<void> plus(WidgetTester tester) async {
@@ -1165,6 +1164,26 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(button);
       await tester.pumpAndSettle();
+    }
+
+    /// The anchor's and end's modes that make the old box-wide [mode].
+    (String, String) modes(String mode) => switch (mode) {
+      'Keep events' => ('Keep', 'Keep'),
+      'Overwrite and trim' => ('Trim', 'Trim'),
+      'Overwrite and cancel' => ('Cancel', 'Cancel'),
+      'Push' => ('Keep', 'Push'),
+      'Trim and push' => ('Trim', 'Push'),
+      'Split and push' => ('Split and push', 'Push'),
+      _ => throw ArgumentError(mode),
+    };
+
+    /// Starts new events in the old box-wide [mode]: its anchor's and
+    /// end's, as if last picked.
+    void startIn(String mode) {
+      final (anchor, end) = modes(mode);
+      current()
+        ..setAnchorMode(AnchorMode.values.firstWhere((m) => m.label == anchor))
+        ..setEndMode(EndMode.values.firstWhere((m) => m.label == end));
     }
 
     /// Lets a second go by: the overwriting pulse never settles.
@@ -1181,6 +1200,30 @@ void main() {
       await settle(tester);
       await tester.tap(button);
       await settle(tester);
+    }
+
+    /// Picks the old box-wide [mode]: its anchor's and end's modes, each
+    /// from the cursor's sheet.
+    Future<void> pickMode(WidgetTester tester, String mode) async {
+      final (anchor, end) = modes(mode);
+      for (final (who, pick) in [('Anchor', anchor), ('End', end)]) {
+        final button = find
+            .byTooltip(RegExp('^$who: .*Tap for its settings\$'))
+            .first;
+        await tester.ensureVisible(button);
+        await settle(tester);
+        await tester.tap(button);
+        await settle(tester);
+        await tester.tap(
+          find.descendant(
+            of: find.byType(BottomSheet),
+            matching: find.text(pick),
+          ),
+        );
+        await settle(tester);
+        Navigator.of(tester.element(find.byType(BottomSheet))).pop();
+        await settle(tester);
+      }
     }
 
     Future<void> continueToDialog(WidgetTester tester) async {
@@ -1201,10 +1244,10 @@ void main() {
 
     /// Drags the cursor, by its handle, [by].
     Future<void> moveLine(WidgetTester tester, Duration by) async {
-      await drag(tester, find.byTooltip('Drag to move the cursor'), by);
+      await drag(tester, find.byTooltip('Drag to move the anchor'), by);
     }
 
-    final otherHandle = find.byTooltip('Drag to move the other end');
+    final otherHandle = find.byTooltip('Drag to move the end');
 
     FloatingActionButton continueButton(WidgetTester tester) =>
         tester.widget<FloatingActionButton>(
@@ -1328,22 +1371,11 @@ void main() {
       expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
 
       // Overwriting, it can cover Tea; keeping again, it's out of the way.
-      await tapButton(tester, find.byTooltip('Keep events: tap to change'));
-      await tester.tap(find.text('Overwrite and trim'));
-      await tester.pump();
-      await tester.tap(find.text('Done'));
-      await settle(tester);
+      await pickMode(tester, 'Overwrite and trim');
       await drag(tester, otherHandle, const Duration(hours: 1));
       expect(box(tester).span, (at(30, 12, 30), at(30, 15)));
       expect(overwrites(tester), isTrue);
-      final mode = find.byTooltip('Overwrite and trim: tap to change');
-      await tester.ensureVisible(mode);
-      await settle(tester);
-      await tester.tap(mode);
-      await settle(tester);
-      await tester.tap(find.text('Keep events'));
-      await tester.pump();
-      await tester.tap(find.text('Done'));
+      await pickMode(tester, 'Keep events');
       await tester.pumpAndSettle();
       expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
     });
@@ -1447,33 +1479,39 @@ void main() {
       await tester.pumpAndSettle();
       await plus(tester);
 
-      // Picked from the drop-down, each said what it does.
-      await tester.tap(find.byTooltip('Keep events: tap to change'));
+      // The end's, from its sheet: each says what it does.
+      await tester.tap(find.byTooltip(RegExp(r'^End: Keep\. ')));
       await tester.pumpAndSettle();
       // Only the one picked says what it does.
-      expect(find.textContaining('never overlaps them'), findsOneWidget);
+      expect(
+        find.textContaining("doesn't go into other events"),
+        findsOneWidget,
+      );
       expect(find.textContaining('touches is cancelled, whole'), findsNothing);
-      await tester.tap(find.text('Overwrite and cancel'));
+      Finder inSheet(String text) => find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.text(text),
+      );
+      await tester.tap(inSheet('Cancel'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('never overlaps them'), findsNothing);
+      expect(find.textContaining("doesn't go into other events"), findsNothing);
       expect(
         find.textContaining('touches is cancelled, whole'),
         findsOneWidget,
       );
-      await tester.tap(find.text('Overwrite and trim'));
+      await tester.tap(inSheet('Trim'));
       await tester.pumpAndSettle();
       expect(
-        find.textContaining('shortened, or split around it'),
+        find.textContaining('cut short, or split around it'),
         findsOneWidget,
       );
-      // Still open, until Done.
-      expect(find.text('Events in the way'), findsOneWidget);
-      await tester.tap(find.text('Done'));
+      // Still open, until closed.
+      expect(find.text('The events the box reaches'), findsOneWidget);
+      Navigator.of(tester.element(find.byType(BottomSheet))).pop();
       await tester.pumpAndSettle();
-      expect(
-        find.byTooltip('Overwrite and trim: tap to change'),
-        findsOneWidget,
-      );
+      expect(find.byTooltip(RegExp(r'^End: Trim\. ')), findsOneWidget);
+      // And the anchor's, cutting short the event it's in.
+      await pickMode(tester, 'Overwrite and trim');
 
       await drag(tester, startHere, const Duration(hours: 3));
       expect(box(tester).span, (at(30, 12), at(30, 15)));
@@ -1517,13 +1555,13 @@ void main() {
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await plus(tester);
-      final shrinkTop = find.byTooltip('Shrink it an hour, from the top');
-      final shrinkFoot = find.byTooltip('Shrink it an hour, from the foot');
+      final shrinkTop = find.byTooltip('Shrink it from the top');
+      final shrinkFoot = find.byTooltip('Shrink it from the foot');
       // Nothing to shrink yet.
       Material shrinking(Finder button) => tester.widget<Material>(
         find.descendant(of: button, matching: find.byType(Material)),
       );
-      expect(shrinking(shrinkTop).elevation, 0);
+      expect(shrinkTop, findsNothing);
 
       // Two below: two hours, from the cursor.
       await tapButton(tester, startHere);
@@ -1538,43 +1576,96 @@ void main() {
       expect(box(tester).span, (at(30, 12), at(30, 14)));
       await tapButton(tester, shrinkFoot);
       expect(box(tester).span, (at(30, 12), at(30, 13)));
-      // Never to the other end.
+      // Never to the other end: greyed out.
+      expect(shrinking(shrinkFoot).elevation, 0);
       await tapButton(tester, shrinkFoot);
       expect(box(tester).span, (at(30, 12), at(30, 13)));
     });
 
-    testWidgets("the other cursor's own \"−\" and \"+\", on its outside, "
-        'shrink and stretch the box at that end', (tester) async {
+    testWidgets("before there's a box, the anchor's arrows step it, and "
+        'each "+" makes the box that way', (tester) async {
       final repo = _RecordingRepository([]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await plus(tester);
-      final stretch = find.byTooltip(
-        'Stretch it an hour, at this end: tap, or drag it',
+      expect(find.text('12:00 PM anchor'), findsOneWidget);
+
+      await tapButton(
+        tester,
+        find.byTooltip('Move the anchor to its next stop, later'),
       );
-      final shrink = find.byTooltip('Shrink it an hour, at this end');
+      expect((box(tester).cursor, box(tester).other), (at(30, 13), null));
+      await tapButton(
+        tester,
+        find.byTooltip('Move the anchor to its next stop, earlier'),
+      );
+      expect(box(tester).cursor, at(30, 12));
+      // Up from it: the anchor at the foot, the end at the top.
+      await tapButton(tester, endHere);
+      expect((box(tester).cursor, box(tester).other), (at(30, 12), at(30, 11)));
+      expect(find.text('11:00 AM end'), findsOneWidget);
+    });
+
+    testWidgets("a cursor's sheet sets what it stops at, and its time", (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      await tapButton(tester, startHere);
+
+      await tapButton(tester, find.byTooltip(RegExp(r'^Anchor: Keep\. ')));
+      expect(find.text('The event it is inside of'), findsOneWidget);
+      await tester.tap(find.text('Event edges'));
+      // Its edges now pulse: they never settle.
+      await settle(tester);
+      expect(current().snapFor(CursorRole.anchor), {SnapTo.events});
+      // The end's own: unchanged.
+      expect(current().snapFor(CursorRole.end), isEmpty);
+
+      await tester.tap(find.text('Edit its time'));
+      await settle(tester);
+      expect(find.text("The anchor's time"), findsOneWidget);
+      expect(find.text('Wed, Sep 30'), findsOneWidget);
+      expect(find.text('12:00 PM'), findsWidgets);
+      await tester.tap(find.text('Done'));
+      await settle(tester);
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
+    });
+
+    testWidgets("each cursor's own \"−\" and \"+\" are on its outside, "
+        'shrinking and stretching the box at that end', (tester) async {
+      final repo = _RecordingRepository([]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      final shrinkFoot = find.byTooltip('Shrink it from the foot');
       // Not until there's a box.
-      expect(stretch, findsNothing);
+      expect(shrinkFoot, findsNothing);
 
       await tapButton(tester, startHere);
       await tapButton(tester, startHere);
       expect(box(tester).span, (at(30, 12), at(30, 14)));
-      // The foot: below its line.
+      // The end's, the foot's: below its line.
       final line = tester.getCenter(otherHandle).dy;
-      expect(tester.getTopLeft(stretch).dy, greaterThan(line));
-      await tapButton(tester, stretch);
-      expect(box(tester).span, (at(30, 12), at(30, 15)));
-      await tapButton(tester, shrink);
-      expect(box(tester).span, (at(30, 12), at(30, 14)));
+      expect(tester.getTopLeft(startHere).dy, greaterThan(line));
+      expect(tester.getTopLeft(shrinkFoot).dy, greaterThan(line));
+      await tapButton(tester, shrinkFoot);
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
 
-      // Switched, the other cursor's the top: above its line.
-      await tapButton(tester, find.byTooltip('Switch the cursors'));
+      // Switched, the end's the top: above its line.
+      await tapButton(
+        tester,
+        find.byTooltip('Switch the anchor to the other end'),
+      );
+      expect(box(tester).cursor, at(30, 13));
       expect(
-        tester.getBottomLeft(stretch).dy,
+        tester.getBottomLeft(endHere).dy,
         lessThan(tester.getCenter(otherHandle).dy),
       );
-      await tapButton(tester, stretch);
-      expect(box(tester).span, (at(30, 11), at(30, 14)));
+      await tapButton(tester, endHere);
+      expect(box(tester).span, (at(30, 11), at(30, 13)));
     });
 
     testWidgets('keeping events, "+" above stretches the box up into the '
@@ -1589,10 +1680,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.longPress(find.text('Siesta'));
       await tester.pumpAndSettle();
-      await tapButton(tester, find.byTooltip('Push: tap to change'));
-      await tester.tap(find.text('Keep events'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Done'));
+      await pickMode(tester, 'Keep events');
       await tester.pumpAndSettle();
 
       await tapButton(tester, endHere);
@@ -1608,13 +1696,10 @@ void main() {
         Event(id: 'a', start: at(30, 11), end: at(30, 12, 30), summary: 'A'),
         Event(id: 'b', start: at(30, 13, 30), end: at(30, 15), summary: 'B'),
       ]);
+      startIn('Overwrite and cancel');
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
-      await plus(tester);
-      await tapButton(tester, find.byTooltip('Keep events: tap to change'));
-      await tester.tap(find.text('Overwrite and cancel'));
-      await tester.pump();
-      await tester.tap(find.text('Done'));
+      await tester.tap(find.byTooltip('New event'));
       await settle(tester);
 
       await tapPulsing(tester, startHere);
@@ -1672,11 +1757,8 @@ void main() {
       // nothing made.
       await tester.tap(find.byTooltip('Cancel'));
       await tester.pumpAndSettle();
-      await plus(tester);
-      await tapButton(tester, find.byTooltip('Keep events: tap to change'));
-      await tester.tap(find.text('Overwrite and trim'));
-      await tester.pump();
-      await tester.tap(find.text('Done'));
+      startIn('Overwrite and trim');
+      await tester.tap(find.byTooltip('New event'));
       await settle(tester);
       await tapPulsing(tester, startHere);
       expect(box(tester).span, (at(30, 12), at(30, 13)));
@@ -1699,18 +1781,6 @@ void main() {
       expect(find.text('Time cleared: 2 events changed.'), findsOneWidget);
       expect(find.byType(PendingEventBoxView), findsNothing);
     });
-
-    /// Picks [mode] from the box's drop-down.
-    Future<void> pickMode(WidgetTester tester, String mode) async {
-      await tapPulsing(tester, find.byTooltip(RegExp(r'^.*: tap to change$')));
-      await tester.ensureVisible(find.text(mode));
-      await settle(tester);
-      await tester.tap(find.text(mode));
-      await tester.pump();
-      await tester.tap(find.text('Done'));
-      await settle(tester);
-      await settle(tester);
-    }
 
     /// Where the box shows the events it pushes going.
     List<PushedEvent> pushed(WidgetTester tester) => tester
@@ -1831,11 +1901,11 @@ void main() {
       await tester.pumpAndSettle();
       await plus(tester);
       await pickMode(tester, 'Push');
-      // Noon, in A, nearer its end: where A and B meet.
-      expect(box(tester).cursor, at(30, 12, 15));
+      // Noon, in A: once there's a box, out of A, to where A and B meet.
       for (var i = 0; i < 4; i++) {
         await tapPulsing(tester, startHere);
       }
+      expect(box(tester).cursor, at(30, 12, 15));
       expect(box(tester).span, (at(30, 12, 15), at(30, 13, 15)));
       // B pushed to 1:15-2, and C, on, to 2-3. Nothing cut.
       expect(pushed(tester), [
@@ -1922,7 +1992,7 @@ void main() {
       await tester.longPress(find.text('Tea'));
       await tester.pumpAndSettle();
       expect(box(tester).span, (at(30, 12), at(30, 13)));
-      expect(find.byTooltip('Push: tap to change'), findsOneWidget);
+      expect(find.byTooltip(RegExp(r'^End: Push\. ')), findsOneWidget);
       expect(find.text('Moving “Tea”'), findsOneWidget);
       // Faint where it was.
       expect(
@@ -1961,7 +2031,7 @@ void main() {
       expect(find.byType(PendingEventBoxView), findsNothing);
       // A new event keeps events again, as it did before the move.
       await plus(tester);
-      expect(find.byTooltip('Keep events: tap to change'), findsOneWidget);
+      expect(find.byTooltip(RegExp(r'^End: Keep\. ')), findsOneWidget);
     });
 
     testWidgets("the label's on the cursor, away from the box; switching "
@@ -1983,7 +2053,7 @@ void main() {
       expect(box(tester).cursor, at(30, 12));
       expect(tester.getCenter(label).dy, lessThan(top + y(at(30, 12))));
 
-      await tester.tap(find.byTooltip('Switch the cursors'));
+      await tester.tap(find.byTooltip('Switch the anchor to the other end'));
       await tester.pump(const Duration(milliseconds: 100));
       expect(box(tester).cursor, at(30, 13));
       expect(box(tester).other, at(30, 12));
