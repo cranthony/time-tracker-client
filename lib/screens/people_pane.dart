@@ -29,7 +29,7 @@ import 'person_screen.dart';
 /// * **Self**, with their relationship health and its last 8 days in its
 ///   head, and under it the two habits they focus on, each with its
 ///   health; "All habits and scores" opens their page ([PersonScreen]).
-/// * **Prioritized people**, the three the user keeps in front, each with
+/// * **People**, the three the user prioritizes, each with
 ///   their health, their time with the user in the summary's 24 hours and
 ///   7 days, and the last event with them -- or, with the summary looking
 ///   on, the next ([PersonTile]); "All people and circles" opens everyone
@@ -38,8 +38,8 @@ import 'person_screen.dart';
 /// Habits are focused on from their page, and people prioritized from
 /// their menu, on this device only (see [PlanMemory.focus]). Tapping a
 /// person opens their page; their menu edits, prioritizes or archives
-/// them. The search finds anyone by name, context, circle and what
-/// matters to them. "+" adds a person or a circle. Above it all, with a
+/// them. There's no search here, with so few: everyone's is on their own
+/// page. "+", in People's head, adds a person or a circle. Above it all, with a
 /// [summary] to measure, the time with people in its window: by person,
 /// and by circle, those in none together as "Individuals". It shows what
 /// [memory] has, while it loads afresh. [onPeople] is told who's there
@@ -91,9 +91,6 @@ class PeoplePane extends StatefulWidget {
 class PeoplePaneState extends State<PeoplePane> {
   PeopleList? get _people => widget.memory.people;
   Object? _error;
-
-  /// What the search has in it.
-  String _query = '';
 
   /// Whether each section is open.
   bool _selfOpen = true;
@@ -328,21 +325,6 @@ class PeoplePaneState extends State<PeoplePane> {
                 circleTime(events, view.window, people),
               ],
             ),
-      searchHint: 'Search people',
-      onSearch: (query) => setState(() => _query = query),
-      actions: [
-        PopupMenuButton<String>(
-          tooltip: 'Add a person or circle',
-          icon: const Icon(Icons.add),
-          enabled: people != null,
-          onSelected: (choice) =>
-              choice == 'circle' ? _editCircle(null) : _editPerson(null),
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'person', child: Text('New person')),
-            PopupMenuItem(value: 'circle', child: Text('New circle')),
-          ],
-        ),
-      ],
       child: RefreshIndicator(
         onRefresh: reload,
         child: ListView(
@@ -355,7 +337,6 @@ class PeoplePaneState extends State<PeoplePane> {
               _tile(context, defaultSelf),
             ],
             (null, _) => const [LinearProgressIndicator()],
-            (final people?, _) when _query.trim().isNotEmpty => _found(people),
             (final people?, _) => [
               ..._selfSection(context, people.self),
               ..._prioritizedSection(context, people),
@@ -364,28 +345,6 @@ class PeoplePaneState extends State<PeoplePane> {
         ),
       ),
     );
-  }
-
-  /// Everyone the search finds, archived or not.
-  List<Widget> _found(PeopleList people) {
-    String? circleName(String id) =>
-        people.circles.where((c) => c.id == id).firstOrNull?.name;
-    final found = [
-      for (final person in people.withSelf)
-        if (person.status != 'deleted' &&
-            matchesSearch(_query, [
-              person.name,
-              person.context,
-              person.whatMatters,
-              if (person.isSelf) 'you',
-              for (final id in person.circleIds) circleName(id),
-            ]))
-          person,
-    ];
-    return [
-      for (final person in found) _tile(context, person),
-      if (found.isEmpty) NoMatches(query: _query),
-    ];
   }
 
   /// Self, and the habits they focus on.
@@ -479,9 +438,21 @@ class PeoplePaneState extends State<PeoplePane> {
     final picked = [for (final id in widget.memory.focus.people) ?byId[id]];
     return [
       _SectionHead(
-        title: 'Prioritized people',
+        title: 'People',
         open: _prioritizedOpen,
         onTap: () => setState(() => _prioritizedOpen = !_prioritizedOpen),
+        trailing: [
+          PopupMenuButton<String>(
+            tooltip: 'Add a person or circle',
+            icon: const Icon(Icons.add),
+            onSelected: (choice) =>
+                choice == 'circle' ? _editCircle(null) : _editPerson(null),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'person', child: Text('New person')),
+              PopupMenuItem(value: 'circle', child: Text('New circle')),
+            ],
+          ),
+        ],
       ),
       if (_prioritizedOpen) ...[
         for (final person in picked) _tile(context, person),

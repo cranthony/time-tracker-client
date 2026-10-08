@@ -264,7 +264,7 @@ void main() {
       );
     });
 
-    // Searching people, and actions.
+    // Searching everyone, from the People pane, and actions.
     for (final (name, pane, query) in [
       ('plan_people_search', 'People', 'salsa'),
       ('actions_search', null, 'guitar'),
@@ -276,7 +276,17 @@ void main() {
           plan(),
           scoped: true,
           then: () async {
-            if (pane != null) await openPane(tester, pane);
+            if (pane != null) {
+              await openPane(tester, pane);
+              // The pane has no search: everyone's has.
+              await tester.scrollUntilVisible(
+                find.text('All people and circles'),
+                300,
+                scrollable: find.byType(Scrollable).last,
+              );
+              await tester.tap(find.text('All people and circles'));
+              await tester.pumpAndSettle();
+            }
             await tester.enterText(
               find.byType(TextField).hitTestable().first,
               query,
