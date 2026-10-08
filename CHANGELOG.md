@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.28.0
+
+- A Settings page, from the menu: the grid the Events page's cursors
+  snap to, every 5, 10, 15, 30 or 60 minutes, or none, to stop at any
+  minute. It's 15 minutes until changed, as before, and kept on the
+  device.
+
 ## 7.27.0
 
 - A change the server refused names the events it's about, in place of

@@ -18,6 +18,7 @@ import 'outbox/note_outbox.dart';
 import 'outbox/outbox_store.dart';
 import 'platform/add_note_shortcut.dart';
 import 'screens/home_screen.dart';
+import 'services/app_settings.dart';
 import 'services/event_store.dart';
 import 'services/actions_repository.dart';
 import 'services/background_refresh.dart';
@@ -271,6 +272,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
 
   /// What's been loaded of the plan, and the events, for every page to
   /// share: the traits are scored from them.
+  /// The app's settings, read from the device as it starts.
+  late final _settings = AppSettings()..load();
+
   late final _planMemory = PlanMemory(
     eventStore: EventStore(
       repository: widget.eventsRepository,
@@ -373,6 +377,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       // Above the navigator, so every route and dialog finds it.
       builder: (context, child) {
         Widget scoped = PlanMemoryScope(memory: _planMemory, child: child!);
+        scoped = AppSettingsScope(settings: _settings, child: scoped);
         if (widget.backgroundRefresh case final refresh?) {
           scoped = BackgroundRefreshScope(refresh: refresh, child: scoped);
         }

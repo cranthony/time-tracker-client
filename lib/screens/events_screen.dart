@@ -12,6 +12,7 @@ import '../models/proposal.dart';
 import '../models/recurrence.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/note_outbox.dart';
+import '../services/app_settings.dart';
 import '../services/actions_repository.dart';
 import '../services/event_store.dart';
 import '../services/events_repository.dart';
@@ -1437,12 +1438,9 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  /// [time] at the nearest quarter hour.
-  static DateTime _nearestQuarter(DateTime time) {
-    final minutes = time.hour * 60 + time.minute + (time.second >= 30 ? 1 : 0);
-    final quarters = (minutes / 15).round();
-    return DateTime(time.year, time.month, time.day, 0, quarters * 15);
-  }
+  /// [time] on the nearest line of the grid set in [AppSettings].
+  DateTime _onGrid(DateTime time) =>
+      snapToGrid(time, AppSettings.of(context).grid);
 
   /// Starts making a new event: a cursor across the day shown, at now if
   /// that's today, or else the middle of what's in view.
@@ -1458,7 +1456,7 @@ class _EventsScreenState extends State<EventsScreen> {
       at = _day.add(const Duration(hours: 9));
     }
     setState(() {
-      _setBox(PendingEventBox(_nearestQuarter(at)));
+      _setBox(PendingEventBox(_onGrid(at)));
       _keptMove = null;
     });
   }
@@ -1796,7 +1794,7 @@ class _EventsScreenState extends State<EventsScreen> {
   void _dragStep(Duration step, DateTime to) {
     final box = _box;
     if (box == null) return;
-    final quarter = _nearestQuarter(to);
+    final quarter = _onGrid(to);
     final (top, foot) = box.span ?? (box.cursor, box.cursor);
     if (step.isNegative) {
       final latest = foot.subtract(OtherEvents.shortest);
@@ -3154,15 +3152,14 @@ class _EventsScreenState extends State<EventsScreen> {
                                     null => null,
                                   },
                                   onMoveCursor: (to) => _changeBox(
-                                    (box) =>
-                                        box.withCursor(_nearestQuarter(to)),
+                                    (box) => box.withCursor(_onGrid(to)),
                                     fromOther: true,
                                   ),
                                   onMoveOther: (to) => _changeBox(
-                                    (box) => box.withOther(_nearestQuarter(to)),
+                                    (box) => box.withOther(_onGrid(to)),
                                   ),
                                   onMoveBox: (to) => _changeBox(
-                                    (box) => box.movedTo(_nearestQuarter(to)),
+                                    (box) => box.movedTo(_onGrid(to)),
                                     moved: true,
                                   ),
                                   onTap: _stretch,
@@ -3324,7 +3321,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 onTapTime: _box == null
                     ? null
                     : (time) => _changeBox(
-                        (box) => box.movedTo(_nearestQuarter(time)),
+                        (box) => box.movedTo(_onGrid(time)),
                         moved: true,
                       ),
                 axis: false,
