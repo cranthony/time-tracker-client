@@ -375,7 +375,9 @@ List<T> placeLabels<T>(
 ///
 /// Tapping an event calls [onTap] with it, and pressing and holding it,
 /// [onLongPress]; tapping anywhere else calls [onTapTime] with the time
-/// there. The [highlighted] event is ringed, pulsing.
+/// there. The [highlighted] event is ringed, pulsing. While a cursor
+/// stops at notes ([pulseNotes]) or events' edges ([pulseEdges]), they're
+/// marked, pulsing.
 class DayTimeline extends StatelessWidget {
   const DayTimeline({
     super.key,
@@ -391,6 +393,8 @@ class DayTimeline extends StatelessWidget {
     this.onTapTime,
     this.faded,
     this.highlighted,
+    this.pulseNotes = false,
+    this.pulseEdges = false,
     this.axis = true,
     this.review,
     this.marks = const {},
@@ -421,6 +425,11 @@ class DayTimeline extends StatelessWidget {
 
   /// The id of an event to pick out: ringed, pulsing.
   final String? highlighted;
+
+  /// Whether to mark the notes, and the edges of the events, as what a
+  /// cursor stops at: bolder, pulsing.
+  final bool pulseNotes;
+  final bool pulseEdges;
 
   /// Called with the time at a tap that isn't on an event.
   final ValueChanged<DateTime>? onTapTime;
@@ -656,6 +665,31 @@ class DayTimeline extends StatelessWidget {
                           height: placement.bottom - placement.top + 6,
                           child: const IgnorePointer(child: _Highlight()),
                         ),
+                    if (pulseNotes || pulseEdges)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: _SnapMarks(
+                            notes: pulseNotes
+                                ? [
+                                    ...noteYs,
+                                    for (final note in reviewNotes)
+                                      ?yIfToday(note.time),
+                                  ]
+                                : const [],
+                            edges: pulseEdges
+                                ? {
+                                    for (final p in placements)
+                                      if (!p.event.isCancelled) ...[
+                                        p.trueTop,
+                                        p.trueBottom,
+                                      ],
+                                  }.toList()
+                                : const [],
+                            noteColor: colors.tertiary,
+                            edgeColor: colors.primary,
+                          ),
+                        ),
+                      ),
                     for (final overlap in eventOverlaps(
                       events,
                       day: day,
@@ -771,6 +805,118 @@ class DayTimeline extends StatelessWidget {
         ),
     ],
   );
+}
+
+/// What a cursor stops at, marked, pulsing -- steady with animations
+/// turned off: a line across at each of the
+/// [notes], in [noteColor], and on the bands a bar at each of the
+/// [edges] of the events, in [edgeColor] -- each a height down the
+/// timeline.
+class _SnapMarks extends StatefulWidget {
+  const _SnapMarks({
+    required this.notes,
+    required this.edges,
+    required this.noteColor,
+    required this.edgeColor,
+  });
+
+  final List<double> notes;
+  final List<double> edges;
+  final Color noteColor;
+  final Color edgeColor;
+
+  @override
+  State<_SnapMarks> createState() => _SnapMarksState();
+}
+
+class _SnapMarksState extends State<_SnapMarks>
+    with SingleTickerProviderStateMixin {
+  late final _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+    value: 1,
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Steady, at their boldest, with animations turned off.
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _pulse
+        ..stop()
+        ..value = 1;
+    } else if (!_pulse.isAnimating) {
+      _pulse.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: [
+      if (widget.notes.isNotEmpty) 'Notes marked as stops',
+      if (widget.edges.isNotEmpty) "Events' edges marked as stops",
+    ].join('. '),
+    child: CustomPaint(
+      painter: _SnapMarksPainter(
+        notes: widget.notes,
+        edges: widget.edges,
+        noteColor: widget.noteColor,
+        edgeColor: widget.edgeColor,
+        pulse: _pulse,
+      ),
+    ),
+  );
+}
+
+class _SnapMarksPainter extends CustomPainter {
+  _SnapMarksPainter({
+    required this.notes,
+    required this.edges,
+    required this.noteColor,
+    required this.edgeColor,
+    required this.pulse,
+  }) : super(repaint: pulse);
+
+  final List<double> notes;
+  final List<double> edges;
+  final Color noteColor;
+  final Color edgeColor;
+  final Animation<double> pulse;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final alpha = 0.4 + 0.6 * pulse.value;
+    final note = Paint()
+      ..color = noteColor.withValues(alpha: alpha)
+      ..strokeWidth = 2.5;
+    for (final y in notes) {
+      canvas.drawLine(Offset(_timeWidth, y), Offset(size.width, y), note);
+    }
+    final edge = Paint()
+      ..color = edgeColor.withValues(alpha: alpha)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    for (final y in edges) {
+      canvas.drawLine(
+        Offset(_timeWidth + 2, y),
+        Offset(_cardsLeft + 10, y),
+        edge,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SnapMarksPainter old) =>
+      old.notes != notes ||
+      old.edges != edges ||
+      old.noteColor != noteColor ||
+      old.edgeColor != edgeColor;
 }
 
 /// A ring round an event, in the primary color, pulsing: to pick it out.
