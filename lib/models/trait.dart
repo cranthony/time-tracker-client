@@ -1,3 +1,4 @@
+import '../widgets/durations.dart' show formatMinutes;
 import 'facts.dart';
 
 /// A trait: how the user wants to be -- adventurous, thoughtful, present
@@ -118,12 +119,13 @@ const partKinds = <String, PartKind>{
   ),
   'duration': (
     label: 'Time spent',
-    hint: 'Minutes of events, against a target: with an action, only its.',
+    hint: 'Time spent at events, against a target: with an action, only its.',
     fields: [
       _action,
       (
         field: 'target_min',
-        label: 'Target, minutes',
+        // Kept in minutes; shown, and entered, in hours and minutes.
+        label: 'Target time',
         required: true,
         hint: null,
       ),
@@ -403,7 +405,10 @@ String describePart(Part part, [Map<String?, String> actionNames = const {}]) {
       if (part['zero_at_days'] case final zero?) '(0 at $zero days)',
     ].join(' '),
     'duration' =>
-      '${part['target_min']} min of ${action ?? 'events'} '
+      '${switch (part['target_min']) {
+            final num minutes => formatMinutes(minutes),
+            final other => '$other',
+          }} of ${action ?? 'events'} '
           'every ${days(part['interval_days'] ?? 30)}',
     'continuity' =>
       'Continuity${action == null ? '' : ' of $action'}: last within '
