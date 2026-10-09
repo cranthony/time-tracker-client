@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.34.0
+
+- The changes waiting to save open from the app menu too, as **Changes
+  waiting to save** -- with how many, when there are any -- not only
+  from the line at the foot of the screen, and so also when nothing's
+  waiting: to see that everything's saved, or to pause the queue ahead.
+
 ## 7.32.0
 
 - The open compaction proposal is kept on the device, and the
