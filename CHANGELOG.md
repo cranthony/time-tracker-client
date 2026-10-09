@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.40.0
+
+- What a new or moved event's Keep list starts with is set in Settings,
+  as rules: historical events -- every one that ended by the last
+  compaction, kept unless told otherwise -- or the last of them; and
+  the previous or next event, from the cursor (or the event moved),
+  with an action or one in a group: "Next event with Sleep", say. Never
+  the event the cursor's in, nor the one being moved.
+
 ## 7.39.0
 
 - A new or moved event's box always trims the events in its way --

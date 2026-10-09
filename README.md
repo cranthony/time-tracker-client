@@ -477,7 +477,11 @@ A **Settings** page, from the menu, holds what's kept on this device
 alone. For now that's the grid the Events page's cursors snap to: every
 5, 10, 15 (the default), 30 or 60 minutes from midnight, or none, to
 stop at any minute. Every cursor also stops at events' edges and notes,
-each of which can be turned off there.
+each of which can be turned off there. And what a new or moved event's
+Keep list starts with: rules, each removable, of historical events (all
+that ended by the last compaction -- the default), the last of them, or
+the previous or next event, from the cursor, with an action or one in a
+group (never the event it starts in, nor the one moved).
 
 ## Background updates
 

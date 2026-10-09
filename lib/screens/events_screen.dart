@@ -12,6 +12,7 @@ import '../models/proposal.dart';
 import '../models/recurrence.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/note_outbox.dart';
+import '../services/keep_rules.dart';
 import '../services/app_settings.dart';
 import '../services/actions_repository.dart';
 import '../services/event_store.dart';
@@ -1521,10 +1522,12 @@ class _EventsScreenState extends State<EventsScreen> {
     } else {
       at = _day.add(const Duration(hours: 9));
     }
+    final cursor = _onGrid(at);
     setState(() {
       _clearLists();
+      _keepByRules(from: cursor, to: cursor);
       _selected = CursorRole.anchor;
-      _setBox(PendingEventBox(_onGrid(at)));
+      _setBox(PendingEventBox(cursor));
     });
   }
 
@@ -1536,9 +1539,28 @@ class _EventsScreenState extends State<EventsScreen> {
       _moving = event;
       _setBox(PendingEventBox(event.start, other: event.end));
       _clearLists();
+      _keepByRules(from: event.start, to: event.end, except: event.id);
       _selected = CursorRole.anchor;
     });
   }
+
+  /// Puts in the Keep list what the rules in [AppSettings] pick, for a box
+  /// from [from] to [to], [except] the event being edited.
+  void _keepByRules({
+    required DateTime from,
+    required DateTime to,
+    String? except,
+  }) => _lists[EventList.keep]!.set(
+    keepByRules(
+      AppSettings.of(context).keepRules,
+      _otherEvents(null).events,
+      from: from,
+      to: to,
+      lastCompaction: _lastCompaction,
+      actions: _actionsById,
+      except: except,
+    ),
+  );
 
   /// Empties the lists, and stops picking for one.
   void _clearLists() {
