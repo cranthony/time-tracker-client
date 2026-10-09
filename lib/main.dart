@@ -23,6 +23,7 @@ import 'services/app_settings.dart';
 import 'services/event_store.dart';
 import 'services/actions_repository.dart';
 import 'services/background_refresh.dart';
+import 'services/diagnostics_repository.dart';
 import 'services/events_repository.dart';
 import 'services/focus_store.dart';
 import 'services/habits_repository.dart';
@@ -87,6 +88,7 @@ Future<void> main() async {
         habitsRepository:
             sample?.habitsRepository() ?? InMemoryHabitsRepository(),
         focus: sample?.focusStore(),
+        diagnosticsRepository: sample?.diagnosticsRepository(),
         backgroundRefresh: BackgroundRefresh(
           repository: sample?.scheduleHintsRepository(),
           // The offline demo has nothing to fetch.
@@ -133,6 +135,7 @@ Future<void> main() async {
       traitsRepository: McpTraitsRepository(client, cache: cache),
       peopleRepository: McpPeopleRepository(client, cache: cache),
       habitsRepository: McpHabitsRepository(client, cache: cache),
+      diagnosticsRepository: McpDiagnosticsRepository(client, cache: cache),
       backgroundRefresh: BackgroundRefresh(
         repository: McpScheduleHintsRepository(client, cache: cache),
         settings: settings,
@@ -238,6 +241,7 @@ class TimeTrackerApp extends StatefulWidget {
     this.peopleRepository,
     this.habitsRepository,
     this.backgroundRefresh,
+    this.diagnosticsRepository,
     this.proposalsRepository,
     this.focus,
     this.settings,
@@ -267,6 +271,10 @@ class TimeTrackerApp extends StatefulWidget {
   /// The background fetches' times, and their schedule (see
   /// [BackgroundRefreshScope]); without it, there are none.
   final BackgroundRefresh? backgroundRefresh;
+
+  /// Where the Diagnostics page's metrics come from (see
+  /// [DiagnosticsScope]); without it, the menu doesn't offer it.
+  final DiagnosticsRepository? diagnosticsRepository;
 
   /// The habits focused on and people prioritized; by default, those
   /// kept on the device.
@@ -406,6 +414,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       builder: (context, child) {
         Widget scoped = PlanMemoryScope(memory: _planMemory, child: child!);
         scoped = AppSettingsScope(settings: _settings, child: scoped);
+        if (widget.diagnosticsRepository case final diagnostics?) {
+          scoped = DiagnosticsScope(repository: diagnostics, child: scoped);
+        }
         if (widget.backgroundRefresh case final refresh?) {
           scoped = BackgroundRefreshScope(refresh: refresh, child: scoped);
         }

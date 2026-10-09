@@ -576,6 +576,34 @@ It's sent again only if whoever claimed it doesn't say how it went within
 two minutes -- killed mid-request, say -- and then checked for first, as
 above. Nor can one being sent elsewhere be dropped.
 
+## Diagnostics
+
+**Diagnostics**, in the ⋮ menu, shows how the server is doing, from its
+`get_health` (see the server's README). Its **Server** pane has three
+graphs over one time range, the latest on the right:
+
+- **Tool calls** -- each call's own work, filled, with the rest of its
+  request (auth and transport) stacked on top, to the whole request's
+  time; a failed call is a red dot.
+- **Memory** -- the server's resident memory after each call, whichever
+  tool's.
+- **Restarts** -- a tick at each time the server started: there's one
+  server, so each is a crash or a deploy.
+
+Above them, pick which calls (all tools, reads, writes, an area -- events,
+notes, proposals, people, actions, habits -- or one tool), how far back
+(the last day, week, or everything), and whether to show each call or the
+mean, median, 95th percentile or max of each 15 minutes, hour, 6 hours or
+day. Each graph says the mean, median, 95th percentile and max of what's
+in view. A pinch -- on a touchscreen or a trackpad, or Ctrl and the mouse
+wheel -- or the buttons zoom all three in together, in time; two fingers
+drag along, and a double tap goes back to the whole range. Scrolling
+scrolls the page. Pull down to fetch again; the last fetched shows offline. Swipe to
+the **App** pane for the app's own metrics -- none yet. A server without
+`get_health` says so.
+
+The graphs are drawn with [fl_chart](https://pub.dev/packages/fl_chart).
+
 ## Compaction proposals
 
 A scheduled Claude routine compacts notes into the calendar as a
