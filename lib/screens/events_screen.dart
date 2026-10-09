@@ -24,6 +24,7 @@ import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
+import '../widgets/mode_stack.dart';
 import '../widgets/window_cursor.dart';
 import '../widgets/cursor_modes.dart';
 import '../widgets/cursor_sheet.dart';
@@ -2251,6 +2252,76 @@ class _EventsScreenState extends State<EventsScreen> {
     for (final n in _proposalNotes) (n.time, n.text ?? ''),
   ];
 
+  /// The modes the page is in, first entered first: placing a cursor --
+  /// left as soon as there's a box -- or creating or editing an event;
+  /// extending the compaction window.
+  List<EventsMode> get _modes => [
+    if (_box case final box?)
+      _moving != null
+          ? EventsMode.edit
+          : box.span == null
+          ? EventsMode.placeCursor
+          : EventsMode.create,
+    if (_extendTo != null) EventsMode.extend,
+  ];
+
+  /// Leaves the top mode -- as ✕ does -- undoing what was done in it.
+  void _leaveMode() {
+    if (_extendTo != null) {
+      setState(() => _extendTo = null);
+    } else if (_box != null) {
+      _endBox();
+    }
+  }
+
+  /// The event the lone cursor is inside of, to split there with ✓; null
+  /// if it's in none, or there's a box.
+  Event? get _toSplit => switch (_box) {
+    PendingEventBox(:final cursor, other: null) when _moving == null =>
+      _otherEvents(null).inside(cursor),
+    _ => null,
+  };
+
+  /// Splits the event the lone cursor is inside of there: shortened to
+  /// end at the cursor, and the rest of it a new event -- in what happened,
+  /// if it's in the proposal's window.
+  Future<void> _splitAtCursor() async {
+    final event = _toSplit;
+    final at = _box?.cursor;
+    if (event == null || at == null) return;
+    final over = _otherEvents(null).splitAt(at);
+    final name = _named(event);
+    final time = MaterialLocalizations.of(context)
+        .formatTimeOfDay(TimeOfDay.fromDateTime(at.toLocal()));
+    try {
+      if (_reviews(at, at.add(const Duration(minutes: 1)))) {
+        final amended = await _amend(
+          ProposalEdits.over(over),
+          label: 'Split $name, in what happened',
+        );
+        if (!mounted) return;
+        _endBox();
+        return _amended(amended, 'Split at $time, in what happened.');
+      }
+      final changed = await _approvingHistory(
+        at: event.start,
+        (allow) =>
+            _writes.makeRoom(over, allowHistory: allow, label: 'Split $name'),
+      );
+      if (!mounted) return;
+      _endBox();
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Split $name at $time.')));
+      _store.putEvents(changed);
+      _fresh.clear();
+      await _refresh();
+    } catch (e) {
+      if (mounted) {
+        await showErrorSheet(context, title: "Couldn't split it", error: e);
+      }
+    }
+  }
+
   /// Whether a cursor at [time] is inside an event, cutting it.
   bool _cutsAt(DateTime time) => _otherEvents(_moving).inside(time) != null;
 
@@ -3027,113 +3098,132 @@ class _EventsScreenState extends State<EventsScreen> {
   @override
   Widget build(BuildContext context) {
     final today = widget.clock();
-    return Scaffold(
-      appBar: AppBar(
-        title: TextButton.icon(
-          onPressed: _pickDay,
-          icon: const Icon(Icons.calendar_today, size: 18),
-          label: Text(dayLabel(context, _day, today)),
-          style: TextButton.styleFrom(
-            textStyle: Theme.of(context).textTheme.titleLarge,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left),
-            tooltip: 'Previous day',
-            onPressed: () => _step(-1),
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right),
-            tooltip: 'Next day',
-            onPressed: () => _step(1),
-          ),
-          AppMenu(
-            serverLabel: widget.serverLabel,
-            version: widget.version,
-            onSignOut: widget.onSignOut == null || _needsSignIn
-                ? null
-                : _signOut,
-          ),
-        ],
-      ),
-      body: RefreshingBar(
-        refreshing: _stale && _error == null && !_needsSignIn,
-        child: _needsSignIn ? _buildSignIn() : _buildTimeline(),
-      ),
-      floatingActionButton: _needsSignIn
-          ? null
-          : _box != null
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                FloatingActionButton.small(
-                  heroTag: 'to-new',
-                  tooltip: 'Go to the new event',
-                  onPressed: _goToBox,
-                  child: const Icon(Icons.filter_center_focus),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    FloatingActionButton(
-                      heroTag: 'cancel-new',
-                      tooltip: 'Cancel',
-                      onPressed: _endBox,
-                      child: const Icon(Icons.close),
-                    ),
-                    const SizedBox(width: 12),
-                    // Only with an event to make.
-                    Builder(
-                      builder: (context) {
-                        final colors = Theme.of(context).colorScheme;
-                        final ready = _box?.span != null;
-                        return FloatingActionButton(
-                          heroTag: 'continue-new',
-                          tooltip: !ready
-                              ? 'Continue: first, make an event between the '
-                                    'cursors'
-                              : _moving != null
-                              ? 'Move it here'
-                              : 'Continue',
-                          onPressed: !ready
-                              ? null
-                              : _moving != null
-                              ? _finishMoving
-                              : _continueCreating,
-                          backgroundColor: ready
-                              ? null
-                              : colors.surfaceContainerHighest,
-                          foregroundColor: ready ? null : colors.outline,
-                          elevation: ready ? null : 0,
-                          child: const Icon(Icons.check),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            )
-          : Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FloatingActionButton.small(
-                  heroTag: 'now',
-                  tooltip: 'Go to now',
-                  onPressed: _goToNow,
-                  child: const Icon(Icons.my_location),
-                ),
-                const SizedBox(height: 12),
-                FloatingActionButton(
-                  heroTag: 'new',
-                  tooltip: 'New event',
-                  onPressed: _startCreating,
-                  child: const Icon(Icons.add),
-                ),
-              ],
+    // Back leaves the top mode, as ✕ does, before it leaves the page.
+    final modes = _modes;
+    return PopScope(
+      canPop: modes.isEmpty,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _leaveMode();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: TextButton.icon(
+            onPressed: _pickDay,
+            icon: const Icon(Icons.calendar_today, size: 18),
+            label: Text(dayLabel(context, _day, today)),
+            style: TextButton.styleFrom(
+              textStyle: Theme.of(context).textTheme.titleLarge,
             ),
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.chevron_left),
+              tooltip: 'Previous day',
+              onPressed: () => _step(-1),
+            ),
+            IconButton(
+              icon: const Icon(Icons.chevron_right),
+              tooltip: 'Next day',
+              onPressed: () => _step(1),
+            ),
+            AppMenu(
+              serverLabel: widget.serverLabel,
+              version: widget.version,
+              onSignOut: widget.onSignOut == null || _needsSignIn
+                  ? null
+                  : _signOut,
+            ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            RefreshingBar(
+              refreshing: _stale && _error == null && !_needsSignIn,
+              child: _needsSignIn ? _buildSignIn() : _buildTimeline(),
+            ),
+            // The modes it's in, lower left.
+            Positioned(left: 16, bottom: 16, child: ModeStack(modes: _modes)),
+          ],
+        ),
+        floatingActionButton: _needsSignIn
+            ? null
+            : _box != null
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  FloatingActionButton.small(
+                    heroTag: 'to-new',
+                    tooltip: 'Go to the new event',
+                    onPressed: _goToBox,
+                    child: const Icon(Icons.filter_center_focus),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FloatingActionButton(
+                        heroTag: 'cancel-new',
+                        tooltip: 'Cancel',
+                        onPressed: _leaveMode,
+                        child: const Icon(Icons.close),
+                      ),
+                      const SizedBox(width: 12),
+                      // Only with an event to make.
+                      Builder(
+                        builder: (context) {
+                          final colors = Theme.of(context).colorScheme;
+                          final split = _toSplit;
+                          final ready = _box?.span != null || split != null;
+                          return FloatingActionButton(
+                            heroTag: 'continue-new',
+                            tooltip: split != null
+                                ? 'Split ${_named(split)} here'
+                                : !ready
+                                ? 'Continue: first, make an event between the '
+                                      'cursors'
+                                : _moving != null
+                                ? 'Move it here'
+                                : 'Continue',
+                            onPressed: split != null
+                                ? _splitAtCursor
+                                : !ready
+                                ? null
+                                : _moving != null
+                                ? _finishMoving
+                                : _continueCreating,
+                            backgroundColor: ready
+                                ? null
+                                : colors.surfaceContainerHighest,
+                            foregroundColor: ready ? null : colors.outline,
+                            elevation: ready ? null : 0,
+                            child: const Icon(Icons.check),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FloatingActionButton.small(
+                    heroTag: 'now',
+                    tooltip: 'Go to now',
+                    onPressed: _goToNow,
+                    child: const Icon(Icons.my_location),
+                  ),
+                  const SizedBox(height: 12),
+                  FloatingActionButton(
+                    heroTag: 'new',
+                    tooltip: 'New event',
+                    onPressed: _startCreating,
+                    child: const Icon(Icons.add),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 

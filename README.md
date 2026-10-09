@@ -26,7 +26,11 @@ set in [Settings](#settings) and, as set there, at events' edges and
 notes too: its buttons step it to the next such stop, and dragged near
 one it snaps there. While it's up, the edges and notes it stops at are
 marked on the timeline, pulsing. Pressed and held, an event is moved
-the same way, pushing to start with. While
+the same way, pushing to start with. The mode the page is in -- placing
+a cursor, creating an event, editing one, extending the compaction
+window -- is named at the lower left, over its icon; back, like ✕,
+leaves it. Placing a cursor inside an event, ✓ splits the event there,
+and does nothing else. While
 Claude has a **compaction proposal** open -- what it says happened since the
 last compaction -- it's a band over the timeline, each change marked, to
 confirm: edits to the events in it edit the proposal, not the calendar, and

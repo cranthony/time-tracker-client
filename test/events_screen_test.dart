@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
+import 'package:time_tracker_client/widgets/mode_stack.dart';
 import 'package:time_tracker_client/widgets/cursor_modes.dart';
 import 'package:time_tracker_client/outbox/action_outbox.dart';
 import 'package:time_tracker_client/models/event.dart';
@@ -1648,6 +1649,52 @@ void main() {
       expect(label('start'), findsOneWidget);
       expect(label('of Lunch'), findsNWidgets(2));
       expect(label('of Work'), findsOneWidget);
+    });
+
+    testWidgets('the mode, lower left: placing a cursor, then creating an '
+        'event; back leaves it, as ✕ does', (tester) async {
+      final repo = _RecordingRepository([]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      expect(find.byType(ModeStack), findsOneWidget);
+      expect(find.text('Place a cursor'), findsNothing);
+
+      await plus(tester);
+      expect(find.text('Place a cursor'), findsOneWidget);
+      await tapButton(tester, startHere);
+      // Placing a cursor is done with, once there's a box.
+      expect(find.text('Create an event'), findsOneWidget);
+      expect(find.text('Place a cursor'), findsNothing);
+
+      // Android's back: the box gone, and nothing left to leave.
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(PendingEventBoxView), findsNothing);
+      expect(find.text('Create an event'), findsNothing);
+    });
+
+    testWidgets('placing a cursor in an event, ✓ splits it there, and does '
+        'nothing else', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 'w', start: at(30, 11), end: at(30, 13), summary: 'Work'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      // At noon, in Work.
+      final split = find.byTooltip('Split “Work” here');
+      expect(split, findsOneWidget);
+      await tester.tap(split);
+      await tester.pumpAndSettle();
+
+      expect(repo.saved, [
+        {'end': localIsoTimestamp(at(30, 12))},
+      ]);
+      expect(repo.created.single['start'], localIsoTimestamp(at(30, 12)));
+      expect(repo.created.single['end'], localIsoTimestamp(at(30, 13)));
+      expect(repo.created.single['summary'], 'Work');
+      expect(find.byType(PendingEventBoxView), findsNothing);
+      expect(find.text('Split “Work” at 12:00 PM.'), findsOneWidget);
     });
 
     testWidgets("a cursor's time, tapped, is typed in", (tester) async {
