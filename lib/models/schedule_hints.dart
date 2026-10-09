@@ -18,6 +18,10 @@ class ScheduleHint {
   /// What runs then: "Morning compaction".
   final String? label;
 
+  /// Whether it compacts notes into a proposal, so one's to be expected
+  /// after it: its label says so ("Morning compaction").
+  bool get expectsProposal => label?.toLowerCase().contains('compact') ?? false;
+
   /// "07:30".
   String get time =>
       '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
