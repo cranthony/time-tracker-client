@@ -186,7 +186,7 @@ class OtherEvents {
       final after = other.end.isAfter(end);
       if (before && after) {
         updates.add((other, {'end': localIsoTimestamp(start)}));
-        creates.add(_rest(other, end, other.end));
+        creates.add(restOf(other, end, other.end));
       } else if (before) {
         updates.add((other, {'end': localIsoTimestamp(start)}));
       } else if (after) {
@@ -281,7 +281,7 @@ class OtherEvents {
     }
     for (final (other, length) in rests) {
       final (from, to) = place(length);
-      creates.add(_rest(other, from, to));
+      creates.add(restOf(other, from, to));
     }
     // The rest, from the anchor on, nearest first, until one's clear.
     final beyond = [
@@ -315,7 +315,7 @@ class OtherEvents {
       updates: [
         (e, {'end': localIsoTimestamp(time)}),
       ],
-      creates: [_rest(e, time, e.end)],
+      creates: [restOf(e, time, e.end)],
     ),
     null => const Overwrite(),
   };
@@ -403,7 +403,7 @@ class OtherEvents {
 
       if (split != null) {
         final (from, to) = place(split);
-        creates.add(_rest(at!, from, to));
+        creates.add(restOf(at!, from, to));
       }
       // Where each other event is now, cut or not.
       (DateTime, DateTime) now(Event e) => (
@@ -494,7 +494,11 @@ class OtherEvents {
 
   /// What's left of [event] from [start] to [end], as a new event: what
   /// was done there and who it was with, not what was said of it.
-  static Map<String, Object?> _rest(Event event, DateTime start, DateTime end) {
+  static Map<String, Object?> restOf(
+    Event event,
+    DateTime start,
+    DateTime end,
+  ) {
     const kept = {
       'summary',
       'description',

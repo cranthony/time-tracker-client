@@ -17,11 +17,18 @@ one before or after), hour and minute, each stepped by a "+" above and
 a "−" below, a minute past 59 carrying into the hour, an hour past 23
 into the day. On its outside, a "+" and a "−"
 stretch and shrink the event there, and its handle drags it. The box
-itself, dragged, moves; tapped, says what it does with the events in
-its way: trims them (the default), keeps clear of them, cancels them,
-or pushes them along -- its icon on it, but for trimming. Once there's
-a box, a tap on the timeline leaves it be. Keeping, a "+" against an
-event is greyed out. Then ✓ to fill it in. A cursor stops on the grid
+itself, dragged, moves, and it trims the events in its way -- splitting
+the one its cursor was placed in -- unless they're in a list: beside ✕
+and ✓, **Keep**, **Push up** over **Push down**, and **Cancel**, each
+with a dot while it has events. Tapping one picks events for it -- a
+tap on an event, any on the timeline, picks it or unpicks it, ringed
+and marked with the list's icon, the box's buttons out of the way --
+then ✓ keeps what's picked, and ✕ or back puts it back. Events to keep
+stay as they are, the box going no further (its "+" greyed out); to
+push up or down, moved whole to just above or below the box when it --
+or what it pushes -- reaches them, trimming what they run into; to
+cancel, cancelled. Once there's a box, a tap on the timeline leaves it
+be. Then ✓ to fill it in. A cursor stops on the grid
 set in [Settings](#settings) and, as set there, at events' edges and
 notes too: its buttons step it to the next such stop, and dragged near
 one it snaps there. While it's up, the edges and notes it stops at are

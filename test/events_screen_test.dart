@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/widgets/mode_stack.dart';
-import 'package:time_tracker_client/widgets/cursor_modes.dart';
 import 'package:time_tracker_client/outbox/action_outbox.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
@@ -1166,20 +1165,6 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    /// The box's mode for the old box-wide [mode].
-    String modeOf(String mode) => switch (mode) {
-      'Keep events' => 'Keep',
-      'Overwrite and trim' => 'Trim',
-      'Overwrite and cancel' => 'Cancel',
-      'Push' => 'Push',
-      _ => throw ArgumentError(mode),
-    };
-
-    /// Starts new events in the old box-wide [mode], as if last picked.
-    void startIn(String mode) => current().setEndMode(
-      EndMode.values.firstWhere((m) => m.label == modeOf(mode)),
-    );
-
     /// Lets a second go by: the overwriting pulse never settles.
     Future<void> settle(WidgetTester tester) async {
       for (var i = 0; i < 10; i++) {
@@ -1196,23 +1181,21 @@ void main() {
       await settle(tester);
     }
 
-    /// Picks the old box-wide [mode] for the box, from its sheet: the box
-    /// tapped.
-    Future<void> pickMode(WidgetTester tester, String mode) async {
-      final box = find.byTooltip(RegExp(r'^Drag to move the event'));
-      await tester.ensureVisible(box);
-      await settle(tester);
-      await tester.tap(box);
-      await settle(tester);
-      await tester.tap(
-        find.descendant(
-          of: find.byType(BottomSheet),
-          matching: find.text(modeOf(mode)),
-        ),
-      );
-      await settle(tester);
-      Navigator.of(tester.element(find.byType(BottomSheet))).pop();
-      await settle(tester);
+    /// Picks the events named [names] for [list]: its button, each event
+    /// tapped, then ✓. Picked events pulse: they never settle.
+    Future<void> pickInto(
+      WidgetTester tester,
+      String list,
+      List<String> names,
+    ) async {
+      await tapPulsing(tester, find.byTooltip(RegExp('^$list: pick events')));
+      for (final name in names) {
+        await tester.ensureVisible(find.text(name).first);
+        await settle(tester);
+        await tester.tap(find.text(name).first);
+        await settle(tester);
+      }
+      await tapPulsing(tester, find.byTooltip('Done picking'));
     }
 
     Future<void> continueToDialog(WidgetTester tester) async {
@@ -1222,7 +1205,8 @@ void main() {
 
     Future<void> drag(WidgetTester tester, Finder button, Duration by) async {
       await tester.ensureVisible(button);
-      await tester.pumpAndSettle();
+      // What's picked pulses: it never settles.
+      await settle(tester);
       await tester.drag(
         button,
         Offset(0, by.inMinutes * defaultTimelineScale),
@@ -1338,107 +1322,52 @@ void main() {
       expect(find.byTooltip('New event'), findsOneWidget);
     });
 
-    testWidgets('keeping events, the box fits into free time: up to the next '
-        'event, out of one a cursor is in, and moved whole to the nearest '
-        'free time it fits', (tester) async {
+    testWidgets('an event to keep stops the box: its "+" greyed out against '
+        "it, and the box isn't dragged into it", (tester) async {
       final repo = _RecordingRepository([
-        Event(
-          id: 'l',
-          start: at(30, 11, 30),
-          end: at(30, 12, 30),
-          summary: 'Lunch',
-        ),
         Event(id: 't', start: at(30, 14), end: at(30, 15), summary: 'Tea'),
       ]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
-      // At noon, in Lunch.
       await plus(tester);
-      expect(box(tester).cursor, at(30, 12));
+      await pickInto(tester, 'Keep', ['Tea']);
+      // Picked: a dot on its list's button.
+      expect(
+        find.descendant(
+          of: find.byType(Stack),
+          matching: find.bySemanticsLabel('Has events'),
+        ),
+        findsWidgets,
+      );
 
-      // Out of Lunch, an hour.
-      await tapButton(tester, startHere);
-      expect(box(tester).span, (at(30, 12, 30), at(30, 13, 30)));
-      expect(continueButton(tester).onPressed, isNotNull);
-      // Then up to Tea, no further.
-      await tapButton(tester, startHere);
-      expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
-      expect(overwrites(tester), isFalse);
-
-      // A tap on the timeline leaves it be.
-      await tapAt(tester, at(30, 16, 30));
-      expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
-      // Dragged whole into Tea: its size kept, as near as it fits -- after
-      // Tea.
+      await tapPulsing(tester, startHere);
+      await tapPulsing(tester, startHere);
+      // Up to Tea, no further.
+      expect(box(tester).span, (at(30, 12), at(30, 14)));
+      Material button(Finder f) => tester.widget<Material>(
+        find.descendant(of: f, matching: find.byType(Material)).first,
+      );
+      expect(button(startHere).elevation, 0);
+      await tapPulsing(tester, startHere);
+      expect(box(tester).span, (at(30, 12), at(30, 14)));
+      // Dragged into it, it stays.
       await drag(
         tester,
         find.byTooltip(RegExp(r'^Drag to move the event')),
         const Duration(hours: 2),
       );
-      expect(box(tester).span, (at(30, 15), at(30, 16, 30)));
-      // Back to before Tea.
-      await drag(
-        tester,
-        find.byTooltip(RegExp(r'^Drag to move the event')),
-        const Duration(hours: -2),
-      );
-      expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
-
-      // Overwriting, it can cover Tea; keeping again, it's out of the way.
-      await pickMode(tester, 'Overwrite and trim');
-      await drag(tester, otherHandle(tester), const Duration(hours: 1));
-      expect(box(tester).span, (at(30, 12, 30), at(30, 15)));
-      expect(overwrites(tester), isTrue);
-      await pickMode(tester, 'Keep events');
-      await tester.pumpAndSettle();
-      expect(box(tester).span, (at(30, 12, 30), at(30, 14)));
+      expect(box(tester).span, (at(30, 12), at(30, 14)));
     });
 
-    testWidgets('keeping events, an arrow shows where the box was moved to, '
-        'then fades; a button scrolls back to it', (tester) async {
-      final repo = _RecordingRepository([
-        Event(id: 't', start: at(30, 14), end: at(30, 15), summary: 'Tea'),
-      ]);
+    testWidgets('a button scrolls back to the box', (tester) async {
+      final repo = _RecordingRepository([]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await plus(tester);
       await tapButton(tester, startHere);
-      expect(box(tester).span, (at(30, 12), at(30, 13)));
-      // Free where it's put: no arrow.
-      expect(find.byType(KeptMoveArrow), findsNothing);
-
-      // Dragged into Tea, it's moved before it: an arrow from the middle of
-      // where it was put to the middle of where it went.
-      final handle = find.byTooltip(RegExp(r'^Drag to move the event'));
-      await tester.drag(
-        handle,
-        Offset(0, 120 * defaultTimelineScale),
-        warnIfMissed: false,
-      );
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(box(tester).span, (at(30, 13), at(30, 14)));
-      final arrow = tester.widget<KeptMoveArrow>(find.byType(KeptMoveArrow));
-      expect((arrow.from, arrow.to), (at(30, 14, 30), at(30, 13, 30)));
-      expect(
-        find.descendant(
-          of: find.byType(KeptMoveArrow),
-          matching: find.byType(CustomPaint),
-        ),
-        findsOneWidget,
-      );
-      // Faded away.
-      await tester.pumpAndSettle();
-      expect(
-        find.descendant(
-          of: find.byType(KeptMoveArrow),
-          matching: find.byType(CustomPaint),
-        ),
-        findsNothing,
-      );
-
-      // Scrolled well away, the button brings it to the middle.
       await tester.drag(find.byType(ListView).first, const Offset(0, 2000));
       await tester.pumpAndSettle();
+      final handle = find.byTooltip(RegExp(r'^Drag to move the event'));
       final list = tester.getRect(find.byType(ListView).first);
       expect(tester.getCenter(handle).dy, greaterThan(list.bottom));
       await tester.tap(find.byTooltip('Go to the new event'));
@@ -1489,7 +1418,6 @@ void main() {
         Event(id: 'b', start: at(30, 13), end: at(30, 13, 30), summary: 'B'),
         Event(id: 'c', start: at(30, 14), end: at(30, 17), summary: 'C'),
       ]);
-      startIn('Overwrite and trim');
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('New event'));
@@ -1497,40 +1425,6 @@ void main() {
       await drag(tester, startHere, const Duration(hours: 3));
       expect(box(tester).span, (at(30, 12), at(30, 15)));
       expect(overwrites(tester), isTrue);
-
-      // The box, tapped: what it does with the events in its way, each
-      // saying what it does.
-      await tapPulsing(
-        tester,
-        find.byTooltip(RegExp(r'^Drag to move the event')),
-      );
-      expect(find.text('Events in the way'), findsOneWidget);
-      // Only the one picked says what it does.
-      expect(
-        find.textContaining('cut short, or split around it'),
-        findsOneWidget,
-      );
-      expect(find.textContaining('touches is cancelled, whole'), findsNothing);
-      Finder inSheet(String text) => find.descendant(
-        of: find.byType(BottomSheet),
-        matching: find.text(text),
-      );
-      await tester.tap(inSheet('Cancel'));
-      await settle(tester);
-      expect(
-        find.textContaining('cut short, or split around it'),
-        findsNothing,
-      );
-      expect(
-        find.textContaining('touches is cancelled, whole'),
-        findsOneWidget,
-      );
-      await tester.tap(inSheet('Trim'));
-      await settle(tester);
-      Navigator.of(tester.element(find.byType(BottomSheet))).pop();
-      await settle(tester);
-      // Kept for the next new event.
-      expect(current().endMode, EndMode.trim);
 
       await continueToDialog(tester);
       await tester.enterText(inDialog(find.byType(TextField)), 'Party');
@@ -1605,7 +1499,6 @@ void main() {
         Event(id: 'l', start: at(30, 11), end: at(30, 12), summary: 'Lunch'),
       ]);
       // Trimming: the box goes into Work.
-      startIn('Overwrite and trim');
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await plus(tester);
@@ -1754,10 +1647,8 @@ void main() {
       expect(find.byIcon(Icons.swap_vert), findsNothing);
     });
 
-    testWidgets('keeping events, "+" above stretches the box up into the '
-        'free time before it, no further than the event before', (
-      tester,
-    ) async {
+    testWidgets('moving, "+" above stretches the box up, no further than an '
+        'event to keep', (tester) async {
       final repo = _RecordingRepository([
         Event(id: 'w', start: at(30, 9), end: at(30, 10, 30), summary: 'Work'),
         Event(id: 's', start: at(30, 12), end: at(30, 13), summary: 'Siesta'),
@@ -1766,61 +1657,77 @@ void main() {
       await tester.pumpAndSettle();
       await tester.longPress(find.text('Siesta'));
       await tester.pumpAndSettle();
-      await pickMode(tester, 'Keep events');
-      await tester.pumpAndSettle();
+      await pickInto(tester, 'Keep', ['Work']);
 
-      await tapButton(tester, endHere);
+      await tapPulsing(tester, endHere);
       expect(box(tester).span, (at(30, 11), at(30, 13)));
-      await tapButton(tester, endHere);
-      // Up to Work's end.
-      expect(box(tester).span, (at(30, 10, 30), at(30, 13)));
+      // Not to 10: into Work.
+      await tapPulsing(tester, endHere);
+      expect(box(tester).span, (at(30, 11), at(30, 13)));
     });
 
-    testWidgets('overwriting and cancelling: the shadow covers every event '
-        'it touches, whole, and saving cancels them', (tester) async {
+    testWidgets('events to cancel: the shadow covers each it touches, '
+        'whole, and saving cancels them', (tester) async {
       final repo = _RecordingRepository([
         Event(id: 'a', start: at(30, 11), end: at(30, 12, 30), summary: 'A'),
         Event(id: 'b', start: at(30, 13, 30), end: at(30, 15), summary: 'B'),
       ]);
-      startIn('Overwrite and cancel');
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('New event'));
-      await settle(tester);
-
+      await plus(tester);
+      await pickInto(tester, 'Cancel', ['A', 'B']);
+      // While picking, the mode said so.
       await tapPulsing(tester, startHere);
       await tapPulsing(tester, startHere);
       // 12-2, touching A and B: the shadow over both, whole.
       expect(box(tester).span, (at(30, 12), at(30, 14)));
-      final view = tester.widget<PendingEventBoxView>(
-        find.byType(PendingEventBoxView),
-      );
-      expect(view.covers, (at(30, 11), at(30, 15)));
-      expect(view.overwrites, isTrue);
+      expect(view(tester).covers, (at(30, 11), at(30, 15)));
+      expect(view(tester).overwrites, isTrue);
 
       await continueToDialog(tester);
-      // The new event keeps the box's times.
-      expect(
-        inDialog(find.text('Wed, Sep 30 · 12:00 PM – 2:00 PM')),
-        findsOneWidget,
-      );
       await tester.enterText(inDialog(find.byType(TextField)), 'Party');
       await settle(tester);
       await tester.tap(find.text('Create'));
       await settle(tester);
-      // A dropped, as a commitment; B, a change of plan.
       expect(find.text('Cancel 2 events to make room?'), findsOneWidget);
-      await tester.tap(find.byType(SwitchListTile).first);
-      await settle(tester);
-      expect(
-        find.textContaining('Counts against follow-through'),
-        findsOneWidget,
-      );
       await tester.tap(find.text('Cancel them'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(repo.created.single['summary'], 'Party');
       expect(repo.saved, isEmpty);
-      expect(repo.deleted, [('a', true), ('b', false)]);
+      expect(repo.deleted, [('a', false), ('b', false)]);
+    });
+
+    testWidgets('picking for a list: the mode says so, a tap picks or '
+        'unpicks, and ✕ puts it back as it was', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 'a', start: at(30, 15), end: at(30, 16), summary: 'A'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      await tapPulsing(
+        tester,
+        find.byTooltip(RegExp(r'^Push down: pick events')),
+      );
+      expect(find.text('Select events to push down'), findsOneWidget);
+      await tester.tap(find.text('A'));
+      await settle(tester);
+      expect(find.byIcon(Icons.keyboard_double_arrow_down), findsWidgets);
+      // ✕: put back, and placing a cursor again.
+      await tapPulsing(tester, find.byTooltip('Put the list back as it was'));
+      expect(find.text('Place a cursor'), findsOneWidget);
+      expect(find.bySemanticsLabel('Has events'), findsNothing);
+      // Back, too.
+      await tapPulsing(
+        tester,
+        find.byTooltip(RegExp(r'^Push down: pick events')),
+      );
+      await tester.tap(find.text('A'));
+      await settle(tester);
+      await tester.binding.handlePopRoute();
+      await settle(tester);
+      expect(find.text('Place a cursor'), findsOneWidget);
+      expect(find.bySemanticsLabel('Has events'), findsNothing);
     });
 
     testWidgets("the new event's trash clears the time of the events under it, "
@@ -1831,19 +1738,7 @@ void main() {
       ]);
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
-      await plus(tester);
-      // Keeping events, there's nothing under it to clear.
-      await tapButton(tester, startHere);
-      await continueToDialog(tester);
-      expect(find.byTooltip('Clear this time instead'), findsNothing);
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
-
-      // Overwriting and trimming, afresh from noon: A trimmed, B cancelled,
-      // nothing made.
-      await tester.tap(find.byTooltip('Cancel'));
-      await tester.pumpAndSettle();
-      startIn('Overwrite and trim');
+      // From noon: A trimmed, B cancelled, nothing made.
       await tester.tap(find.byTooltip('New event'));
       await settle(tester);
       await tapPulsing(tester, startHere);
@@ -1911,18 +1806,12 @@ void main() {
       expect(await stepUpTwice(gridOnly), (at(30, 11, 30), at(30, 12)));
     });
 
-    testWidgets('pushing: the cursor snaps out of an event, to between two '
-        'that meet, and the trash just makes room', (tester) async {
+    testWidgets('events to push down: moved whole after the box, one after '
+        'another, and the trash just makes room', (tester) async {
       // Stepped a quarter hour at a time.
       settings = _quarterly();
       addTearDown(() => settings = null);
       final repo = _RecordingRepository([
-        Event(
-          id: 'a',
-          start: at(30, 11, 30),
-          end: at(30, 12, 15),
-          summary: 'A',
-        ),
         Event(id: 'b', start: at(30, 12, 15), end: at(30, 13), summary: 'B'),
         Event(
           id: 'c',
@@ -1931,20 +1820,18 @@ void main() {
           summary: 'C',
         ),
       ]);
-      startIn('Push');
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await plus(tester);
-      // Noon, in A: once there's a box, out of A, to where A and B meet.
+      await pickInto(tester, 'Push down', ['B', 'C']);
       for (var i = 0; i < 4; i++) {
         await tapPulsing(tester, startHere);
       }
-      expect(box(tester).cursor, at(30, 12, 15));
-      expect(box(tester).span, (at(30, 12, 15), at(30, 13, 15)));
-      // B pushed to 1:15-2, and C, on, to 2-3. Nothing cut.
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
+      // B pushed to 1-1:45, and C, which that reaches, on to 1:45-2:45.
       expect(pushed(tester), [
-        (start: at(30, 13, 15), end: at(30, 14), label: 'B'),
-        (start: at(30, 14), end: at(30, 15), label: 'C'),
+        (start: at(30, 13), end: at(30, 13, 45), label: 'B'),
+        (start: at(30, 13, 45), end: at(30, 14, 45), label: 'C'),
       ]);
       expect(overwrites(tester), isFalse);
 
@@ -1957,12 +1844,12 @@ void main() {
       expect(repo.created, isEmpty);
       expect(repo.saved, [
         {
-          'start': localIsoTimestamp(at(30, 13, 15)),
-          'end': localIsoTimestamp(at(30, 14)),
+          'start': localIsoTimestamp(at(30, 13)),
+          'end': localIsoTimestamp(at(30, 13, 45)),
         },
         {
-          'start': localIsoTimestamp(at(30, 14)),
-          'end': localIsoTimestamp(at(30, 15)),
+          'start': localIsoTimestamp(at(30, 13, 45)),
+          'end': localIsoTimestamp(at(30, 14, 45)),
         },
       ]);
     });
@@ -1980,7 +1867,6 @@ void main() {
       await tester.longPress(find.text('Tea'));
       await tester.pumpAndSettle();
       expect(box(tester).span, (at(30, 12), at(30, 13)));
-      expect(view(tester).mode, EndMode.push);
       expect(find.text('Moving “Tea”'), findsOneWidget);
       // Faint where it was.
       expect(
@@ -1988,7 +1874,8 @@ void main() {
         findsOneWidget,
       );
 
-      // Dragged onto Walk: Walk, and Talk after it, pushed along.
+      // Walk and Talk to push down; dragged onto Walk, both pushed along.
+      await pickInto(tester, 'Push down', ['Walk', 'Talk']);
       await drag(
         tester,
         find.byTooltip(RegExp(r'^Drag to move the event')),
@@ -2021,9 +1908,9 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(PendingEventBoxView), findsNothing);
-      // A new event keeps events again, as it did before the move.
+      // A new event starts with its lists empty again.
       await plus(tester);
-      expect(view(tester).mode, EndMode.keep);
+      expect(find.bySemanticsLabel('Has events'), findsNothing);
     });
 
     testWidgets("moving an event from the server, keeping events: its \"+\" "
@@ -2052,7 +1939,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.longPress(find.text('Tea'));
       await settle(tester);
-      await pickMode(tester, 'Keep events');
+      await pickInto(tester, 'Keep', ['Walk']);
       (DateTime, DateTime) span() =>
           (box(tester).span!.$1.toLocal(), box(tester).span!.$2.toLocal());
 
@@ -2946,12 +2833,10 @@ class _CountingActionsRepository extends InMemoryActionsRepository {
 }
 
 /// A grid of an hour, and no stops at events' edges or notes: each step
-/// of a cursor an hour. Keeping events.
+/// of a cursor an hour.
 AppSettings _hourly() {
   return AppSettings(persist: false, grid: const Duration(hours: 1))
-    ..setSnap(const {})
-    // Keeping events, as these were written for.
-    ..setEndMode(EndMode.keep);
+    ..setSnap(const {});
 }
 
 /// A grid of a quarter hour, and no stops at events' edges or notes.

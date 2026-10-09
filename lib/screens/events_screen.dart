@@ -24,9 +24,9 @@ import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
+import '../widgets/event_lists.dart';
 import '../widgets/mode_stack.dart';
 import '../widgets/window_cursor.dart';
-import '../widgets/cursor_modes.dart';
 import '../widgets/cursor_sheet.dart';
 import '../widgets/cursor_snap.dart';
 import '../widgets/app_menu.dart';
@@ -216,25 +216,21 @@ class _EventsScreenState extends State<EventsScreen> {
   /// another's.
   CursorRole _selected = CursorRole.anchor;
 
-  /// Where keeping events last moved the box, from where it was put, to
-  /// show with a [KeptMoveArrow]; [id] tells each move from the last.
-  ({DateTime from, DateTime to, int id})? _keptMove;
+  /// The events the box treats as a list says, by list -- kept, pushed
+  /// up or down, or cancelled -- in place of trimming them.
+  final _lists = {for (final l in EventList.values) l: EventSelection()};
 
-  /// What the box does with the events in its way: as last picked, for
-  /// a new event; a move starts out pushing.
-  EndMode _endMode = EndMode.trim;
+  /// The list being picked for, while it is: a tap on an event picks it,
+  /// or unpicks it.
+  EventList? _selecting;
 
-  /// What it does with the event its first cursor is inside of, to match:
-  /// trims or cancels it, if it trims or cancels the rest; keeping, or
-  /// pushing, keeps clear of it.
-  AnchorMode get _anchorMode => switch (_endMode) {
-    EndMode.trim => AnchorMode.trim,
-    EndMode.cancel => AnchorMode.cancel,
-    EndMode.keep || EndMode.push => AnchorMode.keep,
+  /// The lists' ids, as [BoxEffect] takes them.
+  Map<EventList, Set<String>> get _listIds => {
+    for (final MapEntry(:key, :value) in _lists.entries) key: value.ids,
   };
 
-  /// Whether the box changes the events in its way.
-  bool get _overwritesAny => _anchorMode.changes || _endMode != EndMode.keep;
+  /// The box always trims what's in its way, unless a list says otherwise.
+  bool get _overwritesAny => true;
 
   /// Why the day shown couldn't be loaded, if it couldn't.
   Object? _error;
@@ -1525,12 +1521,10 @@ class _EventsScreenState extends State<EventsScreen> {
     } else {
       at = _day.add(const Duration(hours: 9));
     }
-    final settings = AppSettings.of(context);
     setState(() {
-      _endMode = settings.endMode;
+      _clearLists();
       _selected = CursorRole.anchor;
       _setBox(PendingEventBox(_onGrid(at)));
-      _keptMove = null;
     });
   }
 
@@ -1541,14 +1535,22 @@ class _EventsScreenState extends State<EventsScreen> {
     setState(() {
       _moving = event;
       _setBox(PendingEventBox(event.start, other: event.end));
-      _keptMove = null;
+      _clearLists();
       _selected = CursorRole.anchor;
-      _endMode = EndMode.push;
     });
+  }
+
+  /// Empties the lists, and stops picking for one.
+  void _clearLists() {
+    for (final list in _lists.values) {
+      list.set(const []);
+    }
+    _selecting = null;
   }
 
   /// Puts the box away -- the new event or the move done, or dropped.
   void _endBox() => setState(() {
+    _clearLists();
     _setBox(null);
     _moving = null;
   });
@@ -1640,83 +1642,31 @@ class _EventsScreenState extends State<EventsScreen> {
     await _refresh();
   }
 
-  /// [box] as its cursors' modes let it be. Its anchor, kept, out of
-  /// any event it's inside of, once there's a box: to its edge on the
-  /// box's side. Kept by its end too: fitted into free time
-  /// (see [OtherEvents]) -- [moved] whole, as near as it fits; or from its
-  /// anchor -- or, [fromOther], its end -- to no further than the next
-  /// event; otherwise, up to the next event but the anchor's. Pushing, no
-  /// further than leaves the day room for what it pushes.
+  /// [box], unless it -- or what it pushes -- would run into an event to
+  /// keep: then the box as it was.
   PendingEventBox _kept(
     PendingEventBox box, {
     bool moved = false,
     bool fromOther = false,
   }) {
-    final others = _otherEvents(_moving);
-    var (cursor, other) = (box.cursor, box.other);
-    final keepAnchor = _anchorMode == AnchorMode.keep;
-    if (keepAnchor && _endMode == EndMode.keep && other != null) {
-      if (moved) {
-        final start = box.span?.$1 ?? box.cursor;
-        final (from, to) = others.fitMoved(
-          start,
-          box.length,
-          from: _from,
-          to: _to,
-        );
-        return box.at(from, to);
-      }
-      if (fromOther) {
-        final (fitted, anchor) = others.fitFrom(other, cursor);
-        return PendingEventBox(anchor, other: fitted);
-      }
-      final (anchor, fitted) = others.fitFrom(cursor, other);
-      return PendingEventBox(anchor, other: fitted);
-    }
-    if (other == null || other == cursor) {
-      return PendingEventBox(cursor, other: other);
-    }
-    final later = other.isAfter(cursor);
-    // Kept, the anchor out of any event it's in, to its edge on the box's
-    // side -- the box with it, its length kept.
-    if (keepAnchor) {
-      var snapped = cursor;
-      for (var i = 0; i < 100; i++) {
-        final at = others.inside(snapped);
-        if (at == null) break;
-        snapped = later ? at.end : at.start;
-      }
-      other = other.add(snapped.difference(cursor));
-      cursor = snapped;
-    }
-    switch (_endMode) {
-      case EndMode.keep:
-        final at = others.inside(cursor);
-        final rest = OtherEvents(others.events.where((e) => e != at));
-        if (later) {
-          if (rest.latestEnd(cursor) case final next?
-              when next.isBefore(other)) {
-            other = next;
-          }
-        } else if (rest.earliestStart(cursor) case final last?
-            when last.isAfter(other)) {
-          other = last;
-        }
-      case EndMode.push:
-        other = others.pushFit(
-          cursor,
-          other,
-          from: _from,
-          to: _to,
-          inside: _anchorMode == AnchorMode.splitPush
-              ? Inside.split
-              : Inside.trim,
-        );
-      case EndMode.trim || EndMode.cancel:
-        break;
-    }
-    return PendingEventBox(cursor, other: other);
+    if (_effectOf(box)?.blocked ?? false) return _box ?? box;
+    return box;
   }
+
+  /// What [box] does to the events in its way, as the lists say; null if
+  /// it's no box yet.
+  BoxEffect? _effectOf(PendingEventBox? box) => switch (box?.span) {
+    (final start, final end) => BoxEffect(
+      _otherEvents(_moving),
+      start: start,
+      end: end,
+      // A new event's first cursor splits what it's inside of; a moved
+      // one's box is the event itself.
+      anchor: _moving == null ? box!.cursor : null,
+      lists: _listIds,
+    ),
+    null => null,
+  };
 
   /// Whether the box goes later from its cursor: the way it pushes.
   bool get _later => switch (_box) {
@@ -1738,34 +1688,13 @@ class _EventsScreenState extends State<EventsScreen> {
     setState(() => _keep(change(box), moved: moved, fromOther: fromOther));
   }
 
-  /// Makes the box [box], kept in free time (see [_kept]); if that moves
-  /// it, an arrow shows from where it was put to where it went.
+  /// Makes the box [box], unless an event to keep's in the way (see
+  /// [_kept]).
   void _keep(
     PendingEventBox box, {
     bool moved = false,
     bool fromOther = false,
-  }) {
-    final kept = _kept(box, moved: moved, fromOther: fromOther);
-    _box = kept;
-    if (kept == box) return;
-    // The box's middle, moved whole; or the end that moved.
-    DateTime middle(PendingEventBox box) =>
-        (box.span?.$1 ?? box.cursor).add(box.length ~/ 2);
-    final (from, to) = moved
-        ? (middle(box), middle(kept))
-        : box.cursor != kept.cursor
-        ? (box.cursor, kept.cursor)
-        : (box.other ?? box.cursor, kept.other ?? kept.cursor);
-    // Still going to the same place, as a drag goes on: the same arrow,
-    // from where it's put now.
-    final last = _keptMove;
-    final id = last == null
-        ? 1
-        : last.to == to
-        ? last.id
-        : last.id + 1;
-    _keptMove = (from: from, to: to, id: id);
-  }
+  }) => _box = _kept(box, moved: moved, fromOther: fromOther);
 
   /// Scrolls the new event into the middle of the view.
   void _goToBox() {
@@ -1783,12 +1712,6 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  /// What the box does to the events in its way, as it is.
-  Overwrite? get _inTheWay => switch (_box?.span) {
-    (final start, final end) => _overwrite(_otherEvents(_moving), start, end),
-    null => null,
-  };
-
   /// Whether [fields] move [event] whole, its length kept: pushing it.
   static bool _moves(Event event, Map<String, Object?> fields) =>
       switch ((fields['start'], fields['end'])) {
@@ -1801,69 +1724,71 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Whether the new event takes time from events already there: cuts
   /// one short, or cancels one.
   bool get _overwrites {
-    final o = _inTheWay;
-    if (o == null) return false;
-    // Split, the anchor's event isn't lost: the rest goes after the box.
-    final split = _anchorMode == AnchorMode.splitPush
-        ? _otherEvents(_moving).inside(_box!.cursor)
-        : null;
-    return o.cancels.isNotEmpty ||
-        o.updates.any((u) => u.$1 != split && !_moves(u.$1, u.$2));
+    final effect = _effectOf(_box);
+    if (effect == null) return false;
+    final pushed = {for (final p in effect.pushed) p.$1};
+    final o = effect.overwrite;
+    return o.cancels.isNotEmpty || o.updates.any((u) => !pushed.contains(u.$1));
   }
 
-  /// Where the events the new one pushes go, and the rest of one it
-  /// splits.
-  List<PushedEvent> get _pushed => switch (_inTheWay) {
-    final o? => [
-      for (final (event, changes) in o.updates)
-        if (_moves(event, changes))
-          (
-            start: DateTime.parse(changes['start']! as String).toLocal(),
-            end: DateTime.parse(changes['end']! as String).toLocal(),
-            label: event.summary ?? 'Event',
-          ),
-      for (final rest in o.creates)
-        (
-          start: DateTime.parse(rest['start'] as String).toLocal(),
-          end: DateTime.parse(rest['end'] as String).toLocal(),
-          label: '${rest['summary'] ?? 'Event'} (the rest)',
-        ),
-    ],
-    null => const [],
-  };
+  /// Where the events the new one pushes go, up or down, and the rest of
+  /// the one it was started in, pushed.
+  List<PushedEvent> get _pushed => [
+    for (final (event, from, to, rest)
+        in _effectOf(_box)?.pushed ??
+            const <(Event, DateTime, DateTime, bool)>[])
+      (
+        start: from,
+        end: to,
+        label: rest
+            ? '${event.summary ?? 'Event'} (the rest)'
+            : event.summary ?? 'Event',
+      ),
+  ];
 
-  /// What the shadow covers, cancelling: the box, and every event it
+  /// What the shadow covers: the box, and every event in its way it
   /// cancels, whole. Null otherwise: just the box.
-  (DateTime, DateTime)? get _covers => switch ((_box?.span, _inTheWay)) {
-    ((final start, final end), final o?) when o.cancels.isNotEmpty => (
+  (DateTime, DateTime)? get _covers {
+    final span = _box?.span;
+    final effect = _effectOf(_box);
+    if (span == null || effect == null) return null;
+    final (top, foot) = effect.span;
+    final cancels = [
+      for (final e in effect.overwrite.cancels)
+        if (e.start.isBefore(foot) && e.end.isAfter(top)) e,
+    ];
+    if (cancels.isEmpty) return null;
+    return (
       [
-        start,
-        for (final e in o.cancels) e.start,
+        span.$1,
+        for (final e in cancels) e.start,
       ].reduce((a, b) => a.isBefore(b) ? a : b),
       [
-        end,
-        for (final e in o.cancels) e.end,
+        span.$2,
+        for (final e in cancels) e.end,
       ].reduce((a, b) => a.isAfter(b) ? a : b),
-    ),
-    _ => null,
-  };
+    );
+  }
 
   /// What an event from [start] to [end] does to the [others] in its
-  /// way, as its cursors' modes say: its anchor the [start], for one
-  /// [later] (the way the box goes, unless said), or else its [end].
+  /// way, as the lists say ([BoxEffect]): a new event's split at its
+  /// first cursor, if that's still in it.
   Overwrite _overwrite(
     OtherEvents others,
     DateTime start,
     DateTime end, {
     bool? later,
   }) {
-    final l = later ?? _later;
-    return others.around(
-      anchor: l ? start : end,
-      end: l ? end : start,
-      anchorMode: _anchorMode,
-      endMode: _endMode,
-    );
+    final anchor = _moving == null ? _box?.cursor : null;
+    return BoxEffect(
+      others,
+      start: start,
+      end: end,
+      anchor: anchor != null && anchor.isAfter(start) && anchor.isBefore(end)
+          ? anchor
+          : null,
+      lists: _listIds,
+    ).overwrite;
   }
 
   /// How near, on screen, a dragged cursor has to come to an edge or a
@@ -2022,25 +1947,15 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// Whether [role]'s cursor can step [later], or earlier: to a stop, and
-  /// -- keeping -- not out of free time it's at the edge of.
+  /// not so the box -- or what it pushes -- runs into an event to keep.
   bool _canStep(CursorRole role, {required bool later}) {
     final box = _box;
-    if (box == null || _stepTo(role, later: later) == null) return false;
-    final anchor = role == CursorRole.anchor;
-    final keeps = anchor
-        ? _anchorMode == AnchorMode.keep
-        : _endMode == EndMode.keep;
-    if (!keeps) return true;
-    final at = anchor ? box.cursor : box.other ?? box.cursor;
-    // Into the box, it's free; out of it, not into an event it touches.
-    final other = anchor ? box.other : box.cursor;
-    if (other != null &&
-        !other.isAtSameMomentAs(at) &&
-        other.isAfter(at) == later) {
-      return true;
-    }
-    final others = _otherEvents(_moving).events;
-    return !others.any((e) => (later ? e.start : e.end).isAtSameMomentAs(at));
+    final to = _stepTo(role, later: later);
+    if (box == null || to == null) return false;
+    final stepped = role == CursorRole.anchor
+        ? box.withCursor(to)
+        : box.withOther(to);
+    return !(_effectOf(stepped)?.blocked ?? false);
   }
 
   /// [role]'s cursor stepped to its next stop, [later] or earlier.
@@ -2207,21 +2122,71 @@ class _EventsScreenState extends State<EventsScreen> {
       ? _Clearing.pushes
       : _Clearing.trims;
 
-  /// What the box does with the events in its way, in a sheet: kept for
-  /// the next new event, but a move's isn't.
-  Future<void> _openBox() async {
-    final settings = AppSettings.of(context);
-    await showCursorSheet(
-      context,
-      title: 'Events in the way',
-      endMode: _endMode,
-      onEndMode: (mode) {
-        setState(() => _endMode = mode);
-        if (_moving == null) settings.setEndMode(mode);
-        _changeBox((box) => box);
-      },
-    );
+  /// [list]'s button: its icon, round, with a dot while it has events in
+  /// it; tapped, picking events for it.
+  Widget _listButton(EventList list) => Stack(
+    clipBehavior: Clip.none,
+    children: [
+      FloatingActionButton.small(
+        heroTag: 'list-${list.name}',
+        tooltip: '${list.label}: pick events to ${list.verb}',
+        onPressed: () => _startSelecting(list),
+        child: Icon(list.icon),
+      ),
+      if (!_lists[list]!.isEmpty)
+        Positioned(
+          right: 2,
+          top: 2,
+          child: Semantics(
+            label: 'Has events',
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.error,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        ),
+    ],
+  );
+
+  /// Starts picking events for [list]: a tap on one picks it, or unpicks
+  /// it; ✓ keeps what's picked, and ✕ or back puts the lists back.
+  void _startSelecting(EventList list) {
+    for (final l in _lists.values) {
+      l.begin();
+    }
+    setState(() => _selecting = list);
   }
+
+  /// Stops picking: what was picked [kept], or put back as it was.
+  void _endSelecting({required bool kept}) {
+    for (final l in _lists.values) {
+      kept ? l.commit() : l.revert();
+    }
+    setState(() => _selecting = null);
+  }
+
+  /// [event], tapped while picking: picked for the list being picked for
+  /// -- out of any other -- or unpicked. Not the event being moved: that's
+  /// the box.
+  void _pick(Event event) {
+    final list = _selecting;
+    final id = event.id;
+    if (list == null || id == null || id == _moving?.id) return;
+    for (final MapEntry(:key, :value) in _lists.entries) {
+      if (key != list) value.remove(id);
+    }
+    setState(() => _lists[list]!.toggle(id));
+  }
+
+  /// Each event in a list, by id, with its list's icon.
+  Map<String, IconData> get _listed => {
+    for (final MapEntry(:key, :value) in _lists.entries)
+      for (final id in value.ids) id: key.icon,
+  };
 
   /// What a cursor at [time] is on: the starts and ends of the events
   /// there, and the notes.
@@ -2265,11 +2230,15 @@ class _EventsScreenState extends State<EventsScreen> {
           ? EventsMode.placeCursor
           : EventsMode.create,
     if (_extendTo != null) EventsMode.extend,
+    if (_selecting case final list?)
+      EventsMode(list.icon, 'Select events to ${list.verb}'),
   ];
 
   /// Leaves the top mode -- as ✕ does -- undoing what was done in it.
   void _leaveMode() {
-    if (_extendTo != null) {
+    if (_selecting != null) {
+      _endSelecting(kept: false);
+    } else if (_extendTo != null) {
       setState(() => _extendTo = null);
     } else if (_box != null) {
       _endBox();
@@ -3149,11 +3118,51 @@ class _EventsScreenState extends State<EventsScreen> {
         ),
         floatingActionButton: _needsSignIn
             ? null
+            : _selecting != null
+            // Picking: ✓ keeps what's picked, ✕ puts the lists back.
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FloatingActionButton(
+                    heroTag: 'cancel-pick',
+                    tooltip: 'Put the list back as it was',
+                    onPressed: () => _endSelecting(kept: false),
+                    child: const Icon(Icons.close),
+                  ),
+                  const SizedBox(width: 12),
+                  FloatingActionButton(
+                    heroTag: 'done-pick',
+                    tooltip: 'Done picking',
+                    onPressed: () => _endSelecting(kept: true),
+                    child: const Icon(Icons.check),
+                  ),
+                ],
+              )
             : _box != null
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  // The lists, clear of ✕: keep; push up over push down;
+                  // cancel.
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _listButton(EventList.keep),
+                      const SizedBox(width: 12),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _listButton(EventList.pushUp),
+                          const SizedBox(height: 8),
+                          _listButton(EventList.pushDown),
+                        ],
+                      ),
+                      const SizedBox(width: 12),
+                      _listButton(EventList.cancel),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
                   FloatingActionButton.small(
                     heroTag: 'to-new',
                     tooltip: 'Go to the new event',
@@ -3176,7 +3185,10 @@ class _EventsScreenState extends State<EventsScreen> {
                         builder: (context) {
                           final colors = Theme.of(context).colorScheme;
                           final split = _toSplit;
-                          final ready = _box?.span != null || split != null;
+                          // Not into an event to keep.
+                          final blocked = _effectOf(_box)?.blocked ?? false;
+                          final ready =
+                              (_box?.span != null && !blocked) || split != null;
                           return FloatingActionButton(
                             heroTag: 'continue-new',
                             tooltip: split != null
@@ -3607,7 +3619,6 @@ class _EventsScreenState extends State<EventsScreen> {
                                   dayEnd: _to,
                                   scale: _scale,
                                   box: box,
-                                  mode: _endMode,
                                   selected: _selected,
                                   onSelect: (role) =>
                                       setState(() => _selected = role),
@@ -3641,21 +3652,11 @@ class _EventsScreenState extends State<EventsScreen> {
                                   ),
                                   onStep: _stepCursor,
                                   canStep: _canStep,
-                                  onTapBox: _openBox,
                                   onEditTime: _editTime,
+                                  // Picking, taps go to the events.
+                                  interactive: _selecting == null,
                                   marks: _marksAt,
                                   cuts: _cutsAt,
-                                ),
-                              ),
-                            if ((_box, _keptMove) case (_?, final move?))
-                              Positioned.fill(
-                                child: KeptMoveArrow(
-                                  key: ValueKey(move.id),
-                                  from: move.from,
-                                  to: move.to,
-                                  day: _from,
-                                  dayEnd: _to,
-                                  scale: _scale,
                                 ),
                               ),
                           ],
@@ -3784,7 +3785,14 @@ class _EventsScreenState extends State<EventsScreen> {
                 // While the cursor's up, events don't open: a tap on one
                 // goes to the timeline under it, and moves the cursor
                 // there.
-                onTap: _box == null ? _openEvent : null,
+                // Picking for a list, a tap picks the event; while the box
+                // is up otherwise, events don't open.
+                onTap: _selecting != null
+                    ? _pick
+                    : _box == null
+                    ? _openEvent
+                    : null,
+                listed: _listed,
                 // Pressed and held, it's moved: the box around it.
                 onLongPress: _box == null ? _startMoving : null,
                 faded: _moving?.id,
@@ -3804,8 +3812,9 @@ class _EventsScreenState extends State<EventsScreen> {
                 onTapThrough: _canExtend ? _startExtending : null,
                 marks: _marks,
                 // Before there's a box, the cursor moved there; after, the
-                // box stays put.
-                onTapTime: _box?.span != null || _box == null
+                // box stays put. Picking, a tap only picks.
+                onTapTime:
+                    _box?.span != null || _box == null || _selecting != null
                     ? null
                     : (time) => _changeBox(
                         (box) => box.movedTo(_snap(time, CursorRole.anchor)),
