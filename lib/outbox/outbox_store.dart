@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,18 +6,42 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'pending_action_save.dart';
 import 'pending_event_write.dart';
 import 'pending_note.dart';
+import 'store_lock.dart';
 
 /// Keeps unsaved changes, of type [T], across app restarts.
 abstract class OutboxStore<T> {
   Future<List<T>> load();
   Future<void> save(List<T> items);
+
+  /// What keeps changes to it one at a time ([update]); none, by default.
+  StoreLock get lock => const NoStoreLock();
+
+  /// Reads what's kept, changes it with [change], and writes it back, if
+  /// [change] changed it -- holding [lock] throughout, so no other
+  /// change, from this isolate or another, comes in between. Gives what
+  /// was kept, and what is. Each step gives up after [timeout], throwing
+  /// a [TimeoutException]; a write that does is still waited for before
+  /// another change can begin.
+  Future<(List<T> before, List<T> after)> update(
+    List<T> Function(List<T> items) change, {
+    required Duration timeout,
+  }) => lock.hold((keepUntil) async {
+    final before = await load().timeout(timeout);
+    final after = change(before);
+    if (!identical(after, before)) {
+      final saving = save(after);
+      keepUntil(saving);
+      await saving.timeout(timeout);
+    }
+    return (before, after);
+  }, wait: timeout);
 }
 
 /// SharedPreferences on Android, a file in AppData on Windows, and
 /// localStorage on the web. The async API doesn't cache, so the app and its
 /// Android background task (which may run in another isolate) always see
 /// each other's latest writes.
-class PrefsOutboxStore<T> implements OutboxStore<T> {
+class PrefsOutboxStore<T> extends OutboxStore<T> {
   PrefsOutboxStore({
     required this.key,
     required this._fromJson,
@@ -57,6 +82,11 @@ class PrefsOutboxStore<T> implements OutboxStore<T> {
   );
 
   final String key;
+
+  /// Shared by every outbox of [key], in every isolate.
+  @override
+  late final StoreLock lock = IsolateStoreLock.forKey(key);
+
   final T Function(Map<String, dynamic> json) _fromJson;
   final Map<String, dynamic> Function(T item) _toJson;
   final SharedPreferencesAsync _prefs;
@@ -76,8 +106,14 @@ class PrefsOutboxStore<T> implements OutboxStore<T> {
       : _prefs.setString(key, jsonEncode(items.map(_toJson).toList()));
 }
 
-class InMemoryOutboxStore<T> implements OutboxStore<T> {
+/// Keeps them in memory: for the offline demo, and tests -- where two
+/// outboxes may share one, as the app's and its background task's share
+/// what's on the device, so its changes are made one at a time too.
+class InMemoryOutboxStore<T> extends OutboxStore<T> {
   List<T> items = [];
+
+  @override
+  final StoreLock lock = SerialStoreLock();
 
   @override
   Future<List<T>> load() async => [...items];

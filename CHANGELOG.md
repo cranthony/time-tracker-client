@@ -6,6 +6,21 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.41.0
+
+- Fixed: changes waiting to save could be lost, or sent twice, when the
+  app and its Android background task were both at them -- the app
+  coming back while the task ran, say. Each wrote what's kept on the
+  device whole, from what it had read, overwriting what the other had
+  written meanwhile: a change just made, or one's claim to be sending
+  one. Now each change to what's kept holds a lock both share, and a
+  change waiting is claimed for sending only if no one else has it.
+- Sent again after an attempt nobody heard back from, a cancel isn't
+  refused as made already, nor is an event a move splits off, or one an
+  edit of the proposal creates, made twice.
+- A sender that took too long to hear back, its change since claimed by
+  the other, leaves it to the other.
+
 ## 7.40.0
 
 - What a new or moved event's Keep list starts with is set in Settings,

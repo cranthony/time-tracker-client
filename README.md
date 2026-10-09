@@ -559,7 +559,19 @@ closed.
 A new event, a note for Claude, or abandoning the proposal is checked for
 before it's sent again after an attempt nobody heard back from, so a lost
 response doesn't make it twice; a confirm finishes applying instead, if
-the server has it.
+the server has it. Nor is a cancel refused for having been made already,
+an event a move splits off made twice, or an event an edit of the
+proposal creates.
+
+The app and the background task each send from what's kept on the
+device, and may both be at it at once -- the app coming back while the
+task runs, say. Each change to what's kept is made whole, holding a lock
+both share (the task runs in the app's process, in an isolate of its
+own), so neither's change to it overwrites the other's; and each change
+waiting is claimed before it's sent, the same way, so only one sends it.
+It's sent again only if whoever claimed it doesn't say how it went within
+two minutes -- killed mid-request, say -- and then checked for first, as
+above. Nor can one being sent elsewhere be dropped.
 
 ## Compaction proposals
 
@@ -725,10 +737,17 @@ because a screen changed.
 
 `.github/workflows/emulator.yml` also runs the Android app on an emulator
 and checks that the home screen "+" brings the keyboard up
-(`tool/emulator/keyboard_test.sh`). Tests go there only when they need
+(`tool/emulator/keyboard_test.sh`), and that changes waiting to save are
+handed off between the app and its WorkManager background task, each sent
+once (`tool/emulator/handoff_test.sh`, running
+`integration_test/outbox_handoff_test.dart`; on a device of your own,
+`flutter test integration_test/outbox_handoff_test.dart -d <device>`).
+`test/outbox_handoff_test.dart` checks the same in seconds, with two
+outboxes standing for the app's and the task's, and what happens when one
+is killed mid-request. Tests go on the emulator only when they need
 Android itself (intents, home screen widgets, the system keyboard, a cold
-start); anything else, animations included, is a Flutter widget test,
-which is faster and can check every frame.
+start, WorkManager); anything else, animations included, is a Flutter
+widget test, which is faster and can check every frame.
 
 On a pull request, the slow checks (the Android build, the emulator and
 the visual tests) skip a push that changes nothing they use: one that

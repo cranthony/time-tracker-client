@@ -13,6 +13,9 @@
 # Now:
 #   tool/emulator/keyboard_test.sh  the home screen "+" opens the New note
 #                                   dialog with the keyboard up.
+#   tool/emulator/handoff_test.sh   changes waiting to save are handed off
+#                                   between the app and its WorkManager
+#                                   background task, each sent once.
 name: Emulator tests
 
 on:
@@ -41,7 +44,7 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -69,6 +72,15 @@ jobs:
           arch: x86_64
           disable-animations: false
           script: tool/emulator/keyboard_test.sh build/app/outputs/flutter-apk/app-release.apk
+      # Its own debug build, of integration_test/: the background task
+      # runs in an isolate of its own, as on a phone.
+      - name: Changes are handed off between the app and its background task
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          script: tool/emulator/handoff_test.sh
       - if: always()
         uses: actions/upload-artifact@v4
         with:

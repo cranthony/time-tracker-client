@@ -55,7 +55,7 @@ class NoteOutbox extends Outbox<PendingNote, void> {
   /// Drops [note] without sending it. Returns false if it's being sent.
   Future<bool> cancel(PendingNote note) async {
     if (isSending(note)) return false;
-    await change((notes) => notes.where((n) => n.id != note.id).toList());
+    if (!await removeUnlessSending(note.id)) return false;
     schedule();
     return true;
   }
