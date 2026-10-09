@@ -1922,6 +1922,7 @@ class _EventsScreenState extends State<EventsScreen> {
           context,
           title: 'The end of what happened',
           initial: at,
+          day: _day,
           first: proposal.through,
           last: widget.clock(),
         );
@@ -2234,6 +2235,7 @@ class _EventsScreenState extends State<EventsScreen> {
         _ => 'The bottom of the event',
       },
       initial: anchor ? box.cursor : box.other ?? box.cursor,
+      day: _day,
       first: _from,
       last: _to,
     );

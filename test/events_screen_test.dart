@@ -1659,10 +1659,17 @@ void main() {
 
       await tapButton(tester, find.byTooltip('Type in its time').first);
       expect(find.text('The top of the event'), findsOneWidget);
-      expect(find.text('Wed, Sep 30'), findsOneWidget);
+      expect(find.text('Wed, Sep 30, 12:00 PM'), findsOneWidget);
+      // Ten minutes earlier: across the hour.
+      for (var i = 0; i < 10; i++) {
+        await tester.tap(find.byTooltip('One minute earlier'));
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('Wed, Sep 30, 11:50 AM'), findsOneWidget);
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
-      expect(box(tester).span, (at(30, 12), at(30, 13)));
+      expect(box(tester).span, (at(30, 11, 50), at(30, 13)));
     });
 
     testWidgets("each cursor's own \"−\" and \"+\" are on its outside, "
