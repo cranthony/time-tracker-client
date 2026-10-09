@@ -4,10 +4,11 @@ import '../screens/background_updates_screen.dart';
 import '../screens/settings_screen.dart';
 import '../services/app_settings.dart';
 import '../services/background_refresh.dart';
+import 'event_outbox_bar.dart';
 
-/// The app bar's menu: Settings, Background updates, when the app has
-/// them (a [BackgroundRefreshScope] above), About, and Sign out when
-/// [onSignOut] is set.
+/// The app bar's menu: Settings, Background updates and Changes waiting to
+/// save, when the app has them (a [BackgroundRefreshScope] or an
+/// [EventOutboxScope] above), About, and Sign out when [onSignOut] is set.
 class AppMenu extends StatelessWidget {
   const AppMenu({
     super.key,
@@ -26,6 +27,7 @@ class AppMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final refresh = BackgroundRefresh.of(context);
+    final outbox = EventOutboxScope.of(context);
     final settings = AppSettings.of(context);
     return PopupMenuButton<_MenuItem>(
       onSelected: (item) => switch (item) {
@@ -39,6 +41,7 @@ class AppMenu extends StatelessWidget {
             builder: (_) => BackgroundUpdatesScreen(refresh: refresh!),
           ),
         ),
+        _MenuItem.outbox => outbox!.show(context),
         _MenuItem.about => showAboutDialog(
           context: context,
           applicationName: 'Time Tracker',
@@ -54,6 +57,14 @@ class AppMenu extends StatelessWidget {
             value: _MenuItem.updates,
             child: Text('Background updates'),
           ),
+        if (outbox != null)
+          PopupMenuItem(
+            value: _MenuItem.outbox,
+            child: Text(switch (outbox.outbox.pending.length) {
+              0 => 'Changes waiting to save',
+              final n => 'Changes waiting to save ($n)',
+            }),
+          ),
         const PopupMenuItem(value: _MenuItem.about, child: Text('About')),
         if (onSignOut != null)
           const PopupMenuItem(
@@ -65,4 +76,4 @@ class AppMenu extends StatelessWidget {
   }
 }
 
-enum _MenuItem { settings, updates, about, signOut }
+enum _MenuItem { settings, updates, outbox, about, signOut }

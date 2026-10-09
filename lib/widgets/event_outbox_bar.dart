@@ -103,6 +103,35 @@ class EventOutboxBar extends StatelessWidget {
   );
 }
 
+/// Makes the [EventOutbox] available to everything below it -- the app
+/// menu, to open it ([showEventOutboxSheet]) when nothing's waiting too
+/// -- with what [EventOutboxBar] names and shows events by.
+class EventOutboxScope extends InheritedWidget {
+  const EventOutboxScope({
+    super.key,
+    required this.outbox,
+    this.lookup,
+    this.onShow,
+    required super.child,
+  });
+
+  final EventOutbox outbox;
+  final Event? Function(String id)? lookup;
+  final ValueChanged<Event>? onShow;
+
+  /// The nearest one, or null if there's none.
+  static EventOutboxScope? of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<EventOutboxScope>();
+
+  /// Slides up its changes ([showEventOutboxSheet]).
+  Future<void> show(BuildContext context) =>
+      showEventOutboxSheet(context, outbox, lookup: lookup, onShow: onShow);
+
+  @override
+  bool updateShouldNotify(EventOutboxScope oldWidget) =>
+      outbox != oldWidget.outbox;
+}
+
 /// Slides up the changes waiting in [outbox], oldest first, as they're
 /// sent: each with how it's going -- sending, next, waiting its turn, to
 /// be tried again, or refused, and why -- to edit (a change to one event,
