@@ -11,6 +11,7 @@ import 'actions_repository.dart';
 import 'events_repository.dart';
 import 'mcp_client.dart';
 import 'people_repository.dart';
+import 'response_cache.dart';
 
 /// The user's edits to a [Proposal], as `amend_proposal` takes them:
 /// [updates] and [creates] keyed as `compact_notes` takes them (an update
@@ -286,6 +287,11 @@ abstract class ProposalRepository {
   /// that revision.
   Future<Proposal?> current({int? sinceRevision});
 
+  /// What [current] last returned, kept from an earlier run of the app
+  /// -- with nothing changed since -- to show while it's asked again;
+  /// null if none was open, or nothing's kept.
+  Future<Proposal?> cachedCurrent();
+
   /// Records [edits] to [proposal], from its [Proposal.revision], and
   /// returns the new revision -- with, in [Proposal.replaced], Claude's
   /// newer changes they overrode. Refused, writing nothing, if an edit
@@ -327,22 +333,42 @@ bool isNoteId(String id) => id.contains('#');
 /// `get_compaction_status`, `get_proposal`, `amend_proposal`,
 /// `add_proposal_note`, `withdraw_proposal_note`, `confirm_proposal`,
 /// `finish_proposal` and `abandon_compaction`.
+///
+/// Keeps the open one in [_cache], if given, for [cachedCurrent].
 class McpProposalRepository implements ProposalRepository {
-  McpProposalRepository(this._client);
+  McpProposalRepository(this._client, {this._cache});
 
   final McpClient _client;
+  final ResponseCache? _cache;
+
+  static const _key = 'proposal';
 
   @override
   Future<Proposal?> current({int? sinceRevision}) async {
     final status = await _client.callTool('get_compaction_status', {});
     final open = (status as Map)['proposal'];
-    if (open is! Map) return null;
-    return _proposal(
-      await _client.callTool('get_proposal', {
-        'proposal_id': open['id'],
-        'since_revision': ?sinceRevision,
-      }),
-    );
+    if (open is! Map) {
+      await _cache?.write(_key, null);
+      return null;
+    }
+    final result = await _client.callTool('get_proposal', {
+      'proposal_id': open['id'],
+      'since_revision': ?sinceRevision,
+    });
+    final proposal = _proposal(result);
+    // What changed since is the asker's: kept, nothing has.
+    await _cache?.write(_key, {...(result as Map)}..remove('changed_since'));
+    return proposal;
+  }
+
+  @override
+  Future<Proposal?> cachedCurrent() async {
+    try {
+      final kept = await _cache?.read(_key);
+      return kept == null ? null : _proposal(kept);
+    } catch (_) {
+      return null; // From an older version of the app, perhaps.
+    }
   }
 
   @override
@@ -460,6 +486,9 @@ class InMemoryProposalRepository implements ProposalRepository {
   /// Called on [confirm], before anything's checked: a test's chance to
   /// change the proposal under it.
   Future<ProposalOutcome?> Function(Proposal proposal)? onConfirm;
+
+  @override
+  Future<Proposal?> cachedCurrent() async => null;
 
   @override
   Future<Proposal?> current({int? sinceRevision}) async {

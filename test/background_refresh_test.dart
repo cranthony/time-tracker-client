@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
+import 'package:time_tracker_client/models/proposal.dart';
 import 'package:time_tracker_client/models/schedule_hints.dart';
 import 'package:time_tracker_client/screens/background_updates_screen.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
+import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/services/background_refresh.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
+import 'package:time_tracker_client/services/notes_repository.dart';
+import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/services/response_cache.dart';
 import 'package:time_tracker_client/services/schedule_hints_repository.dart';
 import 'package:time_tracker_client/widgets/app_menu.dart';
@@ -49,6 +54,180 @@ void main() {
 
       expect(next.at, DateTime(2026, 10, 7, 13, 40));
       expect(next.hint, isNull);
+    });
+
+    test('is as long after the routine as set', () {
+      final next = nextRefresh(DateTime(2026, 10, 7, 7), [
+        _morning,
+      ], delay: const Duration(minutes: 30));
+
+      expect(next.at, DateTime(2026, 10, 7, 8));
+    });
+
+    test("comes sooner while a compaction's proposal hasn't come", () {
+      final next = nextRefresh(
+        DateTime(2026, 10, 7, 7, 40),
+        [_morning, _evening],
+        retry: const Duration(minutes: 20),
+        awaiting: (hint: _morning, at: DateTime(2026, 10, 7, 7, 30)),
+      );
+
+      expect(next.at, DateTime(2026, 10, 7, 8));
+      expect(next.hint, _morning);
+      expect(next.retry, isTrue);
+    });
+
+    test('gives up on the proposal 3 hours after its routine', () {
+      final next = nextRefresh(
+        DateTime(2026, 10, 7, 10, 20),
+        [_morning, _evening],
+        awaiting: (hint: _morning, at: DateTime(2026, 10, 7, 7, 30)),
+      );
+
+      expect(next.at, DateTime(2026, 10, 7, 16, 20));
+      expect(next.retry, isFalse);
+    });
+
+    test('does not come sooner, set not to', () {
+      final next = nextRefresh(
+        DateTime(2026, 10, 7, 7, 40),
+        [_morning],
+        retry: null,
+        awaiting: (hint: _morning, at: DateTime(2026, 10, 7, 7, 30)),
+      );
+
+      expect(next.retry, isFalse);
+    });
+  });
+
+  test('a compaction expects a proposal; other routines do not', () {
+    expect(_morning.expectsProposal, isTrue);
+    expect(
+      const ScheduleHint(
+        hour: 10,
+        minute: 10,
+        label: 'Feedback and judging',
+      ).expectsProposal,
+      isFalse,
+    );
+    expect(const ScheduleHint(hour: 10, minute: 10).expectsProposal, isFalse);
+  });
+
+  group('after a compaction, a background fetch', () {
+    final at = DateTime(2026, 10, 7, 7, 45);
+    final hints = InMemoryScheduleHintsRepository(
+      const ScheduleHints(hints: [_morning, _evening]),
+    );
+    NotesRepository notes([List<Note>? list]) => InMemoryNotesRepository(
+      list ?? [Note(timestamp: DateTime(2026, 10, 7, 6, 50))],
+    );
+
+    test("awaits its proposal when there's none", () async {
+      final record = await refreshCaches(
+        hints: hints,
+        notes: notes(),
+        proposals: InMemoryProposalRepository(null),
+        clock: () => at,
+      );
+
+      expect(record.fetched, contains('proposal'));
+      expect(record.awaiting?.hint, _morning);
+      expect(record.awaiting?.at, DateTime(2026, 10, 7, 7, 30));
+    });
+
+    test('has it, found since', () async {
+      final record = await refreshCaches(
+        hints: hints,
+        notes: notes(),
+        proposals: InMemoryProposalRepository(_proposal(2)),
+        clock: () => at,
+      );
+
+      expect(record.awaiting, isNull);
+      expect(record.proposal?.revision, 2);
+      expect(record.proposal?.since, at);
+    });
+
+    test('awaits it while the revision is one found before', () async {
+      final record = await refreshCaches(
+        hints: hints,
+        notes: notes(),
+        proposals: InMemoryProposalRepository(_proposal(2)),
+        previous: RefreshRecord(
+          at: DateTime(2026, 10, 7, 1),
+          proposal: (
+            id: 'abc123def456',
+            revision: 2,
+            since: DateTime(2026, 10, 7, 1),
+          ),
+        ),
+        clock: () => at,
+      );
+
+      expect(record.awaiting?.hint, _morning);
+      expect(record.proposal?.since, DateTime(2026, 10, 7, 1));
+    });
+
+    test('awaits nothing, with no notes from before it', () async {
+      final record = await refreshCaches(
+        hints: hints,
+        notes: notes([Note(timestamp: DateTime(2026, 10, 7, 7, 40))]),
+        proposals: InMemoryProposalRepository(null),
+        clock: () => at,
+      );
+
+      expect(record.awaiting, isNull);
+    });
+
+    test('awaits nothing long after it', () async {
+      final record = await refreshCaches(
+        hints: hints,
+        notes: notes(),
+        proposals: InMemoryProposalRepository(null),
+        clock: () => DateTime(2026, 10, 7, 11),
+      );
+
+      expect(record.awaiting, isNull);
+    });
+  });
+
+  group('the open proposal', () {
+    test('is kept, with nothing changed since', () async {
+      final cache = InMemoryResponseCache();
+
+      final proposal = await McpProposalRepository(
+        _ProposalClient(open: true),
+        cache: cache,
+      ).current(sinceRevision: 1);
+      final kept = await McpProposalRepository(
+        _ProposalClient(open: false),
+        cache: cache,
+      ).cachedCurrent();
+
+      expect(proposal?.changedSince, {'e1'});
+      expect(kept?.revision, 2);
+      expect(kept?.changedSince, isEmpty);
+    });
+
+    test('is forgotten once none is open', () async {
+      final cache = InMemoryResponseCache();
+      await McpProposalRepository(
+        _ProposalClient(open: true),
+        cache: cache,
+      ).current();
+
+      await McpProposalRepository(
+        _ProposalClient(open: false),
+        cache: cache,
+      ).current();
+
+      expect(
+        await McpProposalRepository(
+          _ProposalClient(open: false),
+          cache: cache,
+        ).cachedCurrent(),
+        isNull,
+      );
     });
   });
 
@@ -151,6 +330,39 @@ void main() {
       expect(delays, [const Duration(hours: 6)]);
     });
 
+    test("reschedules as the settings change, and awaits the last fetch's "
+        'proposal', () async {
+      final delays = <Duration>[];
+      final settings = AppSettings(persist: false);
+      final refresh = BackgroundRefresh(
+        repository: InMemoryScheduleHintsRepository(
+          const ScheduleHints(hints: [_morning, _evening]),
+        ),
+        settings: settings,
+        supported: true,
+        clock: () => DateTime(2026, 10, 7, 7, 40),
+        schedule: (delay) async => delays.add(delay),
+        lastRecord: () async => RefreshRecord(
+          at: DateTime(2026, 10, 7, 7, 40),
+          awaiting: (hint: _morning, at: DateTime(2026, 10, 7, 7, 30)),
+        ),
+      );
+      await refresh.load();
+
+      await settings.setRetryInterval(const Duration(minutes: 30));
+      await settings.setRetryInterval(null);
+      await settings.setRefreshDelay(const Duration(minutes: 20));
+
+      expect(delays, [
+        const Duration(minutes: 15),
+        const Duration(minutes: 30),
+        // Not checking again: the fallback's, sooner than the evening's.
+        const Duration(hours: 6),
+        // The morning's again, 20 minutes after it.
+        const Duration(minutes: 10),
+      ]);
+    });
+
     test('schedules nothing where there are no background fetches', () async {
       final delays = <Duration>[];
       final refresh = BackgroundRefresh(
@@ -193,6 +405,7 @@ void main() {
       ScheduleHintsRepository? repository,
       bool supported = true,
       RefreshRecord? last,
+      DateTime? now,
     }) => BackgroundRefresh(
       repository:
           repository ??
@@ -203,7 +416,7 @@ void main() {
             ),
           ),
       supported: supported,
-      clock: () => _now,
+      clock: () => now ?? _now,
       schedule: (_) async {},
       lastRecord: () async => last,
     );
@@ -242,6 +455,40 @@ void main() {
         find.text("Couldn't fetch habits; fetched routine times, events."),
         findsOneWidget,
       );
+    });
+
+    testWidgets("says it's checking again for a compaction's proposal", (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        refresh(
+          now: DateTime(2026, 10, 7, 7, 40),
+          last: RefreshRecord(
+            at: DateTime(2026, 10, 7, 7, 40),
+            awaiting: (hint: _morning, at: DateTime(2026, 10, 7, 7, 30)),
+          ),
+        ),
+      );
+
+      expect(find.text('Next: about 7:55 AM'), findsOneWidget);
+      expect(
+        find.textContaining("checking again for Morning compaction's proposal"),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('sets how long after each routine it fetches', (tester) async {
+      final r = refresh();
+      await pump(tester, r);
+
+      await tester.tap(find.text('10 min'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('30 min').last);
+      await tester.pumpAndSettle();
+
+      expect(r.settings.refreshDelay, const Duration(minutes: 30));
+      expect(find.text('Update ≈ 8:00 AM'), findsOneWidget);
     });
 
     testWidgets("says when the server doesn't give the times", (tester) async {
@@ -290,6 +537,41 @@ class _Client extends McpClient {
     called.add(name);
     return result;
   }
+}
+
+Proposal _proposal(int revision) => Proposal(
+  id: 'abc123def456',
+  revision: revision,
+  state: ProposalState.awaitingReview,
+  windowStart: DateTime(2026, 10, 6, 20),
+  through: DateTime(2026, 10, 7, 7),
+);
+
+/// A server with a proposal [open], or none.
+class _ProposalClient extends McpClient {
+  _ProposalClient({required this.open})
+    : super(endpoint: Uri.parse('http://test'));
+
+  final bool open;
+
+  @override
+  Future<Object?> callTool(
+    String name, [
+    Map<String, Object?> arguments = const {},
+  ]) async => switch (name) {
+    'get_compaction_status' => {
+      'proposal': open ? {'id': 'abc123def456', 'revision': 2} : null,
+    },
+    _ => {
+      'id': 'abc123def456',
+      'revision': 2,
+      'state': 'awaiting_review',
+      'window_start': '2026-10-06T20:00:00-04:00',
+      'through': '2026-10-07T07:00:00-04:00',
+      'events': <Object?>[],
+      'changed_since': ['e1'],
+    },
+  };
 }
 
 class _NoHints implements ScheduleHintsRepository {

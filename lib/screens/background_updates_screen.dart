@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../models/schedule_hints.dart';
+import '../services/app_settings.dart';
 import '../services/background_refresh.dart';
 
-/// How the app keeps what it shows fresh while it's closed: a fetch
-/// [refreshDelay] after each time Claude's routines run -- their times
-/// read from the server, which the routines set, and listed here, not
-/// edited -- and otherwise every [refreshFallback], said plainly; when
-/// the next is due, and why; and what the last did. Background fetches
-/// are Android's: elsewhere it says the app fetches only while it's open.
+/// How the app keeps what it shows fresh while it's closed: a fetch a
+/// while after each time Claude's routines run -- their times read from
+/// the server, which the routines set, and listed here, not edited --
+/// again every so often while a compaction's proposal hasn't come, and
+/// otherwise every [refreshFallback], said plainly; when the next is
+/// due, and why; and what the last did. How long after, and how often
+/// again, are set here. Background fetches are Android's: elsewhere it
+/// says the app fetches only while it's open.
 class BackgroundUpdatesScreen extends StatefulWidget {
   const BackgroundUpdatesScreen({super.key, required this.refresh});
 
@@ -46,14 +49,17 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
       };
     }
 
-    final delay = refreshDelay.inMinutes;
     final fallback = refreshFallback.inHours;
+    final window = retryWindow.inHours;
     return Scaffold(
       appBar: AppBar(title: const Text('Background updates')),
       body: ListenableBuilder(
         listenable: widget.refresh,
         builder: (context, _) {
           final refresh = widget.refresh;
+          final settings = refresh.settings;
+          final delay = settings.refreshDelay.inMinutes;
+          final retry = settings.retryInterval?.inMinutes;
           final hints = refresh.hints;
           final next = refresh.next;
           final last = refresh.last;
@@ -68,7 +74,11 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
                     'So what the app shows is fresh when you open it, it '
                     'fetches in the background: $delay minutes after each '
                     "time Claude's routines run, and otherwise every "
-                    '$fallback hours.',
+                    '$fallback hours.'
+                    '${switch (retry) {
+                      final retry? => ' After a compaction, until its proposal comes, it checks again every $retry minutes, for up to $window hours.',
+                      null => '',
+                    }}',
                     style: theme.textTheme.bodyMedium,
                   ),
                 ),
@@ -85,6 +95,7 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
                     title: Text('Next: about ${at(next.at)}'),
                     subtitle: Text(
                       '${day(next.at)} · ${switch (next.hint) {
+                        final h? when next.retry => "checking again for ${h.label ?? clock(h)}'s proposal: it hasn't come",
                         final h? => '$delay minutes after ${h.label ?? clock(h)}',
                         null => 'the $fallback-hourly update: no routine runs sooner',
                       }}\nAndroid picks the moment: it may be later while '
@@ -115,6 +126,61 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
                             _ => 'Fetched ${last.fetched.join(', ')}.',
                           }),
                   ),
+                  _heading(theme, 'Timing'),
+                  ListTile(
+                    leading: const Icon(Icons.timer_outlined),
+                    title: const Text('After each routine'),
+                    subtitle: const Text(
+                      'How long after its time to fetch what it made: it '
+                      'takes a while to run.',
+                    ),
+                    trailing: DropdownButton<Duration>(
+                      value: settings.refreshDelay,
+                      onChanged: (d) {
+                        if (d != null) settings.setRefreshDelay(d);
+                      },
+                      items: [
+                        for (final d in {
+                          ...AppSettings.refreshDelays,
+                          settings.refreshDelay,
+                        })
+                          DropdownMenuItem(
+                            value: d,
+                            child: Text('${d.inMinutes} min'),
+                          ),
+                      ],
+                    ),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.replay),
+                    title: const Text('Until a proposal comes'),
+                    subtitle: Text(
+                      'How often to check again after a compaction, if its '
+                      "proposal hasn't come: for up to $window hours.",
+                    ),
+                    trailing: DropdownButton<Duration?>(
+                      value: settings.retryInterval,
+                      onChanged: settings.setRetryInterval,
+                      items: [
+                        for (final d in {
+                          ...AppSettings.retryIntervals,
+                          settings.retryInterval,
+                        })
+                          DropdownMenuItem(
+                            value: d,
+                            child: Text(
+                              d == null ? "Don't" : 'Every ${d.inMinutes} min',
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  _note(
+                    theme,
+                    'Android picks the moment, and may hold a fetch back '
+                    "while the phone's idle or the app's little used -- "
+                    'by hours, sometimes.',
+                  ),
                 ],
                 _heading(theme, "When Claude's routines run"),
                 if (refresh.unavailable && hints == null)
@@ -141,7 +207,7 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
                       title: Text(clock(h)),
                       subtitle: h.label == null ? null : Text(h.label!),
                       trailing: Text(
-                        'Update ≈ ${strings.formatTimeOfDay(TimeOfDay.fromDateTime(DateTime(2000, 1, 1, h.hour, h.minute).add(refreshDelay)))}',
+                        'Update ≈ ${strings.formatTimeOfDay(TimeOfDay.fromDateTime(DateTime(2000, 1, 1, h.hour, h.minute).add(settings.refreshDelay)))}',
                         style: theme.textTheme.bodySmall,
                       ),
                     ),
