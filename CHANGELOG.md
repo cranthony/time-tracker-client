@@ -15,7 +15,8 @@ on. Add the new version's section here at the same time; CI checks both.
   latest on the right. Pick which tools' calls (reads, writes, an area,
   one tool), and each call or the mean, median, 95th percentile or max
   of each 15 minutes, hour, 6 hours or day; each graph sums up what's in
-  view. Pinch, scroll or tap to zoom all three in together. An **App**
+  view. Pinch, or tap the buttons, to zoom all three in together, in
+  time; scrolling scrolls the page. An **App**
   pane, swiped to, is for the app's own metrics, later.
 
 ## 7.41.0

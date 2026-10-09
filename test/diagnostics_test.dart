@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/server_health.dart';
@@ -303,6 +304,25 @@ void main() {
       await tester.tap(find.byTooltip('Zoom out'));
       await tester.pumpAndSettle();
       expect(find.textContaining('(zoomed in)'), findsNothing);
+    });
+
+    testWidgets('scrolls the page with the wheel, and zooms with a pinch', (
+      tester,
+    ) async {
+      await open(tester, InMemoryDiagnosticsRepository(_health()));
+      final graph = tester.getCenter(find.text('Tool calls'));
+
+      tester.binding.handlePointerEvent(
+        PointerScrollEvent(position: graph, scrollDelta: const Offset(0, 120)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('(zoomed in)'), findsNothing);
+
+      tester.binding.handlePointerEvent(
+        PointerScaleEvent(position: graph, scale: 2),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('(zoomed in)'), findsOneWidget);
     });
 
     testWidgets('says when the server has no get_health', (tester) async {

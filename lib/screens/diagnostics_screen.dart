@@ -19,9 +19,10 @@ import '../widgets/status_message.dart';
 /// red -- its memory, and its restarts, ticked. Which tools' calls,
 /// how far back, and each call or a statistic of each bucket of them are
 /// picked from the menus above; each graph says the mean, median, 95th
-/// percentile and max of what's in view. Pinching -- or the mouse wheel,
-/// or the buttons -- zooms all three in on a stretch, two fingers drag it
-/// along, and a double tap goes back to the whole range.
+/// percentile and max of what's in view. Pinching -- on a touchscreen or a
+/// trackpad, or Ctrl and the mouse wheel -- or the buttons zooms all three
+/// in on a stretch of time, two fingers drag it along, and a double tap
+/// goes back to the whole range. Scrolling scrolls the page.
 class DiagnosticsScreen extends StatefulWidget {
   const DiagnosticsScreen({
     super.key,
@@ -361,10 +362,12 @@ class _Picker<T> extends StatelessWidget {
   }
 }
 
-/// Turns pinches (two fingers: apart zooms in, moving drags along), the
-/// mouse wheel, and a double tap (back to the whole range) into
-/// [onZoom]s and [onReset]s, for every graph in [child] at once. A
-/// [Listener], so a finger's own drags still scroll the page.
+/// Turns pinches -- two fingers on a touchscreen (apart zooms in, moving
+/// drags along), on a trackpad, or Ctrl and the mouse wheel, as browsers
+/// send it -- and a double tap (back to the whole range) into [onZoom]s
+/// and [onReset]s, for every graph in [child] at once: in time, across,
+/// only. A [Listener], so scrolling, and a finger's own drags, still
+/// scroll the page.
 class _Zoomable extends StatefulWidget {
   const _Zoomable({
     required this.onZoom,
@@ -382,6 +385,9 @@ class _Zoomable extends StatefulWidget {
 
 class _ZoomableState extends State<_Zoomable> {
   final _pointers = <int, Offset>{};
+
+  /// A trackpad pinch's scale, as last seen.
+  double _trackpadScale = 1;
 
   /// The two fingers' distance apart and middle, as last seen.
   (double, double)? _last;
@@ -428,14 +434,30 @@ class _ZoomableState extends State<_Zoomable> {
             _pointers.remove(e.pointer);
             _last = _pinch();
           },
+          // Ctrl and the mouse wheel, as browsers send it: a pinch. The
+          // wheel alone scrolls the page, as anywhere else.
           onPointerSignal: (e) {
-            if (e is PointerScrollEvent && e.scrollDelta.dy != 0) {
+            if (e is PointerScaleEvent && e.scale != 1) {
               GestureBinding.instance.pointerSignalResolver.register(e, (_) {
-                widget.onZoom(
-                  pow(1.2, -e.scrollDelta.dy / 100).toDouble(),
-                  anchor: across(e.localPosition.dx),
-                );
+                widget.onZoom(e.scale, anchor: across(e.localPosition.dx));
               });
+            }
+          },
+          // A trackpad's pinch. Its two-finger swipes come this way too:
+          // a sideways one drags along; an up-and-down one is left to
+          // scroll the page.
+          onPointerPanZoomStart: (_) => _trackpadScale = 1,
+          onPointerPanZoomUpdate: (e) {
+            final factor = e.scale / _trackpadScale;
+            _trackpadScale = e.scale;
+            final sideways =
+                e.localPanDelta.dx.abs() > e.localPanDelta.dy.abs();
+            if (factor != 1 || sideways) {
+              widget.onZoom(
+                factor,
+                anchor: across(e.localPosition.dx),
+                shift: sideways ? e.localPanDelta.dx / width : 0,
+              );
             }
           },
           child: GestureDetector(

@@ -595,9 +595,10 @@ notes, proposals, people, actions, habits -- or one tool), how far back
 (the last day, week, or everything), and whether to show each call or the
 mean, median, 95th percentile or max of each 15 minutes, hour, 6 hours or
 day. Each graph says the mean, median, 95th percentile and max of what's
-in view. Pinch (or the mouse wheel, or the buttons) zooms all three in
-together; two fingers drag along, and a double tap goes back to the whole
-range. Pull down to fetch again; the last fetched shows offline. Swipe to
+in view. A pinch -- on a touchscreen or a trackpad, or Ctrl and the mouse
+wheel -- or the buttons zoom all three in together, in time; two fingers
+drag along, and a double tap goes back to the whole range. Scrolling
+scrolls the page. Pull down to fetch again; the last fetched shows offline. Swipe to
 the **App** pane for the app's own metrics -- none yet. A server without
 `get_health` says so.
 
