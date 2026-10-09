@@ -1,7 +1,10 @@
+import 'dart:math';
+
 import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/habit.dart';
 import '../models/schedule_hints.dart';
+import '../models/server_health.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/person.dart';
@@ -11,6 +14,7 @@ import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/events_repository.dart';
 import '../services/actions_repository.dart';
+import '../services/diagnostics_repository.dart';
 import '../services/focus_store.dart';
 import '../services/habits_repository.dart';
 import '../services/notes_repository.dart';
@@ -65,6 +69,79 @@ class SampleData {
   );
 
   HabitsRepository habitsRepository() => InMemoryHabitsRepository(habits);
+
+  /// The server's health, up to [now]: a few days of tool calls -- the
+  /// Events page's reads every few minutes, notes and proposal work now
+  /// and then, the odd one failing -- its memory creeping up between its
+  /// restarts, and three restarts.
+  DiagnosticsRepository diagnosticsRepository({DateTime? now}) =>
+      InMemoryDiagnosticsRepository(serverHealth(now ?? DateTime.now()));
+
+  static ServerHealth serverHealth(DateTime now) {
+    final random = Random(7);
+    final end = now.toUtc();
+    // (tool, every, work, overhead): roughly how often, and how long.
+    const tools = [
+      ('list_events', Duration(minutes: 9), 320, 90),
+      ('get_notes', Duration(minutes: 23), 180, 80),
+      ('note', Duration(minutes: 47), 410, 95),
+      ('get_proposal', Duration(hours: 2), 650, 110),
+      ('amend_proposal', Duration(hours: 5), 1400, 120),
+      ('confirm_proposal', Duration(hours: 11), 3800, 140),
+      ('get_health', Duration(hours: 7), 40, 70),
+    ];
+    final restarts = [
+      end.subtract(const Duration(days: 3, hours: 2)),
+      end.subtract(const Duration(days: 1, hours: 15)),
+      end.subtract(const Duration(hours: 9, minutes: 20)),
+    ];
+    final calls = <ToolCall>[];
+    final health = <ToolCalls>[];
+    for (final (tool, every, work, overhead) in tools) {
+      final mine = <ToolCall>[];
+      var at = end;
+      while (mine.length < 100 &&
+          end.difference(at) < const Duration(days: 4)) {
+        at = at.subtract(every * (0.5 + random.nextDouble()));
+        final w = (work * (0.6 + random.nextDouble() * 0.9)).round();
+        // Slower just after a restart, as the caches fill.
+        final cold = restarts.any(
+          (r) =>
+              at.isAfter(r) && at.difference(r) < const Duration(minutes: 30),
+        );
+        mine.add(
+          ToolCall(
+            tool: tool,
+            at: at,
+            workMs: cold ? w * 3 : w,
+            totalMs:
+                (cold ? w * 3 : w) +
+                (overhead * (0.5 + random.nextDouble())).round(),
+            ok: random.nextInt(40) != 0,
+          ),
+        );
+      }
+      mine.sort((a, b) => a.at.compareTo(b.at));
+      calls.addAll(mine);
+      health.add(ToolCalls(tool: tool, calls: mine));
+    }
+    calls.sort((a, b) => a.at.compareTo(b.at));
+    final memory = [
+      for (final c in calls.skip(max(0, calls.length - 100)))
+        () {
+          final since = restarts.lastWhere(
+            (r) => !r.isAfter(c.at),
+            orElse: () => restarts.first,
+          );
+          final hours = c.at.difference(since).inMinutes / 60;
+          return MemorySample(
+            at: c.at,
+            mib: 182 + hours * 2.4 + random.nextDouble() * 6,
+          );
+        }(),
+    ];
+    return ServerHealth(tools: health, memory: memory, restarts: restarts);
+  }
 
   /// When Claude's routines run: compacting in the morning and evening,
   /// and answering notes at midday.

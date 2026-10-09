@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../screens/background_updates_screen.dart';
+import '../screens/diagnostics_screen.dart';
 import '../screens/settings_screen.dart';
 import '../services/app_settings.dart';
 import '../services/background_refresh.dart';
+import '../services/diagnostics_repository.dart';
 import 'event_outbox_bar.dart';
 
-/// The app bar's menu: Settings, Background updates and Changes waiting to
-/// save, when the app has them (a [BackgroundRefreshScope] or an
-/// [EventOutboxScope] above), About, and Sign out when [onSignOut] is set.
+/// The app bar's menu: Settings, Background updates, Changes waiting to
+/// save and Diagnostics, when the app has them (a [BackgroundRefreshScope],
+/// an [EventOutboxScope] or a [DiagnosticsScope] above), About, and Sign
+/// out when [onSignOut] is set.
 class AppMenu extends StatelessWidget {
   const AppMenu({
     super.key,
@@ -28,6 +31,7 @@ class AppMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final refresh = BackgroundRefresh.of(context);
     final outbox = EventOutboxScope.of(context);
+    final diagnostics = DiagnosticsScope.of(context);
     final settings = AppSettings.of(context);
     return PopupMenuButton<_MenuItem>(
       onSelected: (item) => switch (item) {
@@ -42,6 +46,11 @@ class AppMenu extends StatelessWidget {
           ),
         ),
         _MenuItem.outbox => outbox!.show(context),
+        _MenuItem.diagnostics => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => DiagnosticsScreen(repository: diagnostics!),
+          ),
+        ),
         _MenuItem.about => showAboutDialog(
           context: context,
           applicationName: 'Time Tracker',
@@ -65,6 +74,11 @@ class AppMenu extends StatelessWidget {
               final n => 'Changes waiting to save ($n)',
             }),
           ),
+        if (diagnostics != null)
+          const PopupMenuItem(
+            value: _MenuItem.diagnostics,
+            child: Text('Diagnostics'),
+          ),
         const PopupMenuItem(value: _MenuItem.about, child: Text('About')),
         if (onSignOut != null)
           const PopupMenuItem(
@@ -76,4 +90,4 @@ class AppMenu extends StatelessWidget {
   }
 }
 
-enum _MenuItem { settings, updates, outbox, about, signOut }
+enum _MenuItem { settings, updates, outbox, diagnostics, about, signOut }

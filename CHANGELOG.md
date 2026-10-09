@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.42.0
+
+- **Diagnostics**, in the ⋮ menu: the server's health, from its
+  `get_health`. Graphs of its tool calls -- each one's own work, with
+  auth and transport stacked on top, failed calls dotted red -- its
+  memory, and its restarts, over the last day, week or everything, the
+  latest on the right. Pick which tools' calls (reads, writes, an area,
+  one tool), and each call or the mean, median, 95th percentile or max
+  of each 15 minutes, hour, 6 hours or day; each graph sums up what's in
+  view. Pinch, scroll or tap to zoom all three in together. An **App**
+  pane, swiped to, is for the app's own metrics, later.
+
 ## 7.41.0
 
 - Fixed: changes waiting to save could be lost, or sent twice, when the

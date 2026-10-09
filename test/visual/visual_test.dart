@@ -18,6 +18,7 @@ import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/background_updates_screen.dart';
+import 'package:time_tracker_client/screens/diagnostics_screen.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
 import 'package:time_tracker_client/screens/plan_screen.dart';
@@ -698,6 +699,46 @@ void main() {
                 );
                 await tester.pumpAndSettle();
                 await tester.tap(find.text('Lunch with Sam & Priya').first);
+                await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
+
+    // Diagnostics: the server's health -- its tool calls, stacked, its
+    // memory and its restarts, over the last day -- each call, and the
+    // median of each hour; scrolled to the restarts; and the app's pane,
+    // empty for now.
+    for (final (name, step) in [
+      ('diagnostics', ''),
+      ('diagnostics_median', 'median'),
+      ('diagnostics_restarts', 'scroll'),
+      ('diagnostics_app', 'app'),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          DiagnosticsScreen(
+            repository: sample.diagnosticsRepository(now: _now),
+            clock: () => _now,
+          ),
+          then: () async {
+            switch (step) {
+              case 'median':
+                await tester.tap(find.text('Each call'));
+                await tester.pumpAndSettle();
+                await tester.tap(find.text('Median').last);
+                await tester.pumpAndSettle();
+              case 'scroll':
+                await tester.drag(
+                  find.byType(ListView).first,
+                  const Offset(0, -1400),
+                );
+                await tester.pumpAndSettle();
+              case 'app':
+                await tester.tap(find.text('App'));
                 await tester.pumpAndSettle();
             }
           },
