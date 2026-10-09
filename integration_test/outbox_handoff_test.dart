@@ -4,8 +4,11 @@
 // sent once. None lost, none twice, and changes to events in the order
 // they were made.
 //
-// The "server" is a file both isolates append to: each note and event
-// it's asked to save, and who asked. The app goes to the background and
+// The "server" is a folder of files: each note and event it's asked to
+// save, and who asked -- a file for each kind and sender, as one sender
+// sends one of a kind at a time. (Not one file both isolates append to:
+// Dart appends by seeking to the end, then writing, so two writing at
+// once can write over each other.) The app goes to the background and
 // back as the app does (stop, schedule the background task; cancel it,
 // pick up what it did, start), taking notes and making events between,
 // while the task runs alongside it.
@@ -49,8 +52,15 @@ void handoffDispatcher() => BackgroundSync.run(
   ],
 );
 
-Future<File> _server() async =>
-    File('${(await getTemporaryDirectory()).path}/handoff_server.txt');
+Future<Directory> _server() async =>
+    Directory('${(await getTemporaryDirectory()).path}/handoff_server');
+
+/// Where [who]'s requests to save a [kind] go.
+Future<File> _file(String kind, String who) async {
+  final dir = await _server();
+  await dir.create(recursive: true);
+  return File('${dir.path}/${kind}_$who.txt');
+}
 
 final _random = Random();
 
@@ -59,13 +69,14 @@ final _random = Random();
 Future<void> _wire() =>
     Future<void>.delayed(Duration(milliseconds: 30 + _random.nextInt(250)));
 
-/// What the file says was saved: each line's fields, split by "|".
+/// What the files say was saved: each line's fields, split by "|".
 Future<List<List<String>>> _saved() async {
-  final file = await _server();
-  if (!file.existsSync()) return const [];
+  final dir = await _server();
+  if (!dir.existsSync()) return const [];
   return [
-    for (final line in await file.readAsLines())
-      if (line.isNotEmpty) line.split('|'),
+    for (final file in dir.listSync().whereType<File>())
+      for (final line in await file.readAsLines())
+        if (line.isNotEmpty) line.split('|'),
   ];
 }
 
@@ -78,7 +89,7 @@ class _FileNotes extends InMemoryNotesRepository {
   @override
   Future<Note> addNote(Note note) async {
     await _wire();
-    await (await _server()).writeAsString(
+    await (await _file('note', who)).writeAsString(
       'note|${note.timestamp.toUtc().toIso8601String()}|${note.description}|$who\n',
       mode: FileMode.append,
       flush: true,
@@ -105,8 +116,9 @@ class _FileEvents extends InMemoryEventsRepository {
   @override
   Future<List<Event>> createEvent(Map<String, Object?> fields) async {
     await _wire();
-    await (await _server()).writeAsString(
-      'event|${fields['start']}|${fields['end']}|${fields['summary']}|$who\n',
+    await (await _file('event', who)).writeAsString(
+      'event|${fields['start']}|${fields['end']}|${fields['summary']}|'
+      '${DateTime.now().microsecondsSinceEpoch}|$who\n',
       mode: FileMode.append,
       flush: true,
     );
@@ -141,7 +153,7 @@ void main() {
       await prefs.remove('note_outbox');
       await prefs.remove('event_outbox');
       final server = await _server();
-      if (server.existsSync()) server.deleteSync();
+      if (server.existsSync()) server.deleteSync(recursive: true);
       await BackgroundSync.initialize(handoffDispatcher);
 
       final notes = NoteOutbox(
@@ -234,9 +246,13 @@ void main() {
         for (final f in saved)
           if (f[0] == 'note') f[2],
       ];
+      // In the order the server got them: one sender sends at a time.
       final savedEvents = [
-        for (final f in saved)
-          if (f[0] == 'event') f[3],
+        for (final f in [
+          for (final f in saved)
+            if (f[0] == 'event') f,
+        ]..sort((a, b) => int.parse(a[4]).compareTo(int.parse(b[4]))))
+          f[3],
       ];
       // ignore: avoid_print
       print(
