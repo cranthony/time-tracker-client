@@ -18,9 +18,9 @@ class ScheduleHint {
   /// What runs then: "Morning compaction".
   final String? label;
 
-  /// Whether it compacts notes into a proposal, so one's to be expected
-  /// after it: its label says so ("Morning compaction").
-  bool get expectsProposal => label?.toLowerCase().contains('compact') ?? false;
+  /// What it's known by from one reading to the next: its [id], or with
+  /// none, its [time].
+  String get key => id ?? time;
 
   /// "07:30".
   String get time =>

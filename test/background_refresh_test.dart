@@ -100,33 +100,18 @@ void main() {
     });
   });
 
-  test('a compaction expects a proposal; other routines do not', () {
-    expect(_morning.expectsProposal, isTrue);
-    expect(
-      const ScheduleHint(
-        hour: 10,
-        minute: 10,
-        label: 'Feedback and judging',
-      ).expectsProposal,
-      isFalse,
-    );
-    expect(const ScheduleHint(hour: 10, minute: 10).expectsProposal, isFalse);
-  });
-
-  group('after a compaction, a background fetch', () {
+  group('after a routine a proposal is expected from, a background fetch', () {
     final at = DateTime(2026, 10, 7, 7, 45);
     final hints = InMemoryScheduleHintsRepository(
       const ScheduleHints(hints: [_morning, _evening]),
     );
-    NotesRepository notes([List<Note>? list]) => InMemoryNotesRepository(
-      list ?? [Note(timestamp: DateTime(2026, 10, 7, 6, 50))],
-    );
+    bool morning(ScheduleHint hint) => hint == _morning;
 
     test("awaits its proposal when there's none", () async {
       final record = await refreshCaches(
         hints: hints,
-        notes: notes(),
         proposals: InMemoryProposalRepository(null),
+        expects: morning,
         clock: () => at,
       );
 
@@ -135,44 +120,68 @@ void main() {
       expect(record.awaiting?.at, DateTime(2026, 10, 7, 7, 30));
     });
 
-    test('has it, found since', () async {
+    test('has it, through a time after the routine', () async {
       final record = await refreshCaches(
         hints: hints,
-        notes: notes(),
-        proposals: InMemoryProposalRepository(_proposal(2)),
+        proposals: InMemoryProposalRepository(
+          _proposal(through: DateTime(2026, 10, 7, 7, 35)),
+        ),
+        expects: morning,
         clock: () => at,
       );
 
       expect(record.awaiting, isNull);
-      expect(record.proposal?.revision, 2);
-      expect(record.proposal?.since, at);
     });
 
-    test('awaits it while the revision is one found before', () async {
+    test('awaits it while the proposal runs through before then', () async {
       final record = await refreshCaches(
         hints: hints,
-        notes: notes(),
-        proposals: InMemoryProposalRepository(_proposal(2)),
-        previous: RefreshRecord(
-          at: DateTime(2026, 10, 7, 1),
-          proposal: (
-            id: 'abc123def456',
-            revision: 2,
-            since: DateTime(2026, 10, 7, 1),
-          ),
+        proposals: InMemoryProposalRepository(
+          _proposal(through: DateTime(2026, 10, 7, 1)),
         ),
+        expects: morning,
         clock: () => at,
       );
 
       expect(record.awaiting?.hint, _morning);
-      expect(record.proposal?.since, DateTime(2026, 10, 7, 1));
     });
 
-    test('awaits nothing, with no notes from before it', () async {
+    test('awaits it while only the user extended it past then', () async {
       final record = await refreshCaches(
         hints: hints,
-        notes: notes([Note(timestamp: DateTime(2026, 10, 7, 7, 40))]),
+        proposals: InMemoryProposalRepository(
+          _proposal(
+            through: DateTime(2026, 10, 7, 7, 40),
+            claudeThrough: DateTime(2026, 10, 7, 1),
+          ),
+        ),
+        expects: morning,
+        clock: () => at,
+      );
+
+      expect(record.awaiting?.hint, _morning);
+    });
+
+    test('has it, confirmed since', () async {
+      final record = await refreshCaches(
+        hints: hints,
+        notes: InMemoryNotesRepository(
+          null,
+          CompactionStatus(lastCompaction: DateTime(2026, 10, 7, 7, 40)),
+        ),
         proposals: InMemoryProposalRepository(null),
+        expects: morning,
+        clock: () => at,
+      );
+
+      expect(record.awaiting, isNull);
+    });
+
+    test('awaits nothing after a routine none is expected from', () async {
+      final record = await refreshCaches(
+        hints: hints,
+        proposals: InMemoryProposalRepository(null),
+        expects: (_) => false,
         clock: () => at,
       );
 
@@ -182,8 +191,8 @@ void main() {
     test('awaits nothing long after it', () async {
       final record = await refreshCaches(
         hints: hints,
-        notes: notes(),
         proposals: InMemoryProposalRepository(null),
+        expects: morning,
         clock: () => DateTime(2026, 10, 7, 11),
       );
 
@@ -334,6 +343,7 @@ void main() {
         'proposal', () async {
       final delays = <Duration>[];
       final settings = AppSettings(persist: false);
+      await settings.setExpectsProposal(_morning, true);
       final refresh = BackgroundRefresh(
         repository: InMemoryScheduleHintsRepository(
           const ScheduleHints(hints: [_morning, _evening]),
@@ -350,13 +360,18 @@ void main() {
       await refresh.load();
 
       await settings.setRetryInterval(const Duration(minutes: 30));
+      await settings.setExpectsProposal(_morning, false);
+      await settings.setExpectsProposal(_morning, true);
       await settings.setRetryInterval(null);
       await settings.setRefreshDelay(const Duration(minutes: 20));
 
       expect(delays, [
         const Duration(minutes: 15),
         const Duration(minutes: 30),
-        // Not checking again: the fallback's, sooner than the evening's.
+        // Not expected: the fallback's, sooner than the evening's.
+        const Duration(hours: 6),
+        const Duration(minutes: 30),
+        // Not checking again.
         const Duration(hours: 6),
         // The morning's again, 20 minutes after it.
         const Duration(minutes: 10),
@@ -406,7 +421,9 @@ void main() {
       bool supported = true,
       RefreshRecord? last,
       DateTime? now,
+      AppSettings? settings,
     }) => BackgroundRefresh(
+      settings: settings,
       repository:
           repository ??
           InMemoryScheduleHintsRepository(
@@ -426,9 +443,13 @@ void main() {
       await pump(tester, refresh());
 
       expect(find.text('7:30 AM'), findsOneWidget);
-      expect(find.text('Morning compaction'), findsOneWidget);
-      expect(find.text('Update ≈ 7:40 AM'), findsOneWidget);
-      expect(find.text('Update ≈ 7:10 PM'), findsOneWidget);
+      expect(find.textContaining('Morning compaction'), findsOneWidget);
+      expect(find.textContaining('Update ≈ 7:40 AM'), findsOneWidget);
+      expect(find.textContaining('Update ≈ 7:10 PM'), findsOneWidget);
+      expect(
+        find.widgetWithText(FilterChip, 'Expect proposal'),
+        findsNWidgets(2),
+      );
       expect(find.text('Every 6 hours'), findsOneWidget);
       expect(find.text('Next: about 3:00 PM'), findsOneWidget);
       expect(find.textContaining("can't change them"), findsOneWidget);
@@ -457,12 +478,15 @@ void main() {
       );
     });
 
-    testWidgets("says it's checking again for a compaction's proposal", (
+    testWidgets("says it's checking again for a routine's proposal", (
       tester,
     ) async {
+      final settings = AppSettings(persist: false);
+      await settings.setExpectsProposal(_morning, true);
       await pump(
         tester,
         refresh(
+          settings: settings,
           now: DateTime(2026, 10, 7, 7, 40),
           last: RefreshRecord(
             at: DateTime(2026, 10, 7, 7, 40),
@@ -488,7 +512,30 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(r.settings.refreshDelay, const Duration(minutes: 30));
-      expect(find.text('Update ≈ 8:00 AM'), findsOneWidget);
+      expect(find.textContaining('Update ≈ 8:00 AM'), findsOneWidget);
+    });
+
+    testWidgets('sets which routines a proposal is expected from', (
+      tester,
+    ) async {
+      final r = refresh();
+      await pump(tester, r);
+
+      await tester.tap(
+        find.widgetWithText(FilterChip, 'Expect proposal').first,
+      );
+      await tester.pumpAndSettle();
+
+      expect(r.settings.expectsProposal(_morning), isTrue);
+      expect(r.settings.expectsProposal(_evening), isFalse);
+      expect(
+        tester
+            .widget<FilterChip>(
+              find.widgetWithText(FilterChip, 'Expect proposal').first,
+            )
+            .selected,
+        isTrue,
+      );
     });
 
     testWidgets("says when the server doesn't give the times", (tester) async {
@@ -539,13 +586,15 @@ class _Client extends McpClient {
   }
 }
 
-Proposal _proposal(int revision) => Proposal(
-  id: 'abc123def456',
-  revision: revision,
-  state: ProposalState.awaitingReview,
-  windowStart: DateTime(2026, 10, 6, 20),
-  through: DateTime(2026, 10, 7, 7),
-);
+Proposal _proposal({required DateTime through, DateTime? claudeThrough}) =>
+    Proposal(
+      id: 'abc123def456',
+      revision: 2,
+      state: ProposalState.awaitingReview,
+      windowStart: DateTime(2026, 10, 6, 20),
+      through: through,
+      claudeThrough: claudeThrough,
+    );
 
 /// A server with a proposal [open], or none.
 class _ProposalClient extends McpClient {

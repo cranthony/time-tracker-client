@@ -7,7 +7,8 @@ import '../services/background_refresh.dart';
 /// How the app keeps what it shows fresh while it's closed: a fetch a
 /// while after each time Claude's routines run -- their times read from
 /// the server, which the routines set, and listed here, not edited --
-/// again every so often while a compaction's proposal hasn't come, and
+/// again every so often while a proposal expected after one hasn't come
+/// (the user says which, with each's "Expect proposal"), and
 /// otherwise every [refreshFallback], said plainly; when the next is
 /// due, and why; and what the last did. How long after, and how often
 /// again, are set here. Background fetches are Android's: elsewhere it
@@ -54,7 +55,7 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Background updates')),
       body: ListenableBuilder(
-        listenable: widget.refresh,
+        listenable: Listenable.merge([widget.refresh, widget.refresh.settings]),
         builder: (context, _) {
           final refresh = widget.refresh;
           final settings = refresh.settings;
@@ -76,7 +77,7 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
                     "time Claude's routines run, and otherwise every "
                     '$fallback hours.'
                     '${switch (retry) {
-                      final retry? => ' After a compaction, until its proposal comes, it checks again every $retry minutes, for up to $window hours.',
+                      final retry? => ' After a routine you expect a proposal from, until one through its time comes, it checks again every $retry minutes, for up to $window hours.',
                       null => '',
                     }}',
                     style: theme.textTheme.bodyMedium,
@@ -155,8 +156,9 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
                     leading: const Icon(Icons.replay),
                     title: const Text('Until a proposal comes'),
                     subtitle: Text(
-                      'How often to check again after a compaction, if its '
-                      "proposal hasn't come: for up to $window hours.",
+                      'How often to check again after a routine you expect '
+                      "a proposal from, if it hasn't come: for up to "
+                      '$window hours.',
                     ),
                     trailing: DropdownButton<Duration?>(
                       value: settings.retryInterval,
@@ -205,10 +207,20 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
                     ListTile(
                       leading: const Icon(Icons.schedule),
                       title: Text(clock(h)),
-                      subtitle: h.label == null ? null : Text(h.label!),
-                      trailing: Text(
-                        'Update ≈ ${strings.formatTimeOfDay(TimeOfDay.fromDateTime(DateTime(2000, 1, 1, h.hour, h.minute).add(settings.refreshDelay)))}',
-                        style: theme.textTheme.bodySmall,
+                      subtitle: Text(
+                        [
+                          ?h.label,
+                          'Update ≈ ${strings.formatTimeOfDay(TimeOfDay.fromDateTime(DateTime(2000, 1, 1, h.hour, h.minute).add(settings.refreshDelay)))}',
+                        ].join('\n'),
+                      ),
+                      trailing: FilterChip(
+                        label: const Text('Expect proposal'),
+                        tooltip:
+                            'Check again until a proposal through this time '
+                            'comes',
+                        selected: settings.expectsProposal(h),
+                        onSelected: (expects) =>
+                            settings.setExpectsProposal(h, expects),
                       ),
                     ),
                 _note(
