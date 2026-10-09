@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.36.0
+
+- A cursor's time, tapped -- and the compaction window's end's, from
+  its settings -- is set in a dialog of its day, hour and minute, each
+  with a "+" above and a "−" below stepping it by one. The day is the
+  day shown ("+0") or the one before or after; a minute past 59 carries
+  into the hour, and an hour past 23 into the day, either way.
+
 ## 7.35.0
 
 - A new or moved event's box has no anchor any more: its cursors are its

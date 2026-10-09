@@ -136,76 +136,165 @@ Future<void> showCursorSheet(
   },
 );
 
-/// Asks for a cursor's time, starting at [initial]: its date, from
-/// [first] to [last], and its time of day. Null if called off.
+/// Asks for a cursor's time, starting at [initial]: its day -- "+0" the
+/// timeline's [day], or the day before or after -- its hour and its
+/// minute, each with a "+" above and a "−" below, stepping it by one. A
+/// minute past 59 carries into the hour, and an hour past 23 into the
+/// day, either way. Never before [first], nor after [last]. Null if
+/// called off.
 Future<DateTime?> showEditTimeDialog(
   BuildContext context, {
   required String title,
   required DateTime initial,
+  required DateTime day,
   required DateTime first,
   required DateTime last,
 }) => showDialog<DateTime>(
   context: context,
-  builder: (context) {
-    var date = DateUtils.dateOnly(initial);
-    var time = TimeOfDay.fromDateTime(initial);
-    return StatefulBuilder(
-      builder: (context, setState) {
-        final strings = MaterialLocalizations.of(context);
-        return AlertDialog(
-          title: Text(title),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
+  builder: (context) => _EditTimeDialog(
+    title: title,
+    initial: initial.toLocal(),
+    day: DateUtils.dateOnly(day),
+    first: first,
+    last: last,
+  ),
+);
+
+class _EditTimeDialog extends StatefulWidget {
+  const _EditTimeDialog({
+    required this.title,
+    required this.initial,
+    required this.day,
+    required this.first,
+    required this.last,
+  });
+
+  final String title;
+  final DateTime initial;
+  final DateTime day;
+  final DateTime first;
+  final DateTime last;
+
+  @override
+  State<_EditTimeDialog> createState() => _EditTimeDialogState();
+}
+
+class _EditTimeDialogState extends State<_EditTimeDialog> {
+  late DateTime _at = DateTime(
+    widget.initial.year,
+    widget.initial.month,
+    widget.initial.day,
+    widget.initial.hour,
+    widget.initial.minute,
+  );
+
+  /// How many days [time] is from the timeline's day: calendar days,
+  /// whatever the clocks did.
+  int _daysFrom(DateTime time) => DateTime.utc(time.year, time.month, time.day)
+      .difference(
+        DateTime.utc(widget.day.year, widget.day.month, widget.day.day),
+      )
+      .inDays;
+
+  /// [_at] stepped: by [days], [hours] or [minutes], carrying.
+  DateTime _stepped({int days = 0, int hours = 0, int minutes = 0}) => DateTime(
+    _at.year,
+    _at.month,
+    _at.day + days,
+    _at.hour + hours,
+    _at.minute + minutes,
+  );
+
+  /// Whether [to] can be had: within a day of the timeline's, and from
+  /// [first] to [last].
+  bool _allowed(DateTime to) =>
+      _daysFrom(to).abs() <= 1 &&
+      !to.isBefore(widget.first) &&
+      !to.isAfter(widget.last);
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = MaterialLocalizations.of(context);
+    final theme = Theme.of(context);
+    final offset = _daysFrom(_at);
+    Widget column(
+      String label,
+      String value,
+      String what, {
+      required DateTime up,
+      required DateTime down,
+    }) {
+      Widget step(IconData icon, String tooltip, DateTime to) =>
+          IconButton.filledTonal(
+            tooltip: tooltip,
+            iconSize: 24,
+            onPressed: _allowed(to) ? () => setState(() => _at = to) : null,
+            icon: Icon(icon),
+          );
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: theme.textTheme.labelMedium),
+          const SizedBox(height: 4),
+          step(Icons.add, 'One $what later', up),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(value, style: theme.textTheme.headlineSmall),
+          ),
+          step(Icons.remove, 'One $what earlier', down),
+        ],
+      );
+    }
+
+    return AlertDialog(
+      title: Text(widget.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '${strings.formatMediumDate(_at)}, '
+            '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(_at))}',
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              ListTile(
-                leading: const Icon(Icons.event),
-                title: Text(strings.formatMediumDate(date)),
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: date,
-                    firstDate: DateUtils.dateOnly(first),
-                    lastDate: DateUtils.dateOnly(last),
-                  );
-                  if (picked != null) setState(() => date = picked);
-                },
+              column(
+                'Day',
+                offset < 0 ? '−${-offset}' : '+$offset',
+                'day',
+                up: _stepped(days: 1),
+                down: _stepped(days: -1),
               ),
-              ListTile(
-                leading: const Icon(Icons.schedule),
-                title: Text(strings.formatTimeOfDay(time)),
-                onTap: () async {
-                  final picked = await showTimePicker(
-                    context: context,
-                    initialTime: time,
-                  );
-                  if (picked != null) setState(() => time = picked);
-                },
+              column(
+                'Hour',
+                _at.hour.toString().padLeft(2, '0'),
+                'hour',
+                up: _stepped(hours: 1),
+                down: _stepped(hours: -1),
+              ),
+              column(
+                'Minute',
+                _at.minute.toString().padLeft(2, '0'),
+                'minute',
+                up: _stepped(minutes: 1),
+                down: _stepped(minutes: -1),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                var at = DateTime(
-                  date.year,
-                  date.month,
-                  date.day,
-                  time.hour,
-                  time.minute,
-                );
-                if (at.isBefore(first)) at = first;
-                if (at.isAfter(last)) at = last;
-                Navigator.of(context).pop(at);
-              },
-              child: const Text('Done'),
-            ),
-          ],
-        );
-      },
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_at),
+          child: const Text('Done'),
+        ),
+      ],
     );
-  },
-);
+  }
+}

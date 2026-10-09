@@ -12,7 +12,10 @@ moves: its arrows step it, and a "+" either side makes the event that
 way, a box between two cursors -- its top and its bottom, alike. Each
 cursor's time, after its corner (┌ or └), says what it's on -- "end of
 Lunch", "start of Work", "note: …" -- with scissors while it cuts into
-an event, and tapped, is typed in. On its outside, a "+" and a "−"
+an event, and tapped, is set in a dialog: its day (the day shown, or the
+one before or after), hour and minute, each stepped by a "+" above and
+a "−" below, a minute past 59 carrying into the hour, an hour past 23
+into the day. On its outside, a "+" and a "−"
 stretch and shrink the event there, and its handle drags it. The box
 itself, dragged, moves; tapped, says what it does with the events in
 its way: trims them (the default), keeps clear of them, cancels them,
