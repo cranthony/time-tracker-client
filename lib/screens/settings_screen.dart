@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../services/app_settings.dart';
+import '../widgets/cursor_snap.dart';
 
 /// The app's [settings], to change: the grid the timeline's cursors snap
-/// to, every so many minutes, or none.
+/// to, every so many minutes, or none, and what else they stop at.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key, required this.settings});
 
@@ -52,6 +53,27 @@ class SettingsScreen extends StatelessWidget {
                 ],
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text('Also stop at', style: theme.textTheme.titleMedium),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                'Every cursor stops at these too, between the lines, and a '
+                'dragged one snaps to them as it comes near.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+            for (final snap in SnapTo.values)
+              CheckboxListTile(
+                value: settings.snap.contains(snap),
+                title: Text(snap.label),
+                onChanged: (on) => settings.setSnap({
+                  for (final s in SnapTo.values)
+                    if (s == snap ? on ?? false : settings.snap.contains(s)) s,
+                }),
+              ),
           ],
         ),
       ),

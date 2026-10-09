@@ -7,23 +7,23 @@ delete it. An **Events** page, from the bar at the bottom, shows a day's
 events from your calendar; tap one to see or edit it, including the actions
 done at it and what happened: who it was with and for, where, and notes.
 Where events overlap, the timeline tints that time red and labels it
-"overlap". Its **+** puts a cursor at now -- the event's **anchor** --
-which a tap on the timeline moves: its arrows step it, and a "+" either
-side makes the event that way, its **end** a second cursor. Each cursor
-has, on its outside, a "+" and a "−" stretching and shrinking the event
-there, a handle to drag it by, and its own settings (its icon): what it
-does with events, what it stops at, and its time, typed. The anchor
-keeps clear of the event it's in, or trims it, cancels it, or splits it,
-the rest going after the new event; the end keeps the event clear of
-others, or trims them, cancels them, or pushes them along -- earlier,
-for an event drawn upward. Keeping, a "+" against an event is greyed
-out. The switch, with an anchor on it, makes the end the anchor. Then ✓
-to fill it in. A cursor stops on the grid set in [Settings](#settings)
-and, by default, at events' edges and notes too: its buttons step it to
-the next such stop, and dragged near one it snaps there. While it's
-up, the edges and notes it stops at are marked on the timeline,
-pulsing. Pressed and held, an event is moved the same way, its anchor
-where it was grabbed, pushing to start with. While
+"overlap". Its **+** puts a cursor at now, which a tap on the timeline
+moves: its arrows step it, and a "+" either side makes the event that
+way, a box between two cursors -- its top and its bottom, alike. Each
+cursor's time, after its corner (┌ or └), says what it's on -- "end of
+Lunch", "start of Work", "note: …" -- with scissors while it cuts into
+an event, and tapped, is typed in. On its outside, a "+" and a "−"
+stretch and shrink the event there, and its handle drags it. The box
+itself, dragged, moves; tapped, says what it does with the events in
+its way: trims them (the default), keeps clear of them, cancels them,
+or pushes them along -- its icon on it, but for trimming. Once there's
+a box, a tap on the timeline leaves it be. Keeping, a "+" against an
+event is greyed out. Then ✓ to fill it in. A cursor stops on the grid
+set in [Settings](#settings) and, as set there, at events' edges and
+notes too: its buttons step it to the next such stop, and dragged near
+one it snaps there. While it's up, the edges and notes it stops at are
+marked on the timeline, pulsing. Pressed and held, an event is moved
+the same way, pushing to start with. While
 Claude has a **compaction proposal** open -- what it says happened since the
 last compaction -- it's a band over the timeline, each change marked, to
 confirm: edits to the events in it edit the proposal, not the calendar, and
@@ -462,8 +462,8 @@ got the note after all, so a lost response doesn't create a duplicate.
 A **Settings** page, from the menu, holds what's kept on this device
 alone. For now that's the grid the Events page's cursors snap to: every
 5, 10, 15 (the default), 30 or 60 minutes from midnight, or none, to
-stop at any minute. Each cursor also stops at events' edges and notes;
-what each cursor stops at is kept on the device too.
+stop at any minute. Every cursor also stops at events' edges and notes,
+each of which can be turned off there.
 
 ## Background updates
 

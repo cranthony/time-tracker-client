@@ -6,6 +6,25 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.35.0
+
+- A new or moved event's box has no anchor any more: its cursors are its
+  top and its bottom, alike. Each is labeled with its corner (┌, └) and
+  its time, and under it, what it's on -- "end of Lunch", "start of
+  Work" lined up over another, "note: …", faded to fit -- with scissors
+  while it cuts into an event. Its time, tapped, is typed in.
+- The box has one mode, not one for each cursor: it trims the events in
+  its way, unless another is picked -- keeps clear of them, cancels them,
+  or pushes them -- its icon on it but for trimming. Tap the box to
+  change it. The switch, and each cursor's settings, are gone; trimming
+  and pushing, and splitting and pushing, come back with lists of events
+  to push.
+- The box is dragged by itself, not a handle; once it's made, a tap on
+  the timeline leaves it be. The "+", "−" and arrows are all one size,
+  bigger and further apart, and the cursors' handles twice as wide.
+- What a cursor stops at besides the grid -- events' edges, notes -- is
+  set in Settings, for every cursor.
+
 ## 7.34.0
 
 - The changes waiting to save open from the app menu too, as **Changes

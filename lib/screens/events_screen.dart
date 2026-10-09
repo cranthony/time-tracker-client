@@ -211,10 +211,6 @@ class _EventsScreenState extends State<EventsScreen> {
   /// The event the box is moving, if it's moving one.
   Event? _moving;
 
-  /// How many times the box's cursors have been switched: each time,
-  /// the cursor pings where it's gone.
-  int _swaps = 0;
-
   /// The cursor last touched: its buttons win where they'd overlap
   /// another's.
   CursorRole _selected = CursorRole.anchor;
@@ -223,11 +219,18 @@ class _EventsScreenState extends State<EventsScreen> {
   /// show with a [KeptMoveArrow]; [id] tells each move from the last.
   ({DateTime from, DateTime to, int id})? _keptMove;
 
-  /// What the box's anchor does with the event it's inside of, and its
-  /// end with the events the box reaches: as last picked, for a new
-  /// event; a move starts out pushing.
-  AnchorMode _anchorMode = AnchorMode.keep;
-  EndMode _endMode = EndMode.keep;
+  /// What the box does with the events in its way: as last picked, for
+  /// a new event; a move starts out pushing.
+  EndMode _endMode = EndMode.trim;
+
+  /// What it does with the event its first cursor is inside of, to match:
+  /// trims or cancels it, if it trims or cancels the rest; keeping, or
+  /// pushing, keeps clear of it.
+  AnchorMode get _anchorMode => switch (_endMode) {
+    EndMode.trim => AnchorMode.trim,
+    EndMode.cancel => AnchorMode.cancel,
+    EndMode.keep || EndMode.push => AnchorMode.keep,
+  };
 
   /// Whether the box changes the events in its way.
   bool get _overwritesAny => _anchorMode.changes || _endMode != EndMode.keep;
@@ -1490,7 +1493,6 @@ class _EventsScreenState extends State<EventsScreen> {
     }
     final settings = AppSettings.of(context);
     setState(() {
-      _anchorMode = settings.anchorMode;
       _endMode = settings.endMode;
       _selected = CursorRole.anchor;
       _setBox(PendingEventBox(_onGrid(at)));
@@ -1507,40 +1509,7 @@ class _EventsScreenState extends State<EventsScreen> {
       _setBox(PendingEventBox(event.start, other: event.end));
       _keptMove = null;
       _selected = CursorRole.anchor;
-      _anchorMode = AnchorMode.keep;
       _endMode = EndMode.push;
-    });
-  }
-
-  /// Switches the box's cursors: the box going the other way from the
-  /// other one -- kept in free time, or pushing, as before -- and an
-  /// arrow to where the cursor's gone. Not if there's no room that way:
-  /// the box would be gone.
-  void _swapCursors() {
-    final box = _box;
-    final other = box?.other;
-    if (box == null || other == null) return;
-    final switched = PendingEventBox(other, other: box.cursor);
-    if (_kept(switched).span == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "No room to switch: there's no free time "
-            '${switched.other!.isAfter(switched.cursor) ? 'later' : 'earlier'} '
-            'in the day to push into.',
-          ),
-        ),
-      );
-      return;
-    }
-    setState(() {
-      _keep(switched);
-      _keptMove = (
-        from: box.cursor,
-        to: _box!.cursor,
-        id: (_keptMove?.id ?? 0) + 1,
-      );
-      _swaps++;
     });
   }
 
@@ -1939,14 +1908,12 @@ class _EventsScreenState extends State<EventsScreen> {
     () => _extendTo = _inExtensible(_snap(to, CursorRole.windowEnd)),
   );
 
-  /// The window's end's settings: what it stops at, and its time.
+  /// The window's end's settings: its time. What it stops at is set in
+  /// Settings, for every cursor.
   Future<void> _openExtension() async {
-    final settings = AppSettings.of(context);
     await showCursorSheet(
       context,
       title: 'The end of what happened',
-      snap: settings.snapFor(CursorRole.windowEnd),
-      onSnap: (snap) => settings.setSnap(CursorRole.windowEnd, snap),
       onEditTime: () async {
         final proposal = _proposal;
         final at = _extendTo;
@@ -2205,31 +2172,53 @@ class _EventsScreenState extends State<EventsScreen> {
       ? _Clearing.pushes
       : _Clearing.trims;
 
-  /// [role]'s settings, in a sheet: its mode, what it stops at, and its
-  /// time. A new event's modes are kept for the next; a move's aren't.
-  Future<void> _openCursor(CursorRole role) async {
+  /// What the box does with the events in its way, in a sheet: kept for
+  /// the next new event, but a move's isn't.
+  Future<void> _openBox() async {
     final settings = AppSettings.of(context);
-    final anchor = role == CursorRole.anchor;
     await showCursorSheet(
       context,
-      title: anchor ? 'Anchor' : 'End',
-      anchorMode: anchor ? _anchorMode : null,
-      endMode: anchor ? null : _endMode,
-      snap: settings.snapFor(role),
-      onAnchorMode: (mode) {
-        setState(() => _anchorMode = mode);
-        if (_moving == null) settings.setAnchorMode(mode);
-        _changeBox((box) => box);
-      },
+      title: 'Events in the way',
+      endMode: _endMode,
       onEndMode: (mode) {
         setState(() => _endMode = mode);
         if (_moving == null) settings.setEndMode(mode);
         _changeBox((box) => box);
       },
-      onSnap: (snap) => settings.setSnap(role, snap),
-      onEditTime: () => _editTime(role),
     );
   }
+
+  /// What a cursor at [time] is on: the starts and ends of the events
+  /// there, and the notes.
+  List<SnapMark> _marksAt(DateTime time) {
+    final events = _otherEvents(_moving).events;
+    String name(Event e) => switch (e.summary) {
+      final s? when s.trim().isNotEmpty => s.trim(),
+      _ => 'an event',
+    };
+    return [
+      for (final e in events)
+        if (e.start.isAtSameMomentAs(time)) (what: 'start', name: name(e)),
+      for (final e in events)
+        if (e.end.isAtSameMomentAs(time)) (what: 'end', name: name(e)),
+      for (final (at, text) in _noteTexts)
+        if (at.isAtSameMomentAs(time)) (what: 'note', name: text),
+    ];
+  }
+
+  /// The notes not yet compacted, and the proposal's, each with its time
+  /// and text.
+  List<(DateTime, String)> get _noteTexts => [
+    for (final n in _memory.notes ?? const <Note>[])
+      (n.timestamp, n.description ?? ''),
+    ...?widget.outbox?.items.map(
+      (p) => (p.note.timestamp, p.note.description ?? ''),
+    ),
+    for (final n in _proposalNotes) (n.time, n.text ?? ''),
+  ];
+
+  /// Whether a cursor at [time] is inside an event, cutting it.
+  bool _cutsAt(DateTime time) => _otherEvents(_moving).inside(time) != null;
 
   /// Asks for [role]'s cursor's time, its date and time of day, and puts
   /// it there.
@@ -2239,7 +2228,11 @@ class _EventsScreenState extends State<EventsScreen> {
     final anchor = role == CursorRole.anchor;
     final picked = await showEditTimeDialog(
       context,
-      title: anchor ? "The anchor's time" : "The end's time",
+      title: switch ((anchor, box.cursorOnTop)) {
+        _ when box.span == null => "The cursor's time",
+        (true, true) || (false, false) => 'The top of the event',
+        _ => 'The bottom of the event',
+      },
       initial: anchor ? box.cursor : box.other ?? box.cursor,
       first: _from,
       last: _to,
@@ -3425,18 +3418,13 @@ class _EventsScreenState extends State<EventsScreen> {
                                   dayEnd: _to,
                                   scale: _scale,
                                   box: box,
-                                  anchorMode: _anchorMode,
-                                  endMode: _endMode,
+                                  mode: _endMode,
                                   selected: _selected,
                                   onSelect: (role) =>
                                       setState(() => _selected = role),
                                   overwrites: _overwrites,
                                   covers: _covers,
                                   pushed: _pushed,
-                                  onSwap: box.other == null
-                                      ? null
-                                      : _swapCursors,
-                                  swaps: _swaps,
                                   label: switch (_moving) {
                                     final event? =>
                                       'Moving ${switch (event.summary) {
@@ -3464,7 +3452,10 @@ class _EventsScreenState extends State<EventsScreen> {
                                   ),
                                   onStep: _stepCursor,
                                   canStep: _canStep,
-                                  onOpen: _openCursor,
+                                  onTapBox: _openBox,
+                                  onEditTime: _editTime,
+                                  marks: _marksAt,
+                                  cuts: _cutsAt,
                                 ),
                               ),
                             if ((_box, _keptMove) case (_?, final move?))
@@ -3623,8 +3614,9 @@ class _EventsScreenState extends State<EventsScreen> {
                       ),
                 onTapThrough: _canExtend ? _startExtending : null,
                 marks: _marks,
-                // The box moved there, its size intact.
-                onTapTime: _box == null
+                // Before there's a box, the cursor moved there; after, the
+                // box stays put.
+                onTapTime: _box?.span != null || _box == null
                     ? null
                     : (time) => _changeBox(
                         (box) => box.movedTo(_snap(time, CursorRole.anchor)),
