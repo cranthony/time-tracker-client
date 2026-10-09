@@ -6,11 +6,10 @@ import '../widgets/cursor_modes.dart';
 import '../widgets/cursor_snap.dart';
 
 /// The app's settings, kept on this device only: the [grid] a cursor on
-/// the timeline snaps to, what else each cursor stops at ([snapFor]),
-/// what a new event's anchor and end do with the events in the way
-/// ([anchorMode], [endMode]), and when background fetches run
-/// ([refreshDelay], [retryInterval], [expectsProposal]). Listeners hear
-/// every change.
+/// the timeline snaps to, what else cursors stop at ([snap]), what a new
+/// event does with the events in its way ([endMode]), and when background
+/// fetches run ([refreshDelay], [retryInterval], [expectsProposal]).
+/// Listeners hear every change.
 class AppSettings extends ChangeNotifier {
   /// Kept on the device with [persist]; otherwise only while the app
   /// runs. Starts with [grid], until what's kept is [load]ed.
@@ -28,21 +27,15 @@ class AppSettings extends ChangeNotifier {
 
   static const defaultGrid = Duration(minutes: 15);
   static const _gridKey = 'settings_grid_minutes';
-  static String _snapKey(CursorRole role) => 'settings_snap_${role.key}';
+  static const _snapKey = 'settings_snap';
 
   /// What a cursor stops at, besides the grid, until it's changed.
   static const defaultSnap = {SnapTo.events, SnapTo.notes};
 
-  final _snaps = <CursorRole, Set<SnapTo>>{};
+  Set<SnapTo> _snap = defaultSnap;
 
-  static const _anchorModeKey = 'settings_anchor_mode';
   static const _endModeKey = 'settings_end_mode';
-  AnchorMode _anchorMode = AnchorMode.keep;
-  EndMode _endMode = EndMode.keep;
-
-  /// What a new event's anchor does with the event it's inside of, as
-  /// last picked.
-  AnchorMode get anchorMode => _anchorMode;
+  EndMode _endMode = EndMode.trim;
 
   /// What a new event's end does with the events the box reaches, as last
   /// picked.
@@ -136,18 +129,11 @@ class AppSettings extends ChangeNotifier {
       if (await prefs.getStringList(_expectingKey) case final keys?) {
         _expecting = {...keys};
       }
-      _anchorMode =
-          AnchorMode.values.asNameMap()[await prefs.getString(
-            _anchorModeKey,
-          )] ??
-          _anchorMode;
       _endMode =
           EndMode.values.asNameMap()[await prefs.getString(_endModeKey)] ??
           _endMode;
-      for (final role in CursorRole.values) {
-        final names = await prefs.getStringList(_snapKey(role));
-        if (names == null) continue;
-        _snaps[role] = {
+      if (await prefs.getStringList(_snapKey) case final names?) {
+        _snap = {
           for (final snap in SnapTo.values)
             if (names.contains(snap.name)) snap,
         };
@@ -193,10 +179,6 @@ class AppSettings extends ChangeNotifier {
     }
   }
 
-  /// Sets what a new event's anchor does, and keeps it.
-  Future<void> setAnchorMode(AnchorMode mode) =>
-      _setString(_anchorModeKey, mode.name, () => _anchorMode = mode);
-
   /// Sets what a new event's end does, and keeps it.
   Future<void> setEndMode(EndMode mode) =>
       _setString(_endModeKey, mode.name, () => _endMode = mode);
@@ -212,16 +194,19 @@ class AppSettings extends ChangeNotifier {
     }
   }
 
-  /// What [role]'s cursor stops at, besides the grid's lines.
-  Set<SnapTo> snapFor(CursorRole role) => _snaps[role] ?? defaultSnap;
+  /// What every cursor stops at, besides the grid's lines.
+  Set<SnapTo> get snap => _snap;
 
-  /// Sets what [role]'s cursor stops at, and keeps it.
-  Future<void> setSnap(CursorRole role, Set<SnapTo> snap) async {
-    _snaps[role] = {...snap};
+  /// What [role]'s cursor stops at: as every cursor does ([snap]).
+  Set<SnapTo> snapFor(CursorRole role) => _snap;
+
+  /// Sets what every cursor stops at, and keeps it.
+  Future<void> setSnap(Set<SnapTo> snap) async {
+    _snap = {...snap};
     notifyListeners();
     if (!persist) return;
     try {
-      await SharedPreferencesAsync().setStringList(_snapKey(role), [
+      await SharedPreferencesAsync().setStringList(_snapKey, [
         for (final s in snap) s.name,
       ]);
     } catch (_) {

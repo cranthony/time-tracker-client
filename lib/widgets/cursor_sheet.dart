@@ -12,10 +12,10 @@ Future<void> showCursorSheet(
   required String title,
   AnchorMode? anchorMode,
   EndMode? endMode,
-  required Set<SnapTo> snap,
+  Set<SnapTo>? snap,
   ValueChanged<AnchorMode>? onAnchorMode,
   ValueChanged<EndMode>? onEndMode,
-  required ValueChanged<Set<SnapTo>> onSnap,
+  ValueChanged<Set<SnapTo>>? onSnap,
   VoidCallback? onEditTime,
 }) => showModalBottomSheet<void>(
   context: context,
@@ -24,7 +24,7 @@ Future<void> showCursorSheet(
   builder: (context) {
     var anchor = anchorMode;
     var end = endMode;
-    var stops = {...snap};
+    var stops = {...?snap};
     return StatefulBuilder(
       builder: (context, setState) {
         final theme = Theme.of(context);
@@ -72,7 +72,7 @@ Future<void> showCursorSheet(
                   ),
                 ],
                 if (end case final picked?) ...[
-                  heading('The events the box reaches'),
+                  heading('What it does with the events in its way'),
                   RadioGroup<EndMode>(
                     groupValue: picked,
                     onChanged: (m) {
@@ -88,28 +88,30 @@ Future<void> showCursorSheet(
                     ),
                   ),
                 ],
-                heading('Stops at'),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                  child: Text(
-                    "The grid's lines, set in Settings, and:",
-                    style: theme.textTheme.bodySmall,
+                if (snap != null) heading('Stops at'),
+                if (snap != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                    child: Text(
+                      "The grid's lines, set in Settings, and:",
+                      style: theme.textTheme.bodySmall,
+                    ),
                   ),
-                ),
                 for (final s in SnapTo.values)
-                  CheckboxListTile(
-                    value: stops.contains(s),
-                    title: Text(s.label),
-                    onChanged: (on) {
-                      setState(
-                        () => stops = {
-                          for (final t in SnapTo.values)
-                            if (t == s ? on ?? false : stops.contains(t)) t,
-                        },
-                      );
-                      onSnap(stops);
-                    },
-                  ),
+                  if (snap != null)
+                    CheckboxListTile(
+                      value: stops.contains(s),
+                      title: Text(s.label),
+                      onChanged: (on) {
+                        setState(
+                          () => stops = {
+                            for (final t in SnapTo.values)
+                              if (t == s ? on ?? false : stops.contains(t)) t,
+                          },
+                        );
+                        onSnap?.call(stops);
+                      },
+                    ),
                 if (onEditTime != null)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),

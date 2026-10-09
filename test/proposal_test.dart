@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/outbox/pending_event_write.dart';
 import 'package:time_tracker_client/widgets/window_cursor.dart';
-import 'package:time_tracker_client/widgets/cursor_snap.dart';
+import 'package:time_tracker_client/widgets/cursor_modes.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/note.dart';
@@ -647,9 +647,8 @@ void main() {
           home: AppSettingsScope(
             settings:
                 AppSettings(persist: false, grid: const Duration(hours: 1))
-                  ..setSnap(CursorRole.anchor, const {})
-                  ..setSnap(CursorRole.end, const {})
-                  ..setSnap(CursorRole.windowEnd, const {}),
+                  ..setSnap(const {})
+                  ..setEndMode(EndMode.keep),
             child: EventsScreen(
               repository: events,
               serverLabel: 'offline demo',
@@ -660,6 +659,19 @@ void main() {
             ),
           ),
         ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    /// Drags the box, by itself, [by].
+    Future<void> dragBox(WidgetTester tester, Duration by) async {
+      final box = find.byTooltip(RegExp(r'^Drag to move the event'));
+      await tester.ensureVisible(box);
+      await tester.pumpAndSettle();
+      await tester.drag(
+        box,
+        Offset(0, by.inMinutes * defaultTimelineScale),
+        warnIfMissed: false,
       );
       await tester.pumpAndSettle();
     }
@@ -729,18 +741,9 @@ void main() {
       scale: defaultTimelineScale,
     );
 
-    /// Taps the timeline, away from the times, at [time].
     /// Today's timeline: while the box is up, the days either side are
     /// stacked with it.
     final today = find.byKey(ValueKey(('shown', at(0))));
-
-    Future<void> tapAt(WidgetTester tester, DateTime time) async {
-      await tester.tapAt(
-        tester.getTopLeft(today) +
-            Offset(tester.getSize(today).width / 2, y(time)),
-      );
-      await tester.pumpAndSettle();
-    }
 
     /// Scrolls today's timeline so 7, the band's start just below it, is
     /// at the top of the view.
@@ -1107,7 +1110,8 @@ void main() {
       await toBand(tester);
       await tester.longPress(find.text('Tea'));
       await tester.pumpAndSettle();
-      await tapAt(tester, at(8));
+      // Dragged up, from 9:15 to 8.
+      await dragBox(tester, const Duration(minutes: -75));
       await tester.tap(find.byTooltip('Move it here'));
       await tester.pumpAndSettle();
 
@@ -1133,9 +1137,9 @@ void main() {
       await tester.pumpAndSettle();
       final startHere = find.byTooltip('Stretch it later');
       await tap(tester, startHere);
-      // Moved whole, to 8.
+      // Dragged whole, from noon to 8.
+      await dragBox(tester, const Duration(hours: -4));
       await toBand(tester);
-      await tapAt(tester, at(8));
       await tester.tap(find.byTooltip('Continue'));
       await tester.pumpAndSettle();
       await tester.enterText(inDialog(find.byType(TextField)), 'Stretch');
