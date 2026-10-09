@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/note.dart';
+import '../models/proposal.dart';
 import '../models/schedule_hints.dart';
 import '../outbox/background_sync.dart';
 import '../models/trait.dart' show traitStatuses;
@@ -35,13 +36,10 @@ const retryInterval = AppSettings.defaultRetryInterval;
 /// its proposal: then it waits for the next.
 const retryWindow = Duration(hours: 3);
 
-/// A routine expected to make a proposal ([ScheduleHint.expectsProposal])
-/// whose proposal hasn't come: the routine, and when it ran.
+/// A routine expected to make a proposal (see
+/// [AppSettings.expectsProposal]) whose proposal hasn't come: the
+/// routine, and when it ran.
 typedef AwaitedProposal = ({ScheduleHint hint, DateTime at});
-
-/// The open proposal, as a background fetch found it: its id and
-/// revision, and when a fetch first found that revision.
-typedef ProposalMark = ({String id, int revision, DateTime since});
 
 /// When the next background fetch is due, and why: [hint]'s time, plus
 /// the delay -- or, a [retry], [hint]'s proposal not yet come, sooner --
@@ -89,12 +87,16 @@ RefreshPlan nextRefresh(
   return plan;
 }
 
-/// The latest of [hints] that makes a proposal and ran in the
+/// The latest of [hints] that [expects] a proposal and ran in the
 /// [retryWindow] before [now] -- today, or yesterday -- or null.
-AwaitedProposal? expectedProposal(DateTime now, List<ScheduleHint> hints) {
+AwaitedProposal? expectedProposal(
+  DateTime now,
+  List<ScheduleHint> hints,
+  bool Function(ScheduleHint hint) expects,
+) {
   AwaitedProposal? latest;
   for (final hint in hints) {
-    if (!hint.expectsProposal) continue;
+    if (!expects(hint)) continue;
     for (final day in [now.day, now.day - 1]) {
       final at = DateTime(now.year, now.month, day, hint.hour, hint.minute);
       if (at.isAfter(now) || !now.isBefore(at.add(retryWindow))) continue;
@@ -107,16 +109,14 @@ AwaitedProposal? expectedProposal(DateTime now, List<ScheduleHint> hints) {
 }
 
 /// What the last background fetch did: when, what it fetched and what it
-/// couldn't, and whether it found the user signed out; the open proposal
-/// it found ([proposal]), and the routine whose proposal it expected and
-/// didn't find ([awaiting]).
+/// couldn't, and whether it found the user signed out; and the routine
+/// whose proposal it expected and didn't find ([awaiting]).
 class RefreshRecord {
   const RefreshRecord({
     required this.at,
     this.fetched = const [],
     this.failed = const [],
     this.signedOut = false,
-    this.proposal,
     this.awaiting,
   });
 
@@ -124,7 +124,6 @@ class RefreshRecord {
   final List<String> fetched;
   final List<String> failed;
   final bool signedOut;
-  final ProposalMark? proposal;
   final AwaitedProposal? awaiting;
 
   bool get ok => failed.isEmpty && !signedOut;
@@ -143,15 +142,6 @@ class RefreshRecord {
         fetched: [for (final f in map['fetched'] as List? ?? []) '$f'],
         failed: [for (final f in map['failed'] as List? ?? []) '$f'],
         signedOut: map['signed_out'] == true,
-        proposal: switch (map['proposal']) {
-          {
-            'id': final String id,
-            'revision': final int revision,
-            'since': final String since,
-          } =>
-            (id: id, revision: revision, since: time(since)),
-          _ => null,
-        },
         awaiting: switch (map['awaiting']) {
           {'at': final String at, 'hint': final Object hint} =>
             switch (ScheduleHint.fromJson(hint)) {
@@ -176,12 +166,6 @@ class RefreshRecord {
           'fetched': fetched,
           'failed': failed,
           if (signedOut) 'signed_out': true,
-          if (proposal case final p?)
-            'proposal': {
-              'id': p.id,
-              'revision': p.revision,
-              'since': time(p.since),
-            },
           if (awaiting case final a?)
             'awaiting': {'at': time(a.at), 'hint': a.hint.toJson()},
         }),
@@ -200,11 +184,11 @@ class RefreshRecord {
 /// is fetched on its own, best effort; signed out, it stops. [clock]
 /// says when it ran.
 ///
-/// After a routine that makes a proposal, it says if the proposal hasn't
-/// come ([RefreshRecord.awaiting]), for the next fetch to come sooner:
-/// no revision first found since the routine ran -- by this fetch, or
-/// one since the [previous] -- no compaction since, and notes from
-/// before it to compact.
+/// After a routine that [expects] a proposal, it says if the proposal
+/// hasn't come ([RefreshRecord.awaiting]), for the next fetch to come
+/// sooner: none is open through a time after the routine ran -- as
+/// Claude's own revision runs, not as the user extended it -- and no
+/// compaction was confirmed since.
 Future<RefreshRecord> refreshCaches({
   ScheduleHintsRepository? hints,
   NotesRepository? notes,
@@ -214,16 +198,15 @@ Future<RefreshRecord> refreshCaches({
   PeopleRepository? people,
   HabitsRepository? habits,
   EventStore? events,
-  RefreshRecord? previous,
+  bool Function(ScheduleHint hint)? expects,
   DateTime Function() clock = DateTime.now,
 }) async {
   final fetched = <String>[], failed = <String>[];
   final started = clock();
   ScheduleHints? times;
-  List<Note>? uncompacted;
   CompactionStatus? status;
   var proposalFetched = false;
-  ProposalMark? mark;
+  Proposal? proposal;
   final steps = <(String, Future<void> Function()?)>[
     (
       'routine times',
@@ -234,7 +217,7 @@ Future<RefreshRecord> refreshCaches({
       notes == null
           ? null
           : () async {
-              uncompacted = await notes.uncompactedNotes();
+              await notes.uncompactedNotes();
               status = await notes.compactionStatus();
             },
     ),
@@ -243,17 +226,8 @@ Future<RefreshRecord> refreshCaches({
       proposals == null
           ? null
           : () async {
-              final proposal = await proposals.current();
+              proposal = await proposals.current();
               proposalFetched = true;
-              if (proposal == null) return;
-              final was = previous?.proposal;
-              final same =
-                  was?.id == proposal.id && was?.revision == proposal.revision;
-              mark = (
-                id: proposal.id,
-                revision: proposal.revision,
-                since: same ? was!.since : started,
-              );
             },
     ),
     ('actions', actions == null ? null : () => actions.actions()),
@@ -294,33 +268,27 @@ Future<RefreshRecord> refreshCaches({
         fetched: fetched,
         failed: failed,
         signedOut: true,
-        proposal: previous?.proposal,
       );
     } catch (_) {
       failed.add(name);
     }
   }
-  AwaitedProposal? awaiting;
-  final expected = proposals == null
+  final expected = proposals == null || expects == null
       ? null
-      : expectedProposal(started, times?.hints ?? const []);
-  if (expected != null) {
-    final came =
-        (mark?.since.isAfter(expected.at) ?? false) ||
-        (status?.lastCompaction?.isAfter(expected.at) ?? false);
-    final nothingToCompact = switch (uncompacted) {
-      final notes? => !notes.any((n) => n.timestamp.isBefore(expected.at)),
-      null => false,
-    };
-    // Not found for want of asking, ask again too.
-    if (!proposalFetched || (!came && !nothingToCompact)) awaiting = expected;
-  }
+      : expectedProposal(started, times?.hints ?? const [], expects);
+  final came = switch (expected) {
+    null => true,
+    // Not found for want of asking: ask again.
+    _ when !proposalFetched => false,
+    (:final at, hint: _) =>
+      ((proposal?.claudeThrough ?? proposal?.through)?.isAfter(at) ?? false) ||
+          (status?.lastCompaction?.isAfter(at) ?? false),
+  };
   return RefreshRecord(
     at: clock(),
     fetched: fetched,
     failed: failed,
-    proposal: proposalFetched ? mark : previous?.proposal,
-    awaiting: awaiting,
+    awaiting: came ? null : expected,
   );
 }
 
@@ -346,27 +314,34 @@ class BackgroundRefresh extends ChangeNotifier {
        _clock = clock ?? DateTime.now,
        _schedule = schedule ?? BackgroundSync.scheduleRefresh,
        _lastRecord = lastRecord ?? RefreshRecord.load {
-    _delay = this.settings.refreshDelay;
-    _retry = this.settings.retryInterval;
+    _planned = _planning;
     this.settings.addListener(_settingsChanged);
   }
 
   final ScheduleHintsRepository? repository;
 
-  /// Where the delay after a routine, and how often to fetch again, are
-  /// set.
+  /// Where the delay after a routine, how often to fetch again, and which
+  /// routines a proposal's expected after, are set.
   final AppSettings settings;
 
-  /// The settings last planned with.
-  Duration _delay = refreshDelay;
-  Duration? _retry = retryInterval;
+  /// What of the [settings] the next fetch is planned with.
+  ({Duration delay, Duration? retry, AwaitedProposal? awaiting})
+  get _planning => (
+    delay: settings.refreshDelay,
+    retry: settings.retryInterval,
+    awaiting: _awaiting,
+  );
+  late ({Duration delay, Duration? retry, AwaitedProposal? awaiting}) _planned;
+
+  /// The proposal the last fetch didn't find, if it's still expected.
+  AwaitedProposal? get _awaiting => switch (last?.awaiting) {
+    final a? when settings.expectsProposal(a.hint) => a,
+    _ => null,
+  };
 
   void _settingsChanged() {
-    if (settings.refreshDelay == _delay && settings.retryInterval == _retry) {
-      return;
-    }
-    _delay = settings.refreshDelay;
-    _retry = settings.retryInterval;
+    if (_planning == _planned) return;
+    _planned = _planning;
     notifyListeners();
     reschedule().catchError((Object _) {});
   }
@@ -401,7 +376,7 @@ class BackgroundRefresh extends ChangeNotifier {
     hints?.hints ?? const [],
     delay: settings.refreshDelay,
     retry: settings.retryInterval,
-    awaiting: last?.awaiting,
+    awaiting: _awaiting,
   );
 
   /// Loads the times -- kept from before, then afresh -- and what the last
@@ -420,6 +395,7 @@ class BackgroundRefresh extends ChangeNotifier {
       }
     }
     last = await _lastRecord();
+    _planned = _planning;
     notifyListeners();
     await reschedule();
   }

@@ -177,7 +177,7 @@ Future<void> _refreshInBackground() async {
     hints: hints,
     notes: McpNotesRepository(client, cache: cache),
     proposals: McpProposalRepository(client, cache: cache),
-    previous: await RefreshRecord.load(),
+    expects: settings.expectsProposal,
     actions: McpActionsRepository(client, cache: cache),
     traits: McpTraitsRepository(client, cache: cache),
     people: McpPeopleRepository(client, cache: cache),

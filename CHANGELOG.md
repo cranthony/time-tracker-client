@@ -13,6 +13,18 @@ on. Add the new version's section here at the same time; CI checks both.
   from the line at the foot of the screen, and so also when nothing's
   waiting: to see that everything's saved, or to pause the queue ahead.
 
+## 7.33.0
+
+- Which routines a proposal is expected from is now up to you: on
+  Background updates, each routine's time has an **Expect proposal**
+  button. The label no longer decides it, and none is expected until
+  you say so.
+- A proposal has come once one is open through a time after the
+  routine ran (as far as Claude's own revision runs, not as you
+  extended it), or a compaction was confirmed since. Whether there were
+  notes to compact no longer matters: Claude proposes the calendar as
+  planned when there are none.
+
 ## 7.32.0
 
 - The open compaction proposal is kept on the device, and the
