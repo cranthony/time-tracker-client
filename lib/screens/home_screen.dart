@@ -131,6 +131,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scaffold = _scaffold();
+    return switch (widget.eventOutbox) {
+      final outbox? => EventOutboxScope(
+        outbox: outbox,
+        lookup: _lookup,
+        onShow: _showEvent,
+        child: scaffold,
+      ),
+      null => scaffold,
+    };
+  }
+
+  Event? _lookup(String id) => _planMemory.eventStore?.event(id);
+
+  Widget _scaffold() {
     return Scaffold(
       body: switch (_tab) {
         _Tab.notes => NotesScreen(
@@ -174,11 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (widget.eventOutbox case final outbox?)
-            EventOutboxBar(
-              outbox: outbox,
-              lookup: (id) => _planMemory.eventStore?.event(id),
-              onShow: _showEvent,
-            ),
+            EventOutboxBar(outbox: outbox, lookup: _lookup, onShow: _showEvent),
           _navigation(),
         ],
       ),

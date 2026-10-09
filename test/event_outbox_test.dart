@@ -12,6 +12,7 @@ import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
+import 'package:time_tracker_client/widgets/app_menu.dart';
 import 'package:time_tracker_client/widgets/event_outbox_bar.dart';
 import 'package:time_tracker_client/widgets/other_events.dart';
 import 'package:time_tracker_client/widgets/waiting_note.dart';
@@ -619,6 +620,33 @@ void main() {
       expect(find.textContaining('it would overlap “Call”'), findsOneWidget);
       expect(find.text('Try again'), findsOneWidget);
       expect(find.text('Edit'), findsOneWidget);
+    });
+
+    testWidgets('the app menu opens the changes, with none waiting too', (
+      tester,
+    ) async {
+      final outbox = _outbox(_Server([]));
+      addTearDown(outbox.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EventOutboxScope(
+            outbox: outbox,
+            child: Scaffold(
+              appBar: AppBar(actions: const [AppMenu(serverLabel: 'test')]),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byType(AppMenu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Changes waiting to save'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Nothing waiting: everything is saved.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('a refusal names the events it mentions, each to show', (
