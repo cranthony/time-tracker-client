@@ -393,6 +393,7 @@ class DayTimeline extends StatelessWidget {
     this.onTapTime,
     this.faded,
     this.highlighted,
+    this.listed = const {},
     this.pulseNotes = false,
     this.pulseEdges = false,
     this.axis = true,
@@ -426,6 +427,10 @@ class DayTimeline extends StatelessWidget {
 
   /// The id of an event to pick out: ringed, pulsing.
   final String? highlighted;
+
+  /// The events in a list, by id, with its icon: each ringed, slightly
+  /// pulsing, the icon on it.
+  final Map<String, IconData> listed;
 
   /// Whether to mark the notes, and the edges of the events, as what a
   /// cursor stops at: bolder, pulsing.
@@ -662,6 +667,15 @@ class DayTimeline extends StatelessWidget {
                               ),
                         ),
                       ),
+                    for (final placement in placements)
+                      if (listed[placement.event.id] case final icon?)
+                        Positioned(
+                          left: _cardsLeft - 2,
+                          top: placement.top - 2,
+                          width: cardWidth + 4,
+                          height: placement.bottom - placement.top + 4,
+                          child: IgnorePointer(child: _Listed(icon: icon)),
+                        ),
                     for (final placement in placements)
                       if (highlighted != null &&
                           placement.event.id == highlighted)
@@ -1035,6 +1049,85 @@ class _SnapMarksPainter extends CustomPainter {
       old.edges != edges ||
       old.noteColor != noteColor ||
       old.edgeColor != edgeColor;
+}
+
+/// An event in a list: ringed in the secondary color, slightly pulsing --
+/// steady with animations turned off -- with the list's [icon] in its
+/// corner.
+class _Listed extends StatefulWidget {
+  const _Listed({required this.icon});
+
+  final IconData icon;
+
+  @override
+  State<_Listed> createState() => _ListedState();
+}
+
+class _ListedState extends State<_Listed> with SingleTickerProviderStateMixin {
+  late final _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+    value: 1,
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _pulse
+        ..stop()
+        ..value = 1;
+    } else if (!_pulse.isAnimating) {
+      _pulse.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, _) => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.secondary.withValues(
+                  alpha: 0.06 + 0.08 * _pulse.value,
+                ),
+                borderRadius: BorderRadius.circular(_cardRadius + 2),
+                border: Border.all(
+                  color: colors.secondary.withValues(
+                    alpha: 0.55 + 0.45 * _pulse.value,
+                  ),
+                  width: 2.5,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 6,
+            bottom: 4,
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: colors.secondary,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(widget.icon, size: 14, color: colors.onSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// A ring round an event, in the primary color, pulsing: to pick it out.

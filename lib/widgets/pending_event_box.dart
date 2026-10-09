@@ -117,12 +117,12 @@ class PendingEventBoxView extends StatefulWidget {
     required this.dayEnd,
     required this.scale,
     required this.box,
-    required this.mode,
+    this.mode,
     required this.onMoveCursor,
     required this.onMoveOther,
     required this.onMoveBox,
     required this.onStep,
-    required this.onTapBox,
+    this.onTapBox,
     required this.onEditTime,
     this.canStep,
     this.marks,
@@ -134,15 +134,22 @@ class PendingEventBoxView extends StatefulWidget {
     this.covers,
     this.pushed = const [],
     this.label,
+    this.interactive = true,
   });
+
+  /// Whether its cursors and box take touches; if not -- while events
+  /// are picked -- they're drawn, but taps go to what's under them, and
+  /// the cursors' buttons are hidden.
+  final bool interactive;
 
   final DateTime day;
   final DateTime dayEnd;
   final double scale;
   final PendingEventBox box;
 
-  /// What the box does with the events in its way.
-  final EndMode mode;
+  /// What the box does with the events in its way, if it's not just
+  /// trimming them.
+  final EndMode? mode;
 
   /// Whether the event between the cursors is shaded.
   final bool shaded;
@@ -180,8 +187,8 @@ class PendingEventBoxView extends StatefulWidget {
   /// null.
   final bool Function(CursorRole role, {required bool later})? canStep;
 
-  /// The box tapped: to change what it does with the events in its way.
-  final VoidCallback onTapBox;
+  /// The box tapped; nothing, if null.
+  final VoidCallback? onTapBox;
 
   /// A cursor's time tapped: to type it in.
   final ValueChanged<CursorRole> onEditTime;
@@ -271,7 +278,8 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
             g.$1 != widget.selected &&
             groups.any((o) => o.$1 == widget.selected && o.$2.overlaps(g.$2));
         final alone = span == null;
-        return Stack(
+        if (!widget.interactive) groups.clear();
+        final stack = Stack(
           clipBehavior: Clip.none,
           children: [
             if (span case (final start, final end) when widget.shaded)
@@ -288,7 +296,7 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
                   end: end,
                   overwrites: widget.overwrites,
                   // Trimming goes without saying.
-                  icon: widget.mode == EndMode.trim ? null : widget.mode.icon,
+                  icon: widget.mode == EndMode.trim ? null : widget.mode?.icon,
                 ),
               ),
             for (final pushed in widget.pushed)
@@ -340,6 +348,7 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
               ),
           ],
         );
+        return widget.interactive ? stack : IgnorePointer(child: stack);
       },
     );
   }
@@ -786,25 +795,31 @@ class _PendingEventShadowState extends State<PendingEventShadow>
   );
 
   @override
-  void initState() {
-    super.initState();
-    _pulseIfOverwriting();
-  }
-
-  @override
   void didUpdateWidget(PendingEventShadow old) {
     super.didUpdateWidget(old);
     _pulseIfOverwriting();
   }
 
   void _pulseIfOverwriting() {
-    if (widget.overwrites && !_pulse.isAnimating) {
+    // Steady, at its strongest, with animations turned off.
+    final still = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (widget.overwrites && still) {
+      _pulse
+        ..stop()
+        ..value = 1;
+    } else if (widget.overwrites && !_pulse.isAnimating) {
       _pulse.repeat(reverse: true);
     } else if (!widget.overwrites && _pulse.isAnimating) {
       _pulse
         ..stop()
         ..value = 0;
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _pulseIfOverwriting();
   }
 
   @override

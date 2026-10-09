@@ -850,31 +850,33 @@ void main() {
       });
     }
 
-    // Making an event: the cursor at now, from "+"; dragged out over
-    // events, keeping them -- fitted into the free time there; moved to a
-    // free stretch, and dragged out there; trimming, tinged red;
-    // cancelling, the shadow stretched over the events it cancels whole;
-    // the box tapped, for what it does with them; the new event,
-    // trimming, with its trash to clear the time instead; keeping events,
-    // the arrow from where the box was put to where it was moved, part way
-    // through; and pushing, the events pushed outlined where they go.
-    for (final (name, endMode, move, drag, sheet, open, arrow) in [
-      ('events_new_cursor', EndMode.trim, 0, 0, false, false, false),
-      ('events_new_dragged', EndMode.keep, 0, 150, false, false, false),
-      ('events_new_kept', EndMode.keep, 180, 60, false, false, false),
-      ('events_new_overwrite', EndMode.trim, 0, 150, false, false, false),
-      ('events_new_cancel', EndMode.cancel, 0, 150, false, false, false),
-      ('events_new_modes', EndMode.trim, 0, 150, true, false, false),
-      ('events_new_clear', EndMode.trim, 0, 150, false, true, false),
-      ('events_new_moved', EndMode.keep, 0, 150, false, false, true),
-      ('events_new_push', EndMode.push, 0, 150, false, false, false),
+    // Making an event: the cursor at now, from "+", in an event, its
+    // scissors out; dragged out over events, trimming them, tinged red;
+    // up to an event to keep; with events to cancel, the shadow stretched
+    // over them; picking events to push down, the mode named; the new
+    // event, with its trash to clear the time instead; and events pushed
+    // down, outlined where they go.
+    for (final (name, list, names, picking, drag, open) in [
+      ('events_new_cursor', null, const <String>[], false, 0, false),
+      ('events_new_dragged', null, const <String>[], false, 150, false),
+      ('events_new_kept', 'Keep', ['Doomscroll'], false, 150, false),
+      ('events_new_cancel', 'Cancel', ['Cooking class'], false, 150, false),
+      ('events_new_picking', 'Push down', ['Doomscroll'], true, 60, false),
+      ('events_new_clear', null, const <String>[], false, 150, true),
+      (
+        'events_new_push',
+        'Push down',
+        ['Doomscroll', 'Cooking class'],
+        false,
+        150,
+        false,
+      ),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
         await render(
           tester,
           name,
           events(),
-          endMode: endMode,
           then: () async {
             Future<void> settle() async {
               for (var i = 0; i < 12; i++) {
@@ -884,14 +886,6 @@ void main() {
 
             await tester.tap(find.byTooltip('New event'));
             await tester.pumpAndSettle();
-            if (move != 0) {
-              await tester.drag(
-                find.byTooltip('Drag to move the cursor'),
-                Offset(0, move * defaultTimelineScale),
-                warnIfMissed: false,
-              );
-              await settle();
-            }
             if (drag != 0) {
               await tester.drag(
                 find.byTooltip('Stretch it later'),
@@ -900,23 +894,17 @@ void main() {
               );
               await settle();
             }
-            if (sheet) {
-              // The box, tapped: what it does with the events in its way.
-              await tester.tap(
-                find.byTooltip(RegExp(r'^Drag to move the event')),
-              );
+            if (list != null) {
+              await tester.tap(find.byTooltip(RegExp('^$list: pick events')));
               await settle();
-            }
-            if (arrow) {
-              // Dragged whole into the events above.
-              await tester.drag(
-                find.byTooltip(RegExp(r'^Drag to move the event')),
-                Offset(0, -90 * defaultTimelineScale),
-                warnIfMissed: false,
-              );
-              // Its first frame, and part way through.
-              await tester.pump();
-              await tester.pump(const Duration(milliseconds: 500));
+              for (final n in names) {
+                await tester.tap(find.text(n).first, warnIfMissed: false);
+                await settle();
+              }
+              if (!picking) {
+                await tester.tap(find.byTooltip('Done picking'));
+                await settle();
+              }
             }
             if (open) {
               await tester.tap(find.byTooltip('Continue'));

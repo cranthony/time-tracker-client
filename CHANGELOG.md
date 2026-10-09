@@ -6,6 +6,26 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.39.0
+
+- A new or moved event's box always trims the events in its way --
+  splitting the one its cursor was placed in -- unless they're in a
+  list, which take the place of its modes. Beside ✕ and ✓: **Keep**,
+  **Push up** over **Push down**, and **Cancel**, each with a dot while
+  it has events. Tap one to pick events for it -- any on the timeline,
+  the days either side too -- each tap picking or unpicking one, ringed
+  and marked with the list's icon; ✓ keeps them, ✕ or back puts the
+  list back. The mode says which list, at the lower left.
+- Events to keep stay as they are: the box, and what it pushes, go no
+  further, its "+" greyed out. Those to push up or down are moved whole
+  to just above or below the box when it -- or what it pushes -- reaches
+  them, one after another, trimming what they run into without moving
+  it. Those to cancel are cancelled. Pushing down the event the cursor
+  was placed in puts the rest of it after the box, as splitting and
+  pushing did.
+- While picking, the box's buttons step aside, so taps reach the events.
+  The overwriting pulse, too, holds still with animations turned off.
+
 ## 7.38.0
 
 - The mode the Events page is in -- placing a cursor, creating an event,
