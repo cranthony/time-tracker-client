@@ -6,6 +6,25 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.37.0
+
+- Confirming, finishing or abandoning the proposal, and leaving or
+  withdrawing a note for Claude, wait to save like any other change:
+  offline, they go when they can, even with the app closed. One the
+  server refuses stops the queue there, to deal with. Once confirming,
+  finishing or abandoning it waits, nothing more of it can be changed.
+- What came of them is said over the proposal until you tap OK: a
+  confirm recorded, planned again as a new revision to confirm, or gone
+  to Claude.
+- An edit of the proposal is sent from the revision you were looking at
+  when you made it, not the one the edit before it made, so the server
+  says which of Claude's newer changes it replaced -- and now the app
+  does too, over the proposal, those events marked.
+- Dropping a change to the proposal offers to drop those of it made
+  after it too.
+- A note for Claude, or abandoning, isn't made twice after an attempt
+  nobody heard back from; a confirm finishes applying instead.
+
 ## 7.36.0
 
 - A cursor's time, tapped -- and the compaction window's end's, from

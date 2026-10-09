@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/proposal.dart';
+import '../outbox/proposal_notices.dart';
 import 'error_sheet.dart';
 import 'day_timeline.dart';
 import 'time_summary.dart';
@@ -90,12 +91,15 @@ bool _same(List<String> a, List<String> b) =>
 /// waiting for Claude, and can't be confirmed. One whose apply stopped
 /// partway offers to [onRetry]. Tapping its heading calls [onGoTo];
 /// its menu offers to [onAbandon] it. [changes] events changed since the
-/// user last looked. While [busy], nothing can be tapped.
+/// user last looked. While [busy], nothing can be tapped; nor while
+/// [closing] -- confirming, finishing or abandoning it, which it names --
+/// waits to save.
 class ProposalBar extends StatelessWidget {
   const ProposalBar({
     super.key,
     required this.proposal,
     this.busy = false,
+    this.closing,
     this.changes = 0,
     this.onConfirm,
     this.onNote,
@@ -107,6 +111,10 @@ class ProposalBar extends StatelessWidget {
 
   final Proposal proposal;
   final bool busy;
+
+  /// What's waiting to save that confirms, finishes or abandons it: "Confirm
+  /// what happened".
+  final String? closing;
   final int changes;
   final VoidCallback? onConfirm;
   final VoidCallback? onNote;
@@ -121,6 +129,8 @@ class ProposalBar extends StatelessWidget {
     final colors = theme.colorScheme;
     final band = reviewColors(colors);
     final window = windowLabel(context, proposal.windowStart, proposal.through);
+    // Nothing more of it, till that's saved.
+    final busy = this.busy || closing != null;
     final open = proposal.openFeedback.length;
     final notes = [
       for (final f in proposal.feedback)
@@ -129,7 +139,15 @@ class ProposalBar extends StatelessWidget {
     final stopped = proposal.state == ProposalState.applying;
     final muted = colors.onSurfaceVariant;
     final status = <(IconData, String, Color)>[
-      if (stopped)
+      if (closing case final closing?)
+        (
+          Icons.cloud_upload_outlined,
+          '“$closing” is waiting to save: it goes as soon as it can. '
+              "What came of it shows here, even if it's sent with the app "
+              'closed.',
+          colors.secondary,
+        )
+      else if (stopped)
         (
           Icons.error_outline,
           'Applying it stopped partway. Retry to finish.',
@@ -196,7 +214,7 @@ class ProposalBar extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (busy)
+                if (this.busy)
                   const Padding(
                     padding: EdgeInsets.all(12),
                     child: SizedBox.square(
@@ -292,6 +310,84 @@ class ProposalBar extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// What came of changes to the proposal sent from the queue -- maybe with
+/// the app closed -- each said until it's dismissed ([onDismiss]): an edit
+/// that replaced Claude's newer changes, or what a confirm came to.
+class ProposalNoticesBanner extends StatelessWidget {
+  const ProposalNoticesBanner({
+    super.key,
+    required this.notices,
+    required this.onDismiss,
+  });
+
+  final List<ProposalNotice> notices;
+  final ValueChanged<ProposalNotice> onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Material(
+      color: colors.secondaryContainer,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final notice in notices)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 4, 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      switch (notice.kind) {
+                        ProposalNoticeKind.applied =>
+                          Icons.check_circle_outline,
+                        ProposalNoticeKind.abandoned => Icons.delete_outline,
+                        _ => Icons.info_outline,
+                      },
+                      size: 20,
+                      color: colors.onSecondaryContainer,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          notice.text,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colors.onSecondaryContainer,
+                          ),
+                        ),
+                        if (notice.message case final message?
+                            when notice.kind != ProposalNoticeKind.applied &&
+                                notice.kind != ProposalNoticeKind.replaced)
+                          Text(
+                            message,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSecondaryContainer,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => onDismiss(notice),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

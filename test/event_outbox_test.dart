@@ -448,8 +448,8 @@ void main() {
       }
     });
 
-    test('an edit of the proposal behind another is made on the revision '
-        'that one makes', () async {
+    test('an edit of the proposal behind another is sent from the revision '
+        'the user was looking at, as that one is', () async {
       final server = _Server(const []);
       final proposals = _Proposals();
       final outbox = _outbox(server, proposals: proposals);
@@ -476,7 +476,8 @@ void main() {
       expect(shown.event('lunch')!.summary, 'Brunch');
       expect(shown.event('call')!.live, isFalse);
       await outbox.flush(ignoreBackoff: true);
-      expect(proposals.revisions, [3, 4]);
+      // So the server says which of Claude's changes since each replaced.
+      expect(proposals.revisions, [3, 3]);
     });
   });
 
@@ -726,7 +727,7 @@ Proposal _proposal() => Proposal(
   ],
 );
 
-/// Records the revision each amend is made on, each making the next.
+/// Records the revision each amend is sent from, each making the next.
 class _Proposals implements ProposalRepository {
   final revisions = <int>[];
 
