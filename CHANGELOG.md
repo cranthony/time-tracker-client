@@ -6,6 +6,20 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.38.0
+
+- The mode the Events page is in -- placing a cursor, creating an event,
+  editing one, extending the compaction window -- is named at its lower
+  left, over its icon, the newest on the left. Android's back leaves the
+  mode, as ✕ does, undoing what was done in it, before it leaves the
+  page.
+- Placing a cursor inside an event, ✓ splits that event there -- the
+  rest of it a new event -- and does nothing else, through the changes
+  waiting to save as ever.
+- A cursor's snap labels go outside the box: above its top, below its
+  bottom. On the end of one event and the start of the next, "end of"
+  is above "start of", as on the timeline.
+
 ## 7.37.0
 
 - Confirming, finishing or abandoning the proposal, and leaving or

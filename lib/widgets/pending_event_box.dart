@@ -563,12 +563,12 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
         height: thickness,
         child: IgnorePointer(child: ColoredBox(color: colors.primary)),
       ),
-      // Its label, on its line; what it's on into the box -- below a
-      // lone cursor, or the top; above the bottom.
+      // Its label, on its line; what it's on out of the box -- above the
+      // top, below the bottom, or a lone cursor.
       Positioned(
         left: 4,
         width: _labelWidth,
-        top: y - 10 - (top == false ? _marksHeight(time) : 0),
+        top: y - 10 - (top == true ? _marksHeight(time) : 0),
         child: _label(colors, role, time, top: top),
       ),
       Positioned(
@@ -606,9 +606,8 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
       (widget.marks?.call(time).length ?? 0) * 15.0;
 
   /// [role]'s label: its time, after its corner -- [top] ┌, or └ -- and
-  /// scissors if it cuts an event; then, a line each, what it's on. Its
-  /// time, tapped, is typed in. For the bottom, what it's on goes above
-  /// its time, into the box.
+  /// scissors if it cuts an event; then, a line each, what it's on: out
+  /// of the box, above the top's time. Its time, tapped, is typed in.
   Widget _label(
     ColorScheme colors,
     CursorRole role,
@@ -713,9 +712,9 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (top == false) ?marksBox,
+        if (top == true) ?marksBox,
         timePill,
-        if (top != false) ?marksBox,
+        if (top != true) ?marksBox,
       ],
     );
   }

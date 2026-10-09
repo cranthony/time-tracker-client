@@ -307,6 +307,19 @@ class OtherEvents {
     return (Overwrite(updates: updates, creates: creates), frontier);
   }
 
+  /// The event [time] is strictly inside of split there: shortened to
+  /// end at [time], and the rest of it a new event, from [time] to where
+  /// it ended. Nothing, if [time] isn't inside one.
+  Overwrite splitAt(DateTime time) => switch (inside(time)) {
+    final e? => Overwrite(
+      updates: [
+        (e, {'end': localIsoTimestamp(time)}),
+      ],
+      creates: [_rest(e, time, e.end)],
+    ),
+    null => const Overwrite(),
+  };
+
   /// The event [anchor] is strictly inside of, if any.
   Event? inside(DateTime anchor) {
     for (final e in events) {
@@ -491,6 +504,8 @@ class OtherEvents {
       'facts',
     };
     return {
+      // Its title, if its properties don't have it.
+      'summary': ?event.summary,
       for (final MapEntry(:key, :value) in event.properties.entries)
         if (kept.contains(key) && value != null) key: value,
       'start': localIsoTimestamp(start),
