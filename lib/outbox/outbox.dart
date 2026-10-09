@@ -28,6 +28,9 @@ abstract interface class OutboxItem<T extends OutboxItem<T>> {
   /// request for it in flight.
   DateTime? get sendingSince;
 
+  /// Who that is, while [sendingSince] is set: an [Outbox.sender].
+  String? get sentBy;
+
   /// Whether the server refused it: it isn't sent again until it's retried
   /// (see [Outbox.retryNow]), as it would only be refused again.
   bool get refused;
@@ -37,6 +40,7 @@ abstract interface class OutboxItem<T extends OutboxItem<T>> {
     String? Function()? lastError,
     DateTime? Function()? nextAttemptAt,
     DateTime? Function()? sendingSince,
+    String? Function()? sentBy,
     bool? refused,
   });
 }
@@ -49,8 +53,13 @@ abstract interface class OutboxItem<T extends OutboxItem<T>> {
 ///
 /// Call [start] to have it send by itself while the app is in use, and
 /// [stop] when the app goes to the background. The Android background task
-/// uses its own instance and calls [flush] instead; a claim on each item
-/// in flight keeps the two from sending it at once.
+/// uses its own instance and calls [flush] instead. Each change to what's
+/// kept is made whole, with none of the other's in between
+/// ([OutboxStore.update]), so neither loses the other's; and a claim on
+/// each item in flight, made the same way, keeps the two from sending it
+/// at once. An item is sent again only if whoever claimed it didn't say
+/// how it went in time ([inFlightTimeout]) -- killed mid-request, say --
+/// and then [send] checks first whether it was saved.
 ///
 /// [send] sends an item, giving an [R] (e.g. the id the server gave it);
 /// [failed] says when sending one didn't go well.
@@ -65,8 +74,28 @@ abstract interface class OutboxItem<T extends OutboxItem<T>> {
 /// in (see [fetching]), so whatever shows the items can show it until
 /// then, rather than it going missing in between.
 abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
-  Outbox({required this._store, DateTime Function()? clock})
-    : _clock = clock ?? DateTime.now;
+  Outbox({
+    required this._store,
+    DateTime Function()? clock,
+    this.sender = appSender,
+  }) : _clock = clock ?? DateTime.now;
+
+  /// Who's sending, as each item it claims says ([OutboxItem.sentBy]):
+  /// the app's outboxes, by default, or the background task's.
+  final String sender;
+  static const appSender = 'app';
+  static const backgroundSender = 'background';
+
+  /// Who's sending [item], as one would say it -- "the background task" --
+  /// or null if no one is.
+  String? sendingBy(T item) {
+    if (!isSending(item)) return null;
+    final by = item.id == _sendingId ? sender : item.sentBy;
+    return switch (by) {
+      backgroundSender => 'the background task',
+      _ => 'the app',
+    };
+  }
 
   final OutboxStore<T> _store;
   final DateTime Function() _clock;
@@ -139,8 +168,44 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
 
   /// Whether [item] is being sent right now, here or by the background
   /// task. It can't be dropped then: the server may already have it.
+  /// Given an item as it's kept -- inside a [change] -- it says so for
+  /// sure; otherwise, as it was last read.
   bool isSending(T item) =>
       item.id == _sendingId || _inFlightElsewhere(item, _clock());
+
+  /// Removes the item with [id] without sending it -- unless it's being
+  /// sent, here or elsewhere, as what's kept says: false then.
+  @protected
+  Future<bool> removeUnlessSending(String id) async {
+    var removed = false;
+    await change((items) {
+      removed = !items.any((item) => item.id == id && isSending(item));
+      return removed
+          ? [
+              for (final item in items)
+                if (item.id != id) item,
+            ]
+          : items;
+    });
+    return removed;
+  }
+
+  /// Replaces the item with [id] with [replace] of it -- unless it's
+  /// being sent, here or elsewhere, as what's kept says: false then.
+  @protected
+  Future<bool> replaceUnlessSending(
+    String id,
+    T Function(T item) replace,
+  ) async {
+    var replaced = false;
+    await change((items) {
+      replaced = !items.any((item) => item.id == id && isSending(item));
+      return replaced
+          ? [for (final item in items) item.id == id ? replace(item) : item]
+          : items;
+    });
+    return replaced;
+  }
 
   /// The time now, as this outbox tells it.
   @protected
@@ -272,24 +337,43 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
       // app restarts.
       _sendingId = next.id;
       try {
-        // If it was dropped just before, it's gone: skip it.
-        var stillPending = false;
+        // Claimed as it's kept, with no other change in between: unless
+        // it's gone (dropped, or saved by the background task), refused,
+        // or claimed by another sender since it was read -- nor while
+        // another sender has any of them: one sends at a time, the other
+        // waiting till it's done, or its claim's timed out.
+        var claimed = false;
+        var elsewhere = false;
+        var maybeSaved = false;
         await change((items) {
-          stillPending = items.any((item) => item.id == next.id);
+          claimed = false;
+          elsewhere = items.any(
+            (item) => item.id != next.id && _claimedAt(item, now),
+          );
+          if (elsewhere) return items;
           return [
             for (final item in items)
-              item.id == next.id
-                  ? item.copyWith(sendingSince: () => now)
-                  : item,
+              if (item.id == next.id && !item.refused && !_claimedAt(item, now))
+                () {
+                  claimed = true;
+                  // An earlier attempt, or a sender that gave up on it
+                  // (see inFlightTimeout), may have saved it even though
+                  // nobody heard.
+                  maybeSaved = item.attempts > 0 || item.sendingSince != null;
+                  return item.copyWith(
+                    sendingSince: () => now,
+                    sentBy: () => sender,
+                  );
+                }()
+              else
+                item,
           ];
         });
-        if (!stillPending) continue;
-        // An earlier attempt, or a sender that gave up on it (see
-        // inFlightTimeout), may have saved it even though nobody heard.
-        final result = await send(
-          next,
-          maybeSaved: next.attempts > 0 || next.sendingSince != null,
-        );
+        // Another's sending: this round's over, to look again soon (see
+        // schedule).
+        if (elsewhere) break;
+        if (!claimed) continue;
+        final result = await send(next, maybeSaved: maybeSaved);
         _sendingId = null;
         // Kept before it's dropped, so whatever shows it can show it as
         // saved without it going missing in between.
@@ -305,9 +389,10 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
         _needsSignIn = true;
         final kept = next.copyWith(
           sendingSince: () => null,
+          sentBy: () => null,
           lastError: () => 'Sign in to save',
         );
-        await _replace(kept);
+        await _release(kept, claimedAt: now);
         failed(kept);
         break;
       } catch (e) {
@@ -318,11 +403,12 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
           final kept = next.copyWith(
             attempts: 0,
             sendingSince: () => null,
+            sentBy: () => null,
             lastError: () => describeSaveError(e),
             nextAttemptAt: () => null,
             refused: true,
           );
-          await _replace(kept);
+          await _release(kept, claimedAt: now);
           failed(kept);
           // In order, what's after it waits for it.
           if (inOrder) break;
@@ -332,10 +418,11 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
         final kept = next.copyWith(
           attempts: attempts,
           sendingSince: () => null,
+          sentBy: () => null,
           lastError: () => describeSaveError(e),
           nextAttemptAt: () => _clock().add(backoff(attempts)),
         );
-        await _replace(kept);
+        await _release(kept, claimedAt: now);
         failed(kept);
         // Most failures are the connection or the server; the rest would
         // likely fail the same way, so leave them for the next round.
@@ -361,11 +448,14 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
     return ignoreBackoff || at == null || !at.isAfter(now);
   }
 
-  bool _inFlightElsewhere(T item, DateTime now) {
+  bool _inFlightElsewhere(T item, DateTime now) =>
+      item.id != _sendingId && _claimedAt(item, now);
+
+  /// Whether a sender's claim on [item] holds at [now]: it said it's
+  /// sending it, within [inFlightTimeout].
+  static bool _claimedAt(OutboxItem item, DateTime now) {
     final since = item.sendingSince;
-    return item.id != _sendingId &&
-        since != null &&
-        now.difference(since) < inFlightTimeout;
+    return since != null && now.difference(since) < inFlightTimeout;
   }
 
   /// Sends what's due when it's due, while running.
@@ -374,6 +464,14 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
     _timer?.cancel();
     if (!_running || _needsSignIn || _paused) return;
     final now = _clock();
+    // Another sender's sending: nothing's sent till it's done, so look
+    // again soon -- it may finish any moment.
+    if (_items.any((item) => _inFlightElsewhere(item, now))) {
+      _timer = Timer(const Duration(seconds: 5), () {
+        if (_running) flush();
+      });
+      return;
+    }
     DateTime? next = immediately && hasUnsent ? now : null;
     for (final item in inOrder ? _items.take(1) : _items) {
       if (item.refused) continue;
@@ -390,8 +488,18 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
     });
   }
 
-  Future<void> _replace(T item) =>
-      change((items) => [for (final i in items) i.id == item.id ? item : i]);
+  /// Puts back [item], which this sender claimed at [claimedAt], as it's
+  /// kept now -- unless its claim was taken over meanwhile (it took too
+  /// long), when the sender that took it over says how it went.
+  Future<void> _release(T item, {required DateTime claimedAt}) => change(
+    (items) => [
+      for (final i in items)
+        i.id == item.id &&
+                (i.sendingSince?.isAtSameMomentAs(claimedAt) ?? false)
+            ? item
+            : i,
+    ],
+  );
 
   /// Applies [change] to the items: at once, to those listed, then to
   /// those kept, which it reads, changes and writes back, then lists.
@@ -405,18 +513,17 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
       _notify();
     }
     final result = _lock.then((_) async {
-      final before = await _store.load().timeout(storeTimeout);
+      final (before, after) = await _store.update(
+        (before) => order(change(before)),
+        timeout: storeTimeout,
+      );
       // Gone since this outbox last read or wrote them: another sender
-      // (the background task) saved them, as nothing else drops them.
+      // (the background task) saved them, or the user dropped them there.
       final ids = {for (final item in before) item.id};
       for (final item in _stored) {
         if (!ids.contains(item.id)) {
           _justSaved.add((item: item, result: null, seq: ++_seq));
         }
-      }
-      final after = order(change(before));
-      if (!identical(after, before)) {
-        await _store.save(after).timeout(storeTimeout);
       }
       _items = _stored = after;
       _notify();

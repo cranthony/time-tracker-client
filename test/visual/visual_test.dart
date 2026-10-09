@@ -15,6 +15,7 @@ import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/outbox/event_outbox.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
+import 'package:time_tracker_client/outbox/outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/background_updates_screen.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
@@ -698,6 +699,76 @@ void main() {
                 await tester.pumpAndSettle();
                 await tester.tap(find.text('Lunch with Sam & Priya').first);
                 await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
+
+    // The changes waiting to save, as their sheet shows them: none, all
+    // saved; one being sent, by the background task, the bar saying so
+    // too; and one whose send failed -- no connection -- to try again.
+    for (final (name, sending, failed) in [
+      ('outbox_empty', false, false),
+      ('outbox_sending', true, false),
+      ('outbox_failed', false, true),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        final repository = sample.eventsRepository();
+        final lunch = sample.events.firstWhere((e) => e.id == 'lunch');
+        final outbox = EventOutbox(
+          store: InMemoryOutboxStore()
+            ..items = [
+              if (sending || failed)
+                PendingEventWrite(
+                  id: 'w1',
+                  kind: EventWriteKind.update,
+                  label: 'Move “Lunch with Sam”',
+                  made: _now.subtract(const Duration(minutes: 3)),
+                  event: lunch,
+                  changes: {
+                    'start': localIsoTimestamp(DateTime(2026, 10, 2, 12, 30)),
+                    'end': localIsoTimestamp(DateTime(2026, 10, 2, 13, 30)),
+                  },
+                  // Claimed just now, as the outbox's clock tells it.
+                  sendingSince: sending ? DateTime.now() : null,
+                  sentBy: sending ? Outbox.backgroundSender : null,
+                  attempts: failed ? 2 : 0,
+                  lastError: failed ? 'No connection' : null,
+                  nextAttemptAt: failed
+                      ? _now.add(const Duration(minutes: 1))
+                      : null,
+                ),
+            ],
+          events: repository,
+        );
+        addTearDown(outbox.dispose);
+        await render(
+          tester,
+          name,
+          Scaffold(
+            body: EventsScreen(
+              repository: repository,
+              notesRepository: sample.notesRepository(),
+              actionsRepository: sample.actionsRepository(),
+              eventOutbox: outbox,
+              serverLabel: 'sample',
+              clock: () => _now,
+            ),
+            bottomNavigationBar: EventOutboxBar(outbox: outbox),
+          ),
+          then: () async {
+            await tester.runAsync(outbox.refresh);
+            // Opened as from the app menu, which opens it with nothing
+            // waiting too. Pumped, not settled: what's sending spins.
+            unawaited(
+              showEventOutboxSheet(
+                tester.element(find.byType(EventsScreen)),
+                outbox,
+              ),
+            );
+            for (var i = 0; i < 10; i++) {
+              await tester.pump(const Duration(milliseconds: 100));
             }
           },
         );

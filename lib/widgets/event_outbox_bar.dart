@@ -51,7 +51,7 @@ class EventOutboxBar extends StatelessWidget {
         _ when outbox.needsSignIn => (Icons.login, 'Sign in to save $changes'),
         _ when outbox.isSending(first) => (
           Icons.cloud_upload_outlined,
-          'Saving $changes…',
+          'Saving $changes, by ${outbox.sendingBy(first)}…',
         ),
         PendingEventWrite(:final nextAttemptAt?) => (
           Icons.cloud_off_outlined,
@@ -296,7 +296,7 @@ class _WriteTile extends StatelessWidget {
       null => null,
     };
     final status = switch (write) {
-      _ when sending => 'Sending…',
+      _ when sending => 'Sending, by ${outbox.sendingBy(write)}…',
       PendingEventWrite(refused: true) =>
         "Couldn't save: ${named?.text ?? 'the server said no'}. Nothing "
             "after it is sent till it's changed, approved, or dropped.",

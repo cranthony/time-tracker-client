@@ -143,6 +143,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
     this.notices,
     this.persistPause = false,
     super.clock,
+    super.sender,
     Random? random,
   }) : _random = random ?? Random();
 
@@ -564,12 +565,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
   /// server may already have it.
   Future<bool> drop(PendingEventWrite write) async {
     if (isSending(write)) return false;
-    await change(
-      (items) => [
-        for (final w in items)
-          if (w.id != write.id) w,
-      ],
-    );
+    if (!await removeUnlessSending(write.id)) return false;
     schedule(immediately: true);
     return true;
   }
@@ -579,19 +575,16 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
   Future<bool> edit(PendingEventWrite write, PendingEventWrite edited) async {
     if (isSending(write)) return false;
     if (conflict(edited, except: write.id) case final waiting?) throw waiting;
-    await change(
-      (items) => [
-        for (final w in items)
-          w.id == write.id
-              ? edited.copyWith(
-                  attempts: 0,
-                  refused: false,
-                  lastError: () => null,
-                  nextAttemptAt: () => null,
-                )
-              : w,
-      ],
+    final replaced = await replaceUnlessSending(
+      write.id,
+      (_) => edited.copyWith(
+        attempts: 0,
+        refused: false,
+        lastError: () => null,
+        nextAttemptAt: () => null,
+      ),
     );
+    if (!replaced) return false;
     schedule(immediately: true);
     return true;
   }
@@ -626,11 +619,14 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
           allowCompactedChanges: allow,
         ),
       ),
-      EventWriteKind.cancel => await timed(
-        _events.deleteEvent(
-          item.event!,
-          countsAgainstFollowThrough: item.countsAgainstFollowThrough,
-          allowCompactedChanges: allow,
+      EventWriteKind.cancel => await _unlessDone(
+        maybeSaved,
+        () => timed(
+          _events.deleteEvent(
+            item.event!,
+            countsAgainstFollowThrough: item.countsAgainstFollowThrough,
+            allowCompactedChanges: allow,
+          ),
         ),
       ),
       EventWriteKind.create =>
@@ -645,10 +641,17 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
                 allowCompactedChanges: allow,
               ),
             ),
-      EventWriteKind.makeRoom => await timed(
-        _events.makeRoom(item.over, allowCompactedChanges: allow),
-      ),
-      EventWriteKind.amend => await _amend(item),
+      EventWriteKind.makeRoom =>
+        (maybeSaved && item.over.creates.isNotEmpty
+                ? await _alreadyMade(item.over.creates.first)
+                : null) ??
+            await _unlessDone(
+              maybeSaved,
+              () => timed(
+                _events.makeRoom(item.over, allowCompactedChanges: allow),
+              ),
+            ),
+      EventWriteKind.amend => await _amend(item, maybeSaved: maybeSaved),
       EventWriteKind.confirm => await _confirm(item, maybeSaved: maybeSaved),
       EventWriteKind.finish => await _outcome(
         item,
@@ -665,6 +668,22 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
     };
     _saved.add((item, result));
     return result;
+  }
+
+  /// [write]'s result -- or, if an earlier attempt, unheard ([maybeSaved]),
+  /// made it, none: the server refuses to cancel an event again, saying
+  /// it's "cancelled already", and nothing of a batch is made once one
+  /// change of it is refused.
+  static Future<List<Event>> _unlessDone(
+    bool maybeSaved,
+    Future<List<Event>> Function() write,
+  ) async {
+    try {
+      return await write();
+    } on McpException catch (e) {
+      if (maybeSaved && '$e'.contains('is cancelled already')) return const [];
+      rethrow;
+    }
   }
 
   /// The event [fields] make, if an earlier attempt made it unheard: one
@@ -701,18 +720,31 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
     through: item.made,
   );
 
-  Future<Proposal> _amend(PendingEventWrite item) async {
+  /// Sends [item]'s edits. Sent again after an attempt nobody heard back
+  /// from ([maybeSaved]), most say the same twice, which is no matter;
+  /// but the events it creates, and the additions it makes, already
+  /// there aren't made again -- and with nothing else, it's not sent.
+  Future<Proposal> _amend(
+    PendingEventWrite item, {
+    required bool maybeSaved,
+  }) async {
     final proposals = _proposalsOf();
+    final current = item.revision == null || maybeSaved
+        ? await proposals.current().timeout(Outbox.requestTimeout)
+        : null;
     // Kept by an older version, behind an edit that was dropped: on the
     // revision there is now.
-    final revision =
-        item.revision ??
-        (await proposals.current().timeout(Outbox.requestTimeout))?.revision;
+    final revision = item.revision ?? current?.revision;
     if (revision == null) {
       throw McpException('amend_proposal: there is no proposal open.');
     }
+    var edits = item.edits;
+    if (maybeSaved && current != null && current.id == item.proposalId) {
+      edits = _unmade(edits, current);
+      if (edits.isEmpty) return current;
+    }
     final amended = await proposals
-        .amend(_of(item, revision), item.edits)
+        .amend(_of(item, revision), edits)
         .timeout(Outbox.requestTimeout);
     if (amended.replaced.isNotEmpty) {
       await _notice(
@@ -730,6 +762,40 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
       );
     }
     return amended;
+  }
+
+  /// [edits] less what [current] shows they made already: the events
+  /// they create that it has, as the user's, and the additions they make
+  /// that it no longer has to settle.
+  static ProposalEdits _unmade(ProposalEdits edits, Proposal current) {
+    bool made(Map<String, Object?> create) => (current.events ?? const []).any(
+      (e) =>
+          e.status == ProposalEventStatus.created &&
+          e.decidedBy == DecidedBy.user &&
+          e.start.isAtSameMomentAs(
+            DateTime.tryParse('${create['start']}') ?? DateTime(0),
+          ) &&
+          e.end.isAtSameMomentAs(
+            DateTime.tryParse('${create['end']}') ?? DateTime(0),
+          ) &&
+          (e.summary ?? '') == (create['summary'] ?? ''),
+    );
+    final pending = {for (final a in current.additions) a.ref};
+    return ProposalEdits(
+      updates: edits.updates,
+      creates: [
+        for (final c in edits.creates)
+          if (!made(c)) c,
+      ],
+      cancels: edits.cancels,
+      asPlanned: edits.asPlanned,
+      notes: edits.notes,
+      additions: [
+        for (final a in edits.additions)
+          if (pending.contains(a.ref)) a,
+      ],
+      through: edits.through,
+    );
   }
 
   /// Confirms [item]'s revision. An earlier attempt, unheard

@@ -10,6 +10,7 @@ class PendingNote implements OutboxItem<PendingNote> {
     this.lastError,
     this.nextAttemptAt,
     this.sendingSince,
+    this.sentBy,
     this.refused = false,
   });
 
@@ -25,6 +26,8 @@ class PendingNote implements OutboxItem<PendingNote> {
   final DateTime? nextAttemptAt;
   @override
   final DateTime? sendingSince;
+  @override
+  final String? sentBy;
 
   /// Never, as notes are sent: every failure is tried again.
   @override
@@ -36,6 +39,7 @@ class PendingNote implements OutboxItem<PendingNote> {
     String? Function()? lastError,
     DateTime? Function()? nextAttemptAt,
     DateTime? Function()? sendingSince,
+    String? Function()? sentBy,
     bool? refused,
   }) => PendingNote(
     id: id,
@@ -44,6 +48,7 @@ class PendingNote implements OutboxItem<PendingNote> {
     lastError: lastError == null ? this.lastError : lastError(),
     nextAttemptAt: nextAttemptAt == null ? this.nextAttemptAt : nextAttemptAt(),
     sendingSince: sendingSince == null ? this.sendingSince : sendingSince(),
+    sentBy: sentBy == null ? this.sentBy : sentBy(),
     refused: refused ?? this.refused,
   );
 
@@ -54,6 +59,7 @@ class PendingNote implements OutboxItem<PendingNote> {
     lastError: json['last_error'] as String?,
     nextAttemptAt: _date(json['next_attempt_at']),
     sendingSince: _date(json['sending_since']),
+    sentBy: json['sent_by'] as String?,
     refused: json['refused'] as bool? ?? false,
   );
 
@@ -64,6 +70,7 @@ class PendingNote implements OutboxItem<PendingNote> {
     'last_error': ?lastError,
     'next_attempt_at': ?nextAttemptAt?.toUtc().toIso8601String(),
     'sending_since': ?sendingSince?.toUtc().toIso8601String(),
+    'sent_by': ?sentBy,
     if (refused) 'refused': true,
   };
 
