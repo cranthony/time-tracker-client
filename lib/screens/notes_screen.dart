@@ -382,6 +382,7 @@ class _NotesScreenState extends State<NotesScreen> {
           tile: _PendingNoteTile(
             pending: note,
             sending: widget.outbox.isSending(note),
+            sendingBy: widget.outbox.sendingBy(note),
             needsSignIn: needsSignIn,
             onCancel: () => _cancel(note),
             onRetry: widget.outbox.retryNow,
@@ -613,6 +614,7 @@ class _PendingNoteTile extends StatelessWidget {
   const _PendingNoteTile({
     required this.pending,
     required this.sending,
+    this.sendingBy,
     required this.needsSignIn,
     required this.onCancel,
     required this.onRetry,
@@ -620,6 +622,9 @@ class _PendingNoteTile extends StatelessWidget {
 
   final PendingNote pending;
   final bool sending;
+
+  /// Who's sending it, as one would say it: "the background task".
+  final String? sendingBy;
   final bool needsSignIn;
   final VoidCallback onCancel;
   final VoidCallback onRetry;
@@ -641,7 +646,7 @@ class _PendingNoteTile extends StatelessWidget {
         dimension: 12,
         child: CircularProgressIndicator(strokeWidth: 2),
       );
-      status = 'Saving…';
+      status = sendingBy == null ? 'Saving…' : 'Saving, by $sendingBy…';
     } else if (needsSignIn) {
       icon = Icon(Icons.lock_outline, size: 14, color: scheme.error);
       status = 'Not saved · sign in to save';

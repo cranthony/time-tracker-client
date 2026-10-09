@@ -46,18 +46,27 @@ DateTime _at(int minutes) =>
 class _NotesServer extends InMemoryNotesRepository {
   final saved = <String>[];
 
+  /// How many it's saving now, and the most it ever was at once.
+  int _inFlight = 0;
+  int mostAtOnce = 0;
+
   /// While set, each note is saved, then this is waited for before
   /// answering: a sender killed mid-request never hears back.
   Completer<void>? hang;
 
   @override
   Future<Note> addNote(Note note) async {
-    await _jitter();
-    saved.add(note.description!);
-    final added = await super.addNote(note);
-    if (hang case final h?) await h.future;
-    await _jitter();
-    return added;
+    mostAtOnce = max(mostAtOnce, ++_inFlight);
+    try {
+      await _jitter();
+      saved.add(note.description!);
+      final added = await super.addNote(note);
+      if (hang case final h?) await h.future;
+      await _jitter();
+      return added;
+    } finally {
+      _inFlight--;
+    }
   }
 
   @override
@@ -133,6 +142,7 @@ void main() {
       final background = NoteOutbox(
         store: PrefsOutboxStore.notes(),
         repository: server,
+        sender: Outbox.backgroundSender,
       );
       const count = 60;
       var done = false;
@@ -162,6 +172,8 @@ void main() {
         server.saved..sort(),
         [for (var i = 0; i < count; i++) 'note $i']..sort(),
       );
+      // One at a time: neither took one while the other was sending.
+      expect(server.mostAtOnce, 1);
     });
 
     test('send every change to events once, in order', () async {
@@ -170,6 +182,7 @@ void main() {
       final background = EventOutbox(
         store: PrefsOutboxStore.events(),
         events: server,
+        sender: Outbox.backgroundSender,
       );
       const count = 40;
       var done = false;
@@ -421,6 +434,45 @@ void main() {
     server.hang!.complete();
     await _until(() async => (await PrefsOutboxStore.notes().load()).isEmpty);
     expect(server.saved, ['Lunch']);
+  });
+
+  test('while the background task sends one note, the app takes none of '
+      "the rest, and says who's sending", () async {
+    final server = _NotesServer();
+    final app = NoteOutbox(store: PrefsOutboxStore.notes(), repository: server);
+    final task = NoteOutbox(
+      store: PrefsOutboxStore.notes(),
+      repository: server,
+      sender: Outbox.backgroundSender,
+    );
+    await app.add(Note(timestamp: _at(0), description: 'Lunch'));
+    await app.add(Note(timestamp: _at(1), description: 'Coffee'));
+    final hang = server.hang = Completer<void>();
+
+    unawaited(task.flush(ignoreBackoff: true));
+    await _until(() async => server.saved.isNotEmpty);
+    await app.flush(ignoreBackoff: true);
+
+    expect(server.saved, ['Lunch']);
+    final lunch = app.items.firstWhere((n) => n.note.description == 'Lunch');
+    expect(lunch.sentBy, Outbox.backgroundSender);
+    expect(app.sendingBy(lunch), 'the background task');
+    expect(
+      app.sendingBy(
+        app.items.firstWhere((n) => n.note.description == 'Coffee'),
+      ),
+      isNull,
+    );
+
+    server.hang = null;
+    hang.complete();
+    await _until(() async => server.saved.length == 2 || app.items.length < 2);
+    await _until(() async {
+      await app.flush(ignoreBackoff: true);
+      return (await PrefsOutboxStore.notes().load()).isEmpty;
+    });
+    expect(server.saved, ['Lunch', 'Coffee']);
+    expect(server.mostAtOnce, 1);
   });
 
   group('The lock on what\'s kept', () {

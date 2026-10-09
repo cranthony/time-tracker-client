@@ -32,7 +32,12 @@ class ActionSaveFailed extends ActionSaveEvent {
 /// is in use, and [stop] when the app goes to the background, where the
 /// Android background task sends them, as it does notes.
 class ActionOutbox extends Outbox<PendingActionSave, String?> {
-  ActionOutbox({required super.store, required this._repository, super.clock});
+  ActionOutbox({
+    required super.store,
+    required this._repository,
+    super.clock,
+    super.sender,
+  });
 
   final ActionsRepository _repository;
   int _nextId = 0;

@@ -416,6 +416,7 @@ void main() {
       lastError: 'offline',
       nextAttemptAt: DateTime.utc(2026, 10, 4, 9, 0, 20),
       sendingSince: DateTime.utc(2026, 10, 4, 9),
+      sentBy: Outbox.backgroundSender,
       refused: true,
     );
     await prefs.save([save]);

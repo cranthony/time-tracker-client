@@ -19,6 +19,7 @@ class NoteOutbox extends Outbox<PendingNote, void> {
     required super.store,
     required this._repository,
     super.clock,
+    super.sender,
     Random? random,
   }) : _random = random ?? Random();
 

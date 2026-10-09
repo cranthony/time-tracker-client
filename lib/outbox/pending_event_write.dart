@@ -79,6 +79,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     this.lastError,
     this.nextAttemptAt,
     this.sendingSince,
+    this.sentBy,
     this.refused = false,
   });
 
@@ -136,6 +137,8 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
   final DateTime? nextAttemptAt;
   @override
   final DateTime? sendingSince;
+  @override
+  final String? sentBy;
   @override
   final bool refused;
 
@@ -332,6 +335,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     String? Function()? lastError,
     DateTime? Function()? nextAttemptAt,
     DateTime? Function()? sendingSince,
+    String? Function()? sentBy,
     bool? refused,
     String? label,
     Map<String, Object?>? changes,
@@ -361,6 +365,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     lastError: lastError != null ? lastError() : this.lastError,
     nextAttemptAt: nextAttemptAt != null ? nextAttemptAt() : this.nextAttemptAt,
     sendingSince: sendingSince != null ? sendingSince() : this.sendingSince,
+    sentBy: sentBy != null ? sentBy() : this.sentBy,
     refused: refused ?? this.refused,
   );
 
@@ -384,6 +389,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     'last_error': ?lastError,
     'next_attempt_at': ?nextAttemptAt?.toUtc().toIso8601String(),
     'sending_since': ?sendingSince?.toUtc().toIso8601String(),
+    'sent_by': ?sentBy,
     if (refused) 'refused': true,
   };
 
@@ -418,6 +424,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
       lastError: json['last_error'] as String?,
       nextAttemptAt: time(json['next_attempt_at']),
       sendingSince: time(json['sending_since']),
+      sentBy: json['sent_by'] as String?,
       refused: json['refused'] == true,
     );
   }

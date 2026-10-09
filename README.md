@@ -568,7 +568,10 @@ device, and may both be at it at once -- the app coming back while the
 task runs, say. Each change to what's kept is made whole, holding a lock
 both share (the task runs in the app's process, in an isolate of its
 own), so neither's change to it overwrites the other's; and each change
-waiting is claimed before it's sent, the same way, so only one sends it.
+waiting is claimed before it's sent, the same way, so only one sends it
+-- and neither takes one while the other's sending one, so they take
+turns. A change being sent says who's sending it: "Sending, by the
+background task…".
 It's sent again only if whoever claimed it doesn't say how it went within
 two minutes -- killed mid-request, say -- and then checked for first, as
 above. Nor can one being sent elsewhere be dropped.

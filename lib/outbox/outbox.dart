@@ -28,6 +28,9 @@ abstract interface class OutboxItem<T extends OutboxItem<T>> {
   /// request for it in flight.
   DateTime? get sendingSince;
 
+  /// Who that is, while [sendingSince] is set: an [Outbox.sender].
+  String? get sentBy;
+
   /// Whether the server refused it: it isn't sent again until it's retried
   /// (see [Outbox.retryNow]), as it would only be refused again.
   bool get refused;
@@ -37,6 +40,7 @@ abstract interface class OutboxItem<T extends OutboxItem<T>> {
     String? Function()? lastError,
     DateTime? Function()? nextAttemptAt,
     DateTime? Function()? sendingSince,
+    String? Function()? sentBy,
     bool? refused,
   });
 }
@@ -70,8 +74,28 @@ abstract interface class OutboxItem<T extends OutboxItem<T>> {
 /// in (see [fetching]), so whatever shows the items can show it until
 /// then, rather than it going missing in between.
 abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
-  Outbox({required this._store, DateTime Function()? clock})
-    : _clock = clock ?? DateTime.now;
+  Outbox({
+    required this._store,
+    DateTime Function()? clock,
+    this.sender = appSender,
+  }) : _clock = clock ?? DateTime.now;
+
+  /// Who's sending, as each item it claims says ([OutboxItem.sentBy]):
+  /// the app's outboxes, by default, or the background task's.
+  final String sender;
+  static const appSender = 'app';
+  static const backgroundSender = 'background';
+
+  /// Who's sending [item], as one would say it -- "the background task" --
+  /// or null if no one is.
+  String? sendingBy(T item) {
+    if (!isSending(item)) return null;
+    final by = item.id == _sendingId ? sender : item.sentBy;
+    return switch (by) {
+      backgroundSender => 'the background task',
+      _ => 'the app',
+    };
+  }
 
   final OutboxStore<T> _store;
   final DateTime Function() _clock;
@@ -315,11 +339,18 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
       try {
         // Claimed as it's kept, with no other change in between: unless
         // it's gone (dropped, or saved by the background task), refused,
-        // or claimed by another sender since it was read.
+        // or claimed by another sender since it was read -- nor while
+        // another sender has any of them: one sends at a time, the other
+        // waiting till it's done, or its claim's timed out.
         var claimed = false;
+        var elsewhere = false;
         var maybeSaved = false;
         await change((items) {
           claimed = false;
+          elsewhere = items.any(
+            (item) => item.id != next.id && _claimedAt(item, now),
+          );
+          if (elsewhere) return items;
           return [
             for (final item in items)
               if (item.id == next.id && !item.refused && !_claimedAt(item, now))
@@ -329,12 +360,18 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
                   // (see inFlightTimeout), may have saved it even though
                   // nobody heard.
                   maybeSaved = item.attempts > 0 || item.sendingSince != null;
-                  return item.copyWith(sendingSince: () => now);
+                  return item.copyWith(
+                    sendingSince: () => now,
+                    sentBy: () => sender,
+                  );
                 }()
               else
                 item,
           ];
         });
+        // Another's sending: this round's over, to look again soon (see
+        // schedule).
+        if (elsewhere) break;
         if (!claimed) continue;
         final result = await send(next, maybeSaved: maybeSaved);
         _sendingId = null;
@@ -352,6 +389,7 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
         _needsSignIn = true;
         final kept = next.copyWith(
           sendingSince: () => null,
+          sentBy: () => null,
           lastError: () => 'Sign in to save',
         );
         await _release(kept, claimedAt: now);
@@ -365,6 +403,7 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
           final kept = next.copyWith(
             attempts: 0,
             sendingSince: () => null,
+            sentBy: () => null,
             lastError: () => describeSaveError(e),
             nextAttemptAt: () => null,
             refused: true,
@@ -379,6 +418,7 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
         final kept = next.copyWith(
           attempts: attempts,
           sendingSince: () => null,
+          sentBy: () => null,
           lastError: () => describeSaveError(e),
           nextAttemptAt: () => _clock().add(backoff(attempts)),
         );
@@ -424,6 +464,14 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
     _timer?.cancel();
     if (!_running || _needsSignIn || _paused) return;
     final now = _clock();
+    // Another sender's sending: nothing's sent till it's done, so look
+    // again soon -- it may finish any moment.
+    if (_items.any((item) => _inFlightElsewhere(item, now))) {
+      _timer = Timer(const Duration(seconds: 5), () {
+        if (_running) flush();
+      });
+      return;
+    }
     DateTime? next = immediately && hasUnsent ? now : null;
     for (final item in inOrder ? _items.take(1) : _items) {
       if (item.refused) continue;

@@ -15,6 +15,7 @@ import 'outbox/background_sync.dart';
 import 'outbox/action_outbox.dart';
 import 'outbox/event_outbox.dart';
 import 'outbox/note_outbox.dart';
+import 'outbox/outbox.dart';
 import 'outbox/outbox_store.dart';
 import 'platform/add_note_shortcut.dart';
 import 'screens/home_screen.dart';
@@ -151,13 +152,16 @@ void backgroundDispatcher() =>
         NoteOutbox(
           store: PrefsOutboxStore.notes(),
           repository: McpNotesRepository(client),
+          sender: Outbox.backgroundSender,
         ),
         ActionOutbox(
           store: PrefsOutboxStore.actions(),
           repository: McpActionsRepository(client),
+          sender: Outbox.backgroundSender,
         ),
         EventOutbox(
           store: PrefsOutboxStore.events(),
+          sender: Outbox.backgroundSender,
           events: McpEventsRepository(client),
           proposals: McpProposalRepository(client),
           // What came of a change to the proposal, for the app to say.

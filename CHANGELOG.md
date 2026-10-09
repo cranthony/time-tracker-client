@@ -20,6 +20,10 @@ on. Add the new version's section here at the same time; CI checks both.
   edit of the proposal creates, made twice.
 - A sender that took too long to hear back, its change since claimed by
   the other, leaves it to the other.
+- The app and the background task take turns: neither takes a change to
+  send while the other's sending one, of notes, actions or events.
+- A change being sent says who's sending it -- "Sending, by the
+  background task…" -- in the changes waiting, and on the notes page.
 
 ## 7.40.0
 

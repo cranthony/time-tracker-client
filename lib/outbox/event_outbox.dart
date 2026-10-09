@@ -143,6 +143,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
     this.notices,
     this.persistPause = false,
     super.clock,
+    super.sender,
     Random? random,
   }) : _random = random ?? Random();
 

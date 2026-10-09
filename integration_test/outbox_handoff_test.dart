@@ -26,6 +26,7 @@ import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/outbox/background_sync.dart';
 import 'package:time_tracker_client/outbox/event_outbox.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
+import 'package:time_tracker_client/outbox/outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
@@ -38,10 +39,12 @@ void handoffDispatcher() => BackgroundSync.run(
     NoteOutbox(
       store: PrefsOutboxStore.notes(),
       repository: _FileNotes('background'),
+      sender: Outbox.backgroundSender,
     ),
     EventOutbox(
       store: PrefsOutboxStore.events(),
       events: _FileEvents('background'),
+      sender: Outbox.backgroundSender,
     ),
   ],
 );
