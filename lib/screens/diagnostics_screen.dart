@@ -544,38 +544,45 @@ class _SummaryTable extends StatelessWidget {
       child: Text(
         text,
         style: style,
+        maxLines: 1,
+        softWrap: false,
         textAlign: end ? TextAlign.end : TextAlign.start,
       ),
     );
     final extra = this.extra;
-    return Table(
-      defaultColumnWidth: const IntrinsicColumnWidth(),
-      children: [
-        TableRow(
-          children: [
-            cell('', head),
-            cell('Mean', head),
-            cell('Median', head),
-            cell('p95', head),
-            cell('Max', head),
-            if (extra != null) cell(extra.$1, head),
-          ],
-        ),
-        for (final (i, (name, summary)) in rows.indexed)
+    // Narrower than the card, it's scaled down to fit, not wrapped.
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Table(
+        defaultColumnWidth: const IntrinsicColumnWidth(),
+        children: [
           TableRow(
             children: [
-              cell(name, head, end: false),
-              for (final v in [
-                summary?.mean,
-                summary?.median,
-                summary?.p95,
-                summary?.max,
-              ])
-                cell(v == null ? '–' : format(v), style),
-              if (extra != null) cell(extra.$2[i], style),
+              cell('', head),
+              cell('Mean', head),
+              cell('Median', head),
+              cell('p95', head),
+              cell('Max', head),
+              if (extra != null) cell(extra.$1, head),
             ],
           ),
-      ],
+          for (final (i, (name, summary)) in rows.indexed)
+            TableRow(
+              children: [
+                cell(name, head, end: false),
+                for (final v in [
+                  summary?.mean,
+                  summary?.median,
+                  summary?.p95,
+                  summary?.max,
+                ])
+                  cell(v == null ? '–' : format(v), style),
+                if (extra != null) cell(extra.$2[i], style),
+              ],
+            ),
+        ],
+      ),
     );
   }
 }
