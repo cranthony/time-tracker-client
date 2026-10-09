@@ -3,52 +3,266 @@ import 'dart:math';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/server_health.dart';
+import '../services/client_health.dart';
 import '../services/diagnostics.dart';
 import '../services/diagnostics_repository.dart';
 import '../widgets/status_message.dart';
 
 /// How the app and the server are doing: the server's health metrics
-/// ([DiagnosticsRepository]) on its **Server** pane, and the app's own on
-/// its **App** pane -- swiped between, as the Plan page's are.
+/// ([DiagnosticsRepository]) on its **Server** pane, and the app's own
+/// ([ClientHealthRecorder]) on its **App** pane -- swiped between, as the
+/// Plan page's are.
 ///
-/// The server's are graphs of one time range, the latest on the right:
-/// its tool calls' latencies -- each tool's own work, stacked under the
-/// rest of its request, to the whole request's time, failed calls dotted
-/// red -- its memory, and its restarts, ticked. Which tools' calls,
-/// how far back, and each call or a statistic of each bucket of them are
-/// picked from the menus above; each graph says the mean, median, 95th
-/// percentile and max of what's in view. Pinching -- on a touchscreen or a
-/// trackpad, or Ctrl and the mouse wheel -- or the buttons zooms all three
-/// in on a stretch of time, two fingers drag it along, and a double tap
-/// goes back to the whole range. Scrolling scrolls the page.
-class DiagnosticsScreen extends StatefulWidget {
+/// Each is graphs of one time range, the latest on the right. The
+/// server's: its tool calls' latencies -- each tool's own work, stacked
+/// under the rest of its request, to the whole request's time -- its
+/// memory, and its restarts, ticked. The app's: its tool calls' latencies,
+/// the app's and the background task's, and how many changes waited to
+/// save, in each outbox, stacked; and its last errors, in full. Failed
+/// calls are dotted red. Which tools' calls, how far back, and each call
+/// or a statistic of each bucket of them are picked from the menus above;
+/// each graph says the mean, median, 95th percentile and max of what's in
+/// view. Pinching -- on a touchscreen or a trackpad, or Ctrl and the mouse
+/// wheel -- zooms all of a pane's graphs in on a stretch of time, two
+/// fingers drag it along, and a double tap goes back to the whole range;
+/// the buttons zoom keeping the latest in view. Scrolling scrolls the page.
+class DiagnosticsScreen extends StatelessWidget {
   const DiagnosticsScreen({
     super.key,
     required this.repository,
+    this.client,
     this.clock = DateTime.now,
   });
+
+  final DiagnosticsRepository repository;
+
+  /// The app's own health; without it, its pane says it isn't recorded.
+  final ClientHealthRecorder? client;
+  final DateTime Function() clock;
+
+  @override
+  Widget build(BuildContext context) {
+    final client = this.client;
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Diagnostics'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Server'),
+              Tab(text: 'App'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            _ServerPane(repository: repository, clock: clock),
+            if (client != null)
+              _ClientPane(client: client, clock: clock)
+            else
+              const _AppPane(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// What a pane's graphs show, picked from its menus: which tools' calls,
+/// how far back, each call or a statistic of each bucket of them, and the
+/// stretch zoomed in on, if any.
+mixin _Timeline<T extends StatefulWidget> on State<T> {
+  ToolFilter filter = const AllTools();
+  TimeRange range = TimeRange.day;
+  Statistic? statistic;
+  BucketSize bucket = BucketSize.hour;
+
+  /// The stretch zoomed in on, if it is: within the range.
+  (DateTime, DateTime)? zoom;
+
+  DateTime Function() get clock;
+
+  /// When each series starts: for "Everything" to start at the earliest.
+  Iterable<DateTime> get starts;
+
+  /// The whole range shown, before any zoom: back from now, or to the
+  /// earliest sample.
+  (DateTime, DateTime) get window {
+    final now = clock().toUtc();
+    final span = range.span;
+    if (span != null) return (now.subtract(span), now);
+    final times = starts.toList();
+    final earliest = times.isEmpty
+        ? now.subtract(const Duration(days: 1))
+        : times.reduce((a, b) => a.isBefore(b) ? a : b);
+    return (earliest, now);
+  }
+
+  (DateTime, DateTime) get shown => zoom ?? window;
+
+  /// Zooms by [factor] (above 1, in) about [anchor] -- a fraction of the
+  /// way across: by default the right, the latest, kept where it is -- and
+  /// moves by [shift], a fraction of the stretch shown.
+  void zoomBy(double factor, {double anchor = 1, double shift = 0}) {
+    final (wholeFrom, wholeTo) = window;
+    final (from, to) = shown;
+    final whole = wholeTo.difference(wholeFrom).inMilliseconds;
+    final span = to.difference(from).inMilliseconds;
+    final next = (span / factor).clamp(
+      min(60000, whole).toDouble(),
+      whole.toDouble(),
+    );
+    final pivot = from.millisecondsSinceEpoch + anchor * span;
+    var start = pivot - anchor * next - shift * next;
+    start = start.clamp(
+      wholeFrom.millisecondsSinceEpoch.toDouble(),
+      wholeTo.millisecondsSinceEpoch - next,
+    );
+    setState(() {
+      zoom = next >= whole
+          ? null
+          : (
+              DateTime.fromMillisecondsSinceEpoch(start.round(), isUtc: true),
+              DateTime.fromMillisecondsSinceEpoch(
+                (start + next).round(),
+                isUtc: true,
+              ),
+            );
+    });
+  }
+
+  /// [child]'s graphs, zoomed together.
+  Widget zoomable(Widget child) => _Zoomable(
+    onZoom: zoomBy,
+    onReset: () => setState(() => zoom = null),
+    child: child,
+  );
+
+  /// The menus, for [tools], and the stretch shown, with the buttons to
+  /// zoom and move along it.
+  Widget controls(BuildContext context, Iterable<String> tools) {
+    final filters = toolFilters(tools);
+    if (!filters.contains(filter)) filter = const AllTools();
+    final strings = MaterialLocalizations.of(context);
+    final (from, to) = shown;
+    String time(DateTime t) =>
+        '${strings.formatShortMonthDay(t.toLocal())}, '
+        '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()))}';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _Picker<ToolFilter>(
+                label: 'Tools',
+                value: filter,
+                items: {for (final f in filters) f: f.label},
+                onChanged: (f) => setState(() => filter = f),
+              ),
+              _Picker<TimeRange>(
+                label: 'Range',
+                value: range,
+                items: {for (final r in TimeRange.values) r: r.label},
+                onChanged: (r) => setState(() {
+                  range = r;
+                  zoom = null;
+                }),
+              ),
+              _Picker<Statistic?>(
+                label: 'Show',
+                value: statistic,
+                items: {
+                  null: 'Each call',
+                  for (final s in Statistic.values) s: s.label,
+                },
+                onChanged: (s) => setState(() => statistic = s),
+              ),
+              if (statistic != null)
+                _Picker<BucketSize>(
+                  label: 'Per',
+                  value: bucket,
+                  items: {for (final b in BucketSize.values) b: b.label},
+                  onChanged: (b) => setState(() => bucket = b),
+                ),
+            ],
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${time(from)} – ${time(to)}${zoom == null ? '' : ' (zoomed in)'}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Earlier',
+                icon: const Icon(Icons.chevron_left),
+                onPressed: zoom == null ? null : () => zoomBy(1, shift: 0.5),
+              ),
+              IconButton(
+                tooltip: 'Zoom out',
+                icon: const Icon(Icons.zoom_out),
+                onPressed: zoom == null ? null : () => zoomBy(0.5),
+              ),
+              IconButton(
+                tooltip: 'Zoom in',
+                icon: const Icon(Icons.zoom_in),
+                onPressed: () => zoomBy(2),
+              ),
+              IconButton(
+                tooltip: 'Later',
+                icon: const Icon(Icons.chevron_right),
+                onPressed: zoom == null ? null : () => zoomBy(1, shift: -0.5),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The server's health, from its `get_health`.
+class _ServerPane extends StatefulWidget {
+  const _ServerPane({required this.repository, required this.clock});
 
   final DiagnosticsRepository repository;
   final DateTime Function() clock;
 
   @override
-  State<DiagnosticsScreen> createState() => _DiagnosticsScreenState();
+  State<_ServerPane> createState() => _ServerPaneState();
 }
 
-class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
+class _ServerPaneState extends State<_ServerPane>
+    with _Timeline, AutomaticKeepAliveClientMixin {
   ServerHealth? _health;
   Object? _error;
   bool _loading = true;
 
-  ToolFilter _filter = const AllTools();
-  TimeRange _range = TimeRange.day;
-  Statistic? _statistic;
-  BucketSize _bucket = BucketSize.hour;
+  @override
+  bool get wantKeepAlive => true;
 
-  /// The stretch zoomed in on, if it is: within the range.
-  (DateTime, DateTime)? _zoom;
+  @override
+  DateTime Function() get clock => widget.clock;
+
+  @override
+  Iterable<DateTime> get starts => [
+    if (_health case final health?) ...[
+      for (final t in health.tools)
+        if (t.calls.isNotEmpty) t.calls.first.at,
+      if (health.memory.isNotEmpty) health.memory.first.at,
+      ...health.restarts,
+    ],
+  ];
 
   @override
   void initState() {
@@ -78,79 +292,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     }
   }
 
-  /// The whole range shown, before any zoom: back from now, or to the
-  /// earliest sample.
-  (DateTime, DateTime) get _window {
-    final now = widget.clock().toUtc();
-    final span = _range.span;
-    if (span != null) return (now.subtract(span), now);
-    final health = _health;
-    final times = [
-      if (health != null) ...[
-        for (final t in health.tools)
-          if (t.calls.isNotEmpty) t.calls.first.at,
-        if (health.memory.isNotEmpty) health.memory.first.at,
-        ...health.restarts,
-      ],
-    ];
-    final earliest = times.isEmpty
-        ? now.subtract(const Duration(days: 1))
-        : times.reduce((a, b) => a.isBefore(b) ? a : b);
-    return (earliest, now);
-  }
-
-  (DateTime, DateTime) get _shown => _zoom ?? _window;
-
-  /// Zooms by [factor] (above 1, in) about [anchor] -- a fraction of the
-  /// way across -- and moves by [shift], a fraction of the stretch shown.
-  void _zoomBy(double factor, {double anchor = 0.5, double shift = 0}) {
-    final (wholeFrom, wholeTo) = _window;
-    final (from, to) = _shown;
-    final whole = wholeTo.difference(wholeFrom).inMilliseconds;
-    final span = to.difference(from).inMilliseconds;
-    final next = (span / factor).clamp(
-      min(60000, whole).toDouble(),
-      whole.toDouble(),
-    );
-    final pivot = from.millisecondsSinceEpoch + anchor * span;
-    var start = pivot - anchor * next - shift * next;
-    start = start.clamp(
-      wholeFrom.millisecondsSinceEpoch.toDouble(),
-      wholeTo.millisecondsSinceEpoch - next,
-    );
-    setState(() {
-      _zoom = next >= whole
-          ? null
-          : (
-              DateTime.fromMillisecondsSinceEpoch(start.round(), isUtc: true),
-              DateTime.fromMillisecondsSinceEpoch(
-                (start + next).round(),
-                isUtc: true,
-              ),
-            );
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Diagnostics'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Server'),
-              Tab(text: 'App'),
-            ],
-          ),
-        ),
-        body: TabBarView(children: [_server(context), const _AppPane()]),
-      ),
-    );
-  }
-
-  Widget _server(BuildContext context) {
+    super.build(context);
     final health = _health;
     final error = _error;
     if (health == null) {
@@ -176,11 +320,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         ),
       );
     }
-    final (from, to) = _shown;
+    final (from, to) = shown;
     final calls = within(
       [
         for (final t in health.tools)
-          if (_filter.includes(t.tool)) ...t.calls,
+          if (filter.includes(t.tool)) ...t.calls,
       ]..sort((a, b) => a.at.compareTo(b.at)),
       (c) => c.at,
       from,
@@ -188,8 +332,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     );
     final memory = within(health.memory, (m) => m.at, from, to);
     final restarts = within(health.restarts, (r) => r, from, to);
-    final filters = toolFilters([for (final t in health.tools) t.tool]);
-    final filter = filters.contains(_filter) ? _filter : const AllTools();
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -202,18 +344,16 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               stale: true,
               onRetry: _load,
             ),
-          _controls(context, filters, filter),
-          _Zoomable(
-            onZoom: _zoomBy,
-            onReset: () => setState(() => _zoom = null),
-            child: Column(
+          controls(context, [for (final t in health.tools) t.tool]),
+          zoomable(
+            Column(
               children: [
                 _LatencyCard(
                   calls: calls,
                   points: latencyPoints(
                     calls,
-                    statistic: _statistic,
-                    bucket: _bucket,
+                    statistic: statistic,
+                    bucket: bucket,
                   ),
                   from: from,
                   to: to,
@@ -222,8 +362,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   memory: memory,
                   points: memoryPoints(
                     memory,
-                    statistic: _statistic,
-                    bucket: _bucket,
+                    statistic: statistic,
+                    bucket: bucket,
                   ),
                   from: from,
                   to: to,
@@ -236,90 +376,113 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       ),
     );
   }
+}
 
-  Widget _controls(
-    BuildContext context,
-    List<ToolFilter> filters,
-    ToolFilter filter,
-  ) {
-    final strings = MaterialLocalizations.of(context);
-    final (from, to) = _shown;
-    String time(DateTime t) =>
-        '${strings.formatShortMonthDay(t.toLocal())}, '
-        '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()))}';
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+/// The app's own health: its tool calls, its outboxes' queues, and its
+/// last errors -- as [client] has recorded them, here and in the
+/// background, read again as it records more.
+class _ClientPane extends StatefulWidget {
+  const _ClientPane({required this.client, required this.clock});
+
+  final ClientHealthRecorder client;
+  final DateTime Function() clock;
+
+  @override
+  State<_ClientPane> createState() => _ClientPaneState();
+}
+
+class _ClientPaneState extends State<_ClientPane>
+    with _Timeline, AutomaticKeepAliveClientMixin {
+  ClientHealth? _health;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  DateTime Function() get clock => widget.clock;
+
+  @override
+  Iterable<DateTime> get starts => [
+    if (_health case final health?) ...[
+      for (final calls in health.calls.values)
+        if (calls.isNotEmpty) calls.first.at,
+      if (health.queue.isNotEmpty) health.queue.first.at,
+    ],
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    widget.client.addListener(_load);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    widget.client.removeListener(_load);
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final health = await widget.client.read();
+    if (mounted) setState(() => _health = health);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final health = _health;
+    if (health == null) return const Center(child: CircularProgressIndicator());
+    final (from, to) = shown;
+    final calls = within(
+      [
+        for (final MapEntry(key: tool, value: calls) in health.calls.entries)
+          if (filter.includes(tool)) ...calls,
+      ]..sort((a, b) => a.at.compareTo(b.at)),
+      (c) => c.at,
+      from,
+      to,
+    );
+    // The queue as it stood as the stretch began, then each change in it.
+    final before = health.queue.where((q) => q.at.isBefore(from)).lastOrNull;
+    final queue = [
+      if (before != null)
+        QueueSample(
+          at: from,
+          notes: before.notes,
+          actions: before.actions,
+          events: before.events,
+        ),
+      ...within(health.queue, (q) => q.at, from, to),
+    ];
+    final errors = [
+      for (final e in health.errors.reversed)
+        if (e.tool == null ? filter is AllTools : filter.includes(e.tool!)) e,
+    ];
+    return RefreshIndicator(
+      onRefresh: () async {
+        await widget.client.flush();
+        await _load();
+      },
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 24),
         children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _Picker<ToolFilter>(
-                label: 'Tools',
-                value: filter,
-                items: {for (final f in filters) f: f.label},
-                onChanged: (f) => setState(() => _filter = f),
-              ),
-              _Picker<TimeRange>(
-                label: 'Range',
-                value: _range,
-                items: {for (final r in TimeRange.values) r: r.label},
-                onChanged: (r) => setState(() {
-                  _range = r;
-                  _zoom = null;
-                }),
-              ),
-              _Picker<Statistic?>(
-                label: 'Show',
-                value: _statistic,
-                items: {
-                  null: 'Each call',
-                  for (final s in Statistic.values) s: s.label,
-                },
-                onChanged: (s) => setState(() => _statistic = s),
-              ),
-              if (_statistic != null)
-                _Picker<BucketSize>(
-                  label: 'Per',
-                  value: _bucket,
-                  items: {for (final b in BucketSize.values) b: b.label},
-                  onChanged: (b) => setState(() => _bucket = b),
+          controls(context, health.calls.keys),
+          zoomable(
+            Column(
+              children: [
+                _ClientCallsCard(
+                  calls: calls,
+                  statistic: statistic,
+                  bucket: bucket,
+                  from: from,
+                  to: to,
                 ),
-            ],
+                _QueueCard(queue: queue, from: from, to: to),
+              ],
+            ),
           ),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${time(from)} – ${time(to)}${_zoom == null ? '' : ' (zoomed in)'}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-              IconButton(
-                tooltip: 'Earlier',
-                icon: const Icon(Icons.chevron_left),
-                onPressed: _zoom == null ? null : () => _zoomBy(1, shift: 0.5),
-              ),
-              IconButton(
-                tooltip: 'Zoom out',
-                icon: const Icon(Icons.zoom_out),
-                onPressed: _zoom == null ? null : () => _zoomBy(0.5),
-              ),
-              IconButton(
-                tooltip: 'Zoom in',
-                icon: const Icon(Icons.zoom_in),
-                onPressed: () => _zoomBy(2),
-              ),
-              IconButton(
-                tooltip: 'Later',
-                icon: const Icon(Icons.chevron_right),
-                onPressed: _zoom == null ? null : () => _zoomBy(1, shift: -0.5),
-              ),
-            ],
-          ),
+          _ErrorsCard(errors: errors, kept: health.errors.length),
         ],
       ),
     );
@@ -639,28 +802,32 @@ AxisTitles _timeAxis(BuildContext context, DateTime from, DateTime to) {
   );
 }
 
-AxisTitles _valueAxis(BuildContext context, String Function(num) format) =>
-    AxisTitles(
-      sideTitles: SideTitles(
-        showTitles: true,
-        reservedSize: 60,
-        getTitlesWidget: (value, meta) {
-          // The ends fall between the grid's lines: only those are labelled.
-          if (value == meta.max || (value == meta.min && value != 0)) {
-            return const SizedBox.shrink();
-          }
-          return SideTitleWidget(
-            meta: meta,
-            child: Text(
-              format(value),
-              maxLines: 1,
-              softWrap: false,
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
-          );
-        },
-      ),
-    );
+AxisTitles _valueAxis(
+  BuildContext context,
+  String Function(num) format, {
+  double? interval,
+}) => AxisTitles(
+  sideTitles: SideTitles(
+    showTitles: true,
+    interval: interval,
+    reservedSize: 60,
+    getTitlesWidget: (value, meta) {
+      // The ends fall between the grid's lines: only those are labelled.
+      if (value == meta.max || (value == meta.min && value != 0)) {
+        return const SizedBox.shrink();
+      }
+      return SideTitleWidget(
+        meta: meta,
+        child: Text(
+          format(value),
+          maxLines: 1,
+          softWrap: false,
+          style: Theme.of(context).textTheme.labelSmall,
+        ),
+      );
+    },
+  ),
+);
 
 const _noTitles = AxisTitles();
 
@@ -993,7 +1160,338 @@ class _Note extends StatelessWidget {
   }
 }
 
-/// The app's own metrics: none yet.
+/// The app's tool calls: a line for the app's, and one for the background
+/// task's, each call -- or a statistic of each bucket of them -- its
+/// whole time, retries and the network included; failed calls dotted red.
+class _ClientCallsCard extends StatelessWidget {
+  const _ClientCallsCard({
+    required this.calls,
+    required this.statistic,
+    required this.bucket,
+    required this.from,
+    required this.to,
+  });
+
+  final List<ClientCall> calls;
+  final Statistic? statistic;
+  final BucketSize bucket;
+  final DateTime from;
+  final DateTime to;
+
+  /// [calls] of [origin] as the graph shows them.
+  List<LatencyPoint> _points(CallOrigin origin) => latencyPoints(
+    [
+      for (final c in calls)
+        if (c.origin == origin)
+          ToolCall(tool: c.tool, at: c.at, workMs: c.ms, ok: c.ok),
+    ],
+    statistic: statistic,
+    bucket: bucket,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final app = colors.primary;
+    final background = colors.tertiary;
+    final failed = calls.where((c) => !c.ok).length;
+    final series = [
+      (_points(CallOrigin.app), app),
+      (_points(CallOrigin.background), background),
+    ];
+    final all = [for (final (points, _) in series) ...points];
+    final top = all.isEmpty ? 1.0 : all.map((p) => p.total).reduce(max) * 1.1;
+    List<num> msOf(CallOrigin? origin) => [
+      for (final c in calls)
+        if (origin == null || c.origin == origin) c.ms,
+    ];
+    return _GraphCard(
+      title: 'Tool calls',
+      subtitle:
+          '${calls.length} call${calls.length == 1 ? '' : 's'} in view'
+          '${failed == 0 ? '' : ', $failed failed'}: the whole call, retries '
+          'and the network included',
+      legend: [
+        (app, CallOrigin.app.label),
+        (background, CallOrigin.background.label),
+        (colors.error, 'Failed'),
+      ],
+      graph: all.isEmpty
+          ? _empty(context, 'No calls in view.')
+          : SizedBox(
+              height: 200,
+              child: LineChart(
+                LineChartData(
+                  minX: _x(from),
+                  maxX: _x(to),
+                  minY: 0,
+                  maxY: max(1, top),
+                  clipData: const FlClipData.all(),
+                  titlesData: FlTitlesData(
+                    bottomTitles: _timeAxis(context, from, to),
+                    leftTitles: _valueAxis(context, _ms),
+                    topTitles: _noTitles,
+                    rightTitles: _noTitles,
+                  ),
+                  borderData: FlBorderData(show: false),
+                  lineBarsData: [
+                    for (final (points, color) in series)
+                      LineChartBarData(
+                        spots: [
+                          for (final p in points) FlSpot(_x(p.at), p.total),
+                        ],
+                        color: color,
+                        barWidth: 1.5,
+                        dotData: FlDotData(
+                          checkToShowDot: (spot, bar) => points.any(
+                            (p) => p.errors > 0 && _x(p.at) == spot.x,
+                          ),
+                          getDotPainter: (_, _, _, _) => FlDotCirclePainter(
+                            radius: 4,
+                            color: colors.error,
+                            strokeWidth: 0,
+                          ),
+                        ),
+                      ),
+                  ],
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (spots) => [
+                        for (final s in spots)
+                          LineTooltipItem(
+                            '${s.barIndex == 0 ? 'App' : 'Background'} ${_ms(s.y)}',
+                            TextStyle(
+                              color: colors.onInverseSurface,
+                              fontSize: 12,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+      footer: _SummaryTable(
+        format: _ms,
+        rows: [
+          (CallOrigin.app.label, Summary.of(msOf(CallOrigin.app))),
+          (
+            CallOrigin.background.label,
+            Summary.of(msOf(CallOrigin.background)),
+          ),
+          ('All', Summary.of(msOf(null))),
+        ],
+      ),
+    );
+  }
+}
+
+/// How many changes waited to save, in each outbox, stacked: notes under
+/// actions under events, each step a change.
+class _QueueCard extends StatelessWidget {
+  const _QueueCard({required this.queue, required this.from, required this.to});
+
+  final List<QueueSample> queue;
+  final DateTime from;
+  final DateTime to;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final notes = colors.primary;
+    final actions = colors.secondary;
+    final events = colors.tertiary;
+    // Each step held till the next, and the last till now.
+    final steps = [
+      ...queue,
+      if (queue.isNotEmpty)
+        QueueSample(
+          at: to,
+          notes: queue.last.notes,
+          actions: queue.last.actions,
+          events: queue.last.events,
+        ),
+    ];
+    final top = steps.isEmpty ? 1 : steps.map((q) => q.total).reduce(max);
+    final surface = colors.surfaceContainerLow;
+    // Each level filled down to nothing, the tallest first, so each lower
+    // one is drawn over it: stacked, step by step.
+    LineChartBarData level(int Function(QueueSample) height, Color color) =>
+        LineChartBarData(
+          spots: [
+            for (final q in steps) FlSpot(_x(q.at), height(q).toDouble()),
+          ],
+          isStepLineChart: true,
+          // Each count held till the next change.
+          lineChartStepData: const LineChartStepData(
+            stepDirection: LineChartStepData.stepDirectionForward,
+          ),
+          color: color,
+          barWidth: 1.5,
+          dotData: const FlDotData(show: false),
+          belowBarData: BarAreaData(
+            show: true,
+            color: Color.alphaBlend(color.withValues(alpha: 0.4), surface),
+          ),
+        );
+    return _GraphCard(
+      title: 'Waiting to save',
+      subtitle: 'How many changes waited, in each outbox',
+      legend: [(notes, 'Notes'), (actions, 'Actions'), (events, 'Events')],
+      graph: steps.isEmpty
+          ? _empty(context, 'Nothing waited in view.')
+          : SizedBox(
+              height: 140,
+              child: LineChart(
+                LineChartData(
+                  minX: _x(from),
+                  maxX: _x(to),
+                  minY: 0,
+                  maxY: max(1, top * 1.2).toDouble(),
+                  gridData: FlGridData(
+                    horizontalInterval: max(1, (top / 3).ceil()).toDouble(),
+                  ),
+                  clipData: const FlClipData.all(),
+                  titlesData: FlTitlesData(
+                    bottomTitles: _timeAxis(context, from, to),
+                    leftTitles: _valueAxis(
+                      context,
+                      (v) => '${v.round()}',
+                      interval: max(1, (top / 3).ceil()).toDouble(),
+                    ),
+                    topTitles: _noTitles,
+                    rightTitles: _noTitles,
+                  ),
+                  borderData: FlBorderData(show: false),
+                  lineBarsData: [
+                    level((q) => q.total, events),
+                    level((q) => q.notes + q.actions, actions),
+                    level((q) => q.notes, notes),
+                  ],
+                  lineTouchData: const LineTouchData(enabled: false),
+                ),
+              ),
+            ),
+      footer: _SummaryTable(
+        format: (v) =>
+            v == v.roundToDouble() ? '${v.round()}' : v.toStringAsFixed(1),
+        rows: [
+          ('Waiting', Summary.of([for (final q in queue) q.total])),
+        ],
+        extra: ('Latest', [queue.isEmpty ? '–' : '${queue.last.total}']),
+      ),
+    );
+  }
+}
+
+/// The last errors, newest first, each opened to read in full -- its
+/// message and, for one the app didn't catch, where -- and copy.
+class _ErrorsCard extends StatelessWidget {
+  const _ErrorsCard({required this.errors, required this.kept});
+
+  /// Those of the tools picked.
+  final List<ClientError> errors;
+
+  /// How many are kept, of every tool.
+  final int kept;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final strings = MaterialLocalizations.of(context);
+    String time(DateTime t) =>
+        '${strings.formatShortMonthDay(t.toLocal())}, '
+        '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()))}';
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text('Errors', style: theme.textTheme.titleMedium),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(
+                kept == 0
+                    ? 'None kept.'
+                    : errors.isEmpty
+                    ? 'None of the $kept kept are of these tools.'
+                    : 'The last ${ClientHealthRecorder.keepErrors} are kept, '
+                          'newest first: tap one to read it in full.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+            for (final e in errors)
+              ExpansionTile(
+                leading: Icon(
+                  e.tool == null ? Icons.bug_report_outlined : Icons.cloud_off,
+                  color: theme.colorScheme.error,
+                ),
+                title: Text(
+                  e.tool ?? 'Not caught',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${time(e.at)} · ${e.origin.label}'
+                      '${e.kind == null ? '' : ' · ${e.kind}'}',
+                    ),
+                    Text(
+                      e.message.split('\n').first,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 8, 12),
+                expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SelectableText(
+                    [e.message, ?e.stack].join('\n\n'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.copy, size: 18),
+                      label: const Text('Copy'),
+                      onPressed: () {
+                        Clipboard.setData(
+                          ClipboardData(
+                            text: [
+                              '${e.at.toIso8601String()} ${e.origin.name}'
+                                  '${e.tool == null ? '' : ' ${e.tool}'}'
+                                  '${e.kind == null ? '' : ' ${e.kind}'}',
+                              e.message,
+                              ?e.stack,
+                            ].join('\n\n'),
+                          ),
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Copied.')),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The app's pane, where its health isn't recorded.
 class _AppPane extends StatelessWidget {
   const _AppPane();
 
@@ -1002,7 +1500,7 @@ class _AppPane extends StatelessWidget {
     children: const [
       _Note(
         icon: Icons.phone_android,
-        text: "The app's own metrics come later.",
+        text: "The app's own health isn't recorded here.",
       ),
     ],
   );

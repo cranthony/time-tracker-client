@@ -28,6 +28,7 @@ import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/theme.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
+import 'package:time_tracker_client/services/client_health.dart';
 import 'package:time_tracker_client/services/background_refresh.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
@@ -708,13 +709,16 @@ void main() {
 
     // Diagnostics: the server's health -- its tool calls, stacked, its
     // memory and its restarts, over the last day -- each call, and the
-    // median of each hour; scrolled to the restarts; and the app's pane,
-    // empty for now.
+    // median of each hour; scrolled to the restarts; and the app's own --
+    // its tool calls, the app's and the background task's, and the
+    // outboxes' queues filling while offline -- and scrolled to its last
+    // errors, one opened.
     for (final (name, step) in [
       ('diagnostics', ''),
       ('diagnostics_median', 'median'),
       ('diagnostics_restarts', 'scroll'),
       ('diagnostics_app', 'app'),
+      ('diagnostics_app_errors', 'errors'),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
         await render(
@@ -722,6 +726,10 @@ void main() {
           name,
           DiagnosticsScreen(
             repository: sample.diagnosticsRepository(now: _now),
+            client: ClientHealthRecorder(
+              origin: CallOrigin.app,
+              store: InMemoryClientHealthStore(SampleData.clientHealth(_now)),
+            ),
             clock: () => _now,
           ),
           then: () async {
@@ -739,6 +747,16 @@ void main() {
                 await tester.pumpAndSettle();
               case 'app':
                 await tester.tap(find.text('App'));
+                await tester.pumpAndSettle();
+              case 'errors':
+                await tester.tap(find.text('App'));
+                await tester.pumpAndSettle();
+                await tester.drag(
+                  find.byType(ListView).last,
+                  const Offset(0, -1100),
+                );
+                await tester.pumpAndSettle();
+                await tester.tap(find.text('update_event').first);
                 await tester.pumpAndSettle();
             }
           },

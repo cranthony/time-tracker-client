@@ -596,11 +596,31 @@ notes, proposals, people, actions, habits -- or one tool), how far back
 mean, median, 95th percentile or max of each 15 minutes, hour, 6 hours or
 day. Each graph says the mean, median, 95th percentile and max of what's
 in view. A pinch -- on a touchscreen or a trackpad, or Ctrl and the mouse
-wheel -- or the buttons zoom all three in together, in time; two fingers
-drag along, and a double tap goes back to the whole range. Scrolling
-scrolls the page. Pull down to fetch again; the last fetched shows offline. Swipe to
-the **App** pane for the app's own metrics -- none yet. A server without
-`get_health` says so.
+wheel -- zooms all of a pane's graphs in together, in time, and the buttons
+zoom keeping the latest in view; two fingers drag along, and a double tap
+goes back to the whole range. Scrolling scrolls the page. Pull down to
+fetch again; the last fetched shows offline. A server without `get_health`
+says so.
+
+Swipe to the **App** pane for the app's own health, recorded on the
+device -- by the app and by its Android background task, both -- with the
+same menus:
+
+- **Tool calls** -- each call the app made to the server, its whole time
+  (retries, signing in and the network included): a line for the app's,
+  and one for the background task's, failed calls dotted red; the last
+  100 of each tool are kept.
+- **Waiting to save** -- how many changes waited in each outbox (notes,
+  actions, events), stacked, each step a change; the last 200 changes
+  are kept.
+- **Errors** -- the last 20, newest first: a call that failed, with its
+  tool, or one the app didn't catch, with where. Tap one to read it in
+  full, and copy it.
+
+Recording is a few microseconds' work in memory; it's written to the
+device a few seconds later, and as the app goes to the background or the
+background task ends, under the same lock the outboxes share (see
+[Changes waiting to save](#changes-waiting-to-save)).
 
 The graphs are drawn with [fl_chart](https://pub.dev/packages/fl_chart).
 

@@ -23,6 +23,7 @@ import 'services/app_settings.dart';
 import 'services/event_store.dart';
 import 'services/actions_repository.dart';
 import 'services/background_refresh.dart';
+import 'services/client_health.dart';
 import 'services/diagnostics_repository.dart';
 import 'services/events_repository.dart';
 import 'services/focus_store.dart';
@@ -62,26 +63,41 @@ Future<void> main() async {
       people: people,
       actions: actions,
     );
+    // Kept in memory, with the sample's own to start with.
+    final health = ClientHealthRecorder(
+      origin: CallOrigin.app,
+      store: InMemoryClientHealthStore(
+        sample == null
+            ? const ClientHealth()
+            : SampleData.clientHealth(DateTime.now()),
+      ),
+    );
+    _recordUncaughtErrors(health);
+    final noteOutbox = NoteOutbox(
+      store: InMemoryOutboxStore(),
+      repository: repository,
+    );
+    final actionOutbox = ActionOutbox(
+      store: InMemoryOutboxStore(),
+      repository: actions,
+    );
+    final eventOutbox = EventOutbox(
+      store: InMemoryOutboxStore(),
+      events: events,
+      proposals: proposals,
+      notices: ProposalNotices(persist: false),
+    );
+    _watchQueues(health, noteOutbox, actionOutbox, eventOutbox);
     runApp(
       TimeTrackerApp(
         repository: repository,
         eventsRepository: events,
         proposalsRepository: proposals,
         actionsRepository: actions,
-        outbox: NoteOutbox(
-          store: InMemoryOutboxStore(),
-          repository: repository,
-        ),
-        actionOutbox: ActionOutbox(
-          store: InMemoryOutboxStore(),
-          repository: actions,
-        ),
-        eventOutbox: EventOutbox(
-          store: InMemoryOutboxStore(),
-          events: events,
-          proposals: proposals,
-          notices: ProposalNotices(persist: false),
-        ),
+        outbox: noteOutbox,
+        actionOutbox: actionOutbox,
+        eventOutbox: eventOutbox,
+        clientHealth: health,
         traitsRepository:
             sample?.traitsRepository() ?? InMemoryTraitsRepository(),
         peopleRepository: people,
@@ -100,14 +116,32 @@ Future<void> main() async {
   }
 
   await BackgroundSync.initialize(backgroundDispatcher);
+  final health = ClientHealthRecorder(origin: CallOrigin.app);
+  _recordUncaughtErrors(health);
   final auth = _authSession(interactive: true);
-  final client = _client(auth);
+  final client = _client(auth, health);
   final cache = PrefsResponseCache();
   final repository = McpNotesRepository(client, cache: cache);
   final actions = McpActionsRepository(client, cache: cache);
   final events = McpEventsRepository(client);
   final proposals = McpProposalRepository(client, cache: cache);
   final settings = AppSettings();
+  final noteOutbox = NoteOutbox(
+    store: PrefsOutboxStore.notes(),
+    repository: repository,
+  );
+  final actionOutbox = ActionOutbox(
+    store: PrefsOutboxStore.actions(),
+    repository: actions,
+  );
+  final eventOutbox = EventOutbox(
+    store: PrefsOutboxStore.events(),
+    events: events,
+    proposals: proposals,
+    notices: ProposalNotices(),
+    persistPause: true,
+  );
+  _watchQueues(health, noteOutbox, actionOutbox, eventOutbox);
   runApp(
     TimeTrackerApp(
       settings: settings,
@@ -115,21 +149,10 @@ Future<void> main() async {
       eventsRepository: events,
       proposalsRepository: proposals,
       actionsRepository: actions,
-      outbox: NoteOutbox(
-        store: PrefsOutboxStore.notes(),
-        repository: repository,
-      ),
-      actionOutbox: ActionOutbox(
-        store: PrefsOutboxStore.actions(),
-        repository: actions,
-      ),
-      eventOutbox: EventOutbox(
-        store: PrefsOutboxStore.events(),
-        events: events,
-        proposals: proposals,
-        notices: ProposalNotices(),
-        persistPause: true,
-      ),
+      outbox: noteOutbox,
+      actionOutbox: actionOutbox,
+      eventOutbox: eventOutbox,
+      clientHealth: health,
       auth: auth,
       cache: cache,
       traitsRepository: McpTraitsRepository(client, cache: cache),
@@ -148,38 +171,83 @@ Future<void> main() async {
 /// pending notes, action saves, and changes to events; and the background
 /// fetch ([_refreshInBackground]).
 @pragma('vm:entry-point')
-void backgroundDispatcher() =>
-    BackgroundSync.run(refresh: _refreshInBackground, () {
-      final client = _client(_authSession(interactive: false));
-      return [
-        NoteOutbox(
-          store: PrefsOutboxStore.notes(),
-          repository: McpNotesRepository(client),
-          sender: Outbox.backgroundSender,
-        ),
-        ActionOutbox(
-          store: PrefsOutboxStore.actions(),
-          repository: McpActionsRepository(client),
-          sender: Outbox.backgroundSender,
-        ),
-        EventOutbox(
-          store: PrefsOutboxStore.events(),
-          sender: Outbox.backgroundSender,
-          events: McpEventsRepository(client),
-          proposals: McpProposalRepository(client),
-          // What came of a change to the proposal, for the app to say.
-          notices: ProposalNotices(),
-          persistPause: true,
-        ),
-      ];
-    });
+void backgroundDispatcher() {
+  _recordUncaughtErrors(_backgroundHealth);
+  BackgroundSync.run(
+    refresh: _refreshInBackground,
+    // What it recorded, kept for the Diagnostics page.
+    done: _backgroundHealth.flush,
+    () {
+      final client = _client(
+        _authSession(interactive: false),
+        _backgroundHealth,
+      );
+      final notes = NoteOutbox(
+        store: PrefsOutboxStore.notes(),
+        repository: McpNotesRepository(client),
+        sender: Outbox.backgroundSender,
+      );
+      final actions = ActionOutbox(
+        store: PrefsOutboxStore.actions(),
+        repository: McpActionsRepository(client),
+        sender: Outbox.backgroundSender,
+      );
+      final events = EventOutbox(
+        store: PrefsOutboxStore.events(),
+        sender: Outbox.backgroundSender,
+        events: McpEventsRepository(client),
+        proposals: McpProposalRepository(client),
+        // What came of a change to the proposal, for the app to say.
+        notices: ProposalNotices(),
+        persistPause: true,
+      );
+      _watchQueues(_backgroundHealth, notes, actions, events);
+      return [notes, actions, events];
+    },
+  );
+}
+
+/// The background task's health: its tool calls, errors and queues, kept
+/// as each task ends.
+final _backgroundHealth = ClientHealthRecorder(origin: CallOrigin.background);
+
+/// Records [health]'s queues' lengths as they change: those waiting to be
+/// sent, refused or not.
+void _watchQueues(
+  ClientHealthRecorder health,
+  NoteOutbox notes,
+  ActionOutbox actions,
+  EventOutbox events,
+) => health.watchQueues(
+  notes: notes,
+  notesCount: () => notes.items.length,
+  actions: actions,
+  actionsCount: () => actions.items.length,
+  events: events,
+  eventsCount: () => events.items.length,
+);
+
+/// Records each error nothing else caught, as well as reporting it as
+/// before.
+void _recordUncaughtErrors(ClientHealthRecorder health) {
+  final flutter = FlutterError.onError;
+  FlutterError.onError = (details) {
+    health.recordError(details.exception, stack: details.stack);
+    flutter?.call(details);
+  };
+  final platform = PlatformDispatcher.instance.onError;
+  PlatformDispatcher.instance.onError = (error, stack) {
+    health.recordError(error, stack: stack);
+    return platform?.call(error, stack) ?? false;
+  };
+}
 
 /// Fetches what the app keeps, into what it keeps (see [refreshCaches]),
 /// says how it went, and schedules the next: after the routines' next
 /// time, sooner while a proposal's expected and hasn't come, or the
 /// fallback -- as the settings say.
 Future<void> _refreshInBackground() async {
-  final client = _client(_authSession(interactive: false));
+  final client = _client(_authSession(interactive: false), _backgroundHealth);
   final cache = PrefsResponseCache();
   final hints = McpScheduleHintsRepository(client, cache: cache);
   final settings = AppSettings();
@@ -223,8 +291,8 @@ AuthSession _authSession({required bool interactive}) => AuthSession(
   receiver: interactive ? platformRedirectReceiver() : null,
 );
 
-McpClient _client(AuthSession auth) =>
-    McpClient(endpoint: Uri.parse(_mcpUrl), auth: auth);
+McpClient _client(AuthSession auth, ClientHealthRecorder health) =>
+    McpClient(endpoint: Uri.parse(_mcpUrl), auth: auth, health: health);
 
 class TimeTrackerApp extends StatefulWidget {
   const TimeTrackerApp({
@@ -242,6 +310,7 @@ class TimeTrackerApp extends StatefulWidget {
     this.habitsRepository,
     this.backgroundRefresh,
     this.diagnosticsRepository,
+    this.clientHealth,
     this.proposalsRepository,
     this.focus,
     this.settings,
@@ -275,6 +344,10 @@ class TimeTrackerApp extends StatefulWidget {
   /// Where the Diagnostics page's metrics come from (see
   /// [DiagnosticsScope]); without it, the menu doesn't offer it.
   final DiagnosticsRepository? diagnosticsRepository;
+
+  /// The app's own health, recorded as it goes, for the Diagnostics page's
+  /// App pane; kept as the app goes to the background.
+  final ClientHealthRecorder? clientHealth;
 
   /// The habits focused on and people prioritized; by default, those
   /// kept on the device.
@@ -365,6 +438,8 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     await BackgroundSync.cancel();
     // The background task may have refreshed tokens and saved notes.
     widget.auth?.reload();
+    // What the background task's changes to the proposal came to.
+    unawaited(widget.eventOutbox?.notices?.load());
     widget.outbox.start();
     widget.actionOutbox.start();
     widget.eventOutbox?.start();
@@ -377,8 +452,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     await widget.outbox.refresh();
     await widget.actionOutbox.refresh();
     await widget.eventOutbox?.refresh();
-    // What the background task's changes to the proposal came to.
-    await widget.eventOutbox?.notices?.load();
+    await widget.clientHealth?.flush();
     if (widget.outbox.hasUnsent ||
         widget.actionOutbox.hasUnsent ||
         (widget.eventOutbox?.hasUnsent ?? false)) {
@@ -415,7 +489,11 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         Widget scoped = PlanMemoryScope(memory: _planMemory, child: child!);
         scoped = AppSettingsScope(settings: _settings, child: scoped);
         if (widget.diagnosticsRepository case final diagnostics?) {
-          scoped = DiagnosticsScope(repository: diagnostics, child: scoped);
+          scoped = DiagnosticsScope(
+            repository: diagnostics,
+            client: widget.clientHealth,
+            child: scoped,
+          );
         }
         if (widget.backgroundRefresh case final refresh?) {
           scoped = BackgroundRefreshScope(refresh: refresh, child: scoped);
