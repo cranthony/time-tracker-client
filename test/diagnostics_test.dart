@@ -286,17 +286,22 @@ void main() {
       expect(find.text('Day'), findsOneWidget);
     });
 
-    testWidgets('zooms in, and back out', (tester) async {
+    testWidgets('zooms in keeping the latest in view, and back out', (
+      tester,
+    ) async {
       await open(tester, InMemoryDiagnosticsRepository(_health()));
 
       await tester.tap(find.byTooltip('Zoom in'));
       await tester.pumpAndSettle();
       expect(find.textContaining('(zoomed in)'), findsOneWidget);
-      // The middle of the day: the calls of the last few hours are out.
+      // The last twelve hours: the calls of the last few are still in view.
+      expect(find.text('3 calls in view, 1 failed'), findsOneWidget);
+      expect(find.textContaining('Oct 9, 12:00 PM (zoomed in)'), findsNothing);
+
+      await tester.tap(find.byTooltip('Earlier'));
+      await tester.pumpAndSettle();
       expect(find.text('No calls in view.'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Later'));
-      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Later'));
       await tester.pumpAndSettle();
       expect(find.text('3 calls in view, 1 failed'), findsOneWidget);
@@ -339,16 +344,14 @@ void main() {
       );
     });
 
-    testWidgets("swipes to the app's pane, empty for now", (tester) async {
+    testWidgets("swipes to the app's pane, saying when the app's health "
+        "isn't recorded", (tester) async {
       await open(tester, InMemoryDiagnosticsRepository(_health()));
 
       await tester.tap(find.text('App'));
       await tester.pumpAndSettle();
 
-      expect(
-        find.textContaining("app's own metrics come later"),
-        findsOneWidget,
-      );
+      expect(find.textContaining("isn't recorded here"), findsOneWidget);
     });
 
     testWidgets('opens from the app menu', (tester) async {

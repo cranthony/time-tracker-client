@@ -78,25 +78,30 @@ class BackgroundSync {
 
   /// Call from the background dispatcher. [build] creates the outboxes,
   /// wired to the server, without any UI; [refresh] runs the background
-  /// fetch.
+  /// fetch; [done] runs as each task ends, however it went.
   static void run(
     List<Outbox> Function() build, {
     Future<void> Function()? refresh,
+    Future<void> Function()? done,
   }) {
     Workmanager().executeTask((task, _) async {
-      if (task == refreshTask) {
-        // It schedules the next itself; a failed one waits for that.
-        await refresh?.call();
-        return true;
+      try {
+        if (task == refreshTask) {
+          // It schedules the next itself; a failed one waits for that.
+          await refresh?.call();
+          return true;
+        }
+        final results = [
+          for (final outbox in build()) await outbox.flush(ignoreBackoff: true),
+        ];
+        // Returning false has WorkManager retry later. Nothing will change
+        // without the user signing in, so stop in that case.
+        // Nor will anything be sent past a write the server refused.
+        return results.every((r) => r.remaining == 0 || r.blocked) ||
+            results.any((r) => r.needsSignIn);
+      } finally {
+        await done?.call();
       }
-      final results = [
-        for (final outbox in build()) await outbox.flush(ignoreBackoff: true),
-      ];
-      // Returning false has WorkManager retry later. Nothing will change
-      // without the user signing in, so stop in that case.
-      // Nor will anything be sent past a write the server refused.
-      return results.every((r) => r.remaining == 0 || r.blocked) ||
-          results.any((r) => r.needsSignIn);
     });
   }
 }

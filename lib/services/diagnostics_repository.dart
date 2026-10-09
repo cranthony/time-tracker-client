@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../models/server_health.dart';
+import 'client_health.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
@@ -64,21 +65,24 @@ class InMemoryDiagnosticsRepository implements DiagnosticsRepository {
 }
 
 /// Makes a [DiagnosticsRepository] available below it -- for the app
-/// menu's Diagnostics.
+/// menu's Diagnostics -- and the app's own health, recorded as it goes
+/// ([client]).
 class DiagnosticsScope extends InheritedWidget {
   const DiagnosticsScope({
     super.key,
     required this.repository,
+    this.client,
     required super.child,
   });
 
   final DiagnosticsRepository repository;
+  final ClientHealthRecorder? client;
 
-  /// The nearest one's repository, or null if there's none.
-  static DiagnosticsRepository? of(BuildContext context) =>
-      context.getInheritedWidgetOfExactType<DiagnosticsScope>()?.repository;
+  /// The nearest one, or null if there's none.
+  static DiagnosticsScope? of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<DiagnosticsScope>();
 
   @override
   bool updateShouldNotify(DiagnosticsScope oldWidget) =>
-      repository != oldWidget.repository;
+      repository != oldWidget.repository || client != oldWidget.client;
 }

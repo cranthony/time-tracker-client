@@ -14,6 +14,7 @@ import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/events_repository.dart';
 import '../services/actions_repository.dart';
+import '../services/client_health.dart';
 import '../services/diagnostics_repository.dart';
 import '../services/focus_store.dart';
 import '../services/habits_repository.dart';
@@ -141,6 +142,125 @@ class SampleData {
         }(),
     ];
     return ServerHealth(tools: health, memory: memory, restarts: restarts);
+  }
+
+  /// The app's own health, up to [now]: a few days of its tool calls --
+  /// most the app's, writes now and then from the background task, an
+  /// offline stretch failing -- the errors, and the outboxes' queues
+  /// filling while offline and emptying after.
+  static ClientHealth clientHealth(DateTime now) {
+    final random = Random(11);
+    final end = now.toUtc();
+    final offlineFrom = end.subtract(const Duration(hours: 7));
+    final offlineTo = end.subtract(const Duration(hours: 5, minutes: 30));
+    bool offline(DateTime t) => t.isAfter(offlineFrom) && t.isBefore(offlineTo);
+    // (tool, every, ms, from the background task one time in so many).
+    const tools = [
+      ('list_events', Duration(minutes: 11), 520, 0),
+      ('get_notes', Duration(minutes: 29), 380, 0),
+      ('note', Duration(minutes: 53), 610, 3),
+      ('update_event', Duration(hours: 2), 760, 4),
+      ('amend_proposal', Duration(hours: 6), 1700, 0),
+      ('get_health', Duration(hours: 9), 300, 0),
+    ];
+    final calls = <String, List<ClientCall>>{};
+    final errors = <ClientError>[];
+    for (final (tool, every, ms, background) in tools) {
+      final mine = <ClientCall>[];
+      var at = end;
+      while (mine.length < 100 &&
+          end.difference(at) < const Duration(days: 4)) {
+        at = at.subtract(every * (0.5 + random.nextDouble()));
+        final down = offline(at);
+        final origin = background > 0 && random.nextInt(background) == 0
+            ? CallOrigin.background
+            : CallOrigin.app;
+        mine.add(
+          ClientCall(
+            tool: tool,
+            at: at,
+            ms: down ? 30000 : (ms * (0.6 + random.nextDouble() * 0.9)).round(),
+            ok: !down && random.nextInt(60) != 0,
+            origin: origin,
+          ),
+        );
+        if (down && errors.length < 12) {
+          errors.add(
+            ClientError(
+              at: at,
+              origin: origin,
+              tool: tool,
+              kind: 'TimeoutException',
+              message:
+                  'TimeoutException after 0:00:30.000000: Future not '
+                  'completed',
+            ),
+          );
+        }
+      }
+      calls[tool] = mine..sort((a, b) => a.at.compareTo(b.at));
+    }
+    errors.addAll([
+      ClientError(
+        at: end.subtract(const Duration(hours: 2, minutes: 12)),
+        origin: CallOrigin.app,
+        tool: 'update_event',
+        kind: 'McpException',
+        message:
+            'Tool update_event failed: it would overlap “Call Mom”, '
+            '1:00 PM – 1:30 PM\n\nit would overlap “Call Mom”, 1:00 PM – '
+            '1:30 PM',
+      ),
+      ClientError(
+        at: end.subtract(const Duration(minutes: 40)),
+        origin: CallOrigin.app,
+        kind: 'StateError',
+        message: 'Bad state: No element',
+        stack:
+            '#0      Iterable.single (dart:core/iterable.dart:696:24)\n'
+            '#1      _EventsScreenState._showEvent '
+            '(package:time_tracker_client/screens/events_screen.dart:812:9)',
+      ),
+    ]);
+    errors.sort((a, b) => a.at.compareTo(b.at));
+    // Filling while offline, one by one; emptied soon after.
+    final queue = <QueueSample>[
+      QueueSample(at: end.subtract(const Duration(days: 1))),
+    ];
+    var notes = 0, events = 0;
+    for (
+      var t = offlineFrom;
+      t.isBefore(offlineTo);
+      t = t.add(const Duration(minutes: 13))
+    ) {
+      if (random.nextBool()) {
+        notes++;
+      } else {
+        events++;
+      }
+      queue.add(QueueSample(at: t, notes: notes, events: events));
+    }
+    for (
+      var t = offlineTo.add(const Duration(minutes: 1));
+      notes + events > 0;
+      t = t.add(const Duration(seconds: 20))
+    ) {
+      if (events > 0) {
+        events--;
+      } else {
+        notes--;
+      }
+      queue.add(QueueSample(at: t, notes: notes, events: events));
+    }
+    queue.add(
+      QueueSample(at: end.subtract(const Duration(minutes: 25)), actions: 1),
+    );
+    queue.add(QueueSample(at: end.subtract(const Duration(minutes: 24))));
+    return ClientHealth(
+      calls: calls,
+      errors: errors.sublist(max(0, errors.length - 20)),
+      queue: queue,
+    );
   }
 
   /// When Claude's routines run: compacting in the morning and evening,

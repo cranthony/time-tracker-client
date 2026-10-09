@@ -6,6 +6,22 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.43.0
+
+- Diagnostics' **App** pane: the app's own health, recorded on the device,
+  by the app and its background task both. Its tool calls -- each one's
+  whole time, retries and the network included, a line for the app's and
+  one for the background task's, failed ones dotted red, the last 100 of
+  each tool kept -- filtered and summed up as the server's are; how many
+  changes waited to save in each outbox, stacked, over time; and the last
+  20 errors, in full, to copy: failed calls, and errors the app didn't
+  catch, with where.
+- Diagnostics' zoom buttons keep the latest in view, on the right, rather
+  than the middle.
+- Fixed: what the background task's changes to the proposal came to was
+  only said once the app had gone to the background and come back, not
+  as soon as it came back.
+
 ## 7.42.0
 
 - **Diagnostics**, in the ⋮ menu: the server's health, from its

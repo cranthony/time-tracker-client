@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'client_health.dart';
+
 import 'server_errors.dart';
 
 class McpException implements Exception {
@@ -52,6 +54,7 @@ class McpClient {
   McpClient({
     required this.endpoint,
     this.auth,
+    this.health,
     http.Client? httpClient,
     this.retryDelays = const [
       Duration(milliseconds: 500),
@@ -65,6 +68,11 @@ class McpClient {
   final Uri endpoint;
   final McpAuth? auth;
   final http.Client _http;
+
+  /// Where each tool call is recorded -- how long it took, retries and
+  /// all, and whether it failed -- for the Diagnostics page; nowhere,
+  /// without it.
+  final ClientHealthRecorder? health;
 
   /// How long to wait before each retry of a call that failed in a way
   /// that may well pass (see the class docs): one try more than there are
@@ -83,11 +91,26 @@ class McpClient {
       const {'prepare_judgments'}.contains(name);
 
   /// Calls [name] with [arguments] and returns the tool's result, decoded
-  /// from JSON where possible -- retried as the class docs say.
+  /// from JSON where possible -- retried as the class docs say. Recorded
+  /// in [health], if there is one.
   Future<Object?> callTool(
     String name, [
     Map<String, Object?> arguments = const {},
   ]) async {
+    final health = this.health;
+    if (health == null) return _callTool(name, arguments);
+    final watch = Stopwatch()..start();
+    try {
+      final result = await _callTool(name, arguments);
+      health.recordCall(name, watch.elapsedMilliseconds);
+      return result;
+    } catch (e) {
+      health.recordCall(name, watch.elapsedMilliseconds, error: e);
+      rethrow;
+    }
+  }
+
+  Future<Object?> _callTool(String name, Map<String, Object?> arguments) async {
     final safe = readsOnly(name);
     for (var attempt = 0; ; attempt++) {
       // Whether the call's been sent: before it, any failure is safe to

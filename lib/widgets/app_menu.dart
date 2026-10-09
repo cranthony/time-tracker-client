@@ -48,7 +48,10 @@ class AppMenu extends StatelessWidget {
         _MenuItem.outbox => outbox!.show(context),
         _MenuItem.diagnostics => Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => DiagnosticsScreen(repository: diagnostics!),
+            builder: (_) => DiagnosticsScreen(
+              repository: diagnostics!.repository,
+              client: diagnostics.client,
+            ),
           ),
         ),
         _MenuItem.about => showAboutDialog(
