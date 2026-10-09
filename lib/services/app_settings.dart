@@ -1,5 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'keep_rules.dart';
 
 import '../models/schedule_hints.dart';
 import '../widgets/cursor_modes.dart';
@@ -28,6 +32,27 @@ class AppSettings extends ChangeNotifier {
   static const defaultGrid = Duration(minutes: 15);
   static const _gridKey = 'settings_grid_minutes';
   static const _snapKey = 'settings_snap';
+  static const _keepRulesKey = 'settings_keep_rules';
+
+  List<KeepRule> _keepRules = KeepRule.defaults;
+
+  /// What goes in a new or moved event's Keep list as its box starts.
+  List<KeepRule> get keepRules => List.unmodifiable(_keepRules);
+
+  /// Sets the rules, and keeps them.
+  Future<void> setKeepRules(List<KeepRule> rules) async {
+    _keepRules = [...rules];
+    notifyListeners();
+    if (!persist) return;
+    try {
+      await SharedPreferencesAsync().setString(
+        _keepRulesKey,
+        jsonEncode([for (final r in rules) r.toJson()]),
+      );
+    } catch (_) {
+      // Kept while the app runs, then.
+    }
+  }
 
   /// What a cursor stops at, besides the grid, until it's changed.
   static const defaultSnap = {SnapTo.events, SnapTo.notes};
@@ -132,6 +157,11 @@ class AppSettings extends ChangeNotifier {
       _endMode =
           EndMode.values.asNameMap()[await prefs.getString(_endModeKey)] ??
           _endMode;
+      if (await prefs.getString(_keepRulesKey) case final json?) {
+        _keepRules = [
+          for (final r in jsonDecode(json) as List) ?KeepRule.fromJson(r),
+        ];
+      }
       if (await prefs.getStringList(_snapKey) case final names?) {
         _snap = {
           for (final snap in SnapTo.values)
