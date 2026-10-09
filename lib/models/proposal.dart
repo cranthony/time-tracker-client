@@ -339,8 +339,13 @@ class Proposal {
   bool inExtension(DateTime time) =>
       extended && time.isAfter(claudeThrough!) && !time.isAfter(through);
 
-  /// Every event of its days, as it leaves them; null when it no longer
-  /// plans, with [problem] saying why.
+  /// Every event of its span, as it leaves them, and those it creates:
+  /// from the one that ended just before [windowStart] through its last
+  /// night -- the end-of-day sleep that ends after [through] -- those
+  /// after [through] `planned`. They're all its plan: nothing is moved to
+  /// make room, so one still to come is in it for what's moved to keep
+  /// clear of, and confirming checks it hasn't changed. Null when it no
+  /// longer plans, with [problem] saying why.
   final List<ProposalEvent>? events;
   final String? problem;
 

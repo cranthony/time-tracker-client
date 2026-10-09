@@ -25,6 +25,29 @@ enum EventWriteKind {
 
   /// Edits the open compaction proposal.
   amend,
+
+  /// Confirms a revision of the open proposal: applies it, if the calendar
+  /// still plans it the same.
+  confirm,
+
+  /// Resumes applying a confirmed proposal that stopped partway.
+  finish,
+
+  /// Gives up the open proposal.
+  abandon,
+
+  /// Leaves a note for Claude on the open proposal.
+  addNote,
+
+  /// Withdraws a note left for Claude.
+  withdrawNote;
+
+  /// Whether it closes its proposal, one way or another: nothing's made of
+  /// the proposal after it.
+  bool get closes => this == confirm || this == finish || this == abandon;
+
+  /// Whether it's of the open proposal, not the calendar's events.
+  bool get ofProposal => index >= amend.index;
 }
 
 /// A change to the calendar's events, or to the open compaction proposal,
@@ -50,6 +73,8 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     this.proposalId,
     this.revision,
     this.edits = const ProposalEdits(),
+    this.note = const {},
+    this.feedbackId,
     this.attempts = 0,
     this.lastError,
     this.nextAttemptAt,
@@ -87,11 +112,21 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
   /// settled.
   final bool allowHistory;
 
-  /// An amend's proposal, and the revision it's made on: that of the edit
-  /// before it, once that's saved.
+  /// The proposal it's of, and the revision the user was looking at when
+  /// they made it: what an amend is laid over the current revision from
+  /// (so the server says which of Claude's newer changes it replaced),
+  /// and what a confirm confirms. Null only in an amend kept by an older
+  /// version of the app.
   final String? proposalId;
   final int? revision;
   final ProposalEdits edits;
+
+  /// A note for Claude's `text`, and what it's about: `event_id`, `at`
+  /// and `note_id`, as `add_proposal_note` takes them.
+  final Map<String, Object?> note;
+
+  /// The note a withdrawal withdraws.
+  final String? feedbackId;
 
   @override
   final int attempts;
@@ -139,6 +174,12 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
         for (final id in edits.asPlanned) id: null,
         for (var i = 0; i < edits.creates.length; i++) pendingId(i): null,
       },
+      // What they hold is the proposal: see EventOutbox.closing.
+      EventWriteKind.confirm ||
+      EventWriteKind.finish ||
+      EventWriteKind.abandon ||
+      EventWriteKind.addNote ||
+      EventWriteKind.withdrawNote => const {},
     };
   }
 
@@ -186,17 +227,45 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
         ofOver(over, 1);
       case EventWriteKind.makeRoom:
         ofOver(over, 0);
-      case EventWriteKind.amend:
+      case EventWriteKind.amend ||
+          EventWriteKind.confirm ||
+          EventWriteKind.finish ||
+          EventWriteKind.abandon ||
+          EventWriteKind.addNote ||
+          EventWriteKind.withdrawNote:
         break;
     }
   }
 
-  /// [proposal] with it applied, if it's an edit of it: the events it
-  /// updates, cancels, puts back and creates, as the user decided them.
+  /// [proposal] with it applied, if it's of it: the events an edit
+  /// updates, cancels, puts back and creates, as the user decided them; a
+  /// note left, open, under a [pendingId], or one withdrawn.
   Proposal projectProposal(Proposal proposal) {
-    if (kind != EventWriteKind.amend || proposalId != proposal.id) {
-      return proposal;
+    if (proposalId != proposal.id) return proposal;
+    if (kind == EventWriteKind.addNote || kind == EventWriteKind.withdrawNote) {
+      final feedback = [
+        for (final f in proposal.feedback)
+          f.id == feedbackId ? f.withStatus(FeedbackStatus.withdrawn) : f,
+        if (kind == EventWriteKind.addNote)
+          ProposalFeedback(
+            id: pendingId(),
+            text: '${note['text'] ?? ''}',
+            eventId: note['event_id'] as String?,
+            at: DateTime.tryParse('${note['at']}'),
+            noteId: note['note_id'] as String?,
+            created: made,
+          ),
+      ];
+      return proposal.copyWith(
+        feedback: feedback,
+        state: !proposal.state.open
+            ? null
+            : feedback.any((f) => f.open)
+            ? ProposalState.awaitingClaude
+            : ProposalState.awaitingReview,
+      );
     }
+    if (kind != EventWriteKind.amend) return proposal;
     if (edits.through case final through?
         when through.isAfter(proposal.through)) {
       proposal = proposal.copyWith(through: through);
@@ -286,6 +355,8 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     proposalId: proposalId,
     revision: revision ?? this.revision,
     edits: edits ?? this.edits,
+    note: note,
+    feedbackId: feedbackId,
     attempts: attempts ?? this.attempts,
     lastError: lastError != null ? lastError() : this.lastError,
     nextAttemptAt: nextAttemptAt != null ? nextAttemptAt() : this.nextAttemptAt,
@@ -307,6 +378,8 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     'proposal_id': ?proposalId,
     'revision': ?revision,
     if (!edits.isEmpty) 'edits': edits.toJson(),
+    if (note.isNotEmpty) 'note': note,
+    'feedback_id': ?feedbackId,
     'attempts': attempts,
     'last_error': ?lastError,
     'next_attempt_at': ?nextAttemptAt?.toUtc().toIso8601String(),
@@ -339,6 +412,8 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
       edits: json['edits'] is Map
           ? ProposalEdits.fromJson((json['edits'] as Map).cast())
           : const ProposalEdits(),
+      note: map(json['note']),
+      feedbackId: json['feedback_id'] as String?,
       attempts: json['attempts'] as int? ?? 0,
       lastError: json['last_error'] as String?,
       nextAttemptAt: time(json['next_attempt_at']),

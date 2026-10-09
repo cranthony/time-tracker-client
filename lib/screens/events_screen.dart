@@ -634,8 +634,19 @@ class _EventsScreenState extends State<EventsScreen> {
       _proposal?.covers(start, end) ?? false;
 
   /// The events changed since the user last looked at the proposal.
-  Set<String> get _changedSince =>
-      (_proposal?.changedSince ?? const {}).difference(_editedHere);
+  Set<String> get _changedSince => {
+    ...(_proposal?.changedSince ?? const {}).difference(_editedHere),
+    // Those an edit sent from the queue replaced Claude's newer changes to.
+    for (final n in _notices)
+      if (n.kind == ProposalNoticeKind.replaced &&
+          n.proposalId == _proposal?.id)
+        ...n.eventIds,
+  };
+
+  /// What came of changes to the proposal sent from the queue, not yet
+  /// dismissed.
+  List<ProposalNotice> get _notices =>
+      widget.eventOutbox?.notices?.notices ?? const [];
 
   /// What the open proposal does to each of its events, and which wait
   /// for a change to be saved, to mark them.
@@ -741,6 +752,9 @@ class _EventsScreenState extends State<EventsScreen> {
     _loadActions();
     widget.outbox?.addListener(_outboxChanged);
     widget.eventOutbox?.addListener(_memoryChanged);
+    widget.eventOutbox?.notices
+      ?..addListener(_memoryChanged)
+      ..load();
     _savedWrites = widget.eventOutbox?.saved.listen(_writeSaved);
     _showEvents = widget.showEventRequests?.listen(_showEvent);
     _loadNotes(cached: true);
@@ -774,6 +788,24 @@ class _EventsScreenState extends State<EventsScreen> {
             });
           _proposal = amended.copyWith(changedSince: loaded.changedSince);
         });
+      // What came of it is said in the notices: here, it's only shown.
+      case ProposalOutcome(status: ProposalOutcomeStatus.applied):
+        _sawProposal();
+        setState(() {
+          _proposal = null;
+          _editedHere.clear();
+        });
+        _fresh.clear();
+        // The last compaction is its through now.
+        unawaited(_loadNotes());
+        unawaited(_refresh());
+      case ProposalOutcome(status: ProposalOutcomeStatus.abandoned):
+        setState(() => _proposal = null);
+      case _ when write.kind == EventWriteKind.abandon:
+        setState(() => _proposal = null);
+      case _ when write.kind.ofProposal:
+        // A new revision, or a note left or withdrawn.
+        unawaited(_loadProposal());
     }
   }
 
@@ -959,6 +991,7 @@ class _EventsScreenState extends State<EventsScreen> {
     _lifecycle.dispose();
     widget.outbox?.removeListener(_outboxChanged);
     widget.eventOutbox?.removeListener(_memoryChanged);
+    widget.eventOutbox?.notices?.removeListener(_memoryChanged);
     _savedWrites?.cancel();
     _showEvents?.cancel();
     _unhighlight?.cancel();
@@ -2518,6 +2551,24 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
+  /// Queues [action] on the open proposal, as the server gave it, with the
+  /// [EventOutbox]; says [queued] once it is, or why it can't be.
+  Future<void> _queueOnProposal(
+    String queued,
+    Future<void> Function(Proposal proposal, EventOutbox outbox) action,
+  ) async {
+    final proposal = _loadedProposal;
+    final outbox = widget.eventOutbox;
+    if (proposal == null || outbox == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await action(proposal, outbox);
+      messenger.showSnackBar(SnackBar(content: Text(queued)));
+    } on ProposalEditException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   /// Confirms the open proposal, as shown.
   Future<void> _confirmProposal() async {
     final waiting = [
@@ -2547,6 +2598,13 @@ class _EventsScreenState extends State<EventsScreen> {
       );
       return;
     }
+    if (widget.eventOutbox != null) {
+      return _queueOnProposal(
+        "Confirm waiting to save: it goes as soon as it can, and what came "
+        'of it shows here.',
+        (proposal, outbox) => outbox.confirm(proposal),
+      );
+    }
     return _onProposal(
       "Couldn't confirm it",
       (proposal, repository) async =>
@@ -2555,11 +2613,19 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// Resumes the apply of the open proposal, where it stopped.
-  Future<void> _finishProposal() => _onProposal(
-    "Couldn't finish it",
-    (proposal, repository) async =>
-        _confirmed(proposal, await repository.finish(proposal)),
-  );
+  Future<void> _finishProposal() async {
+    if (widget.eventOutbox != null) {
+      return _queueOnProposal(
+        'Finishing it waits to save: it goes as soon as it can.',
+        (proposal, outbox) => outbox.finish(proposal),
+      );
+    }
+    return _onProposal(
+      "Couldn't finish it",
+      (proposal, repository) async =>
+          _confirmed(proposal, await repository.finish(proposal)),
+    );
+  }
 
   /// Shows what confirming [proposal], or finishing it, came to: applied,
   /// it's history; rechecked, or rebuilt, a new revision to confirm; or
@@ -2775,17 +2841,29 @@ class _EventsScreenState extends State<EventsScreen> {
       subject: subject,
     );
     if (note == null || !mounted) return;
+    // What's added is named by its ref.
+    final eventId = switch ((aboutNote, aboutAddition)) {
+      (null, null) => note.eventId,
+      (_, final a?) => a.ref,
+      _ => null,
+    };
+    if (widget.eventOutbox != null) {
+      return _queueOnProposal(
+        "Note left. It's waiting for Claude to answer.",
+        (proposal, outbox) => outbox.addNote(
+          proposal,
+          note.text,
+          eventId: eventId,
+          noteId: aboutNote?.id,
+        ),
+      );
+    }
     final messenger = ScaffoldMessenger.of(context);
     await _onProposal("Couldn't leave the note", (proposal, repository) async {
       await repository.addNote(
         proposal,
         note.text,
-        // What's added is named by its ref.
-        eventId: switch ((aboutNote, aboutAddition)) {
-          (null, null) => note.eventId,
-          (_, final a?) => a.ref,
-          _ => null,
-        },
+        eventId: eventId,
         noteId: aboutNote?.id,
       );
       await _loadProposal();
@@ -2817,6 +2895,11 @@ class _EventsScreenState extends State<EventsScreen> {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     switch (action) {
+      case WithdrawNote(:final feedback) when widget.eventOutbox != null:
+        await _queueOnProposal(
+          'Note withdrawn.',
+          (proposal, outbox) => outbox.withdrawNote(proposal, feedback.id),
+        );
       case WithdrawNote(:final feedback):
         await _onProposal("Couldn't withdraw it", (_, repository) async {
           await repository.withdrawNote(feedback.id);
@@ -2858,6 +2941,12 @@ class _EventsScreenState extends State<EventsScreen> {
       ),
     );
     if (sure != true || !mounted) return;
+    if (widget.eventOutbox != null) {
+      return _queueOnProposal(
+        'Abandoning it waits to save: it goes as soon as it can.',
+        (proposal, outbox) => outbox.abandon(proposal),
+      );
+    }
     await _onProposal("Couldn't abandon it", (proposal, repository) async {
       await repository.abandon(proposal);
       if (!mounted) return;
@@ -3319,10 +3408,16 @@ class _EventsScreenState extends State<EventsScreen> {
             durations: _summaryDurations,
             onDurations: _setSummaryDurations,
           ),
+        if (_notices.isNotEmpty)
+          ProposalNoticesBanner(
+            notices: _notices,
+            onDismiss: (notice) => widget.eventOutbox?.notices?.dismiss(notice),
+          ),
         if (_proposal case final proposal?)
           ProposalBar(
             proposal: proposal,
             busy: _proposalBusy,
+            closing: widget.eventOutbox?.closing(proposal.id)?.label,
             changes: _changedSince.length,
             onConfirm: _confirmProposal,
             onNote: _noteForClaude,

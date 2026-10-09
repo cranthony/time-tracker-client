@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/event.dart';
+import '../models/note.dart' show localIsoTimestamp;
 import '../models/proposal.dart';
 import '../services/events_repository.dart';
 import '../services/mcp_client.dart';
@@ -11,9 +12,11 @@ import '../services/proposal_repository.dart';
 import '../widgets/other_events.dart';
 import 'outbox.dart';
 import 'pending_event_write.dart';
+import 'proposal_notices.dart';
 
 export 'outbox.dart' show FlushResult;
 export 'pending_event_write.dart';
+export 'proposal_notices.dart';
 
 /// How the Events page changes events and the open proposal: at once, on
 /// the server ([DirectEventWrites]), or by way of the [EventOutbox],
@@ -124,12 +127,20 @@ class DirectEventWrites implements EventWrites {
 /// [projectProposal]), and what it writes can't be written again
 /// ([locked]): the events, and fields, it changes stay as it left them.
 /// [saved] says what each saved, for the app's events to be updated.
+///
+/// What's done to the proposal is queued too: edits, notes for Claude,
+/// and confirming, finishing or abandoning it ([confirm], [finish],
+/// [abandon]) -- after which nothing more of it is taken ([closing]).
+/// What comes of one that the user should hear of, even if it's sent
+/// with the app closed, goes in [notices]: an edit that replaced Claude's
+/// newer changes, and what a confirm came to.
 class EventOutbox extends Outbox<PendingEventWrite, Object?>
     implements EventWrites {
   EventOutbox({
     required super.store,
     required this._events,
     this._proposals,
+    this.notices,
     this.persistPause = false,
     super.clock,
     Random? random,
@@ -138,6 +149,10 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
   final EventsRepository _events;
   final ProposalRepository? _proposals;
   final Random _random;
+
+  /// Where what came of the proposal's changes is said; without it, it
+  /// isn't.
+  final ProposalNotices? notices;
 
   /// Whether a pause is kept on the device, for the next run of the app,
   /// and the background task, to keep to.
@@ -305,28 +320,156 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
 
   static String _count(int n) => n == 1 ? '1 event' : '$n events';
 
+  /// [proposal] is the revision the user is looking at, as the server
+  /// gave it -- not as the writes waiting show it: the edit is laid over
+  /// whatever's current when it's sent, from that revision, so the server
+  /// says which of Claude's newer changes it replaced.
   @override
   Future<Proposal> amend(
     Proposal proposal,
     ProposalEdits edits, {
     String? label,
   }) async {
-    // On the revision shown -- or, behind another edit of it, the one
-    // that edit makes, once it's saved.
-    final behind = items.any(
-      (w) => w.kind == EventWriteKind.amend && w.proposalId == proposal.id,
+    _refuseIfClosing(proposal);
+    await _add(
+      PendingEventWrite(
+        id: _newId(),
+        kind: EventWriteKind.amend,
+        label: label ?? 'Change what happened',
+        made: now(),
+        proposalId: proposal.id,
+        revision: proposal.revision,
+        edits: edits,
+      ),
     );
-    final write = PendingEventWrite(
+    return projectProposal(proposal)!;
+  }
+
+  /// Queues confirming [proposal]'s revision, as the server gave it: it's
+  /// applied once it's sent, if that's still the current revision and
+  /// the calendar still plans it the same. Refused while an edit of it
+  /// waits: what's confirmed is to be what's shown.
+  Future<void> confirm(Proposal proposal) async {
+    _refuseIfClosing(proposal);
+    if (amends(proposal)) {
+      throw ProposalEditException(
+        'A change to it is still waiting to save. Confirm it once '
+        "that's saved, so what you confirm is what's shown.",
+      );
+    }
+    await _addOf(proposal, EventWriteKind.confirm, 'Confirm what happened');
+  }
+
+  /// Queues finishing applying [proposal], confirmed, where it stopped.
+  Future<void> finish(Proposal proposal) async {
+    _refuseIfClosing(proposal);
+    await _addOf(
+      proposal,
+      EventWriteKind.finish,
+      'Finish applying what happened',
+    );
+  }
+
+  /// Queues abandoning [proposal]. Writes of it already made stay.
+  Future<void> abandon(Proposal proposal) async {
+    _refuseIfClosing(proposal);
+    await _addOf(proposal, EventWriteKind.abandon, 'Abandon the proposal');
+  }
+
+  /// Queues leaving [text] for Claude on [proposal], about [eventId], [at]
+  /// or the time note [noteId], if given. Until it's answered, the
+  /// proposal can't be confirmed.
+  Future<void> addNote(
+    Proposal proposal,
+    String text, {
+    String? eventId,
+    DateTime? at,
+    String? noteId,
+  }) async {
+    _refuseIfClosing(proposal);
+    await _addOf(
+      proposal,
+      EventWriteKind.addNote,
+      'Note for Claude',
+      note: {
+        'text': text,
+        'event_id': ?eventId,
+        'at': ?(at == null ? null : localIsoTimestamp(at)),
+        'note_id': ?noteId,
+      },
+    );
+  }
+
+  /// Queues withdrawing the note [feedbackId] from [proposal] -- or, if
+  /// it's one still waiting to be left, drops that.
+  Future<void> withdrawNote(Proposal proposal, String feedbackId) async {
+    final waiting = items
+        .where(
+          (w) =>
+              w.kind == EventWriteKind.addNote && w.pendingId() == feedbackId,
+        )
+        .firstOrNull;
+    if (waiting != null) {
+      if (!await drop(waiting)) {
+        throw ProposalEditException(
+          "It's being sent: withdraw it once it's left.",
+        );
+      }
+      return;
+    }
+    _refuseIfClosing(proposal);
+    await _addOf(
+      proposal,
+      EventWriteKind.withdrawNote,
+      'Withdraw a note for Claude',
+      feedbackId: feedbackId,
+    );
+  }
+
+  Future<void> _addOf(
+    Proposal proposal,
+    EventWriteKind kind,
+    String label, {
+    Map<String, Object?> note = const {},
+    String? feedbackId,
+  }) => _add(
+    PendingEventWrite(
       id: _newId(),
-      kind: EventWriteKind.amend,
-      label: label ?? 'Change what happened',
+      kind: kind,
+      label: label,
       made: now(),
       proposalId: proposal.id,
-      revision: behind ? null : proposal.revision,
-      edits: edits,
-    );
-    await _add(write);
-    return projectProposal(proposal)!;
+      revision: proposal.revision,
+      note: note,
+      feedbackId: feedbackId,
+    ),
+  );
+
+  /// The write waiting that confirms, finishes or abandons [proposalId],
+  /// if one does: nothing more of it is taken after it.
+  PendingEventWrite? closing(String proposalId) => items
+      .where((w) => w.kind.closes && w.proposalId == proposalId)
+      .firstOrNull;
+
+  void _refuseIfClosing(Proposal proposal) {
+    if (closing(proposal.id) case final w?) {
+      throw ProposalEditException(
+        '“${w.label}” is waiting to save: nothing more of it can be '
+        'changed. Drop that, from the changes waiting, to change it.',
+      );
+    }
+  }
+
+  /// The writes of [write]'s proposal waiting after it: made on top of
+  /// it, so they may not mean the same without it.
+  List<PendingEventWrite> after(PendingEventWrite write) {
+    if (!write.kind.ofProposal) return const [];
+    final i = items.indexWhere((w) => w.id == write.id);
+    if (i < 0) return const [];
+    return [
+      for (final w in items.skip(i + 1))
+        if (w.kind.ofProposal && w.proposalId == write.proposalId) w,
+    ];
   }
 
   /// [events], as the server last had them, with every write applied:
@@ -506,6 +649,19 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
         _events.makeRoom(item.over, allowCompactedChanges: allow),
       ),
       EventWriteKind.amend => await _amend(item),
+      EventWriteKind.confirm => await _confirm(item, maybeSaved: maybeSaved),
+      EventWriteKind.finish => await _outcome(
+        item,
+        await _proposalsOf().finish(_of(item)).timeout(Outbox.requestTimeout),
+      ),
+      EventWriteKind.abandon => await _abandon(item, maybeSaved: maybeSaved),
+      EventWriteKind.addNote => await _addNote(item, maybeSaved: maybeSaved),
+      EventWriteKind.withdrawNote => await () async {
+        await _proposalsOf()
+            .withdrawNote(item.feedbackId!)
+            .timeout(Outbox.requestTimeout);
+        return null;
+      }(),
     };
     _saved.add((item, result));
     return result;
@@ -532,10 +688,23 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
     return made == null ? null : [made];
   }
 
+  ProposalRepository _proposalsOf() =>
+      _proposals ?? (throw StateError('No proposals to change.'));
+
+  /// [item]'s proposal, at the revision it's of, as the repository takes
+  /// it.
+  static Proposal _of(PendingEventWrite item, [int? revision]) => Proposal(
+    id: item.proposalId!,
+    revision: revision ?? item.revision ?? 0,
+    state: ProposalState.awaitingReview,
+    windowStart: item.made,
+    through: item.made,
+  );
+
   Future<Proposal> _amend(PendingEventWrite item) async {
-    final proposals = _proposals;
-    if (proposals == null) throw StateError('No proposals to amend.');
-    // Behind an edit that was dropped: on the revision there is now.
+    final proposals = _proposalsOf();
+    // Kept by an older version, behind an edit that was dropped: on the
+    // revision there is now.
     final revision =
         item.revision ??
         (await proposals.current().timeout(Outbox.requestTimeout))?.revision;
@@ -543,35 +712,157 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
       throw McpException('amend_proposal: there is no proposal open.');
     }
     final amended = await proposals
-        .amend(
-          Proposal(
-            id: item.proposalId!,
-            revision: revision,
-            state: ProposalState.awaitingReview,
-            windowStart: item.made,
-            through: item.made,
-          ),
-          item.edits,
+        .amend(_of(item, revision), item.edits)
+        .timeout(Outbox.requestTimeout);
+    if (amended.replaced.isNotEmpty) {
+      await _notice(
+        item,
+        ProposalNoticeKind.replaced,
+        revision: amended.revision,
+        eventIds: amended.replaced,
+        eventNames: [
+          for (final id in amended.replaced)
+            switch (amended.event(id)?.summary) {
+              final s? when s.isNotEmpty => '“$s”',
+              _ => 'an event',
+            },
+        ],
+      );
+    }
+    return amended;
+  }
+
+  /// Confirms [item]'s revision. An earlier attempt, unheard
+  /// ([maybeSaved]), may have started applying it, or applied it: that's
+  /// finished instead -- as is one the server says is being applied.
+  Future<ProposalOutcome> _confirm(
+    PendingEventWrite item, {
+    required bool maybeSaved,
+  }) async {
+    final proposals = _proposalsOf();
+    Future<ProposalOutcome> finish() async => _outcome(
+      item,
+      await proposals.finish(_of(item)).timeout(Outbox.requestTimeout),
+    );
+    if (maybeSaved) {
+      try {
+        return await finish();
+      } on McpException catch (e) {
+        // Not confirmed yet: confirm it.
+        if (!'$e'.contains("hasn't been confirmed")) rethrow;
+      }
+    }
+    try {
+      return await _outcome(
+        item,
+        await proposals.confirm(_of(item)).timeout(Outbox.requestTimeout),
+      );
+    } on McpException catch (e) {
+      if (!'$e'.contains('already being applied')) rethrow;
+      return finish();
+    }
+  }
+
+  /// Abandons [item]'s proposal -- unless an earlier attempt, unheard
+  /// ([maybeSaved]), did: it's no longer the one open.
+  Future<Object?> _abandon(
+    PendingEventWrite item, {
+    required bool maybeSaved,
+  }) async {
+    final proposals = _proposalsOf();
+    final gone =
+        maybeSaved &&
+        (await proposals.current().timeout(Outbox.requestTimeout))?.id !=
+            item.proposalId;
+    if (!gone) {
+      await proposals.abandon(_of(item)).timeout(Outbox.requestTimeout);
+    }
+    await _notice(item, ProposalNoticeKind.abandoned);
+    return null;
+  }
+
+  /// Leaves [item]'s note for Claude -- unless an earlier attempt, unheard
+  /// ([maybeSaved]), did: one of the same text, about the same, is open.
+  Future<ProposalFeedback> _addNote(
+    PendingEventWrite item, {
+    required bool maybeSaved,
+  }) async {
+    final proposals = _proposalsOf();
+    final text = '${item.note['text'] ?? ''}';
+    final eventId = item.note['event_id'] as String?;
+    final noteId = item.note['note_id'] as String?;
+    if (maybeSaved) {
+      final current = await proposals.current().timeout(Outbox.requestTimeout);
+      final left = current?.id != item.proposalId
+          ? null
+          : current?.feedback
+                .where(
+                  (f) =>
+                      f.open &&
+                      f.byUser &&
+                      f.text == text &&
+                      f.eventId == eventId &&
+                      f.noteId == noteId,
+                )
+                .firstOrNull;
+      if (left != null) return left;
+    }
+    return proposals
+        .addNote(
+          _of(item),
+          text,
+          eventId: eventId,
+          at: DateTime.tryParse('${item.note['at']}'),
+          noteId: noteId,
         )
         .timeout(Outbox.requestTimeout);
-    // The next edit of it was made on this one.
-    await change((items) {
-      var next = true;
-      return [
-        for (final w in items)
-          if (next &&
-              w.id != item.id &&
-              w.kind == EventWriteKind.amend &&
-              w.proposalId == item.proposalId)
-            () {
-              next = false;
-              return w.copyWith(revision: amended.revision);
-            }()
-          else
-            w,
-      ];
-    });
-    return amended;
+  }
+
+  /// [outcome], of confirming or finishing [item]'s proposal, said in
+  /// [notices].
+  Future<ProposalOutcome> _outcome(
+    PendingEventWrite item,
+    ProposalOutcome outcome,
+  ) async {
+    await _notice(
+      item,
+      switch (outcome.status) {
+        ProposalOutcomeStatus.applied => ProposalNoticeKind.applied,
+        ProposalOutcomeStatus.rechecked => ProposalNoticeKind.rechecked,
+        ProposalOutcomeStatus.rebuilt => ProposalNoticeKind.rebuilt,
+        ProposalOutcomeStatus.needsClaude => ProposalNoticeKind.needsClaude,
+        ProposalOutcomeStatus.abandoned => ProposalNoticeKind.abandoned,
+      },
+      revision: outcome.proposal?.revision,
+      message: outcome.message,
+    );
+    return outcome;
+  }
+
+  Future<void> _notice(
+    PendingEventWrite item,
+    ProposalNoticeKind kind, {
+    int? revision,
+    String? message,
+    List<String> eventIds = const [],
+    List<String> eventNames = const [],
+  }) async {
+    try {
+      await notices?.add(
+        ProposalNotice(
+          id: '${item.id}-${kind.name}',
+          kind: kind,
+          proposalId: item.proposalId!,
+          at: now(),
+          revision: revision,
+          message: message,
+          eventIds: eventIds,
+          eventNames: eventNames,
+        ),
+      );
+    } catch (_) {
+      // Saved all the same: only not said.
+    }
   }
 }
 

@@ -422,29 +422,47 @@ class _WriteTile extends StatelessWidget {
     if (approved == true) await outbox.approveHistory(write);
   }
 
+  /// Drops it, after asking -- and, if it's of the proposal, those of the
+  /// proposal after it too, if the user says: they were made on top of it.
   Future<void> _drop(BuildContext context) async {
-    final sure = await showDialog<bool>(
+    final after = outbox.after(write);
+    final n = after.length;
+    final drop = await showDialog<List<PendingEventWrite>>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Drop ${write.label}?'),
-        content: const Text(
+        content: Text(
           "It won't be saved: what it changed goes back to how the server "
           'has it. A change after it that counted on it may then be '
-          'refused.',
+          'refused${n == 0 ? '.' : ', or say something you didn\'t mean: '
+                    '${n == 1 ? 'a change' : '$n changes'} to the proposal '
+                    '${n == 1 ? 'was' : 'were'} made after it.'}',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(context).pop(),
             child: const Text('Keep it'),
           ),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Drop it'),
+            onPressed: () => Navigator.of(context).pop([write]),
+            child: Text(n == 0 ? 'Drop it' : 'Drop just it'),
           ),
+          if (n > 0)
+            TextButton(
+              onPressed: () => Navigator.of(context).pop([write, ...after]),
+              child: Text(n == 1 ? 'Drop both' : 'Drop all ${n + 1}'),
+            ),
         ],
       ),
     );
-    if (sure != true) return;
+    if (drop == null) return;
+    // The latest first, so none is sent meanwhile on top of one dropped --
+    // unless it's being sent, when none is.
+    if (!outbox.isSending(write)) {
+      for (final w in drop.skip(1).toList().reversed) {
+        await outbox.drop(w);
+      }
+    }
     if (!await outbox.drop(write) && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("It's being sent: it can't be dropped.")),

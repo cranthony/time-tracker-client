@@ -2,9 +2,12 @@
 // on the Events page -- the band of what happened, edits to it, notes for
 // Claude and confirming it.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:time_tracker_client/outbox/pending_event_write.dart';
+import 'package:time_tracker_client/outbox/event_outbox.dart';
+import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/widgets/window_cursor.dart';
 import 'package:time_tracker_client/widgets/cursor_modes.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
@@ -18,6 +21,7 @@ import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/other_events.dart';
+import 'package:time_tracker_client/widgets/proposal_review.dart';
 
 void main() {
   final now = DateTime(2026, 9, 30, 12);
@@ -622,13 +626,17 @@ void main() {
 
     late InMemoryEventsRepository events;
     late _Proposals proposals;
+    EventOutbox? outbox;
 
+    /// Opens the page on the proposal -- [queued], its changes going by way
+    /// of an [outbox], sent when it's flushed.
     Future<void> open(
       WidgetTester tester, {
       Map<String, Object?>? json,
       Map<String, int>? seen,
       Map<int, Set<String>> changed = const {},
       NotesRepository? notes,
+      bool queued = false,
     }) async {
       // A phone's height: the bar and its details, and the morning, in
       // view.
@@ -641,6 +649,15 @@ void main() {
         events: events,
         changed: changed,
       );
+      outbox = queued
+          ? EventOutbox(
+              store: InMemoryOutboxStore(),
+              events: events,
+              proposals: proposals,
+              notices: ProposalNotices(persist: false),
+            )
+          : null;
+      if (outbox case final o?) addTearDown(o.dispose);
       await tester.pumpWidget(
         MaterialApp(
           // An hour's grid and no other stops: each step an hour.
@@ -655,6 +672,7 @@ void main() {
               proposals: proposals,
               proposalSeen: ProposalSeenStore(persist: false, seen: seen),
               notesRepository: notes,
+              eventOutbox: outbox,
               clock: () => now,
             ),
           ),
@@ -680,6 +698,30 @@ void main() {
       FilledButton,
       'Confirm 8:00 AM – 12:00 PM happened as shown',
     );
+
+    testWidgets('queued, confirming waits to save, then says what came of '
+        'it, even once the proposal is gone', (tester) async {
+      await open(tester, queued: true);
+
+      await tester.tap(confirmButton);
+      await tester.pumpAndSettle();
+      expect(proposals.calls, isNot(contains('confirm_proposal')));
+      expect(
+        find.textContaining('“Confirm what happened” is waiting to save'),
+        findsOneWidget,
+      );
+      expect(tester.widget<FilledButton>(confirmButton).onPressed, isNull);
+
+      unawaited(outbox!.flush(ignoreBackoff: true));
+      await tester.pumpAndSettle();
+
+      expect(proposals.calls, contains('confirm_proposal'));
+      expect(find.byType(ProposalBar), findsNothing);
+      expect(find.textContaining('Your confirm went through'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'OK'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Your confirm went through'), findsNothing);
+    });
 
     testWidgets("its through tab extends it: the end's cursor, stepped, "
         'then saved, the stretch added marked', (tester) async {

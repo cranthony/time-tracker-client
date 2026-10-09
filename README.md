@@ -493,7 +493,9 @@ fetches only while it's open.
 ## Changes waiting to save
 
 Changes to events -- editing, cancelling, adding or moving one -- and
-edits of the open compaction proposal don't wait for the server: they're
+what's done to the open compaction proposal -- editing it, leaving or
+withdrawing a note for Claude, confirming, finishing or abandoning it --
+don't wait for the server: they're
 kept on the device, shown at once as made, marked **Waiting to save**,
 and sent in the background, strictly in the order they were made. They
 survive closing the app, and Android's background task sends them too,
@@ -509,7 +511,8 @@ first, each with how it's going. From there:
   cancel, in its place; a move that changed others is dropped and made
   again instead.
 - **Drop** throws one away: what it changed goes back to how the server
-  has it.
+  has it. Dropping a change to the proposal offers to drop those of it
+  made after, on top of it, too.
 
 A change that couldn't be sent -- offline, say -- is tried again by
 itself after 5s, 10s, 20s and 40s, then every minute. One the server
@@ -524,11 +527,24 @@ event it cancels or adds not at all, and the fields it sets (its title,
 its time, its actions) not until then. Their dialogs say so, those fields
 don't open, and a change that would touch them -- a move pushing it, say
 -- says which change it's waiting for. A proposal with edits waiting
-can't be confirmed till they're saved. Series, and notes for Claude, are
-still saved at once.
+can't be confirmed till they're saved, and once confirming, finishing or
+abandoning it waits, nothing more of it can be changed. Series are still
+saved at once.
 
-A new event is checked for before it's sent again after an attempt
-nobody heard back from, so a lost response doesn't create it twice.
+An edit of the proposal is sent from the revision you were looking at
+when you made it, so if Claude changed the same events since, the server
+says so, and the Events page does too, over the proposal, with those
+events marked: "Your change replaced Claude's newer change to …". What a
+confirm came to is said there too: recorded; planned again as a new
+revision, the calendar or notes having changed, to review and confirm;
+what's left planned again after a write that couldn't be made; or gone to
+Claude. Each stays until you tap OK -- even if it was sent with the app
+closed.
+
+A new event, a note for Claude, or abandoning the proposal is checked for
+before it's sent again after an attempt nobody heard back from, so a lost
+response doesn't make it twice; a confirm finishes applying instead, if
+the server has it.
 
 ## Compaction proposals
 
@@ -583,6 +599,9 @@ Claude can't apply one; only confirming it in the app does.
   since it was planned, it says what changed and asks to confirm again; if
   it can't be planned any more, it's handed to Claude; if applying it
   stopped partway, Retry finishes it. Its menu goes to it, or abandons it.
+  Each waits to save, as changes do (see
+  [Changes waiting to save](#changes-waiting-to-save)), and what came of
+  it is said over the proposal.
 
 The sample data has one open, so `SAMPLE_DATA=true` shows it.
 

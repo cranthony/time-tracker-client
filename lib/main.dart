@@ -78,6 +78,7 @@ Future<void> main() async {
           store: InMemoryOutboxStore(),
           events: events,
           proposals: proposals,
+          notices: ProposalNotices(persist: false),
         ),
         traitsRepository:
             sample?.traitsRepository() ?? InMemoryTraitsRepository(),
@@ -123,6 +124,7 @@ Future<void> main() async {
         store: PrefsOutboxStore.events(),
         events: events,
         proposals: proposals,
+        notices: ProposalNotices(),
         persistPause: true,
       ),
       auth: auth,
@@ -158,6 +160,8 @@ void backgroundDispatcher() =>
           store: PrefsOutboxStore.events(),
           events: McpEventsRepository(client),
           proposals: McpProposalRepository(client),
+          // What came of a change to the proposal, for the app to say.
+          notices: ProposalNotices(),
           persistPause: true,
         ),
       ];
@@ -361,6 +365,8 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     await widget.outbox.refresh();
     await widget.actionOutbox.refresh();
     await widget.eventOutbox?.refresh();
+    // What the background task's changes to the proposal came to.
+    await widget.eventOutbox?.notices?.load();
     if (widget.outbox.hasUnsent ||
         widget.actionOutbox.hasUnsent ||
         (widget.eventOutbox?.hasUnsent ?? false)) {
