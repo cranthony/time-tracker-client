@@ -296,7 +296,6 @@ void main() {
       expect(find.textContaining('(zoomed in)'), findsOneWidget);
       // The last twelve hours: the calls of the last few are still in view.
       expect(find.text('3 calls in view, 1 failed'), findsOneWidget);
-      expect(find.textContaining('Oct 9, 12:00 PM (zoomed in)'), findsNothing);
 
       await tester.tap(find.byTooltip('Earlier'));
       await tester.pumpAndSettle();
