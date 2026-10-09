@@ -102,9 +102,11 @@ Future<void> main() async {
   final repository = McpNotesRepository(client, cache: cache);
   final actions = McpActionsRepository(client, cache: cache);
   final events = McpEventsRepository(client);
-  final proposals = McpProposalRepository(client);
+  final proposals = McpProposalRepository(client, cache: cache);
+  final settings = AppSettings();
   runApp(
     TimeTrackerApp(
+      settings: settings,
       repository: repository,
       eventsRepository: events,
       proposalsRepository: proposals,
@@ -130,6 +132,7 @@ Future<void> main() async {
       habitsRepository: McpHabitsRepository(client, cache: cache),
       backgroundRefresh: BackgroundRefresh(
         repository: McpScheduleHintsRepository(client, cache: cache),
+        settings: settings,
       ),
     ),
   );
@@ -162,14 +165,19 @@ void backgroundDispatcher() =>
 
 /// Fetches what the app keeps, into what it keeps (see [refreshCaches]),
 /// says how it went, and schedules the next: after the routines' next
-/// time, or the fallback.
+/// time, sooner while a proposal's expected and hasn't come, or the
+/// fallback -- as the settings say.
 Future<void> _refreshInBackground() async {
   final client = _client(_authSession(interactive: false));
   final cache = PrefsResponseCache();
   final hints = McpScheduleHintsRepository(client, cache: cache);
+  final settings = AppSettings();
+  await settings.load();
   final record = await refreshCaches(
     hints: hints,
     notes: McpNotesRepository(client, cache: cache),
+    proposals: McpProposalRepository(client, cache: cache),
+    previous: await RefreshRecord.load(),
     actions: McpActionsRepository(client, cache: cache),
     traits: McpTraitsRepository(client, cache: cache),
     people: McpPeopleRepository(client, cache: cache),
@@ -178,7 +186,13 @@ Future<void> _refreshInBackground() async {
   );
   await record.save();
   final now = DateTime.now();
-  final next = nextRefresh(now, (await hints.cachedHints())?.hints ?? const []);
+  final next = nextRefresh(
+    now,
+    (await hints.cachedHints())?.hints ?? const [],
+    delay: settings.refreshDelay,
+    retry: settings.retryInterval,
+    awaiting: record.awaiting,
+  );
   await BackgroundSync.scheduleRefresh(next.at.difference(now), fromTask: true);
 }
 
@@ -218,7 +232,11 @@ class TimeTrackerApp extends StatefulWidget {
     this.backgroundRefresh,
     this.proposalsRepository,
     this.focus,
+    this.settings,
   });
+
+  /// The app's settings; by default, those kept on the device.
+  final AppSettings? settings;
 
   final NotesRepository repository;
 
@@ -273,7 +291,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
   /// What's been loaded of the plan, and the events, for every page to
   /// share: the traits are scored from them.
   /// The app's settings, read from the device as it starts.
-  late final _settings = AppSettings()..load();
+  late final _settings = (widget.settings ?? AppSettings())..load();
 
   late final _planMemory = PlanMemory(
     eventStore: EventStore(

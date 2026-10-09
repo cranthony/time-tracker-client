@@ -6,8 +6,9 @@ import '../widgets/cursor_snap.dart';
 
 /// The app's settings, kept on this device only: the [grid] a cursor on
 /// the timeline snaps to, what else each cursor stops at ([snapFor]),
-/// and what a new event's anchor and end do with the events in the way
-/// ([anchorMode], [endMode]). Listeners hear every change.
+/// what a new event's anchor and end do with the events in the way
+/// ([anchorMode], [endMode]), and when background fetches run
+/// ([refreshDelay], [retryInterval]). Listeners hear every change.
 class AppSettings extends ChangeNotifier {
   /// Kept on the device with [persist]; otherwise only while the app
   /// runs. Starts with [grid], until what's kept is [load]ed.
@@ -45,6 +46,44 @@ class AppSettings extends ChangeNotifier {
   /// picked.
   EndMode get endMode => _endMode;
 
+  /// The delays to pick from, after a routine's time, for the background
+  /// fetch.
+  static const refreshDelays = <Duration>[
+    Duration(minutes: 5),
+    Duration(minutes: 10),
+    Duration(minutes: 15),
+    Duration(minutes: 20),
+    Duration(minutes: 30),
+    Duration(minutes: 45),
+    Duration(minutes: 60),
+  ];
+
+  /// How often to fetch again, to pick from, while a compaction's
+  /// proposal hasn't come; null is not to.
+  static const retryIntervals = <Duration?>[
+    null,
+    Duration(minutes: 15),
+    Duration(minutes: 20),
+    Duration(minutes: 30),
+    Duration(minutes: 60),
+  ];
+
+  static const defaultRefreshDelay = Duration(minutes: 10);
+  static const defaultRetryInterval = Duration(minutes: 15);
+  static const _refreshDelayKey = 'settings_refresh_delay_minutes';
+  static const _retryIntervalKey = 'settings_retry_interval_minutes';
+  Duration _refreshDelay = defaultRefreshDelay;
+  Duration? _retryInterval = defaultRetryInterval;
+
+  /// How long after a routine's time the background fetch runs: the
+  /// routine takes a while.
+  Duration get refreshDelay => _refreshDelay;
+
+  /// How often the background fetch runs again while a compaction's
+  /// proposal is expected and hasn't come; null for not until the next
+  /// it would anyway.
+  Duration? get retryInterval => _retryInterval;
+
   final bool persist;
   Duration? _grid;
   Future<void>? _loading;
@@ -61,6 +100,12 @@ class AppSettings extends ChangeNotifier {
       final minutes = await prefs.getInt(_gridKey);
       if (minutes != null) {
         _grid = minutes <= 0 ? null : Duration(minutes: minutes);
+      }
+      if (await prefs.getInt(_refreshDelayKey) case final m? when m > 0) {
+        _refreshDelay = Duration(minutes: m);
+      }
+      if (await prefs.getInt(_retryIntervalKey) case final m?) {
+        _retryInterval = m <= 0 ? null : Duration(minutes: m);
       }
       _anchorMode =
           AnchorMode.values.asNameMap()[await prefs.getString(
@@ -92,6 +137,28 @@ class AppSettings extends ChangeNotifier {
     if (!persist) return;
     try {
       await SharedPreferencesAsync().setInt(_gridKey, grid?.inMinutes ?? 0);
+    } catch (_) {
+      // Kept while the app runs, then.
+    }
+  }
+
+  /// Sets the [refreshDelay], and keeps it.
+  Future<void> setRefreshDelay(Duration delay) =>
+      _setInt(_refreshDelayKey, delay.inMinutes, () => _refreshDelay = delay);
+
+  /// Sets the [retryInterval], and keeps it.
+  Future<void> setRetryInterval(Duration? interval) => _setInt(
+    _retryIntervalKey,
+    interval?.inMinutes ?? 0,
+    () => _retryInterval = interval,
+  );
+
+  Future<void> _setInt(String key, int value, VoidCallback set) async {
+    set();
+    notifyListeners();
+    if (!persist) return;
+    try {
+      await SharedPreferencesAsync().setInt(key, value);
     } catch (_) {
       // Kept while the app runs, then.
     }

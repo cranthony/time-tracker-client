@@ -316,6 +316,10 @@ class _EventsScreenState extends State<EventsScreen> {
   int? _since;
   String? _sinceOf;
 
+  /// Whether the proposal's been loaded from the server this visit: until
+  /// then, it's as it was kept, if it was.
+  bool _proposalLoaded = false;
+
   /// The events the user's own edits changed this visit: not highlighted
   /// as changed since they looked.
   final _editedHere = <String>{};
@@ -737,6 +741,7 @@ class _EventsScreenState extends State<EventsScreen> {
     _savedWrites = widget.eventOutbox?.saved.listen(_writeSaved);
     _showEvents = widget.showEventRequests?.listen(_showEvent);
     _loadNotes(cached: true);
+    _showKeptProposal();
     _loadProposal();
     _loadSummaryCollapsed();
     _loadDetailsCollapsed();
@@ -804,6 +809,18 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
+  /// Shows the open proposal as it was kept -- by the background fetch,
+  /// say -- while [_loadProposal] asks again, unless that answers first.
+  Future<void> _showKeptProposal() async {
+    try {
+      final kept = await widget.proposals?.cachedCurrent();
+      if (!mounted || kept == null || _proposalLoaded) return;
+      setState(() => _proposal = kept);
+    } catch (_) {
+      // Nothing kept, then.
+    }
+  }
+
   /// Loads the open compaction proposal, if there is one: the first time,
   /// what's changed since the revision the user last saw, to highlight.
   /// Best effort: without it, it's shown as it was.
@@ -823,14 +840,17 @@ class _EventsScreenState extends State<EventsScreen> {
         _since ??= proposal?.revision;
       }
       if (!mounted) return;
+      _proposalLoaded = true;
       setState(() => _proposal = proposal);
     } catch (_) {
       // Shown as it was.
     }
   }
 
-  /// Keeps the proposal's revision as seen, for next time.
+  /// Keeps the proposal's revision as seen, for next time: not one only
+  /// kept, its changes not yet shown.
   void _sawProposal() {
+    if (!_proposalLoaded) return;
     if (_proposal case final proposal?) {
       _seen.saw(proposal.id, proposal.revision);
     }

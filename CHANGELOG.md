@@ -6,6 +6,19 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.32.0
+
+- The open compaction proposal is kept on the device, and the
+  background fetch fetches it: the Events page shows it at once, as it
+  was kept, while it asks again.
+- After a compaction routine (one whose label says "compaction"), if
+  its proposal hasn't come, the background fetch checks again every 15
+  minutes, for up to 3 hours. It's waiting when no new revision has come
+  since the routine ran and there are notes from before it to compact.
+- On Background updates, under **Timing**: how long after each routine
+  to fetch (10 minutes, unless it's changed), and how often to check
+  again until a proposal comes, or not to.
+
 ## 7.31.0
 
 - A compaction proposal can be extended from the app, past where
