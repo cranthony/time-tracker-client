@@ -17,7 +17,8 @@ on. Add the new version's section here at the same time; CI checks both.
   rest of it a new event -- and does nothing else, through the changes
   waiting to save as ever.
 - A cursor's snap labels go outside the box: above its top, below its
-  bottom.
+  bottom. On the end of one event and the start of the next, "end of"
+  is above "start of", as on the timeline.
 
 ## 7.37.0
 

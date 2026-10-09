@@ -2231,11 +2231,13 @@ class _EventsScreenState extends State<EventsScreen> {
       final s? when s.trim().isNotEmpty => s.trim(),
       _ => 'an event',
     };
+    // The end of what's before above the start of what's after, as they
+    // are on the timeline.
     return [
       for (final e in events)
-        if (e.start.isAtSameMomentAs(time)) (what: 'start', name: name(e)),
-      for (final e in events)
         if (e.end.isAtSameMomentAs(time)) (what: 'end', name: name(e)),
+      for (final e in events)
+        if (e.start.isAtSameMomentAs(time)) (what: 'start', name: name(e)),
       for (final (at, text) in _noteTexts)
         if (at.isAtSameMomentAs(time)) (what: 'note', name: text),
     ];

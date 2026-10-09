@@ -1644,9 +1644,14 @@ void main() {
         findsOneWidget,
       );
       await tapPulsing(tester, find.byTooltip('Shrink it from the top'));
-      // Its top on the start of Lunch and the end of Work, lined up.
+      // Its top on the end of Work and the start of Lunch, lined up -- the
+      // end above, as on the timeline.
       expect(box(tester).span, (at(30, 11), at(30, 12)));
       expect(label('start'), findsOneWidget);
+      expect(
+        tester.getTopLeft(label('of Work')).dy,
+        lessThan(tester.getTopLeft(label('start')).dy),
+      );
       expect(label('of Lunch'), findsNWidgets(2));
       expect(label('of Work'), findsOneWidget);
     });
