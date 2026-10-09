@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/schedule_hints.dart';
 import '../widgets/cursor_modes.dart';
 import '../widgets/cursor_snap.dart';
 
@@ -8,7 +9,8 @@ import '../widgets/cursor_snap.dart';
 /// the timeline snaps to, what else each cursor stops at ([snapFor]),
 /// what a new event's anchor and end do with the events in the way
 /// ([anchorMode], [endMode]), and when background fetches run
-/// ([refreshDelay], [retryInterval]). Listeners hear every change.
+/// ([refreshDelay], [retryInterval], [expectsProposal]). Listeners hear
+/// every change.
 class AppSettings extends ChangeNotifier {
   /// Kept on the device with [persist]; otherwise only while the app
   /// runs. Starts with [grid], until what's kept is [load]ed.
@@ -75,6 +77,30 @@ class AppSettings extends ChangeNotifier {
   Duration _refreshDelay = defaultRefreshDelay;
   Duration? _retryInterval = defaultRetryInterval;
 
+  static const _expectingKey = 'settings_hints_expecting_proposal';
+  var _expecting = <String>{};
+
+  /// Whether a proposal's to be expected after [hint]'s routine runs --
+  /// the user says so, of each -- for the background fetch to check again
+  /// until it comes. A routine's known by its [ScheduleHint.key].
+  bool expectsProposal(ScheduleHint hint) => _expecting.contains(hint.key);
+
+  /// Sets whether a proposal's to be expected after [hint], and keeps it.
+  Future<void> setExpectsProposal(ScheduleHint hint, bool expects) async {
+    _expecting = {..._expecting}
+      ..remove(hint.key)
+      ..addAll([if (expects) hint.key]);
+    notifyListeners();
+    if (!persist) return;
+    try {
+      await SharedPreferencesAsync().setStringList(_expectingKey, [
+        ..._expecting,
+      ]);
+    } catch (_) {
+      // Kept while the app runs, then.
+    }
+  }
+
   /// How long after a routine's time the background fetch runs: the
   /// routine takes a while.
   Duration get refreshDelay => _refreshDelay;
@@ -106,6 +132,9 @@ class AppSettings extends ChangeNotifier {
       }
       if (await prefs.getInt(_retryIntervalKey) case final m?) {
         _retryInterval = m <= 0 ? null : Duration(minutes: m);
+      }
+      if (await prefs.getStringList(_expectingKey) case final keys?) {
+        _expecting = {...keys};
       }
       _anchorMode =
           AnchorMode.values.asNameMap()[await prefs.getString(
