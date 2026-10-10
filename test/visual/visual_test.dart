@@ -712,7 +712,8 @@ void main() {
     // median of each hour; scrolled to the restarts; and the app's own --
     // its tool calls, the app's and the background task's, and the
     // outboxes' queues filling while offline -- scrolled to its visits to
-    // Plan and its work, and to its last errors, one opened.
+    // Plan and its work, and its last errors, on their own page, one
+    // opened.
     for (final (name, step) in [
       ('diagnostics', ''),
       ('diagnostics_median', 'median'),
@@ -764,14 +765,13 @@ void main() {
                 await tester.tap(find.text('App'));
                 await tester.pumpAndSettle();
                 await tester.dragUntilVisible(
-                  find.text('Errors'),
+                  find.textContaining('See all'),
                   find.byType(ListView).last,
                   const Offset(0, -300),
                 );
-                await tester.drag(
-                  find.byType(ListView).last,
-                  const Offset(0, -200),
-                );
+                await tester.ensureVisible(find.textContaining('See all'));
+                await tester.pumpAndSettle();
+                await tester.tap(find.textContaining('See all'));
                 await tester.pumpAndSettle();
                 await tester.tap(find.text('update_event').first);
                 await tester.pumpAndSettle();

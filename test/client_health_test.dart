@@ -377,7 +377,7 @@ void main() {
       expect(find.text('The background task'), findsWidgets);
       expect(find.text('Waiting to save'), findsOneWidget);
       expect(find.text('Errors'), findsOneWidget);
-      expect(find.text('note'), findsWidgets);
+      expect(find.textContaining('note'), findsWidgets);
     });
 
     testWidgets("shows the app's slow frames, visits to Plan, and work, "
@@ -439,6 +439,11 @@ void main() {
       );
       await open(tester);
 
+      // On a page of their own.
+      await tester.ensureVisible(find.text('See it in full'));
+      await tester.tap(find.text('See it in full'));
+      await tester.pumpAndSettle();
+      expect(find.text('Errors (1)'), findsOneWidget);
       await tester.tap(find.textContaining('TimeoutException').first);
       await tester.pumpAndSettle();
       expect(find.textContaining('all of it'), findsOneWidget);

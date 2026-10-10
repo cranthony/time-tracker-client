@@ -1397,12 +1397,12 @@ class _QueueCard extends StatelessWidget {
   }
 }
 
-/// The last errors, newest first, each opened to read in full -- its
-/// message and, for one the app didn't catch, where -- and copy.
+/// The errors kept, in brief: how many, and the newest; a button opens
+/// them all ([_ErrorsScreen]).
 class _ErrorsCard extends StatelessWidget {
   const _ErrorsCard({required this.errors, required this.kept});
 
-  /// Those of the tools picked.
+  /// Those of the tools picked, newest first.
   final List<ClientError> errors;
 
   /// How many are kept, of every tool.
@@ -1411,95 +1411,141 @@ class _ErrorsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final strings = MaterialLocalizations.of(context);
-    String time(DateTime t) =>
-        '${strings.formatShortMonthDay(t.toLocal())}, '
-        '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()))}';
+    final newest = errors.firstOrNull;
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text('Errors', style: theme.textTheme.titleMedium),
+            Text('Errors', style: theme.textTheme.titleMedium),
+            Text(
+              kept == 0
+                  ? 'None kept.'
+                  : errors.isEmpty
+                  ? 'None of the $kept kept are of these tools.'
+                  : "${errors.length} of these tools' kept, of the last "
+                        '${ClientHealthRecorder.keepErrors}. The newest:',
+              style: theme.textTheme.bodySmall,
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: Text(
-                kept == 0
-                    ? 'None kept.'
-                    : errors.isEmpty
-                    ? 'None of the $kept kept are of these tools.'
-                    : 'The last ${ClientHealthRecorder.keepErrors} are kept, '
-                          'newest first: tap one to read it in full.',
+            if (newest != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${_errorTime(context, newest.at)} · '
+                '${newest.tool ?? 'Not caught'}',
+                style: theme.textTheme.bodyMedium,
+              ),
+              Text(
+                newest.message.split('\n').first,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall,
               ),
-            ),
-            for (final e in errors)
-              ExpansionTile(
-                leading: Icon(
-                  e.tool == null ? Icons.bug_report_outlined : Icons.cloud_off,
-                  color: theme.colorScheme.error,
-                ),
-                title: Text(
-                  e.tool ?? 'Not caught',
-                  style: theme.textTheme.bodyMedium,
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${time(e.at)} · ${e.origin.label}'
-                      '${e.kind == null ? '' : ' · ${e.kind}'}',
-                    ),
-                    Text(
-                      e.message.split('\n').first,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 8, 12),
-                expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SelectableText(
-                    [e.message, ?e.stack].join('\n\n'),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontFamily: 'monospace',
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.chevron_right),
+                  iconAlignment: IconAlignment.end,
+                  label: Text(
+                    errors.length == 1
+                        ? 'See it in full'
+                        : 'See all ${errors.length}',
+                  ),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _ErrorsScreen(errors: errors),
                     ),
                   ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      icon: const Icon(Icons.copy, size: 18),
-                      label: const Text('Copy'),
-                      onPressed: () {
-                        Clipboard.setData(
-                          ClipboardData(
-                            text: [
-                              '${e.at.toIso8601String()} ${e.origin.name}'
-                                  '${e.tool == null ? '' : ' ${e.tool}'}'
-                                  '${e.kind == null ? '' : ' ${e.kind}'}',
-                              e.message,
-                              ?e.stack,
-                            ].join('\n\n'),
-                          ),
-                        );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Copied.')),
-                        );
-                      },
-                    ),
-                  ),
-                ],
+                ),
               ),
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+/// When an error was, as its row says it: "Oct 2, 1:30 PM".
+String _errorTime(BuildContext context, DateTime t) {
+  final strings = MaterialLocalizations.of(context);
+  return '${strings.formatShortMonthDay(t.toLocal())}, '
+      '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()))}';
+}
+
+/// The errors kept, of the tools picked, on a page of their own, newest
+/// first, each opened to read in full -- its message and, for one the app
+/// didn't catch, where -- and copy.
+class _ErrorsScreen extends StatelessWidget {
+  const _ErrorsScreen({required this.errors});
+
+  final List<ClientError> errors;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text('Errors (${errors.length})')),
+    body: ListView.builder(
+      padding: const EdgeInsets.only(bottom: 24),
+      itemCount: errors.length,
+      itemBuilder: (context, i) => _tile(context, errors[i]),
+    ),
+  );
+
+  Widget _tile(BuildContext context, ClientError e) {
+    final theme = Theme.of(context);
+    String time(DateTime t) => _errorTime(context, t);
+    return ExpansionTile(
+      leading: Icon(
+        e.tool == null ? Icons.bug_report_outlined : Icons.cloud_off,
+        color: theme.colorScheme.error,
+      ),
+      title: Text(e.tool ?? 'Not caught', style: theme.textTheme.bodyMedium),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${time(e.at)} · ${e.origin.label}'
+            '${e.kind == null ? '' : ' · ${e.kind}'}',
+          ),
+          Text(
+            e.message.split('\n').first,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 8, 12),
+      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SelectableText(
+          [e.message, ?e.stack].join('\n\n'),
+          style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            icon: const Icon(Icons.copy, size: 18),
+            label: const Text('Copy'),
+            onPressed: () {
+              Clipboard.setData(
+                ClipboardData(
+                  text: [
+                    '${e.at.toIso8601String()} ${e.origin.name}'
+                        '${e.tool == null ? '' : ' ${e.tool}'}'
+                        '${e.kind == null ? '' : ' ${e.kind}'}',
+                    e.message,
+                    ?e.stack,
+                  ].join('\n\n'),
+                ),
+              );
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('Copied.')));
+            },
+          ),
+        ),
+      ],
     );
   }
 }
