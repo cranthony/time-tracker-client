@@ -12,6 +12,8 @@ import '../models/person.dart';
 import '../models/time_split.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
+import '../outbox/actions_shown.dart';
+import '../outbox/action_outbox.dart';
 import 'event_store.dart';
 import 'focus_store.dart';
 import 'actions_repository.dart';
@@ -48,7 +50,39 @@ class PlanMemory extends ChangeNotifier {
   /// The habits focused on and people prioritized, kept on the device.
   final FocusStore focus;
 
+  /// The actions as the server last listed them.
   ActionList? actions;
+
+  /// [actions] as they're shown: with the saves the action outbox made
+  /// since they were fetched, or is still to make, made to them (see
+  /// [useActionOutbox]) -- an action renamed shows its new name on every
+  /// page at once, not once they're fetched again.
+  ActionList? get shownActions {
+    final actions = this.actions, outbox = _actionOutbox;
+    if (actions == null || outbox == null) return actions;
+    if (_shown case (final from, final shown) when identical(from, actions)) {
+      return shown;
+    }
+    final shown = actionsShown(actions, outbox);
+    _shown = (actions, shown);
+    return shown;
+  }
+
+  (ActionList, ActionList)? _shown;
+  ActionOutbox? _actionOutbox;
+
+  /// Shows [outbox]'s saves in [shownActions], and tells listeners as they
+  /// change.
+  void useActionOutbox(ActionOutbox outbox) {
+    if (_actionOutbox != null) return;
+    _actionOutbox = outbox..addListener(_actionsSaved);
+  }
+
+  void _actionsSaved() {
+    _shown = null;
+    notifyListeners();
+  }
+
   List<Trait>? traits;
   PeopleList? people;
   List<Location>? locations;

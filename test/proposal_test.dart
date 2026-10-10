@@ -637,6 +637,7 @@ void main() {
       Map<int, Set<String>> changed = const {},
       NotesRepository? notes,
       bool queued = false,
+      bool hidden = false,
     }) async {
       // A phone's height: the bar and its details, and the morning, in
       // view.
@@ -648,7 +649,7 @@ void main() {
         Proposal.fromJson(json ?? proposalJson()),
         events: events,
         changed: changed,
-      );
+      )..hidden = hidden;
       outbox = queued
           ? EventOutbox(
               store: InMemoryOutboxStore(),
@@ -744,6 +745,35 @@ void main() {
       proposals.hold!.complete();
       await tester.pumpAndSettle();
       expect(find.byType(ProposalBar), findsNothing);
+    });
+
+    testWidgets('back in the app, the proposal the background task kept '
+        'meanwhile shows at once, while it is asked for again', (tester) async {
+      await open(tester, hidden: true);
+      expect(find.byType(ProposalBar), findsNothing);
+
+      // Fetched in the background meanwhile; the server slow to answer.
+      proposals
+        ..hidden = false
+        ..kept = Proposal.fromJson(proposalJson())
+        ..hold = Completer();
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(ProposalBar), findsOneWidget);
+
+      proposals.hold!.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(ProposalBar), findsOneWidget);
     });
 
     testWidgets('gone as soon as a notice says it was confirmed -- by the '
@@ -1433,12 +1463,23 @@ class _Proposals extends InMemoryProposalRepository {
   /// once it's done: a load asked for before something changed.
   Completer<void>? hold;
 
+  /// While set, none is open, as far as [current] says: one not made yet.
+  bool hidden = false;
+
+  /// What [cachedCurrent] gives: one kept -- by the background task, say.
+  Proposal? kept;
+
   @override
   Future<Proposal?> current({int? sinceRevision}) async {
-    final answer = await super.current(sinceRevision: sinceRevision);
+    final answer = hidden
+        ? null
+        : await super.current(sinceRevision: sinceRevision);
     await hold?.future;
     return answer;
   }
+
+  @override
+  Future<Proposal?> cachedCurrent() async => kept;
 
   @override
   Future<Proposal> amend(
