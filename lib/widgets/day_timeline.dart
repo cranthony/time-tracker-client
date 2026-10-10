@@ -484,13 +484,13 @@ class DayTimeline extends StatelessWidget {
       mark: text.labelSmall?.copyWith(fontWeight: FontWeight.w500),
     );
     final summaryLine = lineHeight(styles.summary);
-    final actionLine = math.max(lineHeight(styles.action), 10.0);
     final markLine = lineHeight(styles.mark);
+    // Its actions' names aren't made room for: they're listed as far as
+    // its time leaves room, its diamonds by its chips standing for them.
     double minHeight(Event event) =>
         _cardPadding.vertical +
         summaryLine +
         (marks[event.id]?.label == null ? 0 : markLine) +
-        event.actionIds.length * actionLine +
         // Slack for rounding, so the text never overflows.
         2;
 
@@ -1437,7 +1437,8 @@ class _CardStyles {
   final TextStyle? mark;
 }
 
-/// An event: its summary, then its actions, each after a diamond.
+/// An event: its summary, its actions' diamonds stacked by its chips,
+/// then as many of its actions, each after a diamond, as fit whole.
 class _EventCard extends StatelessWidget {
   const _EventCard({
     required this.placement,
@@ -1501,6 +1502,11 @@ class _EventCard extends StatelessWidget {
     final strike = cancelled ? TextDecoration.lineThrough : null;
     final duration = formatDuration(event.end.difference(event.start));
     final priority = event.effectivePriority ?? defaultPriority;
+    final fill = switch (mark) {
+      null => colors.surfaceContainerHigh,
+      EventMark(changed: true) => reviewColors(colors).changed,
+      _ => reviewColors(colors).card,
+    };
     final card = Semantics(
       label:
           '$summary, ${timeLabel(event.start)} to ${timeLabel(event.end)}'
@@ -1516,11 +1522,7 @@ class _EventCard extends StatelessWidget {
       onLongPressHint: onLongPress == null ? null : 'Move',
       excludeSemantics: true,
       child: Material(
-        color: switch (mark) {
-          null => colors.surfaceContainerHigh,
-          EventMark(changed: true) => reviewColors(colors).changed,
-          _ => reviewColors(colors).card,
-        },
+        color: fill,
         // Square on the left, where its fill from the band meets it, and
         // where it meets another event.
         shape: RoundedRectangleBorder(
@@ -1551,100 +1553,124 @@ class _EventCard extends StatelessWidget {
                 Expanded(
                   child: Padding(
                     padding: _cardPadding,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final listed = _actionsThatFit(
+                          context,
+                          constraints.maxHeight,
+                          labelled: mark?.label != null,
+                          count: ids.length,
+                        );
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: Text(
-                                summary,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: styles.summary?.copyWith(
-                                  color: cancelled ? muted : null,
-                                  decoration: strike,
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    summary,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: styles.summary?.copyWith(
+                                      color: cancelled ? muted : null,
+                                      decoration: strike,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                if (ids.isNotEmpty)
+                                  _DiamondStack(
+                                    colors: [
+                                      for (final id in ids) _colorOf(id),
+                                    ],
+                                    outline: muted,
+                                    edge: fill,
+                                  ),
+                                if (duration != null)
+                                  // Square-cornered when it's drawn taller than
+                                  // it lasts; open at the top when it's drawn
+                                  // shorter, having started above.
+                                  _Chip(
+                                    text: duration,
+                                    style: styles.chip?.copyWith(color: muted),
+                                    border: colors.outline,
+                                    shape: placement.compressed
+                                        ? _ChipShape.square
+                                        : placement.shortened
+                                        ? _ChipShape.openTop
+                                        : _ChipShape.rounded,
+                                  ),
+                                _Chip(
+                                  text: 'P$priority',
+                                  style: styles.chip?.copyWith(
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  fill: priorityColor(priority),
+                                  border: priorityColor(priority),
+                                ),
+                              ],
                             ),
-                            if (duration != null)
-                              // Square-cornered when it's drawn taller than
-                              // it lasts; open at the top when it's drawn
-                              // shorter, having started above.
-                              _Chip(
-                                text: duration,
-                                style: styles.chip?.copyWith(color: muted),
-                                border: colors.outline,
-                                shape: placement.compressed
-                                    ? _ChipShape.square
-                                    : placement.shortened
-                                    ? _ChipShape.openTop
-                                    : _ChipShape.rounded,
+                            if (mark case EventMark(
+                              :final label?,
+                              :final icon,
+                              :final changed,
+                            ))
+                              Row(
+                                children: [
+                                  if (changed) ...[
+                                    _Dot(color: colors.tertiary),
+                                    const SizedBox(width: 4),
+                                  ],
+                                  if (icon != null) ...[
+                                    Icon(
+                                      icon,
+                                      size: 12,
+                                      color: colors.tertiary,
+                                    ),
+                                    const SizedBox(width: 2),
+                                  ],
+                                  Expanded(
+                                    child: Text(
+                                      label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: styles.mark?.copyWith(
+                                        color: changed
+                                            ? colors.onTertiaryContainer
+                                            : colors.tertiary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            _Chip(
-                              text: 'P$priority',
-                              style: styles.chip?.copyWith(
-                                color: Colors.black87,
-                                fontWeight: FontWeight.w600,
+                            for (final (i, id) in ids.take(listed).indexed)
+                              Row(
+                                children: [
+                                  _Diamond(color: _colorOf(id), outline: muted),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      switch (actions[id]) {
+                                        final action? => actionName(action),
+                                        null =>
+                                          (i < names.length
+                                                  ? names[i]
+                                                  : null) ??
+                                              id,
+                                      },
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: styles.action?.copyWith(
+                                        color: muted,
+                                        decoration: strike,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              fill: priorityColor(priority),
-                              border: priorityColor(priority),
-                            ),
                           ],
-                        ),
-                        if (mark case EventMark(
-                          :final label?,
-                          :final icon,
-                          :final changed,
-                        ))
-                          Row(
-                            children: [
-                              if (changed) ...[
-                                _Dot(color: colors.tertiary),
-                                const SizedBox(width: 4),
-                              ],
-                              if (icon != null) ...[
-                                Icon(icon, size: 12, color: colors.tertiary),
-                                const SizedBox(width: 2),
-                              ],
-                              Expanded(
-                                child: Text(
-                                  label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: styles.mark?.copyWith(
-                                    color: changed
-                                        ? colors.onTertiaryContainer
-                                        : colors.tertiary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        for (final (i, id) in ids.indexed)
-                          Row(
-                            children: [
-                              _Diamond(color: _colorOf(id), outline: muted),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  switch (actions[id]) {
-                                    final action? => actionName(action),
-                                    null =>
-                                      (i < names.length ? names[i] : null) ??
-                                          id,
-                                  },
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: styles.action?.copyWith(
-                                    color: muted,
-                                    decoration: strike,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -1668,6 +1694,33 @@ class _EventCard extends StatelessWidget {
           )
         : card;
     return faded ? Opacity(opacity: 0.35, child: shown) : shown;
+  }
+}
+
+extension on _EventCard {
+  /// How many of its [count] actions' lines fit whole in [height], under
+  /// its summary and chips -- and its mark's line, if it's [labelled].
+  int _actionsThatFit(
+    BuildContext context,
+    double height, {
+    required bool labelled,
+    required int count,
+  }) {
+    if (count == 0 || !height.isFinite) return count;
+    final base = DefaultTextStyle.of(context).style;
+    final scaler = MediaQuery.textScalerOf(context);
+    double line(TextStyle? style) => (TextPainter(
+      text: TextSpan(text: 'Hg', style: base.merge(style)),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout()).height;
+    // A chip's text, and its border above and below.
+    final top = math.max(line(styles.summary), line(styles.chip) + 2);
+    final above = top + (labelled ? line(styles.mark) : 0);
+    // As tall as its diamond, at least.
+    final each = math.max(line(styles.action), 10.0);
+    return ((height - above) / each).floor().clamp(0, count);
   }
 }
 
@@ -1826,12 +1879,61 @@ class _OpenTopPainter extends CustomPainter {
       old.color != color || old.radius != radius;
 }
 
+/// An event's actions' diamonds, overlapping, the first on top: one in
+/// each action's color, or outlined in [outline] if it has none.
+class _DiamondStack extends StatelessWidget {
+  const _DiamondStack({
+    required this.colors,
+    required this.outline,
+    required this.edge,
+  });
+
+  final List<Color?> colors;
+  final Color outline;
+
+  /// The card's color, edging each to stand apart from those it overlaps.
+  final Color edge;
+
+  /// How far along each is from the one before.
+  static const _step = 5.0;
+
+  /// A diamond's width, corner to corner.
+  static const _size = 10.0;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(left: 6),
+    child: SizedBox(
+      width: _size + _step * (colors.length - 1),
+      height: _size,
+      child: Stack(
+        children: [
+          for (final (i, color) in colors.indexed.toList().reversed)
+            Positioned(
+              left: _step * i,
+              top: 0,
+              width: _size,
+              height: _size,
+              child: Center(
+                child: _Diamond(color: color, outline: outline, edge: edge),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
 /// A small diamond in an action's [color], or outlined if it has none.
 class _Diamond extends StatelessWidget {
-  const _Diamond({required this.color, required this.outline});
+  const _Diamond({required this.color, required this.outline, this.edge});
 
   final Color? color;
   final Color outline;
+
+  /// The color it's edged in, outside it so it's as big as the rest: the
+  /// card's, to stand apart from those it overlaps.
+  final Color? edge;
 
   @override
   Widget build(BuildContext context) => Transform.rotate(
@@ -1841,7 +1943,15 @@ class _Diamond extends StatelessWidget {
       height: 7,
       decoration: BoxDecoration(
         color: color,
-        border: color == null ? Border.all(color: outline) : null,
+        border: color == null
+            ? Border.all(color: outline)
+            : edge != null
+            ? Border.all(
+                color: edge!,
+                width: 0.75,
+                strokeAlign: BorderSide.strokeAlignOutside,
+              )
+            : null,
       ),
     ),
   );

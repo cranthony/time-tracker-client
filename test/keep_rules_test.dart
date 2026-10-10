@@ -84,8 +84,7 @@ void main() {
     await tester.tap(find.byTooltip('Remove “Historical events”'));
     await tester.pumpAndSettle();
     expect(settings.keepRules, isEmpty);
-    // As the grid's "None" is.
-    expect(find.text('None'), findsNWidgets(2));
+    expect(find.text('None'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Add a rule'));
     await tester.pumpAndSettle();
