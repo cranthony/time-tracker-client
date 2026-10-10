@@ -22,6 +22,8 @@ import '../widgets/plan_summaries.dart';
 import 'all_people_screen.dart';
 import 'habit_screen.dart';
 import 'person_screen.dart';
+import '../services/client_health.dart';
+import '../services/work_timing.dart';
 
 /// The Plan page's People pane -- who the user wants to be with -- in two
 /// sections, one over the other, each folded away by tapping its head:
@@ -130,12 +132,15 @@ class PeoplePaneState extends State<PeoplePane> {
     if (view == null) return null;
     final store = widget.memory.eventStore;
     final span = store?.span;
-    return PeopleTimes.compute(
-      window: view.window,
-      windowEvents: view.events,
-      known: span == null
-          ? const []
-          : store!.between(span.$1, span.$2.add(const Duration(days: 1))),
+    return timed(
+      WorkKind.peopleTime,
+      () => PeopleTimes.compute(
+        window: view.window,
+        windowEvents: view.events,
+        known: span == null
+            ? const []
+            : store!.between(span.$1, span.$2.add(const Duration(days: 1))),
+      ),
     );
   }
 

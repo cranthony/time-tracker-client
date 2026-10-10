@@ -711,13 +711,14 @@ void main() {
     // memory and its restarts, over the last day -- each call, and the
     // median of each hour; scrolled to the restarts; and the app's own --
     // its tool calls, the app's and the background task's, and the
-    // outboxes' queues filling while offline -- and scrolled to its last
-    // errors, one opened.
+    // outboxes' queues filling while offline -- scrolled to its visits to
+    // Plan and its work, and to its last errors, one opened.
     for (final (name, step) in [
       ('diagnostics', ''),
       ('diagnostics_median', 'median'),
       ('diagnostics_restarts', 'scroll'),
       ('diagnostics_app', 'app'),
+      ('diagnostics_app_work', 'work'),
       ('diagnostics_app_errors', 'errors'),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
@@ -748,12 +749,28 @@ void main() {
               case 'app':
                 await tester.tap(find.text('App'));
                 await tester.pumpAndSettle();
+              case 'work':
+                await tester.tap(find.text('App'));
+                await tester.pumpAndSettle();
+                await tester.dragUntilVisible(
+                  find.text('Plan visits'),
+                  find.byType(ListView).last,
+                  const Offset(0, -300),
+                );
+                // Its title at the top.
+                await tester.ensureVisible(find.text('Plan visits'));
+                await tester.pumpAndSettle();
               case 'errors':
                 await tester.tap(find.text('App'));
                 await tester.pumpAndSettle();
+                await tester.dragUntilVisible(
+                  find.text('Errors'),
+                  find.byType(ListView).last,
+                  const Offset(0, -300),
+                );
                 await tester.drag(
                   find.byType(ListView).last,
-                  const Offset(0, -1100),
+                  const Offset(0, -200),
                 );
                 await tester.pumpAndSettle();
                 await tester.tap(find.text('update_event').first);

@@ -12,8 +12,15 @@ import 'package:time_tracker_client/screens/diagnostics_screen.dart';
 import 'package:time_tracker_client/services/client_health.dart';
 import 'package:time_tracker_client/services/diagnostics_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
+import 'package:time_tracker_client/services/work_timing.dart';
 
 final _now = DateTime.utc(2026, 10, 9, 12);
+
+/// Keeps the thread busy for [ms].
+void _busy(int ms) {
+  final watch = Stopwatch()..start();
+  while (watch.elapsedMilliseconds < ms) {}
+}
 
 /// A clock that moves on a second each time it's read.
 DateTime Function() _ticking([DateTime? from]) {
@@ -159,6 +166,76 @@ void main() {
       expect(kept.errors.single.message, 'Bad state: offline');
       expect(kept.queue.single.actions, 2);
     });
+
+    test('keeps work, slow frames and visits to Plan, each to its '
+        'latest', () async {
+      SharedPreferencesAsyncPlatform.instance =
+          InMemorySharedPreferencesAsync.empty();
+      final recorder = _recorder(store: PrefsClientHealthStore());
+      for (var i = 0; i < ClientHealthRecorder.keepWork + 5; i++) {
+        recorder.recordWork(WorkKind.actionTime, i);
+      }
+      recorder.recordWork(WorkKind.traitScores, 150000, why: 'people');
+      recorder.recordFrame(
+        SlowFrame(at: _now, us: 40000, buildUs: 30000, plan: true),
+      );
+      recorder.recordVisit(
+        PlanVisit(
+          at: _now,
+          us: 900000,
+          work: {WorkKind.traitScores: 150000, WorkKind.planRebuild: 50000},
+        ),
+      );
+      await recorder.flush();
+
+      final kept = await PrefsClientHealthStore().read();
+
+      final times = kept.work[WorkKind.actionTime]!;
+      expect(times, hasLength(ClientHealthRecorder.keepWork));
+      expect(times.first.us, 5);
+      expect(kept.work[WorkKind.traitScores]!.single.why, 'people');
+      expect(kept.frames.single.ms, 40);
+      expect(kept.frames.single.plan, isTrue);
+      final visit = kept.visits.single;
+      expect(visit.msOf(WorkKind.traitScores), 150);
+      expect(visit.waitingMs, 700);
+    });
+  });
+
+  group('Timing work', () {
+    late ClientHealthRecorder recorder;
+    setUp(() {
+      recorder = _recorder();
+      workRecorder = recorder;
+    });
+    tearDown(() => workRecorder = null);
+
+    test("records each run, and gives a visit each kind's own time, none "
+        'of it twice', () async {
+      final visit = PlanVisitTimer.start();
+      final result = timed(WorkKind.planRebuild, () {
+        // Inside the rebuild: its time is the scores', not the rebuild's.
+        timed(WorkKind.traitScores, () => _busy(20), why: () => 'first');
+        _busy(5);
+        return 'built';
+      });
+      visit.finish();
+      visit.finish(); // Once only.
+      await recorder.flush();
+      final kept = await recorder.read();
+
+      expect(result, 'built');
+      final scores = kept.work[WorkKind.traitScores]!.single;
+      final rebuild = kept.work[WorkKind.planRebuild]!.single;
+      expect(scores.why, 'first');
+      expect(scores.ms, greaterThanOrEqualTo(20));
+      // Whole, with the scores in it.
+      expect(rebuild.us, greaterThanOrEqualTo(scores.us));
+      final v = kept.visits.single;
+      expect(v.work[WorkKind.traitScores], scores.us);
+      expect(v.work[WorkKind.planRebuild], rebuild.us - scores.us);
+      expect(v.us, greaterThanOrEqualTo(rebuild.us));
+    });
   });
 
   group('McpClient', () {
@@ -229,6 +306,36 @@ void main() {
         QueueSample(at: _now.subtract(const Duration(hours: 4)), notes: 2),
         QueueSample(at: _now.subtract(const Duration(hours: 3))),
       ],
+      work: {
+        WorkKind.traitScores: [
+          WorkSample(
+            kind: WorkKind.traitScores,
+            at: _now.subtract(const Duration(hours: 2)),
+            us: 120000,
+            why: 'first',
+          ),
+          WorkSample(
+            kind: WorkKind.traitScores,
+            at: _now.subtract(const Duration(hours: 2)),
+            us: 140000,
+            why: 'people, events',
+          ),
+        ],
+      },
+      frames: [
+        SlowFrame(
+          at: _now.subtract(const Duration(hours: 2)),
+          us: 150000,
+          plan: true,
+        ),
+      ],
+      visits: [
+        PlanVisit(
+          at: _now.subtract(const Duration(hours: 2)),
+          us: 800000,
+          work: {WorkKind.traitScores: 260000},
+        ),
+      ],
     );
 
     Future<ClientHealthRecorder> open(WidgetTester tester) async {
@@ -271,6 +378,32 @@ void main() {
       expect(find.text('Waiting to save'), findsOneWidget);
       expect(find.text('Errors'), findsOneWidget);
       expect(find.text('note'), findsWidgets);
+    });
+
+    testWidgets("shows the app's slow frames, visits to Plan, and work, "
+        'with why the scores were worked out again', (tester) async {
+      await open(tester);
+
+      expect(find.textContaining('1 frame in view over 17 ms'), findsOneWidget);
+      // The App pane's list, not the panes'.
+      await tester.scrollUntilVisible(
+        find.text('Work on the device'),
+        300,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView),
+              matching: find.byType(Scrollable),
+            )
+            .last,
+      );
+      expect(find.textContaining('1 visit in view'), findsOneWidget);
+      expect(
+        find.text(
+          'Trait scores were worked out again for: first ×1, people ×1, '
+          'events ×1',
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('filters to reads', (tester) async {

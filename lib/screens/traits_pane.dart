@@ -10,6 +10,8 @@ import '../widgets/plan_pane.dart';
 import '../widgets/trait_dialog.dart';
 import 'trait_breakdown.dart';
 import 'trait_screen.dart';
+import '../services/client_health.dart';
+import '../services/work_timing.dart';
 
 /// The Plan page's Traits pane -- how the user wants to be: each
 /// trait's name, definition, status, latest score (the mean across the
@@ -144,7 +146,10 @@ class TraitsPaneState extends State<TraitsPane> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      timed(WorkKind.planRebuild, () => _build(context));
+
+  Widget _build(BuildContext context) {
     final unsearched = [
       for (final trait in _traits ?? const <Trait>[])
         if (_archived || trait.status != 'archived') trait,

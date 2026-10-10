@@ -135,13 +135,152 @@ class QueueSample {
   }
 }
 
-/// The app's own health: each tool's last calls, the last errors, and how
-/// long the outboxes' queues were, over time.
+/// Work the app does on the device that can hold up the screen, timed
+/// as it's done (see `timed` in work_timing.dart).
+enum WorkKind {
+  traitScores('Trait scores'),
+  actionTime('Action time'),
+  peopleTime('People time'),
+  planRebuild('Plan rebuild');
+
+  const WorkKind(this.label);
+  final String label;
+}
+
+/// One run of [kind]'s work: when it ended, how long it took, and -- for
+/// work done again only when what it's from changes -- [why].
+class WorkSample {
+  const WorkSample({
+    required this.kind,
+    required this.at,
+    required this.us,
+    this.why,
+  });
+
+  final WorkKind kind;
+  final DateTime at;
+
+  /// How long it took, in microseconds.
+  final int us;
+  final String? why;
+
+  double get ms => us / 1000;
+
+  List<Object> toJson() => [at.millisecondsSinceEpoch, us, ?why];
+
+  static WorkSample? fromJson(WorkKind kind, Object? json) {
+    if (json is! List || json.length < 2) return null;
+    final [at, us, ...rest] = json;
+    if (at is! int || us is! int) return null;
+    final why = rest.firstOrNull;
+    return WorkSample(
+      kind: kind,
+      at: DateTime.fromMillisecondsSinceEpoch(at, isUtc: true),
+      us: us,
+      why: why is String ? why : null,
+    );
+  }
+}
+
+/// A frame that took longer than [SlowFrame.budget] to build and draw:
+/// when, how long in all and in each, and whether Plan was open.
+class SlowFrame {
+  const SlowFrame({
+    required this.at,
+    required this.us,
+    this.buildUs = 0,
+    this.rasterUs = 0,
+    this.plan = false,
+  });
+
+  /// A frame's time at 60 frames a second.
+  static const budget = Duration(microseconds: 16667);
+
+  final DateTime at;
+
+  /// From the frame's start to its drawing's end, in microseconds.
+  final int us;
+  final int buildUs;
+  final int rasterUs;
+  final bool plan;
+
+  double get ms => us / 1000;
+
+  List<int> toJson() => [
+    at.millisecondsSinceEpoch,
+    us,
+    buildUs,
+    rasterUs,
+    plan ? 1 : 0,
+  ];
+
+  static SlowFrame? fromJson(Object? json) {
+    if (json is! List || json.length < 5 || json.any((v) => v is! int)) {
+      return null;
+    }
+    final [at, us, build, raster, plan, ...] = json.cast<int>();
+    return SlowFrame(
+      at: DateTime.fromMillisecondsSinceEpoch(at, isUtc: true),
+      us: us,
+      buildUs: build,
+      rasterUs: raster,
+      plan: plan == 1,
+    );
+  }
+}
+
+/// A visit to Plan, from opening it to everything loaded: how long in
+/// all, and the device's own [work] in it, by kind, each kind's time its
+/// own (none of it twice, though one kind's done inside another's). The
+/// rest is waiting, on the server mostly.
+class PlanVisit {
+  const PlanVisit({required this.at, required this.us, this.work = const {}});
+
+  /// When it began.
+  final DateTime at;
+  final int us;
+  final Map<WorkKind, int> work;
+
+  double get ms => us / 1000;
+  double msOf(WorkKind kind) => (work[kind] ?? 0) / 1000;
+
+  /// What wasn't the device's own work, in ms.
+  double get waitingMs =>
+      max(0, us - work.values.fold(0, (a, b) => a + b)) / 1000;
+
+  List<int> toJson() => [
+    at.millisecondsSinceEpoch,
+    us,
+    for (final kind in WorkKind.values) work[kind] ?? 0,
+  ];
+
+  static PlanVisit? fromJson(Object? json) {
+    if (json is! List || json.length < 2 || json.any((v) => v is! int)) {
+      return null;
+    }
+    final values = json.cast<int>();
+    return PlanVisit(
+      at: DateTime.fromMillisecondsSinceEpoch(values[0], isUtc: true),
+      us: values[1],
+      work: {
+        for (final (i, kind) in WorkKind.values.indexed)
+          if (i + 2 < values.length && values[i + 2] > 0) kind: values[i + 2],
+      },
+    );
+  }
+}
+
+/// The app's own health: each tool's last calls, the last errors, how
+/// long the outboxes' queues were, over time, and how long its own work
+/// took -- each kind's last runs, its slow frames, and its visits to Plan.
 class ClientHealth {
   const ClientHealth({
     this.calls = const {},
     this.errors = const [],
     this.queue = const [],
+    this.work = const {},
+    this.frames = const [],
+    this.visits = const [],
   });
 
   /// By tool, oldest first: the last [ClientHealthRecorder.keepCalls] of
@@ -154,7 +293,23 @@ class ClientHealth {
   /// Oldest first: the last [ClientHealthRecorder.keepQueue] changes.
   final List<QueueSample> queue;
 
-  bool get isEmpty => calls.isEmpty && errors.isEmpty && queue.isEmpty;
+  /// By kind, oldest first: the last [ClientHealthRecorder.keepWork] of
+  /// each.
+  final Map<WorkKind, List<WorkSample>> work;
+
+  /// Oldest first: the last [ClientHealthRecorder.keepFrames].
+  final List<SlowFrame> frames;
+
+  /// Oldest first: the last [ClientHealthRecorder.keepVisits].
+  final List<PlanVisit> visits;
+
+  bool get isEmpty =>
+      calls.isEmpty &&
+      errors.isEmpty &&
+      queue.isEmpty &&
+      work.isEmpty &&
+      frames.isEmpty &&
+      visits.isEmpty;
 
   Map<String, Object?> toJson() => {
     'calls': {
@@ -163,11 +318,19 @@ class ClientHealth {
     },
     'errors': [for (final e in errors) e.toJson()],
     'queue': [for (final q in queue) q.toJson()],
+    if (work.isNotEmpty)
+      'work': {
+        for (final MapEntry(:key, :value) in work.entries)
+          key.name: [for (final w in value) w.toJson()],
+      },
+    if (frames.isNotEmpty) 'frames': [for (final f in frames) f.toJson()],
+    if (visits.isNotEmpty) 'visits': [for (final v in visits) v.toJson()],
   };
 
   factory ClientHealth.fromJson(Object? json) {
     if (json is! Map) return const ClientHealth();
     final calls = json['calls'];
+    final work = json['work'];
     return ClientHealth(
       calls: {
         if (calls is Map)
@@ -184,6 +347,20 @@ class ClientHealth {
       queue: [
         for (final q in json['queue'] as List? ?? const [])
           ?QueueSample.fromJson(q),
+      ],
+      work: {
+        if (work is Map)
+          for (final kind in WorkKind.values)
+            if (work[kind.name] case final List samples)
+              kind: [for (final w in samples) ?WorkSample.fromJson(kind, w)],
+      },
+      frames: [
+        for (final f in json['frames'] as List? ?? const [])
+          ?SlowFrame.fromJson(f),
+      ],
+      visits: [
+        for (final v in json['visits'] as List? ?? const [])
+          ?PlanVisit.fromJson(v),
       ],
     );
   }
@@ -206,6 +383,16 @@ class ClientHealth {
       },
       errors: latest(errors, more.errors, ClientHealthRecorder.keepErrors),
       queue: latest(queue, more.queue, ClientHealthRecorder.keepQueue),
+      work: {
+        for (final kind in {...work.keys, ...more.work.keys})
+          kind: latest(
+            work[kind] ?? const [],
+            more.work[kind] ?? const [],
+            ClientHealthRecorder.keepWork,
+          ),
+      },
+      frames: latest(frames, more.frames, ClientHealthRecorder.keepFrames),
+      visits: latest(visits, more.visits, ClientHealthRecorder.keepVisits),
     );
   }
 }
@@ -283,6 +470,9 @@ class ClientHealthRecorder extends ChangeNotifier {
   static const keepCalls = 100;
   static const keepErrors = 20;
   static const keepQueue = 200;
+  static const keepWork = 100;
+  static const keepFrames = 300;
+  static const keepVisits = 50;
 
   final CallOrigin origin;
   final ClientHealthStore store;
@@ -359,6 +549,21 @@ class ClientHealthRecorder extends ChangeNotifier {
     _lastQueue = sample;
     _add(ClientHealth(queue: [sample]));
   }
+
+  /// A run of [kind]'s work that took [us] microseconds, done for [why].
+  void recordWork(WorkKind kind, int us, {String? why}) => _add(
+    ClientHealth(
+      work: {
+        kind: [WorkSample(kind: kind, at: _now(), us: us, why: why)],
+      },
+    ),
+  );
+
+  /// A frame slower than [SlowFrame.budget].
+  void recordFrame(SlowFrame frame) => _add(ClientHealth(frames: [frame]));
+
+  /// A visit to Plan, settled.
+  void recordVisit(PlanVisit visit) => _add(ClientHealth(visits: [visit]));
 
   /// Records each outbox's length as it changes: those waiting, refused
   /// included.

@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.47.0
+
+- Diagnostics' App pane times the app's own work on the device, to find
+  what makes Plan slow: its **slow frames** (over 16 ms, those while Plan
+  is open apart, freezes over 100 ms red), each **visit to Plan** from
+  opening to loaded -- the trait scores, the time on actions and people,
+  and the page's rebuilds, each its own, under the time spent waiting --
+  and each kind of **work on the device**, with why the trait scores were
+  worked out again each time.
+
 ## 7.46.0
 
 - An event on the Events page shows its actions' diamonds, overlapping

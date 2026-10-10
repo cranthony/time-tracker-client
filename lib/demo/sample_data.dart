@@ -256,10 +256,89 @@ class SampleData {
       QueueSample(at: end.subtract(const Duration(minutes: 25)), actions: 1),
     );
     queue.add(QueueSample(at: end.subtract(const Duration(minutes: 24))));
+    // A visit to Plan every few hours: the scores worked out a few times
+    // over, each, as what they're from comes in.
+    final visits = <PlanVisit>[];
+    final work = <WorkKind, List<WorkSample>>{
+      for (final kind in WorkKind.values) kind: [],
+    };
+    final frames = <SlowFrame>[];
+    const whys = ['first', 'people', 'events', 'traits, people', 'events'];
+    for (
+      var at = end.subtract(const Duration(days: 3));
+      at.isBefore(end);
+      at = at.add(Duration(minutes: 150 + random.nextInt(240)))
+    ) {
+      int us(int ms) => (ms * 1000 * (0.6 + random.nextDouble() * 0.8)).round();
+      final runs = 2 + random.nextInt(4);
+      final scores = [for (var i = 0; i < runs; i++) us(160)];
+      final times = [for (var i = 0; i < 12; i++) us(9)];
+      final rebuilds = [for (var i = 0; i < 14; i++) us(6)];
+      for (final (i, s) in scores.indexed) {
+        work[WorkKind.traitScores]!.add(
+          WorkSample(
+            kind: WorkKind.traitScores,
+            at: at.add(Duration(milliseconds: 300 * i)),
+            us: s,
+            why: whys[i % whys.length],
+          ),
+        );
+        frames.add(
+          SlowFrame(
+            at: at.add(Duration(milliseconds: 300 * i)),
+            us: s + 4000,
+            buildUs: s,
+            rasterUs: 4000,
+            plan: true,
+          ),
+        );
+      }
+      for (final t in times) {
+        work[WorkKind.actionTime]!.add(
+          WorkSample(kind: WorkKind.actionTime, at: at, us: t),
+        );
+      }
+      for (final r in rebuilds) {
+        work[WorkKind.planRebuild]!.add(
+          WorkSample(kind: WorkKind.planRebuild, at: at, us: r),
+        );
+      }
+      int sum(List<int> l) => l.fold(0, (a, b) => a + b);
+      final own = sum(scores) + sum(times) + sum(rebuilds);
+      visits.add(
+        PlanVisit(
+          at: at,
+          us: own + us(700),
+          work: {
+            WorkKind.traitScores: sum(scores),
+            WorkKind.actionTime: sum(times),
+            WorkKind.planRebuild: sum(rebuilds),
+          },
+        ),
+      );
+      if (random.nextInt(3) == 0) {
+        frames.add(
+          SlowFrame(
+            at: at.add(const Duration(minutes: 40)),
+            us: us(30),
+            buildUs: us(20),
+            rasterUs: us(8),
+          ),
+        );
+      }
+    }
+    List<T> last<T>(List<T> all, int keep) =>
+        all.sublist(max(0, all.length - keep));
     return ClientHealth(
       calls: calls,
       errors: errors.sublist(max(0, errors.length - 20)),
       queue: queue,
+      work: {
+        for (final MapEntry(:key, :value) in work.entries)
+          if (value.isNotEmpty) key: last(value, ClientHealthRecorder.keepWork),
+      },
+      frames: last(frames, ClientHealthRecorder.keepFrames),
+      visits: last(visits, ClientHealthRecorder.keepVisits),
     );
   }
 

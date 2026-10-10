@@ -15,6 +15,8 @@ import 'habits_repository.dart';
 import 'notes_repository.dart';
 import 'people_repository.dart';
 import 'traits_repository.dart';
+import 'client_health.dart';
+import 'work_timing.dart';
 
 /// What the app has loaded, kept while it runs -- above every route
 /// ([PlanMemoryScope]), across switching between Notes, Events and Plan
@@ -91,24 +93,43 @@ class PlanMemory extends ChangeNotifier {
     };
     final today = key.$5;
     final span = store.span;
-    final scores = TraitScores.compute(
-      traits: traits,
-      people: people.withSelf,
-      habits: habits ?? const [],
-      events: store.between(
-        span?.$1 ?? today,
-        span == null ? today : span.$2.add(const Duration(days: 1)),
+    final was = _scores?.$1;
+    final scores = timed(
+      WorkKind.traitScores,
+      why: () => _why(was, key),
+      () => TraitScores.compute(
+        traits: traits,
+        people: people.withSelf,
+        habits: habits ?? const [],
+        events: store.between(
+          span?.$1 ?? today,
+          span == null ? today : span.$2.add(const Duration(days: 1)),
+        ),
+        today: today,
+        parentOf: (id) => parents[id],
+        days: scoredDays,
+        windowDays: span == null ? 0 : today.difference(span.$1).inDays,
       ),
-      today: today,
-      parentOf: (id) => parents[id],
-      days: scoredDays,
-      windowDays: span == null ? 0 : today.difference(span.$1).inDays,
     );
     _scores = (key, scores);
     return scores;
   }
 
   (_ScoresKey, TraitScores)? _scores;
+
+  /// What changed from [was] to [now], that the scores are worked out
+  /// again for: "first", with none before.
+  static String _why(_ScoresKey? was, _ScoresKey now) {
+    if (was == null) return 'first';
+    return [
+      if (was.$1 != now.$1) 'events',
+      if (!identical(was.$2, now.$2)) 'traits',
+      if (!identical(was.$3, now.$3)) 'people',
+      if (!identical(was.$4, now.$4)) 'actions',
+      if (was.$5 != now.$5) 'day',
+      if (!identical(was.$6, now.$6)) 'habits',
+    ].join(', ');
+  }
 
   static bool _same(_ScoresKey a, _ScoresKey b) =>
       a.$1 == b.$1 &&

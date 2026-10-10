@@ -407,6 +407,10 @@ class _ClientPaneState extends State<_ClientPane>
       for (final calls in health.calls.values)
         if (calls.isNotEmpty) calls.first.at,
       if (health.queue.isNotEmpty) health.queue.first.at,
+      for (final work in health.work.values)
+        if (work.isNotEmpty) work.first.at,
+      if (health.frames.isNotEmpty) health.frames.first.at,
+      if (health.visits.isNotEmpty) health.visits.first.at,
     ],
   ];
 
@@ -455,6 +459,12 @@ class _ClientPaneState extends State<_ClientPane>
         ),
       ...within(health.queue, (q) => q.at, from, to),
     ];
+    final visits = within(health.visits, (v) => v.at, from, to);
+    final frames = within(health.frames, (f) => f.at, from, to);
+    final work = {
+      for (final MapEntry(:key, :value) in health.work.entries)
+        key: within(value, (w) => w.at, from, to),
+    };
     final errors = [
       for (final e in health.errors.reversed)
         if (e.tool == null ? filter is AllTools : filter.includes(e.tool!)) e,
@@ -479,9 +489,12 @@ class _ClientPaneState extends State<_ClientPane>
                   to: to,
                 ),
                 _QueueCard(queue: queue, from: from, to: to),
+                _SlowFramesCard(frames: frames, from: from, to: to),
               ],
             ),
           ),
+          _PlanVisitsCard(visits: visits),
+          _WorkCard(work: work),
           _ErrorsCard(errors: errors, kept: health.errors.length),
         ],
       ),
@@ -1484,6 +1497,297 @@ class _ErrorsCard extends StatelessWidget {
                   ),
                 ],
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Each kind of the device's own work's color, in the visits' bars and
+/// the work's table.
+Color _workColor(ColorScheme colors, WorkKind kind) => switch (kind) {
+  WorkKind.traitScores => colors.primary,
+  WorkKind.actionTime => colors.tertiary,
+  WorkKind.peopleTime => colors.secondary,
+  WorkKind.planRebuild => colors.error,
+};
+
+/// Each visit to Plan in view, oldest first, from opening it to
+/// everything loaded: a bar of the device's own work, kind by kind, under
+/// the time it waited -- on the server, mostly.
+class _PlanVisitsCard extends StatelessWidget {
+  const _PlanVisitsCard({required this.visits});
+
+  final List<PlanVisit> visits;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final waiting = colors.outlineVariant;
+    final strings = MaterialLocalizations.of(context);
+    final top = visits.isEmpty ? 1.0 : visits.map((v) => v.ms).reduce(max);
+    return _GraphCard(
+      title: 'Plan visits',
+      subtitle:
+          '${visits.length} visit${visits.length == 1 ? '' : 's'} in view, '
+          'from opening Plan to everything loaded, by what the time went to',
+      legend: [
+        for (final kind in WorkKind.values)
+          (_workColor(colors, kind), kind.label),
+        (waiting, 'Waiting, on the server mostly'),
+      ],
+      graph: visits.isEmpty
+          ? _empty(context, 'No visits to Plan in view.')
+          : SizedBox(
+              height: 180,
+              child: BarChart(
+                BarChartData(
+                  minY: 0,
+                  maxY: max(1, top * 1.1),
+                  alignment: BarChartAlignment.spaceAround,
+                  titlesData: FlTitlesData(
+                    leftTitles: _valueAxis(context, _ms),
+                    bottomTitles: _noTitles,
+                    topTitles: _noTitles,
+                    rightTitles: _noTitles,
+                  ),
+                  borderData: FlBorderData(show: false),
+                  barGroups: [
+                    for (final (i, v) in visits.indexed)
+                      BarChartGroupData(
+                        x: i,
+                        barRods: [
+                          BarChartRodData(
+                            toY: v.ms,
+                            width: max(3, min(16, 240 / visits.length)),
+                            borderRadius: BorderRadius.zero,
+                            color: waiting,
+                            rodStackItems: () {
+                              var y = 0.0;
+                              return [
+                                for (final kind in WorkKind.values)
+                                  if (v.msOf(kind) > 0)
+                                    BarChartRodStackItem(
+                                      y,
+                                      y += v.msOf(kind),
+                                      _workColor(colors, kind),
+                                    ),
+                                BarChartRodStackItem(y, v.ms, waiting),
+                              ];
+                            }(),
+                          ),
+                        ],
+                      ),
+                  ],
+                  barTouchData: BarTouchData(
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipItem: (group, _, _, _) {
+                        final v = visits[group.x];
+                        final at = v.at.toLocal();
+                        return BarTooltipItem(
+                          [
+                            '${strings.formatShortMonthDay(at)}, '
+                                '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(at))}: '
+                                '${_ms(v.ms)}',
+                            for (final kind in WorkKind.values)
+                              if (v.msOf(kind) > 0)
+                                '${kind.label} ${_ms(v.msOf(kind))}',
+                            'Waiting ${_ms(v.waitingMs)}',
+                          ].join('\n'),
+                          TextStyle(
+                            color: colors.onInverseSurface,
+                            fontSize: 12,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+      footer: _SummaryTable(
+        format: _ms,
+        rows: [
+          ('Whole visit', Summary.of([for (final v in visits) v.ms])),
+          (
+            'Own work',
+            Summary.of([for (final v in visits) v.ms - v.waitingMs]),
+          ),
+          ('Waiting', Summary.of([for (final v in visits) v.waitingMs])),
+        ],
+      ),
+    );
+  }
+}
+
+/// Each frame in view slower than [SlowFrame.budget], as tall as it took:
+/// those while Plan was open apart from the rest, and any long enough to
+/// see the screen freeze, red.
+class _SlowFramesCard extends StatelessWidget {
+  const _SlowFramesCard({
+    required this.frames,
+    required this.from,
+    required this.to,
+  });
+
+  final List<SlowFrame> frames;
+  final DateTime from;
+  final DateTime to;
+
+  /// A frame this slow is a freeze anyone would see.
+  static const _freeze = 100.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final plan = colors.primary;
+    final elsewhere = colors.outline;
+    final top = frames.isEmpty ? 1.0 : frames.map((f) => f.ms).reduce(max);
+    List<num> msOf(bool onPlan) => [
+      for (final f in frames)
+        if (f.plan == onPlan) f.ms,
+    ];
+    final onPlan = msOf(true), off = msOf(false);
+    return _GraphCard(
+      title: 'Slow frames',
+      subtitle:
+          '${frames.length} frame${frames.length == 1 ? '' : 's'} in view '
+          'over ${(SlowFrame.budget.inMicroseconds / 1000).round()} ms, each '
+          'as tall as it took',
+      legend: [
+        (plan, 'Plan open'),
+        (elsewhere, 'Elsewhere'),
+        (colors.error, 'Over ${_freeze.round()} ms: a freeze'),
+      ],
+      graph: frames.isEmpty
+          ? _empty(context, 'No slow frames in view.')
+          : SizedBox(
+              height: 140,
+              child: ScatterChart(
+                ScatterChartData(
+                  minX: _x(from),
+                  maxX: _x(to),
+                  minY: 0,
+                  maxY: max(1, top * 1.1),
+                  clipData: const FlClipData.all(),
+                  titlesData: FlTitlesData(
+                    bottomTitles: _timeAxis(context, from, to),
+                    leftTitles: _valueAxis(context, _ms),
+                    topTitles: _noTitles,
+                    rightTitles: _noTitles,
+                  ),
+                  borderData: FlBorderData(show: false),
+                  scatterSpots: [
+                    for (final f in frames)
+                      ScatterSpot(
+                        _x(f.at),
+                        f.ms,
+                        dotPainter: FlDotCirclePainter(
+                          radius: 3,
+                          color: f.ms > _freeze
+                              ? colors.error
+                              : f.plan
+                              ? plan
+                              : elsewhere,
+                          strokeWidth: 0,
+                        ),
+                      ),
+                  ],
+                  scatterTouchData: ScatterTouchData(
+                    touchTooltipData: ScatterTouchTooltipData(
+                      getTooltipItems: (spot) {
+                        final f = frames.firstWhere(
+                          (f) => _x(f.at) == spot.x && f.ms == spot.y,
+                          orElse: () => frames.first,
+                        );
+                        return ScatterTooltipItem(
+                          '${_ms(f.ms)}: build ${_ms(f.buildUs / 1000)}, '
+                          'draw ${_ms(f.rasterUs / 1000)}',
+                          textStyle: TextStyle(
+                            color: colors.onInverseSurface,
+                            fontSize: 12,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+      footer: _SummaryTable(
+        format: _ms,
+        rows: [
+          ('Plan open', Summary.of(onPlan)),
+          ('Elsewhere', Summary.of(off)),
+        ],
+        extra: ('Frames', ['${onPlan.length}', '${off.length}']),
+      ),
+    );
+  }
+}
+
+/// How long each kind of the device's own work took, in view: each run
+/// whole, what's done inside it included, and how many runs. And why the
+/// traits' scores were worked out again, each time they were.
+class _WorkCard extends StatelessWidget {
+  const _WorkCard({required this.work});
+
+  final Map<WorkKind, List<WorkSample>> work;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final kinds = [
+      for (final kind in WorkKind.values)
+        if (work[kind]?.isNotEmpty ?? false) kind,
+    ];
+    final whys = <String, int>{};
+    for (final s in work[WorkKind.traitScores] ?? const <WorkSample>[]) {
+      for (final why in (s.why ?? '').split(', ')) {
+        if (why.isNotEmpty) whys[why] = (whys[why] ?? 0) + 1;
+      }
+    }
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Work on the device', style: theme.textTheme.titleMedium),
+            Text(
+              kinds.isEmpty
+                  ? 'None in view.'
+                  : 'Each run whole, with what it does inside it; the last '
+                        '${ClientHealthRecorder.keepWork} of each are kept.',
+              style: theme.textTheme.bodySmall,
+            ),
+            if (kinds.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _SummaryTable(
+                format: _ms,
+                rows: [
+                  for (final kind in kinds)
+                    (
+                      kind.label,
+                      Summary.of([for (final s in work[kind]!) s.ms]),
+                    ),
+                ],
+                extra: (
+                  'Runs',
+                  [for (final kind in kinds) '${work[kind]!.length}'],
+                ),
+              ),
+            ],
+            if (whys.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Trait scores were worked out again for: '
+                '${[for (final MapEntry(:key, :value) in (whys.entries.toList()..sort((a, b) => b.value.compareTo(a.value)))) '$key ×$value'].join(', ')}',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
           ],
         ),
       ),
