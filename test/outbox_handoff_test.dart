@@ -558,7 +558,11 @@ class _HangingProposals extends InMemoryProposalRepository {
   int amended = 0;
 
   @override
-  Future<Proposal> amend(Proposal proposal, ProposalEdits edits) async {
+  Future<Proposal> amend(
+    Proposal proposal,
+    ProposalEdits edits, {
+    bool allowHistory = false,
+  }) async {
     final amended = await super.amend(proposal, edits);
     this.amended++;
     if (hang case final h?) await h.future;

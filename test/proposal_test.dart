@@ -1171,6 +1171,25 @@ void main() {
       expect(find.text('Moved in what happened, to confirm.'), findsOneWidget);
     });
 
+    testWidgets('moving an event an earlier compaction recorded asks to '
+        'change history first', (tester) async {
+      // The last compaction ran at 9:30, as tea, from 9, was going on.
+      await open(tester, json: {...proposalJson(), 'window_start': iso(9, 30)});
+      await toBand(tester);
+      await tester.longPress(find.text('Tea'));
+      await tester.pumpAndSettle();
+      await dragBox(tester, const Duration(minutes: -75));
+      await tester.tap(find.byTooltip('Move it here'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Change history?'), findsOneWidget);
+      await tester.tap(find.text('Change it'));
+      await tester.pumpAndSettle();
+
+      expect(proposals.amends, hasLength(1));
+      expect(proposals.allowed.single, isTrue);
+    });
+
     testWidgets('a new event in the band is made in the proposal', (
       tester,
     ) async {
@@ -1363,13 +1382,22 @@ class _Proposals extends InMemoryProposalRepository {
   _Proposals(super.proposal, {super.events, super.changed});
 
   final amends = <ProposalEdits>[];
+
+  /// Whether each amend was sent with the user's approval to change
+  /// history.
+  final allowed = <bool>[];
   Object? error;
 
   @override
-  Future<Proposal> amend(Proposal proposal, ProposalEdits edits) async {
+  Future<Proposal> amend(
+    Proposal proposal,
+    ProposalEdits edits, {
+    bool allowHistory = false,
+  }) async {
     if (error case final error?) throw error;
     final amended = await super.amend(proposal, edits);
     amends.add(edits);
+    allowed.add(allowHistory);
     return amended;
   }
 }

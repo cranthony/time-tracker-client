@@ -652,7 +652,13 @@ Claude can't apply one; only confirming it in the app does.
   changed too; a cancelled one can be put back as planned. If the server
   refuses an edit (an overlap, say), it stays in the dialog to fix, and
   the proposal loads again. Below the band is the plan, changed on the
-  calendar; before it, history, changed only after asking.
+  calendar; before it, history, changed only after asking. So is an edit
+  of the proposal that changes what an earlier compaction recorded --
+  moving the start of, ending earlier, or cancelling an event that
+  started before the band, as sleeping in pushes the morning: it asks
+  "Change history?" first, and approved, the server keeps to it in every
+  revision after. One it couldn't tell, refused, offers **Change
+  history** from the changes waiting.
 - **Extending it.** Its "through" tab, with a pencil, extends what
   happened past where Claude's revision ran to: the end's cursor, its
   anchor fixed at Claude's end, dragged, stepped to its next stop

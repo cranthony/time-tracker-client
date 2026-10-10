@@ -1434,18 +1434,44 @@ class _EventsScreenState extends State<EventsScreen> {
     if (proposal == null || repository == null) {
       throw StateError('No proposal is open.');
     }
+    // Asked now, if it changes what a compaction settled; one the app
+    // can't tell is refused, and asked then (below, or from the changes
+    // waiting).
+    var allowHistory = false;
+    if (changesHistory(edits, proposal)) {
+      if (await _approveHistory() != true) throw const HistoryKept();
+      allowHistory = true;
+    }
     if (_writes.queued) {
       // Shown as made (see _proposal), till it's saved.
       final amended = await _writes.amend(
         _loadedProposal!,
         edits,
         label: label,
+        allowHistory: allowHistory,
       );
       if (mounted) setState(() {});
       return amended;
     }
     try {
-      final amended = await _writes.amend(proposal, edits, label: label);
+      Proposal amended;
+      try {
+        amended = await _writes.amend(
+          proposal,
+          edits,
+          label: label,
+          allowHistory: allowHistory,
+        );
+      } catch (e) {
+        if (allowHistory || !isHistoryRefusal(e) || !mounted) rethrow;
+        if (await _approveHistory() != true) rethrow;
+        amended = await _writes.amend(
+          proposal,
+          edits,
+          label: label,
+          allowHistory: true,
+        );
+      }
       if (mounted) {
         setState(() {
           _editedHere

@@ -4,6 +4,7 @@ import 'package:time_tracker_client/models/proposal.dart';
 import 'package:time_tracker_client/outbox/event_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/widgets/proposal_review.dart';
@@ -33,6 +34,10 @@ class _Proposals implements ProposalRepository {
   Proposal? open = _proposal();
   final calls = <String>[];
 
+  /// Whether each amend was sent with the user's approval to change
+  /// history.
+  final allowed = <bool>[];
+
   /// The events an amend says it replaced Claude's newer changes to.
   List<String> replaced = const [];
   ProposalOutcome confirmed = const ProposalOutcome(
@@ -53,8 +58,13 @@ class _Proposals implements ProposalRepository {
   Future<Proposal?> cachedCurrent() async => null;
 
   @override
-  Future<Proposal> amend(Proposal proposal, ProposalEdits edits) async {
+  Future<Proposal> amend(
+    Proposal proposal,
+    ProposalEdits edits, {
+    bool allowHistory = false,
+  }) async {
     calls.add('amend from ${proposal.revision}');
+    allowed.add(allowHistory);
     return open = open!.copyWith(
       revision: open!.revision + 1,
       replaced: replaced,
@@ -188,6 +198,105 @@ void main() {
       await outbox.flush(ignoreBackoff: true);
 
       expect(outbox.notices!.notices, isEmpty);
+    });
+  });
+
+  group('Changing history', () {
+    // The last compaction ran at 12:30, as lunch, from 12, was going on.
+    Proposal settled() => Proposal(
+      id: 'p1',
+      revision: 3,
+      state: ProposalState.awaitingReview,
+      windowStart: _at(12).add(const Duration(minutes: 30)),
+      through: _at(14),
+      events: [
+        ProposalEvent(
+          id: 'lunch',
+          start: _at(12),
+          end: _at(13),
+          plannedStart: _at(12),
+          plannedEnd: _at(13),
+          status: ProposalEventStatus.onSchedule,
+          summary: 'Lunch',
+        ),
+        ProposalEvent(
+          id: 'call',
+          start: _at(13),
+          end: _at(14),
+          status: ProposalEventStatus.onSchedule,
+          summary: 'Call',
+        ),
+      ],
+    );
+    ProposalEdits update(String id, Map<String, Object?> fields) =>
+        ProposalEdits(
+          updates: [
+            {
+              'event': {'id': id, ...fields},
+            },
+          ],
+        );
+
+    test('is moving the start of, ending earlier, or cancelling an event '
+        'an earlier compaction recorded', () {
+      final proposal = settled();
+      String at(int h, [int m = 0]) =>
+          localIsoTimestamp(_at(h).add(Duration(minutes: m)));
+
+      expect(
+        changesHistory(update('lunch', {'start': at(12, 10)}), proposal),
+        isTrue,
+      );
+      expect(
+        changesHistory(update('lunch', {'end': at(12, 20)}), proposal),
+        isTrue,
+      );
+      expect(
+        changesHistory(
+          const ProposalEdits(
+            cancels: [(eventId: 'lunch', countsAgainstFollowThrough: false)],
+          ),
+          proposal,
+        ),
+        isTrue,
+      );
+      // Running on, or renamed, it keeps to what was recorded.
+      expect(
+        changesHistory(update('lunch', {'end': at(13, 30)}), proposal),
+        isFalse,
+      );
+      expect(
+        changesHistory(update('lunch', {'start': at(12)}), proposal),
+        isFalse,
+      );
+      expect(
+        changesHistory(update('lunch', {'summary': 'Brunch'}), proposal),
+        isFalse,
+      );
+      // One after it isn't history.
+      expect(
+        changesHistory(update('call', {'start': at(13, 15)}), proposal),
+        isFalse,
+      );
+    });
+
+    test('approved, is kept with the edit waiting, and sent with it', () async {
+      final proposals = _Proposals();
+      final outbox = _outbox(proposals);
+
+      await outbox.amend(_proposal(), _edit, allowHistory: true);
+      expect(outbox.pending.single.allowHistory, isTrue);
+      await outbox.flush(ignoreBackoff: true);
+
+      expect(proposals.allowed, [true]);
+    });
+
+    test('approved, is sent to the server so', () async {
+      final client = _Client();
+      await McpProposalRepository(client)
+          .amend(_proposal(), _edit, allowHistory: true);
+
+      expect(client.arguments['allow_compacted_changes'], isTrue);
     });
   });
 
@@ -515,4 +624,27 @@ void main() {
     await tester.tap(find.byType(FilledButton));
     expect(confirmed, isFalse);
   });
+}
+
+/// A server that answers amend_proposal with a revision, keeping what it
+/// was sent.
+class _Client extends McpClient {
+  _Client() : super(endpoint: Uri.parse('http://test'));
+
+  Map<String, Object?> arguments = const {};
+
+  @override
+  Future<Object?> callTool(
+    String name, [
+    Map<String, Object?> arguments = const {},
+  ]) async {
+    this.arguments = arguments;
+    return {
+      'id': 'p1',
+      'revision': 4,
+      'state': 'awaiting_review',
+      'window_start': '2026-09-30T12:00:00Z',
+      'through': '2026-09-30T14:00:00Z',
+    };
+  }
 }

@@ -732,7 +732,11 @@ class _Proposals implements ProposalRepository {
   final revisions = <int>[];
 
   @override
-  Future<Proposal> amend(Proposal proposal, ProposalEdits edits) async {
+  Future<Proposal> amend(
+    Proposal proposal,
+    ProposalEdits edits, {
+    bool allowHistory = false,
+  }) async {
     revisions.add(proposal.revision);
     return Proposal(
       id: proposal.id,

@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.44.0
+
+- An edit of the proposal that changes what an earlier compaction
+  recorded -- sleeping in past a confirmed morning, say, pushing the
+  start of what came next -- asks "Change history?" first, rather than
+  being refused. Approved, it's sent with the server's
+  `allow_compacted_changes`, which keeps to it in every revision after.
+  One the app couldn't tell, refused, offers **Change history** from the
+  changes waiting. Needs the server's `amend_proposal`
+  `allow_compacted_changes`.
+
 ## 7.43.0
 
 - Diagnostics' **App** pane: the app's own health, recorded on the device,

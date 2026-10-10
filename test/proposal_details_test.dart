@@ -485,7 +485,11 @@ class _Proposals extends InMemoryProposalRepository {
   Object? error;
 
   @override
-  Future<Proposal> amend(Proposal proposal, ProposalEdits edits) async {
+  Future<Proposal> amend(
+    Proposal proposal,
+    ProposalEdits edits, {
+    bool allowHistory = false,
+  }) async {
     if (error case final error?) throw error;
     final amended = await super.amend(proposal, edits);
     amends.add(edits);
