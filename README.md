@@ -629,7 +629,8 @@ same menus:
 - **Slow frames** -- each frame that took more than 16 ms to build and
   draw, as tall as it took: those while Plan was open apart from the
   rest, and red over 100 ms, a freeze anyone would see; the last 300 are
-  kept.
+  kept. None are recorded while Diagnostics is open: its graphs' drawing
+  isn't what's measured, and would only be drawn again.
 - **Plan visits** -- each visit to Plan, from opening it to everything
   loaded: a bar of the device's own work in it that held up the screen --
   the time on actions and on people, rebuilding the page, and the trait

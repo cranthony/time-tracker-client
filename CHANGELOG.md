@@ -11,6 +11,9 @@ on. Add the new version's section here at the same time; CI checks both.
 - Diagnostics' App pane says how many errors there are and shows the
   newest; **See all** opens the list on a page of its own, each still
   opened to read in full and copy.
+- Slow frames aren't recorded while Diagnostics is open: its own graphs,
+  drawn again as each frame was recorded, recorded more, on and on -- the
+  graph filling with them at its right edge, jittering.
 
 ## 7.48.0
 

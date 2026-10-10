@@ -9,6 +9,7 @@ import '../models/server_health.dart';
 import '../services/client_health.dart';
 import '../services/diagnostics.dart';
 import '../services/diagnostics_repository.dart';
+import '../services/work_timing.dart';
 import '../widgets/status_message.dart';
 
 /// How the app and the server are doing: the server's health metrics
@@ -58,18 +59,48 @@ class DiagnosticsScreen extends StatelessWidget {
             ],
           ),
         ),
-        body: TabBarView(
-          children: [
-            _ServerPane(repository: repository, clock: clock),
-            if (client != null)
-              _ClientPane(client: client, clock: clock)
-            else
-              const _AppPane(),
-          ],
+        body: _PausingFrames(
+          child: TabBarView(
+            children: [
+              _ServerPane(repository: repository, clock: clock),
+              if (client != null)
+                _ClientPane(client: client, clock: clock)
+              else
+                const _AppPane(),
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+/// [child], with the app's slow frames not recorded while it's shown: its
+/// graphs, drawn again as each was recorded, would only record more.
+class _PausingFrames extends StatefulWidget {
+  const _PausingFrames({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_PausingFrames> createState() => _PausingFramesState();
+}
+
+class _PausingFramesState extends State<_PausingFrames> {
+  @override
+  void initState() {
+    super.initState();
+    framesPaused++;
+  }
+
+  @override
+  void dispose() {
+    framesPaused--;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// What a pane's graphs show, picked from its menus: which tools' calls,
@@ -1700,7 +1731,7 @@ class _SlowFramesCard extends StatelessWidget {
       subtitle:
           '${frames.length} frame${frames.length == 1 ? '' : 's'} in view '
           'over ${(SlowFrame.budget.inMicroseconds / 1000).round()} ms, each '
-          'as tall as it took',
+          "as tall as it took; none's recorded while this page is open",
       legend: [
         (plan, 'Plan open'),
         (elsewhere, 'Elsewhere'),

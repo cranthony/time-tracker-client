@@ -454,6 +454,15 @@ void main() {
       expect(copied, contains('background note TimeoutException'));
     });
 
+    testWidgets("doesn't record frames while it's open: its own graphs' "
+        'drawing would be, on and on', (tester) async {
+      expect(framesPaused, 0);
+      await open(tester);
+      expect(framesPaused, 1);
+      await tester.pumpWidget(const SizedBox());
+      expect(framesPaused, 0);
+    });
+
     testWidgets('shows what it records as it records it', (tester) async {
       final client = await open(tester);
 
