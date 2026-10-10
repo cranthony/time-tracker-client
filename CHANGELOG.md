@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.49.0
+
+- Diagnostics' App pane says how many errors there are and shows the
+  newest; **See all** opens the list on a page of its own, each still
+  opened to read in full and copy.
+- Slow frames aren't recorded while Diagnostics is open: its own graphs,
+  drawn again as each frame was recorded, recorded more, on and on -- the
+  graph filling with them at its right edge, jittering.
+- Opening or closing an action group no longer builds every row again:
+  each row is kept by its action, and one that shows nothing new isn't
+  built again at all.
+
 ## 7.48.0
 
 - Plan's Actions, Traits and People panes open faster, and don't freeze

@@ -377,7 +377,7 @@ void main() {
       expect(find.text('The background task'), findsWidgets);
       expect(find.text('Waiting to save'), findsOneWidget);
       expect(find.text('Errors'), findsOneWidget);
-      expect(find.text('note'), findsWidgets);
+      expect(find.textContaining('note'), findsWidgets);
     });
 
     testWidgets("shows the app's slow frames, visits to Plan, and work, "
@@ -439,6 +439,11 @@ void main() {
       );
       await open(tester);
 
+      // On a page of their own.
+      await tester.ensureVisible(find.text('See it in full'));
+      await tester.tap(find.text('See it in full'));
+      await tester.pumpAndSettle();
+      expect(find.text('Errors (1)'), findsOneWidget);
       await tester.tap(find.textContaining('TimeoutException').first);
       await tester.pumpAndSettle();
       expect(find.textContaining('all of it'), findsOneWidget);
@@ -447,6 +452,15 @@ void main() {
 
       expect(copied, contains('all of it'));
       expect(copied, contains('background note TimeoutException'));
+    });
+
+    testWidgets("doesn't record frames while it's open: its own graphs' "
+        'drawing would be, on and on', (tester) async {
+      expect(framesPaused, 0);
+      await open(tester);
+      expect(framesPaused, 1);
+      await tester.pumpWidget(const SizedBox());
+      expect(framesPaused, 0);
     });
 
     testWidgets('shows what it records as it records it', (tester) async {

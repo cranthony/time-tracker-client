@@ -629,7 +629,8 @@ same menus:
 - **Slow frames** -- each frame that took more than 16 ms to build and
   draw, as tall as it took: those while Plan was open apart from the
   rest, and red over 100 ms, a freeze anyone would see; the last 300 are
-  kept.
+  kept. None are recorded while Diagnostics is open: its graphs' drawing
+  isn't what's measured, and would only be drawn again.
 - **Plan visits** -- each visit to Plan, from opening it to everything
   loaded: a bar of the device's own work in it that held up the screen --
   the time on actions and on people, rebuilding the page, and the trait
@@ -641,9 +642,10 @@ same menus:
   scores were worked out again each time they were: the first time, or
   what they're from changed -- the events, traits, people, actions,
   habits, or the day. The last 100 of each kind are kept.
-- **Errors** -- the last 20, newest first: a call that failed, with its
-  tool, or one the app didn't catch, with where. Tap one to read it in
-  full, and copy it.
+- **Errors** -- how many of the last 20 are of the tools picked, and the
+  newest; **See all** opens them on a page of their own, newest first: a
+  call that failed, with its tool, or one the app didn't catch, with
+  where. Tap one to read it in full, and copy it.
 
 Work is timed with a stopwatch around it (work_timing.dart), and slow
 frames as Flutter reports them. Recording is a few microseconds' work in

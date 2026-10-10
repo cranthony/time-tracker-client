@@ -69,11 +69,16 @@ class PlanVisitTimer {
   }
 }
 
+/// How many pages showing the slow frames are open: while one is, frames
+/// aren't recorded. Its own drawing of them would be, each drawn again as
+/// it's recorded -- on and on.
+int framesPaused = 0;
+
 /// Records every frame slower than [SlowFrame.budget], from now on, as
-/// Flutter reports their timings.
+/// Flutter reports their timings -- but while [framesPaused].
 void watchFrames() => SchedulerBinding.instance.addTimingsCallback((timings) {
   final recorder = workRecorder;
-  if (recorder == null) return;
+  if (recorder == null || framesPaused > 0) return;
   // Reported in batches, soon after; their own times are on the engine's
   // clock, not the wall's.
   final now = DateTime.now().toUtc();
