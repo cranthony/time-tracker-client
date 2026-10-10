@@ -1025,6 +1025,8 @@ void main() {
               await settle();
             }
             if (list != null) {
+              await tester.tap(find.byTooltip('Show the lists'));
+              await settle();
               await tester.tap(find.byTooltip(RegExp('^$list: pick events')));
               await settle();
               for (final n in names) {

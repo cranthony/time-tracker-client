@@ -16,10 +16,13 @@ class CalledOff implements Exception {
 /// cancellation counts against follow-through: a commitment dropped,
 /// rather than a change of plan. Each starts as a change of plan. Returns
 /// the ids of those that count, or null if the change was called off.
+/// Not [makingRoom] -- cancelled for their own sake -- it doesn't say
+/// it's to make room.
 Future<Set<String>?> askFollowThrough(
   BuildContext context,
-  List<Event> cancels,
-) async {
+  List<Event> cancels, {
+  bool makingRoom = true,
+}) async {
   if (cancels.isEmpty) return const {};
   final counts = <String>{};
   final strings = MaterialLocalizations.of(context);
@@ -33,9 +36,8 @@ Future<Set<String>?> askFollowThrough(
     builder: (context) => StatefulBuilder(
       builder: (context, setState) => AlertDialog(
         title: Text(
-          n == 1
-              ? 'Cancel an event to make room?'
-              : 'Cancel $n events to make room?',
+          '${n == 1 ? 'Cancel an event' : 'Cancel $n events'}'
+          '${makingRoom ? ' to make room' : ''}?',
         ),
         content: SizedBox(
           width: 420,

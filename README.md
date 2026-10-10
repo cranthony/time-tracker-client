@@ -18,16 +18,19 @@ a "−" below, a minute past 59 carrying into the hour, an hour past 23
 into the day. On its outside, a "+" and a "−"
 stretch and shrink the event there, and its handle drags it. The box
 itself, dragged, moves, and it trims the events in its way -- splitting
-the one its cursor was placed in -- unless they're in a list: beside ✕
-and ✓, **Keep**, **Push up** over **Push down**, and **Cancel**, each
-with a dot while it has events. Tapping one picks events for it -- a
+the one its cursor was placed in -- unless they're in a list: beside
+go-to-new, a checklist button, with a dot while any list has events,
+brings out **Keep**, **Push up** over **Push down**, and **Cancel**
+above ✕ and ✓, each with a dot while it has events. Tapping one picks
+events for it -- a
 tap on an event, any on the timeline, picks it or unpicks it, ringed
 and marked with the list's icon, the box's buttons out of the way --
-then ✓ keeps what's picked, and ✕ or back puts it back. Events to keep
+then ✓ keeps what's picked, and ✕ or back puts it back, the lists
+tucked away again either way. Events to keep
 stay as they are, the box going no further (its "+" greyed out); to
 push up or down, moved whole to just above or below the box when it --
 or what it pushes -- reaches them, trimming what they run into; to
-cancel, cancelled. Once there's a box, a tap on the timeline leaves it
+cancel, cancelled, wherever they are. Once there's a box, a tap on the timeline leaves it
 be. Then ✓ to fill it in. A cursor stops on the grid
 set in [Settings](#settings) and, as set there, at events' edges and
 notes too: its buttons step it to the next such stop, and dragged near
@@ -36,8 +39,8 @@ marked on the timeline, pulsing. Pressed and held, an event is moved
 the same way, pushing to start with. The mode the page is in -- placing
 a cursor, creating an event, editing one, extending the compaction
 window -- is named at the lower left, over its icon; back, like ✕,
-leaves it. Placing a cursor inside an event, ✓ splits the event there,
-and does nothing else. While
+leaves it. With just the one cursor placed, ✓ cancels the events to
+cancel, if there are any, and is greyed out otherwise. While
 Claude has a **compaction proposal** open -- what it says happened since the
 last compaction -- it's a band over the timeline, each change marked, to
 confirm: edits to the events in it edit the proposal, not the calendar, and
