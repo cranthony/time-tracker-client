@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:isolate';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../models/event.dart';
@@ -70,52 +74,127 @@ class PlanMemory extends ChangeNotifier {
 
   /// Everyone's traits scored for each of the last [scoredDays] days, from
   /// [eventStore]'s events -- Self's habits' too, once they're loaded --
-  /// null until the traits and people are loaded. Worked out again only
-  /// when something it's from changes.
+  /// null until the traits and people are loaded, and they've been worked
+  /// out once. Worked out again only when what they're from changes --
+  /// not just as it's loaded again, alike -- by [runScores], off the UI
+  /// thread: until then, as they were, with [rescoring] saying so, and
+  /// listeners told once they're in.
   TraitScores? get scores {
     final traits = this.traits, people = this.people, store = _eventStore;
     if (traits == null || people == null || store == null) return null;
     final now = DateTime.now();
     final key = (
       store.version,
-      traits,
-      people,
-      actions,
+      _signature(traits, _traitsSignature),
+      _signature(people, _peopleSignature),
+      _signature(actions, _actionsSignature),
       DateTime(now.year, now.month, now.day),
-      habits,
+      _signature(habits, _habitsSignature),
     );
-    if (_scores case (final kept, final scores) when _same(kept, key)) {
-      return scores;
+    if (_scores case (final kept, final scores) when kept == key) return scores;
+    if (_rescoring == null && _failed != key) {
+      _rescore(key, traits, people, store);
     }
-    final parents = {
-      for (final g in actions?.actions ?? const <PlanAction>[])
-        if (g.id != null) g.id!: g.parentId,
-    };
+    return _scores?.$2;
+  }
+
+  /// Whether [scores] are being worked out again: they're as they were
+  /// till then.
+  bool get rescoring => _rescoring != null;
+
+  (_ScoresKey, TraitScores)? _scores;
+  Future<void>? _rescoring;
+
+  /// What they couldn't be worked out from: not tried again till it
+  /// changes.
+  _ScoresKey? _failed;
+
+  /// Runs the scores' working out, off the UI thread: on another isolate,
+  /// or on the web, which has none, in a task of its own. Tests set one
+  /// that runs it there and then.
+  static Future<TraitScores> Function(TraitScores Function() work) runScores =
+      _offThread;
+
+  static Future<TraitScores> _offThread(TraitScores Function() work) =>
+      kIsWeb ? Future(work) : Isolate.run(work);
+
+  /// Works the scores out for [key], then has them shown -- and worked
+  /// out again, if what they're from changed meanwhile.
+  void _rescore(
+    _ScoresKey key,
+    List<Trait> traits,
+    PeopleList people,
+    EventStore store,
+  ) {
     final today = key.$5;
     final span = store.span;
-    final was = _scores?.$1;
-    final scores = timed(
-      WorkKind.traitScores,
-      why: () => _why(was, key),
+    final work = _scoring(
+      traits: traits,
+      people: people.withSelf,
+      habits: habits ?? const [],
+      events: store.between(
+        span?.$1 ?? today,
+        span == null ? today : span.$2.add(const Duration(days: 1)),
+      ),
+      today: today,
+      parents: {
+        for (final g in actions?.actions ?? const <PlanAction>[])
+          if (g.id != null) g.id!: g.parentId,
+      },
+      windowDays: span == null ? 0 : today.difference(span.$1).inDays,
+    );
+    final why = _why(_scores?.$1, key);
+    final watch = Stopwatch()..start();
+    // Done there and then -- as in tests -- it's shown now, not told of.
+    var now = true, done = false;
+    final rescoring = runScores(work)
+        .then(
+          (scores) {
+            recordWork(
+              WorkKind.traitScores,
+              watch.elapsedMicroseconds,
+              why: why,
+              blocking: now,
+            );
+            _scores = (key, scores);
+            _failed = null;
+          },
+          onError: (Object e, StackTrace stack) {
+            // Kept as they were; worked out again when something changes.
+            _failed = key;
+            workRecorder?.recordError(e, stack: stack);
+          },
+        )
+        .whenComplete(() {
+          done = true;
+          _rescoring = null;
+          if (!now) notifyListeners();
+        });
+    if (!done) _rescoring = rescoring;
+    now = false;
+  }
+
+  /// The scores' working out, from these alone: what's sent off the UI
+  /// thread holds nothing more.
+  static TraitScores Function() _scoring({
+    required List<Trait> traits,
+    required List<Person> people,
+    required List<Habit> habits,
+    required List<Event> events,
+    required DateTime today,
+    required Map<String, String?> parents,
+    required int windowDays,
+  }) =>
       () => TraitScores.compute(
         traits: traits,
-        people: people.withSelf,
-        habits: habits ?? const [],
-        events: store.between(
-          span?.$1 ?? today,
-          span == null ? today : span.$2.add(const Duration(days: 1)),
-        ),
+        people: people,
+        habits: habits,
+        events: events,
         today: today,
         parentOf: (id) => parents[id],
         days: scoredDays,
-        windowDays: span == null ? 0 : today.difference(span.$1).inDays,
-      ),
-    );
-    _scores = (key, scores);
-    return scores;
-  }
-
-  (_ScoresKey, TraitScores)? _scores;
+        windowDays: windowDays,
+      );
 
   /// What changed from [was] to [now], that the scores are worked out
   /// again for: "first", with none before.
@@ -123,21 +202,59 @@ class PlanMemory extends ChangeNotifier {
     if (was == null) return 'first';
     return [
       if (was.$1 != now.$1) 'events',
-      if (!identical(was.$2, now.$2)) 'traits',
-      if (!identical(was.$3, now.$3)) 'people',
-      if (!identical(was.$4, now.$4)) 'actions',
+      if (was.$2 != now.$2) 'traits',
+      if (was.$3 != now.$3) 'people',
+      if (was.$4 != now.$4) 'actions',
       if (was.$5 != now.$5) 'day',
-      if (!identical(was.$6, now.$6)) 'habits',
+      if (was.$6 != now.$6) 'habits',
     ].join(', ');
   }
 
-  static bool _same(_ScoresKey a, _ScoresKey b) =>
-      a.$1 == b.$1 &&
-      identical(a.$2, b.$2) &&
-      identical(a.$3, b.$3) &&
-      identical(a.$4, b.$4) &&
-      a.$5 == b.$5 &&
-      identical(a.$6, b.$6);
+  /// [of]'s [signature]: worked out again only when [of] is another
+  /// object, so loading it again, alike, changes nothing.
+  String? _signature<T extends Object>(T? of, String Function(T) signature) {
+    if (of == null) return null;
+    final kept = _signatures[T];
+    if (kept != null && identical(kept.$1, of)) return kept.$2;
+    final made = signature(of);
+    _signatures[T] = (of, made);
+    return made;
+  }
+
+  final _signatures = <Type, (Object, String)>{};
+
+  /// What of the traits the scores are from: all of each.
+  static String _traitsSignature(List<Trait> traits) =>
+      jsonEncode([for (final t in traits) t.toJson()]);
+
+  /// What of the people the scores are from: each, with what they
+  /// cancelled.
+  static String _peopleSignature(PeopleList people) => jsonEncode([
+    for (final p in people.withSelf)
+      [
+        p.toJson(),
+        for (final c in p.cancelledEvents)
+          [
+            c.eventId,
+            c.summary,
+            c.start.toIso8601String(),
+            c.end.toIso8601String(),
+            c.actionIds,
+            c.engagement,
+            c.parts,
+            c.cancelledAt?.toIso8601String(),
+            c.source,
+          ],
+      ],
+  ]);
+
+  /// What of the actions the scores are from: what each is in.
+  static String _actionsSignature(ActionList actions) => jsonEncode([
+    for (final a in actions.actions) [a.id, a.parentId],
+  ]);
+
+  static String _habitsSignature(List<Habit> habits) =>
+      jsonEncode([for (final h in habits) h.toJson()]);
 
   /// The saved notes not yet compacted; null until they're loaded.
   List<Note>? notes;
@@ -404,11 +521,6 @@ class PlanMemoryScope extends InheritedWidget {
       memory != oldWidget.memory;
 }
 
-typedef _ScoresKey = (
-  int,
-  List<Trait>,
-  PeopleList,
-  ActionList?,
-  DateTime,
-  List<Habit>?,
-);
+/// What the scores are from: the events' version, the traits', people's,
+/// actions' and habits' signatures, and the day.
+typedef _ScoresKey = (int, String?, String?, String?, DateTime, String?);

@@ -12,6 +12,7 @@ import 'trait_breakdown.dart';
 import 'trait_screen.dart';
 import '../services/client_health.dart';
 import '../services/work_timing.dart';
+import '../widgets/refreshing_bar.dart';
 
 /// The Plan page's Traits pane -- how the user wants to be: each
 /// trait's name, definition, status, latest score (the mean across the
@@ -150,6 +151,8 @@ class TraitsPaneState extends State<TraitsPane> {
       timed(WorkKind.planRebuild, () => _build(context));
 
   Widget _build(BuildContext context) {
+    // Once a build, not once a trait.
+    final history = _history;
     final unsearched = [
       for (final trait in _traits ?? const <Trait>[])
         if (_archived || trait.status != 'archived') trait,
@@ -182,35 +185,39 @@ class TraitsPaneState extends State<TraitsPane> {
           onPressed: _traits == null ? null : () => _edit(null),
         ),
       ],
-      child: RefreshIndicator(
-        onRefresh: reload,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 24),
-          children: switch ((_traits, _error)) {
-            (null, final error?) => [
-              LoadError(what: 'the traits', error: error, onRetry: reload),
-            ],
-            (null, _) => const [LinearProgressIndicator()],
-            _ => [
-              for (final trait in traits) _tile(context, trait),
-              if (unsearched.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text('No traits yet. Tap + to define one.'),
-                )
-              else if (traits.isEmpty)
-                NoMatches(query: _query),
-            ],
-          },
+      // The scores as they were, while they're worked out again.
+      child: RefreshingBar(
+        refreshing: widget.memory.rescoring,
+        child: RefreshIndicator(
+          onRefresh: reload,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 24),
+            children: switch ((_traits, _error)) {
+              (null, final error?) => [
+                LoadError(what: 'the traits', error: error, onRetry: reload),
+              ],
+              (null, _) => const [LinearProgressIndicator()],
+              _ => [
+                for (final trait in traits)
+                  _tile(context, trait, history[trait.id] ?? const []),
+                if (unsearched.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No traits yet. Tap + to define one.'),
+                  )
+                else if (traits.isEmpty)
+                  NoMatches(query: _query),
+              ],
+            },
+          ),
         ),
       ),
     );
   }
 
-  Widget _tile(BuildContext context, Trait trait) {
+  Widget _tile(BuildContext context, Trait trait, List<TraitDay> days) {
     final theme = Theme.of(context);
-    final days = _history[trait.id] ?? const <TraitDay>[];
     final latest = days.isEmpty ? null : days.last;
     final muted = trait.status != 'active';
     final judgments = trait.parts.where((p) => p['kind'] == 'judgment').length;

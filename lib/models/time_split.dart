@@ -20,13 +20,25 @@ Map<Event?, Duration> timeByEvent(
     to,
     for (final event in shown) ...[clip(event.start), clip(event.end)],
   }.toList()..sort();
+  // Swept edge by edge, in order: each event joins those going on at its
+  // start and leaves at its end, so each stretch looks only at those
+  // going on in it, not at every event.
+  final starting = [...shown]
+    ..sort((a, b) => clip(a.start).compareTo(clip(b.start)));
+  final ending = [...shown]..sort((a, b) => clip(a.end).compareTo(clip(b.end)));
+  var started = 0, ended = 0;
+  final during = <Event>[];
   final time = <Event?, Duration>{};
   for (var i = 0; i + 1 < edges.length; i++) {
     final (start, end) = (edges[i], edges[i + 1]);
-    final during = [
-      for (final event in shown)
-        if (!event.start.isAfter(start) && !event.end.isBefore(end)) event,
-    ];
+    while (ended < ending.length && !clip(ending[ended].end).isAfter(start)) {
+      final gone = ending[ended++];
+      during.removeAt(during.indexWhere((e) => identical(e, gone)));
+    }
+    while (started < starting.length &&
+        !clip(starting[started].start).isAfter(start)) {
+      during.add(starting[started++]);
+    }
     final length = end.difference(start);
     if (during.isEmpty) time[null] = (time[null] ?? Duration.zero) + length;
     for (final event in during) {

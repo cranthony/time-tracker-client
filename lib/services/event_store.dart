@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -120,29 +121,43 @@ class EventStore extends ChangeNotifier {
   Future<void> refresh(DateTime from, DateTime to) async {
     await _restored;
     final last = _midnight(to) == to ? to : _plusDays(_midnight(to), 1);
-    await _fetch(_midnight(from), last);
-    _changed();
+    _changed(await _fetch(_midnight(from), last));
   }
 
   /// Keeps [events] as [day]'s, as just asked for.
   void putDay(DateTime day, List<Event> events) {
-    _put(_midnight(day), _plusDays(_midnight(day), 1), events);
-    _changed();
+    _changed(_put(_midnight(day), _plusDays(_midnight(day), 1), events));
   }
 
   /// Keeps [events] as every day's from [from] to [to] (midnights).
-  void _put(DateTime from, DateTime to, List<Event> events) {
+  /// Keeps [events] as the days' from [from] to [to]; returns whether
+  /// any day's are new, or differ from what it had.
+  bool _put(DateTime from, DateTime to, List<Event> events) {
     final at = clock();
+    var changed = false;
     for (var d = from; d.isBefore(to); d = _plusDays(d, 1)) {
       final next = _plusDays(d, 1);
-      _days[dayKey(d)] = (
-        at: at,
-        events: [
-          for (final e in events)
-            if (e.start.isBefore(next) && e.end.isAfter(d)) e,
-        ],
-      );
+      final key = dayKey(d);
+      final day = [
+        for (final e in events)
+          if (e.start.isBefore(next) && e.end.isAfter(d)) e,
+      ];
+      if (!changed && !_sameEvents(_days[key]?.events, day)) changed = true;
+      _days[key] = (at: at, events: day);
     }
+    return changed;
+  }
+
+  /// Whether [a] and [b] are the same events, alike in every way.
+  static bool _sameEvents(List<Event>? a, List<Event> b) {
+    if (a == null || a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!identical(a[i], b[i]) &&
+          jsonEncode(a[i].toJson()) != jsonEncode(b[i].toJson())) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// Takes in [changed], as the server returned them after a save: each
@@ -209,21 +224,27 @@ class EventStore extends ChangeNotifier {
         runStart = null;
       }
     }
-    await Future.wait([
+    final changed = await Future.wait([
       _fetch(nearFrom, nearTo),
       for (final (from, to) in runs) _fetch(from, to),
     ]);
-    _changed();
+    _changed(changed.contains(true));
   }
 
-  Future<void> _fetch(DateTime from, DateTime to) async {
+  /// Asks for [from] to [to]; returns whether anything in them changed.
+  Future<bool> _fetch(DateTime from, DateTime to) async {
     final events = await repository.events(from, to);
-    _put(from, to, events);
+    return _put(from, to, events);
   }
 
-  void _changed() {
-    _version++;
-    notifyListeners();
+  /// Keeps the days a little later, as they're fetched again; and, if
+  /// what's in them [changed], moves [version] on and tells listeners.
+  /// Unchanged, what's worked out from them needn't be again.
+  void _changed([bool changed = true]) {
+    if (changed) {
+      _version++;
+      notifyListeners();
+    }
     _saveTimer?.cancel();
     if (cache == null) return;
     _saveTimer = Timer(saveDelay, () => unawaited(_save()));

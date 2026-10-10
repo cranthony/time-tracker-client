@@ -119,6 +119,13 @@ as the server keeps it. As it opens, the app asks
 for the week either side of today, and for any day further back (or
 ahead) the traits read that it hasn't kept from an earlier run; the
 Events page shares those days, and its saves change the scores at once.
+The scores are worked out off the UI thread -- on another isolate; on the
+web, which has none, in a task of their own -- and only when what they're
+from changes: the events kept (a day fetched again, alike, changes
+nothing), or what the traits, people, actions and habits say, not just
+their being loaded again. Meanwhile the Traits and People panes show them
+as they were, with the thin bar along the top, and every page as they
+come in.
 
 Later it will show the summaries the server
 generates.
@@ -624,10 +631,11 @@ same menus:
   rest, and red over 100 ms, a freeze anyone would see; the last 300 are
   kept.
 - **Plan visits** -- each visit to Plan, from opening it to everything
-  loaded: a bar of the device's own work in it -- working out the trait
-  scores, the time on actions and on people, and rebuilding the page --
-  each kind's time its own, under the time it waited, on the server
-  mostly; the last 50 are kept.
+  loaded: a bar of the device's own work in it that held up the screen --
+  the time on actions and on people, rebuilding the page, and the trait
+  scores where they're worked out on the UI thread (the web) -- each
+  kind's time its own, under the time it waited, on the server mostly;
+  the last 50 are kept.
 - **Work on the device** -- each kind of that work's mean, median, 95th
   percentile and longest run, whole, and how many runs; and why the trait
   scores were worked out again each time they were: the first time, or

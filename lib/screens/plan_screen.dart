@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/plan_action.dart';
 import '../models/person.dart';
+import '../models/event.dart';
+import '../models/time_split.dart';
 import '../outbox/action_outbox.dart';
 import '../outbox/pending_action_save.dart';
 import '../services/server_errors.dart';
@@ -118,18 +120,26 @@ class PlanScreen extends StatefulWidget {
 
 class _PlanScreenState extends State<PlanScreen> {
   /// The actions as the server last listed them.
-  ActionList? _fromServer;
+  ActionList? get _fromServer => _server;
+  set _fromServer(ActionList? actions) {
+    _server = actions;
+    _shownActions = null;
+  }
+
+  ActionList? _server;
 
   /// The actions shown: [_fromServer], with the saves made since it was
   /// fetched, here or by the background task, then those waiting in the
-  /// outbox, or that failed, made to them.
+  /// outbox, or that failed, made to them. Worked out again only when
+  /// they or the outbox change.
   ActionList? get _actions => switch (_fromServer) {
-    final actions? => _withSaves(
+    final actions? => _shownActions ??= _withSaves(
       _withSaved(actions, widget.outbox.justSaved),
       widget.outbox.saves,
     ),
     null => null,
   };
+  ActionList? _shownActions;
 
   StreamSubscription<ActionSaveEvent>? _saveEvents;
 
@@ -390,6 +400,7 @@ class _PlanScreenState extends State<PlanScreen> {
 
   void _outboxChanged() {
     if (!mounted) return;
+    _shownActions = null;
     // Once, after the last of a round is answered, rather than after each.
     if (widget.outbox.wantsFetch) _load();
     setState(() {});
@@ -729,7 +740,8 @@ class _PlanScreenState extends State<PlanScreen> {
     // Actions leftmost, so swiping a group right, to open or close it,
     // has nothing else to do.
     final panes = <(String, String, Widget)>[
-      ('Actions', 'do', _actionsPane(context)),
+      // Built only while it's shown: what it works out is costly.
+      ('Actions', 'do', Builder(builder: _actionsPane)),
       if (traits != null)
         (
           'Traits',
@@ -896,7 +908,7 @@ class _PlanScreenState extends State<PlanScreen> {
       view: view,
       titles: const ['Visible actions', 'By priority'],
       pages: (events) {
-        final (day, week) = actionTime(events, view.window, tree.byId, _shown);
+        final (day, week) = _actionTime(events, view.window, tree);
         List<SummarySlice> shares(Map<String?, Duration> time) => planShares(
           byVisible(time, tree.byId, visible),
           none: '',
@@ -916,9 +928,39 @@ class _PlanScreenState extends State<PlanScreen> {
     final view = _summaryView;
     final events = view?.events;
     if (view == null || events == null) return null;
-    final (day, week) = actionTime(events, view.window, tree.byId, _shown);
+    final (day, week) = _actionTime(events, view.window, tree);
     return (rolledUp(day, tree.byId), rolledUp(week, tree.byId));
   }
+
+  /// [events]' time on each action in [window], by [actionTime]: split
+  /// again only when the window, the events, the actions or the statuses
+  /// shown change -- not for the summary and the tiles each, nor for each
+  /// rebuild.
+  (Map<String?, Duration>, Map<String?, Duration>) _actionTime(
+    List<Event> events,
+    SummaryWindow window,
+    _Tree tree,
+  ) {
+    final key = (
+      window,
+      _memory.eventStore?.version,
+      events.length,
+      _actions,
+      (_shown.toList()..sort()).join(','),
+    );
+    if (_actionTimeKept case (final kept, final time) when kept == key) {
+      return time;
+    }
+    final time = actionTime(events, window, tree.byId, _shown);
+    _actionTimeKept = (key, time);
+    return time;
+  }
+
+  (
+    (SummaryWindow, int?, int, ActionList?, String),
+    (Map<String?, Duration>, Map<String?, Duration>),
+  )?
+  _actionTimeKept;
 
   /// The Actions pane's list: the time spent on them, then the tree, or
   /// why it can't be shown.

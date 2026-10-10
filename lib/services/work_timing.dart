@@ -28,6 +28,14 @@ T timed<T>(WorkKind kind, T Function() work, {String? Function()? why}) {
   }
 }
 
+/// Records a run of [kind]'s work, timed some other way, that took [us]:
+/// done off the UI thread unless it was [blocking], when it's the visit
+/// to Plan under way's too, if one is.
+void recordWork(WorkKind kind, int us, {String? why, bool blocking = true}) {
+  if (blocking) PlanVisitTimer._current?._add(kind, us);
+  workRecorder?.recordWork(kind, us, why: why);
+}
+
 /// Times a visit to Plan, from [PlanVisitTimer.start] to [finish]: how
 /// long in all, and the [timed] work in it.
 class PlanVisitTimer {
