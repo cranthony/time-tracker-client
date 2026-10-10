@@ -24,6 +24,8 @@ import 'habit_screen.dart';
 import 'person_screen.dart';
 import '../services/client_health.dart';
 import '../services/work_timing.dart';
+import '../widgets/refreshing_bar.dart';
+import '../models/time_split.dart';
 
 /// The Plan page's People pane -- who the user wants to be with -- in two
 /// sections, one over the other, each folded away by tapping its head:
@@ -126,13 +128,18 @@ class PeoplePaneState extends State<PeoplePane> {
   TraitScores? get _scores => widget.memory.scores;
 
   /// Each person's time and last (or next) event, as the summary
-  /// measures them; null without a summary.
+  /// measures them; null without a summary. Measured again only when the
+  /// window or the events change, not for each person shown.
   PeopleTimes? get _times {
     final view = widget.summary;
     if (view == null) return null;
     final store = widget.memory.eventStore;
     final span = store?.span;
-    return timed(
+    final key = (view.window, store?.version, view.events == null);
+    if (_timesKept case (final kept, final times) when kept == key) {
+      return times;
+    }
+    final times = timed(
       WorkKind.peopleTime,
       () => PeopleTimes.compute(
         window: view.window,
@@ -142,7 +149,11 @@ class PeoplePaneState extends State<PeoplePane> {
             : store!.between(span.$1, span.$2.add(const Duration(days: 1))),
       ),
     );
+    _timesKept = (key, times);
+    return times;
   }
+
+  ((SummaryWindow, int?, bool), PeopleTimes)? _timesKept;
 
   /// Loads everyone afresh, Self's habits, and the events around today
   /// they're scored from.
@@ -319,6 +330,8 @@ class PeoplePaneState extends State<PeoplePane> {
   Widget build(BuildContext context) {
     final people = _people;
     final view = widget.summary;
+    // Asked for first: asking is what has them worked out again.
+    widget.memory.scores;
     return PlanPane(
       summary: view == null || people == null
           ? null
@@ -330,23 +343,27 @@ class PeoplePaneState extends State<PeoplePane> {
                 circleTime(events, view.window, people),
               ],
             ),
-      child: RefreshIndicator(
-        onRefresh: reload,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 24),
-          children: switch ((people, _error)) {
-            (null, final error?) => [
-              LoadError(what: 'people', error: error, onRetry: reload),
-              // Self is there regardless.
-              _tile(context, defaultSelf),
-            ],
-            (null, _) => const [LinearProgressIndicator()],
-            (final people?, _) => [
-              ..._selfSection(context, people.self),
-              ..._prioritizedSection(context, people),
-            ],
-          },
+      // Health as it was, while it's worked out again.
+      child: RefreshingBar(
+        refreshing: widget.memory.rescoring,
+        child: RefreshIndicator(
+          onRefresh: reload,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 24),
+            children: switch ((people, _error)) {
+              (null, final error?) => [
+                LoadError(what: 'people', error: error, onRetry: reload),
+                // Self is there regardless.
+                _tile(context, defaultSelf),
+              ],
+              (null, _) => const [LinearProgressIndicator()],
+              (final people?, _) => [
+                ..._selfSection(context, people.self),
+                ..._prioritizedSection(context, people),
+              ],
+            },
+          ),
         ),
       ),
     );

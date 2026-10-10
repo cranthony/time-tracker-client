@@ -13,6 +13,8 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../flutter_test_config.dart';
+
 const _directory = String.fromEnvironment(
   'SCREENSHOTS_DIR',
   defaultValue: 'build/screenshots',
@@ -20,6 +22,7 @@ const _directory = String.fromEnvironment(
 
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   TestWidgetsFlutterBinding.ensureInitialized();
+  useScoresHere();
   await _loadRealFonts();
   goldenFileComparator = _ScreenshotWriter(Directory(_directory));
   await testMain();

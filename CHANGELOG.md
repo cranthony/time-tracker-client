@@ -6,6 +6,25 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.48.0
+
+- Plan's Actions, Traits and People panes open faster, and don't freeze
+  while they load:
+  - The trait scores are worked out off the UI thread, on another
+    isolate (on the web, in a task of their own), and only when what
+    they're from changes -- not each time the traits, people, actions,
+    habits or a day's events are loaded again, alike. Meanwhile the panes
+    show them as they were, with the thin bar along the top.
+  - The events kept change version only when a day's events do.
+  - The time on actions is split once for the summary and the rows, and
+    only when the window, events, actions or statuses shown change; the
+    Actions pane is built only while it's shown, and the actions shown
+    worked out once per change.
+  - The People pane measures everyone's time once, not once a person;
+    the Traits pane gathers its scores once, not once a trait.
+  - Splitting time among events sweeps through them in order, rather
+    than looking at every event for every stretch.
+
 ## 7.47.0
 
 - Diagnostics' App pane times the app's own work on the device, to find
