@@ -35,6 +35,8 @@ import '../widgets/plan_summaries.dart';
 import '../widgets/time_summary.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
+import '../services/client_health.dart';
+import '../services/work_timing.dart';
 
 /// The Plan page: panes to swipe between, or pick from the tabs at the
 /// top, each with a search of its own --
@@ -171,9 +173,16 @@ class _PlanScreenState extends State<PlanScreen> {
     for (final l in _memory.locations ?? const <Location>[]) l.id: l.name,
   };
 
+  /// This visit, timed till everything's loaded.
+  final _visit = PlanVisitTimer.start();
+
+  /// The loads this visit waits on, before it's done.
+  final _visitLoads = <Future<void>>[];
+
   @override
   void initState() {
     super.initState();
+    PlanVisitTimer.open++;
     _memory.newVisit();
     // On its own, without the app's: the summaries' events go in one of
     // its own.
@@ -184,10 +193,19 @@ class _PlanScreenState extends State<PlanScreen> {
     widget.outbox.addListener(_outboxChanged);
     _saveEvents = widget.outbox.events.listen(_onSaveEvent);
     _showCached();
-    _load();
+    _visitLoads
+      ..add(_load())
+      ..add(_loadCompaction());
     _loadDurations();
     _loadTimeSummaryCollapsed();
-    _loadCompaction();
+  }
+
+  /// Ends the visit's timing once its loads are in, and the frame they
+  /// make is drawn.
+  Future<void> _timeVisit() async {
+    await Future.wait(_visitLoads.map((l) => l.catchError((Object _) {})));
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _visit.finish());
   }
 
   @override
@@ -195,7 +213,8 @@ class _PlanScreenState extends State<PlanScreen> {
     super.didChangeDependencies();
     if (!_prefetched) {
       _prefetched = true;
-      _prefetch();
+      _visitLoads.add(_prefetch());
+      _timeVisit();
     }
   }
 
@@ -361,6 +380,9 @@ class _PlanScreenState extends State<PlanScreen> {
 
   @override
   void dispose() {
+    PlanVisitTimer.open--;
+    // Left before everything loaded: as far as it got.
+    _visit.finish();
     widget.outbox.removeListener(_outboxChanged);
     _saveEvents?.cancel();
     super.dispose();
@@ -691,7 +713,10 @@ class _PlanScreenState extends State<PlanScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      timed(WorkKind.planRebuild, () => _build(context));
+
+  Widget _build(BuildContext context) {
     final actions = _actions;
     final ready = actions != null && !_needsSignIn;
     final reordering = _reordering && ready;

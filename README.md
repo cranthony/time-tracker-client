@@ -619,11 +619,27 @@ same menus:
 - **Waiting to save** -- how many changes waited in each outbox (notes,
   actions, events), stacked, each step a change; the last 200 changes
   are kept.
+- **Slow frames** -- each frame that took more than 16 ms to build and
+  draw, as tall as it took: those while Plan was open apart from the
+  rest, and red over 100 ms, a freeze anyone would see; the last 300 are
+  kept.
+- **Plan visits** -- each visit to Plan, from opening it to everything
+  loaded: a bar of the device's own work in it -- working out the trait
+  scores, the time on actions and on people, and rebuilding the page --
+  each kind's time its own, under the time it waited, on the server
+  mostly; the last 50 are kept.
+- **Work on the device** -- each kind of that work's mean, median, 95th
+  percentile and longest run, whole, and how many runs; and why the trait
+  scores were worked out again each time they were: the first time, or
+  what they're from changed -- the events, traits, people, actions,
+  habits, or the day. The last 100 of each kind are kept.
 - **Errors** -- the last 20, newest first: a call that failed, with its
   tool, or one the app didn't catch, with where. Tap one to read it in
   full, and copy it.
 
-Recording is a few microseconds' work in memory; it's written to the
+Work is timed with a stopwatch around it (work_timing.dart), and slow
+frames as Flutter reports them. Recording is a few microseconds' work in
+memory; it's written to the
 device a few seconds later, and as the app goes to the background or the
 background task ends, under the same lock the outboxes share (see
 [Changes waiting to save](#changes-waiting-to-save)).

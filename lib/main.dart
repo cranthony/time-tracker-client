@@ -36,6 +36,7 @@ import 'services/proposal_repository.dart';
 import 'services/response_cache.dart';
 import 'services/schedule_hints_repository.dart';
 import 'services/traits_repository.dart';
+import 'services/work_timing.dart';
 import 'theme.dart';
 
 /// The Time Tracker MCP server's endpoint, passed at build time, e.g.
@@ -73,6 +74,7 @@ Future<void> main() async {
       ),
     );
     _recordUncaughtErrors(health);
+    _recordWork(health);
     final noteOutbox = NoteOutbox(
       store: InMemoryOutboxStore(),
       repository: repository,
@@ -118,6 +120,7 @@ Future<void> main() async {
   await BackgroundSync.initialize(backgroundDispatcher);
   final health = ClientHealthRecorder(origin: CallOrigin.app);
   _recordUncaughtErrors(health);
+  _recordWork(health);
   final auth = _authSession(interactive: true);
   final client = _client(auth, health);
   final cache = PrefsResponseCache();
@@ -226,6 +229,13 @@ void _watchQueues(
   events: events,
   eventsCount: () => events.items.length,
 );
+
+/// Records how long the app's own work takes, its slow frames and its
+/// visits to Plan (see work_timing.dart).
+void _recordWork(ClientHealthRecorder health) {
+  workRecorder = health;
+  watchFrames();
+}
 
 /// Records each error nothing else caught, as well as reporting it as
 /// before.

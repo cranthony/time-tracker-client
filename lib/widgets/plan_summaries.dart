@@ -7,6 +7,8 @@ import '../models/person.dart';
 import '../models/time_split.dart';
 import 'color_picker.dart';
 import 'time_summary.dart';
+import '../services/client_health.dart';
+import '../services/work_timing.dart';
 
 /// The time on nothing in particular: no event then.
 const _unscheduled = 'Unscheduled';
@@ -53,13 +55,16 @@ Color colorFor(String id) =>
   SummaryWindow window,
   Map<String?, PlanAction> byId,
   Set<String> statuses,
-) => window.split<String>(
-  events,
-  (event) => [
-    for (final id in event.actionIds)
-      if (statuses.contains(byId[id]?.status ?? 'active')) id,
-  ],
-  '',
+) => timed(
+  WorkKind.actionTime,
+  () => window.split<String>(
+    events,
+    (event) => [
+      for (final id in event.actionIds)
+        if (statuses.contains(byId[id]?.status ?? 'active')) id,
+    ],
+    '',
+  ),
 );
 
 /// Each of [actions]' time, with what's in it, from each action's [time]:
