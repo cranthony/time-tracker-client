@@ -225,6 +225,10 @@ class _EventsScreenState extends State<EventsScreen> {
   /// or unpicks it.
   EventList? _selecting;
 
+  /// Whether the lists' buttons are out, above ✕ and ✓; the checklist button
+  /// beside go-to-new shows or hides them.
+  bool _listsShown = false;
+
   /// The lists' ids, as [BoxEffect] takes them.
   Map<EventList, Set<String>> get _listIds => {
     for (final MapEntry(:key, :value) in _lists.entries) key: value.ids,
@@ -1047,6 +1051,8 @@ class _EventsScreenState extends State<EventsScreen> {
     final was = _box != null;
     _box = box;
     final stacked = box != null;
+    // A box comes up with its lists' buttons tucked away.
+    if (stacked != was) _listsShown = false;
     if (stacked == was || !_scroll.hasClients) return;
     final before = DateTime(_day.year, _day.month, _day.day - 1);
     final by = _day.difference(before).inMinutes * _scale;
@@ -2172,16 +2178,39 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// [list]'s button: its icon, round, with a dot while it has events in
   /// it; tapped, picking events for it.
-  Widget _listButton(EventList list) => Stack(
+  Widget _listButton(EventList list) => _dotted(
+    FloatingActionButton.small(
+      heroTag: 'list-${list.name}',
+      tooltip: '${list.label}: pick events to ${list.verb}',
+      onPressed: () => _startSelecting(list),
+      child: Icon(list.icon),
+    ),
+    dot: !_lists[list]!.isEmpty,
+  );
+
+  /// The button that shows the lists' buttons, or hides them: marked
+  /// while they're out, with a dot while any list has events in it.
+  Widget _listsToggle() {
+    final colors = Theme.of(context).colorScheme;
+    return _dotted(
+      FloatingActionButton.small(
+        heroTag: 'lists',
+        tooltip: _listsShown ? 'Hide the lists' : 'Show the lists',
+        onPressed: () => setState(() => _listsShown = !_listsShown),
+        backgroundColor: _listsShown ? colors.primary : null,
+        foregroundColor: _listsShown ? colors.onPrimary : null,
+        child: const Icon(Icons.checklist),
+      ),
+      dot: _lists.values.any((l) => !l.isEmpty),
+    );
+  }
+
+  /// [button], with a dot at its top right if [dot].
+  Widget _dotted(Widget button, {required bool dot}) => Stack(
     clipBehavior: Clip.none,
     children: [
-      FloatingActionButton.small(
-        heroTag: 'list-${list.name}',
-        tooltip: '${list.label}: pick events to ${list.verb}',
-        onPressed: () => _startSelecting(list),
-        child: Icon(list.icon),
-      ),
-      if (!_lists[list]!.isEmpty)
+      button,
+      if (dot)
         Positioned(
           right: 2,
           top: 2,
@@ -2209,12 +2238,16 @@ class _EventsScreenState extends State<EventsScreen> {
     setState(() => _selecting = list);
   }
 
-  /// Stops picking: what was picked [kept], or put back as it was.
+  /// Stops picking: what was picked [kept], or put back as it was; the
+  /// lists' buttons tucked away again.
   void _endSelecting({required bool kept}) {
     for (final l in _lists.values) {
       kept ? l.commit() : l.revert();
     }
-    setState(() => _selecting = null);
+    setState(() {
+      _selecting = null;
+      _listsShown = false;
+    });
   }
 
   /// [event], tapped while picking: picked for the list being picked for
@@ -2293,50 +2326,53 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
-  /// The event the lone cursor is inside of, to split there with ✓; null
-  /// if it's in none, or there's a box.
-  Event? get _toSplit => switch (_box) {
-    PendingEventBox(:final cursor, other: null) when _moving == null =>
-      _otherEvents(null).inside(cursor),
-    _ => null,
+  /// The events to cancel with ✓ while there's just the one cursor: the
+  /// cancel list's, there being no box to do it with.
+  List<Event> get _cursorCancels => switch (_box) {
+    PendingEventBox(other: null) when _moving == null => [
+      for (final e in _otherEvents(null).events)
+        if (_lists[EventList.cancel]!.contains(e.id)) e,
+    ],
+    _ => const [],
   };
 
-  /// Splits the event the lone cursor is inside of there: shortened to
-  /// end at the cursor, and the rest of it a new event -- in what happened,
-  /// if it's in the proposal's window.
-  Future<void> _splitAtCursor() async {
-    final event = _toSplit;
+  /// With just the one cursor, cancels the cancel list's events, asked
+  /// which count against follow-through -- in what happened, if the
+  /// cursor's in the proposal's window.
+  Future<void> _cancelAtCursor() async {
+    final cancels = _cursorCancels;
     final at = _box?.cursor;
-    if (event == null || at == null) return;
-    final over = _otherEvents(null).splitAt(at);
-    final name = _named(event);
-    final time = MaterialLocalizations.of(context)
-        .formatTimeOfDay(TimeOfDay.fromDateTime(at.toLocal()));
+    if (at == null || cancels.isEmpty) return;
+    final asked = await askFollowThrough(context, cancels, makingRoom: false);
+    // Called off: the cursor stays, as it was.
+    if (asked == null || !mounted) return;
+    final over = Overwrite(cancels: cancels).counting(asked);
+    final label = 'Cancel ${_events(cancels.length)}';
+    final said = 'Cancelled ${_events(cancels.length)}';
     try {
       if (_reviews(at, at.add(const Duration(minutes: 1)))) {
         final amended = await _amend(
           ProposalEdits.over(over),
-          label: 'Split $name, in what happened',
+          label: '$label, in what happened',
         );
         if (!mounted) return;
         _endBox();
-        return _amended(amended, 'Split at $time, in what happened.');
+        return _amended(amended, '$said, in what happened.');
       }
       final changed = await _approvingHistory(
-        at: event.start,
-        (allow) =>
-            _writes.makeRoom(over, allowHistory: allow, label: 'Split $name'),
+        at: cancels.map((e) => e.start).reduce((a, b) => a.isBefore(b) ? a : b),
+        (allow) => _writes.makeRoom(over, allowHistory: allow, label: label),
       );
       if (!mounted) return;
       _endBox();
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Split $name at $time.')));
+          .showSnackBar(SnackBar(content: Text('$said.')));
       _store.putEvents(changed);
       _fresh.clear();
       await _refresh();
     } catch (e) {
       if (mounted) {
-        await showErrorSheet(context, title: "Couldn't split it", error: e);
+        await showErrorSheet(context, title: "Couldn't cancel them", error: e);
       }
     }
   }
@@ -3191,31 +3227,40 @@ class _EventsScreenState extends State<EventsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  // The lists, clear of ✕: keep; push up over push down;
-                  // cancel.
+                  // The lists, while they're out: keep; push up over
+                  // push down; cancel.
+                  if (_listsShown) ...[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _listButton(EventList.keep),
+                        const SizedBox(width: 12),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _listButton(EventList.pushUp),
+                            const SizedBox(height: 8),
+                            _listButton(EventList.pushDown),
+                          ],
+                        ),
+                        const SizedBox(width: 12),
+                        _listButton(EventList.cancel),
+                      ],
+                    ),
+                    const SizedBox(height: 28),
+                  ],
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _listButton(EventList.keep),
+                      _listsToggle(),
                       const SizedBox(width: 12),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _listButton(EventList.pushUp),
-                          const SizedBox(height: 8),
-                          _listButton(EventList.pushDown),
-                        ],
+                      FloatingActionButton.small(
+                        heroTag: 'to-new',
+                        tooltip: 'Go to the new event',
+                        onPressed: _goToBox,
+                        child: const Icon(Icons.filter_center_focus),
                       ),
-                      const SizedBox(width: 12),
-                      _listButton(EventList.cancel),
                     ],
-                  ),
-                  const SizedBox(height: 28),
-                  FloatingActionButton.small(
-                    heroTag: 'to-new',
-                    tooltip: 'Go to the new event',
-                    onPressed: _goToBox,
-                    child: const Icon(Icons.filter_center_focus),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -3228,27 +3273,32 @@ class _EventsScreenState extends State<EventsScreen> {
                         child: const Icon(Icons.close),
                       ),
                       const SizedBox(width: 12),
-                      // Only with an event to make.
+                      // Only with an event to make, or -- with just the
+                      // one cursor -- events to cancel.
                       Builder(
                         builder: (context) {
                           final colors = Theme.of(context).colorScheme;
-                          final split = _toSplit;
+                          final cancels = _cursorCancels.length;
+                          final atCursor = cancels == 0
+                              ? null
+                              : 'Cancel ${_events(cancels)}';
                           // Not into an event to keep.
                           final blocked = _effectOf(_box)?.blocked ?? false;
                           final ready =
-                              (_box?.span != null && !blocked) || split != null;
+                              (_box?.span != null && !blocked) ||
+                              atCursor != null;
                           return FloatingActionButton(
                             heroTag: 'continue-new',
-                            tooltip: split != null
-                                ? 'Split ${_named(split)} here'
-                                : !ready
-                                ? 'Continue: first, make an event between the '
-                                      'cursors'
-                                : _moving != null
-                                ? 'Move it here'
-                                : 'Continue',
-                            onPressed: split != null
-                                ? _splitAtCursor
+                            tooltip:
+                                atCursor ??
+                                (!ready
+                                    ? 'Continue: first, make an event between '
+                                          'the cursors'
+                                    : _moving != null
+                                    ? 'Move it here'
+                                    : 'Continue'),
+                            onPressed: atCursor != null
+                                ? _cancelAtCursor
                                 : !ready
                                 ? null
                                 : _moving != null
@@ -3269,6 +3319,8 @@ class _EventsScreenState extends State<EventsScreen> {
               )
             : Column(
                 mainAxisSize: MainAxisSize.min,
+                // Flush right, where go-to-new is with a box up.
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   FloatingActionButton.small(
                     heroTag: 'now',

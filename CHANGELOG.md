@@ -6,6 +6,20 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.45.0
+
+- The Events page's list buttons -- Keep, Push up, Push down and Cancel
+  -- are tucked behind a checklist button beside go-to-new, with a dot
+  while any list has events; it brings them out above ✕ and ✓, shaded
+  while they're out, and they tuck away again when picking for one
+  ends, and each time a box comes up.
+- With just the one cursor placed, ✓ cancels the events in the Cancel
+  list, asked as ever which count against follow-through ("Cancel an
+  event?", not "to make room": nothing's made). It no longer splits the
+  event the cursor is in; making an event over part of one does that
+  job, and a box's first cursor still splits what it's placed in.
+- Go to now sits flush right, where go-to-new is with a box up.
+
 ## 7.44.0
 
 - An edit of the proposal that changes what an earlier compaction

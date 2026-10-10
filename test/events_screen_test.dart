@@ -1181,13 +1181,20 @@ void main() {
       await settle(tester);
     }
 
-    /// Picks the events named [names] for [list]: its button, each event
-    /// tapped, then ✓. Picked events pulse: they never settle.
+    /// Brings out the lists' buttons, if they're tucked away.
+    Future<void> showLists(WidgetTester tester) async {
+      final show = find.byTooltip('Show the lists');
+      if (show.evaluate().isNotEmpty) await tapPulsing(tester, show);
+    }
+
+    /// Picks the events named [names] for [list]: the lists brought out,
+    /// its button, each event tapped, then ✓. Picked events pulse: they never settle.
     Future<void> pickInto(
       WidgetTester tester,
       String list,
       List<String> names,
     ) async {
+      await showLists(tester);
       await tapPulsing(tester, find.byTooltip(RegExp('^$list: pick events')));
       for (final name in names) {
         await tester.ensureVisible(find.text(name).first);
@@ -1571,8 +1578,8 @@ void main() {
       expect(find.text('Create an event'), findsNothing);
     });
 
-    testWidgets('placing a cursor in an event, ✓ splits it there, and does '
-        'nothing else', (tester) async {
+    testWidgets('placing a cursor in an event, ✓ stays off: there is '
+        'nothing to make yet', (tester) async {
       final repo = _RecordingRepository([
         Event(id: 'w', start: at(30, 11), end: at(30, 13), summary: 'Work'),
       ]);
@@ -1580,19 +1587,15 @@ void main() {
       await tester.pumpAndSettle();
       await plus(tester);
       // At noon, in Work.
-      final split = find.byTooltip('Split “Work” here');
-      expect(split, findsOneWidget);
-      await tester.tap(split);
+      final check = find.byTooltip(
+        'Continue: first, make an event between the cursors',
+      );
+      expect(check, findsOneWidget);
+      await tester.tap(check);
       await tester.pumpAndSettle();
-
-      expect(repo.saved, [
-        {'end': localIsoTimestamp(at(30, 12))},
-      ]);
-      expect(repo.created.single['start'], localIsoTimestamp(at(30, 12)));
-      expect(repo.created.single['end'], localIsoTimestamp(at(30, 13)));
-      expect(repo.created.single['summary'], 'Work');
-      expect(find.byType(PendingEventBoxView), findsNothing);
-      expect(find.text('Split “Work” at 12:00 PM.'), findsOneWidget);
+      expect(repo.saved, isEmpty);
+      expect(repo.created, isEmpty);
+      expect(find.byType(PendingEventBoxView), findsOneWidget);
     });
 
     testWidgets("a cursor's time, tapped, is typed in", (tester) async {
@@ -1697,6 +1700,27 @@ void main() {
       expect(repo.deleted, [('a', false), ('b', false)]);
     });
 
+    testWidgets('the lists come up tucked away, the checklist button beside '
+        'go-to-new bringing them out, flush right like go-to-now', (
+      tester,
+    ) async {
+      await tester.pumpWidget(app(_RecordingRepository([])));
+      await tester.pumpAndSettle();
+      final now = tester.getRect(find.byTooltip('Go to now'));
+      await plus(tester);
+      expect(
+        tester.getRect(find.byTooltip('Go to the new event')).right,
+        now.right,
+      );
+      expect(find.byTooltip(RegExp(r'^Keep: pick events')), findsNothing);
+      await tester.tap(find.byTooltip('Show the lists'));
+      await settle(tester);
+      expect(find.byTooltip(RegExp(r'^Keep: pick events')), findsOneWidget);
+      await tester.tap(find.byTooltip('Hide the lists'));
+      await settle(tester);
+      expect(find.byTooltip(RegExp(r'^Keep: pick events')), findsNothing);
+    });
+
     testWidgets('picking for a list: the mode says so, a tap picks or '
         'unpicks, and ✕ puts it back as it was', (tester) async {
       final repo = _RecordingRepository([
@@ -1705,6 +1729,7 @@ void main() {
       await tester.pumpWidget(app(repo));
       await tester.pumpAndSettle();
       await plus(tester);
+      await showLists(tester);
       await tapPulsing(
         tester,
         find.byTooltip(RegExp(r'^Push down: pick events')),
@@ -1717,7 +1742,10 @@ void main() {
       await tapPulsing(tester, find.byTooltip('Put the list back as it was'));
       expect(find.text('Place a cursor'), findsOneWidget);
       expect(find.bySemanticsLabel('Has events'), findsNothing);
+      // The lists tucked away again.
+      expect(find.byTooltip(RegExp(r'^Push down: pick events')), findsNothing);
       // Back, too.
+      await showLists(tester);
       await tapPulsing(
         tester,
         find.byTooltip(RegExp(r'^Push down: pick events')),
@@ -1804,6 +1832,55 @@ void main() {
         ..setSnap(const {})
         ..setSnap(const {});
       expect(await stepUpTwice(gridOnly), (at(30, 11, 30), at(30, 12)));
+    });
+
+    testWidgets('events to cancel: cancelled with the new event made, even '
+        'those it never reaches', (tester) async {
+      settings = _quarterly();
+      addTearDown(() => settings = null);
+      final repo = _RecordingRepository([
+        Event(id: 'far', start: at(30, 20), end: at(30, 21), summary: 'Far'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      await pickInto(tester, 'Cancel', ['Far']);
+      for (var i = 0; i < 4; i++) {
+        await tapPulsing(tester, startHere);
+      }
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
+      await continueToDialog(tester);
+      await tester.enterText(inDialog(find.byType(TextField)), 'Lunch');
+      await settle(tester);
+      await tester.tap(find.text('Create'));
+      await settle(tester);
+      // Asked, though it's nowhere near the new one.
+      expect(find.text('Cancel an event to make room?'), findsOneWidget);
+      await tester.tap(find.text('Cancel it'));
+      await settle(tester);
+      expect(repo.created.single['summary'], 'Lunch');
+      expect(repo.deleted, [('far', false)]);
+    });
+
+    testWidgets('events to cancel, with just the one cursor: ✓ cancels '
+        'them, and leaves what the cursor is inside of be', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 'a', start: at(30, 11), end: at(30, 13), summary: 'A'),
+        Event(id: 'far', start: at(30, 20), end: at(30, 21), summary: 'Far'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      await pickInto(tester, 'Cancel', ['Far']);
+      await tapPulsing(tester, find.byTooltip('Cancel 1 event'));
+      // Not to make room: there's nothing new.
+      expect(find.text('Cancel an event?'), findsOneWidget);
+      await tester.tap(find.text('Cancel it'));
+      await settle(tester);
+      expect(repo.deleted, [('far', false)]);
+      expect(repo.saved, isEmpty);
+      expect(repo.created, isEmpty);
+      expect(find.text('Cancelled 1 event.'), findsOneWidget);
     });
 
     testWidgets('events to push down: moved whole after the box, one after '
