@@ -1030,63 +1030,107 @@ class _PlanScreenState extends State<PlanScreen> {
                 icon: Icons.bolt_outlined,
                 text: 'No actions with these statuses.',
               ),
-      for (final (i, action) in shown.indexed) ...[
+      for (var i = 0; i < shown.length; i++) ...[
         if (i > 0) tree.divider(i),
-        _ActionTile(
-          action: action,
-          ancestors: tree.ancestors[i],
-          joined: tree.sharedAbove(i),
-          time: switch (time) {
-            (final day, final week) => (
-              day[action.id] ?? Duration.zero,
-              week[action.id] ?? Duration.zero,
-            ),
-            null => null,
-          },
-          timeLabels: _summaryView?.window.labels,
-          durations: _durations,
-          subActions: tree.subActions[action.id] ?? 0,
-          // A search shows what's in the groups it finds.
-          expanded: searching || _expanded.contains(action.id),
-          onToggle: searching
-              ? null
-              : () => setState(() {
-                  if (!_expanded.remove(action.id)) _expanded.add(action.id!);
-                }),
-          // One the server hasn't made yet has nothing to open, and
-          // nothing is reordered under changes still being saved, or
-          // around one that couldn't be made.
-          saving: _unmade(action.id) && _failed(action.id) == null,
-          failed: switch (_failed(action.id)) {
-            null => null,
-            final save when save.refused => save.lastError,
-            final save => '${save.lastError}. Trying again soon',
-          },
-          onTap: _failed(action.id) != null
-              ? () => _open(action)
-              : (action.isGroup || (tree.subActions[action.id] ?? 0) > 0) &&
-                    !searching
-              ? () => setState(() {
-                  if (!_expanded.remove(action.id)) _expanded.add(action.id!);
-                })
-              : () => _edit(action),
-          onEdit: () => _edit(action),
-          onRetry: () => widget.outbox.retry(action.id!),
-          onDiscard: () => _discard(action.id!),
-          onLongPress:
-              !widget.repository.reorderable ||
-                  searching ||
-                  widget.outbox.busy ||
-                  widget.outbox.saves.any((s) => s.isNew)
-              ? null
-              : () => setState(() => _reordering = true),
-          onAddAction: () => _add(parentId: action.id),
-          onAddGroup: () => _add(parentId: action.id, group: true),
-          onApprove: action.proposed ? () => _approve(action) : null,
-        ),
+        _tile(tree, i, time: time, searching: searching),
       ],
     ];
   }
+
+  /// The [i]th action [tree] shows, as its row: the row built for it
+  /// before, if nothing it shows has changed since -- then it isn't built
+  /// again, nor are rows that haven't changed, as a group opens or closes.
+  Widget _tile(
+    _Tree tree,
+    int i, {
+    required (Map<String?, Duration>, Map<String?, Duration>)? time,
+    required bool searching,
+  }) {
+    final action = tree.shown[i];
+    final id = action.id;
+    final save = _failed(id);
+    final failed = switch (save) {
+      null => null,
+      final save when save.refused => save.lastError,
+      final save => '${save.lastError}. Trying again soon',
+    };
+    // One the server hasn't made yet has nothing to open, and nothing is
+    // reordered under changes still being saved, or around one that
+    // couldn't be made.
+    final saving = _unmade(id) && save == null;
+    final reorderable =
+        widget.repository.reorderable &&
+        !searching &&
+        !widget.outbox.busy &&
+        !widget.outbox.saves.any((s) => s.isNew);
+    final subActions = tree.subActions[id] ?? 0;
+    // A search shows what's in the groups it finds.
+    final expanded = searching || _expanded.contains(id);
+    final ancestors = tree.ancestors[i];
+    final joined = tree.sharedAbove(i);
+    final itsTime = switch (time) {
+      (final day, final week) => (
+        day[id] ?? Duration.zero,
+        week[id] ?? Duration.zero,
+      ),
+      null => null,
+    };
+    final labels = _summaryView?.window.labels;
+    final shows = (
+      action,
+      [for (final a in ancestors) a.id].join('/'),
+      joined,
+      itsTime,
+      labels,
+      _durations,
+      subActions,
+      expanded,
+      (saving, failed),
+      (searching, reorderable),
+    );
+    if (_tiles[id] case (final kept, final tile) when kept == shows) {
+      return tile;
+    }
+    void toggle() => setState(() {
+      if (!_expanded.remove(id)) _expanded.add(id!);
+    });
+    final tile = _ActionTile(
+      // By its action: opening or closing a group then keeps every row
+      // there was, rather than each taking the one at its place.
+      key: ValueKey(id),
+      action: action,
+      ancestors: ancestors,
+      joined: joined,
+      time: itsTime,
+      timeLabels: labels,
+      durations: _durations,
+      subActions: subActions,
+      expanded: expanded,
+      onToggle: searching ? null : toggle,
+      saving: saving,
+      failed: failed,
+      onTap: save != null
+          ? () => _open(action)
+          : (action.isGroup || subActions > 0) && !searching
+          ? toggle
+          : () => _edit(action),
+      onEdit: () => _edit(action),
+      onRetry: () => widget.outbox.retry(id!),
+      onDiscard: () => _discard(id!),
+      onLongPress: reorderable
+          ? () => setState(() => _reordering = true)
+          : null,
+      onAddAction: () => _add(parentId: id),
+      onAddGroup: () => _add(parentId: id, group: true),
+      onApprove: action.proposed ? () => _approve(action) : null,
+    );
+    _tiles[id] = (shows, tile);
+    return tile;
+  }
+
+  /// Each action's row as last built, with what it showed: built again
+  /// only when that changes.
+  final _tiles = <String?, (Object, Widget)>{};
 
   /// The actions shown, to drag into a new order among their siblings.
   Widget _reorderable(ActionList actions) {
@@ -1232,8 +1276,12 @@ class _Tree {
     return shared;
   }
 
-  Widget divider(int i) =>
-      Divider(height: 1, indent: sharedAbove(i) * actionBandWidth);
+  /// The divider above the [i]th, by it, as its row is.
+  Widget divider(int i) => Divider(
+    key: ValueKey(('above', shown[i].id)),
+    height: 1,
+    indent: sharedAbove(i) * actionBandWidth,
+  );
 }
 
 /// The Actions pane's filter: a drop-down of every status, each with a check
@@ -1295,6 +1343,7 @@ const _bandTip = 8.0;
 
 class _ActionTile extends StatelessWidget {
   const _ActionTile({
+    super.key,
     required this.action,
     this.ancestors = const [],
     this.joined = 0,

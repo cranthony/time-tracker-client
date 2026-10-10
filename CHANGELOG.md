@@ -14,6 +14,9 @@ on. Add the new version's section here at the same time; CI checks both.
 - Slow frames aren't recorded while Diagnostics is open: its own graphs,
   drawn again as each frame was recorded, recorded more, on and on -- the
   graph filling with them at its right edge, jittering.
+- Opening or closing an action group no longer builds every row again:
+  each row is kept by its action, and one that shows nothing new isn't
+  built again at all.
 
 ## 7.48.0
 
