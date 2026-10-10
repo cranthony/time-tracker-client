@@ -152,16 +152,21 @@ class SettingsScreen extends StatelessWidget {
                 style: theme.textTheme.bodySmall,
               ),
             ),
-            RadioGroup<Duration?>(
-              groupValue: settings.grid,
-              onChanged: settings.setGrid,
-              child: Column(
-                children: [
-                  for (final grid in AppSettings.grids)
-                    RadioListTile<Duration?>(
-                      value: grid,
-                      title: Text(gridName(grid)),
-                    ),
+            // By index into the grids: none is null, which a menu can't
+            // tell from nothing picked.
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: DropdownMenu<int>(
+                initialSelection: AppSettings.grids.indexOf(settings.grid),
+                expandedInsets: EdgeInsets.zero,
+                requestFocusOnTap: false,
+                label: const Text('Grid'),
+                onSelected: (i) {
+                  if (i != null) settings.setGrid(AppSettings.grids[i]);
+                },
+                dropdownMenuEntries: [
+                  for (final (i, grid) in AppSettings.grids.indexed)
+                    DropdownMenuEntry(value: i, label: gridName(grid)),
                 ],
               ),
             ),

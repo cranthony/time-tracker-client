@@ -6,6 +6,9 @@ record a new one; tap a note to change its description or time, or to
 delete it. An **Events** page, from the bar at the bottom, shows a day's
 events from your calendar; tap one to see or edit it, including the actions
 done at it and what happened: who it was with and for, where, and notes.
+Each event shows its summary, its actions' diamonds -- overlapping, in
+their colors -- by its length and priority chips at the top right, and
+below, as many of its actions' names as its time leaves room for.
 Where events overlap, the timeline tints that time red and labels it
 "overlap". Its **+** puts a cursor at now, which a tap on the timeline
 moves: its arrows step it, and a "+" either side makes the event that
@@ -477,9 +480,9 @@ got the note after all, so a lost response doesn't create a duplicate.
 ## Settings
 
 A **Settings** page, from the menu, holds what's kept on this device
-alone. For now that's the grid the Events page's cursors snap to: every
-5, 10, 15 (the default), 30 or 60 minutes from midnight, or none, to
-stop at any minute. Every cursor also stops at events' edges and notes,
+alone. For now that's the grid the Events page's cursors snap to, picked
+from a menu: every 5, 10, 15 (the default), 30 or 60 minutes from
+midnight, or none, to stop at any minute. Every cursor also stops at events' edges and notes,
 each of which can be turned off there. And what a new or moved event's
 Keep list starts with: rules, each removable, of historical events (all
 that ended by the last compaction -- the default), the last of them, or

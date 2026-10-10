@@ -47,11 +47,17 @@ void main() {
 
     expect(find.byType(SettingsScreen), findsOneWidget);
     expect(settings.grid, AppSettings.defaultGrid);
-    await tester.tap(find.text('None'));
-    await tester.pumpAndSettle();
+    // From a menu.
+    Future<void> pick(String name) async {
+      await tester.tap(find.byType(DropdownMenu<int>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(name).last);
+      await tester.pumpAndSettle();
+    }
+
+    await pick('None');
     expect(settings.grid, isNull);
-    await tester.tap(find.text('Every 30 minutes'));
-    await tester.pumpAndSettle();
+    await pick('Every 30 minutes');
     expect(settings.grid, const Duration(minutes: 30));
   });
 }

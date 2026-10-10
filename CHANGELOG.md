@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.46.0
+
+- An event on the Events page shows its actions' diamonds, overlapping
+  in their colors, by its length and priority chips at the top right.
+  Below its summary it lists as many of its actions' names as its time
+  leaves room for -- an event is no longer drawn taller to fit them
+  all.
+- Settings picks the snap grid from a menu, in place of radio buttons.
+
 ## 7.45.0
 
 - The Events page's list buttons -- Keep, Push up, Push down and Cancel
