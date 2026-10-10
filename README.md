@@ -505,7 +505,10 @@ today's events. It fetches 10 minutes after each time Claude's routines
 run -- compacting notes, answering the notes on a proposal -- and
 otherwise every 6 hours. Android's WorkManager runs each fetch around its
 time: usually within minutes, later while the phone's idle. Signed out,
-it stops till you sign in.
+it stops till you sign in. What it keeps, the app reads afresh -- each
+answer kept apart, so neither the app nor the fetch ever puts back an
+older one over what the other kept -- and back in the app, the Events
+page shows the proposal it fetched at once, while it asks again.
 
 The routines' times are **compaction schedule hints**, kept on the server
 (the Compaction Schedule tab of the calendar's metadata spreadsheet): the

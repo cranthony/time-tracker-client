@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:time_tracker_client/outbox/action_outbox.dart';
@@ -45,6 +46,39 @@ void main() {
       await cache.clear();
       expect(await cache.read('a'), isNull);
       expect(await PrefsResponseCache().read('a'), isNull);
+    });
+
+    test("the app's and the background task's each see what the other "
+        'keeps, and neither puts back what the other changed', () async {
+      final app = PrefsResponseCache();
+      final background = PrefsResponseCache();
+      await app.write('events', ['yesterday']);
+      // Read by the app as it started.
+      expect(await app.read('proposal'), isNull);
+
+      // The background task fetches the proposal...
+      await background.write('proposal', {'id': 'p1'});
+      // ...which the app, still running, sees.
+      expect(await app.read('proposal'), {'id': 'p1'});
+
+      // And keeping another entry doesn't put the proposal back as none.
+      await app.write('events', ['today']);
+      expect(await background.read('proposal'), {'id': 'p1'});
+      expect(await PrefsResponseCache().read('events'), ['today']);
+    });
+
+    test('takes in what an earlier version kept as one value', () async {
+      await SharedPreferencesAsync().setString(
+        'response_cache',
+        '{"proposal": {"id": "p1"}, "actions": [1, 2]}',
+      );
+      final cache = PrefsResponseCache();
+      expect(await cache.read('proposal'), {'id': 'p1'});
+      expect(await cache.read('actions'), [1, 2]);
+      expect(
+        await SharedPreferencesAsync().getString('response_cache'),
+        isNull,
+      );
     });
   });
 

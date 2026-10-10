@@ -403,6 +403,8 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
   @override
   void initState() {
     super.initState();
+    // Every page shows the actions with the saves waiting, or just made.
+    _planMemory.useActionOutbox(widget.actionOutbox);
     BackgroundSync.cancel();
     widget.outbox.start();
     widget.actionOutbox.start();

@@ -20,7 +20,12 @@ abstract class ResponseCache {
   Future<void> clear();
 }
 
-/// Keeps every entry in one SharedPreferences value.
+/// Keeps each entry in a SharedPreferences value of its own, under [key]
+/// and its own -- "response_cache/proposal" -- read afresh each time. The
+/// app and its background task (another isolate, with a cache of its own)
+/// each see what the other last kept, and keeping one entry never puts
+/// back another as it was: one big value, read once and written whole,
+/// left each blind to the other's, and undoing them.
 class PrefsResponseCache implements ResponseCache {
   PrefsResponseCache({
     this.key = 'response_cache',
@@ -30,35 +35,63 @@ class PrefsResponseCache implements ResponseCache {
   final String key;
   final SharedPreferencesAsync _prefs;
 
-  late final Future<Map<String, Object?>> _entries = _load();
+  String _keyOf(String entry) => '$key/$entry';
+
+  /// The entries kept as one value, by an earlier version of the app, each
+  /// kept as its own -- unless it has one already -- then that let go.
+  late final Future<void> _split = () async {
+    try {
+      final json = await _prefs.getString(key);
+      if (json == null) return;
+      final entries = (jsonDecode(json) as Map).cast<String, Object?>();
+      for (final MapEntry(key: entry, :value) in entries.entries) {
+        if (value == null || await _prefs.getString(_keyOf(entry)) != null) {
+          continue;
+        }
+        await _prefs.setString(_keyOf(entry), jsonEncode(value));
+      }
+      await _prefs.remove(key);
+    } catch (_) {
+      // Unreadable: start over.
+    }
+  }();
 
   /// The last save, so saves land in order.
   Future<void> _saving = Future.value();
 
-  Future<Map<String, Object?>> _load() async {
+  @override
+  Future<Object?> read(String key) async {
+    await _split;
+    await _saving;
     try {
-      final json = await _prefs.getString(key);
-      if (json != null) return (jsonDecode(json) as Map).cast();
+      final json = await _prefs.getString(_keyOf(key));
+      return json == null ? null : jsonDecode(json);
     } catch (_) {
-      // Unreadable: start over.
+      return null;
     }
-    return {};
   }
 
   @override
-  Future<Object?> read(String key) async => (await _entries)[key];
-
-  @override
   Future<void> write(String key, Object? value) async {
-    final entries = await _entries;
-    entries[key] = value;
-    await _save(() => _prefs.setString(this.key, jsonEncode(entries)));
+    await _split;
+    final json = value == null ? null : jsonEncode(value);
+    await _save(
+      () => json == null
+          ? _prefs.remove(_keyOf(key))
+          : _prefs.setString(_keyOf(key), json),
+    );
   }
 
   @override
   Future<void> clear() async {
-    (await _entries).clear();
-    await _save(() => _prefs.remove(key));
+    await _split;
+    await _save(() async {
+      final keys = await _prefs.getKeys();
+      for (final k in keys) {
+        if (k.startsWith('$key/')) await _prefs.remove(k);
+      }
+      await _prefs.remove(key);
+    });
   }
 
   Future<void> _save(Future<void> Function() save) =>

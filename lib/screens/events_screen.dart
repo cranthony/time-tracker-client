@@ -245,7 +245,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// The actions by id, for the colors and names of events' actions; empty
   /// until they're loaded, or without actions.
   Map<String, PlanAction> get _actionsById => {
-    for (final action in _memory.actions?.actions ?? const <PlanAction>[])
+    for (final action in _memory.shownActions?.actions ?? const <PlanAction>[])
       ?action.id: action,
   };
 
@@ -339,6 +339,8 @@ class _EventsScreenState extends State<EventsScreen> {
     // The last compaction is its through now.
     unawaited(_loadNotes());
     unawaited(_refresh());
+    // The actions it made, or approved, as the server has them now.
+    unawaited(_loadActions());
   }
 
   /// How changes are made: by way of [EventsScreen.eventOutbox], or at
@@ -788,7 +790,10 @@ class _EventsScreenState extends State<EventsScreen> {
       ..addListener(_memoryChanged);
     _seen = widget.proposalSeen ?? ProposalSeenStore();
     _day = _firstDay = _midnight(widget.clock());
-    _lifecycle = AppLifecycleListener(onHide: _savePlace);
+    _lifecycle = AppLifecycleListener(
+      onHide: _savePlace,
+      onResume: _resumeProposal,
+    );
     final store = widget.placeStore;
     // Back from another tab: there at once.
     if (store?.remembered case final place? when place.keptAt(widget.clock())) {
@@ -905,6 +910,27 @@ class _EventsScreenState extends State<EventsScreen> {
     } catch (_) {
       // Nothing kept, then.
     }
+  }
+
+  /// Back in the app: the proposal the background task kept meanwhile,
+  /// shown at once if it's newer than the one shown, while it's asked for
+  /// again -- not just once something else asks.
+  Future<void> _resumeProposal() async {
+    try {
+      final kept = await widget.proposals?.cachedCurrent();
+      final loaded = _loadedProposal;
+      if (mounted &&
+          kept != null &&
+          !_closed.contains(kept.id) &&
+          (loaded == null ||
+              loaded.id != kept.id ||
+              kept.revision > loaded.revision)) {
+        setState(() => _proposal = kept);
+      }
+    } catch (_) {
+      // Nothing kept, then.
+    }
+    if (mounted) unawaited(_loadProposal());
   }
 
   /// Loads the open compaction proposal, if there is one: the first time,
@@ -2589,7 +2615,7 @@ class _EventsScreenState extends State<EventsScreen> {
           if (_memory.actions == null) {
             await _memory.loadActions(repository);
           }
-          return _memory.actions?.actions ?? const [];
+          return _memory.shownActions?.actions ?? const [];
         },
         null => null,
       };
@@ -3492,7 +3518,8 @@ class _EventsScreenState extends State<EventsScreen> {
             (id: l.id, name: l.name, detail: l.hint),
         ],
         AdditionKind.action => [
-          for (final action in _memory.actions?.actions ?? const <PlanAction>[])
+          for (final action
+              in _memory.shownActions?.actions ?? const <PlanAction>[])
             if (!action.isGroup &&
                 action.id != null &&
                 action.status != 'deleted')

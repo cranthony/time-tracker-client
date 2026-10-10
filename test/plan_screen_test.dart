@@ -821,6 +821,34 @@ void main() {
     );
   });
 
+  testWidgets('a proposed action renamed shows its new name, once saved '
+      'and once fetched again', (tester) async {
+    final repo = tree();
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('More for Idea'));
+    await settle(tester);
+    await tester.tap(find.text('Edit'));
+    await settle(tester);
+    await tester.tap(find.text('Details'));
+    await settle(tester);
+    await rename(tester, 'Better idea');
+    await tester.tap(find.text('Save 1 change'));
+    await settle(tester);
+    await tester.pumpAndSettle();
+    if (find.text('Close').evaluate().isNotEmpty) {
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+    }
+    debugPrint('SHOWN ${shownNames(tester)}');
+    debugPrint(
+      'SERVER ${[for (final a in (await repo.actions()).actions) '${a.id}:${a.name}:${a.status}'].join(', ')}',
+    );
+    expect(shownNames(tester), contains('Better idea'));
+    expect(shownNames(tester), isNot(contains('Idea')));
+  });
+
   testWidgets('a new action needs a name', (tester) async {
     await tester.pumpWidget(app(tree()));
     await tester.pumpAndSettle();

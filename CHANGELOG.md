@@ -6,6 +6,19 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.51.0
+
+- What the background fetch keeps shows as soon as you're back in the
+  app: the server's answers are each kept apart and read afresh, so the
+  app sees what the fetch kept -- the proposal, say -- even while it's
+  been running all along, and neither puts back an older answer over the
+  other's. Back in the app, the Events page shows the proposal fetched
+  meanwhile at once, while it asks the server again.
+- An action renamed, approved or otherwise changed shows so on every
+  page as soon as it's saved -- the Events page included, which kept the
+  actions as it last fetched them -- and confirming a proposal fetches
+  the actions again, with any it made or approved.
+
 ## 7.50.0
 
 - A compaction proposal leaves the Events page as soon as it's confirmed
