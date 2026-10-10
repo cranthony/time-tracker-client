@@ -300,10 +300,46 @@ class _EventsScreenState extends State<EventsScreen> {
   Proposal? _loadedProposal;
 
   /// The open compaction proposal, as shown: with the edits of it waiting
-  /// to be saved.
-  Proposal? get _proposal =>
-      widget.eventOutbox?.projectProposal(_loadedProposal) ?? _loadedProposal;
+  /// to be saved. Never one that's closed -- confirmed and applied, or
+  /// abandoned -- however it was loaded: a load asked for before it closed
+  /// answers with it still open.
+  Proposal? get _proposal => switch (_loadedProposal) {
+    final loaded? when !_closed.contains(loaded.id) =>
+      widget.eventOutbox?.projectProposal(loaded) ?? loaded,
+    _ => null,
+  };
   set _proposal(Proposal? proposal) => _loadedProposal = proposal;
+
+  /// The proposals closed while the page has been open: here, or as the
+  /// notices say -- by the background task, say.
+  Set<String> get _closed => {
+    ..._closedHere,
+    for (final n in _notices)
+      if (n.kind == ProposalNoticeKind.applied ||
+          n.kind == ProposalNoticeKind.abandoned)
+        n.proposalId,
+  };
+  final _closedHere = <String>{};
+
+  /// Takes the proposal [id] away, once, as closed: [applied], the events
+  /// and notes it compacted are loaded again.
+  void _closeProposal(String id, {required bool applied}) {
+    if (!mounted || !_closedHere.add(id)) return;
+    if (applied && _loadedProposal?.id == id) {
+      // Kept as seen: nothing in it is new any more.
+      final loaded = _loadedProposal!;
+      if (_proposalLoaded) _seen.saw(loaded.id, loaded.revision);
+    }
+    setState(() {
+      if (_loadedProposal?.id == id) _proposal = null;
+      _editedHere.clear();
+    });
+    if (!applied) return;
+    _fresh.clear();
+    // The last compaction is its through now.
+    unawaited(_loadNotes());
+    unawaited(_refresh());
+  }
 
   /// How changes are made: by way of [EventsScreen.eventOutbox], or at
   /// once.
@@ -711,7 +747,22 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Shows what the app loads -- a day, as it opens, say -- as soon as
   /// it has it.
   void _memoryChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // Closed, as a notice says -- sent from here or by the background
+    // task: gone as the banner says so, not when it's next loaded.
+    if (_loadedProposal case final loaded?
+        when !_closedHere.contains(loaded.id)) {
+      for (final n in _notices) {
+        if (n.proposalId != loaded.id) continue;
+        if (n.kind == ProposalNoticeKind.applied) {
+          return _closeProposal(loaded.id, applied: true);
+        }
+        if (n.kind == ProposalNoticeKind.abandoned) {
+          return _closeProposal(loaded.id, applied: false);
+        }
+      }
+    }
+    setState(() {});
   }
 
   /// Loads everyone, every location, every trait and Self's habits, for
@@ -792,19 +843,17 @@ class _EventsScreenState extends State<EventsScreen> {
         });
       // What came of it is said in the notices: here, it's only shown.
       case ProposalOutcome(status: ProposalOutcomeStatus.applied):
-        _sawProposal();
-        setState(() {
-          _proposal = null;
-          _editedHere.clear();
-        });
-        _fresh.clear();
-        // The last compaction is its through now.
-        unawaited(_loadNotes());
-        unawaited(_refresh());
+        if (write.proposalId case final id?) {
+          _closeProposal(id, applied: true);
+        }
       case ProposalOutcome(status: ProposalOutcomeStatus.abandoned):
-        setState(() => _proposal = null);
+        if (write.proposalId case final id?) {
+          _closeProposal(id, applied: false);
+        }
       case _ when write.kind == EventWriteKind.abandon:
-        setState(() => _proposal = null);
+        if (write.proposalId case final id?) {
+          _closeProposal(id, applied: false);
+        }
       case _ when write.kind.ofProposal:
         // A new revision, or a note left or withdrawn.
         unawaited(_loadProposal());
@@ -2762,11 +2811,7 @@ class _EventsScreenState extends State<EventsScreen> {
     final next = outcome.proposal;
     switch (outcome.status) {
       case ProposalOutcomeStatus.applied:
-        _sawProposal();
-        setState(() {
-          _proposal = null;
-          _editedHere.clear();
-        });
+        _closeProposal(proposal.id, applied: true);
         messenger.showSnackBar(
           SnackBar(
             content: Text(
@@ -2776,10 +2821,6 @@ class _EventsScreenState extends State<EventsScreen> {
             ),
           ),
         );
-        _fresh.clear();
-        // The last compaction is its through now.
-        unawaited(_loadNotes());
-        await _refresh();
       case ProposalOutcomeStatus.rechecked:
         // What the recheck changed, from the revision confirmed.
         final again =
@@ -2816,7 +2857,7 @@ class _EventsScreenState extends State<EventsScreen> {
           ),
         );
       case ProposalOutcomeStatus.abandoned:
-        setState(() => _proposal = null);
+        _closeProposal(proposal.id, applied: false);
         messenger.showSnackBar(
           SnackBar(content: Text(outcome.message ?? 'It was abandoned.')),
         );
@@ -3075,8 +3116,7 @@ class _EventsScreenState extends State<EventsScreen> {
     }
     await _onProposal("Couldn't abandon it", (proposal, repository) async {
       await repository.abandon(proposal);
-      if (!mounted) return;
-      setState(() => _proposal = null);
+      _closeProposal(proposal.id, applied: false);
     });
   }
 

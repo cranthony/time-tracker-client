@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.50.0
+
+- A compaction proposal leaves the Events page as soon as it's confirmed
+  and applied -- or abandoned -- and doesn't come back: a load asked for
+  before it went through, answering with it still open, no longer shows
+  it again. Gone as the banner says so, even when the background task
+  confirmed it; and the proposal kept for next time is forgotten, so it
+  isn't shown again as the app opens.
+
 ## 7.49.0
 
 - Diagnostics' App pane says how many errors there are and shows the
