@@ -1502,6 +1502,11 @@ class _EventCard extends StatelessWidget {
     final strike = cancelled ? TextDecoration.lineThrough : null;
     final duration = formatDuration(event.end.difference(event.start));
     final priority = event.effectivePriority ?? defaultPriority;
+    final fill = switch (mark) {
+      null => colors.surfaceContainerHigh,
+      EventMark(changed: true) => reviewColors(colors).changed,
+      _ => reviewColors(colors).card,
+    };
     final card = Semantics(
       label:
           '$summary, ${timeLabel(event.start)} to ${timeLabel(event.end)}'
@@ -1517,11 +1522,7 @@ class _EventCard extends StatelessWidget {
       onLongPressHint: onLongPress == null ? null : 'Move',
       excludeSemantics: true,
       child: Material(
-        color: switch (mark) {
-          null => colors.surfaceContainerHigh,
-          EventMark(changed: true) => reviewColors(colors).changed,
-          _ => reviewColors(colors).card,
-        },
+        color: fill,
         // Square on the left, where its fill from the band meets it, and
         // where it meets another event.
         shape: RoundedRectangleBorder(
@@ -1582,6 +1583,7 @@ class _EventCard extends StatelessWidget {
                                       for (final id in ids) _colorOf(id),
                                     ],
                                     outline: muted,
+                                    edge: fill,
                                   ),
                                 if (duration != null)
                                   // Square-cornered when it's drawn taller than
@@ -1880,10 +1882,17 @@ class _OpenTopPainter extends CustomPainter {
 /// An event's actions' diamonds, overlapping, the first on top: one in
 /// each action's color, or outlined in [outline] if it has none.
 class _DiamondStack extends StatelessWidget {
-  const _DiamondStack({required this.colors, required this.outline});
+  const _DiamondStack({
+    required this.colors,
+    required this.outline,
+    required this.edge,
+  });
 
   final List<Color?> colors;
   final Color outline;
+
+  /// The card's color, edging each to stand apart from those it overlaps.
+  final Color edge;
 
   /// How far along each is from the one before.
   static const _step = 5.0;
@@ -1906,7 +1915,7 @@ class _DiamondStack extends StatelessWidget {
               width: _size,
               height: _size,
               child: Center(
-                child: _Diamond(color: color, outline: outline, edge: true),
+                child: _Diamond(color: color, outline: outline, edge: edge),
               ),
             ),
         ],
@@ -1917,18 +1926,14 @@ class _DiamondStack extends StatelessWidget {
 
 /// A small diamond in an action's [color], or outlined if it has none.
 class _Diamond extends StatelessWidget {
-  const _Diamond({
-    required this.color,
-    required this.outline,
-    this.edge = false,
-  });
+  const _Diamond({required this.color, required this.outline, this.edge});
 
   final Color? color;
   final Color outline;
 
-  /// Whether it's edged in the card's color, to stand apart from those
-  /// it overlaps.
-  final bool edge;
+  /// The color it's edged in, outside it so it's as big as the rest: the
+  /// card's, to stand apart from those it overlaps.
+  final Color? edge;
 
   @override
   Widget build(BuildContext context) => Transform.rotate(
@@ -1940,10 +1945,11 @@ class _Diamond extends StatelessWidget {
         color: color,
         border: color == null
             ? Border.all(color: outline)
-            : edge
+            : edge != null
             ? Border.all(
-                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                color: edge!,
                 width: 0.75,
+                strokeAlign: BorderSide.strokeAlignOutside,
               )
             : null,
       ),
