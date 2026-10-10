@@ -723,6 +723,47 @@ void main() {
       expect(find.textContaining('Your confirm went through'), findsNothing);
     });
 
+    testWidgets('confirmed, it stays gone, though a load asked for before '
+        'it went through answers with it still open', (tester) async {
+      await open(tester, queued: true);
+      // Pulled down to load it again: asked now, answered later.
+      proposals.hold = Completer();
+      unawaited(
+        tester
+            .state<RefreshIndicatorState>(find.byType(RefreshIndicator).first)
+            .show(),
+      );
+      await tester.pump(const Duration(seconds: 1));
+
+      await tester.tap(confirmButton);
+      await tester.pumpAndSettle();
+      unawaited(outbox!.flush(ignoreBackoff: true));
+      await tester.pumpAndSettle();
+      expect(find.byType(ProposalBar), findsNothing);
+
+      proposals.hold!.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(ProposalBar), findsNothing);
+    });
+
+    testWidgets('gone as soon as a notice says it was confirmed -- by the '
+        'background task, say', (tester) async {
+      await open(tester, queued: true);
+      expect(find.byType(ProposalBar), findsOneWidget);
+
+      await outbox!.notices!.add(
+        ProposalNotice(
+          id: 'elsewhere-applied',
+          kind: ProposalNoticeKind.applied,
+          proposalId: Proposal.fromJson(proposalJson()).id,
+          at: now,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ProposalBar), findsNothing);
+    });
+
     testWidgets("its through tab extends it: the end's cursor, stepped, "
         'then saved, the stretch added marked', (tester) async {
       await open(
@@ -1387,6 +1428,17 @@ class _Proposals extends InMemoryProposalRepository {
   /// history.
   final allowed = <bool>[];
   Object? error;
+
+  /// While set, [current] answers as things stood when it was asked, only
+  /// once it's done: a load asked for before something changed.
+  Completer<void>? hold;
+
+  @override
+  Future<Proposal?> current({int? sinceRevision}) async {
+    final answer = await super.current(sinceRevision: sinceRevision);
+    await hold?.future;
+    return answer;
+  }
 
   @override
   Future<Proposal> amend(

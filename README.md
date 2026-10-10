@@ -717,7 +717,9 @@ Claude can't apply one; only confirming it in the app does.
   stopped partway, Retry finishes it. Its menu goes to it, or abandons it.
   Each waits to save, as changes do (see
   [Changes waiting to save](#changes-waiting-to-save)), and what came of
-  it is said over the proposal.
+  it is said over the proposal. Applied, or abandoned, it's gone at once
+  -- here or by the background task, as the notice says -- and stays
+  gone, though a load asked for before then answers with it open.
 
 The sample data has one open, so `SAMPLE_DATA=true` shows it.
 

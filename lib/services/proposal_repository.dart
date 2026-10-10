@@ -448,21 +448,46 @@ class McpProposalRepository implements ProposalRepository {
       _client.callTool('withdraw_proposal_note', {'feedback_id': feedbackId});
 
   @override
-  Future<ProposalOutcome> confirm(Proposal proposal) async => _outcome(
-    await _client.callTool('confirm_proposal', {
-      'proposal_id': proposal.id,
-      'revision': proposal.revision,
-    }),
+  Future<ProposalOutcome> confirm(Proposal proposal) async => _closing(
+    _outcome(
+      await _client.callTool('confirm_proposal', {
+        'proposal_id': proposal.id,
+        'revision': proposal.revision,
+      }),
+    ),
   );
 
   @override
-  Future<ProposalOutcome> finish(Proposal proposal) async => _outcome(
-    await _client.callTool('finish_proposal', {'proposal_id': proposal.id}),
+  Future<ProposalOutcome> finish(Proposal proposal) async => _closing(
+    _outcome(
+      await _client.callTool('finish_proposal', {'proposal_id': proposal.id}),
+    ),
   );
 
   @override
-  Future<void> abandon(Proposal proposal) =>
-      _client.callTool('abandon_compaction', {'proposal_id': proposal.id});
+  Future<void> abandon(Proposal proposal) async {
+    await _client.callTool('abandon_compaction', {'proposal_id': proposal.id});
+    await _forget();
+  }
+
+  /// [outcome], with the proposal kept for [cachedCurrent] forgotten if
+  /// it closed it -- applied, or abandoned -- so it isn't shown again.
+  Future<ProposalOutcome> _closing(ProposalOutcome outcome) async {
+    if (outcome.status
+        case ProposalOutcomeStatus.applied || ProposalOutcomeStatus.abandoned) {
+      await _forget();
+    }
+    return outcome;
+  }
+
+  /// Forgets the proposal kept: none's open now. Best effort.
+  Future<void> _forget() async {
+    try {
+      await _cache?.write(_key, null);
+    } catch (_) {
+      // Asked for again next time all the same.
+    }
+  }
 
   static Proposal _proposal(Object? result) =>
       Proposal.fromJson((result as Map).cast<String, dynamic>());
