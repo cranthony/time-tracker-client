@@ -296,8 +296,13 @@ abstract class ProposalRepository {
   /// returns the new revision -- with, in [Proposal.replaced], Claude's
   /// newer changes they overrode. Refused, writing nothing, if an edit
   /// names an event outside its window, the result overlaps, or it
-  /// changes history: nothing is moved to make room.
-  Future<Proposal> amend(Proposal proposal, ProposalEdits edits);
+  /// changes history ([changesHistory]) without the user's approval
+  /// ([allowHistory]): nothing is moved to make room.
+  Future<Proposal> amend(
+    Proposal proposal,
+    ProposalEdits edits, {
+    bool allowHistory = false,
+  });
 
   /// Leaves [text] for Claude on [proposal], about [eventId], [at] or the
   /// time note [noteId] if given. Until Claude answers, the proposal can't
@@ -323,6 +328,33 @@ abstract class ProposalRepository {
 
   /// Gives [proposal] up. Writes already made stay.
   Future<void> abandon(Proposal proposal);
+}
+
+/// Whether [edits] change what an earlier compaction settled -- what
+/// happened before [proposal]'s window, which starts where the last one
+/// confirmed ended: move the start of an event that started before
+/// then, end it earlier than then, or cancel it. The server refuses that
+/// unless the user approves.
+bool changesHistory(ProposalEdits edits, Proposal proposal) {
+  final settledUntil = proposal.windowStart;
+  ProposalEvent? settled(String id) => switch (proposal.event(id)) {
+    final e? when (e.plannedStart ?? e.start).isBefore(settledUntil) => e,
+    _ => null,
+  };
+  for (final update in edits.updates) {
+    final (id, fields) = updateFields(update);
+    final e = settled(id);
+    if (e == null) continue;
+    final start = DateTime.tryParse('${fields['start']}');
+    if (start != null && !start.isAtSameMomentAs(e.plannedStart ?? e.start)) {
+      return true;
+    }
+    final end = DateTime.tryParse('${fields['end']}');
+    final recorded = e.plannedEnd ?? e.end;
+    final until = recorded.isBefore(settledUntil) ? recorded : settledUntil;
+    if (end != null && end.isBefore(until)) return true;
+  }
+  return edits.cancels.any((c) => settled(c.eventId) != null);
 }
 
 /// Whether [id] is a time note's (`<timestamp>#<row>`), not an event's or
@@ -372,11 +404,16 @@ class McpProposalRepository implements ProposalRepository {
   }
 
   @override
-  Future<Proposal> amend(Proposal proposal, ProposalEdits edits) async {
+  Future<Proposal> amend(
+    Proposal proposal,
+    ProposalEdits edits, {
+    bool allowHistory = false,
+  }) async {
     final result = await _client.callTool('amend_proposal', {
       'proposal_id': proposal.id,
       'revision': proposal.revision,
       ...edits.toJson(),
+      if (allowHistory) 'allow_compacted_changes': true,
     });
     // Refused: the current revision, and the edits refused.
     if (result case {'refused': final refused} when refused != null) {
@@ -517,7 +554,11 @@ class InMemoryProposalRepository implements ProposalRepository {
   int _notes = 0;
 
   @override
-  Future<Proposal> amend(Proposal proposal, ProposalEdits edits) async {
+  Future<Proposal> amend(
+    Proposal proposal,
+    ProposalEdits edits, {
+    bool allowHistory = false,
+  }) async {
     calls.add('amend_proposal');
     final current = _open();
     final events = [...?current.events];

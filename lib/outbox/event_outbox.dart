@@ -51,11 +51,13 @@ abstract interface class EventWrites {
   });
 
   /// Edits [proposal]; returns it as edited -- the server's new revision,
-  /// or, queued, it as the edit will leave it.
+  /// or, queued, it as the edit will leave it. [allowHistory]: the user
+  /// approved it changing history ([changesHistory]).
   Future<Proposal> amend(
     Proposal proposal,
     ProposalEdits edits, {
     String? label,
+    bool allowHistory = false,
   });
 }
 
@@ -112,7 +114,8 @@ class DirectEventWrites implements EventWrites {
     Proposal proposal,
     ProposalEdits edits, {
     String? label,
-  }) => _proposals!.amend(proposal, edits);
+    bool allowHistory = false,
+  }) => _proposals!.amend(proposal, edits, allowHistory: allowHistory);
 }
 
 /// Changes to the calendar's events, and to the open compaction proposal,
@@ -330,6 +333,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
     Proposal proposal,
     ProposalEdits edits, {
     String? label,
+    bool allowHistory = false,
   }) async {
     _refuseIfClosing(proposal);
     await _add(
@@ -341,6 +345,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
         proposalId: proposal.id,
         revision: proposal.revision,
         edits: edits,
+        allowHistory: allowHistory,
       ),
     );
     return projectProposal(proposal)!;
@@ -744,7 +749,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
       if (edits.isEmpty) return current;
     }
     final amended = await proposals
-        .amend(_of(item, revision), edits)
+        .amend(_of(item, revision), edits, allowHistory: item.allowHistory)
         .timeout(Outbox.requestTimeout);
     if (amended.replaced.isNotEmpty) {
       await _notice(
