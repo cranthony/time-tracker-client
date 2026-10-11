@@ -8,17 +8,17 @@ import 'package:time_tracker_client/outbox/pending_action_save.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/outbox/action_outbox.dart';
 import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/habit.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/screens/plan_screen.dart';
-import 'package:time_tracker_client/models/trait.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/services/habits_repository.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
-import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/widgets/actions_picker.dart';
 import 'package:time_tracker_client/widgets/color_picker.dart';
@@ -440,18 +440,10 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      TraitsScope(
-        repository: InMemoryTraitsRepository(
-          traits: const [
-            Trait(
-              id: 'kind',
-              name: 'Kind',
-              parts: [
-                {'kind': 'follow_through'},
-              ],
-            ),
-          ],
-        ),
+      HabitsScope(
+        repository: InMemoryHabitsRepository([
+          const Habit(id: 'h1', name: 'Cook slowly', actionId: 'cooking'),
+        ]),
         child: app(tree()),
       ),
     );
@@ -463,7 +455,7 @@ void main() {
 
     await tester.fling(titled('Cooking').first, const Offset(-300, 0), 1000);
     await tester.pumpAndSettle();
-    expect(find.text('Kind'), findsOneWidget);
+    expect(find.text('Cook slowly'), findsOneWidget);
     // Still open, back on Actions.
     await tester.tap(find.widgetWithText(Tab, 'Actions'));
     await tester.pumpAndSettle();

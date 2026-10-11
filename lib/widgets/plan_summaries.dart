@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/facts.dart';
+import '../models/habit.dart';
 import '../models/plan_action.dart';
 import '../models/person.dart';
 import '../models/time_split.dart';
 import 'color_picker.dart';
+import 'health.dart';
 import 'time_summary.dart';
 import '../services/client_health.dart';
 import '../services/work_timing.dart';
@@ -226,6 +228,106 @@ const individuals = '\u0000individuals';
     slice: (id, time) =>
         SummarySlice(locationNames[id] ?? id, colorFor(id), time),
   );
+  return (shares(day), shares(week));
+}
+
+/// The ids of [habits] whose action, or group, [event] is of.
+/// [parentOf] gives an action's group.
+Set<String> _habitsOf(
+  Event event,
+  List<Habit> habits,
+  String? Function(String id) parentOf,
+) => {
+  for (final habit in habits)
+    if (event.actionIds.any((id) => inScope(habit.actionId, id, parentOf)))
+      habit.id,
+};
+
+/// [window]'s time by the active [habits] whose events it was: each
+/// event's time split evenly among them, in their actions' colors; those
+/// of none, "No habit". [byId] gives the actions, and their groups.
+(List<SummarySlice>, List<SummarySlice>) habitTime(
+  List<Event> events,
+  SummaryWindow window,
+  List<Habit> habits,
+  Map<String?, PlanAction> byId,
+) {
+  final active = [
+    for (final h in habits)
+      if (h.active) h,
+  ];
+  final habitsById = {for (final h in active) h.id: h};
+  final (day, week) = window.split<String>(
+    events,
+    (event) => _habitsOf(event, active, (id) => byId[id]?.parentId),
+    '',
+  );
+  List<SummarySlice> shares(Map<String?, Duration> time) => planShares(
+    time,
+    none: '',
+    noneLabel: 'No habit',
+    others: 'habits',
+    slice: (id, time) {
+      final habit = habitsById[id];
+      final action = byId[habit?.actionId];
+      return SummarySlice(
+        habit == null ? id : habitName(habit),
+        parseColor(action?.backgroundColor ?? action?.effectiveColor) ??
+            colorFor(id),
+        time,
+      );
+    },
+  );
+  return (shares(day), shares(week));
+}
+
+/// The key for the habits not scored yet, in [habitHealthTime].
+const _unscored = '\u0000unscored';
+
+/// [window]'s time by the health of the active [habits] whose events it
+/// was -- on track, needing attention or off track, as each is now
+/// ([health]); not yet scored -- each event's time split evenly among
+/// their bands; those of none, "No habit". [byId] gives the actions, and
+/// their groups.
+(List<SummarySlice>, List<SummarySlice>) habitHealthTime(
+  List<Event> events,
+  SummaryWindow window,
+  List<Habit> habits,
+  Map<String?, PlanAction> byId,
+  int? Function(Habit habit) health,
+) {
+  final active = [
+    for (final h in habits)
+      if (h.active) h,
+  ];
+  final bands = {
+    for (final h in active)
+      h.id: switch (health(h)) {
+        final rating? => healthBand(rating),
+        null => _unscored,
+      },
+  };
+  final (day, week) = window.split<String>(
+    events,
+    (event) => {
+      for (final id in _habitsOf(event, active, (id) => byId[id]?.parentId))
+        bands[id]!,
+    },
+    '',
+  );
+  // From best to worst, as the bands' colors run, whatever the time.
+  const ratings = {'on track': 100, 'needs attention': 50, 'off track': 0};
+  List<SummarySlice> shares(Map<String?, Duration> time) => [
+    for (final MapEntry(key: band, value: rating) in ratings.entries)
+      if (time[band] case final t? when t > Duration.zero)
+        SummarySlice(band, healthColor(rating), t),
+    if (time[_unscored] case final t? when t > Duration.zero)
+      SummarySlice('Not scored yet', otherActionsColor, t),
+    if (time[''] case final t? when t > Duration.zero)
+      SummarySlice('No habit', noActionColor, t),
+    if (time[null] case final t? when t > Duration.zero)
+      SummarySlice(_unscheduled, null, t),
+  ];
   return (shares(day), shares(week));
 }
 

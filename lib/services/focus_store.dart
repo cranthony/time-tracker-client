@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Who and what the People pane keeps in front: the habits the user
-/// focuses on (up to [maxHabits]) and the people they prioritize (up to
-/// [maxPeople]), each in the order picked. Picked in the app and kept on
+/// Who and what the Plan page keeps in front: the habits the user
+/// focuses on (up to [maxHabits]), first in the Habits pane, and the
+/// people they prioritize (up to [maxPeople]), in the People pane, each in the order picked. Picked in the app and kept on
 /// this device only, not on the server. Listeners hear every change.
 class FocusStore extends ChangeNotifier {
   /// Kept on the device with [persist]; otherwise only while the app

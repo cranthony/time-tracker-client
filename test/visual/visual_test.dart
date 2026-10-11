@@ -17,6 +17,7 @@ import 'package:time_tracker_client/outbox/event_outbox.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
+import 'package:time_tracker_client/screens/people_pane.dart';
 import 'package:time_tracker_client/screens/background_updates_screen.dart';
 import 'package:time_tracker_client/screens/diagnostics_screen.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
@@ -126,6 +127,15 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    /// The People pane's list, Self's section and all: not its summary's
+    /// pages, which go across.
+    Finder peopleList() => find.descendant(
+      of: find.byType(PeoplePane),
+      matching: find.byWidgetPredicate(
+        (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+      ),
+    );
+
     // A call to the server that failed, as every failure is shown: here,
     // one that trying again may fix.
     testWidgets('error sheet ($mode)', (tester) async {
@@ -153,7 +163,7 @@ void main() {
     });
 
     for (final (name, pane) in [
-      ('plan_traits', 'Traits'),
+      ('plan_habits', 'Habits'),
       ('plan_people', 'People'),
       ('plan_locations', 'Locations'),
     ]) {
@@ -186,8 +196,11 @@ void main() {
             await tester.scrollUntilVisible(
               find.text('All people and circles'),
               300,
-              scrollable: find.byType(Scrollable).last,
+              scrollable: peopleList(),
             );
+            // Built a little below the fold counts as visible: onto it.
+            await tester.ensureVisible(find.text('All people and circles'));
+            await tester.pumpAndSettle();
             await tester.tap(find.text('All people and circles'));
             await tester.pumpAndSettle();
             if (sort != null) {
@@ -217,8 +230,11 @@ void main() {
           await tester.scrollUntilVisible(
             find.byTooltip('More for Sam'),
             300,
-            scrollable: find.byType(Scrollable).last,
+            scrollable: peopleList(),
           );
+          // Built a little below the fold counts as visible: onto it.
+          await tester.ensureVisible(find.byTooltip('More for Sam'));
+          await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('More for Sam'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('Edit'));
@@ -299,8 +315,11 @@ void main() {
               await tester.scrollUntilVisible(
                 find.text('All people and circles'),
                 300,
-                scrollable: find.byType(Scrollable).last,
+                scrollable: peopleList(),
               );
+              // Built a little below the fold counts as visible: onto it.
+              await tester.ensureVisible(find.text('All people and circles'));
+              await tester.pumpAndSettle();
               await tester.tap(find.text('All people and circles'));
               await tester.pumpAndSettle();
             }
@@ -324,7 +343,7 @@ void main() {
           plan(),
           scoped: true,
           then: () async {
-            await openPane(tester, 'Traits');
+            await openPane(tester, 'People');
             await tester.tap(find.text('Adventurous'));
             await tester.pumpAndSettle();
             if (edit) {
@@ -381,55 +400,24 @@ void main() {
       });
     }
 
-    // Self's page, scrolled to their habits; a habit's page, with its
-    // scores; how one trait's was reached; and one being edited.
-    for (final (name, open, edit) in [
-      ('self_habits', false, false),
-      ('habit', true, false),
-      ('habit_trait', true, false),
-      ('habit_dialog', true, true),
+    // A habit's page, as tapping it in the Habits pane opens it, with
+    // its scores; how one trait's was reached; and one being edited.
+    for (final (name, edit) in [
+      ('habit', false),
+      ('habit_trait', false),
+      ('habit_dialog', true),
     ]) {
       testWidgets('$name ($mode)', (tester) async {
-        final people = (await tester.runAsync(
-          sample.peopleRepository().people,
-        ))!;
-        final memory = PlanMemory(
-          eventStore: EventStore(repository: sample.eventsRepository()),
-        );
-        await tester.runAsync(
-          () => memory.warmScores(
-            traits: sample.traitsRepository(),
-            people: sample.peopleRepository(),
-            actions: sample.actionsRepository(),
-            habits: sample.habitsRepository(),
-          ),
-        );
         await render(
           tester,
           name,
-          PersonScreen(
-            person: people.self,
-            traits: sample.traitsRepository(),
-            memory: memory,
-            circles: people.circles,
-            personNames: {for (final p in people.withSelf) p.id: personName(p)},
-            actionNames: {for (final g in sample.actions) g.id: g.name ?? ''},
-            habits: sample.habitsRepository(),
-            actions: sample.actions,
-          ),
+          plan(),
+          scoped: true,
           then: () async {
-            await tester.scrollUntilVisible(
-              find.text('Habits'),
-              300,
-              scrollable: find.byType(Scrollable).first,
+            await openPane(tester, 'Habits');
+            await tester.tap(
+              find.widgetWithText(ListTile, 'Practice guitar mindfully'),
             );
-            // Its heading at the top.
-            unawaited(
-              Scrollable.ensureVisible(tester.element(find.text('Habits'))),
-            );
-            await tester.pumpAndSettle();
-            if (!open) return;
-            await tester.tap(find.text('Practice guitar mindfully'));
             await tester.pumpAndSettle();
             if (name == 'habit_trait') {
               await tester.tap(find.widgetWithText(ListTile, 'Present').last);

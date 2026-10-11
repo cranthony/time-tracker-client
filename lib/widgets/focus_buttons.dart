@@ -4,7 +4,7 @@ import '../models/habit.dart';
 import '../models/person.dart';
 import '../services/focus_store.dart';
 
-/// A star that focuses on [habit], keeping it in the People pane, or
+/// A star that focuses on [habit], keeping it first in the Habits pane, or
 /// stops; off once [FocusStore.maxHabits] are. It applies at once, on
 /// this device.
 Widget focusHabitButton(FocusStore focus, Habit habit) => ListenableBuilder(

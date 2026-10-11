@@ -6,8 +6,10 @@ import 'package:time_tracker_client/models/habit.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
+import 'package:time_tracker_client/models/time_split.dart';
 import 'package:time_tracker_client/models/trait.dart';
 import 'package:time_tracker_client/screens/habit_screen.dart';
+import 'package:time_tracker_client/screens/habits_pane.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
@@ -18,6 +20,8 @@ import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/response_cache.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/widgets/facts_dialog.dart';
+import 'package:time_tracker_client/widgets/plan_summaries.dart';
+import 'package:time_tracker_client/widgets/time_summary.dart';
 
 /// Creative › Guitar › Play guitar and Practice guitar, and Walk.
 final _actions = [
@@ -310,29 +314,106 @@ void main() {
     );
   });
 
-  group("Self's habits", () {
-    Future<void> pump(
+  group("The Habits pane's summary", () {
+    final asOf = DateTime(2026, 10, 11, 12);
+    final window = SummaryWindow(asOf: asOf);
+    final byId = {for (final a in _actions) a.id: a};
+    const walking = Habit(id: 'h2', name: 'Walk daily', actionId: 'walk');
+    const archived = Habit(
+      id: 'h3',
+      name: 'Old',
+      actionId: 'walk',
+      status: 'archived',
+    );
+
+    /// An hour of [actionIds], [hoursAgo] hours before [asOf].
+    Event hour(String id, List<String> actionIds, int hoursAgo) =>
+        Event.fromJson({
+          'id': id,
+          'summary': id,
+          'start': localIsoTimestamp(asOf.subtract(Duration(hours: hoursAgo))),
+          'end': localIsoTimestamp(
+            asOf.subtract(Duration(hours: hoursAgo - 1)),
+          ),
+          'action_ids': actionIds,
+        });
+
+    final events = [
+      // In the guitar group, so the habit on it.
+      hour('practice', ['practice'], 3),
+      hour('walk', ['walk'], 5),
+      // Both: split between them.
+      hour('both', ['play', 'walk'], 7),
+      hour('creative', ['creative'], 9),
+    ];
+
+    Duration? time(List<SummarySlice> shares, String label) =>
+        shares.where((s) => s.label == label).firstOrNull?.time;
+
+    test('splits the time by the active habits, the rest "No habit"', () {
+      final (day, _) = habitTime(events, window, const [
+        _mindfully,
+        walking,
+        archived,
+      ], byId);
+
+      expect(time(day, 'Practice mindfully'), const Duration(minutes: 90));
+      expect(time(day, 'Walk daily'), const Duration(minutes: 90));
+      expect(time(day, 'Old'), isNull);
+      expect(time(day, 'No habit'), const Duration(hours: 1));
+    });
+
+    test("and by each habit's health band, those unscored together", () {
+      final (day, _) = habitHealthTime(
+        events,
+        window,
+        const [_mindfully, walking],
+        byId,
+        (habit) => habit.id == 'h1' ? 80 : null,
+      );
+
+      expect(time(day, 'on track'), const Duration(minutes: 90));
+      expect(time(day, 'Not scored yet'), const Duration(minutes: 90));
+      expect(time(day, 'No habit'), const Duration(hours: 1));
+    });
+  });
+
+  group('The Habits pane', () {
+    Future<PlanMemory> pump(
       WidgetTester tester, {
-      Person person = defaultSelf,
       HabitsRepository? habits,
+      List<String> focus = const [],
     }) async {
       tester.view.physicalSize = const Size(800, 2400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
+      final memory =
+          PlanMemory(
+              focus: FocusStore(persist: false, habits: focus),
+              eventStore: EventStore(repository: InMemoryEventsRepository()),
+            )
+            ..traits = _traits
+            ..people = const PeopleList()
+            ..actions = ActionList(actions: _actions);
+      await memory.eventStore!.warm();
       await tester.pumpWidget(
         MaterialApp(
-          home: PersonScreen(
-            person: person,
-            traits: InMemoryTraitsRepository(traits: _traits),
-            habits: habits,
-            actions: _actions,
+          home: Scaffold(
+            body: HabitsPane(
+              repository: habits ?? InMemoryHabitsRepository(),
+              memory: memory,
+              actions: _actions,
+            ),
           ),
         ),
       );
       await tester.pumpAndSettle();
+      return memory;
     }
 
-    testWidgets('are listed on their page, by name and action', (tester) async {
+    testWidgets('lists them by name and action, archived ones when asked', (
+      tester,
+    ) async {
       await pump(
         tester,
         habits: InMemoryHabitsRepository([
@@ -352,36 +433,92 @@ void main() {
         ]),
       );
 
-      expect(find.text('Habits'), findsOneWidget);
       expect(find.text('Practice mindfully'), findsOneWidget);
       expect(find.text('Creative › Guitar'), findsOneWidget);
+      expect(find.text('Walk daily'), findsNothing);
+
+      await tester.tap(find.byTooltip('Show archived habits'));
+      await tester.pumpAndSettle();
       expect(find.text('Walk · Archived'), findsOneWidget);
       expect(find.text('Gone'), findsNothing);
     });
 
-    testWidgets("aren't anyone else's", (tester) async {
+    testWidgets('puts those starred first, in the order they were', (
+      tester,
+    ) async {
       await pump(
         tester,
-        person: const Person(id: 'sam', name: 'Sam'),
-        habits: InMemoryHabitsRepository([_mindfully]),
+        habits: InMemoryHabitsRepository([
+          const Habit(id: 'a', name: 'Apples', actionId: 'walk'),
+          const Habit(id: 'b', name: 'Bananas', actionId: 'walk'),
+          const Habit(id: 'c', name: 'Cherries', actionId: 'walk'),
+        ]),
+        focus: ['c', 'b'],
       );
 
-      expect(find.text('Habits'), findsNothing);
+      double top(String name) => tester.getTopLeft(find.text(name)).dy;
+      expect(top('Cherries'), lessThan(top('Bananas')));
+      expect(top('Bananas'), lessThan(top('Apples')));
     });
 
-    testWidgets("aren't there if they can't be loaded", (tester) async {
+    testWidgets('searches them by name, action and note', (tester) async {
+      await pump(
+        tester,
+        habits: InMemoryHabitsRepository([
+          _mindfully,
+          const Habit(id: 'h2', name: 'Walk daily', actionId: 'walk'),
+        ]),
+      );
+
+      await tester.enterText(find.byType(TextField), 'guitar');
+      await tester.pumpAndSettle();
+      expect(find.text('Practice mindfully'), findsOneWidget);
+      expect(find.text('Walk daily'), findsNothing);
+
+      await tester.enterText(find.byType(TextField), 'one thing');
+      await tester.pumpAndSettle();
+      expect(find.text('Practice mindfully'), findsOneWidget);
+    });
+
+    testWidgets('archives one from its menu', (tester) async {
+      final repository = InMemoryHabitsRepository([_mindfully]);
+      await pump(tester, habits: repository);
+
+      await tester.tap(find.byTooltip('More for Practice mindfully'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Archive'));
+      await tester.pumpAndSettle();
+
+      expect((await repository.habits()).single.status, 'archived');
+      expect(find.text('Practice mindfully'), findsNothing);
+    });
+
+    testWidgets("says so if they can't be loaded", (tester) async {
       await pump(tester, habits: _Failing());
 
+      expect(find.text("Couldn't load the habits."), findsOneWidget);
+    });
+
+    testWidgets("aren't on Self's page any more", (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PersonScreen(
+            person: defaultSelf,
+            traits: InMemoryTraitsRepository(traits: _traits),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
       expect(find.text('Habits'), findsNothing);
-      expect(find.text('What matters to you'), findsOneWidget);
     });
 
     testWidgets('adds one, on a group, with its own parts', (tester) async {
       final repository = InMemoryHabitsRepository();
       await pump(tester, habits: repository);
 
-      expect(find.textContaining('None yet.'), findsOneWidget);
-      await tester.tap(find.widgetWithText(TextButton, 'Habit'));
+      expect(find.textContaining('No habits yet.'), findsOneWidget);
+      await tester.tap(find.byTooltip('New habit'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.widgetWithText(TextField, 'Name'),
@@ -471,7 +608,8 @@ void main() {
       expect(find.text('Creative › Guitar'), findsOneWidget);
       expect(find.text('Your events with any action in it'), findsOneWidget);
       expect(find.text('One thing at a time'), findsOneWidget);
-      expect(find.text('Present'), findsOneWidget);
+      // Applying, and scored.
+      expect(find.text('Present'), findsWidgets);
       expect(
         find.text("Nothing cancelled that counts against its follow-through."),
         findsOneWidget,
@@ -564,12 +702,12 @@ void main() {
       await memory.eventStore!.warm();
       await tester.pumpWidget(
         MaterialApp(
-          home: PersonScreen(
-            person: defaultSelf,
-            traits: InMemoryTraitsRepository(traits: _traits),
-            memory: memory,
-            habits: InMemoryHabitsRepository([_mindfully]),
-            actions: _actions,
+          home: Scaffold(
+            body: HabitsPane(
+              repository: InMemoryHabitsRepository([_mindfully]),
+              memory: memory,
+              actions: _actions,
+            ),
           ),
         ),
       );

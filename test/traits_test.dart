@@ -11,7 +11,7 @@ import 'dart:async';
 
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
-import 'package:time_tracker_client/screens/traits_pane.dart';
+import 'package:time_tracker_client/screens/traits_section.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
@@ -306,7 +306,7 @@ void main() {
     }));
   });
 
-  group('TraitsPane', () {
+  group('TraitsSection', () {
     /// Yesterday's dinner with Sam: a new place for Sam (3 of 3), the
     /// usual for Self (1 of 3).
     List<Event> dinner() => [
@@ -340,10 +340,14 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: TraitsPane(
-              repository: repository,
-              memory: memory,
-              actions: const {'call': 'Social › Call', 'social': 'Social'},
+            body: ListView(
+              children: [
+                TraitsSection(
+                  repository: repository,
+                  memory: memory,
+                  actions: const {'call': 'Social › Call', 'social': 'Social'},
+                ),
+              ],
             ),
           ),
         ),
@@ -397,23 +401,23 @@ void main() {
       expect(find.textContaining('Not scored yet'), findsOneWidget);
     });
 
-    testWidgets('searches them by name, definition and parts', (tester) async {
-      await pump(tester);
+    testWidgets('shows archived traits only when asked for', (tester) async {
+      final repository = await pump(tester);
 
-      await tester.enterText(find.byType(TextField), 'new together');
+      await tester.tap(find.byTooltip('More for Reliable'));
       await tester.pumpAndSettle();
-      expect(find.text('Adventurous'), findsOneWidget);
+      await tester.tap(find.text('Archive'));
+      await tester.pumpAndSettle();
+      expect(
+        (await repository.traits(statuses: ['archived'])).single.id,
+        'reliable',
+      );
       expect(find.text('Reliable'), findsNothing);
 
-      // A part's action, by its path.
-      await tester.enterText(find.byType(TextField), 'social call');
+      await tester.tap(find.text('Show archived traits'));
       await tester.pumpAndSettle();
-      expect(find.text('Adventurous'), findsNothing);
       expect(find.text('Reliable'), findsOneWidget);
-
-      await tester.enterText(find.byType(TextField), 'kindness');
-      await tester.pumpAndSettle();
-      expect(find.text('Nothing matches “kindness”.'), findsOneWidget);
+      expect(find.text('Hide archived traits'), findsOneWidget);
     });
 
     testWidgets('creates a trait from a judgment, checking it first', (
@@ -424,7 +428,7 @@ void main() {
       addTearDown(tester.view.reset);
       final repository = await pump(tester);
 
-      await tester.tap(find.byTooltip('New trait'));
+      await tester.tap(find.widgetWithText(TextButton, 'Trait'));
       await tester.pumpAndSettle();
       await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Kind');
       await tester.pump();
