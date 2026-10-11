@@ -1336,7 +1336,7 @@ void main() {
 
       // Claude's reply beside the note it answers; the open one withdrawn.
       await tap(tester, find.byTooltip('More'));
-      await tap(tester, find.text('Notes (2)'));
+      await tap(tester, find.text('Notes for Claude (2)'));
       expect(find.text('Moved it to 9:15.'), findsOneWidget);
       expect(find.text('You, on “Tea, 9:15 AM”'), findsOneWidget);
       await tester.tap(find.text('Withdraw'));

@@ -273,7 +273,7 @@ class ProposalBar extends StatelessWidget {
                         when notes > 0 || proposal.warnings.isNotEmpty)
                       PopupMenuItem(
                         value: notesOf,
-                        child: Text('Notes ($notes)'),
+                        child: Text('Notes for Claude ($notes)'),
                       ),
                     if (onGoTo case final goTo?)
                       PopupMenuItem(value: goTo, child: const Text('Go to it')),
@@ -535,9 +535,22 @@ class _NoteCard extends StatelessWidget {
                   const SizedBox(width: 8, height: 40),
               ],
             ),
+            if (note.quoted case final quoted?)
+              Padding(
+                padding: const EdgeInsets.only(right: 8, bottom: 2),
+                child: Text(
+                  'Answering Claude: “$quoted”',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: small?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: Text(note.text),
+              child: Text(note.body),
             ),
             if (note.reply case final reply?)
               Container(
@@ -1152,7 +1165,8 @@ IconData recapIcon(RecapKind kind) => switch (kind) {
 
 /// One point of Claude's recap -- the [index]th of [count] -- its text, a
 /// line or two of it, and what it's [about]: the events and notes it
-/// names. [changed] when the user's edits since have changed one of them.
+/// names. [changed] when the user's edits since have changed one of them;
+/// what came of the user's [answers] to it.
 /// Tapping it calls [onOpen], to read all of it; with
 /// buttons to go to the point before it ([onPrevious]) and after it
 /// ([onNext]).
@@ -1164,12 +1178,16 @@ class ProposalRecapStrip extends StatelessWidget {
     required this.count,
     this.about = const [],
     this.changed = false,
+    this.answers = const [],
     this.onOpen,
     this.onPrevious,
     this.onNext,
   });
 
   final RecapPoint point;
+
+  /// The user's notes for Claude answering it.
+  final List<ProposalFeedback> answers;
   final int index;
   final int count;
   final List<String> about;
@@ -1194,8 +1212,14 @@ class ProposalRecapStrip extends StatelessWidget {
       says: [
         if (about.isNotEmpty) about.join(', '),
         if (changed) 'you’ve changed it since',
+        if (answers.any((a) => a.open))
+          'you answered: waiting for Claude'
+        else if (answers.isNotEmpty)
+          'you answered: Claude replied',
       ].join(' · '),
-      saysColor: changed ? colors.secondary : colors.onSurfaceVariant,
+      saysColor: changed || answers.isNotEmpty
+          ? colors.secondary
+          : colors.onSurfaceVariant,
       onPrevious: onPrevious,
       onNext: onNext,
       onTap: onOpen,
@@ -1228,7 +1252,10 @@ final class AskAboutRecapPoint extends RecapAction {
 /// id or key) and note ([notes], by id) it names, to go to. Those the
 /// user's edits [changed] since are marked, and if the proposal's
 /// [revision] is past the recap's, it says so. A point Claude is unsure of
-/// can be answered, in a note for Claude, unless [canAsk] is false.
+/// can be answered, in a note for Claude, unless [canAsk] is false; the
+/// user's answers to each ([answersTo]) show under it, and the [others]
+/// notes for Claude -- [about] naming what they're about, by event or note
+/// id -- after them all.
 Future<RecapAction?> showRecapSheet(
   BuildContext context,
   ProposalRecap recap, {
@@ -1237,6 +1264,9 @@ Future<RecapAction?> showRecapSheet(
   Map<String, String> notes = const {},
   Set<String> changed = const {},
   bool canAsk = true,
+  List<ProposalFeedback> Function(RecapPoint point)? answersTo,
+  List<ProposalFeedback> others = const [],
+  Map<String, String> about = const {},
 }) => showModalBottomSheet<RecapAction>(
   context: context,
   isScrollControlled: true,
@@ -1266,6 +1296,7 @@ Future<RecapAction?> showRecapSheet(
         final point = points[i];
         return _RecapPointCard(
           point: point,
+          answers: answersTo?.call(point) ?? const [],
           events: events,
           notes: notes,
           changed: point.eventIds.any(changed.contains),
@@ -1308,6 +1339,17 @@ Future<RecapAction?> showRecapSheet(
             none: recap.unsure.isEmpty ? 'Nothing' : null,
           ),
           for (final i in of(RecapKind.unsure)) card(i),
+          if (others.isNotEmpty) ...[
+            heading('Notes for Claude'),
+            for (final note in others)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _NoteCard(
+                  note: note,
+                  about: about[note.eventId] ?? about[note.noteId],
+                ),
+              ),
+          ],
         ],
       );
     },
@@ -1316,7 +1358,8 @@ Future<RecapAction?> showRecapSheet(
 
 /// One point of Claude's recap, in full, in [showRecapSheet]: its text,
 /// then a chip for each event and note it names, which goes to it
-/// ([onGoTo]); for one it's unsure of, a chip to answer it ([onAsk]).
+/// ([onGoTo]); for one it's unsure of, a chip to answer it ([onAsk]),
+/// and the user's [answers] to it, each with Claude's reply.
 class _RecapPointCard extends StatelessWidget {
   const _RecapPointCard({
     required this.point,
@@ -1324,10 +1367,12 @@ class _RecapPointCard extends StatelessWidget {
     required this.notes,
     required this.changed,
     required this.onGoTo,
+    this.answers = const [],
     this.onAsk,
   });
 
   final RecapPoint point;
+  final List<ProposalFeedback> answers;
   final Map<String, String> events;
   final Map<String, String> notes;
   final bool changed;
@@ -1372,6 +1417,41 @@ class _RecapPointCard extends StatelessWidget {
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colors.secondary,
                       ),
+                    ),
+                  ),
+                for (final answer in answers)
+                  Container(
+                    margin: const EdgeInsets.only(top: 6),
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          answer.open
+                              ? 'You answered · waiting for Claude'
+                              : 'You answered',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: answer.open
+                                ? colors.secondary
+                                : colors.onSurfaceVariant,
+                          ),
+                        ),
+                        Text(answer.body),
+                        if (answer.reply case final reply?) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Claude',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(reply),
+                        ],
+                      ],
                     ),
                   ),
                 if (point.eventIds.isNotEmpty ||
@@ -1747,6 +1827,7 @@ class ProposalDetails extends StatelessWidget {
     this.recap,
     this.recapCount = 0,
     this.unsureCount = 0,
+    this.waitingCount = 0,
     this.notes,
     this.noteCount = 0,
     this.cancels,
@@ -1763,6 +1844,9 @@ class ProposalDetails extends StatelessWidget {
   final Widget? recap;
   final int recapCount;
   final int unsureCount;
+
+  /// How many notes for Claude are waiting for its answer.
+  final int waitingCount;
   final Widget? notes;
   final int noteCount;
   final Widget? cancels;
@@ -1808,10 +1892,13 @@ class ProposalDetails extends StatelessWidget {
       titles: [
         for (final page in pages)
           switch (page) {
-            ProposalDetailPage.claude =>
-              unsureCount > 0
-                  ? 'Claude ($unsureCount unsure)'
-                  : 'Claude ($recapCount)',
+            ProposalDetailPage.claude => switch ([
+              if (waitingCount > 0) '$waitingCount waiting',
+              if (unsureCount > 0) '$unsureCount unsure',
+            ]) {
+              final said when said.isNotEmpty => 'Claude (${said.join(' · ')})',
+              _ => 'Claude ($recapCount)',
+            },
             ProposalDetailPage.notes => 'Notes ($noteCount)',
             ProposalDetailPage.followThrough =>
               'Follow-through ($counting of $cancelCount)',

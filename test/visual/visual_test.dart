@@ -984,7 +984,7 @@ void main() {
         (tester) async {
           await tester.tap(find.byTooltip('More'));
           await tester.pumpAndSettle();
-          await tester.tap(find.text('Notes (1)'));
+          await tester.tap(find.text('Notes for Claude (1)'));
           await tester.pumpAndSettle();
         },
       ),
