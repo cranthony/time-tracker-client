@@ -286,6 +286,79 @@ class ProposalFeedback {
 
 enum FeedbackStatus { open, answered, withdrawn }
 
+/// What a [RecapPoint] is: Claude's [overview], something it [did], or
+/// something it's [unsure] of.
+enum RecapKind { overview, did, unsure }
+
+/// One point of Claude's [ProposalRecap]: its [text], in Markdown, and the
+/// events (ids or keys) and time notes it's about.
+class RecapPoint {
+  const RecapPoint({
+    required this.kind,
+    required this.text,
+    this.eventIds = const [],
+    this.noteIds = const [],
+  });
+
+  final RecapKind kind;
+  final String text;
+  final List<String> eventIds;
+  final List<String> noteIds;
+
+  static RecapPoint? fromJson(RecapKind kind, Object? json) => switch (json) {
+    {'text': final String text} when text.trim().isNotEmpty => RecapPoint(
+      kind: kind,
+      text: text,
+      eventIds: [for (final id in json['event_ids'] as List? ?? []) '$id'],
+      noteIds: [for (final id in json['note_ids'] as List? ?? []) '$id'],
+    ),
+    _ => null,
+  };
+}
+
+/// Claude's account of a [Proposal], mirroring `get_proposal`'s `recap`:
+/// an [overview], what it [did], and what it's [unsure] of -- written for
+/// [revision], which the user's edits may have gone past.
+class ProposalRecap {
+  const ProposalRecap({
+    this.overview,
+    this.did = const [],
+    this.unsure = const [],
+    this.revision,
+  });
+
+  final RecapPoint? overview;
+  final List<RecapPoint> did;
+  final List<RecapPoint> unsure;
+  final int? revision;
+
+  /// Every point, in the order they're read: the overview, what Claude
+  /// did, then what it's unsure of.
+  List<RecapPoint> get points => [?overview, ...did, ...unsure];
+
+  /// Null for none, or one with nothing in it.
+  static ProposalRecap? fromJson(Object? json, {int? revision}) {
+    if (json is! Map) return null;
+    final overview = switch (json['overview']) {
+      final String text when text.trim().isNotEmpty => RecapPoint(
+        kind: RecapKind.overview,
+        text: text,
+      ),
+      _ => null,
+    };
+    List<RecapPoint> points(RecapKind kind, String key) => [
+      for (final p in json[key] as List? ?? []) ?RecapPoint.fromJson(kind, p),
+    ];
+    final recap = ProposalRecap(
+      overview: overview,
+      did: points(RecapKind.did, 'did'),
+      unsure: points(RecapKind.unsure, 'unsure'),
+      revision: revision,
+    );
+    return recap.points.isEmpty ? null : recap;
+  }
+}
+
 /// A compaction under review: "this is what happened from [windowStart]
 /// to [through]", as its current [revision] has it, mirroring
 /// `get_proposal`. Claude prepares it; the user edits it, or leaves notes
@@ -311,6 +384,7 @@ class Proposal {
     this.userEdits = const [],
     this.changedSince = const {},
     this.replaced = const [],
+    this.recap,
   });
 
   /// 12 hex digits.
@@ -394,6 +468,30 @@ class Proposal {
   /// Claude it overrode.
   final List<String> replaced;
 
+  /// Claude's account of its last revision: what it did, and what it's
+  /// unsure of. Null from a server that doesn't say.
+  final ProposalRecap? recap;
+
+  /// The events (ids or keys) the user's edits changed since Claude wrote
+  /// [recap]: what it says of them may no longer hold.
+  Set<String> get editedSinceRecap {
+    final since = recap?.revision;
+    if (since == null) return const {};
+    return {
+      for (final e in userEdits)
+        if (e['status'] != 'inapplicable' &&
+            e['status'] != 'replaced' &&
+            ((e['base_revision'] as num?)?.toInt() ?? 0) >= since)
+          ?switch (e) {
+            {'event_id': final String id} => id,
+            {'edit': {'event_id': final String id}} => id,
+            // A create's key is its edit's id.
+            {'edit': {'action': 'create'}, 'id': final String id} => id,
+            _ => null,
+          },
+    };
+  }
+
   /// The notes still waiting on Claude.
   List<ProposalFeedback> get openFeedback => [
     for (final f in feedback)
@@ -469,6 +567,10 @@ class Proposal {
       for (final id in json['changed_since'] as List? ?? []) '$id',
     },
     replaced: [for (final id in json['replaced'] as List? ?? []) '$id'],
+    recap: ProposalRecap.fromJson(
+      json['recap'],
+      revision: (json['recap_revision'] as num?)?.toInt(),
+    ),
   );
 
   Proposal copyWith({
@@ -506,6 +608,7 @@ class Proposal {
     userEdits: userEdits ?? this.userEdits,
     changedSince: changedSince ?? this.changedSince,
     replaced: replaced ?? this.replaced,
+    recap: recap,
   );
 }
 

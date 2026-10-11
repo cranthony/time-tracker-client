@@ -1361,6 +1361,14 @@ class SampleData {
       };
     }
 
+    /// The id of the note at [hour]:[minute], as the proposal names it.
+    String noteId(int hour, int minute) {
+      final i = notes.indexWhere(
+        (n) => n.timestamp.hour == hour && n.timestamp.minute == minute,
+      );
+      return '${localIsoTimestamp(notes[i].timestamp)}#${i + 1}';
+    }
+
     return Proposal.fromJson({
       'id': proposalId,
       'revision': 3,
@@ -1508,6 +1516,47 @@ class SampleData {
         ],
         'text': '',
       },
+      // Claude's own account of it: what it did, what it isn't sure of.
+      'recap': {
+        'overview':
+            'A **late lunch** pushed work back; the call with Mom didn\'t '
+            'happen.',
+        'did': [
+          {
+            'text': 'Started **breakfast** at 7:50, from your note.',
+            'event_ids': ['breakfast'],
+            'note_ids': [noteId(7, 50)],
+          },
+          {
+            'text':
+                'Added *Email* at the co-working space:\n'
+                '- a new place, **The co-working space**\n'
+                '- a new action, **Inbox zero**',
+            'event_ids': ['${proposalId}c1'],
+          },
+          {
+            'text':
+                'Moved **lunch** to 12:15, as you asked, and ran work to it.',
+            'event_ids': ['lunch', 'work'],
+            'note_ids': [noteId(12, 15)],
+          },
+        ],
+        'unsure': [
+          {
+            'text':
+                'Who **Jo** is: I assumed a friend of Sam\'s from work. '
+                'If you know them already, say which person they are.',
+            'event_ids': ['lunch'],
+          },
+          {
+            'text':
+                'Whether skipping the **call with Mom** counts against '
+                'follow-through: nothing says it was moved.',
+            'event_ids': ['call'],
+          },
+        ],
+      },
+      'recap_revision': 3,
       'feedback': [
         {
           'id': '${proposalId}f1',

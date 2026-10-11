@@ -885,8 +885,36 @@ void main() {
       }
     }
 
+    // The details open on Claude's recap: to its notes.
+    Future<void> notesPage(WidgetTester tester) async {
+      await tester.tap(
+        find.descendant(
+          of: find.byType(TimeSummary),
+          matching: find.textContaining('Notes ('),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
     for (final (name, then) in <(String, Future<void> Function(WidgetTester))>[
       ('events_proposal', (_) async {}),
+      (
+        'events_proposal_recap',
+        (tester) async {
+          await tester.tap(find.byTooltip('All of Claude’s recap'));
+          await tester.pumpAndSettle();
+        },
+      ),
+      (
+        'events_proposal_unsure',
+        (tester) async {
+          // To the first thing Claude isn't sure of.
+          for (var i = 0; i < 4; i++) {
+            await tester.tap(find.byTooltip('Next point'));
+            await tester.pumpAndSettle();
+          }
+        },
+      ),
       ('events_proposal_extending', (tester) => extending(tester, save: false)),
       ('events_proposal_extended', (tester) => extending(tester, save: true)),
       (
@@ -900,6 +928,7 @@ void main() {
         'events_proposal_note',
         (tester) async {
           // To the third note: one Claude left out.
+          await notesPage(tester);
           for (var i = 0; i < 2; i++) {
             await tester.tap(find.byTooltip('Next note'));
             await tester.pumpAndSettle();
@@ -911,6 +940,7 @@ void main() {
         (tester) async {
           // Back from the first note to review to the one compacted last
           // time, there as context.
+          await notesPage(tester);
           await tester.tap(find.byTooltip('Previous note'));
           await tester.pumpAndSettle();
         },
@@ -952,6 +982,7 @@ void main() {
         'events_proposal_note_use',
         (tester) async {
           // What the first note, which sets breakfast's start, is for.
+          await notesPage(tester);
           await tester.tap(find.byTooltip('What this note is for'));
           await tester.pumpAndSettle();
         },

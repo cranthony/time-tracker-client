@@ -15,6 +15,7 @@ import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
+import 'package:time_tracker_client/widgets/recap_markdown.dart';
 
 void main() {
   final now = DateTime(2026, 9, 30, 12);
@@ -121,6 +122,84 @@ void main() {
     expect(tea.actionNames, [null, 'Make matcha']);
   });
 
+  test("reads Claude's recap: each point's kind, text, events and notes; "
+      'and which events the user changed since', () {
+    final proposal = Proposal.fromJson({
+      ...proposalJson(),
+      'recap': {
+        ...recapJson(),
+        'did': [
+          {
+            'text': 'Kept tea',
+            'event_ids': ['tea'],
+            'note_ids': ['n1'],
+          },
+          {'text': '  '},
+        ],
+      },
+      'recap_revision': 1,
+      'user_edits': [
+        {
+          'id': 'abc123def456u1',
+          'event_id': 'tea',
+          'edit': {'action': 'keep', 'event_id': 'tea'},
+          'status': 'active',
+          'base_revision': 1,
+        },
+        {
+          'id': 'abc123def456u2',
+          'event_id': 'walk',
+          'edit': {'action': 'keep', 'event_id': 'walk'},
+          'status': 'replaced',
+          'base_revision': 1,
+        },
+        {
+          'id': 'abc123def456u3',
+          'edit': {'action': 'create', 'summary': 'Nap'},
+          'status': 'active',
+          'base_revision': 2,
+        },
+      ],
+    });
+    final recap = proposal.recap!;
+    expect(recap.revision, 1);
+    expect(
+      [
+        for (final p in recap.points)
+          (p.kind, p.text, p.eventIds.join(','), p.noteIds.join(',')),
+      ],
+      [
+        (RecapKind.overview, 'A **quiet** morning', '', ''),
+        (RecapKind.did, 'Kept tea', 'tea', 'n1'),
+        (
+          RecapKind.unsure,
+          'Whether the call counts against follow-through',
+          'call',
+          '',
+        ),
+      ],
+    );
+    expect(proposal.editedSinceRecap, {'tea', 'abc123def456u3'});
+    // Kept by the app's own revisions.
+    expect(proposal.copyWith(revision: 3).recap, same(recap));
+    expect(Proposal.fromJson(proposalJson()).recap, isNull);
+  });
+
+  test("Claude's Markdown, as a line or two: bold and italics kept, list "
+      'items each on a line with its bullet', () {
+    final span = recapSpan('**Lunch** ran *late*:\n- one\n1. two');
+    expect(span.toPlainText(), 'Lunch ran late:\n• one\n1. two');
+    final bold = <String>[];
+    void walk(InlineSpan s) {
+      if (s is! TextSpan) return;
+      if (s.style?.fontWeight == FontWeight.w700) bold.add(s.toPlainText());
+      s.children?.forEach(walk);
+    }
+
+    walk(span);
+    expect(bold, ['Lunch']);
+  });
+
   test('settling additions, in amend_proposal', () {
     const edits = ProposalEdits(
       additions: [
@@ -171,7 +250,10 @@ void main() {
     late _Proposals proposals;
     late InMemoryPeopleRepository people;
 
-    Future<void> open(WidgetTester tester) async {
+    Future<void> open(
+      WidgetTester tester, {
+      Map<String, Object?> extra = const {},
+    }) async {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -184,7 +266,7 @@ void main() {
         locations: [const Location(id: 'cafe', name: 'The café')],
       );
       proposals = _Proposals(
-        Proposal.fromJson(proposalJson()),
+        Proposal.fromJson({...proposalJson(), ...extra}),
         events: events,
         people: people,
       );
@@ -229,12 +311,16 @@ void main() {
       expect(find.text('Added (3)'), findsOneWidget);
 
       await tester.tap(
-        find.byTooltip('Hide notes, follow-through and additions'),
+        find.byTooltip(
+          'Hide Claude’s recap, notes, follow-through and additions',
+        ),
       );
       await tester.pumpAndSettle();
       expect(find.text('Added (3)'), findsNothing);
       await tester.tap(
-        find.byTooltip('Show notes, follow-through and additions'),
+        find.byTooltip(
+          'Show Claude’s recap, notes, follow-through and additions',
+        ),
       );
       await tester.pumpAndSettle();
       expect(find.text('Added (3)'), findsOneWidget);
@@ -474,8 +560,141 @@ void main() {
       expect(find.textContaining('The teahouse (new)'), findsOneWidget);
       expect(find.textContaining('new:'), findsNothing);
     });
+
+    group("Claude's recap", () {
+      Future<void> openRecap(
+        WidgetTester tester, {
+        Map<String, Object?> extra = const {},
+      }) => open(tester, extra: {'recap': recapJson(), ...extra});
+
+      testWidgets('is the page shown first, stepped through point by point, '
+          'the events each names outlined', (tester) async {
+        await openRecap(tester);
+        expect(find.text('Claude (1 unsure)'), findsOneWidget);
+        expect(find.textContaining('A quiet morning'), findsOneWidget);
+        expect(outlined(tester), isEmpty);
+
+        await tester.tap(find.byTooltip('Next point'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Kept tea as planned'), findsOneWidget);
+        expect(find.text('Tea, Walk'), findsOneWidget);
+        expect(outlined(tester), {'tea', 'walk'});
+
+        await tester.tap(find.byTooltip('Next point'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Whether the call'), findsOneWidget);
+        expect(outlined(tester), {'call'});
+        expect(find.byTooltip('Next point'), findsOneWidget);
+        expect(
+          tester
+              .widget<IconButton>(
+                find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down),
+              )
+              .onPressed,
+          isNull,
+        );
+      });
+
+      testWidgets('opens in full, its points in Markdown under what Claude '
+          'did and what it isn’t sure of; a chip goes to its event', (
+        tester,
+      ) async {
+        await openRecap(tester);
+        await tester.tap(find.byTooltip('All of Claude’s recap'));
+        await tester.pumpAndSettle();
+        expect(find.text('What Claude did'), findsOneWidget);
+        expect(find.text('What Claude isn’t sure of'), findsOneWidget);
+        // Its list, item by item, each with its bullet.
+        expect(find.text('•'), findsNWidgets(2));
+        expect(find.text('the walk was short'), findsOneWidget);
+
+        await tester.tap(find.widgetWithText(ActionChip, 'Walk, 11:00 AM'));
+        await tester.pumpAndSettle();
+        expect(find.text('What Claude did'), findsNothing);
+        expect(find.textContaining('Kept tea as planned'), findsOneWidget);
+        expect(outlined(tester), {'tea', 'walk'});
+      });
+
+      testWidgets('answers a point Claude is unsure of, in a note about its '
+          'event', (tester) async {
+        await openRecap(tester);
+        await tester.tap(find.byTooltip('All of Claude’s recap'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(ActionChip, 'Answer Claude'));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(TextField),
+          ),
+          'It counts',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Leave note'));
+        await tester.pumpAndSettle();
+        final asked = proposals.proposal!.feedback.last;
+        expect((asked.text, asked.eventId), ('It counts', 'call'));
+      });
+
+      testWidgets('says when the user has changed what a point is about '
+          'since Claude wrote it', (tester) async {
+        await openRecap(
+          tester,
+          extra: {
+            'recap_revision': 1,
+            'user_edits': [
+              {
+                'id': 'abc123def456u1',
+                'event_id': 'walk',
+                'edit': {'action': 'keep', 'event_id': 'walk'},
+                'status': 'active',
+                'base_revision': 1,
+              },
+            ],
+          },
+        );
+        await tester.tap(find.byTooltip('Next point'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Tea, Walk · you’ve changed it since'),
+          findsOneWidget,
+        );
+        await tester.tap(find.byTooltip('All of Claude’s recap'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Written for revision 1'), findsOneWidget);
+        expect(
+          find.text('You’ve changed what it’s about since'),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('without one, the details open on the notes as before', (
+        tester,
+      ) async {
+        await open(tester);
+        expect(find.textContaining('Claude ('), findsNothing);
+      });
+    });
   });
 }
+
+/// Claude's recap of [proposalJson]: an overview, what it did -- a list
+/// in it -- and what it's unsure of.
+Map<String, Object?> recapJson() => {
+  'overview': 'A **quiet** morning',
+  'did': [
+    {
+      'text': 'Kept tea as planned:\n- *Sam* came\n- the walk was short',
+      'event_ids': ['tea', 'walk'],
+    },
+  ],
+  'unsure': [
+    {
+      'text': 'Whether the call counts against follow-through',
+      'event_ids': ['call'],
+    },
+  ],
+};
 
 /// An in-memory proposal that records the edits made to it.
 class _Proposals extends InMemoryProposalRepository {
