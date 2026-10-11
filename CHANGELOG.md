@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.57.0
+
+- Answering a point Claude isn't sure of quotes it in the note for
+  Claude, so Claude reads which doubt it answers, and the app shows the
+  answer under that point -- in the strip ("you answered: waiting for
+  Claude") and in the whole recap, with Claude's reply. Other notes for
+  Claude follow the recap's points, under "Notes for Claude", and the
+  Claude page counts those waiting for Claude.
+- "Notes for Claude" is their name everywhere, the menu included, so
+  "Notes" is only ever your own.
+
 ## 7.56.0
 
 - Actions and notes waiting to save now show in the line at the foot of
