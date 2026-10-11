@@ -12,7 +12,6 @@ import '../models/time_split.dart';
 import '../outbox/action_outbox.dart';
 import '../outbox/actions_shown.dart';
 import '../outbox/pending_action_save.dart';
-import '../services/server_errors.dart';
 import '../services/event_store.dart';
 import '../services/events_repository.dart';
 import '../services/habits_repository.dart';
@@ -140,8 +139,6 @@ class _PlanScreenState extends State<PlanScreen> {
   };
   ActionList? _shownActions;
 
-  StreamSubscription<ActionSaveEvent>? _saveEvents;
-
   /// [_fromServer] are the ones kept from last time; the server hasn't
   /// answered since.
   bool _stale = false;
@@ -200,7 +197,6 @@ class _PlanScreenState extends State<PlanScreen> {
     }
     _fromServer = _memory.actions;
     widget.outbox.addListener(_outboxChanged);
-    _saveEvents = widget.outbox.events.listen(_onSaveEvent);
     _showCached();
     _visitLoads
       ..add(_load())
@@ -393,7 +389,6 @@ class _PlanScreenState extends State<PlanScreen> {
     // Left before everything loaded: as far as it got.
     _visit.finish();
     widget.outbox.removeListener(_outboxChanged);
-    _saveEvents?.cancel();
     super.dispose();
   }
 
@@ -403,34 +398,6 @@ class _PlanScreenState extends State<PlanScreen> {
     // Once, after the last of a round is answered, rather than after each.
     if (widget.outbox.wantsFetch) _load();
     setState(() {});
-  }
-
-  void _onSaveEvent(ActionSaveEvent event) {
-    if (!mounted) return;
-    switch (event) {
-      // Said once, not again each time it's tried again by itself.
-      case ActionSaveFailed(:final save)
-          when save.refused || save.attempts <= 1:
-        final name = save.isNew
-            ? save.action.name
-            : _actions?.actions
-                  .where((g) => g.id == save.actionId)
-                  .firstOrNull
-                  ?.name;
-        // Saved in the background: its error's already in words.
-        showErrorSheet(
-          context,
-          title: "Couldn't save ${name ?? 'an action'}",
-          failure: ServerFailure(
-            save.refused ? FailureKind.refused : FailureKind.connection,
-            '${save.lastError}${save.refused ? '' : ' Trying again soon.'}',
-          ),
-          onRetry: () => widget.outbox.retry(save.actionId),
-          retryRefusal: true,
-        );
-      case ActionSaveFailed():
-        break;
-    }
   }
 
   Future<void> _load() async {

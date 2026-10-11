@@ -87,7 +87,7 @@ class EventOutboxStatus implements StatusSource {
           children: [
             Expanded(
               child: Text(
-                'Changes waiting to save',
+                'Events waiting to save',
                 style: theme.textTheme.titleLarge,
               ),
             ),
