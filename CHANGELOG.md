@@ -6,6 +6,11 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.53.1
+
+- Claude's recap: tapping a point opens the whole recap, and the button
+  beside it is gone, leaving the point more of the row.
+
 ## 7.53.0
 
 - A home screen calendar for Android: your events from now to the next
