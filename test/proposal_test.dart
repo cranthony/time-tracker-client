@@ -695,10 +695,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    final confirmButton = find.widgetWithText(
-      FilledButton,
-      'Confirm 8:00 AM – 12:00 PM happened as shown',
-    );
+    final confirmButton = find.widgetWithText(FilledButton, 'Confirm');
 
     testWidgets('queued, confirming waits to save, then says what came of '
         'it, even once the proposal is gone', (tester) async {
@@ -886,7 +883,8 @@ void main() {
       expect(timeline.review!.from.isAtSameMomentAs(at(8)), isTrue);
       expect(timeline.review!.through.isAtSameMomentAs(at(12)), isTrue);
       // The bar, and the band's tab where it starts; its foot.
-      expect(find.text('What happened — to confirm'), findsNWidgets(2));
+      expect(find.byType(ProposalBar), findsOneWidget);
+      expect(find.text('What happened — to confirm'), findsOneWidget);
       expect(find.text('through 12:00 PM'), findsOneWidget);
       expect(find.text('Moved, was 9:00 AM–10:00 AM · Claude'), findsOneWidget);
       expect(find.text('New · Claude'), findsOneWidget);
@@ -1088,10 +1086,8 @@ void main() {
         (asked.text, asked.noteId, asked.eventId),
         ('Tea at 9', 'n1#1', null),
       );
-      expect(
-        find.widgetWithText(FilledButton, 'Waiting for Claude'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('Waiting for Claude:'), findsOneWidget);
+      expect(tester.widget<FilledButton>(confirmButton).onPressed, isNull);
     });
 
     testWidgets("highlights what's changed since the revision last seen", (
@@ -1107,7 +1103,7 @@ void main() {
       final marks = tester.widget<DayTimeline>(find.byType(DayTimeline)).marks;
       expect(marks['tea']!.changed, isTrue);
       expect(marks['work']!.changed, isFalse);
-      expect(find.text('1 event changed since you looked.'), findsOneWidget);
+      expect(find.textContaining('· 1 changed'), findsOneWidget);
     });
 
     testWidgets('an edit to an event in the band edits the proposal, not '
@@ -1323,7 +1319,7 @@ void main() {
           ],
         ),
       );
-      await tap(tester, find.text('Note for Claude'));
+      await tap(tester, find.byTooltip('Note for Claude'));
       await tester.tap(find.text('All of it'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Email, 11:30 AM').last);
@@ -1335,11 +1331,11 @@ void main() {
 
       final note = proposals.proposal!.feedback.last;
       expect((note.text, note.eventId), ('No email', 'abc123def456c1'));
-      final waiting = find.widgetWithText(FilledButton, 'Waiting for Claude');
-      expect(tester.widget<FilledButton>(waiting).onPressed, isNull);
+      expect(tester.widget<FilledButton>(confirmButton).onPressed, isNull);
       expect(find.textContaining('1 note open'), findsOneWidget);
 
       // Claude's reply beside the note it answers; the open one withdrawn.
+      await tap(tester, find.byTooltip('More'));
       await tap(tester, find.text('Notes (2)'));
       expect(find.text('Moved it to 9:15.'), findsOneWidget);
       expect(find.text('You, on “Tea, 9:15 AM”'), findsOneWidget);
@@ -1358,6 +1354,7 @@ void main() {
         find.text('Confirmed: what happened 8:00 AM – 12:00 PM is recorded.'),
         findsOneWidget,
       );
+      expect(find.byType(ProposalBar), findsNothing);
       expect(find.text('What happened — to confirm'), findsNothing);
       expect(
         (await onCalendar('tea')).start.isAtSameMomentAs(at(9, 15)),
@@ -1398,6 +1395,7 @@ void main() {
         proposals.calls.where((c) => c == 'confirm_proposal'),
         hasLength(2),
       );
+      expect(find.byType(ProposalBar), findsNothing);
       expect(find.text('What happened — to confirm'), findsNothing);
     });
 
@@ -1421,7 +1419,7 @@ void main() {
         find.text('Cancelled, counts against follow-through · Claude'),
         findsNothing,
       );
-      expect(find.text('What happened — to confirm'), findsNWidgets(2));
+      expect(find.byType(ProposalBar), findsOneWidget);
     });
 
     testWidgets('handed to Claude when it no longer plans', (tester) async {
@@ -1442,6 +1440,7 @@ void main() {
       expect(confirmButton, findsNothing);
       await tap(tester, find.text('Retry'));
       expect(proposals.calls, contains('finish_proposal'));
+      expect(find.byType(ProposalBar), findsNothing);
       expect(find.text('What happened — to confirm'), findsNothing);
     });
   });

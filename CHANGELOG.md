@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.55.0
+
+- The compaction proposal's bar is one row, over its details as one
+  block: its time and revision, "Confirm", a button for a note for
+  Claude, and a menu with its notes, "Go to it" and "Abandon it". What
+  changed since you looked shows by its revision; what's out of the
+  ordinary -- waiting for Claude, waiting to save, stopped partway, no
+  longer fitting -- still gets a line of its own under it.
+
 ## 7.54.1
 
 - Under the hood: the line at the foot of the screen, and the sheet it
