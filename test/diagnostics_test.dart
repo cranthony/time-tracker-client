@@ -1,3 +1,4 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -249,6 +250,43 @@ void main() {
       expect(find.text('Memory'), findsWidgets);
       expect(find.text('210 MiB'), findsWidgets); // Max, and latest.
       expect(find.textContaining('1 in view'), findsOneWidget);
+    });
+
+    testWidgets('draws the calls and memory as dots, unjoined, with the '
+        'mean, median, p95 and max marked, labelled with the tools', (
+      tester,
+    ) async {
+      await open(tester, InMemoryDiagnosticsRepository(_health()));
+      final [calls, memory, ...] = [
+        for (final chart in tester.widgetList<LineChart>(
+          find.byType(LineChart),
+        ))
+          chart.data,
+      ];
+      for (final data in [calls, memory]) {
+        expect(data.lineBarsData.map((b) => b.barWidth), everyElement(0));
+        expect(
+          data.lineBarsData.map((b) => b.dotData.show),
+          everyElement(true),
+        );
+      }
+      List<String> labels(LineChartData data) => [
+        for (final line in data.extraLinesData.horizontalLines)
+          line.label.labelResolver(line),
+      ];
+      expect(
+        labels(calls),
+        everyElement(matches(r'^(Mean|Median|p95|Max) · All tools · ')),
+      );
+      expect(labels(calls), hasLength(4));
+      expect(labels(memory).last, 'Max · 210 MiB');
+
+      await tester.tap(find.text('All tools'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Writes').last);
+      await tester.pumpAndSettle();
+      final writes = tester.widget<LineChart>(find.byType(LineChart).first);
+      expect(labels(writes.data).first, startsWith('Mean · Writes · '));
     });
 
     testWidgets('filters to a kind of tool, and a range', (tester) async {

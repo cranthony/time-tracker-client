@@ -22,8 +22,10 @@ import '../widgets/status_message.dart';
 /// under the rest of its request, to the whole request's time -- its
 /// memory, and its restarts, ticked. The app's: its tool calls' latencies,
 /// the app's and the background task's, and how many changes waited to
-/// save, in each outbox, stacked; and its last errors, in full. Failed
-/// calls are dotted red. Which tools' calls, how far back, and each call
+/// save, in each outbox, stacked; and its last errors, in full. Calls and
+/// memory are dots, not joined -- they come in bursts, with long gaps
+/// between -- with their mean, median, p95 and max marked across; failed
+/// calls are red. Which tools' calls, how far back, and each call
 /// or a statistic of each bucket of them are picked from the menus above;
 /// each graph says the mean, median, 95th percentile and max of what's in
 /// view. Pinching -- on a touchscreen or a trackpad, or Ctrl and the mouse
@@ -386,6 +388,7 @@ class _ServerPaneState extends State<_ServerPane>
                     statistic: statistic,
                     bucket: bucket,
                   ),
+                  tools: filter.label,
                   from: from,
                   to: to,
                 ),
@@ -516,6 +519,7 @@ class _ClientPaneState extends State<_ClientPane>
                   calls: calls,
                   statistic: statistic,
                   bucket: bucket,
+                  tools: filter.label,
                   from: from,
                   to: to,
                 ),
@@ -877,6 +881,75 @@ const _noTitles = AxisTitles();
 
 double _x(DateTime t) => t.millisecondsSinceEpoch.toDouble();
 
+/// [spots] as dots alone, unjoined: samples come in bursts with long gaps
+/// between, which a line would draw across as if it knew what was there.
+/// Each is [color], or [colorOf] it, by its index.
+LineChartBarData _dots(
+  List<FlSpot> spots,
+  Color color, {
+  Color Function(int index)? colorOf,
+}) => LineChartBarData(
+  spots: spots,
+  color: color,
+  barWidth: 0,
+  dotData: FlDotData(
+    getDotPainter: (_, _, _, i) => FlDotCirclePainter(
+      radius: 2.5,
+      color: colorOf?.call(i) ?? color,
+      strokeWidth: 0,
+    ),
+  ),
+);
+
+/// The four of [summary] its markers are drawn at.
+List<double> _marked(Summary? summary) => summary == null
+    ? const []
+    : [summary.mean, summary.median, summary.p95, summary.max];
+
+/// A dashed line across the graph at each of [summary]'s mean, median,
+/// 95th percentile and max, each labelled with which it is, of [what] --
+/// the tools shown, say -- and its value. The labels take turns at the
+/// left, the right and the middle, so lines close together -- the mean
+/// and the median, or the mean and p95 under a far-off max -- don't
+/// cover each other's.
+ExtraLinesData _markers(
+  BuildContext context,
+  Summary? summary,
+  String Function(num) format, {
+  String? what,
+}) {
+  if (summary == null) return const ExtraLinesData();
+  final colors = Theme.of(context).colorScheme;
+  final style = Theme.of(context).textTheme.labelSmall?.copyWith(
+    color: colors.onSurface,
+    background: Paint()
+      ..color = colors.surfaceContainerLow.withValues(alpha: 0.85),
+  );
+  return ExtraLinesData(
+    horizontalLines: [
+      for (final (name, y, alignment) in [
+        ('Mean', summary.mean, Alignment.topLeft),
+        ('Median', summary.median, Alignment.topRight),
+        ('p95', summary.p95, Alignment.topCenter),
+        ('Max', summary.max, Alignment.topRight),
+      ])
+        HorizontalLine(
+          y: y,
+          color: colors.outline,
+          strokeWidth: 1,
+          dashArray: const [4, 3],
+          label: HorizontalLineLabel(
+            show: true,
+            alignment: alignment,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            style: style,
+            labelResolver: (_) => [name, ?what, format(y)].join(' · '),
+          ),
+        ),
+    ],
+  );
+}
+
 /// What's said in a graph with nothing in view.
 Widget _empty(BuildContext context, String text) => SizedBox(
   height: 120,
@@ -885,19 +958,23 @@ Widget _empty(BuildContext context, String text) => SizedBox(
   ),
 );
 
-/// The tool calls' graph: their own work, filled, under the rest of the
-/// request, filled lighter, to the whole request's time; failed calls
-/// dotted red.
+/// The tool calls' graph: a dot for each call's own work, and one for the
+/// whole request's time, auth and transport included -- red if it failed
+/// -- with the whole request's mean, median, p95 and max marked across.
 class _LatencyCard extends StatelessWidget {
   const _LatencyCard({
     required this.calls,
     required this.points,
+    required this.tools,
     required this.from,
     required this.to,
   });
 
   final List<ToolCall> calls;
   final List<LatencyPoint> points;
+
+  /// Which tools' calls they are, as the menu says it.
+  final String tools;
   final DateTime from;
   final DateTime to;
 
@@ -905,11 +982,13 @@ class _LatencyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final work = colors.primary;
-    final overhead = colors.tertiary;
+    final whole = colors.tertiary;
     final failed = calls.where((c) => !c.ok).length;
+    final total = Summary.of([for (final c in calls) c.wholeMs]);
     final top = points.isEmpty
         ? 1.0
-        : points.map((p) => p.total).reduce(max) * 1.1;
+        : [for (final p in points) p.total, ..._marked(total)].reduce(max) *
+              1.1;
     return _GraphCard(
       title: 'Tool calls',
       subtitle:
@@ -917,7 +996,7 @@ class _LatencyCard extends StatelessWidget {
           '${failed == 0 ? '' : ', $failed failed'}',
       legend: [
         (work, "The tool's work"),
-        (overhead.withValues(alpha: 0.5), 'Auth and transport'),
+        (whole, 'Whole request'),
         (colors.error, 'Failed'),
       ],
       graph: points.isEmpty
@@ -938,61 +1017,29 @@ class _LatencyCard extends StatelessWidget {
                     rightTitles: _noTitles,
                   ),
                   borderData: FlBorderData(show: false),
+                  extraLinesData: _markers(context, total, _ms, what: tools),
                   lineBarsData: [
-                    LineChartBarData(
-                      spots: [for (final p in points) FlSpot(_x(p.at), p.work)],
-                      color: work,
-                      barWidth: 1.5,
-                      dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        color: work.withValues(alpha: 0.35),
-                      ),
-                    ),
-                    LineChartBarData(
-                      spots: [
-                        for (final p in points) FlSpot(_x(p.at), p.total),
-                      ],
-                      color: overhead,
-                      barWidth: 1.5,
-                      dotData: const FlDotData(show: false),
-                    ),
-                    LineChartBarData(
-                      spots: [
-                        for (final p in points)
-                          if (p.errors > 0) FlSpot(_x(p.at), p.total),
-                      ],
-                      color: Colors.transparent,
-                      barWidth: 0,
-                      dotData: FlDotData(
-                        getDotPainter: (_, _, _, _) => FlDotCirclePainter(
-                          radius: 4,
-                          color: colors.error,
-                          strokeWidth: 0,
-                        ),
-                      ),
-                    ),
-                  ],
-                  betweenBarsData: [
-                    BetweenBarsData(
-                      fromIndex: 0,
-                      toIndex: 1,
-                      color: overhead.withValues(alpha: 0.25),
+                    _dots([
+                      for (final p in points) FlSpot(_x(p.at), p.work),
+                    ], work),
+                    _dots(
+                      [for (final p in points) FlSpot(_x(p.at), p.total)],
+                      whole,
+                      colorOf: (i) =>
+                          points[i].errors > 0 ? colors.error : whole,
                     ),
                   ],
                   lineTouchData: LineTouchData(
                     touchTooltipData: LineTouchTooltipData(
                       getTooltipItems: (spots) => [
                         for (final s in spots)
-                          s.barIndex == 2
-                              ? null
-                              : LineTooltipItem(
-                                  '${s.barIndex == 0 ? 'Work' : 'Total'} ${_ms(s.y)}',
-                                  TextStyle(
-                                    color: colors.onInverseSurface,
-                                    fontSize: 12,
-                                  ),
-                                ),
+                          LineTooltipItem(
+                            '${s.barIndex == 0 ? 'Work' : 'Total'} ${_ms(s.y)}',
+                            TextStyle(
+                              color: colors.onInverseSurface,
+                              fontSize: 12,
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -1010,14 +1057,15 @@ class _LatencyCard extends StatelessWidget {
                 if (c.totalMs != null) c.overheadMs,
             ]),
           ),
-          ('Total', Summary.of([for (final c in calls) c.wholeMs])),
+          ('Total', total),
         ],
       ),
     );
   }
 }
 
-/// The server's memory after each call, whichever tool's.
+/// The server's memory after each call, whichever tool's: a dot for each,
+/// with their mean, median, p95 and max marked across.
 class _MemoryCard extends StatelessWidget {
   const _MemoryCard({
     required this.memory,
@@ -1034,7 +1082,8 @@ class _MemoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final values = [for (final p in points) p.mib];
+    final summary = Summary.of([for (final m in memory) m.mib]);
+    final values = [for (final p in points) p.mib, ..._marked(summary)];
     final low = values.isEmpty ? 0.0 : values.reduce(min);
     final high = values.isEmpty ? 1.0 : values.reduce(max);
     final pad = max(1.0, (high - low) * 0.15);
@@ -1060,13 +1109,11 @@ class _MemoryCard extends StatelessWidget {
                     rightTitles: _noTitles,
                   ),
                   borderData: FlBorderData(show: false),
+                  extraLinesData: _markers(context, summary, _mib),
                   lineBarsData: [
-                    LineChartBarData(
-                      spots: [for (final p in points) FlSpot(_x(p.at), p.mib)],
-                      color: colors.secondary,
-                      barWidth: 2,
-                      dotData: const FlDotData(show: false),
-                    ),
+                    _dots([
+                      for (final p in points) FlSpot(_x(p.at), p.mib),
+                    ], colors.secondary),
                   ],
                   lineTouchData: LineTouchData(
                     touchTooltipData: LineTouchTooltipData(
@@ -1087,9 +1134,7 @@ class _MemoryCard extends StatelessWidget {
             ),
       footer: _SummaryTable(
         format: _mib,
-        rows: [
-          ('Memory', Summary.of([for (final m in memory) m.mib])),
-        ],
+        rows: [('Memory', summary)],
         extra: ('Latest', [memory.isEmpty ? '–' : _mib(memory.last.mib)]),
       ),
     );
@@ -1204,14 +1249,16 @@ class _Note extends StatelessWidget {
   }
 }
 
-/// The app's tool calls: a line for the app's, and one for the background
-/// task's, each call -- or a statistic of each bucket of them -- its
-/// whole time, retries and the network included; failed calls dotted red.
+/// The app's tool calls: a dot for each of the app's, and each of the
+/// background task's -- or a statistic of each bucket of them -- its whole
+/// time, retries and the network included; failed calls red. All of
+/// them's mean, median, p95 and max are marked across.
 class _ClientCallsCard extends StatelessWidget {
   const _ClientCallsCard({
     required this.calls,
     required this.statistic,
     required this.bucket,
+    required this.tools,
     required this.from,
     required this.to,
   });
@@ -1219,6 +1266,9 @@ class _ClientCallsCard extends StatelessWidget {
   final List<ClientCall> calls;
   final Statistic? statistic;
   final BucketSize bucket;
+
+  /// Which tools' calls they are, as the menu says it.
+  final String tools;
   final DateTime from;
   final DateTime to;
 
@@ -1244,11 +1294,14 @@ class _ClientCallsCard extends StatelessWidget {
       (_points(CallOrigin.background), background),
     ];
     final all = [for (final (points, _) in series) ...points];
-    final top = all.isEmpty ? 1.0 : all.map((p) => p.total).reduce(max) * 1.1;
     List<num> msOf(CallOrigin? origin) => [
       for (final c in calls)
         if (origin == null || c.origin == origin) c.ms,
     ];
+    final summary = Summary.of(msOf(null));
+    final top = all.isEmpty
+        ? 1.0
+        : [for (final p in all) p.total, ..._marked(summary)].reduce(max) * 1.1;
     return _GraphCard(
       title: 'Tool calls',
       subtitle:
@@ -1278,24 +1331,14 @@ class _ClientCallsCard extends StatelessWidget {
                     rightTitles: _noTitles,
                   ),
                   borderData: FlBorderData(show: false),
+                  extraLinesData: _markers(context, summary, _ms, what: tools),
                   lineBarsData: [
                     for (final (points, color) in series)
-                      LineChartBarData(
-                        spots: [
-                          for (final p in points) FlSpot(_x(p.at), p.total),
-                        ],
-                        color: color,
-                        barWidth: 1.5,
-                        dotData: FlDotData(
-                          checkToShowDot: (spot, bar) => points.any(
-                            (p) => p.errors > 0 && _x(p.at) == spot.x,
-                          ),
-                          getDotPainter: (_, _, _, _) => FlDotCirclePainter(
-                            radius: 4,
-                            color: colors.error,
-                            strokeWidth: 0,
-                          ),
-                        ),
+                      _dots(
+                        [for (final p in points) FlSpot(_x(p.at), p.total)],
+                        color,
+                        colorOf: (i) =>
+                            points[i].errors > 0 ? colors.error : color,
                       ),
                   ],
                   lineTouchData: LineTouchData(
@@ -1323,7 +1366,7 @@ class _ClientCallsCard extends StatelessWidget {
             CallOrigin.background.label,
             Summary.of(msOf(CallOrigin.background)),
           ),
-          ('All', Summary.of(msOf(null))),
+          ('All', summary),
         ],
       ),
     );
