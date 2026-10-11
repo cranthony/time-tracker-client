@@ -6,6 +6,7 @@ import '../models/event.dart';
 import '../outbox/action_outbox.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/note_outbox.dart';
+import '../platform/calendar_widget.dart';
 import '../services/actions_repository.dart';
 import '../services/event_store.dart';
 import '../services/events_place.dart';
@@ -38,6 +39,7 @@ class HomeScreen extends StatefulWidget {
     this.onSignOut,
     this.addNoteRequests,
     this.onAddNoteFieldFocused,
+    this.calendarTaps,
     this.version,
   });
 
@@ -64,6 +66,10 @@ class HomeScreen extends StatefulWidget {
   /// Called when the New note dialog opened for one of [addNoteRequests]
   /// has its field focused.
   final VoidCallback? onAddNoteFieldFocused;
+
+  /// Taps on the home screen calendar: each switches to Events and shows
+  /// what it was on there.
+  final Stream<CalendarTap>? calendarTaps;
   final String? version;
 
   @override
@@ -73,6 +79,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   var _tab = _Tab.notes;
   StreamSubscription<DateTime>? _addNoteRequests;
+  StreamSubscription<CalendarTap>? _calendarTaps;
 
   /// Passes [HomeScreen.addNoteRequests] on to whichever NotesScreen is
   /// showing; broadcast, since each one listens anew.
@@ -80,6 +87,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Events to show on the Events page, from a refusal naming them.
   final _toEvents = StreamController<Event>.broadcast();
+
+  /// Times to show on the Events page, from the home screen calendar;
+  /// null for now.
+  final _toEventsTime = StreamController<DateTime?>.broadcast();
 
   /// Where Events was left, to go back there.
   final _eventsPlace = EventsPlaceStore();
@@ -99,6 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // Once the notes screen is built and listening.
       WidgetsBinding.instance.addPostFrameCallback((_) => _toNotes.add(at));
     });
+    _calendarTaps = widget.calendarTaps?.listen(_showCalendarTap);
   }
 
   /// Loads the week either side of today's events, and the traits,
@@ -121,11 +133,27 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _toEvents.add(event));
   }
 
+  /// Switches to Events, and shows what [tap] on the home screen calendar
+  /// was on: its event, as it is now, if it's here; or else its time, or
+  /// now.
+  void _showCalendarTap(CalendarTap tap) {
+    if (tap.eventId case final id? when _lookup(id) != null) {
+      return _showEvent(_lookup(id)!);
+    }
+    setState(() => _tab = _Tab.events);
+    // Once the events screen is built and listening.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _toEventsTime.add(tap.at),
+    );
+  }
+
   @override
   void dispose() {
     _addNoteRequests?.cancel();
+    _calendarTaps?.cancel();
     _toNotes.close();
     _toEvents.close();
+    _toEventsTime.close();
     super.dispose();
   }
 
@@ -172,6 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
           proposals: widget.proposalsRepository,
           eventOutbox: widget.eventOutbox,
           showEventRequests: _toEvents.stream,
+          showTimeRequests: _toEventsTime.stream,
         ),
         _Tab.plan => PlanScreen(
           repository: widget.actionsRepository,

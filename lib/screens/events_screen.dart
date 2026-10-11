@@ -90,6 +90,7 @@ class EventsScreen extends StatefulWidget {
     this.outbox,
     this.eventOutbox,
     this.showEventRequests,
+    this.showTimeRequests,
     this.onSignIn,
     this.onSignOut,
     this.version,
@@ -135,6 +136,9 @@ class EventsScreen extends StatefulWidget {
   /// Events to show: each, its day gone to, scrolled to it, and
   /// highlighted a moment.
   final Stream<Event>? showEventRequests;
+
+  /// Times to show: each, its day gone to, scrolled to it; null for now.
+  final Stream<DateTime?>? showTimeRequests;
 
   /// Which server this build talks to, for the About dialog.
   final String serverLabel;
@@ -182,6 +186,11 @@ class _EventsScreenState extends State<EventsScreen> {
   String? _highlighted;
   Timer? _unhighlight;
   StreamSubscription<Event>? _showEvents;
+  StreamSubscription<DateTime?>? _showTimes;
+
+  /// Whether it's been asked to show an event or a time, so not to go
+  /// back where it was left.
+  var _askedToShow = false;
 
   late final AppLifecycleListener _lifecycle;
 
@@ -686,6 +695,7 @@ class _EventsScreenState extends State<EventsScreen> {
   void _showEvent(Event event) {
     _unhighlight?.cancel();
     setState(() {
+      _askedToShow = true;
       _placePending = false;
       _scrollPending = false;
       _restoreTop = null;
@@ -695,6 +705,21 @@ class _EventsScreenState extends State<EventsScreen> {
     _unhighlight = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _highlighted = null);
     });
+  }
+
+  /// Shows [time]'s day, scrolled to it; or, with none, now.
+  void _showTime(DateTime? time) {
+    setState(() {
+      _askedToShow = true;
+      _placePending = false;
+      _scrollPending = false;
+      _restoreTop = null;
+    });
+    if (time == null) {
+      _goToNow();
+    } else {
+      _scrollToTime(time);
+    }
   }
 
   /// Shows [time]'s day, scrolled so [time] is in the middle of the view.
@@ -914,6 +939,7 @@ class _EventsScreenState extends State<EventsScreen> {
       ..load();
     _savedWrites = widget.eventOutbox?.saved.listen(_writeSaved);
     _showEvents = widget.showEventRequests?.listen(_showEvent);
+    _showTimes = widget.showTimeRequests?.listen(_showTime);
     _loadNotes(cached: true);
     _showKeptProposal();
     _loadProposal();
@@ -1071,8 +1097,9 @@ class _EventsScreenState extends State<EventsScreen> {
   /// that's to be kept.
   Future<void> _loadPlace(EventsPlaceStore store) async {
     final place = await store.load();
-    // Asked to show an event meanwhile: there, not where it was left.
-    if (!mounted || _highlighted != null) return;
+    // Asked to show an event or a time meanwhile: there, not where it
+    // was left.
+    if (!mounted || _askedToShow) return;
     final kept = place != null && place.keptAt(widget.clock());
     setState(() {
       _placePending = false;
@@ -1170,6 +1197,7 @@ class _EventsScreenState extends State<EventsScreen> {
     widget.eventOutbox?.notices?.removeListener(_memoryChanged);
     _savedWrites?.cancel();
     _showEvents?.cancel();
+    _showTimes?.cancel();
     _unhighlight?.cancel();
     _pages.dispose();
     _scroll.dispose();

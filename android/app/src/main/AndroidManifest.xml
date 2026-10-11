@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Needed in release builds to reach the Time Tracker MCP server. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- To set the home screen calendar's redraws again after a restart;
+         see HomeWidgetScheduledUpdateReceiver below. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
         android:label="Time Tracker"
         android:name="${applicationName}"
@@ -49,6 +52,32 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/add_note_widget_info" />
+        </receiver>
+        <!-- The home screen calendar; see CalendarWidget. -->
+        <receiver
+            android:name=".CalendarWidgetReceiver"
+            android:exported="false"
+            android:label="@string/calendar_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/calendar_widget_info" />
+        </receiver>
+        <!-- Draws the calendar again as each event starts or ends, at the
+             times the app sets (HomeWidget.scheduleWidgetUpdates), and sets
+             them again after a restart or an update. Inexact: the app
+             doesn't ask for exact alarms, so a redraw may come a few
+             minutes late. -->
+        <receiver
+            android:name="es.antonborri.home_widget.HomeWidgetScheduledUpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
         </receiver>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

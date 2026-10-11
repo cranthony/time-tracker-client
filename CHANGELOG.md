@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.53.0
+
+- A home screen calendar for Android: your events from now to the next
+  few days, under a header for each day. It always starts at now:
+  what's over drops off as it ends, the event that's on is in bold, and
+  it's kept up to date as the app or its background fetch gets the
+  events. Tapping an event opens Events on it; tapping a day, that day;
+  tapping the header, now. Its "+" adds a note, like the "+" widget.
+
 ## 7.52.0
 
 - Claude's recap of a compaction proposal: what it did, and what it isn't
