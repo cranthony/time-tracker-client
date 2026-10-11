@@ -12,7 +12,10 @@
 # The check needs to run if the pull request changes a file it depends
 # on, unless the previous push to the pull request passed it and nothing
 # it depends on has changed since. If that push's check is still running,
-# this waits for it.
+# this waits for it. "Changed since" compares the two pushes' files, so it
+# works the same after a rebase onto the base branch as after a merge of
+# it: the check reruns only if the base branch brought in a file it
+# depends on.
 #
 # Reads GitHub's pull_request event: BASE_SHA, HEAD_SHA, BEFORE_SHA (the
 # previous push, empty if none), REPO and GH_TOKEN. Needs the whole
@@ -45,10 +48,14 @@ changed() {
 since_base=$(changed "$(git merge-base "$BASE_SHA" "$HEAD_SHA")" "$HEAD_SHA")
 [ -n "$since_base" ] || decide false "the pull request changes nothing it checks."
 
-if [ -z "${BEFORE_SHA:-}" ] ||
-  ! git merge-base --is-ancestor "$BEFORE_SHA" "$HEAD_SHA" 2>/dev/null; then
+[ -n "${BEFORE_SHA:-}" ] ||
   decide true "checking the pull request (no earlier push to build on)."
-fi
+
+# After a force push (e.g. a rebase), the previous push is no longer on any
+# branch, so the checkout doesn't have it; fetch it by its SHA.
+git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null ||
+  git fetch --quiet --no-tags origin "$BEFORE_SHA" 2>/dev/null ||
+  decide true "checking the pull request (couldn't fetch the last push, ${BEFORE_SHA:0:7})."
 
 since_before=$(changed "$BEFORE_SHA" "$HEAD_SHA")
 [ -z "$since_before" ] ||
