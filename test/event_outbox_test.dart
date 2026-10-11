@@ -13,7 +13,8 @@ import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/widgets/app_menu.dart';
-import 'package:time_tracker_client/widgets/event_outbox_bar.dart';
+import 'package:time_tracker_client/widgets/event_outbox_status.dart';
+import 'package:time_tracker_client/widgets/status_bar.dart';
 import 'package:time_tracker_client/widgets/other_events.dart';
 import 'package:time_tracker_client/widgets/waiting_note.dart';
 
@@ -495,7 +496,9 @@ void main() {
               eventOutbox: outbox,
               clock: () => _at(9),
             ),
-            bottomNavigationBar: EventOutboxBar(outbox: outbox),
+            bottomNavigationBar: StatusBar(
+              sources: [EventOutboxStatus(outbox)],
+            ),
           ),
         ),
       );
@@ -630,8 +633,8 @@ void main() {
       addTearDown(outbox.dispose);
       await tester.pumpWidget(
         MaterialApp(
-          home: EventOutboxScope(
-            outbox: outbox,
+          home: StatusScope(
+            sources: [EventOutboxStatus(outbox)],
             child: Scaffold(
               appBar: AppBar(actions: const [AppMenu(serverLabel: 'test')]),
             ),
@@ -667,9 +670,8 @@ void main() {
               eventOutbox: outbox,
               clock: () => _at(9),
             ),
-            bottomNavigationBar: EventOutboxBar(
-              outbox: outbox,
-              onShow: shown.add,
+            bottomNavigationBar: StatusBar(
+              sources: [EventOutboxStatus(outbox, onShow: shown.add)],
             ),
           ),
         ),
@@ -682,7 +684,7 @@ void main() {
       outbox.setPaused(false);
       unawaited(outbox.flush());
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(EventOutboxBar));
+      await tester.tap(find.byType(StatusBar));
       await tester.pumpAndSettle();
 
       // On its day, not being today.

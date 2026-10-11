@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.54.1
+
+- Under the hood: the line at the foot of the screen, and the sheet it
+  slides up, are no longer just the event changes': anything the app
+  keeps you posted on can say something there, the most pressing first.
+  Nothing looks different yet.
+
 ## 7.54.0
 
 - The Plan page has a Habits pane ("build") where the Traits pane was: every one

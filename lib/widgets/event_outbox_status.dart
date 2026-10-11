@@ -6,19 +6,15 @@ import '../outbox/event_outbox.dart';
 import '../services/plan_memory.dart';
 import 'event_names.dart';
 import 'event_summary_dialog.dart';
+import 'status_bar.dart';
 
-/// A line at the foot of the screen while changes to events wait in
-/// [outbox] to be saved: how many, and whether they're being sent,
-/// paused, waiting to try again, or stopped at one the server refused.
-/// Tapping it shows them ([showEventOutboxSheet]), naming the events a
-/// refusal's about from [lookup], each to [onShow]. Nothing, with none.
-class EventOutboxBar extends StatelessWidget {
-  const EventOutboxBar({
-    super.key,
-    required this.outbox,
-    this.lookup,
-    this.onShow,
-  });
+/// The [EventOutbox]'s part of the [StatusBar]: how many changes to
+/// events wait to be saved, and whether they're being sent, paused,
+/// waiting to try again, or stopped at one the server refused; and in the
+/// sheet, each of them, naming the events a refusal's about from
+/// [lookup], each to [onShow].
+class EventOutboxStatus implements StatusSource {
+  EventOutboxStatus(this.outbox, {this.lookup, this.onShow});
 
   final EventOutbox outbox;
 
@@ -29,222 +25,121 @@ class EventOutboxBar extends StatelessWidget {
   final ValueChanged<Event>? onShow;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: outbox,
-    builder: (context, _) {
-      final pending = outbox.pending;
-      if (pending.isEmpty) return const SizedBox.shrink();
-      final theme = Theme.of(context);
-      final first = pending.first;
-      final n = pending.length;
-      final changes = n == 1 ? '1 change' : '$n changes';
-      final stopped = first.refused;
-      final (IconData icon, String text) = switch (first) {
-        _ when stopped => (
-          Icons.error_outline,
-          "Couldn't save ${first.label}: tap to fix it",
-        ),
-        _ when outbox.paused => (
-          Icons.pause_circle_outline,
-          'Paused: $changes waiting to save',
-        ),
-        _ when outbox.needsSignIn => (Icons.login, 'Sign in to save $changes'),
-        _ when outbox.isSending(first) => (
-          Icons.cloud_upload_outlined,
-          'Saving $changes, by ${outbox.sendingBy(first)}…',
-        ),
-        PendingEventWrite(:final nextAttemptAt?) => (
-          Icons.cloud_off_outlined,
-          '$changes waiting: trying again at '
-              '${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(nextAttemptAt))}',
-        ),
-        _ => (Icons.cloud_upload_outlined, '$changes waiting to save'),
-      };
-      final background = stopped
-          ? theme.colorScheme.errorContainer
-          : theme.colorScheme.secondaryContainer;
-      final foreground = stopped
-          ? theme.colorScheme.onErrorContainer
-          : theme.colorScheme.onSecondaryContainer;
-      return Material(
-        color: background,
-        child: InkWell(
-          onTap: () => showEventOutboxSheet(
-            context,
-            outbox,
-            lookup: lookup,
-            onShow: onShow,
-          ),
-          child: SafeArea(
-            top: false,
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(
-                children: [
-                  Icon(icon, size: 20, color: foreground),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      text,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: foreground),
-                    ),
-                  ),
-                  Icon(Icons.expand_less, color: foreground),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    },
-  );
-}
-
-/// Makes the [EventOutbox] available to everything below it -- the app
-/// menu, to open it ([showEventOutboxSheet]) when nothing's waiting too
-/// -- with what [EventOutboxBar] names and shows events by.
-class EventOutboxScope extends InheritedWidget {
-  const EventOutboxScope({
-    super.key,
-    required this.outbox,
-    this.lookup,
-    this.onShow,
-    required super.child,
-  });
-
-  final EventOutbox outbox;
-  final Event? Function(String id)? lookup;
-  final ValueChanged<Event>? onShow;
-
-  /// The nearest one, or null if there's none.
-  static EventOutboxScope? of(BuildContext context) =>
-      context.getInheritedWidgetOfExactType<EventOutboxScope>();
-
-  /// Slides up its changes ([showEventOutboxSheet]).
-  Future<void> show(BuildContext context) =>
-      showEventOutboxSheet(context, outbox, lookup: lookup, onShow: onShow);
+  Listenable get listenable => outbox;
 
   @override
-  bool updateShouldNotify(EventOutboxScope oldWidget) =>
-      outbox != oldWidget.outbox;
-}
+  int get count => outbox.pending.length;
 
-/// Slides up the changes waiting in [outbox], oldest first, as they're
-/// sent: each with how it's going -- sending, next, waiting its turn, to
-/// be tried again, or refused, and why -- to edit (a change to one event,
-/// a new one, or a cancel), approve as changing history, or drop. Above
-/// them, pausing or resuming the queue, and trying again now. Event ids
-/// in why one was refused are named, from the change itself or else
-/// [lookup] ([nameEvents]); those found can be shown on the timeline
-/// ([onShow]), closing the sheet.
-Future<void> showEventOutboxSheet(
-  BuildContext context,
-  EventOutbox outbox, {
-  Event? Function(String id)? lookup,
-  ValueChanged<Event>? onShow,
-}) => showModalBottomSheet<void>(
-  context: context,
-  isScrollControlled: true,
-  showDragHandle: true,
-  builder: (context) => DraggableScrollableSheet(
-    expand: false,
-    initialChildSize: 0.6,
-    builder: (context, controller) => ListenableBuilder(
-      listenable: outbox,
-      builder: (context, _) => _OutboxList(
-        outbox: outbox,
-        controller: controller,
-        lookup: lookup,
-        onShow: onShow,
+  @override
+  StatusLine? line(BuildContext context) {
+    final pending = outbox.pending;
+    if (pending.isEmpty) return null;
+    final first = pending.first;
+    final n = pending.length;
+    final changes = n == 1 ? '1 change' : '$n changes';
+    return switch (first) {
+      _ when first.refused => StatusLine(
+        icon: Icons.error_outline,
+        text: "Couldn't save ${first.label}: tap to fix it",
+        needsYou: true,
       ),
-    ),
-  ),
-);
+      _ when outbox.paused => StatusLine(
+        icon: Icons.pause_circle_outline,
+        text: 'Paused: $changes waiting to save',
+      ),
+      _ when outbox.needsSignIn => StatusLine(
+        icon: Icons.login,
+        text: 'Sign in to save $changes',
+      ),
+      _ when outbox.isSending(first) => StatusLine(
+        icon: Icons.cloud_upload_outlined,
+        text: 'Saving $changes, by ${outbox.sendingBy(first)}…',
+      ),
+      PendingEventWrite(:final nextAttemptAt?) => StatusLine(
+        icon: Icons.cloud_off_outlined,
+        text:
+            '$changes waiting: trying again at '
+            '${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(nextAttemptAt))}',
+      ),
+      _ => StatusLine(
+        icon: Icons.cloud_upload_outlined,
+        text: '$changes waiting to save',
+      ),
+    };
+  }
 
-class _OutboxList extends StatelessWidget {
-  const _OutboxList({
-    required this.outbox,
-    required this.controller,
-    this.lookup,
-    this.onShow,
-  });
-
-  final EventOutbox outbox;
-  final ScrollController controller;
-  final Event? Function(String id)? lookup;
-  final ValueChanged<Event>? onShow;
-
+  /// The changes waiting, oldest first, as they're sent: each with how
+  /// it's going -- sending, next, waiting its turn, to be tried again, or
+  /// refused, and why -- to edit (a change to one event, a new one, or a
+  /// cancel), approve as changing history, or drop. Above them, pausing
+  /// or resuming the queue, and trying again now. Event ids in why one
+  /// was refused are named, from the change itself or else [lookup]
+  /// ([nameEvents]); those found can be shown on the timeline ([onShow]),
+  /// closing the sheet. Shown with none waiting too, to pause.
   @override
-  Widget build(BuildContext context) {
+  List<Widget> section(BuildContext context) {
     final theme = Theme.of(context);
     final pending = outbox.pending;
-    return ListView(
-      controller: controller,
-      padding: const EdgeInsets.only(bottom: 24),
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Changes waiting to save',
-                  style: theme.textTheme.titleLarge,
-                ),
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Changes waiting to save',
+                style: theme.textTheme.titleLarge,
               ),
-              TextButton.icon(
-                onPressed: () => outbox.setPaused(!outbox.paused),
-                icon: Icon(outbox.paused ? Icons.play_arrow : Icons.pause),
-                label: Text(outbox.paused ? 'Resume' : 'Pause'),
-              ),
-            ],
-          ),
+            ),
+            TextButton.icon(
+              onPressed: () => outbox.setPaused(!outbox.paused),
+              icon: Icon(outbox.paused ? Icons.play_arrow : Icons.pause),
+              label: Text(outbox.paused ? 'Resume' : 'Pause'),
+            ),
+          ],
         ),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        child: Text(
+          outbox.paused
+              ? "Paused: nothing's sent until you resume. Each change, and "
+                    "what it changes, stays as it is till it's saved."
+              : "Sent in order, each once the one before is saved. Each "
+                    "change, and what it changes, stays as it is till it's "
+                    'saved.',
+          style: theme.textTheme.bodySmall,
+        ),
+      ),
+      if (pending.isEmpty)
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          padding: const EdgeInsets.all(16),
           child: Text(
-            outbox.paused
-                ? "Paused: nothing's sent until you resume. Each change, and "
-                      "what it changes, stays as it is till it's saved."
-                : "Sent in order, each once the one before is saved. Each "
-                      "change, and what it changes, stays as it is till it's "
-                      'saved.',
-            style: theme.textTheme.bodySmall,
+            'Nothing waiting: everything is saved.',
+            style: TextStyle(color: theme.hintColor),
           ),
         ),
-        if (pending.isEmpty)
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'Nothing waiting: everything is saved.',
-              style: TextStyle(color: theme.hintColor),
+      for (final (i, write) in pending.indexed)
+        _WriteTile(
+          outbox: outbox,
+          write: write,
+          first: i == 0,
+          lookup: lookup,
+          onShow: onShow,
+        ),
+      if (pending.isNotEmpty && !outbox.paused)
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: TextButton.icon(
+              onPressed: outbox.retryNow,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Try again now'),
             ),
           ),
-        for (final (i, write) in pending.indexed)
-          _WriteTile(
-            outbox: outbox,
-            write: write,
-            first: i == 0,
-            lookup: lookup,
-            onShow: onShow,
-          ),
-        if (pending.isNotEmpty && !outbox.paused)
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: TextButton.icon(
-                onPressed: outbox.retryNow,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Try again now'),
-              ),
-            ),
-          ),
-      ],
-    );
+        ),
+    ];
   }
 }
 

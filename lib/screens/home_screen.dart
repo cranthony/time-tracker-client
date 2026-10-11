@@ -17,7 +17,8 @@ import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
-import '../widgets/event_outbox_bar.dart';
+import '../widgets/event_outbox_status.dart';
+import '../widgets/status_bar.dart';
 import 'events_screen.dart';
 import 'notes_screen.dart';
 import 'plan_screen.dart';
@@ -157,19 +158,15 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  /// What the bar at the foot of every page keeps the user posted on.
+  late final _status = <StatusSource>[
+    if (widget.eventOutbox case final outbox?)
+      EventOutboxStatus(outbox, lookup: _lookup, onShow: _showEvent),
+  ];
+
   @override
-  Widget build(BuildContext context) {
-    final scaffold = _scaffold();
-    return switch (widget.eventOutbox) {
-      final outbox? => EventOutboxScope(
-        outbox: outbox,
-        lookup: _lookup,
-        onShow: _showEvent,
-        child: scaffold,
-      ),
-      null => scaffold,
-    };
-  }
+  Widget build(BuildContext context) =>
+      StatusScope(sources: _status, child: _scaffold());
 
   Event? _lookup(String id) => _planMemory.eventStore?.event(id);
 
@@ -217,8 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (widget.eventOutbox case final outbox?)
-            EventOutboxBar(outbox: outbox, lookup: _lookup, onShow: _showEvent),
+          StatusBar(sources: _status),
           _navigation(),
         ],
       ),
