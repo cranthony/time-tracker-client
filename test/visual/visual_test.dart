@@ -41,7 +41,8 @@ import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/actions_picker.dart';
 import 'package:time_tracker_client/widgets/error_sheet.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
-import 'package:time_tracker_client/widgets/event_outbox_bar.dart';
+import 'package:time_tracker_client/widgets/event_outbox_status.dart';
+import 'package:time_tracker_client/widgets/status_bar.dart';
 import 'package:time_tracker_client/widgets/parts_editor.dart';
 
 /// A fixed moment, so every run renders the same thing.
@@ -673,14 +674,16 @@ void main() {
               serverLabel: 'sample',
               clock: () => _now,
             ),
-            bottomNavigationBar: EventOutboxBar(outbox: outbox),
+            bottomNavigationBar: StatusBar(
+              sources: [EventOutboxStatus(outbox)],
+            ),
           ),
           then: () async {
             unawaited(outbox.refresh());
             await tester.pumpAndSettle();
             switch (step) {
               case 'sheet':
-                await tester.tap(find.byType(EventOutboxBar));
+                await tester.tap(find.byType(StatusBar));
                 await tester.pumpAndSettle();
               case 'open':
                 await tester.ensureVisible(
@@ -819,17 +822,18 @@ void main() {
               serverLabel: 'sample',
               clock: () => _now,
             ),
-            bottomNavigationBar: EventOutboxBar(outbox: outbox),
+            bottomNavigationBar: StatusBar(
+              sources: [EventOutboxStatus(outbox)],
+            ),
           ),
           then: () async {
             await tester.runAsync(outbox.refresh);
             // Opened as from the app menu, which opens it with nothing
             // waiting too. Pumped, not settled: what's sending spins.
             unawaited(
-              showEventOutboxSheet(
-                tester.element(find.byType(EventsScreen)),
-                outbox,
-              ),
+              showStatusSheet(tester.element(find.byType(EventsScreen)), [
+                EventOutboxStatus(outbox),
+              ]),
             );
             for (var i = 0; i < 10; i++) {
               await tester.pump(const Duration(milliseconds: 100));
