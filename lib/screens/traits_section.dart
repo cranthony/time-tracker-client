@@ -6,26 +6,22 @@ import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/health.dart';
-import '../widgets/plan_pane.dart';
 import '../widgets/trait_dialog.dart';
 import 'trait_breakdown.dart';
 import 'trait_screen.dart';
-import '../services/client_health.dart';
-import '../services/work_timing.dart';
-import '../widgets/refreshing_bar.dart';
 
-/// The Plan page's Traits pane -- how the user wants to be: each
-/// trait's name, definition, status, latest score (the mean across the
-/// people rated by it) and its last 8 days' scores, and anything wrong
-/// with it. Tapping a trait opens its page, to read ([TraitScreen]),
-/// whose pencil edits it, parts and all; tapping its score shows the
-/// people and parts behind it; its menu turns it on or off, or archives
-/// it. "+" adds one. Archived traits are shown only when asked for. The
-/// search finds them by name, definition and parts. It shows what
-/// [memory] has, while it loads afresh. [personNames] names the people
-/// behind a score; [actions] the actions a part can count.
-class TraitsPane extends StatefulWidget {
-  const TraitsPane({
+/// The People pane's traits, under Self -- how the user wants to be:
+/// each trait's name, definition, status, latest score (the mean across
+/// the people rated by it) and its last 8 days' scores, and anything
+/// wrong with it. Tapping a trait opens its page, to read
+/// ([TraitScreen]), whose pencil edits it, parts and all; tapping its
+/// score shows the people and parts behind it; its menu turns it on or
+/// off, or archives it. "Trait" adds one. Archived traits are shown only
+/// when asked for. It shows what [memory] has, while it loads afresh.
+/// [personNames] names the people behind a score; [actions] the actions
+/// a part can count.
+class TraitsSection extends StatefulWidget {
+  const TraitsSection({
     super.key,
     required this.repository,
     required this.memory,
@@ -39,15 +35,12 @@ class TraitsPane extends StatefulWidget {
   final Map<String, String> actions;
 
   @override
-  State<TraitsPane> createState() => TraitsPaneState();
+  State<TraitsSection> createState() => TraitsSectionState();
 }
 
-class TraitsPaneState extends State<TraitsPane> {
+class TraitsSectionState extends State<TraitsSection> {
   Object? _error;
   bool _archived = false;
-
-  /// What the search has in it.
-  String _query = '';
 
   List<Trait>? get _traits => widget.memory.traits;
 
@@ -147,72 +140,55 @@ class TraitsPaneState extends State<TraitsPane> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      timed(WorkKind.planRebuild, () => _build(context));
-
-  Widget _build(BuildContext context) {
+  Widget build(BuildContext context) {
     // Once a build, not once a trait.
     final history = _history;
-    final unsearched = [
+    final theme = Theme.of(context);
+    final traits = [
       for (final trait in _traits ?? const <Trait>[])
         if (_archived || trait.status != 'archived') trait,
     ];
-    final traits = [
-      for (final trait in unsearched)
-        if (matchesSearch(_query, [
-          trait.name,
-          trait.definition,
-          for (final part in trait.parts) describePart(part, widget.actions),
-        ]))
-          trait,
-    ];
-    return PlanPane(
-      searchHint: 'Search traits',
-      onSearch: (query) => setState(() => _query = query),
-      actions: [
-        IconButton(
-          tooltip: _archived ? 'Hide archived traits' : 'Show archived traits',
-          icon: Icon(
-            _archived ? Icons.inventory_2 : Icons.inventory_2_outlined,
-          ),
-          onPressed: () {
-            setState(() => _archived = !_archived);
-          },
-        ),
-        IconButton(
-          tooltip: 'New trait',
-          icon: const Icon(Icons.add),
-          onPressed: _traits == null ? null : () => _edit(null),
-        ),
-      ],
-      // The scores as they were, while they're worked out again.
-      child: RefreshingBar(
-        refreshing: widget.memory.rescoring,
-        child: RefreshIndicator(
-          onRefresh: reload,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 24),
-            children: switch ((_traits, _error)) {
-              (null, final error?) => [
-                LoadError(what: 'the traits', error: error, onRetry: reload),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: switch ((_traits, _error)) {
+        (null, final error?) => [
+          LoadError(what: 'the traits', error: error, onRetry: reload),
+        ],
+        (null, _) => const [LinearProgressIndicator()],
+        _ => [
+          for (final trait in traits)
+            _tile(context, trait, history[trait.id] ?? const []),
+          if (traits.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: Text(
+                'No traits yet: how you want to be.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Wrap(
+              children: [
+                TextButton.icon(
+                  onPressed: () => _edit(null),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Trait'),
+                ),
+                TextButton.icon(
+                  onPressed: () => setState(() => _archived = !_archived),
+                  icon: Icon(
+                    _archived ? Icons.inventory_2 : Icons.inventory_2_outlined,
+                  ),
+                  label: Text(
+                    _archived ? 'Hide archived traits' : 'Show archived traits',
+                  ),
+                ),
               ],
-              (null, _) => const [LinearProgressIndicator()],
-              _ => [
-                for (final trait in traits)
-                  _tile(context, trait, history[trait.id] ?? const []),
-                if (unsearched.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('No traits yet. Tap + to define one.'),
-                  )
-                else if (traits.isEmpty)
-                  NoMatches(query: _query),
-              ],
-            },
+            ),
           ),
-        ),
-      ),
+        ],
+      },
     );
   }
 

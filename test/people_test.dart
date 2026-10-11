@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
-import 'package:time_tracker_client/models/habit.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/people_times.dart';
 import 'package:time_tracker_client/models/person.dart';
@@ -9,10 +8,10 @@ import 'package:time_tracker_client/models/time_split.dart';
 import 'package:time_tracker_client/models/trait.dart';
 import 'package:time_tracker_client/screens/locations_pane.dart';
 import 'package:time_tracker_client/screens/people_pane.dart';
+import 'package:time_tracker_client/screens/traits_section.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/focus_store.dart';
-import 'package:time_tracker_client/services/habits_repository.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
@@ -312,8 +311,6 @@ void main() {
       List<Person> people = _people,
       List<Circle> circles = _circles,
       List<String> prioritized = const [],
-      List<Habit> habits = const [],
-      List<String> focusHabits = const [],
       bool forward = false,
       bool durations = true,
       bool selfJudged = false,
@@ -329,12 +326,10 @@ void main() {
       // Scored by how caring their events were.
       final memory = PlanMemory(
         eventStore: EventStore(repository: InMemoryEventsRepository(events)),
-        focus: FocusStore(
-          persist: false,
-          people: prioritized,
-          habits: focusHabits,
-        ),
-      )..traits = const [_caring];
+        focus: FocusStore(persist: false, people: prioritized),
+      );
+      // Loaded this visit, as the traits under Self are shown from.
+      await memory.loadTraits(InMemoryTraitsRepository(traits: [_caring]));
       await memory.eventStore!.warm();
       final window = SummaryWindow(asOf: today(), forward: forward);
       await tester.pumpWidget(
@@ -345,7 +340,6 @@ void main() {
                 repository: repository,
                 memory: memory,
                 traits: InMemoryTraitsRepository(traits: _traits),
-                habits: InMemoryHabitsRepository(habits),
                 actions: const {'call': 'Call'},
                 summary: SummaryView(
                   window: window,
@@ -380,7 +374,7 @@ void main() {
 
       expect(find.text('Self'), findsOneWidget);
       expect(find.text('People'), findsOneWidget);
-      expect(find.text('All habits and scores'), findsOneWidget);
+      expect(find.text('Your page'), findsOneWidget);
       expect(find.text('Mom'), findsOneWidget);
       // Only those prioritized.
       expect(find.text('Sam'), findsNothing);
@@ -392,7 +386,7 @@ void main() {
 
       await tester.tap(find.text('Self'));
       await tester.pumpAndSettle();
-      expect(find.text('All habits and scores'), findsNothing);
+      expect(find.text('Your page'), findsNothing);
 
       await tester.tap(find.text('People'));
       await tester.pumpAndSettle();
@@ -431,19 +425,19 @@ void main() {
       expect(find.textContaining('Next: Call Mom · '), findsOneWidget);
     });
 
-    testWidgets('shows the habits focused on, under Self', (tester) async {
-      const guitar = Habit(id: 'h1', name: 'Practice', actionId: 'guitar');
-      await pump(
-        tester,
-        habits: const [
-          guitar,
-          Habit(id: 'h2', name: 'Walk', actionId: 'w'),
-        ],
-        focusHabits: ['h1'],
-      );
+    testWidgets('shows the traits under Self, and adds one', (tester) async {
+      await pump(tester);
 
-      expect(find.text('Practice'), findsOneWidget);
-      expect(find.text('Walk'), findsNothing);
+      final self = find.ancestor(
+        of: find.text('Caring'),
+        matching: find.byType(TraitsSection),
+      );
+      expect(self, findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+
+      await tester.tap(find.widgetWithText(TextButton, 'Trait'));
+      await tester.pumpAndSettle();
+      expect(find.byType(EditPage), findsOneWidget);
     });
 
     testWidgets('says how to prioritize people, with none', (tester) async {
@@ -507,7 +501,7 @@ void main() {
 
     testWidgets("Self isn't prioritized", (tester) async {
       await pump(tester);
-      await tester.tap(find.text('All habits and scores'));
+      await tester.tap(find.text('Your page'));
       await tester.pumpAndSettle();
 
       expect(find.byTooltip('Prioritize Self'), findsNothing);

@@ -24,7 +24,7 @@ import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import 'locations_pane.dart';
 import 'people_pane.dart';
-import 'traits_pane.dart';
+import 'habits_pane.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/action_dialog.dart';
 import '../widgets/app_menu.dart';
@@ -46,9 +46,10 @@ import '../services/work_timing.dart';
 ///
 /// * **Actions**, what to do, leftmost: the actions, kept as actions, and
 ///   the groups they're in, as a tree;
-/// * **Traits**, how to be ([TraitsPane]), from the [TraitsScope];
-/// * **People**, who to be with, Self always among them ([PeoplePane]),
-///   from the [PeopleScope];
+/// * **Habits**, what to practice ([HabitsPane]), from the [HabitsScope];
+/// * **People**, who to be with, Self always among them, with the traits
+///   -- how to be -- under them ([PeoplePane]), from the [PeopleScope]
+///   and the [TraitsScope];
 /// * **Locations**, where ([LocationsPane]), from the [PeopleScope].
 ///
 /// Landing on it loads everything at once, every pane's and the
@@ -56,11 +57,11 @@ import '../services/work_timing.dart';
 /// else the repositories kept from the app's last run, so nothing shows
 /// empty while it loads.
 ///
-/// The Actions, People and Locations panes each have a summary, above
+/// The Actions, Habits, People and Locations panes each have a summary, above
 /// their search, of the time in its window -- the 24 hours and 7 days
 /// before, or after, the last compaction, or a day at a time from it --
 /// worked out from the events in it ([eventsRepository]); one window for
-/// all three. The Actions pane's splits the time by the actions shown, or
+/// all four. The Actions pane's splits the time by the actions shown, or
 /// by priority. Under it, each action and group: its color, name,
 /// status, priority (as a chip, like the Events page's) and the time on
 /// it in the window, with what's in a group indented under it. Tapping a
@@ -731,6 +732,7 @@ class _PlanScreenState extends State<PlanScreen> {
     final reordering = _reordering && ready;
     final traits = TraitsScope.of(context);
     final people = PeopleScope.of(context);
+    final habits = HabitsScope.of(context);
     final personNames = {
       for (final person in _people?.withSelf ?? const [defaultSelf])
         person.id: personName(person),
@@ -740,15 +742,17 @@ class _PlanScreenState extends State<PlanScreen> {
     final panes = <(String, String, Widget)>[
       // Built only while it's shown: what it works out is costly.
       ('Actions', 'do', Builder(builder: _actionsPane)),
-      if (traits != null)
+      if (habits != null)
         (
-          'Traits',
-          'how to be',
-          TraitsPane(
-            repository: traits,
+          'Habits',
+          'practice',
+          HabitsPane(
+            repository: habits,
             memory: _memory,
+            summary: _summaryView,
+            actions: _actions?.actions ?? const [],
             personNames: personNames,
-            actions: _actionChoices,
+            locationNames: _locationNames,
           ),
         ),
       if (people != null) ...[
@@ -761,10 +765,8 @@ class _PlanScreenState extends State<PlanScreen> {
             summary: _summaryView,
             traits: traits,
             onPeople: (_) => setState(() {}),
-            habits: HabitsScope.of(context),
             actionNames: _actionNames,
             actions: _actionChoices,
-            actionList: _actions?.actions ?? const [],
             locationNames: _locationNames,
           ),
         ),

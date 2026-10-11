@@ -1,27 +1,23 @@
 import 'package:flutter/material.dart';
 
-import '../models/habit.dart';
 import '../models/people_times.dart';
 import '../models/person.dart';
-import '../models/plan_action.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../widgets/status_message.dart';
 import '../services/focus_store.dart';
-import '../services/habits_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import '../widgets/error_sheet.dart';
-import '../widgets/habit_dialog.dart';
 import '../widgets/health.dart';
 import '../widgets/person_dialog.dart';
 import '../widgets/person_tile.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
 import 'all_people_screen.dart';
-import 'habit_screen.dart';
 import 'person_screen.dart';
+import 'traits_section.dart';
 import '../services/client_health.dart';
 import '../services/work_timing.dart';
 import '../widgets/refreshing_bar.dart';
@@ -31,16 +27,16 @@ import '../models/time_split.dart';
 /// sections, one over the other, each folded away by tapping its head:
 ///
 /// * **Self**, with their relationship health and its last 8 days in its
-///   head, and under it the two habits they focus on, each with its
-///   health; "All habits and scores" opens their page ([PersonScreen]).
+///   head, and under it the traits -- how they want to be
+///   ([TraitsSection]); "Your page" opens their page ([PersonScreen]).
 /// * **People**, the three the user prioritizes, each with
 ///   their health, their time with the user in the summary's 24 hours and
 ///   7 days, and the last event with them -- or, with the summary looking
 ///   on, the next ([PersonTile]); "All people and circles" opens everyone
 ///   ([AllPeopleScreen]), to sort, search and edit.
 ///
-/// Habits are focused on from their page, and people prioritized from
-/// their menu, on this device only (see [PlanMemory.focus]). Tapping a
+/// People are prioritized from their menu, on this device only (see
+/// [PlanMemory.focus]). Tapping a
 /// person opens their page; their menu edits, prioritizes or archives
 /// them. There's no search here, with so few: everyone's is on their own
 /// page. "+", in People's head, adds a person or a circle. Above it all, with a
@@ -56,10 +52,8 @@ class PeoplePane extends StatefulWidget {
     this.summary,
     this.traits,
     this.onPeople,
-    this.habits,
     this.actionNames = const {},
     this.actions = const {},
-    this.actionList = const [],
     this.locationNames = const {},
   });
 
@@ -69,21 +63,17 @@ class PeoplePane extends StatefulWidget {
   /// What the summary measures, and how it's shown; null for none.
   final SummaryView? summary;
 
-  /// For each person's traits, and those their dialog offers.
+  /// The traits under Self, each person's, and those their dialog
+  /// offers.
   final TraitsRepository? traits;
   final ValueChanged<PeopleList>? onPeople;
-
-  /// Self's habits, on their page.
-  final HabitsRepository? habits;
 
   /// Names actions by id, for a person's history.
   final Map<String?, String> actionNames;
 
-  /// The actions and groups a person's own parts can count, by id.
+  /// The actions and groups a trait's or a person's own parts can count,
+  /// by id.
   final Map<String, String> actions;
-
-  /// Every action and group, for Self's habits.
-  final List<PlanAction> actionList;
 
   /// Names locations by id, for where a person's events were.
   final Map<String?, String> locationNames;
@@ -100,16 +90,13 @@ class PeoplePaneState extends State<PeoplePane> {
   bool _selfOpen = true;
   bool _prioritizedOpen = true;
 
-  /// Every trait, by id, to name those that apply to a habit.
-  Map<String, Trait> _traitList = const {};
+  final _traitsKey = GlobalKey<TraitsSectionState>();
 
   @override
   void initState() {
     super.initState();
     widget.memory.addListener(_changed);
     _settle(widget.memory.loadPeople(widget.repository));
-    if (widget.habits case final habits?) widget.memory.loadHabits(habits);
-    _loadTraitList();
   }
 
   @override
@@ -155,12 +142,11 @@ class PeoplePaneState extends State<PeoplePane> {
 
   ((SummaryWindow, int?, bool), PeopleTimes)? _timesKept;
 
-  /// Loads everyone afresh, Self's habits, and the events around today
+  /// Loads everyone afresh, the traits, and the events around today
   /// they're scored from.
   Future<void> reload() => Future.wait([
     _settle(widget.memory.loadPeople(widget.repository, again: true)),
-    if (widget.habits case final habits?)
-      widget.memory.loadHabits(habits, again: true),
+    ?_traitsKey.currentState?.reload(),
     ?widget.memory.eventStore?.warm().catchError((Object _) {}),
   ]);
 
@@ -182,23 +168,6 @@ class PeoplePaneState extends State<PeoplePane> {
       return await widget.traits?.traits() ?? const [];
     } catch (_) {
       return const []; // Which apply can wait.
-    }
-  }
-
-  Future<void> _loadTraitList() async {
-    try {
-      final traits = await widget.traits?.traits(
-        statuses: [...traitStatuses.keys],
-      );
-      if (!mounted || traits == null) return;
-      setState(
-        () => _traitList = {
-          for (final t in traits)
-            if (t.id != null) t.id!: t,
-        },
-      );
-    } catch (_) {
-      // Named by id, then.
     }
   }
 
@@ -265,46 +234,12 @@ class PeoplePaneState extends State<PeoplePane> {
           personNames: _personNames,
           actionNames: widget.actionNames,
           locationNames: widget.locationNames,
-          habits: widget.habits,
-          actions: widget.actionList,
           onEdit: () async {
             await _editPerson(person);
             return _people?.withSelf
                 .where((p) => p.id == person.id)
                 .firstOrNull;
           },
-        ),
-      ),
-    );
-  }
-
-  void _openHabit(Habit habit) {
-    final repository = widget.habits;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => HabitScreen(
-          habit: habit,
-          actions: widget.actionList,
-          traits: _traitList,
-          memory: widget.memory,
-          personNames: _personNames,
-          locationNames: widget.locationNames,
-          onEdit: repository == null
-              ? null
-              : (habit) async {
-                  final saved = await showHabitEditor(
-                    context,
-                    habit: habit,
-                    focus: widget.memory.focus,
-                    actions: widget.actionList,
-                    traits: [..._traitList.values],
-                    save: (fields) => repository.updateHabit(habit.id, fields),
-                  );
-                  if (saved != null) {
-                    await widget.memory.loadHabits(repository, again: true);
-                  }
-                  return saved;
-                },
         ),
       ),
     );
@@ -369,17 +304,11 @@ class PeoplePaneState extends State<PeoplePane> {
     );
   }
 
-  /// Self, and the habits they focus on.
+  /// Self, and the traits.
   List<Widget> _selfSection(BuildContext context, Person self) {
-    final theme = Theme.of(context);
-    final focus = widget.memory.focus;
-    final habits = {
-      for (final h in widget.memory.habits ?? const <Habit>[])
-        if (h.status != 'deleted') h.id: h,
-    };
-    final focused = [for (final id in focus.habits) ?habits[id]];
     final health = _scores?.health(self.id);
     final trend = _scores?.healthTrend(self.id) ?? const <int?>[];
+    final traits = widget.traits;
     return [
       _SectionHead(
         title: 'Self',
@@ -395,59 +324,17 @@ class PeoplePaneState extends State<PeoplePane> {
         ],
       ),
       if (_selfOpen) ...[
-        if (widget.habits != null && widget.memory.habits != null) ...[
-          for (final habit in focused) _habitTile(context, habit),
-          if (focused.isEmpty)
-            _hint(
-              theme,
-              habits.isEmpty
-                  ? 'No habits yet: add one from your page.'
-                  : 'Star up to ${FocusStore.maxHabits} habits on their '
-                        'pages to focus on them here.',
-            ),
-        ],
-        _button(
-          context,
-          'All habits and scores',
-          Icons.person_outline,
-          () => _open(self),
-        ),
+        if (traits != null)
+          TraitsSection(
+            key: _traitsKey,
+            repository: traits,
+            memory: widget.memory,
+            personNames: _personNames,
+            actions: widget.actions,
+          ),
+        _button(context, 'Your page', Icons.person_outline, () => _open(self)),
       ],
     ];
-  }
-
-  Widget _habitTile(BuildContext context, Habit habit) {
-    final action = widget.actionList
-        .where((a) => a.id == habit.actionId)
-        .firstOrNull;
-    final health = _scores?.health(habit.subject);
-    final trend = _scores?.healthTrend(habit.subject) ?? const <int?>[];
-    return ListTile(
-      leading: SizedBox(
-        width: 40,
-        child: Center(child: actionDot(action, size: 16)),
-      ),
-      title: Text(habitName(habit)),
-      subtitle: Text(
-        [
-          action?.path ??
-              habit.actionPath ??
-              (action == null ? habit.actionId : actionName(action)),
-          if (health != null) healthBand(health),
-        ].join(' · '),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (trend.nonNulls.isNotEmpty) ...[
-            TrendSparkline(trend: trend),
-            const SizedBox(width: 8),
-          ],
-          if (health != null) HealthDot(rating: health),
-        ],
-      ),
-      onTap: () => _openHabit(habit),
-    );
   }
 
   /// The people prioritized.

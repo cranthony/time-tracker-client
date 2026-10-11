@@ -1,20 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../models/facts.dart';
-import '../models/habit.dart';
 import '../models/person.dart';
-import '../models/plan_action.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
-import '../services/habits_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import '../widgets/durations.dart';
 import '../widgets/focus_buttons.dart';
-import '../widgets/habit_dialog.dart';
 import '../widgets/health.dart';
 import 'event_list_screen.dart';
-import 'habit_screen.dart';
 import 'trait_breakdown.dart';
 
 /// A person -- Self included -- on one page: who they are (their context
@@ -26,12 +21,8 @@ import 'trait_breakdown.dart';
 /// (the actions done and locations of their events, with how often and
 /// when), and a timeline of those events with what happened at each.
 /// Always, the events the user cancelled that count against their
-/// follow-through ([Person.cancelledEvents]). For Self, their [habits]
-/// too, each in its action's color: tapping one opens its page
-/// ([HabitScreen]), its star focuses on it in the People pane, and
-/// "Habit" adds one. Habits are best effort: if
-/// they can't be loaded, there's no section for them.
-/// [onEdit] edits them, returning them as saved.
+/// follow-through ([Person.cancelledEvents]). Self's habits are on the
+/// Plan page's Habits pane. [onEdit] edits them, returning them as saved.
 class PersonScreen extends StatefulWidget {
   const PersonScreen({
     super.key,
@@ -42,8 +33,6 @@ class PersonScreen extends StatefulWidget {
     this.personNames = const {},
     this.actionNames = const {},
     this.locationNames = const {},
-    this.habits,
-    this.actions = const [],
     this.onEdit,
   });
 
@@ -63,11 +52,6 @@ class PersonScreen extends StatefulWidget {
   /// Names locations by id, for where their events were.
   final Map<String?, String> locationNames;
 
-  /// Self's habits, if they're offered.
-  final HabitsRepository? habits;
-
-  /// Every action and group, for a habit's.
-  final List<PlanAction> actions;
   final Future<Person?> Function()? onEdit;
 
   @override
@@ -84,28 +68,11 @@ class _PersonScreenState extends State<PersonScreen> {
   TraitScores? get _scores => widget.memory?.scores;
   bool get _scored => widget.memory != null;
 
-  /// Self's habits, loaded here when there's no [PersonScreen.memory] to
-  /// keep them.
-  List<Habit>? _ownHabits;
-
-  /// Self's habits, but those deleted; null if they couldn't be loaded,
-  /// or aren't theirs to have.
-  List<Habit>? get _habits => !_person.isSelf || widget.habits == null
-      ? null
-      : switch (widget.memory?.habits ?? _ownHabits) {
-          final habits? => [
-            for (final h in habits)
-              if (h.status != 'deleted') h,
-          ],
-          null => null,
-        };
-
   @override
   void initState() {
     super.initState();
     widget.memory?.addListener(_rescored);
     _loadTraitList();
-    _loadHabits();
   }
 
   @override
@@ -123,60 +90,10 @@ class _PersonScreenState extends State<PersonScreen> {
   Future<void> _load() async {
     await Future.wait([
       _loadTraitList(),
-      _loadHabits(again: true),
       if (widget.memory?.eventStore case final store?)
         store.warm().catchError((Object _) {}),
     ]);
   }
-
-  /// Self's habits, if they're offered. Best effort.
-  Future<void> _loadHabits({bool again = false}) async {
-    final repository = widget.habits;
-    if (!_person.isSelf || repository == null) return;
-    if (widget.memory case final memory?) {
-      await memory.loadHabits(repository, again: again);
-      return;
-    }
-    try {
-      final habits = await repository.habits();
-      if (mounted) setState(() => _ownHabits = habits);
-    } catch (_) {
-      // No habits section, then.
-    }
-  }
-
-  /// Adds a habit (with no [habit]) or edits one; returns it as saved.
-  Future<Habit?> _editHabit(Habit? habit) async {
-    final repository = widget.habits!;
-    final saved = await showHabitEditor(
-      context,
-      habit: habit,
-      focus: widget.memory?.focus,
-      actions: widget.actions,
-      traits: [..._traitList.values],
-      save: (fields) => habit == null
-          ? repository.createHabit(
-              Habit.fromJson({'id': '', 'action_id': '', ...fields}),
-            )
-          : repository.updateHabit(habit.id, fields),
-    );
-    if (saved != null) await _loadHabits(again: true);
-    return saved;
-  }
-
-  void _openHabit(Habit habit) => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => HabitScreen(
-        habit: habit,
-        actions: widget.actions,
-        traits: _traitList,
-        memory: widget.memory,
-        personNames: widget.personNames,
-        locationNames: widget.locationNames,
-        onEdit: _editHabit,
-      ),
-    ),
-  );
 
   Future<void> _loadTraitList() async {
     try {
@@ -267,10 +184,6 @@ class _PersonScreenState extends State<PersonScreen> {
             _heading(theme, 'Traits'),
             ..._applies(theme),
             if (_scored) ..._traits(context),
-            if (_habits case final habits?) ...[
-              _heading(theme, 'Habits'),
-              ..._habitTiles(theme, habits),
-            ],
             _heading(
               theme,
               _person.isSelf ? 'What matters to you' : 'What matters to them',
@@ -303,58 +216,6 @@ class _PersonScreenState extends State<PersonScreen> {
     traitList: _traitList,
     actionNames: widget.actionNames,
   );
-
-  /// Each of Self's habits, in its action's color, and a button to add
-  /// one.
-  List<Widget> _habitTiles(ThemeData theme, List<Habit> habits) {
-    final byId = {for (final a in widget.actions) a.id: a};
-    return [
-      if (habits.isEmpty)
-        _padded(
-          Text(
-            'None yet. A habit holds your events with one action, or any '
-            'in a group, to traits of their own: practicing guitar '
-            'mindfully, say.',
-            style: TextStyle(color: theme.hintColor),
-          ),
-        ),
-      for (final habit in habits)
-        ListTile(
-          leading: actionDot(byId[habit.actionId], size: 16),
-          title: Text(
-            habitName(habit),
-            style: habit.active ? null : TextStyle(color: theme.hintColor),
-          ),
-          subtitle: Text(
-            [
-              byId[habit.actionId]?.path ??
-                  habit.actionPath ??
-                  switch (byId[habit.actionId]) {
-                    final a? => actionName(a),
-                    null => habit.actionId,
-                  },
-              if (!habit.active) habitStatuses[habit.status] ?? habit.status,
-            ].join(' · '),
-          ),
-          trailing: switch (widget.memory?.focus) {
-            final focus? => focusHabitButton(focus, habit),
-            null => const Icon(Icons.chevron_right),
-          },
-          onTap: () => _openHabit(habit),
-        ),
-      Align(
-        alignment: AlignmentDirectional.centerStart,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: TextButton.icon(
-            onPressed: () => _editHabit(null),
-            icon: const Icon(Icons.add),
-            label: const Text('Habit'),
-          ),
-        ),
-      ),
-    ];
-  }
 
   List<Widget> _traits(BuildContext context) => traitScoreTiles(
     context,
