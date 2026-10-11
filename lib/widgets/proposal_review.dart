@@ -85,16 +85,16 @@ bool _same(List<String> a, List<String> b) =>
     a.length == b.length &&
     [for (var i = 0; i < a.length; i++) a[i] == b[i]].every((same) => same);
 
-/// The bar over the Events page while a compaction proposal is open:
-/// what happened from its window's start to its `through`, to confirm.
-/// "Confirm ... happened as shown" calls [onConfirm]; "Note for Claude",
-/// [onNote]; the notes' button, [onNotes]. While a note is open it's
-/// waiting for Claude, and can't be confirmed. One whose apply stopped
-/// partway offers to [onRetry]. Tapping its heading calls [onGoTo];
-/// its menu offers to [onAbandon] it. [changes] events changed since the
-/// user last looked. While [busy], nothing can be tapped; nor while
-/// [closing] -- confirming, finishing or abandoning it, which it names --
-/// waits to save.
+/// The header over the Events page while a compaction proposal is open:
+/// what happened from its window's start to its `through`, to confirm, in
+/// one row over its details ([joined] to them: they read as one block).
+/// "Confirm" calls [onConfirm]; the note button, [onNote]; its menu's
+/// "Notes", [onNotes]. While a note is open it's waiting for Claude, and
+/// can't be confirmed. One whose apply stopped partway offers to
+/// [onRetry]. Tapping its heading calls [onGoTo]; its menu offers to
+/// [onAbandon] it. [changes] events changed since the user last looked.
+/// While [busy], nothing can be tapped; nor while [closing] -- confirming,
+/// finishing or abandoning it, which it names -- waits to save.
 class ProposalBar extends StatelessWidget {
   const ProposalBar({
     super.key,
@@ -102,6 +102,7 @@ class ProposalBar extends StatelessWidget {
     this.busy = false,
     this.closing,
     this.changes = 0,
+    this.joined = false,
     this.onConfirm,
     this.onNote,
     this.onNotes,
@@ -117,6 +118,9 @@ class ProposalBar extends StatelessWidget {
   /// what happened".
   final String? closing;
   final int changes;
+
+  /// Whether its details are right under it, sharing its color.
+  final bool joined;
   final VoidCallback? onConfirm;
   final VoidCallback? onNote;
   final VoidCallback? onNotes;
@@ -139,6 +143,7 @@ class ProposalBar extends StatelessWidget {
     ].length;
     final stopped = proposal.state == ProposalState.applying;
     final muted = colors.onSurfaceVariant;
+    // What's out of the ordinary, a line each, under the row.
     final status = <(IconData, String, Color)>[
       if (closing case final closing?)
         (
@@ -168,30 +173,23 @@ class ProposalBar extends StatelessWidget {
           proposal.problem ?? 'It no longer fits the calendar.',
           colors.error,
         ),
-      if (changes > 0 && !stopped)
-        (
-          Icons.circle,
-          '$changes event${changes == 1 ? '' : 's'} changed since you '
-              'looked.',
-          colors.secondary,
-        ),
     ];
     return Material(
-      color: Color.alphaBlend(band.tint, colors.surface),
+      color: Color.alphaBlend(band.tint, colors.surfaceContainerLow),
       shape: Border(
         top: BorderSide(color: band.line, width: 2),
-        bottom: BorderSide(color: band.line, width: 2),
+        bottom: joined
+            ? BorderSide.none
+            : BorderSide(color: band.line, width: 2),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 4, 4, 8),
+        padding: const EdgeInsets.fromLTRB(12, 2, 0, 2),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
             Row(
               children: [
-                Icon(Icons.fact_check_outlined, color: band.line, size: 20),
-                const SizedBox(width: 8),
                 Expanded(
                   child: InkWell(
                     onTap: onGoTo,
@@ -201,11 +199,26 @@ class ProposalBar extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'What happened — to confirm',
+                            window,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.titleSmall,
                           ),
-                          Text(
-                            '$window · revision ${proposal.revision}',
+                          Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: 'To confirm · rev ${proposal.revision}',
+                                ),
+                                if (changes > 0 && !stopped)
+                                  TextSpan(
+                                    text: ' · $changes changed',
+                                    style: TextStyle(color: colors.secondary),
+                                  ),
+                              ],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: muted,
                             ),
@@ -215,19 +228,53 @@ class ProposalBar extends StatelessWidget {
                     ),
                   ),
                 ),
+                const SizedBox(width: 6),
                 if (this.busy)
                   const Padding(
-                    padding: EdgeInsets.all(12),
+                    padding: EdgeInsets.all(8),
                     child: SizedBox.square(
                       dimension: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
+                  )
+                else if (stopped)
+                  FilledButton.icon(
+                    onPressed: busy ? null : onRetry,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Retry'),
+                    style: _compact,
+                  )
+                else
+                  Tooltip(
+                    message: open > 0
+                        ? 'Waiting for Claude to answer your notes'
+                        : 'Confirm $window happened as shown',
+                    child: FilledButton(
+                      onPressed: busy || !proposal.confirmable
+                          ? null
+                          : onConfirm,
+                      style: _compact,
+                      child: const Text('Confirm'),
+                    ),
+                  ),
+                if (!stopped)
+                  IconButton(
+                    tooltip: 'Note for Claude',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: busy ? null : onNote,
+                    icon: const Icon(Icons.add_comment_outlined),
                   ),
                 PopupMenuButton<VoidCallback>(
                   tooltip: 'More',
                   enabled: !busy,
                   onSelected: (action) => action(),
                   itemBuilder: (context) => [
+                    if (onNotes case final notesOf?
+                        when notes > 0 || proposal.warnings.isNotEmpty)
+                      PopupMenuItem(
+                        value: notesOf,
+                        child: Text('Notes ($notes)'),
+                      ),
                     if (onGoTo case final goTo?)
                       PopupMenuItem(value: goTo, child: const Text('Go to it')),
                     if (onAbandon case final abandon?)
@@ -241,17 +288,13 @@ class ProposalBar extends StatelessWidget {
             ),
             for (final (icon, text, color) in status)
               Padding(
-                padding: const EdgeInsets.only(right: 8, bottom: 4),
+                padding: const EdgeInsets.only(right: 12, bottom: 4),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Padding(
                       padding: const EdgeInsets.only(top: 1),
-                      child: Icon(
-                        icon,
-                        size: icon == Icons.circle ? 10 : 16,
-                        color: color,
-                      ),
+                      child: Icon(icon, size: 16, color: color),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -265,55 +308,17 @@ class ProposalBar extends StatelessWidget {
                   ],
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  if (stopped)
-                    FilledButton.icon(
-                      onPressed: busy ? null : onRetry,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Retry'),
-                    )
-                  else
-                    Tooltip(
-                      message: open > 0
-                          ? 'Waiting for Claude to answer your notes'
-                          : 'Record it as what happened',
-                      child: FilledButton(
-                        onPressed: busy || !proposal.confirmable
-                            ? null
-                            : onConfirm,
-                        child: Text(
-                          open > 0
-                              ? 'Waiting for Claude'
-                              : 'Confirm $window happened as shown',
-                        ),
-                      ),
-                    ),
-                  if (!stopped)
-                    OutlinedButton.icon(
-                      onPressed: busy ? null : onNote,
-                      icon: const Icon(Icons.add_comment_outlined, size: 18),
-                      label: const Text('Note for Claude'),
-                    ),
-                  if (notes > 0 || proposal.warnings.isNotEmpty)
-                    TextButton.icon(
-                      onPressed: busy ? null : onNotes,
-                      icon: const Icon(Icons.forum_outlined, size: 18),
-                      label: Text('Notes ($notes)'),
-                    ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
     );
   }
+
+  /// The header's buttons: no taller than its row.
+  static final _compact = FilledButton.styleFrom(
+    visualDensity: VisualDensity.compact,
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+  );
 }
 
 /// What came of changes to the proposal sent from the queue -- maybe with

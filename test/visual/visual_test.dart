@@ -912,7 +912,7 @@ void main() {
       (
         'events_proposal_start',
         (tester) async {
-          await tester.tap(find.text('What happened — to confirm').first);
+          await tester.tap(find.textContaining('To confirm'));
           await tester.pumpAndSettle();
         },
       ),
@@ -982,6 +982,8 @@ void main() {
       (
         'events_proposal_notes',
         (tester) async {
+          await tester.tap(find.byTooltip('More'));
+          await tester.pumpAndSettle();
           await tester.tap(find.text('Notes (1)'));
           await tester.pumpAndSettle();
         },
@@ -989,7 +991,7 @@ void main() {
       (
         'events_proposal_waiting',
         (tester) async {
-          await tester.tap(find.text('Note for Claude'));
+          await tester.tap(find.byTooltip('Note for Claude'));
           await tester.pumpAndSettle();
           await tester.enterText(
             find.byType(TextField),

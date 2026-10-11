@@ -3537,6 +3537,13 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Under the proposal's bar, its details, a page each: its notes, its
   /// cancels and whether they count against follow-through, and what it
   /// adds -- each one at a time, stepped through.
+  /// Whether the proposal has details to show under its bar.
+  bool _hasDetails(Proposal proposal) =>
+      _recapPoint != null ||
+      _note != null ||
+      _cancel != null ||
+      _addition != null;
+
   Widget _buildDetails(Proposal proposal) {
     final notes = _proposalNotes;
     final note = _note;
@@ -3844,6 +3851,7 @@ class _EventsScreenState extends State<EventsScreen> {
             busy: _proposalBusy,
             closing: widget.eventOutbox?.closing(proposal.id)?.label,
             changes: _changedSince.length,
+            joined: _hasDetails(proposal),
             onConfirm: _confirmProposal,
             onNote: _noteForClaude,
             onNotes: _showProposalNotes,
