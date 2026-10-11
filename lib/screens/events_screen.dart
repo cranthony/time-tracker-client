@@ -1182,7 +1182,7 @@ class _EventsScreenState extends State<EventsScreen> {
     });
   }
 
-  /// Shows today, scrolled so now is about a third of the way down.
+  /// Shows today, scrolled so now is a fifth of the way down.
   void _goToNow() {
     final now = widget.clock();
     final today = _midnight(now);
@@ -1196,7 +1196,7 @@ class _EventsScreenState extends State<EventsScreen> {
       final (from, to) = _stacked(today);
       final y =
           timelineOffset(now, day: from, dayEnd: to, scale: _scale) -
-          position.viewportDimension / 3;
+          position.viewportDimension / 5;
       _scroll.jumpTo(y.clamp(0, position.maxScrollExtent));
     });
     setState(() {});

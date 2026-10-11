@@ -6,6 +6,11 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.51.1
+
+- Events: "Go to now" puts now a fifth of the way down the screen,
+  not a third, so more of what's ahead shows.
+
 ## 7.51.0
 
 - What the background fetch keeps shows as soon as you're back in the
