@@ -745,7 +745,7 @@ class _PlanScreenState extends State<PlanScreen> {
       if (habits != null)
         (
           'Habits',
-          'practice',
+          'build',
           HabitsPane(
             repository: habits,
             memory: _memory,

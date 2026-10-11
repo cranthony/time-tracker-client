@@ -374,7 +374,7 @@ void main() {
 
       expect(find.text('Self'), findsOneWidget);
       expect(find.text('People'), findsOneWidget);
-      expect(find.text('Your page'), findsOneWidget);
+      expect(find.text('Caring'), findsOneWidget);
       expect(find.text('Mom'), findsOneWidget);
       // Only those prioritized.
       expect(find.text('Sam'), findsNothing);
@@ -386,7 +386,9 @@ void main() {
 
       await tester.tap(find.text('Self'));
       await tester.pumpAndSettle();
-      expect(find.text('Your page'), findsNothing);
+      expect(find.text('Caring'), findsNothing);
+      // Their page is a tap away, folded or not.
+      expect(find.byTooltip('Your page'), findsOneWidget);
 
       await tester.tap(find.text('People'));
       await tester.pumpAndSettle();
@@ -501,7 +503,7 @@ void main() {
 
     testWidgets("Self isn't prioritized", (tester) async {
       await pump(tester);
-      await tester.tap(find.text('Your page'));
+      await tester.tap(find.byTooltip('Your page'));
       await tester.pumpAndSettle();
 
       expect(find.byTooltip('Prioritize Self'), findsNothing);

@@ -27,8 +27,8 @@ import '../models/time_split.dart';
 /// sections, one over the other, each folded away by tapping its head:
 ///
 /// * **Self**, with their relationship health and its last 8 days in its
-///   head, and under it the traits -- how they want to be
-///   ([TraitsSection]); "Your page" opens their page ([PersonScreen]).
+///   head, and a button there that opens their page ([PersonScreen]);
+///   under it the traits -- how they want to be ([TraitsSection]).
 /// * **People**, the three the user prioritizes, each with
 ///   their health, their time with the user in the summary's 24 hours and
 ///   7 days, and the last event with them -- or, with the summary looking
@@ -321,6 +321,11 @@ class PeoplePaneState extends State<PeoplePane> {
           ],
           if (health != null)
             HealthDot(rating: health, scale: HealthScale.relationship),
+          IconButton(
+            tooltip: 'Your page',
+            icon: const Icon(Icons.person_outline),
+            onPressed: () => _open(self),
+          ),
         ],
       ),
       if (_selfOpen) ...[
@@ -332,7 +337,6 @@ class PeoplePaneState extends State<PeoplePane> {
             personNames: _personNames,
             actions: widget.actions,
           ),
-        _button(context, 'Your page', Icons.person_outline, () => _open(self)),
       ],
     ];
   }

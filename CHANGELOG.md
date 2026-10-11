@@ -8,7 +8,7 @@ on. Add the new version's section here at the same time; CI checks both.
 
 ## 7.54.0
 
-- The Plan page has a Habits pane where the Traits pane was: every one
+- The Plan page has a Habits pane ("build") where the Traits pane was: every one
   of your habits, in its action's color, with its action or group, its
   health and its last 8 days. Starred habits come first. Tap one to open
   it, use its menu to archive or restore it, and "+" to add one. Search
@@ -19,7 +19,8 @@ on. Add the new version's section here at the same time; CI checks both.
 - The traits are now under Self in the People pane, with everything the
   Traits pane had except its search: scores and trends, each trait's
   menu, "Trait" to add one, and archived traits on request. Self's
-  "All habits and scores" button is now "Your page".
+  "All habits and scores" button is now a person icon in Self's head,
+  beside their health: it opens your page, folded away or not.
 - Self's page no longer lists habits: they're in the Habits pane.
 
 ## 7.53.1
