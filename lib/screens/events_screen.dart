@@ -643,6 +643,9 @@ class _EventsScreenState extends State<EventsScreen> {
       notes: _recapNoteNames,
       changed: proposal.editedSinceRecap,
       canAsk: !_proposalBusy,
+      answersTo: proposal.answersTo,
+      others: proposal.notesForClaude,
+      about: {..._reviewedNames, ..._noteNames},
     );
     if (action == null || !mounted) return;
     switch (action) {
@@ -657,6 +660,7 @@ class _EventsScreenState extends State<EventsScreen> {
         await _noteForClaude(
           about: point.eventIds.where(_reviewedNames.containsKey).firstOrNull,
           aboutNote: note,
+          answering: point,
         );
     }
   }
@@ -3147,8 +3151,10 @@ class _EventsScreenState extends State<EventsScreen> {
     String? about,
     ProposalNote? aboutNote,
     ProposalAddition? aboutAddition,
+    RecapPoint? answering,
   }) async {
     final subject = switch ((aboutNote, aboutAddition)) {
+      _ when answering != null => 'Answering Claude: “${answering.quote}”',
       (final n?, _) => 'About ${_noteNames[n.id]}',
       (_, final a?) =>
         'About the new ${a.kind.label.toLowerCase()} “${a.name}”',
@@ -3161,6 +3167,11 @@ class _EventsScreenState extends State<EventsScreen> {
       subject: subject,
     );
     if (note == null || !mounted) return;
+    // Quoting the point it answers, for Claude, and to show it under.
+    final text = switch (answering) {
+      final point? => ProposalFeedback.answering(point, note.text),
+      null => note.text,
+    };
     // What's added is named by its ref.
     final eventId = switch ((aboutNote, aboutAddition)) {
       (null, null) => note.eventId,
@@ -3172,7 +3183,7 @@ class _EventsScreenState extends State<EventsScreen> {
         "Note left. It's waiting for Claude to answer.",
         (proposal, outbox) => outbox.addNote(
           proposal,
-          note.text,
+          text,
           eventId: eventId,
           noteId: aboutNote?.id,
         ),
@@ -3182,7 +3193,7 @@ class _EventsScreenState extends State<EventsScreen> {
     await _onProposal("Couldn't leave the note", (proposal, repository) async {
       await repository.addNote(
         proposal,
-        note.text,
+        text,
         eventId: eventId,
         noteId: aboutNote?.id,
       );
@@ -3590,6 +3601,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 for (final id in point.noteIds) ?noteNames[id],
               ],
               changed: point.eventIds.any(edited.contains),
+              answers: proposal.answersTo(point),
               onOpen: _openRecap,
               onPrevious: recapAt > 0 ? () => _goToRecap(recapAt - 1) : null,
               onNext: recapAt < points.length - 1
@@ -3598,6 +3610,7 @@ class _EventsScreenState extends State<EventsScreen> {
             ),
       recapCount: points.length,
       unsureCount: proposal.recap?.unsure.length ?? 0,
+      waitingCount: proposal.openFeedback.length,
       notes: note == null
           ? null
           : ProposalNoteStrip(

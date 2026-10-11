@@ -617,12 +617,20 @@ void main() {
       });
 
       testWidgets('answers a point Claude is unsure of, in a note about its '
-          'event', (tester) async {
+          'event quoting it; shown under it, waiting for Claude, in the strip '
+          'and in full', (tester) async {
         await openRecap(tester);
         await tester.tap(find.textContaining('A quiet morning'));
         await tester.pumpAndSettle();
         await tester.tap(find.widgetWithText(ActionChip, 'Answer Claude'));
         await tester.pumpAndSettle();
+        expect(
+          find.text(
+            'Answering Claude: “Whether the call counts against '
+            'follow-through”',
+          ),
+          findsOneWidget,
+        );
         await tester.enterText(
           find.descendant(
             of: find.byType(AlertDialog),
@@ -634,7 +642,73 @@ void main() {
         await tester.tap(find.text('Leave note'));
         await tester.pumpAndSettle();
         final asked = proposals.proposal!.feedback.last;
-        expect((asked.text, asked.eventId), ('It counts', 'call'));
+        expect(
+          (asked.text, asked.eventId),
+          (
+            'Re: “Whether the call counts against follow-through”\n\nIt counts',
+            'call',
+          ),
+        );
+        expect(
+          (asked.quoted, asked.body),
+          ('Whether the call counts against follow-through', 'It counts'),
+        );
+
+        // The page counts it; the point says so.
+        expect(find.text('Claude (1 waiting · 1 unsure)'), findsOneWidget);
+        await tester.tap(find.byTooltip('Next point'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Next point'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Call Mom · you answered: waiting for Claude'),
+          findsOneWidget,
+        );
+        // In full, under the point it answers -- not among the other notes.
+        await tester.tap(find.textContaining('Whether the call'));
+        await tester.pumpAndSettle();
+        expect(find.text('You answered · waiting for Claude'), findsOneWidget);
+        expect(find.text('It counts'), findsOneWidget);
+        expect(find.text('Notes for Claude'), findsNothing);
+      });
+
+      testWidgets("a note for Claude that answers no point shows after the "
+          "recap's points, with Claude's reply", (tester) async {
+        await openRecap(
+          tester,
+          extra: {
+            'feedback': [
+              {
+                'id': 'abc123def456f1',
+                'text': 'Tea ran long',
+                'event_id': 'tea',
+                'status': 'answered',
+                'reply': 'Moved its end to 10.',
+                'answered_in': 2,
+              },
+              {
+                'id': 'abc123def456f2',
+                'text': 'Re: “Something Claude no longer says”\n\nYes',
+                'status': 'answered',
+                'reply': 'Thanks.',
+                'answered_in': 2,
+              },
+            ],
+          },
+        );
+        await tester.tap(find.textContaining('A quiet morning'));
+        await tester.pumpAndSettle();
+        await tester.drag(find.text('What Claude did'), const Offset(0, -400));
+        await tester.pumpAndSettle();
+        expect(find.text('Notes for Claude'), findsOneWidget);
+        expect(find.text('Tea ran long'), findsOneWidget);
+        expect(find.text('Moved its end to 10.'), findsOneWidget);
+        // Its point's gone: the quote says what it answered.
+        expect(
+          find.text('Answering Claude: “Something Claude no longer says”'),
+          findsOneWidget,
+        );
+        expect(find.text('Yes'), findsOneWidget);
       });
 
       testWidgets('says when the user has changed what a point is about '

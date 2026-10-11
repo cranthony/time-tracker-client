@@ -246,6 +246,25 @@ class ProposalFeedback {
 
   bool get open => status == FeedbackStatus.open;
 
+  static final _quote = RegExp(r'^Re: “(.*)”\n\n');
+
+  /// The point of Claude's recap it answers, as [answering] quoted it --
+  /// null for a note that answers none.
+  String? get quoted => _quote.firstMatch(text)?.group(1);
+
+  /// What the user wrote: [text] after the point it answers, if it quotes
+  /// one.
+  String get body => switch (_quote.firstMatch(text)) {
+    final m? => text.substring(m.end),
+    null => text,
+  };
+
+  /// A note's [text] answering [point]: the point quoted, on a line of its
+  /// own, then a blank line and [text]. Claude reads which doubt it
+  /// answers; the app, which point to show it under.
+  static String answering(RecapPoint point, String text) =>
+      'Re: “${point.quote}”\n\n$text';
+
   factory ProposalFeedback.fromJson(Map<String, dynamic> json) =>
       ProposalFeedback(
         id: '${json['id']}',
@@ -304,6 +323,15 @@ class RecapPoint {
   final String text;
   final List<String> eventIds;
   final List<String> noteIds;
+
+  /// It as a note answering it quotes it: on one line, cut short.
+  String get quote {
+    final line = text.replaceAll(RegExp(r'\s+'), ' ').replaceAll('”', '"');
+    final trimmed = line.trim();
+    return trimmed.length <= 120
+        ? trimmed
+        : '${trimmed.substring(0, 119).trimRight()}…';
+  }
 
   static RecapPoint? fromJson(RecapKind kind, Object? json) => switch (json) {
     {'text': final String text} when text.trim().isNotEmpty => RecapPoint(
@@ -490,6 +518,22 @@ class Proposal {
             _ => null,
           },
     };
+  }
+
+  /// The notes for Claude answering [point] of its recap, oldest first.
+  List<ProposalFeedback> answersTo(RecapPoint point) => [
+    for (final f in feedback)
+      if (f.status != FeedbackStatus.withdrawn && f.quoted == point.quote) f,
+  ];
+
+  /// The notes for Claude that answer no point of its recap as it stands.
+  List<ProposalFeedback> get notesForClaude {
+    final quotes = {for (final p in recap?.points ?? const []) p.quote};
+    return [
+      for (final f in feedback)
+        if (f.status != FeedbackStatus.withdrawn && !quotes.contains(f.quoted))
+          f,
+    ];
   }
 
   /// The notes still waiting on Claude.
