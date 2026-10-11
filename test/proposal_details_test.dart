@@ -595,12 +595,13 @@ void main() {
         );
       });
 
-      testWidgets('opens in full, its points in Markdown under what Claude '
-          'did and what it isn’t sure of; a chip goes to its event', (
-        tester,
-      ) async {
+      testWidgets('tapping a point opens it in full, its points in Markdown '
+          'under what Claude did and what it isn’t sure of; a chip goes to its '
+          'event', (tester) async {
         await openRecap(tester);
-        await tester.tap(find.byTooltip('All of Claude’s recap'));
+        // The point itself opens it: there's no button beside it.
+        expect(find.byIcon(Icons.open_in_full), findsNothing);
+        await tester.tap(find.textContaining('A quiet morning'));
         await tester.pumpAndSettle();
         expect(find.text('What Claude did'), findsOneWidget);
         expect(find.text('What Claude isn’t sure of'), findsOneWidget);
@@ -618,7 +619,7 @@ void main() {
       testWidgets('answers a point Claude is unsure of, in a note about its '
           'event', (tester) async {
         await openRecap(tester);
-        await tester.tap(find.byTooltip('All of Claude’s recap'));
+        await tester.tap(find.textContaining('A quiet morning'));
         await tester.pumpAndSettle();
         await tester.tap(find.widgetWithText(ActionChip, 'Answer Claude'));
         await tester.pumpAndSettle();
@@ -659,7 +660,7 @@ void main() {
           find.text('Tea, Walk · you’ve changed it since'),
           findsOneWidget,
         );
-        await tester.tap(find.byTooltip('All of Claude’s recap'));
+        await tester.tap(find.textContaining('Kept tea as planned'));
         await tester.pumpAndSettle();
         expect(find.textContaining('Written for revision 1'), findsOneWidget);
         expect(
