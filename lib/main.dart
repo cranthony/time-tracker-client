@@ -18,6 +18,7 @@ import 'outbox/note_outbox.dart';
 import 'outbox/outbox.dart';
 import 'outbox/outbox_store.dart';
 import 'platform/add_note_shortcut.dart';
+import 'platform/calendar_widget.dart';
 import 'screens/home_screen.dart';
 import 'services/app_settings.dart';
 import 'services/event_store.dart';
@@ -107,6 +108,7 @@ Future<void> main() async {
             sample?.habitsRepository() ?? InMemoryHabitsRepository(),
         focus: sample?.focusStore(),
         diagnosticsRepository: sample?.diagnosticsRepository(),
+        calendarWidget: CalendarWidget(),
         backgroundRefresh: BackgroundRefresh(
           repository: sample?.scheduleHintsRepository(),
           // The offline demo has nothing to fetch.
@@ -162,6 +164,7 @@ Future<void> main() async {
       peopleRepository: McpPeopleRepository(client, cache: cache),
       habitsRepository: McpHabitsRepository(client, cache: cache),
       diagnosticsRepository: McpDiagnosticsRepository(client, cache: cache),
+      calendarWidget: CalendarWidget(),
       backgroundRefresh: BackgroundRefresh(
         repository: McpScheduleHintsRepository(client, cache: cache),
         settings: settings,
@@ -262,18 +265,29 @@ Future<void> _refreshInBackground() async {
   final hints = McpScheduleHintsRepository(client, cache: cache);
   final settings = AppSettings();
   await settings.load();
+  final actions = McpActionsRepository(client, cache: cache);
+  final events = EventStore(
+    repository: McpEventsRepository(client),
+    cache: cache,
+  );
   final record = await refreshCaches(
     hints: hints,
     notes: McpNotesRepository(client, cache: cache),
     proposals: McpProposalRepository(client, cache: cache),
     expects: settings.expectsProposal,
-    actions: McpActionsRepository(client, cache: cache),
+    actions: actions,
     traits: McpTraitsRepository(client, cache: cache),
     people: McpPeopleRepository(client, cache: cache),
     habits: McpHabitsRepository(client, cache: cache),
-    events: EventStore(repository: McpEventsRepository(client), cache: cache),
+    events: events,
   );
   await record.save();
+  // The home screen calendar, from what was just fetched -- or, if that
+  // failed, what was kept.
+  await CalendarWidget().publish(
+    events,
+    actions: (await actions.cachedActions())?.actions ?? const [],
+  );
   final now = DateTime.now();
   final next = nextRefresh(
     now,
@@ -324,6 +338,7 @@ class TimeTrackerApp extends StatefulWidget {
     this.proposalsRepository,
     this.focus,
     this.settings,
+    this.calendarWidget,
   });
 
   /// The app's settings; by default, those kept on the device.
@@ -362,6 +377,10 @@ class TimeTrackerApp extends StatefulWidget {
   /// The habits focused on and people prioritized; by default, those
   /// kept on the device.
   final FocusStore? focus;
+
+  /// The Android home screen calendar, kept up to date with the events,
+  /// and its taps shown on Events; without it, it isn't.
+  final CalendarWidget? calendarWidget;
   final EventsRepository eventsRepository;
   final ActionsRepository actionsRepository;
   final NoteOutbox outbox;
@@ -416,7 +435,36 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       onPause: _onBackground,
     );
     _addNoteShortcut.start();
+    _startCalendarWidget();
     _loadVersion();
+  }
+
+  Timer? _calendarTimer;
+
+  /// Keeps the home screen calendar up to date with the events, and
+  /// listens for its taps.
+  void _startCalendarWidget() {
+    final calendar = widget.calendarWidget;
+    if (calendar == null || !calendar.enabled) return;
+    _planMemory.addListener(_calendarChanged);
+    _calendarChanged();
+    calendar.start();
+  }
+
+  /// Publishes the events to the home screen calendar a moment after
+  /// they change: a run of changes, once.
+  void _calendarChanged() {
+    _calendarTimer?.cancel();
+    _calendarTimer = Timer(const Duration(seconds: 1), () {
+      final store = _planMemory.eventStore;
+      if (store == null) return;
+      unawaited(
+        widget.calendarWidget?.publish(
+          store,
+          actions: _planMemory.shownActions?.actions ?? const [],
+        ),
+      );
+    });
   }
 
   StreamSubscription<(PendingEventWrite, Object?)>? _savedWrites;
@@ -483,6 +531,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
   void dispose() {
     _lifecycle.dispose();
     _addNoteShortcut.dispose();
+    _calendarTimer?.cancel();
+    _planMemory.removeListener(_calendarChanged);
+    widget.calendarWidget?.dispose();
     widget.outbox.dispose();
     widget.actionOutbox.dispose();
     _savedWrites?.cancel();
@@ -532,6 +583,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         onSignIn: widget.auth?.signIn,
         onSignOut: widget.auth == null ? null : _signOut,
         addNoteRequests: _addNoteShortcut.taps,
+        calendarTaps: widget.calendarWidget?.taps,
         onAddNoteFieldFocused: _addNoteShortcut.fieldReady,
         version: _version,
       ),

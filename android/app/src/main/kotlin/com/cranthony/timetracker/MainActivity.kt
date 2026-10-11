@@ -16,6 +16,13 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private var oauthChannel: MethodChannel? = null
     private var addNoteChannel: MethodChannel? = null
+    private var calendarChannel: MethodChannel? = null
+
+    /**
+     * When a tap on the home screen calendar launched the app from scratch:
+     * the Dart side collects it with "takeLaunchRequest", as for the "+".
+     */
+    private var launchCalendarTap: Map<String, Any?>? = null
 
     /**
      * When the home screen "+" launched the app from scratch: the Dart side
@@ -49,6 +56,10 @@ class MainActivity : FlutterActivity() {
             launchAddNoteAt = System.currentTimeMillis()
             awaitKeyboard()
         }
+        if (savedInstanceState == null && isShowEvents(intent)) {
+            Log.d(TAG, "onCreate: show events")
+            launchCalendarTap = CalendarWidget.tapOf(intent)
+        }
         super.onCreate(savedInstanceState)
     }
 
@@ -71,6 +82,16 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+        calendarChannel = MethodChannel(messenger, CalendarWidget.CHANNEL).apply {
+            setMethodCallHandler { call, result ->
+                if (call.method == "takeLaunchRequest") {
+                    result.success(launchCalendarTap)
+                    launchCalendarTap = null
+                } else {
+                    result.notImplemented()
+                }
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -81,6 +102,12 @@ class MainActivity : FlutterActivity() {
             // In front already, the dialog's field can show it by itself.
             if (!hasWindowFocus()) awaitKeyboard()
             addNoteChannel?.invokeMethod("addNote", System.currentTimeMillis())
+            return
+        }
+        // A tap on the home screen calendar while the app was running.
+        if (isShowEvents(intent)) {
+            Log.d(TAG, "onNewIntent: show events")
+            calendarChannel?.invokeMethod("show", CalendarWidget.tapOf(intent))
             return
         }
         // The browser's sign-in redirect (com.cranthony.timetracker://oauth/callback?...)
@@ -154,6 +181,11 @@ class MainActivity : FlutterActivity() {
     /** Ignores relaunching from Recents, which replays the original intent. */
     private fun isAddNote(intent: Intent?): Boolean =
         intent?.action == AddNoteWidget.ACTION_ADD_NOTE &&
+            (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+
+    /** Ignores relaunching from Recents, as [isAddNote] does. */
+    private fun isShowEvents(intent: Intent?): Boolean =
+        intent?.action == CalendarWidget.ACTION_SHOW_EVENTS &&
             (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
 
     private companion object {

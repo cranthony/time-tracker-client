@@ -2,6 +2,7 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.plugin.compose")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -18,6 +19,11 @@ android {
     namespace = "com.cranthony.timetracker"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+
+    // The home screen calendar's UI (CalendarWidget.kt) is Glance.
+    buildFeatures {
+        compose = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -67,4 +73,10 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // The home screen calendar (CalendarWidget.kt): the version home_widget
+    // is built with.
+    implementation("androidx.glance:glance-appwidget:1.2.0")
 }
