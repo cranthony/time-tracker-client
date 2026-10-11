@@ -563,7 +563,7 @@ void main() {
 
       await tester.tap(find.text('Paused: 1 change waiting to save'));
       await tester.pumpAndSettle();
-      expect(find.text('Changes waiting to save'), findsOneWidget);
+      expect(find.text('Events waiting to save'), findsOneWidget);
       expect(find.text('Change “Lunch”'), findsOneWidget);
 
       await tester.tap(find.text('Drop'));
@@ -699,7 +699,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(shown.single.id, id);
       // The sheet's closed, to see it.
-      expect(find.text('Changes waiting to save'), findsNothing);
+      expect(find.text('Events waiting to save'), findsNothing);
     });
   });
 }

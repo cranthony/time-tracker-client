@@ -169,8 +169,6 @@ void main() {
   test('a save the server refuses is kept, and waits to be retried', () async {
     server.failWith = McpException('No room for it.');
     final box = outbox();
-    final events = <ActionSaveEvent>[];
-    box.events.listen(events.add);
     box.start();
 
     final shownAs = box.create({'name': 'Running', 'parent_id': null});
@@ -178,7 +176,6 @@ void main() {
     final failed = box.saves.single;
     expect(failed.lastError, 'No room for it.');
     expect(failed.refused, isTrue);
-    expect(events.whereType<ActionSaveFailed>(), hasLength(1));
     expect(store.items.single.lastError, 'No room for it.');
 
     // Not by starting again: it would only be refused again.

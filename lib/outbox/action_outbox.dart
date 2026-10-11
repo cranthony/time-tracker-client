@@ -8,20 +8,6 @@ import '../services/server_errors.dart';
 import 'outbox.dart';
 import 'pending_action_save.dart';
 
-/// What happened to an action save: see [ActionOutbox.events]. Saves that
-/// went through are in [Outbox.justSaved].
-sealed class ActionSaveEvent {
-  const ActionSaveEvent();
-}
-
-/// [save] failed, as its [PendingActionSave.lastError] says. It's kept, and
-/// tried again after a while, or, if the server refused it, when it's
-/// retried.
-class ActionSaveFailed extends ActionSaveEvent {
-  const ActionSaveFailed(this.save);
-  final PendingActionSave save;
-}
-
 /// PlanAction saves waiting to be sent to the server, or that failed: an
 /// [Outbox] of them, sent oldest first, retrying with backoff. One the
 /// server refuses (a name already used, say) waits until it's retried,
@@ -41,14 +27,9 @@ class ActionOutbox extends Outbox<PendingActionSave, String?> {
 
   final ActionsRepository _repository;
   int _nextId = 0;
-  // Synchronous, so a failure is heard of as it's kept.
-  final _events = StreamController<ActionSaveEvent>.broadcast(sync: true);
 
   /// Every save waiting, being sent, or that failed, oldest first.
   List<PendingActionSave> get saves => items;
-
-  /// What happens to each save, as it happens.
-  Stream<ActionSaveEvent> get events => _events.stream;
 
   /// Whether anything is being sent, or waiting to be for the first time.
   /// Saves that failed wait a while, or to be retried, so they don't count.
@@ -189,19 +170,6 @@ class ActionOutbox extends Outbox<PendingActionSave, String?> {
   @override
   bool retries(Object error) =>
       describeServerError(error).kind != FailureKind.refused;
-
-  @override
-  void failed(PendingActionSave item) => _emit(ActionSaveFailed(item));
-
-  @override
-  void dispose() {
-    _events.close();
-    super.dispose();
-  }
-
-  void _emit(ActionSaveEvent event) {
-    if (!_events.isClosed) _events.add(event);
-  }
 
   String _newId() =>
       '${now().microsecondsSinceEpoch.toRadixString(36)}-${_nextId++}';

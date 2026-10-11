@@ -6,6 +6,19 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.56.0
+
+- Actions and notes waiting to save now show in the line at the foot of
+  the screen too, as event changes do: saving, waiting to try again, or
+  stopped at one the server refused (in red, "tap to fix it"). Tapping
+  it slides up each, by name, with why it couldn't be saved, to try
+  again or drop.
+- Plan no longer pops up an error when an action couldn't be saved: the
+  line at the foot of the screen says so, and the action's row still
+  shows it, to try again, edit or discard.
+- The sheet's event changes are headed "Events waiting to save", apart
+  from the actions and notes.
+
 ## 7.55.0
 
 - The compaction proposal's bar is one row, over its details as one

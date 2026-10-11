@@ -18,6 +18,7 @@ import '../services/plan_memory.dart';
 import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
 import '../widgets/event_outbox_status.dart';
+import '../widgets/outbox_status.dart';
 import '../widgets/status_bar.dart';
 import 'events_screen.dart';
 import 'notes_screen.dart';
@@ -162,7 +163,12 @@ class _HomeScreenState extends State<HomeScreen> {
   late final _status = <StatusSource>[
     if (widget.eventOutbox case final outbox?)
       EventOutboxStatus(outbox, lookup: _lookup, onShow: _showEvent),
+    ActionOutboxStatus(widget.actionOutbox, nameOf: _actionName),
+    NoteOutboxStatus(widget.outbox),
   ];
+
+  String? _actionName(String id) =>
+      _planMemory.actions?.actions.where((a) => a.id == id).firstOrNull?.name;
 
   @override
   Widget build(BuildContext context) =>

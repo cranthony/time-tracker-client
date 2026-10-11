@@ -661,11 +661,9 @@ void main() {
     await addAction(tester, 'Running');
     repo.fail(McpException('No room for it.'));
     await tester.pumpAndSettle();
-    expect(find.text("Couldn't save Running"), findsOneWidget);
-    expect(find.text('No room for it.'), findsOneWidget);
-    await tester.tap(find.text('Close'));
-    await tester.pumpAndSettle();
-    // Still there, with an error in place of its menu.
+    // No pop-up: the status bar says so. Still there, with an error in
+    // place of its menu.
+    expect(find.text("Couldn't save Running"), findsNothing);
     expect(shownNames(tester), contains('Running'));
     expect(find.byTooltip('Not saved: No room for it.'), findsOneWidget);
     expect(find.byTooltip('More for Running'), findsNothing);
@@ -701,13 +699,13 @@ void main() {
     await addAction(tester, 'Running');
     repo.fail(McpException('No room for it.'));
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Not saved: No room for it.'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Try again'));
     await settle(tester);
     expect(repo.sent, ['create Running', 'create Running']);
     expect(find.byTooltip('Saving…'), findsOneWidget);
     repo.fail(McpException('Still no room.'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Not saved: Still no room.'));
@@ -791,8 +789,6 @@ void main() {
     await settle(tester);
     repo.fail(McpException('Try later.'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Close'));
-    await tester.pumpAndSettle();
     // Kept, though the actions were fetched again.
     expect(shownNames(tester), contains('Parties'));
     expect(find.byTooltip('Not saved: Try later.'), findsOneWidget);
@@ -829,10 +825,6 @@ void main() {
     await tester.tap(find.text('Save 1 change'));
     await settle(tester);
     await tester.pumpAndSettle();
-    if (find.text('Close').evaluate().isNotEmpty) {
-      await tester.tap(find.text('Close'));
-      await tester.pumpAndSettle();
-    }
     debugPrint('SHOWN ${shownNames(tester)}');
     debugPrint(
       'SERVER ${[for (final a in (await repo.actions()).actions) '${a.id}:${a.name}:${a.status}'].join(', ')}',
