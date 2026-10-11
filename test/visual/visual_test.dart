@@ -901,7 +901,7 @@ void main() {
       (
         'events_proposal_recap',
         (tester) async {
-          await tester.tap(find.byTooltip('All of Claude’s recap'));
+          await tester.tap(find.textContaining('pushed work back'));
           await tester.pumpAndSettle();
         },
       ),

@@ -1148,7 +1148,7 @@ IconData recapIcon(RecapKind kind) => switch (kind) {
 /// One point of Claude's recap -- the [index]th of [count] -- its text, a
 /// line or two of it, and what it's [about]: the events and notes it
 /// names. [changed] when the user's edits since have changed one of them.
-/// Tapping it, or its button, calls [onOpen], to read all of it; with
+/// Tapping it calls [onOpen], to read all of it; with
 /// buttons to go to the point before it ([onPrevious]) and after it
 /// ([onNext]).
 class ProposalRecapStrip extends StatelessWidget {
@@ -1191,15 +1191,6 @@ class ProposalRecapStrip extends StatelessWidget {
         if (changed) 'you’ve changed it since',
       ].join(' · '),
       saysColor: changed ? colors.secondary : colors.onSurfaceVariant,
-      actions: [
-        if (onOpen != null)
-          IconButton(
-            tooltip: 'All of Claude’s recap',
-            visualDensity: VisualDensity.compact,
-            onPressed: onOpen,
-            icon: const Icon(Icons.open_in_full, size: 20),
-          ),
-      ],
       onPrevious: onPrevious,
       onNext: onNext,
       onTap: onOpen,
