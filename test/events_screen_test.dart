@@ -2655,7 +2655,7 @@ void main() {
     expect(find.textContaining('token revoked'), findsOneWidget);
   });
 
-  testWidgets('"Go to now" shows today, with now a third of the way down', (
+  testWidgets('"Go to now" shows today, with now a fifth of the way down', (
     tester,
   ) async {
     final repo = InMemoryEventsRepository([
@@ -2687,7 +2687,7 @@ void main() {
               dayEnd: DateTime(2026, 10, 1),
               scale: defaultTimelineScale,
             ) -
-            position.viewportDimension / 3,
+            position.viewportDimension / 5,
       ),
     );
   });
