@@ -380,20 +380,33 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Null for the first note to review.
   int? _noteIndex;
 
-  /// Which page of the proposal's details is shown under its bar: its
-  /// notes, its cancels, or what it adds.
-  ProposalDetailPage _detailPage = ProposalDetailPage.notes;
+  /// Which page of the proposal's details is shown under its bar:
+  /// Claude's recap of it -- first, while it has one -- its notes, its
+  /// cancels, or what it adds.
+  ProposalDetailPage _detailPage = ProposalDetailPage.claude;
 
   /// The page of the proposal's details shown: [_detailPage], if it has
   /// anything on it, or else the first that has.
   ProposalDetailPage? get _shownPage {
     final pages = [
+      if (_recapPoint != null) ProposalDetailPage.claude,
       if (_note != null) ProposalDetailPage.notes,
       if (_cancel != null) ProposalDetailPage.followThrough,
       if (_addition != null) ProposalDetailPage.added,
     ];
     return pages.contains(_detailPage) ? _detailPage : pages.firstOrNull;
   }
+
+  /// Which point of Claude's recap is shown.
+  int _recapIndex = 0;
+
+  /// The point of Claude's recap shown under the proposal's bar, if it has
+  /// a recap.
+  RecapPoint? get _recapPoint => switch (_proposal?.recap?.points) {
+    final points? when points.isNotEmpty =>
+      points[_recapIndex.clamp(0, points.length - 1)],
+    _ => null,
+  };
 
   /// Which of the proposal's cancels, and of what it adds, is shown.
   int _cancelIndex = 0;
@@ -494,6 +507,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// The events outlined on the timeline: the cancel shown, or where
   /// what's added that's shown is used.
   Set<String> get _selectedEvents => switch (_shownPage) {
+    ProposalDetailPage.claude => {...?_recapPoint?.eventIds},
     ProposalDetailPage.followThrough => {?_cancel?.id},
     ProposalDetailPage.added => switch (_addition) {
       final a? => {for (final e in _usesOf(a)) e.id},
@@ -540,17 +554,102 @@ class _EventsScreenState extends State<EventsScreen> {
     return notes[i.clamp(0, notes.length - 1)];
   }
 
-  /// The proposal's notes, as the timeline draws them.
+  /// The proposal's notes, as the timeline draws them: the note shown
+  /// selected, or those the point of Claude's recap shown names.
   List<ReviewNote> get _reviewNotes {
-    final selected = _shownPage == ProposalDetailPage.notes ? _note : null;
+    final selected = switch (_shownPage) {
+      ProposalDetailPage.notes => {?_note?.id},
+      ProposalDetailPage.claude => {...?_recapPoint?.noteIds},
+      _ => const <String>{},
+    };
     return [
       for (final note in _proposalNotes)
         ReviewNote(
           time: note.time,
           kind: reviewNoteKind(note, of: _proposal),
-          selected: note.id == selected?.id,
+          selected: selected.contains(note.id),
         ),
     ];
+  }
+
+  /// Shows the [index]th point of Claude's recap under the proposal's
+  /// bar, and scrolls the timeline to [eventId] or [noteId] -- or, with
+  /// neither, to the first event, or else note, it names.
+  void _goToRecap(int index, {String? eventId, String? noteId}) {
+    final points = _proposal?.recap?.points ?? const <RecapPoint>[];
+    if (points.isEmpty) return;
+    final i = index.clamp(0, points.length - 1);
+    setState(() {
+      _recapIndex = i;
+      _detailPage = ProposalDetailPage.claude;
+    });
+    final point = points[i];
+    final proposal = _proposal;
+    final event = proposal?.event(
+      eventId ?? (noteId == null ? point.eventIds.firstOrNull : null),
+    );
+    if (event != null) return _scrollToTime(event.start);
+    final noteTo = noteId ?? point.noteIds.firstOrNull;
+    final note = _proposalNotes.where((n) => n.id == noteTo).firstOrNull;
+    if (note != null) _scrollToTime(note.time);
+  }
+
+  /// The open proposal's events, by id or key, named for Claude's recap:
+  /// those still to come too, which it may name.
+  Map<String, String> get _recapEventNames {
+    final strings = MaterialLocalizations.of(context);
+    return {
+      for (final e in _proposal?.events ?? const <ProposalEvent>[])
+        e.id:
+            '${switch (e.summary) {
+              final s? when s.isNotEmpty => s,
+              _ => '(no summary)',
+            }}, ${strings.formatTimeOfDay(TimeOfDay.fromDateTime(e.start.toLocal()))}',
+    };
+  }
+
+  /// The open proposal's time notes, by id, named for Claude's recap:
+  /// "11:05 AM note".
+  Map<String, String> get _recapNoteNames {
+    final strings = MaterialLocalizations.of(context);
+    return {
+      for (final n in _proposalNotes)
+        n.id:
+            '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(n.time.toLocal()))} note',
+    };
+  }
+
+  /// Shows all of Claude's recap, and goes where the user asks of it: to
+  /// a point, an event or a note -- or leaves a note for Claude answering
+  /// a point it's unsure of.
+  Future<void> _openRecap() async {
+    final proposal = _proposal;
+    final recap = proposal?.recap;
+    if (proposal == null || recap == null) return;
+    final action = await showRecapSheet(
+      context,
+      recap,
+      revision: proposal.revision,
+      events: _recapEventNames,
+      notes: _recapNoteNames,
+      changed: proposal.editedSinceRecap,
+      canAsk: !_proposalBusy,
+    );
+    if (action == null || !mounted) return;
+    switch (action) {
+      case GoToRecapPoint(:final index, :final eventId, :final noteId):
+        _goToRecap(index, eventId: eventId, noteId: noteId);
+      case AskAboutRecapPoint(:final point):
+        final note = point.eventIds.isEmpty
+            ? _proposalNotes
+                  .where((n) => point.noteIds.contains(n.id))
+                  .firstOrNull
+            : null;
+        await _noteForClaude(
+          about: point.eventIds.where(_reviewedNames.containsKey).firstOrNull,
+          aboutNote: note,
+        );
+    }
   }
 
   /// Shows the [index]th of the proposal's notes under its bar, and
@@ -3419,6 +3518,12 @@ class _EventsScreenState extends State<EventsScreen> {
     final addition = _addition;
     int indexOf<T>(List<T> list, bool Function(T) test) =>
         list.indexWhere(test);
+    final points = proposal.recap?.points ?? const <RecapPoint>[];
+    final point = _recapPoint;
+    final recapAt = point == null ? -1 : points.indexOf(point);
+    final edited = proposal.editedSinceRecap;
+    final eventNames = _recapEventNames;
+    final noteNames = _recapNoteNames;
     final noteAt = note == null ? -1 : indexOf(notes, (n) => n.id == note.id);
     final cancelAt = cancel == null
         ? -1
@@ -3428,6 +3533,7 @@ class _EventsScreenState extends State<EventsScreen> {
         : indexOf(added, (a) => a.addition.ref == addition.addition.ref);
     // Its pages, as it'll have them: those with something on.
     final pages = [
+      if (point != null) ProposalDetailPage.claude,
       if (note != null) ProposalDetailPage.notes,
       if (cancel != null) ProposalDetailPage.followThrough,
       if (addition != null) ProposalDetailPage.added,
@@ -3437,6 +3543,26 @@ class _EventsScreenState extends State<EventsScreen> {
         -1 => 0,
         final i => i,
       },
+      recap: point == null
+          ? null
+          : ProposalRecapStrip(
+              point: point,
+              index: recapAt,
+              count: points.length,
+              about: [
+                for (final id in point.eventIds)
+                  ?_reviewedSummaries[id] ?? eventNames[id],
+                for (final id in point.noteIds) ?noteNames[id],
+              ],
+              changed: point.eventIds.any(edited.contains),
+              onOpen: _openRecap,
+              onPrevious: recapAt > 0 ? () => _goToRecap(recapAt - 1) : null,
+              onNext: recapAt < points.length - 1
+                  ? () => _goToRecap(recapAt + 1)
+                  : null,
+            ),
+      recapCount: points.length,
+      unsureCount: proposal.recap?.unsure.length ?? 0,
       notes: note == null
           ? null
           : ProposalNoteStrip(

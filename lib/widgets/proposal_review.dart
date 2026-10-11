@@ -6,6 +6,7 @@ import '../models/proposal.dart';
 import '../outbox/proposal_notices.dart';
 import 'error_sheet.dart';
 import 'day_timeline.dart';
+import 'recap_markdown.dart';
 import 'time_summary.dart';
 
 /// [start] to [end] in a few words: "7:30 AM – 1:30 PM" in a day, or
@@ -778,7 +779,7 @@ String noteFate(
 }
 
 /// One of a run of things to review, in a [ProposalDetails] page: a
-/// [badge], its [title] and what it [says], [actions] beside it, then
+/// [badge] (on [badgeColor], or the primary color), its [title] and what it [says], [actions] beside it, then
 /// which it is -- the [index]th of [count] -- and buttons to go to the one
 /// before it ([onPrevious]) and after it ([onNext]), named [what]. Tapping
 /// it calls [onTap].
@@ -789,6 +790,7 @@ class _DetailRow extends StatelessWidget {
     required this.what,
     required this.index,
     required this.count,
+    this.badgeColor,
     this.says,
     this.saysColor,
     this.actions = const [],
@@ -798,6 +800,7 @@ class _DetailRow extends StatelessWidget {
   });
 
   final IconData badge;
+  final ({Color background, Color foreground})? badgeColor;
   final InlineSpan title;
   final String what;
   final int index;
@@ -819,10 +822,14 @@ class _DetailRow extends StatelessWidget {
           width: 22,
           height: 22,
           decoration: BoxDecoration(
-            color: colors.primary,
+            color: badgeColor?.background ?? colors.primary,
             shape: BoxShape.circle,
           ),
-          child: Icon(badge, size: 14, color: colors.onPrimary),
+          child: Icon(
+            badge,
+            size: 14,
+            color: badgeColor?.foreground ?? colors.onPrimary,
+          ),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -1110,6 +1117,317 @@ class ProposalAdditionStrip extends StatelessWidget {
       onPrevious: onPrevious,
       onNext: onNext,
       onTap: onSettle,
+    );
+  }
+}
+
+/// The badge of a point of Claude's recap of [kind].
+IconData recapIcon(RecapKind kind) => switch (kind) {
+  RecapKind.overview => Icons.notes,
+  RecapKind.did => Icons.check,
+  RecapKind.unsure => Icons.question_mark,
+};
+
+/// The badge's colors for a point of Claude's recap of [kind] -- null for
+/// the primary color: what it's unsure of stands out.
+({Color background, Color foreground})? recapBadge(
+  ColorScheme colors,
+  RecapKind kind,
+) => switch (kind) {
+  RecapKind.unsure => (
+    background: colors.tertiary,
+    foreground: colors.onTertiary,
+  ),
+  RecapKind.overview => (
+    background: colors.secondary,
+    foreground: colors.onSecondary,
+  ),
+  RecapKind.did => null,
+};
+
+/// One point of Claude's recap -- the [index]th of [count] -- its text, a
+/// line or two of it, and what it's [about]: the events and notes it
+/// names. [changed] when the user's edits since have changed one of them.
+/// Tapping it, or its button, calls [onOpen], to read all of it; with
+/// buttons to go to the point before it ([onPrevious]) and after it
+/// ([onNext]).
+class ProposalRecapStrip extends StatelessWidget {
+  const ProposalRecapStrip({
+    super.key,
+    required this.point,
+    required this.index,
+    required this.count,
+    this.about = const [],
+    this.changed = false,
+    this.onOpen,
+    this.onPrevious,
+    this.onNext,
+  });
+
+  final RecapPoint point;
+  final int index;
+  final int count;
+  final List<String> about;
+  final bool changed;
+  final VoidCallback? onOpen;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return _DetailRow(
+      badge: recapIcon(point.kind),
+      badgeColor: recapBadge(colors, point.kind),
+      what: 'point',
+      index: index,
+      count: count,
+      title: recapSpan(
+        point.text,
+        codeBackground: colors.surfaceContainerHighest,
+      ),
+      says: [
+        if (about.isNotEmpty) about.join(', '),
+        if (changed) 'you’ve changed it since',
+      ].join(' · '),
+      saysColor: changed ? colors.secondary : colors.onSurfaceVariant,
+      actions: [
+        if (onOpen != null)
+          IconButton(
+            tooltip: 'All of Claude’s recap',
+            visualDensity: VisualDensity.compact,
+            onPressed: onOpen,
+            icon: const Icon(Icons.open_in_full, size: 20),
+          ),
+      ],
+      onPrevious: onPrevious,
+      onNext: onNext,
+      onTap: onOpen,
+    );
+  }
+}
+
+/// What Claude's recap sheet was closed to do.
+sealed class RecapAction {
+  const RecapAction();
+}
+
+/// Go to the [index]th point, and to [eventId] or [noteId] of it -- or,
+/// with neither, the first it names.
+final class GoToRecapPoint extends RecapAction {
+  const GoToRecapPoint(this.index, {this.eventId, this.noteId});
+  final int index;
+  final String? eventId;
+  final String? noteId;
+}
+
+/// Leave a note for Claude about [point].
+final class AskAboutRecapPoint extends RecapAction {
+  const AskAboutRecapPoint(this.point);
+  final RecapPoint point;
+}
+
+/// Shows all of Claude's [recap]: its overview, what it did and what it's
+/// unsure of, each point in full with a chip for each event ([events], by
+/// id or key) and note ([notes], by id) it names, to go to. Those the
+/// user's edits [changed] since are marked, and if the proposal's
+/// [revision] is past the recap's, it says so. A point Claude is unsure of
+/// can be answered, in a note for Claude, unless [canAsk] is false.
+Future<RecapAction?> showRecapSheet(
+  BuildContext context,
+  ProposalRecap recap, {
+  int? revision,
+  Map<String, String> events = const {},
+  Map<String, String> notes = const {},
+  Set<String> changed = const {},
+  bool canAsk = true,
+}) => showModalBottomSheet<RecapAction>(
+  context: context,
+  isScrollControlled: true,
+  showDragHandle: true,
+  builder: (context) => DraggableScrollableSheet(
+    expand: false,
+    initialChildSize: 0.7,
+    maxChildSize: 0.95,
+    builder: (context, scroll) {
+      final theme = Theme.of(context);
+      final muted = theme.colorScheme.onSurfaceVariant;
+      final points = recap.points;
+      Widget heading(String title, {String? none}) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Row(
+          children: [
+            Expanded(child: Text(title, style: theme.textTheme.titleSmall)),
+            if (none != null)
+              Text(
+                none,
+                style: theme.textTheme.bodySmall?.copyWith(color: muted),
+              ),
+          ],
+        ),
+      );
+      Widget card(int i) {
+        final point = points[i];
+        return _RecapPointCard(
+          point: point,
+          events: events,
+          notes: notes,
+          changed: point.eventIds.any(changed.contains),
+          onGoTo: ({String? eventId, String? noteId}) =>
+              Navigator.of(context)
+                  .pop(GoToRecapPoint(i, eventId: eventId, noteId: noteId)),
+          onAsk: canAsk && point.kind == RecapKind.unsure
+              ? () => Navigator.of(context).pop(AskAboutRecapPoint(point))
+              : null,
+        );
+      }
+
+      Iterable<int> of(RecapKind kind) => [
+        for (final (i, p) in points.indexed)
+          if (p.kind == kind) i,
+      ];
+      return ListView(
+        controller: scroll,
+        padding: const EdgeInsets.only(bottom: 24),
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text('Claude’s recap', style: theme.textTheme.titleMedium),
+          ),
+          if (recap.revision case final r?
+              when revision != null && r < revision)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
+              child: Text(
+                'Written for revision $r: your edits since may have changed '
+                'what it says.',
+                style: theme.textTheme.bodySmall?.copyWith(color: muted),
+              ),
+            ),
+          for (final i in of(RecapKind.overview)) card(i),
+          heading('What Claude did'),
+          for (final i in of(RecapKind.did)) card(i),
+          heading(
+            'What Claude isn’t sure of',
+            none: recap.unsure.isEmpty ? 'Nothing' : null,
+          ),
+          for (final i in of(RecapKind.unsure)) card(i),
+        ],
+      );
+    },
+  ),
+);
+
+/// One point of Claude's recap, in full, in [showRecapSheet]: its text,
+/// then a chip for each event and note it names, which goes to it
+/// ([onGoTo]); for one it's unsure of, a chip to answer it ([onAsk]).
+class _RecapPointCard extends StatelessWidget {
+  const _RecapPointCard({
+    required this.point,
+    required this.events,
+    required this.notes,
+    required this.changed,
+    required this.onGoTo,
+    this.onAsk,
+  });
+
+  final RecapPoint point;
+  final Map<String, String> events;
+  final Map<String, String> notes;
+  final bool changed;
+  final void Function({String? eventId, String? noteId}) onGoTo;
+  final VoidCallback? onAsk;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final badge = recapBadge(colors, point.kind);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            margin: const EdgeInsets.only(top: 1),
+            decoration: BoxDecoration(
+              color: badge?.background ?? colors.primary,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              recapIcon(point.kind),
+              size: 14,
+              color: badge?.foreground ?? colors.onPrimary,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                RecapMarkdown(point.text),
+                if (changed)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      'You’ve changed what it’s about since',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.secondary,
+                      ),
+                    ),
+                  ),
+                if (point.eventIds.isNotEmpty ||
+                    point.noteIds.isNotEmpty ||
+                    onAsk != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        for (final id in point.eventIds)
+                          ActionChip(
+                            avatar: const Icon(Icons.event, size: 16),
+                            label: Text(
+                              events[id] ?? 'An event no longer in it',
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: events.containsKey(id)
+                                ? () => onGoTo(eventId: id)
+                                : null,
+                          ),
+                        for (final id in point.noteIds)
+                          ActionChip(
+                            avatar: const Icon(
+                              Icons.sticky_note_2_outlined,
+                              size: 16,
+                            ),
+                            label: Text(notes[id] ?? 'A note no longer in it'),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: notes.containsKey(id)
+                                ? () => onGoTo(noteId: id)
+                                : null,
+                          ),
+                        if (onAsk != null)
+                          ActionChip(
+                            avatar: const Icon(
+                              Icons.add_comment_outlined,
+                              size: 16,
+                            ),
+                            label: const Text('Answer Claude'),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: onAsk,
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1420,7 +1738,8 @@ IconData additionIcon(AdditionKind kind) => switch (kind) {
   AdditionKind.location => Icons.add_location_alt,
 };
 
-/// What there is to look at in a proposal, under its bar: its [notes],
+/// What there is to look at in a proposal, under its bar: Claude's
+/// [recap] of it (of [recapCount] points, [unsureCount] unsure), its [notes],
 /// how many of its cancels count against follow-through ([cancels], of
 /// [cancelCount]), and what it [adds] -- each a page, under its title,
 /// swiped or tapped between. Its chevron folds it away
@@ -1429,6 +1748,9 @@ IconData additionIcon(AdditionKind kind) => switch (kind) {
 class ProposalDetails extends StatelessWidget {
   const ProposalDetails({
     super.key,
+    this.recap,
+    this.recapCount = 0,
+    this.unsureCount = 0,
     this.notes,
     this.noteCount = 0,
     this.cancels,
@@ -1442,6 +1764,9 @@ class ProposalDetails extends StatelessWidget {
     this.onPage,
   });
 
+  final Widget? recap;
+  final int recapCount;
+  final int unsureCount;
   final Widget? notes;
   final int noteCount;
   final Widget? cancels;
@@ -1460,6 +1785,7 @@ class ProposalDetails extends StatelessWidget {
 
   /// The pages it has, in order.
   List<ProposalDetailPage> get pages => [
+    if (recap != null) ProposalDetailPage.claude,
     if (notes != null) ProposalDetailPage.notes,
     if (cancels != null) ProposalDetailPage.followThrough,
     if (adds != null) ProposalDetailPage.added,
@@ -1477,8 +1803,8 @@ class ProposalDetails extends StatelessWidget {
         reviewColors(colors).tint,
         colors.surfaceContainerLow,
       ),
-      showLabel: 'Show notes, follow-through and additions',
-      hideLabel: 'Hide notes, follow-through and additions',
+      showLabel: 'Show Claude’s recap, notes, follow-through and additions',
+      hideLabel: 'Hide Claude’s recap, notes, follow-through and additions',
       collapsed: collapsed,
       onCollapsed: onCollapsed,
       initialPage: initialPage.clamp(0, pages.length - 1),
@@ -1486,6 +1812,10 @@ class ProposalDetails extends StatelessWidget {
       titles: [
         for (final page in pages)
           switch (page) {
+            ProposalDetailPage.claude =>
+              unsureCount > 0
+                  ? 'Claude ($unsureCount unsure)'
+                  : 'Claude ($recapCount)',
             ProposalDetailPage.notes => 'Notes ($noteCount)',
             ProposalDetailPage.followThrough =>
               'Follow-through ($counting of $cancelCount)',
@@ -1495,6 +1825,7 @@ class ProposalDetails extends StatelessWidget {
       pages: [
         for (final page in pages)
           switch (page) {
+            ProposalDetailPage.claude => recap!,
             ProposalDetailPage.notes => notes!,
             ProposalDetailPage.followThrough => cancels!,
             ProposalDetailPage.added => adds!,
@@ -1505,7 +1836,7 @@ class ProposalDetails extends StatelessWidget {
 }
 
 /// A page of [ProposalDetails].
-enum ProposalDetailPage { notes, followThrough, added }
+enum ProposalDetailPage { claude, notes, followThrough, added }
 
 /// What the user said a note is for, from [showNoteUseSheet].
 sealed class NoteUseChoice {

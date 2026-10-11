@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.52.0
+
+- Claude's recap of a compaction proposal: what it did, and what it isn't
+  sure of, in its own words -- bold, lists and all -- after a short
+  overview. It's the first page under the proposal's bar, stepped
+  through point by point, the events each point names outlined on the
+  timeline and the notes it names marked; the button beside a point
+  opens the whole recap, where each event and note it names is a chip
+  that goes straight to it, and a point Claude isn't sure of can be
+  answered in a note for Claude. A point about something you've changed
+  since Claude wrote it says so.
+
 ## 7.51.1
 
 - Events: "Go to now" puts now a fifth of the way down the screen,
