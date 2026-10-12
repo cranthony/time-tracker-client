@@ -80,4 +80,63 @@ void main() {
       'for_ids': ['priya'],
     });
   });
+
+  group('a new event can repeat', () {
+    Future<List<Map<String, Object?>>> open(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final created = <Map<String, Object?>>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showNewEventDialog(
+                context,
+                start: DateTime(2026, 10, 1, 18),
+                end: DateTime(2026, 10, 1, 20),
+                repeatable: true,
+                create: (fields) async {
+                  created.add(fields);
+                  return const <Event>[];
+                },
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, 'Run');
+      await tester.pumpAndSettle();
+      return created;
+    }
+
+    testWidgets("weekly at first, then however it's changed", (tester) async {
+      final created = await open(tester);
+      await tester.tap(find.text('No recurrence'));
+      await tester.pumpAndSettle();
+      expect(find.text('Every week on Thu'), findsOneWidget);
+
+      await tester.tap(find.text('Day'));
+      await tester.pumpAndSettle();
+      expect(find.text('Every day'), findsOneWidget);
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+      expect(created.single['repeat'], {'every': 'day', 'interval': 1});
+    });
+
+    testWidgets("\"Don't repeat\" takes it back", (tester) async {
+      final created = await open(tester);
+      await tester.tap(find.text('No recurrence'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text("Don't repeat"));
+      await tester.pumpAndSettle();
+      expect(find.text('No recurrence'), findsOneWidget);
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+      expect(created.single.containsKey('repeat'), isFalse);
+    });
+  });
 }
