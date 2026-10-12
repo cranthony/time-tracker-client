@@ -68,6 +68,11 @@ class _FakeHost implements CalendarWidgetHost {
 
   @override
   Future<void> redraw() async => redraws++;
+
+  var pins = 0;
+
+  @override
+  Future<void> pin() async => pins++;
 }
 
 void main() {
@@ -197,6 +202,17 @@ void main() {
       expect(host.saved, isEmpty);
     });
   });
+
+  test(
+    'pin asks to add it to the home screen; offered only when built so',
+    () async {
+      final host = _FakeHost();
+      await CalendarWidget.pin(host: host);
+      expect(host.pins, 1);
+      // Not in this build: no --dart-define=CALENDAR_PIN=true.
+      expect(CalendarWidget.pinOffered, isFalse);
+    },
+  );
 
   group('taps', () {
     const channel = MethodChannel(CalendarWidget.channelName);

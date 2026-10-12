@@ -46,6 +46,23 @@ class CalendarWidget {
   /// How many days it shows, today first.
   static const days = 4;
 
+  /// Whether the app menu offers to add the widget to the home screen:
+  /// only in builds for the emulator test, which can't add it otherwise
+  /// (tool/emulator/calendar_widget_test.sh):
+  ///   flutter build apk --dart-define=CALENDAR_PIN=true
+  static const pinOffered = bool.fromEnvironment('CALENDAR_PIN');
+
+  /// Asks Android to add the widget to the home screen; it asks first.
+  static Future<void> pin({
+    CalendarWidgetHost host = const HomeWidgetHost(),
+  }) async {
+    try {
+      await host.pin();
+    } on Exception catch (e) {
+      debugPrint('Home screen calendar unavailable: $e');
+    }
+  }
+
   final CalendarWidgetHost _host;
   final MethodChannel _channel;
   final bool enabled;
@@ -189,6 +206,9 @@ abstract class CalendarWidgetHost {
 
   /// Has the widget drawn again now.
   Future<void> redraw();
+
+  /// Asks to add the widget to the home screen.
+  Future<void> pin();
 }
 
 /// [CalendarWidgetHost] by the home_widget plugin, which works from the
@@ -215,4 +235,8 @@ class HomeWidgetHost implements CalendarWidgetHost {
   @override
   Future<void> redraw() =>
       HomeWidget.updateWidget(qualifiedAndroidName: _receiver);
+
+  @override
+  Future<void> pin() =>
+      HomeWidget.requestPinWidget(qualifiedAndroidName: _receiver);
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../platform/calendar_widget.dart';
 import '../screens/background_updates_screen.dart';
 import '../screens/diagnostics_screen.dart';
 import '../screens/settings_screen.dart';
@@ -11,7 +12,8 @@ import 'status_bar.dart';
 /// The app bar's menu: Settings, Background updates, Changes waiting to
 /// save and Diagnostics, when the app has them (a [BackgroundRefreshScope],
 /// a [StatusScope] or a [DiagnosticsScope] above), About, and Sign
-/// out when [onSignOut] is set.
+/// out when [onSignOut] is set. Builds for the emulator test offer to add
+/// the home screen calendar too ([CalendarWidget.pinOffered]).
 class AppMenu extends StatelessWidget {
   const AppMenu({
     super.key,
@@ -61,6 +63,7 @@ class AppMenu extends StatelessWidget {
           children: [Text('Server: $serverLabel')],
         ),
         _MenuItem.signOut => onSignOut!(),
+        _MenuItem.pinCalendar => CalendarWidget.pin(),
       },
       itemBuilder: (_) => [
         const PopupMenuItem(value: _MenuItem.settings, child: Text('Settings')),
@@ -82,6 +85,11 @@ class AppMenu extends StatelessWidget {
             value: _MenuItem.diagnostics,
             child: Text('Diagnostics'),
           ),
+        if (CalendarWidget.pinOffered)
+          const PopupMenuItem(
+            value: _MenuItem.pinCalendar,
+            child: Text('Add calendar to home screen'),
+          ),
         const PopupMenuItem(value: _MenuItem.about, child: Text('About')),
         if (onSignOut != null)
           const PopupMenuItem(
@@ -93,4 +101,12 @@ class AppMenu extends StatelessWidget {
   }
 }
 
-enum _MenuItem { settings, updates, outbox, diagnostics, about, signOut }
+enum _MenuItem {
+  settings,
+  updates,
+  outbox,
+  diagnostics,
+  pinCalendar,
+  about,
+  signOut,
+}
