@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.66.1
+
+- Tapping an event on the home screen calendar with the app closed opens
+  Events on the event's day, as it does with the app open, rather than
+  on today. The event's near the top, where it stays in view as the page
+  finishes loading.
+
 ## 7.66.0
 
 - The Habits pane is a graph: each habit can be built on others, and on

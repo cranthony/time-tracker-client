@@ -2970,6 +2970,34 @@ void main() {
         await taps.close();
       });
 
+      testWidgets('starting the app, before it has a size: on its day too', (
+        tester,
+      ) async {
+        final taps = await openOnNotes(tester);
+        // As on Android, when the tap that launched the app comes before
+        // its window's size: the days' jump only takes effect once
+        // they're laid out, and says nothing then.
+        tester.view.physicalSize = Size.zero;
+        addTearDown(tester.view.resetPhysicalSize);
+        taps.add((at: later.start, eventId: 'later'));
+        await tester.pump();
+        await tester.pump();
+        tester.view.resetPhysicalSize();
+        await tester.pumpAndSettle();
+
+        expectShowing(dayAhead(3));
+        final label = MaterialLocalizations.of(
+          tester.element(find.byType(EventsScreen)),
+        ).formatMediumDate(dayAhead(3));
+        expect(
+          find.descendant(of: find.byType(AppBar), matching: find.text(label)),
+          findsOneWidget,
+        );
+        expect(find.text('Today'), findsNothing);
+        outbox.stop();
+        await taps.close();
+      });
+
       testWidgets('on an event no longer there: Events at its time', (
         tester,
       ) async {
