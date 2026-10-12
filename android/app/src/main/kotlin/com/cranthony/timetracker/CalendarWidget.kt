@@ -229,7 +229,7 @@ private fun Header(context: Context) {
                 .size(32.dp)
                 .cornerRadius(16.dp)
                 .background(GlanceTheme.colors.primary)
-                .clickable(addNote(context)),
+                .clickable(AddNoteWidget.addNote(context)),
             contentAlignment = Alignment.Center,
         ) {
             Image(
@@ -336,9 +336,3 @@ private fun times(context: Context, day: CalendarDay, event: CalendarEvent, goin
 private fun open(context: Context, at: Long? = null, event: String? = null): Action =
     actionStartActivity(CalendarWidget.showEventsIntent(context, at, event))
 
-private fun addNote(context: Context): Action =
-    actionStartActivity(
-        Intent(context, MainActivity::class.java)
-            .setAction(AddNoteWidget.ACTION_ADD_NOTE)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-    )

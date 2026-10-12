@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.58.0
+
+- The home screen "+" is drawn the same way as the calendar now (with
+  Glance); it looks and works as before, and the buttons already on
+  your home screen stay.
+
 ## 7.57.0
 
 - Answering a point Claude isn't sure of quotes it in the note for

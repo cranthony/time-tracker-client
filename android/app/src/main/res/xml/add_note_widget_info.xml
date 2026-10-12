@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- One cell, never updates by itself: it's only a button. -->
+<!-- One cell, never updates by itself: it's only a button. Drawn by
+     Glance (AddNoteWidget.kt); the old layout is its preview. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/add_note_widget_description"
-    android:initialLayout="@layout/add_note_widget"
+    android:initialLayout="@layout/glance_default_loading_layout"
     android:minWidth="40dp"
     android:minHeight="40dp"
     android:previewLayout="@layout/add_note_widget"
