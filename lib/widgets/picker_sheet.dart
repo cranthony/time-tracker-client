@@ -4,6 +4,7 @@ import '../models/facts.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/proposal.dart';
+import '../services/maps.dart';
 import '../services/people_repository.dart';
 import '../services/server_errors.dart';
 import '../services/plan_memory.dart';
@@ -184,12 +185,18 @@ class _TextSheetFieldState extends State<_TextSheetField> {
 /// as [showFactsDialog]'s do, with those a compaction proposal adds --
 /// its [additions], by their refs, marked new; a new location can be
 /// added from here.
-Future<Facts?> showWhoWhereSheet(
+///
+/// Where, there's a second page, swiped to: its [mapLocation], the place
+/// as a maps app would find it, to see and edit in full. It's returned
+/// as typed, or as it was.
+Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
   BuildContext context,
   Facts facts, {
   bool where = false,
+  String? mapLocation,
   List<ProposalAddition> additions = const [],
 }) {
+  var map = mapLocation;
   final addedPeople = [
     for (final a in additions)
       if (a.kind == AdditionKind.person)
@@ -291,20 +298,47 @@ Future<Facts?> showWhoWhereSheet(
     },
   );
 
-  return showPickerSheet<Facts>(
+  return showPickerSheet<({Facts facts, String? mapLocation})>(
     context,
     title: where ? 'Location' : 'Who',
-    result: () => Facts(
-      locationId: location,
-      withIds: [...with_],
-      forIds: [...for_],
-      notes: {
-        for (final MapEntry(:key, :value) in facts.notes.entries)
-          if (key == selfPersonId || with_.contains(key)) key: value,
-      },
+    result: () => (
+      facts: Facts(
+        locationId: location,
+        withIds: [...with_],
+        forIds: [...for_],
+        notes: {
+          for (final MapEntry(:key, :value) in facts.notes.entries)
+            if (key == selfPersonId || with_.contains(key)) key: value,
+        },
+      ),
+      mapLocation: map,
     ),
     body: (context, setState) => where
-        ? place(setState)
+        ? DefaultTabController(
+            length: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const TabBar(
+                  tabs: [
+                    Tab(text: 'Location'),
+                    Tab(text: 'Map location'),
+                  ],
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      place(setState),
+                      _MapLocationPage(
+                        text: map ?? '',
+                        onChanged: (typed) => map = typed,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )
         : DefaultTabController(
             length: 2,
             child: Column(
@@ -333,6 +367,83 @@ Future<Facts?> showWhoWhereSheet(
             ),
           ),
   );
+}
+
+/// The place an event was, as a maps app would find it -- an address,
+/// or a place's name -- to type in full, and open in Maps.
+class _MapLocationPage extends StatefulWidget {
+  const _MapLocationPage({required this.text, required this.onChanged});
+
+  final String text;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_MapLocationPage> createState() => _MapLocationPageState();
+}
+
+class _MapLocationPageState extends State<_MapLocationPage> {
+  late final _controller = TextEditingController(text: widget.text);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      children: [
+        Text(
+          'Where it was, as a maps app would find it: an address, or a '
+          "place's name. Kept apart from the location on the other page.",
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _controller,
+          minLines: 3,
+          maxLines: null,
+          keyboardType: TextInputType.multiline,
+          textCapitalization: TextCapitalization.words,
+          decoration: InputDecoration(
+            hintText: 'e.g. 1600 Amphitheatre Pkwy, Mountain View',
+            border: const OutlineInputBorder(),
+            suffixIcon: _controller.text.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear',
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      _controller.clear();
+                      widget.onChanged('');
+                      setState(() {});
+                    },
+                  ),
+          ),
+          onChanged: (typed) {
+            widget.onChanged(typed);
+            setState(() {});
+          },
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: _controller.text.trim().isEmpty
+                ? null
+                : () => openInMaps(_controller.text),
+            icon: const Icon(Icons.map_outlined),
+            label: const Text('Open in Maps'),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Everyone, from what the app has, or is loading, rather than asking
@@ -502,36 +613,60 @@ class _ListPickerState<T> extends State<ListPicker<T>> {
         // Above the list, not in it: always to hand.
         ?widget.extra,
         Expanded(
-          child: ListView(
-            children: [
-              if (widget.items.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Text(
-                    widget.empty,
-                    style: TextStyle(color: theme.hintColor),
+          child: _oneOf(
+            ListView(
+              children: [
+                if (widget.items.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text(
+                      widget.empty,
+                      style: TextStyle(color: theme.hintColor),
+                    ),
+                  )
+                else if (shown.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Text('Nothing matches.'),
                   ),
-                )
-              else if (shown.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(8),
-                  child: Text('Nothing matches.'),
-                ),
-              for (final item in shown)
-                CheckboxListTile(
-                  value: widget.picked.contains(widget.id(item)),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: Text(widget.label(item)),
-                  subtitle: switch (widget.detail?.call(item)) {
-                    final detail? when detail.isNotEmpty => Text(detail),
-                    _ => null,
-                  },
-                  onChanged: (on) => _toggle(widget.id(item), on ?? false),
-                ),
-            ],
+                for (final item in shown)
+                  if (widget.single)
+                    // Only one: a radio button each. Tapped again, the one
+                    // picked is unpicked, leaving none.
+                    RadioListTile<String>(
+                      value: widget.id(item),
+                      toggleable: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(widget.label(item)),
+                      subtitle: _detail(item),
+                    )
+                  else
+                    CheckboxListTile(
+                      value: widget.picked.contains(widget.id(item)),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(widget.label(item)),
+                      subtitle: _detail(item),
+                      onChanged: (on) => _toggle(widget.id(item), on ?? false),
+                    ),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
+
+  Widget? _detail(T item) => switch (widget.detail?.call(item)) {
+    final detail? when detail.isNotEmpty => Text(detail),
+    _ => null,
+  };
+
+  /// [list], its radio buttons grouped where only one is picked.
+  Widget _oneOf(Widget list) => widget.single
+      ? RadioGroup<String>(
+          groupValue: widget.picked.firstOrNull,
+          onChanged: (id) => widget.onChanged([?id]),
+          child: list,
+        )
+      : list;
 }

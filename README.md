@@ -495,6 +495,46 @@ Keep list starts with: rules, each removable, of historical events (all
 that ended by the last compaction -- the default), the last of them, or
 the previous or next event, from the cursor, with an action or one in a
 group (never the event it starts in, nor the one moved).
+On Android, it's also where [Google Calendar events](#google-calendar-events)
+are turned on, and their calendars picked.
+
+## Google Calendar events
+
+On Android, the Events page can show the events in your Google
+calendars beside your own, for reference. It's off until you turn on
+**Show its events** in Settings' Google Calendar section, which asks for
+Android's calendar permission; refused, only this is off, and the
+section says so -- refused for good, it offers the app's Android
+settings, to allow it there. Under the switch, every Google calendar
+synced to the phone, by account, with its color: each account's own is
+shown to start with. They're read on the phone, from what the Google
+Calendar app syncs: nothing about them is sent to the server.
+
+- **On the timeline**, a calendar's event is drawn faintly at its times,
+  in its color, behind your own events, side by side with any it
+  overlaps; a strip at the timeline's right edge marks each, so one
+  under an event of yours still shows. Beside "now", a button brings
+  them over your own events instead, nearly solid (its icon's dotted box
+  over the solid one), and back.
+- **All-day events** are pills in a strip over the timeline, in view
+  wherever it's scrolled to -- one lasting days says until when -- or,
+  folded, a line naming them.
+- **Tapped**, an event shows its time, location, calendar and
+  description -- what was written on Google Calendar's website is HTML,
+  drawn with its bold, italics, lists and links; a long one is cut off
+  with **More**. **Open in Calendar** opens it in the calendar app;
+  **Log this** puts the new-event box over its times, and the event it
+  makes starts with its title, description (as plain text, links'
+  addresses after them) and location.
+- Pulling the timeline down, or coming back to the app, reads them
+  again; events you declined aren't shown.
+
+An event's location has a second page, **Map location**, swiped to on
+its location sheet: where it was as a maps app would find it, an address
+or a place's name, typed in full -- a logged calendar event's location
+lands there. With one, a map button at the right of the event's
+location opens it in your default maps app (with a `geo:` link; Google
+Maps in the browser on the web and Windows).
 
 ## Background updates
 
@@ -774,6 +814,10 @@ with every status, their own and inherited colors, and health ratings,
 including skipped periods, periods not yet assessed, and a proposed
 rating. It's dated relative to today, so it never goes stale. To run the app with it,
 see [Try it with sample data](#try-it-with-sample-data).
+`lib/demo/google_calendar_sample.dart` gives it a phone's Google calendars
+too, on every platform: two accounts, with a family calendar, birthdays
+and holidays, weekday meetings, and today, timed and all-day events with
+descriptions in plain text and HTML.
 
 ### Visual tests
 
@@ -890,10 +934,14 @@ lib/
   outbox/outbox_store.dart       keeps them across restarts
   outbox/background_sync.dart    Android WorkManager task that sends them
   platform/add_note_shortcut.dart  taps on the home screen "+" (Android)
+  platform/google_calendar_source.dart  the phone's Google calendars (Android)
+  services/google_calendars.dart  which are shown, and each day's events
   screens/notes_screen.dart      uncompacted notes by day (saved and not), sign-in, "+"
   widgets/note_dialog.dart       new/edit note sheet: description, time, delete
 android/app/src/main/kotlin/.../MainActivity.kt   forwards the sign-in deep link
                                                   and home screen "+" taps
 android/app/src/main/kotlin/.../AddNoteWidget.kt  the home screen "+" widget
+android/app/src/main/kotlin/.../GoogleCalendarReader.kt  reads Android's
+                                                  calendar provider
 android/app/src/main/res/xml/shortcuts.xml         the "Add note" app shortcut
 ```

@@ -25,6 +25,11 @@ import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
+import '../models/google_calendar.dart';
+import '../services/google_calendars.dart';
+import '../widgets/event_description.dart';
+import '../widgets/google_all_day_strip.dart';
+import '../widgets/google_event_sheet.dart';
 import '../widgets/event_lists.dart';
 import '../widgets/mode_stack.dart';
 import '../widgets/window_cursor.dart';
@@ -279,6 +284,18 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Whether the day's summary is folded away.
   bool _summaryCollapsed = false;
+
+  /// Whether the strip of Google Calendar's all-day events is folded to
+  /// a line.
+  bool _allDayCollapsed = false;
+
+  /// Whether Google Calendar's events are drawn over the user's own,
+  /// rather than behind them.
+  bool _googleOnTop = false;
+
+  /// The Google Calendar event being logged, while the box is up for it:
+  /// the new event starts with its title, description and location.
+  GoogleEvent? _logging;
 
   /// Whether the day's summary shows durations, rather than percentages.
   bool _summaryDurations = false;
@@ -931,7 +948,11 @@ class _EventsScreenState extends State<EventsScreen> {
     _loads.bind(_refresh);
     _lifecycle = AppLifecycleListener(
       onHide: _savePlace,
-      onResume: _resumeProposal,
+      onResume: () {
+        _resumeProposal();
+        // Changed in the calendar app, maybe, while away.
+        GoogleCalendars.of(context)?.refresh();
+      },
     );
     final store = widget.placeStore;
     // Back from another tab: there at once.
@@ -959,6 +980,8 @@ class _EventsScreenState extends State<EventsScreen> {
     _showKeptProposal();
     _loadProposal();
     _loadSummaryCollapsed();
+    _loadAllDayCollapsed();
+    _loadGoogleOnTop();
     _loadDetailsCollapsed();
     // Once the scopes can be read: everyone, every location and every
     // trait, for an event's dialogs.
@@ -1178,6 +1201,88 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
+  /// Whether the all-day strip was folded last time. Best effort:
+  /// without it, it's open.
+  Future<void> _loadAllDayCollapsed() async {
+    try {
+      final collapsed = await SharedPreferencesAsync().getBool(
+        _allDayCollapsedKey,
+      );
+      if (!mounted || collapsed == null) return;
+      setState(() => _allDayCollapsed = collapsed);
+    } catch (_) {
+      // Nowhere to keep it: it's open.
+    }
+  }
+
+  /// Whether Google Calendar's events were over the user's last time.
+  /// Best effort: without it, they're behind.
+  Future<void> _loadGoogleOnTop() async {
+    try {
+      final onTop = await SharedPreferencesAsync().getBool(_googleOnTopKey);
+      if (!mounted || onTop == null) return;
+      setState(() => _googleOnTop = onTop);
+    } catch (_) {
+      // Nowhere to keep it: they're behind.
+    }
+  }
+
+  void _setGoogleOnTop(bool onTop) {
+    setState(() => _googleOnTop = onTop);
+    try {
+      SharedPreferencesAsync()
+          .setBool(_googleOnTopKey, onTop)
+          .catchError((_) {});
+    } catch (_) {
+      // Nowhere to keep it: it lasts until the app closes.
+    }
+  }
+
+  /// Whether any day on the page -- with the box up, those stacked with
+  /// it too -- has Google Calendar events, timed or all day.
+  bool get _hasGoogleEvents {
+    final calendars = GoogleCalendars.of(context);
+    if (calendars == null || !calendars.enabled) return false;
+    final (from, to) = _stacked(_day);
+    for (
+      var d = from;
+      d.isBefore(to);
+      d = DateTime(d.year, d.month, d.day + 1)
+    ) {
+      if (calendars.on(d).isNotEmpty) return true;
+    }
+    return false;
+  }
+
+  /// The button that brings Google Calendar's events over the user's
+  /// own, or sends them back behind: marked while they're over.
+  Widget _googleToggle() {
+    final colors = Theme.of(context).colorScheme;
+    return FloatingActionButton.small(
+      heroTag: 'google-on-top',
+      tooltip: _googleOnTop
+          ? 'Put calendar events behind yours'
+          : 'Bring calendar events over yours',
+      onPressed: () => _setGoogleOnTop(!_googleOnTop),
+      backgroundColor: _googleOnTop ? colors.primary : null,
+      foregroundColor: _googleOnTop ? colors.onPrimary : null,
+      // What's on top, as it is: the user's, solid, over the calendar's,
+      // dotted -- or the other way round.
+      child: Icon(_googleOnTop ? Icons.flip_to_back : Icons.flip_to_front),
+    );
+  }
+
+  void _setAllDayCollapsed(bool collapsed) {
+    setState(() => _allDayCollapsed = collapsed);
+    try {
+      SharedPreferencesAsync()
+          .setBool(_allDayCollapsedKey, collapsed)
+          .catchError((_) {});
+    } catch (_) {
+      // Nowhere to keep it: it lasts until the app closes.
+    }
+  }
+
   /// Whether the day's summary showed durations last time. Best effort:
   /// without it, it shows percentages.
   Future<void> _loadSummaryDurations() async {
@@ -1269,6 +1374,7 @@ class _EventsScreenState extends State<EventsScreen> {
   void _setBox(PendingEventBox? box) {
     final was = _box != null;
     _box = box;
+    if (box == null) _logging = null;
     final stacked = box != null;
     // A box comes up with its lists' buttons tucked away.
     if (stacked != was) _listsShown = false;
@@ -1784,6 +1890,40 @@ class _EventsScreenState extends State<EventsScreen> {
     });
   }
 
+  /// What a new event logged from [event] starts with: its title,
+  /// description, and where, as its map location.
+  Map<String, Object?> _loggedFields(GoogleEvent event) => {
+    'summary': event.title,
+    if (event.description case final about? when about.trim().isNotEmpty)
+      'description': descriptionText(about),
+    if (event.location case final where? when where.trim().isNotEmpty)
+      'location': where.trim(),
+  };
+
+  /// Shows [event], from Google Calendar; logged, the box goes up
+  /// across its times, to make an event of the user's own there.
+  Future<void> _openGoogleEvent(GoogleEvent event) async {
+    final choice = await showGoogleEventSheet(context, event);
+    if (!mounted) return;
+    if (choice == GoogleEventChoice.open) {
+      final calendars = GoogleCalendars.of(context);
+      if (!(await calendars?.source.open(event) ?? false) && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't open it in a calendar app")),
+        );
+      }
+      return;
+    }
+    if (choice != GoogleEventChoice.log) return;
+    setState(() {
+      _clearLists();
+      _keepByRules(from: event.start, to: event.end);
+      _selected = CursorRole.anchor;
+      _setBox(PendingEventBox(event.start, other: event.end));
+      _logging = event;
+    });
+  }
+
   /// Starts moving [event]: the box around it, pushing the events in its
   /// way to start with.
   void _startMoving(Event event) {
@@ -2273,10 +2413,12 @@ class _EventsScreenState extends State<EventsScreen> {
       return over.counting(asked);
     }
 
+    final logging = _logging;
     final created = await showNewEventDialog(
       context,
       start: start,
       end: end,
+      initial: logging == null ? const {} : _loggedFields(logging),
       // Overwriting, its times needn't keep clear of anything.
       otherEvents: overwrite ? const OtherEvents.none() : others,
       create: review
@@ -3473,6 +3615,10 @@ class _EventsScreenState extends State<EventsScreen> {
                     children: [
                       _listsToggle(),
                       const SizedBox(width: 12),
+                      if (_hasGoogleEvents) ...[
+                        _googleToggle(),
+                        const SizedBox(width: 12),
+                      ],
                       FloatingActionButton.small(
                         heroTag: 'to-new',
                         tooltip: 'Go to the new event',
@@ -3541,11 +3687,20 @@ class _EventsScreenState extends State<EventsScreen> {
                 // Flush right, where go-to-new is with a box up.
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  FloatingActionButton.small(
-                    heroTag: 'now',
-                    tooltip: 'Go to now',
-                    onPressed: _goToNow,
-                    child: const Icon(Icons.my_location),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_hasGoogleEvents) ...[
+                        _googleToggle(),
+                        const SizedBox(width: 12),
+                      ],
+                      FloatingActionButton.small(
+                        heroTag: 'now',
+                        tooltip: 'Go to now',
+                        onPressed: _goToNow,
+                        child: const Icon(Icons.my_location),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   FloatingActionButton(
@@ -3859,6 +4014,16 @@ class _EventsScreenState extends State<EventsScreen> {
             durations: _summaryDurations,
             onDurations: _setSummaryDurations,
           ),
+        if (GoogleCalendars.of(context) case final calendars?)
+          GoogleAllDayStrip(
+            events: [
+              for (final e in calendars.on(_day))
+                if (e.allDay) e,
+            ],
+            collapsed: _allDayCollapsed,
+            onCollapsed: _setAllDayCollapsed,
+            onTap: _openGoogleEvent,
+          ),
         if (_notices.isNotEmpty)
           ProposalNoticesBanner(
             notices: _notices,
@@ -3885,6 +4050,7 @@ class _EventsScreenState extends State<EventsScreen> {
               onRefresh: () {
                 unawaited(_loadNotes());
                 unawaited(_loadProposal());
+                GoogleCalendars.of(context)?.refresh();
                 return _refresh();
               },
               child: NotificationListener<ScrollEndNotification>(
@@ -4148,6 +4314,11 @@ class _EventsScreenState extends State<EventsScreen> {
                 listed: _listed,
                 // Pressed and held, it's moved: the box around it.
                 onLongPress: _box == null ? _startMoving : null,
+                googleEvents: GoogleCalendars.of(context)?.on(day) ?? const [],
+                googleOnTop: _googleOnTop,
+                onTapGoogle: _box == null && _selecting == null
+                    ? _openGoogleEvent
+                    : null,
                 faded: _moving?.id,
                 highlighted: _highlighted,
                 // While the box is up, what its cursors stop at.
@@ -4285,6 +4456,8 @@ const _detailsCollapsedKey = 'proposal_details_collapsed';
 
 /// Where whether the day's summary is folded away is kept.
 const _summaryCollapsedKey = 'day_summary_collapsed';
+const _allDayCollapsedKey = 'google_all_day_collapsed';
+const _googleOnTopKey = 'google_on_top';
 
 /// Where whether the day's summary shows durations is kept.
 const _summaryDurationsKey = 'day_summary_durations';

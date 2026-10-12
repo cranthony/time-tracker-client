@@ -6,6 +6,29 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.63.0
+
+- Google Calendar events on the Events page (Android): turned on in
+  Settings, which asks for the calendar permission, they're read from
+  the phone -- never sent to the server -- from the Google calendars
+  picked there, by account, each account's own to start with. Refused,
+  only this is off, and Settings says so, offering the app's Android
+  settings if it's refused for good.
+- On the timeline they're drawn faintly behind your own events, a strip
+  at its right edge marking each; a button beside "now" brings them over
+  your events instead. All-day events are pills in a strip over the
+  timeline, folded to a line if you like.
+- Tapped, one shows its time, location, calendar and description (its
+  HTML drawn, links tappable), with **Open in Calendar**, and **Log
+  this**, which starts a new event at its times with its title,
+  description and location.
+- An event's location sheet has a second page, **Map location**: where
+  it was, as a maps app would find it. With one, a map button by the
+  event's location opens it in your default maps app.
+- The location list picks with radio buttons: only one can be picked.
+- An event being moved, drawn faintly where it was, no longer shows
+  what's behind it.
+
 ## 7.62.0
 
 - The pending event box, and its "+" buttons, are moved by pressing and

@@ -4,6 +4,7 @@ import '../models/plan_action.dart';
 import '../services/app_settings.dart';
 import '../services/keep_rules.dart';
 import '../services/plan_memory.dart';
+import '../widgets/google_calendar_settings.dart';
 import '../widgets/actions_picker.dart';
 import '../widgets/habit_dialog.dart';
 import '../widgets/cursor_snap.dart';
@@ -192,6 +193,7 @@ class SettingsScreen extends StatelessWidget {
                 }),
               ),
             ..._keepRules(context, theme),
+            const GoogleCalendarSettings(),
           ],
         ),
       ),
