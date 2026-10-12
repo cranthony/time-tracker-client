@@ -8,6 +8,7 @@ import 'auth/auth_session.dart';
 import 'auth/oauth.dart';
 import 'auth/platform_receiver.dart'
     if (dart.library.js_interop) 'auth/platform_receiver_web.dart';
+import 'auth/sign_in_mode.dart';
 import 'auth/token_store.dart';
 import 'demo/google_calendar_sample.dart';
 import 'demo/sample_data.dart';
@@ -42,6 +43,7 @@ import 'platform/google_calendar_source.dart';
 import 'services/google_calendars.dart';
 import 'services/work_timing.dart';
 import 'theme.dart';
+import 'widgets/sign_in_off_banner.dart';
 
 /// The Time Tracker MCP server's endpoint, passed at build time, e.g.
 ///   flutter run --dart-define=MCP_URL=https://your-service.onrender.com/mcp
@@ -134,7 +136,8 @@ Future<void> main() async {
   final health = ClientHealthRecorder(origin: CallOrigin.app);
   _recordUncaughtErrors(health);
   _recordWork(health);
-  final auth = _authSession(interactive: true);
+  // No sign-in at all, in a build that skips it: no Sign in, no Sign out.
+  final auth = signInOff ? null : _authSession(interactive: true);
   final client = _client(auth, health);
   final cache = PrefsResponseCache();
   final repository = McpNotesRepository(client, cache: cache);
@@ -332,8 +335,15 @@ AuthSession _authSession({required bool interactive}) => AuthSession(
   receiver: interactive ? platformRedirectReceiver() : null,
 );
 
-McpClient _client(AuthSession auth, ClientHealthRecorder health) =>
-    McpClient(endpoint: Uri.parse(_mcpUrl), auth: auth, health: health);
+/// The server's client: without [auth] -- no token at all -- in a build
+/// that skips sign-in ([signInOff]).
+McpClient _client(AuthSession? auth, ClientHealthRecorder health) => McpClient(
+  endpoint: Uri.parse(_mcpUrl),
+  auth: signInOff ? null : auth,
+  signInOff: signInOff,
+  serverSignInOff: serverSignInOff,
+  health: health,
+);
 
 class TimeTrackerApp extends StatefulWidget {
   const TimeTrackerApp({
@@ -566,7 +576,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Time Tracker',
+      title: appName,
       theme: appTheme(Brightness.light),
       darkTheme: appTheme(Brightness.dark),
       // Above the navigator, so every route and dialog finds it.
@@ -595,7 +605,8 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         if (widget.traitsRepository case final traits?) {
           scoped = TraitsScope(repository: traits, child: scoped);
         }
-        return scoped;
+        // Over every screen and dialog, while sign-in is off.
+        return SignInOffBanner(child: scoped);
       },
       home: HomeScreen(
         notesRepository: widget.repository,

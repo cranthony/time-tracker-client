@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../auth/sign_in_mode.dart';
 import '../platform/calendar_widget.dart';
 import '../screens/background_updates_screen.dart';
 import '../screens/diagnostics_screen.dart';
@@ -58,9 +59,20 @@ class AppMenu extends StatelessWidget {
         ),
         _MenuItem.about => showAboutDialog(
           context: context,
-          applicationName: 'Time Tracker',
+          applicationName: appName,
           applicationVersion: version,
-          children: [Text('Server: $serverLabel')],
+          children: [
+            Text('Server: $serverLabel'),
+            if (signInOff)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Text(
+                  'Sign-in is off in this build (DISABLE_AUTH): it never '
+                  'signs in and sends the server no token, trusting the '
+                  'network in front of the server to sign people in.',
+                ),
+              ),
+          ],
         ),
         _MenuItem.signOut => onSignOut!(),
         _MenuItem.pinCalendar => CalendarWidget.pin(),

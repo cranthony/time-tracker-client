@@ -455,6 +455,39 @@ Redirect URIs it registers:
   audience doesn't match. `MCP_URL` must be exactly the server's public URL
   plus `/mcp`, with no trailing slash.
 
+### Without sign-in, behind a corporate proxy
+
+On a network where a proxy in front of the server already signs people
+in, the web app can be built to skip sign-in, against a server built with
+`AUTH_DISABLED` (see the server's README):
+
+```sh
+flutter build web --release --dart-define=DISABLE_AUTH=true   --dart-define=MCP_URL=https://your-server.example/mcp
+```
+
+`DISABLE_AUTH` is `true`, `1` or `yes`, in any case
+([`lib/auth/sign_in_mode.dart`](lib/auth/sign_in_mode.dart)); anything
+else, or nothing, signs in as usual. Such a build never signs in and sends
+the server no bearer token, and it's hard to miss:
+
+- **A strip on every screen.** Amber, across the top, above every page
+  and dialog, and never dismissed: "Sign-in off: this build trusts its
+  network".
+- **Its name says so.** The tab title and About read "Time Tracker (no
+  sign-in)", and About says what that means.
+- **Nothing to sign in or out of.** There's no sign-in prompt and no Sign
+  out; Settings says why.
+- **A server that wants a token says so.** Rather than asking to sign in,
+  the app explains that this build has sign-in off but the server requires
+  it.
+
+A normal build that connects to a server built with `AUTH_DISABLED` shows
+the strip too ("Sign-in off: the server trusts every request"), since the
+server says so as it's connected to. It works on every platform, but it's
+meant for the web app. The release builds (Pages, Android) never set it;
+CI checks this build's tests and web build on every PR (`no-sign-in.yml`),
+without publishing it.
+
 ## Notes that haven't been saved yet
 
 (For changes to events, see [Changes waiting to save](#changes-waiting-to-save).)
@@ -864,7 +897,7 @@ descriptions in plain text and HTML.
 ### Visual tests
 
 `test/visual` renders the main screens with the sample data, at a phone's
-size, in light and dark: Plan (each pane, People looking on, everyone
+size, in light and dark: Plan (each pane, with sign-in off, People looking on, everyone
 as listed and sorted, a person being edited, a Time spent part's target, a circle's people, searches
 of people and actions, a trait's page, a trait and an action being
 edited, and its
