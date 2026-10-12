@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.60.0
+
+- Diagnostics: the tool calls' and the server's memory graphs draw each
+  sample as a dot, no longer joined by lines -- they come in bursts with
+  long gaps between, which the lines drew across. Dashed lines mark the
+  mean, median, p95 and max across each, labelled with which it is, the
+  tools shown, and its value.
+
 ## 7.59.0
 
 - When Notes, Events or Plan can't load, it tries again by itself --
