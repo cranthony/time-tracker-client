@@ -25,6 +25,7 @@ import 'locations_pane.dart';
 import 'people_pane.dart';
 import 'habits_pane.dart';
 import '../widgets/error_sheet.dart';
+import '../widgets/load_status.dart';
 import '../widgets/action_dialog.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/color_picker.dart';
@@ -86,6 +87,7 @@ class PlanScreen extends StatefulWidget {
     this.onSignIn,
     this.onSignOut,
     this.version,
+    this.loads,
   });
 
   final ActionsRepository repository;
@@ -115,6 +117,10 @@ class PlanScreen extends StatefulWidget {
   /// The app's version, for the About dialog; null until it's known.
   final String? version;
 
+  /// How loading the actions is going, for the status bar: the app's,
+  /// or else one of the page's own.
+  final LoadStatus? loads;
+
   @override
   State<PlanScreen> createState() => _PlanScreenState();
 }
@@ -142,8 +148,11 @@ class _PlanScreenState extends State<PlanScreen> {
   /// [_fromServer] are the ones kept from last time; the server hasn't
   /// answered since.
   bool _stale = false;
-  Object? _error;
   bool _needsSignIn = false;
+
+  /// How loading the actions is going: a failure is tried again by itself.
+  late final LoadStatus _loads = widget.loads ?? LoadStatus('actions');
+  Object? get _error => _loads.error;
   bool _signingIn = false;
 
   /// The statuses shown.
@@ -197,6 +206,7 @@ class _PlanScreenState extends State<PlanScreen> {
     }
     _fromServer = _memory.actions;
     widget.outbox.addListener(_outboxChanged);
+    _loads.bind(_load);
     _showCached();
     _visitLoads
       ..add(_load())
@@ -389,6 +399,8 @@ class _PlanScreenState extends State<PlanScreen> {
     // Left before everything loaded: as far as it got.
     _visit.finish();
     widget.outbox.removeListener(_outboxChanged);
+    _loads.unbind();
+    if (widget.loads == null) _loads.dispose();
     super.dispose();
   }
 
@@ -406,16 +418,17 @@ class _PlanScreenState extends State<PlanScreen> {
       final actions = await widget.repository.actions();
       if (!mounted) return;
       widget.outbox.reconcile(actions);
+      _loads.loaded();
       setState(() {
         // Saves made while these were fetched are still made to them.
         _fromServer = _memory.actions = actions;
         _stale = false;
-        _error = null;
         _needsSignIn = false;
       });
       fetched();
     } on SignInRequiredException {
       if (!mounted) return;
+      _loads.reset();
       setState(() {
         _fromServer = null;
         _stale = false;
@@ -423,8 +436,9 @@ class _PlanScreenState extends State<PlanScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      // Tried again by itself; with actions shown, the status bar says so.
+      _loads.failed(e, hasData: _fromServer?.actions.isNotEmpty ?? false);
       setState(() {
-        _error = e;
         // Signed in: without that it's SignInRequiredException.
         _needsSignIn = false;
       });
@@ -934,7 +948,14 @@ class _PlanScreenState extends State<PlanScreen> {
   List<Widget> _actionTiles(BuildContext context) {
     final actions = _actions;
     if (_error != null && (actions == null || actions.actions.isEmpty)) {
-      return [LoadError(what: 'actions', error: _error!, onRetry: _load)];
+      return [
+        LoadError(
+          what: 'actions',
+          error: _error!,
+          retryingAt: _loads.nextAttemptAt,
+          onRetry: _load,
+        ),
+      ];
     }
     if (actions == null) return const [LinearProgressIndicator()];
     final tree = _Tree(actions, _shown, _expanded, query: _query);
@@ -950,9 +971,6 @@ class _PlanScreenState extends State<PlanScreen> {
     final time = _timeOnActions(tree);
     final searching = _query.trim().isNotEmpty;
     return [
-      // The last actions loaded, or kept from last time, are still shown.
-      if (_error != null)
-        LoadError(what: 'actions', error: _error!, stale: true, onRetry: _load),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
         child: Wrap(

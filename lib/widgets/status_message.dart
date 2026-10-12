@@ -54,19 +54,22 @@ class StatusMessage extends StatelessWidget {
 
 /// Why [what] -- "events" -- couldn't be loaded, from [error], with a
 /// button to try again ([onRetry]) when that might help: how every page
-/// says so. [stale]: what's shown is what was loaded before.
+/// says so. [stale]: what's shown is what was loaded before. [retryingAt]:
+/// when it's tried again by itself.
 class LoadError extends StatelessWidget {
   const LoadError({
     super.key,
     required this.what,
     required this.error,
     this.stale = false,
+    this.retryingAt,
     this.onRetry,
   });
 
   final String what;
   final Object error;
   final bool stale;
+  final DateTime? retryingAt;
   final VoidCallback? onRetry;
 
   @override
@@ -78,9 +81,15 @@ class LoadError extends StatelessWidget {
         FailureKind.refused || FailureKind.other => Icons.error_outline,
         _ => Icons.cloud_off,
       },
-      text: stale
-          ? "Couldn't load $what. These may be out of date.\n${failure.message}"
-          : "Couldn't load $what.\n${failure.message}",
+      text: [
+        stale
+            ? "Couldn't load $what. These may be out of date."
+            : "Couldn't load $what.",
+        failure.message,
+        if (retryingAt case final at?)
+          'Trying again at '
+              '${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(at.toLocal()))}.',
+      ].join('\n'),
       action: onRetry == null || failure.kind == FailureKind.signIn
           ? null
           : OutlinedButton(onPressed: onRetry, child: const Text('Try again')),

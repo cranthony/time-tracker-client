@@ -10,6 +10,7 @@ import '../services/mcp_client.dart';
 import '../services/notes_repository.dart';
 import '../services/plan_memory.dart';
 import '../widgets/error_sheet.dart';
+import '../widgets/load_status.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/day_header.dart';
 import '../widgets/note_dialog.dart';
@@ -31,6 +32,7 @@ class NotesScreen extends StatefulWidget {
     this.onAddNoteFieldFocused,
     this.version,
     this.memory,
+    this.loads,
     DateTime Function()? clock,
   }) : clock = clock ?? DateTime.now;
 
@@ -58,6 +60,10 @@ class NotesScreen extends StatefulWidget {
   /// share: by default, the [PlanMemoryScope]'s.
   final PlanMemory? memory;
 
+  /// How loading the notes is going, for the status bar: the app's, or
+  /// else one of the page's own.
+  final LoadStatus? loads;
+
   /// Now, for the "Today" and "Yesterday" headings.
   final DateTime Function() clock;
 
@@ -82,9 +88,12 @@ class _NotesScreenState extends State<NotesScreen> {
   /// [_notes] are the ones kept from last time; the server hasn't
   /// answered since.
   bool _stale = false;
-  Object? _error;
   bool _needsSignIn = false;
   bool _signingIn = false;
+
+  /// How loading the notes is going: a failure is tried again by itself.
+  late final LoadStatus _loads = widget.loads ?? LoadStatus('notes');
+  Object? get _error => _loads.error;
 
   /// One dialog at a time, e.g. if the home screen "+" is tapped twice.
   bool _dialogOpen = false;
@@ -100,6 +109,7 @@ class _NotesScreenState extends State<NotesScreen> {
     _addNoteRequests = widget.addNoteRequests?.listen(
       (at) => _addNote(at: at, onFieldFocused: widget.onAddNoteFieldFocused),
     );
+    _loads.bind(_load);
     _showCached();
     _load();
   }
@@ -122,6 +132,8 @@ class _NotesScreenState extends State<NotesScreen> {
   void dispose() {
     widget.outbox.removeListener(_outboxChanged);
     _addNoteRequests?.cancel();
+    _loads.unbind();
+    if (widget.loads == null) _loads.dispose();
     super.dispose();
   }
 
@@ -138,14 +150,15 @@ class _NotesScreenState extends State<NotesScreen> {
       await _memory.loadNotes(widget.repository, again: true);
       _answered++;
       if (!mounted) return;
+      _loads.loaded();
       setState(() {
         _stale = false;
-        _error = null;
         _needsSignIn = false;
       });
       fetched();
     } on SignInRequiredException {
       if (!mounted) return;
+      _loads.reset();
       setState(() {
         _notes = null;
         _stale = false;
@@ -153,8 +166,9 @@ class _NotesScreenState extends State<NotesScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      // Tried again by itself; with notes shown, the status bar says so.
+      _loads.failed(e, hasData: _notes != null);
       setState(() {
-        _error = e;
         // Signed in: without that it's SignInRequiredException.
         _needsSignIn = false;
       });
@@ -404,11 +418,11 @@ class _NotesScreenState extends State<NotesScreen> {
                 child: Text(_signingIn ? 'Waiting for browser…' : 'Sign in'),
               ),
       );
-    } else if (_error != null) {
+    } else if (_error != null && notes == null) {
       banner = LoadError(
         what: 'notes',
         error: _error!,
-        stale: notes != null,
+        retryingAt: _loads.nextAttemptAt,
         onRetry: _refresh,
       );
     } else if (notes == null && rows.isEmpty) {

@@ -36,6 +36,7 @@ import '../widgets/day_summary.dart';
 import '../widgets/pending_event_box.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/error_sheet.dart';
+import '../widgets/load_status.dart';
 import '../widgets/event_dialog.dart';
 import '../widgets/follow_through_dialog.dart';
 import '../widgets/other_events.dart';
@@ -98,6 +99,7 @@ class EventsScreen extends StatefulWidget {
     this.memory,
     this.proposals,
     this.proposalSeen,
+    this.loads,
     DateTime Function()? clock,
   }) : clock = clock ?? DateTime.now;
 
@@ -118,6 +120,10 @@ class EventsScreen extends StatefulWidget {
   /// page opens, so an event's dialogs name them at once: by default, the
   /// [PlanMemoryScope]'s.
   final PlanMemory? memory;
+
+  /// How loading the day shown is going, for the status bar: the app's,
+  /// or else one of the page's own.
+  final LoadStatus? loads;
 
   /// Where to list actions from, to pick an event's; null to type their ids.
   final ActionsRepository? actionsRepository;
@@ -246,8 +252,12 @@ class _EventsScreenState extends State<EventsScreen> {
   /// The box always trims what's in its way, unless a list says otherwise.
   bool get _overwritesAny => true;
 
+  /// How loading the day shown is going: a failure is tried again by
+  /// itself.
+  late final LoadStatus _loads = widget.loads ?? LoadStatus('events');
+
   /// Why the day shown couldn't be loaded, if it couldn't.
-  Object? _error;
+  Object? get _error => _loads.error;
   bool _needsSignIn = false;
   bool _signingIn = false;
 
@@ -918,6 +928,7 @@ class _EventsScreenState extends State<EventsScreen> {
       ..addListener(_memoryChanged);
     _seen = widget.proposalSeen ?? ProposalSeenStore();
     _day = _firstDay = _midnight(widget.clock());
+    _loads.bind(_refresh);
     _lifecycle = AppLifecycleListener(
       onHide: _savePlace,
       onResume: _resumeProposal,
@@ -1196,6 +1207,8 @@ class _EventsScreenState extends State<EventsScreen> {
   void dispose() {
     _memory.removeListener(_memoryChanged);
     _lifecycle.dispose();
+    _loads.unbind();
+    if (widget.loads == null) _loads.dispose();
     widget.outbox?.removeListener(_outboxChanged);
     widget.eventOutbox?.removeListener(_memoryChanged);
     widget.eventOutbox?.notices?.removeListener(_memoryChanged);
@@ -1422,20 +1435,22 @@ class _EventsScreenState extends State<EventsScreen> {
       setState(() {
         _fresh.add(which);
         if (which == _day) {
-          _error = null;
+          _loads.loaded();
           _needsSignIn = false;
         }
       });
     } on SignInRequiredException {
       if (!mounted || which != _day) return;
+      _loads.reset();
       setState(() {
         _fresh.remove(which);
         _needsSignIn = true;
       });
     } catch (e) {
       if (!mounted || which != _day) return;
+      // Tried again by itself; with events shown, the status bar says so.
+      _loads.failed(e, hasData: _shown?.isNotEmpty ?? false);
       setState(() {
-        _error = e;
         // Signed in: without that it's SignInRequiredException.
         _needsSignIn = false;
       });
@@ -1469,7 +1484,7 @@ class _EventsScreenState extends State<EventsScreen> {
         );
       }
       _day = day;
-      _error = null;
+      _loads.reset();
       _fresh.removeWhere((d) => (_pageOf(d) - _pageOf(day)).abs() > 3);
       if (_box case final box?) _keep(box, moved: true);
     });
@@ -3834,15 +3849,6 @@ class _EventsScreenState extends State<EventsScreen> {
     final noDrag = _pinch == null ? null : const NeverScrollableScrollPhysics();
     return Column(
       children: [
-        // The last events loaded, or kept from last time, are still
-        // shown, under this.
-        if (_error != null && events != null && events.isNotEmpty)
-          LoadError(
-            what: 'events',
-            error: _error!,
-            stale: true,
-            onRetry: _refresh,
-          ),
         if (events != null)
           DaySummary(
             events: events,
@@ -4033,7 +4039,12 @@ class _EventsScreenState extends State<EventsScreen> {
     final days = stacked ? [from, day, next] : [day];
     final message = switch (events) {
       _ when day == _day && _error != null && (events?.isEmpty ?? true) =>
-        LoadError(what: 'events', error: _error!, onRetry: _refresh),
+        LoadError(
+          what: 'events',
+          error: _error!,
+          retryingAt: _loads.nextAttemptAt,
+          onRetry: _refresh,
+        ),
       null => const Padding(
         padding: EdgeInsets.all(16),
         child: CircularProgressIndicator(),

@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.59.0
+
+- When Notes, Events or Plan can't load, it tries again by itself --
+  after 5s, 10s, 20s, 40s, then every minute -- until it loads.
+- With what was loaded before still shown, it no longer says so over
+  the page: the line at the foot of the screen does ("Couldn't load
+  events: trying again at 9:42 AM"), and tapping it says why, to try
+  again now. With nothing to show, the page still says so, and when
+  it'll try again.
+
 ## 7.58.0
 
 - The home screen "+" is drawn the same way as the calendar now (with
