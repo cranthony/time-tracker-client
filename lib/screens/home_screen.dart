@@ -18,6 +18,7 @@ import '../services/plan_memory.dart';
 import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
 import '../widgets/event_outbox_status.dart';
+import '../widgets/load_status.dart';
 import '../widgets/outbox_status.dart';
 import '../widgets/status_bar.dart';
 import 'events_screen.dart';
@@ -156,11 +157,24 @@ class _HomeScreenState extends State<HomeScreen> {
     _toNotes.close();
     _toEvents.close();
     _toEventsTime.close();
+    _notesLoads.dispose();
+    _eventsLoads.dispose();
+    _actionsLoads.dispose();
     super.dispose();
   }
 
-  /// What the bar at the foot of every page keeps the user posted on.
+  /// How loading each page is going: only the page shown's says
+  /// anything.
+  final _notesLoads = LoadStatus('notes');
+  final _eventsLoads = LoadStatus('events');
+  final _actionsLoads = LoadStatus('actions');
+
+  /// What the bar at the foot of every page keeps the user posted on: the
+  /// page shown's load failing, then what's waiting to save.
   late final _status = <StatusSource>[
+    _notesLoads,
+    _eventsLoads,
+    _actionsLoads,
     if (widget.eventOutbox case final outbox?)
       EventOutboxStatus(outbox, lookup: _lookup, onShow: _showEvent),
     ActionOutboxStatus(widget.actionOutbox, nameOf: _actionName),
@@ -188,6 +202,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onAddNoteFieldFocused: widget.onAddNoteFieldFocused,
           version: widget.version,
           memory: _planMemory,
+          loads: _notesLoads,
         ),
         _Tab.events => EventsScreen(
           repository: widget.eventsRepository,
@@ -204,6 +219,7 @@ class _HomeScreenState extends State<HomeScreen> {
           eventOutbox: widget.eventOutbox,
           showEventRequests: _toEvents.stream,
           showTimeRequests: _toEventsTime.stream,
+          loads: _eventsLoads,
         ),
         _Tab.plan => PlanScreen(
           repository: widget.actionsRepository,
@@ -215,6 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onSignIn: widget.onSignIn,
           onSignOut: widget.onSignOut,
           version: widget.version,
+          loads: _actionsLoads,
         ),
       },
       bottomNavigationBar: Column(

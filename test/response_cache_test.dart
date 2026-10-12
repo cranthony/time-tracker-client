@@ -18,6 +18,8 @@ import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
+import 'package:time_tracker_client/widgets/load_status.dart';
+import 'package:time_tracker_client/widgets/status_bar.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
@@ -183,9 +185,8 @@ void main() {
       outbox.stop();
     });
 
-    testWidgets('Events keeps kept events when the refresh fails', (
-      tester,
-    ) async {
+    testWidgets('Events keeps kept events when the refresh fails, the '
+        'status bar saying so, and tries again by itself', (tester) async {
       final day = DateTime(2026, 9, 30);
       final repo = _GatedEventsRepository();
       final memory = await keptMemory(repo, {
@@ -197,13 +198,19 @@ void main() {
           ),
         ],
       });
+      final loads = LoadStatus('events');
+      addTearDown(loads.dispose);
       await tester.pumpWidget(
         MaterialApp(
-          home: EventsScreen(
-            repository: repo,
-            serverLabel: 'test',
-            memory: memory,
-            clock: () => now,
+          home: Scaffold(
+            body: EventsScreen(
+              repository: repo,
+              serverLabel: 'test',
+              memory: memory,
+              loads: loads,
+              clock: () => now,
+            ),
+            bottomNavigationBar: StatusBar(sources: [loads]),
           ),
         ),
       );
@@ -214,11 +221,20 @@ void main() {
       repo.gate.completeError(McpException('offline'));
       await tester.pumpAndSettle();
       expect(find.text('Old'), findsOneWidget);
+      // Not over the events: in the bar at the foot.
+      expect(find.textContaining("Couldn't load events."), findsNothing);
       expect(
-        find.textContaining("Couldn't load events. These may be out of date."),
+        find.textContaining("Couldn't load events: trying again at"),
         findsOneWidget,
       );
       expect(refreshing(), findsNothing);
+      expect(loads.attempts, 1);
+
+      // Tried again by itself, after 5s.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(loads.attempts, 2);
+      expect(find.text('Old'), findsOneWidget);
     });
 
     testWidgets('Events shows the spinner for a day with nothing kept', (
