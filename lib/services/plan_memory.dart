@@ -496,7 +496,11 @@ class PlanMemory extends ChangeNotifier {
         for (final parts in h.traits.parts.values) ...parts,
     ]);
     await quietly(
-      store.warm(back: scoredDays + reached.back + 1, ahead: reached.ahead),
+      // Far enough back for consistency, as many days as it counts.
+      store.warm(
+        back: maxConsistencyDays + 1 + reached.back + 1,
+        ahead: reached.ahead,
+      ),
     );
   });
 

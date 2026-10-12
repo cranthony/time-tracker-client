@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/habit.dart';
+import '../models/habit_graph.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/trait.dart';
@@ -10,6 +11,7 @@ import '../services/focus_store.dart';
 import 'edit_page.dart';
 import 'error_sheet.dart';
 import 'focus_buttons.dart';
+import 'foundations_field.dart';
 import 'traits_field.dart';
 
 /// Adds a habit (with no [habit]) or edits one, on a page of its own
@@ -21,13 +23,17 @@ import 'traits_field.dart';
 /// warned of. Saves with [save], which gets the fields as `create_habit`
 /// or `update_habit` takes them (null to clear one), and returns what it
 /// returned, or null if it was called off. With [focus], a star beside
-/// Save focuses on one already there, at once.
+/// Save focuses on one already there, at once. With [foundationChoices],
+/// what it's built on is picked from them; [foundationNames] names its
+/// foundations by id.
 Future<Habit?> showHabitEditor(
   BuildContext context, {
   Habit? habit,
   List<PlanAction> actions = const [],
   List<Trait> traits = const [],
   FocusStore? focus,
+  List<GraphNode>? foundationChoices,
+  Map<String, String> foundationNames = const {},
   required Future<Habit> Function(Map<String, Object?> fields) save,
 }) => showEditPage<Habit>(
   context,
@@ -36,6 +42,8 @@ Future<Habit?> showHabitEditor(
     actions: actions,
     traits: traits,
     focus: focus,
+    foundationChoices: foundationChoices,
+    foundationNames: foundationNames,
     save: save,
   ),
 );
@@ -53,6 +61,8 @@ class _HabitEditor extends StatefulWidget {
     required this.actions,
     required this.traits,
     required this.focus,
+    required this.foundationChoices,
+    required this.foundationNames,
     required this.save,
   });
 
@@ -60,6 +70,8 @@ class _HabitEditor extends StatefulWidget {
   final List<PlanAction> actions;
   final List<Trait> traits;
   final FocusStore? focus;
+  final List<GraphNode>? foundationChoices;
+  final Map<String, String> foundationNames;
   final Future<Habit> Function(Map<String, Object?> fields) save;
 
   @override
@@ -72,6 +84,7 @@ class _HabitEditorState extends State<_HabitEditor> {
   late String? _actionId = widget.habit?.actionId;
   late String _status = widget.habit?.status ?? 'active';
   late PersonTraits _traits = widget.habit?.traits ?? const PersonTraits();
+  late List<String> _foundations = widget.habit?.foundations ?? const [];
   bool _saving = false;
 
   late final Map<String, PlanAction> _byId = {
@@ -108,6 +121,10 @@ class _HabitEditorState extends State<_HabitEditor> {
     'action_id': _actionId,
     'note': _noteText,
     'traits': _traits.isDefault ? null : _traits.toJson(),
+    // Only when changed, so a server without them is never asked.
+    if (_foundations.join(',') !=
+        (widget.habit?.foundations ?? const []).join(','))
+      'foundations': _foundations.isEmpty ? null : _foundations,
     if (widget.habit != null) 'status': _status,
   };
 
@@ -209,6 +226,16 @@ class _HabitEditorState extends State<_HabitEditor> {
             ),
           ),
         ),
+        if (widget.foundationChoices case final choices?)
+          Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: FoundationsField(
+              value: _foundations,
+              choices: choices,
+              names: widget.foundationNames,
+              onChanged: (picked) => setState(() => _foundations = picked),
+            ),
+          ),
         TraitsField(
           // Again for another action, so its warnings are new.
           key: ValueKey(_actionId),
@@ -216,6 +243,12 @@ class _HabitEditorState extends State<_HabitEditor> {
           value: _traits,
           own: 'Its own',
           actions: _inScope,
+          // Sleep, say, needn't be in its scope to be set aside.
+          exceptionActions: {
+            for (final a in widget.actions)
+              if (a.id case final id? when a.status != 'deleted')
+                id: a.path ?? actionName(a),
+          },
           partsTitle: (trait) => '${trait.name} for $name',
           partsExplanation: (trait) =>
               "Its own parts for ${trait.name}, in place of the "

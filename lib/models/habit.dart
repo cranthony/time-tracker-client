@@ -20,6 +20,7 @@ class Habit {
     this.status = 'active',
     this.note,
     this.traits = const PersonTraits(),
+    this.foundations = const [],
     this.cancelledEvents = const [],
   });
 
@@ -43,6 +44,10 @@ class Habit {
   /// every active trait unless it says.
   final PersonTraits traits;
 
+  /// What it's built on, on the habit graph: other habits, by
+  /// [habitSubject], and people, by id.
+  final List<String> foundations;
+
   /// The events the user cancelled that count against its
   /// follow-through, newest first, as the server recorded them: not sent
   /// back.
@@ -63,6 +68,7 @@ class Habit {
     status: status,
     note: note,
     traits: traits,
+    foundations: foundations,
     cancelledEvents: events,
   );
 
@@ -77,6 +83,9 @@ class Habit {
       _ => null,
     },
     traits: PersonTraits.fromJson(json['traits']),
+    foundations: [
+      for (final f in json['foundations'] as List? ?? const []) '$f',
+    ],
     cancelledEvents: [
       for (final e in json['cancelled_events'] as List? ?? const [])
         ?CancelledEvent.fromJson(e),
@@ -92,6 +101,7 @@ class Habit {
     'status': status,
     'note': ?note,
     if (!traits.isDefault) 'traits': traits.toJson(),
+    if (foundations.isNotEmpty) 'foundations': foundations,
   };
 }
 

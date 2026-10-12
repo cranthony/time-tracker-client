@@ -181,6 +181,31 @@ void main() {
       });
     }
 
+    // The habit graph with what waits on its foundations shown too, its
+    // summary folded away; and searched, a match with its foundations.
+    for (final (name, query) in [
+      ('plan_habits_all', null),
+      ('plan_habits_search', 'cook'),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          plan(),
+          scoped: true,
+          then: () async {
+            await openPane(tester, 'Habits');
+            await tester.tap(find.byTooltip('Show all habits'));
+            await tester.pumpAndSettle();
+            if (query != null) {
+              await tester.enterText(find.byType(TextField).first, query);
+              await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
+
     // Everyone, as listed and sorted by the time in the last 7 days; and
     // one circle's people.
     for (final (name, sort, circle) in [
@@ -418,9 +443,7 @@ void main() {
           scoped: true,
           then: () async {
             await openPane(tester, 'Habits');
-            await tester.tap(
-              find.widgetWithText(ListTile, 'Practice guitar mindfully'),
-            );
+            await tester.tap(find.text('Practice guitar mindfully').last);
             await tester.pumpAndSettle();
             if (name == 'habit_trait') {
               await tester.tap(find.widgetWithText(ListTile, 'Present').last);

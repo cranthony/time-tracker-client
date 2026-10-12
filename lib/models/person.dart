@@ -16,6 +16,7 @@ class Person {
     this.circleIds = const [],
     this.whatMatters,
     this.traits = const PersonTraits(),
+    this.foundations,
     this.cancelledEvents = const [],
   });
 
@@ -38,6 +39,14 @@ class Person {
   /// Which traits apply to them, and their own parts for any.
   final PersonTraits traits;
 
+  /// What their relationship is built on, on the habit graph: habits, by
+  /// `habit:<id>`, and people, by id. Null when they aren't on it; empty
+  /// when they are, built on nothing.
+  final List<String>? foundations;
+
+  /// Whether they're on the habit graph by themselves.
+  bool get onHabitGraph => foundations != null;
+
   /// The events the user cancelled that count against their
   /// follow-through, newest first, as the server recorded them: not sent
   /// back.
@@ -53,6 +62,7 @@ class Person {
     circleIds: circleIds,
     whatMatters: whatMatters,
     traits: traits,
+    foundations: foundations,
     cancelledEvents: events,
   );
 
@@ -67,6 +77,10 @@ class Person {
     circleIds: [for (final id in json['circles'] as List? ?? const []) '$id'],
     whatMatters: _text(json['what_matters']),
     traits: PersonTraits.fromJson(json['traits']),
+    foundations: switch (json['foundations']) {
+      final List items => [for (final f in items) '$f'],
+      _ => null,
+    },
     cancelledEvents: [
       for (final e in json['cancelled_events'] as List? ?? const [])
         ?CancelledEvent.fromJson(e),
@@ -83,6 +97,7 @@ class Person {
     'circles': circleIds,
     'what_matters': ?whatMatters,
     if (!traits.isDefault) 'traits': traits.toJson(),
+    'foundations': ?foundations,
   };
 }
 

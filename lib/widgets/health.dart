@@ -47,17 +47,27 @@ enum HealthScale {
   final String Function(int rating) band;
 }
 
+/// How many days in a row something's been healthy, as shown under its
+/// rating: "1d", "7d", or ">30d" for more than [maxConsistency].
+String consistencyLabel(int days, {int maxConsistency = 30}) =>
+    days > maxConsistency ? '>${maxConsistency}d' : '${days}d';
+
 /// A latest confirmed rating: a dot in its band's color beside the
-/// number, or a muted dash when it has none.
+/// number, or a muted dash when it has none -- with its [consistency]
+/// under it, when it's been healthy a day or more.
 class HealthDot extends StatelessWidget {
   const HealthDot({
     super.key,
     required this.rating,
     this.scale = HealthScale.action,
+    this.consistency = 0,
   });
 
   final int? rating;
   final HealthScale scale;
+
+  /// Days healthy in a row (see [consistencyLabel]); 0 shows none.
+  final int consistency;
 
   @override
   Widget build(BuildContext context) {
@@ -69,23 +79,42 @@ class HealthDot extends StatelessWidget {
         child: Text('–', style: TextStyle(color: theme.hintColor)),
       );
     }
-    return Tooltip(
-      message: 'Health $rating: ${scale.band(rating)}',
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: scale.color(rating),
-              shape: BoxShape.circle,
-            ),
+    final dot = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: scale.color(rating),
+            shape: BoxShape.circle,
           ),
-          const SizedBox(width: 4),
-          Text('$rating', style: theme.textTheme.labelMedium),
-        ],
-      ),
+        ),
+        const SizedBox(width: 4),
+        Text('$rating', style: theme.textTheme.labelMedium),
+      ],
+    );
+    return Tooltip(
+      message: [
+        'Health $rating: ${scale.band(rating)}',
+        if (consistency > 0)
+          '${scale.band(rating)} ${consistencyLabel(consistency)} in a row',
+      ].join('\n'),
+      child: consistency <= 0
+          ? dot
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                dot,
+                Text(
+                  consistencyLabel(consistency),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.hintColor,
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }

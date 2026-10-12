@@ -320,7 +320,11 @@ class PeoplePaneState extends State<PeoplePane> {
             const SizedBox(width: 8),
           ],
           if (health != null)
-            HealthDot(rating: health, scale: HealthScale.relationship),
+            HealthDot(
+              rating: health,
+              scale: HealthScale.relationship,
+              consistency: _scores?.consistency(self.id) ?? 0,
+            ),
           IconButton(
             tooltip: 'Your page',
             icon: const Icon(Icons.person_outline),
@@ -423,6 +427,7 @@ class PeoplePaneState extends State<PeoplePane> {
       circles: circles,
       health: _scores?.health(person.id),
       trend: _scores?.healthTrend(person.id) ?? const [],
+      consistency: _scores?.consistency(person.id) ?? 0,
       times: _times,
       durations: widget.summary?.durations ?? true,
       prioritized: prioritized,

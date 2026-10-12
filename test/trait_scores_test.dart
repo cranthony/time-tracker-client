@@ -759,4 +759,146 @@ void main() {
       expect(scores.digest('habit:h').actions.single.label, 'practice');
     });
   });
+
+  group('spacing', () {
+    const part = {
+      'kind': 'spacing',
+      'action': 'meal',
+      'max_gap_hours': 6,
+      'exceptions': [
+        {
+          'actions': ['sleep'],
+          'reset_hours': 1,
+        },
+      ],
+    };
+    // Asleep from 11pm the night before to 7am, and again from 11pm.
+    final nights = [
+      _event('night 1', 2, hour: 23, hours: 8, actions: ['sleep']),
+      _event('night 2', 1, hour: 23, hours: 8, actions: ['sleep']),
+    ];
+    Event meal(String id, int hour, [int minutes = 0]) => Event.fromJson({
+      ..._event(id, 1, hour: hour, actions: ['meal']).toJson(),
+      'start': localIsoTimestamp(
+        _start.add(Duration(hours: hour, minutes: minutes)),
+      ),
+      'end': localIsoTimestamp(
+        _start.add(Duration(hours: hour + 1, minutes: minutes)),
+      ),
+    });
+    PartScore spaced(List<Event> meals) =>
+        _score([part], [...nights, ...meals], person: _self).parts.single;
+
+    test('is 100 when the clock never ran out while awake', () {
+      final score = spaced([
+        meal('breakfast', 7, 30),
+        meal('lunch', 12, 30),
+        meal('dinner', 18),
+      ]);
+      expect(score.score, 100);
+      expect(score.said, 'Never over 6 hours apart, in 16h');
+      expect(score.eventIds, ['breakfast', 'lunch', 'dinner']);
+    });
+
+    test("is the share of the day's waking time it hadn't run out", () {
+      // No lunch: 1:30pm to 6pm overdue, 4h 30m of 16h.
+      final score = spaced([meal('breakfast', 7, 30), meal('dinner', 18)]);
+      expect(score.score, 72);
+      expect(score.said, '4h 30m overdue of 16h');
+    });
+
+    test('an exception sets the time left after it', () {
+      // An hour after waking, so breakfast at 9 is an hour late.
+      expect(
+        spaced([meal('breakfast', 9), meal('lunch', 14), meal('dinner', 19)])
+            .score,
+        94,
+      );
+      // Without a reset, waking leaves it as it was going to sleep: 1h.
+      final paused = Map<String, Object?>.of(part)
+        ..['exceptions'] = [
+          {
+            'actions': ['sleep'],
+          },
+        ];
+      final score = _score(
+        [paused],
+        [
+          ...nights,
+          meal('breakfast', 9),
+          meal('lunch', 14),
+          meal('dinner', 18),
+        ],
+        person: _self,
+      ).parts.single;
+      // Last meal before the first night unknown: its clock starts full
+      // two days before, so it's run out by then; 7am to 9am overdue.
+      expect(score.score, 88);
+    });
+
+    test('reads a habit\'s exceptions outside its scope', () {
+      final scores = scoreSubject(
+        Subject.habit(
+          const Habit(
+            id: 'eat',
+            name: 'Eat well',
+            actionId: 'meal',
+            traits: PersonTraits(
+              parts: {
+                't': [part],
+              },
+            ),
+          ),
+        ),
+        [
+          _trait([_judgment]),
+        ],
+        _start,
+        _end,
+        [...nights, meal('breakfast', 7, 30), meal('dinner', 18)],
+      );
+      expect(scores.single.parts.single.score, 72);
+    });
+  });
+
+  group('consistency', () {
+    final today = DateTime(2026, 10, 8);
+    // An event at noon on each of [days] days before today.
+    List<Event> daily(int days, {int skipping = 0}) => [
+      for (var back = 1 + skipping; back <= days + skipping; back++)
+        Event.fromJson({
+          'id': 'day $back',
+          'start': localIsoTimestamp(DateTime(2026, 10, 8 - back, 12)),
+          'end': localIsoTimestamp(DateTime(2026, 10, 8 - back, 13)),
+          'action_ids': ['walk'],
+        }),
+    ];
+    TraitScores compute(List<Event> events) => TraitScores.compute(
+      traits: [
+        _trait([
+          {'kind': 'count', 'target': 1, 'interval_days': 1},
+        ]),
+      ],
+      people: const [_self, _sam],
+      events: events,
+      today: today,
+    );
+
+    test('counts the days healthy in a row, back from yesterday', () {
+      expect(compute(daily(3)).consistency(selfPersonId), 3);
+      expect(compute(daily(10)).consistency(selfPersonId), 10);
+      // Yesterday wasn't: none.
+      expect(compute(daily(10, skipping: 1)).consistency(selfPersonId), 0);
+      expect(compute(daily(10)).consistency('sam'), 0);
+      expect(compute(daily(10)).consistency('nobody'), 0);
+    });
+
+    test('stops one past the most it counts', () {
+      expect(compute(daily(30)).consistency(selfPersonId), 30);
+      expect(
+        compute(daily(45)).consistency(selfPersonId),
+        maxConsistencyDays + 1,
+      );
+    });
+  });
 }

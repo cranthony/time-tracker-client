@@ -6,6 +6,27 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.66.0
+
+- The Habits pane is a graph: each habit can be built on others, and on
+  people. Layer 0, at the bottom, has what's built on nothing; each
+  layer above, what's built on those below. Each habit is a chip in its
+  action's color, with its trend, its consistency and its star; each
+  layer has a trend of its lowest ratings. Hold a chip to pick what it's
+  built on, or archive it; a habit's editor picks them too.
+- People can be on the graph: the person button puts them there, built
+  on habits and other people, and holding one takes them off.
+- By default it shows only what's unlocked -- what has every foundation
+  on track, or not rated yet -- saying how many more wait; the lock
+  shows them all. The search marks what matches and shows what it's
+  built on. It opens at the highest layer on track with everything
+  below it.
+- Consistency: how many days in a row a habit has been on track, or a
+  relationship healthy, under its rating -- "1d", "7d", up to ">30d".
+- A new kind of trait part, spacing: never too long between events of
+  an action -- meals, say -- with exceptions, like sleep, that stop the
+  clock and can set the time left after them.
+
 ## 7.65.0
 
 - An event that doesn't repeat says "No recurrence" in its summary, and a

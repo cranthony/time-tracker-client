@@ -7,21 +7,25 @@ import 'edit_page.dart';
 /// Edits a trait's parts -- each one's kind, settings, weight and whether
 /// it reads events with someone or for them -- as cards, with "Add part"
 /// below them. A judgment's card edits its rubric, its rating scale and
-/// the facts Claude judges it from, each history with its lookback.
+/// the facts Claude judges it from, each history with its lookback; a
+/// spacing part's, its exceptions.
 /// Calls [onChanged] with the parts as they stand after every edit,
 /// whether or not they're valid yet; see [partProblem]. [actions] names
-/// the actions and groups a part can count, by id.
+/// the actions and groups a part can count, by id; [exceptionActions]
+/// (by default those) those a spacing part can set aside.
 class PartsEditor extends StatefulWidget {
   const PartsEditor({
     super.key,
     required this.parts,
     required this.onChanged,
     this.actions = const {},
+    this.exceptionActions,
   });
 
   final List<Part> parts;
   final ValueChanged<List<Part>> onChanged;
   final Map<String, String> actions;
+  final Map<String, String>? exceptionActions;
 
   @override
   State<PartsEditor> createState() => _PartsEditorState();
@@ -146,7 +150,7 @@ class _PartsEditorState extends State<PartsEditor> {
             ),
             for (final field in kind?.fields ?? const [])
               if (field.field == 'action')
-                _actionPicker(draft)
+                _actionPicker(draft, required: field.required)
               else if (field.field == 'target_min')
                 Padding(
                   padding: const EdgeInsets.only(top: 8, right: 8),
@@ -165,15 +169,16 @@ class _PartsEditorState extends State<PartsEditor> {
                   maxLines: field.field == 'rubric' ? 4 : 1,
                 ),
             if (draft.kind == 'judgment') ..._judgmentFields(theme, draft),
+            if (draft.kind == 'spacing') ..._spacingFields(theme, draft),
           ],
         ),
       ),
     );
   }
 
-  /// The action or group a part counts: any, or one of
-  /// [PartsEditor.actions].
-  Widget _actionPicker(_PartDraft draft) {
+  /// The action or group a part counts: one of [PartsEditor.actions],
+  /// or, unless it's [required], any.
+  Widget _actionPicker(_PartDraft draft, {bool required = false}) {
     final current = draft.controller('action').text;
     final known = widget.actions.containsKey(current);
     return Padding(
@@ -181,13 +186,16 @@ class _PartsEditorState extends State<PartsEditor> {
       child: DropdownButtonFormField<String?>(
         initialValue: current.isEmpty ? null : current,
         isExpanded: true,
-        decoration: const InputDecoration(
-          labelText: 'Action or group (optional)',
+        decoration: InputDecoration(
+          labelText: required
+              ? 'Action or group'
+              : 'Action or group (optional)',
           isDense: true,
-          border: OutlineInputBorder(),
+          border: const OutlineInputBorder(),
         ),
         items: [
-          const DropdownMenuItem(value: null, child: Text('Any action')),
+          if (!required)
+            const DropdownMenuItem(value: null, child: Text('Any action')),
           for (final MapEntry(:key, :value) in widget.actions.entries)
             DropdownMenuItem(value: key, child: Text(value)),
           if (current.isNotEmpty && !known)
@@ -323,6 +331,109 @@ class _PartsEditorState extends State<PartsEditor> {
       ),
   ];
 
+  /// A spacing part's exceptions: each the actions whose events stop
+  /// its clock, and the time left on it after one.
+  List<Widget> _spacingFields(ThemeData theme, _PartDraft draft) {
+    final actions = widget.exceptionActions ?? widget.actions;
+    return [
+      Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Text('Exceptions', style: theme.textTheme.labelLarge),
+      ),
+      Text(
+        "Events that stop the clock -- you don't eat while you sleep -- and, "
+        'if you like, the time it has left after one: an hour after waking, '
+        'say.',
+        style: theme.textTheme.bodySmall,
+      ),
+      for (final (i, exception) in draft.exceptions.indexed)
+        Padding(
+          padding: const EdgeInsets.only(top: 8, right: 8),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border.all(color: theme.dividerColor),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 0, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            for (final id in exception.actions)
+                              InputChip(
+                                label: Text(actions[id] ?? id),
+                                onDeleted: () {
+                                  exception.actions.remove(id);
+                                  _changed();
+                                },
+                              ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Remove exception ${i + 1}',
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          draft.exceptions.removeAt(i).dispose();
+                          _changed();
+                        },
+                      ),
+                    ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, right: 8),
+                    child: DropdownButtonFormField<String>(
+                      key: ValueKey(exception.actions.join(',')),
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Add an action or group',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final MapEntry(:key, :value) in actions.entries)
+                          if (!exception.actions.contains(key))
+                            DropdownMenuItem(value: key, child: Text(value)),
+                      ],
+                      onChanged: (picked) {
+                        if (picked == null) return;
+                        exception.actions.add(picked);
+                        _changed();
+                      },
+                    ),
+                  ),
+                  _input(
+                    exception.reset,
+                    'Hours left after it (optional)',
+                    hint: 'unchanged',
+                    number: true,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton.icon(
+          onPressed: () {
+            draft.exceptions.add(_ExceptionDraft(const [], null));
+            _changed();
+          },
+          icon: const Icon(Icons.add),
+          label: const Text('Add exception'),
+        ),
+      ),
+    ];
+  }
+
   Widget _input(
     TextEditingController controller,
     String label, {
@@ -365,6 +476,21 @@ class _RatingDraft {
   }
 }
 
+/// One of a spacing part's exceptions as it's being edited.
+class _ExceptionDraft {
+  _ExceptionDraft(List<String> actions, num? resetHours)
+    : actions = [...actions],
+      reset = TextEditingController(text: resetHours?.toString() ?? '');
+
+  final List<String> actions;
+  final TextEditingController reset;
+
+  SpacingException get exception =>
+      (actions: actions, resetHours: num.tryParse(reset.text.trim()));
+
+  void dispose() => reset.dispose();
+}
+
 /// A part as it's being edited: its kind, its engagement type, and a
 /// field for each of its settings, kept across changes of kind; and a
 /// judgment's ratings and facts (each history's lookback in a field).
@@ -384,11 +510,18 @@ class _PartDraft {
     for (final MapEntry(:key, :value) in judgmentFactsOf(judgment).entries) {
       facts[key] = value == null ? null : TextEditingController(text: '$value');
     }
+    exceptions.addAll([
+      for (final e in spacingExceptions(part))
+        _ExceptionDraft(e.actions, e.resetHours),
+    ]);
   }
 
   String kind;
   late String engagement;
   final ratings = <_RatingDraft>[];
+
+  /// A spacing part's exceptions.
+  final exceptions = <_ExceptionDraft>[];
 
   /// The facts picked, each history with its lookback's field.
   final facts = <String, TextEditingController?>{};
@@ -417,6 +550,16 @@ class _PartDraft {
       'kind': kind,
       if (engagement != 'with') 'engagement_type': engagement,
       for (final field in fields) field: ?value(field),
+      if (kind == 'spacing' && exceptions.isNotEmpty)
+        'exceptions': [
+          for (final e in exceptions)
+            {
+              'actions': e.actions,
+              // One that doesn't parse is kept as typed, for partProblem.
+              if (e.reset.text.trim() case final text when text.isNotEmpty)
+                'reset_hours': num.tryParse(text) ?? text,
+            },
+        ],
       if (kind == 'judgment') ...{
         // Two sharing a score can't be a map: partProblem says so.
         'ratings': scores.toSet().length == scores.length
@@ -450,6 +593,9 @@ class _PartDraft {
     for (final c in facts.values) {
       c?.dispose();
     }
+    for (final e in exceptions) {
+      e.dispose();
+    }
   }
 }
 
@@ -464,6 +610,7 @@ Future<List<Part>?> showPartsEditor(
   String? explanation,
   required List<Part> parts,
   Map<String, String> actions = const {},
+  Map<String, String>? exceptionActions,
   List<String> Function(List<Part> parts)? warnings,
 }) => showEditPage<List<Part>>(
   context,
@@ -472,6 +619,7 @@ Future<List<Part>?> showPartsEditor(
     explanation: explanation,
     parts: parts,
     actions: actions,
+    exceptionActions: exceptionActions,
     warnings: warnings,
   ),
 );
@@ -482,6 +630,7 @@ class _PartsPage extends StatefulWidget {
     required this.explanation,
     required this.parts,
     required this.actions,
+    required this.exceptionActions,
     required this.warnings,
   });
 
@@ -489,6 +638,7 @@ class _PartsPage extends StatefulWidget {
   final String? explanation;
   final List<Part> parts;
   final Map<String, String> actions;
+  final Map<String, String>? exceptionActions;
   final List<String> Function(List<Part> parts)? warnings;
 
   @override
@@ -514,6 +664,7 @@ class _PartsPageState extends State<_PartsPage> {
         PartsEditor(
           parts: widget.parts,
           actions: widget.actions,
+          exceptionActions: widget.exceptionActions,
           onChanged: (parts) => setState(() => _parts = parts),
         ),
         for (final warning in widget.warnings?.call(_parts) ?? const [])

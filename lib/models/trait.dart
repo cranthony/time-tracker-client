@@ -189,7 +189,49 @@ const partKinds = <String, PartKind>{
       ),
     ],
   ),
+  'spacing': (
+    label: 'Spacing',
+    hint:
+        'Often enough through the day: each event of the action winds a '
+        'clock back to the longest gap; exceptions, like sleep, stop it, '
+        'and can set it to a time left after them. Each day scores the '
+        "share of its time the clock hadn't run out.",
+    fields: [
+      (field: 'action', label: 'Action', required: true, hint: null),
+      (
+        field: 'max_gap_hours',
+        label: 'Longest gap, in hours',
+        required: true,
+        hint: null,
+      ),
+    ],
+  ),
 };
+
+/// A spacing part's exception: [actions] whose events stop its clock,
+/// and the hours left on it after one, if it sets them.
+typedef SpacingException = ({List<String> actions, num? resetHours});
+
+/// [part]'s exceptions, as far as they're well formed.
+List<SpacingException> spacingExceptions(Part part) => [
+  for (final e in part['exceptions'] as List? ?? const [])
+    if (e case {'actions': final List actions})
+      (
+        actions: [for (final a in actions) '$a'],
+        resetHours: switch (e['reset_hours']) {
+          final num n => n,
+          _ => null,
+        },
+      ),
+];
+
+/// [exceptions] as a spacing part keeps them.
+List<Map<String, Object>> spacingExceptionsJson(
+  List<SpacingException> exceptions,
+) => [
+  for (final e in exceptions)
+    {'actions': e.actions, 'reset_hours': ?e.resetHours},
+];
 
 /// A part's `engagement_type`, as the server names them, and as the app
 /// shows them: the events a person was at with the user (the default), or
@@ -371,6 +413,24 @@ String? partProblem(Part part) {
       }
     }
   }
+  if (part['kind'] == 'spacing') {
+    final exceptions = part['exceptions'];
+    if (exceptions != null && exceptions is! List) {
+      return 'its exceptions must be a list.';
+    }
+    for (final e in exceptions as List? ?? const []) {
+      if (e is! Map ||
+          e['actions'] is! List ||
+          (e['actions'] as List).isEmpty ||
+          (e['actions'] as List).any((a) => a is! String || a.isEmpty)) {
+        return 'each exception needs an action.';
+      }
+      final reset = e['reset_hours'];
+      if (reset != null && (reset is! num || reset < 0)) {
+        return "an exception's time left must be 0 hours or more.";
+      }
+    }
+  }
   final zeroAt = part['zero_at_days'];
   if (zeroAt is num && zeroAt <= ((part['interval_days'] as num?) ?? 30)) {
     return '"zero at" must be more days than it looks back.';
@@ -414,6 +474,13 @@ String describePart(Part part, [Map<String?, String> actionNames = const {}]) {
       'Continuity${action == null ? '' : ' of $action'}: last within '
           '${days(part['last_within_days'] ?? 14)}, next within '
           '${days(part['next_within_days'] ?? 14)}',
+    'spacing' => [
+      'At most ${part['max_gap_hours']} hours between '
+          '${action ?? 'events'}',
+      for (final e in spacingExceptions(part))
+        '(${e.actions.map((a) => (actionNames[a] ?? a).toLowerCase()).join(', ')} '
+            '${e.resetHours == null ? 'aside' : 'aside, then ${e.resetHours} hours left'})',
+    ].join(' '),
     final kind => partKinds[kind]?.label ?? '$kind',
   };
 }

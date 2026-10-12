@@ -154,8 +154,9 @@ void main() {
       people: InMemoryPeopleRepository(),
     );
 
-    // 7 days scored, each reading 40 back; continuity 21 ahead.
-    expect(repository.asked, [(-7, 7), (-48, -8), (8, 21)]);
+    // 31 days for consistency, each reading 40 back; continuity 21
+    // ahead.
+    expect(repository.asked, [(-7, 7), (-72, -8), (8, 21)]);
     expect(memory.scores?.days, hasLength(PlanMemory.scoredDays));
   });
 }
