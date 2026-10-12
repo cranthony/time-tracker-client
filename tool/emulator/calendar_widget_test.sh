@@ -100,21 +100,24 @@ if ! { tap_view 'Show menu' && sleep 1 &&
 else
   # The launcher's prompt: its button, not its title, which may read the
   # same.
+  adb exec-out screencap -p > "$OUT/calendar_prompt.png"
   tap_view '(Add|ADD|Add to home screen|ADD TO HOME SCREEN)' 'clickable="true"' ||
     echo "No prompt to accept; added already?"
   sleep 2
   home
   sleep 3
   # The list may start with today's events, or with nothing planned:
-  # scroll it until an event shows, a few times at most.
+  # scroll it until an event shows, a few times at most. Within the
+  # widget's list: a swipe up that starts below the widget, on the home
+  # screen, opens the launcher's app drawer instead.
   for _ in 1 2 3 4; do
     ui_nodes | grep -qE "text=\"$SAMPLE_EVENTS\"" && break
-    b=$(ui_nodes | grep -E 'text="Today"' | head -1 |
+    b=$(ui_nodes | grep "class=\"android.widget.ListView\" package=\"$PKG\"" | head -1 |
       sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p')
     [ -n "$b" ] || break
     set -- $b
     x=$((($1 + $3) / 2))
-    adb shell input swipe $x $(($4 + 200)) $x $(($4 + 20)) 300
+    adb shell input swipe $x $(($4 - 10)) $x $(($2 + 10)) 300
     sleep 1
   done
   ui_nodes > "$OUT/calendar_shown.txt"
