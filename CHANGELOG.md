@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.60.1
+
+- Tapping the home screen calendar's "Today" or its title while the
+  app is open no longer leaves it a blank grey screen.
+- Tests for the home screen calendar: on an Android emulator, that it
+  shows the events and that tapping an event, a day or its "+" opens
+  the app where it should; and that each tap shows the right day, and
+  event, on the Events page. Builds for that test (with
+  `--dart-define=CALENDAR_PIN=true`) offer to add the calendar to the
+  home screen from the app's menu; others don't.
+
 ## 7.60.0
 
 - Diagnostics: the tool calls' and the server's memory graphs draw each

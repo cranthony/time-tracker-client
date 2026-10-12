@@ -12,6 +12,7 @@ import 'package:time_tracker_client/models/recurrence.dart';
 import 'package:time_tracker_client/models/repeat.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
+import 'package:time_tracker_client/platform/calendar_widget.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/home_screen.dart';
 import 'package:time_tracker_client/services/event_store.dart';
@@ -2733,14 +2734,18 @@ void main() {
   group('HomeScreen', () {
     late NoteOutbox outbox;
 
-    Widget home({Stream<DateTime>? addNoteRequests}) {
+    Widget home({
+      Stream<DateTime>? addNoteRequests,
+      Stream<CalendarTap>? calendarTaps,
+      List<Event> events = const [],
+    }) {
       final notes = InMemoryNotesRepository();
       outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: notes)
         ..start();
       return MaterialApp(
         home: HomeScreen(
           notesRepository: notes,
-          eventsRepository: InMemoryEventsRepository(),
+          eventsRepository: InMemoryEventsRepository(events),
           actionsRepository: InMemoryActionsRepository(),
           outbox: outbox,
           actionOutbox: ActionOutbox(
@@ -2748,6 +2753,7 @@ void main() {
             repository: InMemoryActionsRepository(),
           ),
           addNoteRequests: addNoteRequests,
+          calendarTaps: calendarTaps,
         ),
       );
     }
@@ -2792,6 +2798,106 @@ void main() {
       expect(find.text('New note'), findsOneWidget);
       outbox.stop();
       await taps.close();
+    });
+
+    group('a tap on the home screen calendar', () {
+      final today = DateTime(
+        DateTime.now().year,
+        DateTime.now().month,
+        DateTime.now().day,
+      );
+      DateTime dayAhead(int n) =>
+          DateTime(today.year, today.month, today.day + n);
+      // Three days ahead: not a page either side of today.
+      final later = Event.fromJson({
+        'id': 'later',
+        'summary': 'Later',
+        'start': localIsoTimestamp(dayAhead(3).add(const Duration(hours: 15))),
+        'end': localIsoTimestamp(dayAhead(3).add(const Duration(hours: 16))),
+      });
+
+      /// The day the Events page shows, laid out: [day]'s, and not
+      /// today's.
+      void expectShowing(DateTime day) {
+        expect(find.byKey(ValueKey(('shown', day))), findsWidgets);
+        expect(find.byKey(ValueKey(('shown', today))), findsNothing);
+      }
+
+      Future<StreamController<CalendarTap>> openOnNotes(
+        WidgetTester tester,
+      ) async {
+        final taps = StreamController<CalendarTap>();
+        await tester.pumpWidget(
+          home(calendarTaps: taps.stream, events: [later]),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(EventsScreen), findsNothing);
+        return taps;
+      }
+
+      testWidgets('on an event: Events, on its day, the event highlighted', (
+        tester,
+      ) async {
+        final taps = await openOnNotes(tester);
+        taps.add((at: later.start, eventId: 'later'));
+        // Not settled: the highlight pulses, then goes after 4 seconds.
+        for (var i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+
+        expect(find.byType(EventsScreen), findsOneWidget);
+        expectShowing(dayAhead(3));
+        final timeline = tester.widget<DayTimeline>(
+          find.byKey(ValueKey(('shown', dayAhead(3)))).first,
+        );
+        expect(timeline.highlighted, 'later');
+        await tester.pumpAndSettle();
+        outbox.stop();
+        await taps.close();
+      });
+
+      testWidgets('on an event no longer there: Events at its time', (
+        tester,
+      ) async {
+        final taps = await openOnNotes(tester);
+        taps.add((
+          at: dayAhead(2).add(const Duration(hours: 9)),
+          eventId: 'gone',
+        ));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(EventsScreen), findsOneWidget);
+        expectShowing(dayAhead(2));
+        outbox.stop();
+        await taps.close();
+      });
+
+      testWidgets('on a day: Events, on that day', (tester) async {
+        final taps = await openOnNotes(tester);
+        taps.add((at: dayAhead(3), eventId: null));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(EventsScreen), findsOneWidget);
+        expectShowing(dayAhead(3));
+        outbox.stop();
+        await taps.close();
+      });
+
+      testWidgets('on its header: Events, on today, from another day', (
+        tester,
+      ) async {
+        final taps = await openOnNotes(tester);
+        taps.add((at: dayAhead(3), eventId: null));
+        await tester.pumpAndSettle();
+        expectShowing(dayAhead(3));
+
+        taps.add((at: null, eventId: null));
+        await tester.pumpAndSettle();
+        expect(find.byKey(ValueKey(('shown', today))), findsWidgets);
+        expect(find.byKey(ValueKey(('shown', dayAhead(3)))), findsNothing);
+        outbox.stop();
+        await taps.close();
+      });
     });
   });
 }
