@@ -64,7 +64,7 @@ void main() {
     // Where, from the list.
     await tester.tap(find.text('Add location'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(CheckboxListTile, 'Home'));
+    await tester.tap(find.widgetWithText(RadioListTile<String>, 'Home'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     await tester.pumpAndSettle();

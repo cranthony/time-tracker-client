@@ -45,6 +45,7 @@ dependencies:
   fl_chart: ^1.2.0
   markdown: ^7.3.1
   home_widget: ^0.10.0
+  html: ^0.15.7
 
 dev_dependencies:
   flutter_test:

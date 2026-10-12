@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../services/maps.dart';
 import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/plan_action.dart';
@@ -146,8 +147,10 @@ Future<List<Event>?> showNewEventDialog(
   Map<String, PlanAction> actions = const {},
   Future<List<PlanAction>> Function()? loadActions,
   List<ProposalAddition> additions = const [],
+  Map<String, Object?> initial = const {},
 }) async {
   final values = {
+    ...initial,
     'start': localIsoTimestamp(start),
     'end': localIsoTimestamp(end),
   };
@@ -460,7 +463,11 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   @override
   void initState() {
     super.initState();
-    if (widget.creating) _editing = _Field.summary;
+    if (widget.creating) {
+      _editing = _Field.summary;
+      // One it starts with, to change.
+      _text.text = '${_value('summary') ?? ''}';
+    }
   }
 
   @override
@@ -1419,13 +1426,17 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   /// Who it was with and for, in a line after a person -- or, [where],
   /// its location, after a pin; picked in a sheet up from the foot
   /// ([showWhoWhereSheet]).
+  ///
+  /// Where, its map location shows if it has no location, and a map
+  /// button opens that in a maps app.
   Widget _whoRow(BuildContext context, {bool where = false}) {
     final theme = Theme.of(context);
     final facts = Facts.fromJson(_value('facts')) ?? const Facts();
+    final map = (_value('location') as String?)?.trim() ?? '';
     final line = where
         ? switch (facts.locationId) {
             final id? => _locationNames[id] ?? id,
-            null => '',
+            null => map,
           }
         : Facts(
             withIds: facts.withIds,
@@ -1441,15 +1452,39 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           context,
           facts,
           where: where,
+          mapLocation: _value('location') as String?,
           additions: widget.additions,
         );
-        if (edited != null && mounted) _setFacts(edited);
+        if (edited == null || !mounted) return;
+        _setFacts(edited.facts);
+        if (where) {
+          final typed = edited.mapLocation?.trim() ?? '';
+          // Null clears it: see clearableFields.
+          _set('location', typed.isEmpty ? null : typed);
+        }
       },
-      child: Text(
-        line.isEmpty ? (where ? 'Add location' : 'Add who') : line,
-        style: theme.textTheme.bodyLarge?.copyWith(
-          color: line.isEmpty ? theme.hintColor : null,
-        ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              line.isEmpty ? (where ? 'Add location' : 'Add who') : line,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: line.isEmpty ? theme.hintColor : null,
+              ),
+            ),
+          ),
+          if (where && map.isNotEmpty) ...[
+            IconButton(
+              icon: const Icon(Icons.map_outlined),
+              tooltip: 'Open in Maps',
+              visualDensity: VisualDensity.compact,
+              color: theme.colorScheme.primary,
+              onPressed: () => openInMaps(map),
+            ),
+          ],
+        ],
       ),
     );
   }

@@ -9,6 +9,7 @@ import 'auth/oauth.dart';
 import 'auth/platform_receiver.dart'
     if (dart.library.js_interop) 'auth/platform_receiver_web.dart';
 import 'auth/token_store.dart';
+import 'demo/google_calendar_sample.dart';
 import 'demo/sample_data.dart';
 import 'models/event.dart';
 import 'outbox/background_sync.dart';
@@ -37,6 +38,7 @@ import 'services/proposal_repository.dart';
 import 'services/response_cache.dart';
 import 'services/schedule_hints_repository.dart';
 import 'services/traits_repository.dart';
+import 'services/google_calendars.dart';
 import 'services/work_timing.dart';
 import 'theme.dart';
 
@@ -109,6 +111,13 @@ Future<void> main() async {
         focus: sample?.focusStore(),
         diagnosticsRepository: sample?.diagnosticsRepository(),
         calendarWidget: CalendarWidget(),
+        googleCalendars: sample == null
+            ? null
+            : GoogleCalendars(
+                source: SampleGoogleCalendarSource(DateTime.now()),
+                enabled: true,
+                selected: const {'personal', 'family', 'birthdays', 'work'},
+              ),
         backgroundRefresh: BackgroundRefresh(
           repository: sample?.scheduleHintsRepository(),
           // The offline demo has nothing to fetch.
@@ -339,10 +348,15 @@ class TimeTrackerApp extends StatefulWidget {
     this.focus,
     this.settings,
     this.calendarWidget,
+    this.googleCalendars,
   });
 
   /// The app's settings; by default, those kept on the device.
   final AppSettings? settings;
+
+  /// The phone's Google calendars, to show their events; null where
+  /// there are none to read.
+  final GoogleCalendars? googleCalendars;
 
   final NotesRepository repository;
 
@@ -551,6 +565,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       builder: (context, child) {
         Widget scoped = PlanMemoryScope(memory: _planMemory, child: child!);
         scoped = AppSettingsScope(settings: _settings, child: scoped);
+        if (widget.googleCalendars case final calendars?) {
+          scoped = GoogleCalendarsScope(calendars: calendars, child: scoped);
+        }
         if (widget.diagnosticsRepository case final diagnostics?) {
           scoped = DiagnosticsScope(
             repository: diagnostics,

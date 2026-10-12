@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
+import '../models/google_calendar.dart';
 import '../models/plan_action.dart';
 import 'color_picker.dart';
 import 'durations.dart';
@@ -401,9 +402,23 @@ class DayTimeline extends StatelessWidget {
     this.onTapThrough,
     this.marks = const {},
     this.reviewNotes = const [],
+    this.googleEvents = const [],
+    this.googleOnTop = false,
+    this.onTapGoogle,
   });
 
   final List<Event> events;
+
+  /// Events from the user's Google calendars, for reference: the timed
+  /// ones drawn faintly behind [events], each also marked down the right
+  /// edge, so one under an event still shows. Tapping one calls
+  /// [onTapGoogle].
+  final List<GoogleEvent> googleEvents;
+
+  /// Whether [googleEvents] are drawn over [events], nearly solid, rather
+  /// than faintly behind them.
+  final bool googleOnTop;
+  final ValueChanged<GoogleEvent>? onTapGoogle;
 
   /// Midnight, local time, at the start of the day shown.
   final DateTime day;
@@ -634,6 +649,16 @@ class DayTimeline extends StatelessWidget {
                   clipBehavior: Clip.none,
                   children: [
                     ...?band?.under,
+                    if (!googleOnTop)
+                      ..._googleEvents(
+                        context,
+                        googleEvents,
+                        day: day,
+                        dayEnd: dayEnd,
+                        y: y,
+                        width: cardWidth,
+                        onTap: onTapGoogle,
+                      ),
                     for (final (i, placement) in placements.indexed)
                       Positioned(
                         left: _cardsLeft,
@@ -666,6 +691,17 @@ class DayTimeline extends StatelessWidget {
                                 TimeOfDay.fromDateTime(t.toLocal()),
                               ),
                         ),
+                      ),
+                    if (googleOnTop)
+                      ..._googleEvents(
+                        context,
+                        googleEvents,
+                        day: day,
+                        dayEnd: dayEnd,
+                        y: y,
+                        width: cardWidth,
+                        onTap: onTapGoogle,
+                        onTop: true,
                       ),
                     for (final placement in placements)
                       if (listed[placement.event.id] case final icon?)
@@ -718,6 +754,14 @@ class DayTimeline extends StatelessWidget {
                     ))
                       ..._overlap(context, y(overlap.start), y(overlap.end)),
                     ...?band?.over,
+                    ..._googleMarks(
+                      googleEvents,
+                      day: day,
+                      dayEnd: dayEnd,
+                      y: y,
+                      left: _cardsLeft + cardWidth + 2,
+                      onTap: onTapGoogle,
+                    ),
                     for (final note in reviewNotes)
                       if (yIfToday(note.time) case final y?)
                         ..._reviewNote(context, note, y),
@@ -731,6 +775,178 @@ class DayTimeline extends StatelessWidget {
     );
   }
 }
+
+/// [events]' timed ones on [day], each with its lane and how many lanes
+/// its run of overlapping ones needs, so they sit side by side.
+List<({GoogleEvent event, int lane, int lanes})> _googleLanes(
+  List<GoogleEvent> events, {
+  required DateTime day,
+  required DateTime dayEnd,
+}) {
+  final timed = [
+    for (final e in events)
+      if (!e.allDay && e.start.isBefore(dayEnd) && e.end.isAfter(day)) e,
+  ]..sort((a, b) => a.start.compareTo(b.start));
+  final placed = <({GoogleEvent event, int lane, int lanes})>[];
+  var run = <({GoogleEvent event, int lane})>[];
+  var runEnd = day;
+  void close() {
+    final lanes = run.map((r) => r.lane + 1).fold(1, math.max);
+    placed.addAll([
+      for (final r in run) (event: r.event, lane: r.lane, lanes: lanes),
+    ]);
+    run = [];
+  }
+
+  for (final e in timed) {
+    if (run.isNotEmpty && !e.start.isBefore(runEnd)) close();
+    final ends = <int, DateTime>{};
+    for (final r in run) {
+      final end = ends[r.lane];
+      if (end == null || r.event.end.isAfter(end)) ends[r.lane] = r.event.end;
+    }
+    var lane = 0;
+    while (ends[lane]?.isAfter(e.start) ?? false) {
+      lane++;
+    }
+    run.add((event: e, lane: lane));
+    if (e.end.isAfter(runEnd)) runEnd = e.end;
+  }
+  if (run.isNotEmpty) close();
+  return placed;
+}
+
+/// [events] drawn faintly at their times, [width] wide from the cards'
+/// left, side by side where they overlap: behind the user's own events.
+/// The whole day's aren't drawn: the Events page lists them above.
+/// [onTop], they're over the user's events instead, nearly solid, so
+/// they read over them.
+List<Widget> _googleEvents(
+  BuildContext context,
+  List<GoogleEvent> events, {
+  required DateTime day,
+  required DateTime dayEnd,
+  required double Function(DateTime) y,
+  required double width,
+  ValueChanged<GoogleEvent>? onTap,
+  bool onTop = false,
+}) {
+  if (events.isEmpty) return const [];
+  final theme = Theme.of(context);
+  final dark = theme.brightness == Brightness.dark;
+  final local = MaterialLocalizations.of(context);
+  String time(DateTime t) =>
+      local.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()));
+  Widget ghost(GoogleEvent e) {
+    final color = e.calendar.color;
+    final ink = dark
+        ? Color.lerp(color, Colors.white, 0.55)!
+        : Color.lerp(color, Colors.black, 0.45)!;
+    return Semantics(
+      label: '${e.title}, ${e.calendar.name}, Google Calendar',
+      button: onTap != null,
+      excludeSemantics: true,
+      child: Material(
+        color: onTop
+            ? Color.alphaBlend(
+                color.withValues(alpha: dark ? 0.3 : 0.18),
+                theme.colorScheme.surface,
+              ).withValues(alpha: 0.94)
+            : color.withValues(alpha: dark ? 0.22 : 0.14),
+        elevation: onTop ? 2 : 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(6),
+          side: BorderSide(color: color.withValues(alpha: 0.75)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap == null ? null : () => onTap(e),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 2, 6, 2),
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.middle,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 3),
+                      child: Icon(Icons.event_outlined, size: 12, color: ink),
+                    ),
+                  ),
+                  TextSpan(
+                    text: e.title,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  TextSpan(text: '  ${time(e.start)}–${time(e.end)}'),
+                ],
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(color: ink),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  return [
+    for (final (:event, :lane, :lanes) in _googleLanes(
+      events,
+      day: day,
+      dayEnd: dayEnd,
+    ))
+      Positioned(
+        left: _cardsLeft + width * lane / lanes,
+        top: y(event.start.isBefore(day) ? day : event.start),
+        width: width / lanes - (lanes > 1 ? 2 : 0),
+        height: math.max(
+          16,
+          y(event.end.isAfter(dayEnd) ? dayEnd : event.end) -
+              y(event.start.isBefore(day) ? day : event.start),
+        ),
+        child: ghost(event),
+      ),
+  ];
+}
+
+/// A strip down the right edge, from [left], at each of [events]' times,
+/// in its calendar's color: over everything, so one under the user's own
+/// events still shows.
+List<Widget> _googleMarks(
+  List<GoogleEvent> events, {
+  required DateTime day,
+  required DateTime dayEnd,
+  required double Function(DateTime) y,
+  required double left,
+  ValueChanged<GoogleEvent>? onTap,
+}) => [
+  for (final (:event, :lane, :lanes) in _googleLanes(
+    events,
+    day: day,
+    dayEnd: dayEnd,
+  ))
+    Positioned(
+      // Its lane's share of the strip, where they overlap.
+      left: left + 4 * lane / lanes,
+      top: y(event.start.isBefore(day) ? day : event.start),
+      width: math.max(1.5, 4 / lanes),
+      height: math.max(
+        4,
+        y(event.end.isAfter(dayEnd) ? dayEnd : event.end) -
+            y(event.start.isBefore(day) ? day : event.start),
+      ),
+      child: GestureDetector(
+        onTap: onTap == null ? null : () => onTap(event),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: event.calendar.color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+      ),
+    ),
+];
 
 /// The part of a proposal's review band, [from] to [through], on [day]:
 /// [under] the events, its tint and outline; [over] them, its heading
@@ -1693,7 +1909,14 @@ class _EventCard extends StatelessWidget {
             child: card,
           )
         : card;
-    return faded ? Opacity(opacity: 0.35, child: shown) : shown;
+    // Faint, but over the page's background, not what's behind it: a
+    // Google Calendar event under it stays hidden, as under any other.
+    return faded
+        ? ColoredBox(
+            color: theme.scaffoldBackgroundColor,
+            child: Opacity(opacity: 0.35, child: shown),
+          )
+        : shown;
   }
 }
 

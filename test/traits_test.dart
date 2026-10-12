@@ -898,7 +898,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Home'));
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(CheckboxListTile, 'Home'), findsOneWidget);
+    expect(find.widgetWithText(RadioListTile<String>, 'Home'), findsOneWidget);
     // Asked once, not again for the facts.
     expect(people.calls, ['people', 'locations']);
     people.gate!.complete();
@@ -1049,11 +1049,13 @@ void main() {
     // Picked, once it's made.
     expect(
       tester
-          .widget<CheckboxListTile>(
-            find.widgetWithText(CheckboxListTile, 'Home'),
+          .widget<RadioListTile<String>>(
+            find.widgetWithText(RadioListTile<String>, 'Home'),
           )
           .value,
-      isTrue,
+      tester
+          .widget<RadioGroup<String>>(find.byType(RadioGroup<String>))
+          .groupValue,
     );
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     await tester.pumpAndSettle();
