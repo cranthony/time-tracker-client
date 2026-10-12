@@ -93,4 +93,21 @@ void main() {
       'https://www.google.com/maps/search/?api=1&query=Room+4B',
     );
   });
+
+  test('a map location that is a link opens as one, by an arrow', () {
+    expect(
+      placeLink(' https://maps.app.goo.gl/abc123 ').toString(),
+      'https://maps.app.goo.gl/abc123',
+    );
+    expect(placeLink('http://zoom.us/j/42?pwd=x'), isNotNull);
+    expect(placeLink('12 Fifth Ave, New York'), isNull);
+    expect(placeLink('See https://example.com'), isNull);
+    expect(placeLink('mailto:jo@example.com'), isNull);
+    expect(placeLink('Room 4B'), isNull);
+    expect(placeLink(''), isNull);
+    expect(placeButton('https://example.com/x').icon, Icons.arrow_forward);
+    expect(placeButton('https://example.com/x').tooltip, 'Open link');
+    expect(placeButton('Room 4B').icon, Icons.map_outlined);
+    expect(placeButton('Room 4B').tooltip, 'Open in Maps');
+  });
 }

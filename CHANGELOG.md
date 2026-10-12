@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.64.0
+
+- An event's map location that's just a web link -- to a map, or a
+  video call -- has an arrow by it instead of the map button, and opens
+  the link itself rather than searching for it in a maps app.
+- A Google Calendar event's sheet has the same button by its location,
+  when it has one.
+
 ## 7.63.0
 
 - Google Calendar events on the Events page (Android): turned on in
