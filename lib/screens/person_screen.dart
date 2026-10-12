@@ -165,6 +165,7 @@ class _PersonScreenState extends State<PersonScreen> {
                     HealthDot(
                       rating: _scores?.health(_person.id),
                       scale: HealthScale.relationship,
+                      consistency: _scores?.consistency(_person.id) ?? 0,
                     ),
                   ],
                 ),

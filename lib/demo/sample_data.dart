@@ -40,10 +40,11 @@ import '../services/traits_repository.dart';
 /// five traits made of judgments and cadences -- Self by four, Sam with a
 /// cadence of their own -- with Claude's judgments of their recent events
 /// behind each score; and the locations those events were at. Self has
-/// two habits: practicing guitar mindfully, over the Guitar group, with
-/// a rubric and cadence of its own; and cooking from scratch, over one
+/// three habits: practicing guitar mindfully, over the Guitar group, with
+/// a rubric and cadence of its own; eating well, with three meals a day
+/// never far apart; and, built on that, cooking from scratch, over one
 /// action, held to every trait -- with Claude's judgments of their
-/// recent events.
+/// recent events. Sam is on the habit graph too, built on cooking.
 class SampleData {
   SampleData(this.now);
 
@@ -633,6 +634,8 @@ class SampleData {
         'circles': p.circles,
         'what_matters': p.whatMatters,
         'traits': _personTraits[p.id]?.toJson(),
+        // Dinners together: on the habit graph, built on cooking.
+        if (p.id == 'sam') 'foundations': [habitSubject('cook-from-scratch')],
         'cancelled_events': _cancelled[p.id],
       }),
   ];
@@ -694,8 +697,9 @@ class SampleData {
 
   // --------------------------------------------------------------- Habits
 
-  /// Self's habits: one over a group, with parts of its own, and one
-  /// over a single action, held to every trait.
+  /// Self's habits: one over a group, with parts of its own; one with a
+  /// spacing part; and one over a single action, held to every trait,
+  /// built on that.
   List<Habit> get habits => [
     Habit.fromJson({
       'id': 'guitar-mindfully',
@@ -736,11 +740,44 @@ class SampleData {
       'cancelled_events': _cancelled[habitSubject('guitar-mindfully')],
     }),
     Habit.fromJson({
+      'id': 'eat-well',
+      'name': 'Eat well',
+      'action_id': 'eat_meal',
+      'action_path': 'Food-related › Eat a meal',
+      'note': 'Three meals a day, the first soon after waking.',
+      'traits': const PersonTraits(
+        select: ['reliable'],
+        parts: {
+          'reliable': [
+            {
+              'kind': 'count',
+              'target': 3,
+              'interval_days': 1,
+              'zero_at_days': 2,
+              'noun': 'meals',
+            },
+            {
+              'kind': 'spacing',
+              'action': 'eat_meal',
+              'max_gap_hours': 6,
+              'exceptions': [
+                {
+                  'actions': ['sleep'],
+                  'reset_hours': 1,
+                },
+              ],
+            },
+          ],
+        },
+      ).toJson(),
+    }),
+    Habit.fromJson({
       'id': 'cook-from-scratch',
       'name': 'Cook from scratch',
       'action_id': 'cook_lunch_dinner',
       'action_path': 'Creative › Cooking › Cook lunch or dinner',
       'note': 'Real meals, not reheating.',
+      'foundations': [habitSubject('eat-well')],
     }),
   ];
 

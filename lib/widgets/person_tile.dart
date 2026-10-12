@@ -11,7 +11,7 @@ import 'health.dart';
 /// summary's 24 hours and 7 days, from [times], in time or, without
 /// [durations], as a share of each; and the last event with them, or
 /// looking on, the next. Beside them, their relationship [health] and
-/// its [trend], and a [menu]. Self has no time with themself, so says
+/// its [trend], with its [consistency] under it, and a [menu]. Self has no time with themself, so says
 /// "You" instead; a [prioritized] person has a star.
 class PersonTile extends StatelessWidget {
   const PersonTile({
@@ -20,6 +20,7 @@ class PersonTile extends StatelessWidget {
     this.circles = const [],
     this.health,
     this.trend = const [],
+    this.consistency = 0,
     this.times,
     this.durations = true,
     this.prioritized = false,
@@ -31,6 +32,9 @@ class PersonTile extends StatelessWidget {
   final List<String> circles;
   final int? health;
   final List<int?> trend;
+
+  /// Days healthy in a row; 0 for none.
+  final int consistency;
   final PeopleTimes? times;
   final bool durations;
   final bool prioritized;
@@ -98,7 +102,11 @@ class PersonTile extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           if (health != null)
-            HealthDot(rating: health, scale: HealthScale.relationship),
+            HealthDot(
+              rating: health,
+              scale: HealthScale.relationship,
+              consistency: consistency,
+            ),
           ?menu,
         ],
       ),

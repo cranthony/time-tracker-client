@@ -39,6 +39,11 @@
 /// |                  | 100, each day loses `penalty` (25) per event the    |
 /// |                  | user cancelled and regains `recovery` (25) if one   |
 /// |                  | was kept                                            |
+/// | `spacing`        | the share of the day's time, outside its            |
+/// |                  | exceptions' events, that its clock hadn't run out:  |
+/// |                  | each event of its `action` winds it back to         |
+/// |                  | `max_gap_hours`; an exception's events stop it, and |
+/// |                  | after one, it has `reset_hours` left (if given)     |
 ///
 /// `continuity`, `count`, `duration` and `follow_through` with an
 /// `action` count only events of that action -- or, for an action group,
@@ -59,6 +64,17 @@ const defaultWindowDays = 30;
 
 /// How far continuity looks either way unless it says.
 const defaultWithinDays = 14;
+
+/// How far before a day a spacing part looks, for its clock as the day
+/// starts.
+const spacingLeadDays = 2;
+
+/// The most consecutive healthy days counted; more are "more than" it.
+const maxConsistencyDays = 30;
+
+/// The rating from which a day counts as healthy: on track, for a habit;
+/// healthy, for a relationship.
+const healthyRating = 70;
 
 /// What a follow-through part loses per cancellation, and wins back per
 /// day kept, unless it says; and how far back it runs.
@@ -164,6 +180,7 @@ List<(Trait, List<Part>)> traitsFor(Subject subject, List<Trait> traits) => [
         part['look_back_days'],
         followThroughLookBackDays,
       ),
+      'spacing' => spacingLeadDays,
       _ => 0,
     };
     back = math.max(back, n);
@@ -406,6 +423,14 @@ PartScore _part(
       engaged = _ofAction(engaged, part['action'] as String?, parentOf);
       final (rating, said, behind) = _overInterval(part, kind, end, engaged);
       return score(rating, said, behind);
+    case 'spacing':
+      // The user was at every event of Self's, and a habit's, but its
+      // exceptions -- sleep, say -- needn't be in a habit's scope.
+      final theirs = subject.isHabit || subject.id == selfPersonId
+          ? events
+          : engaged;
+      final (rating, said, behind) = _spacing(part, end, theirs, parentOf);
+      return score(rating, said, behind);
     default: // follow_through
       engaged = _ofAction(engaged, part['action'] as String?, parentOf);
       final dropped = [
@@ -473,6 +498,84 @@ PartScore _part(
 }
 
 double _days(Duration d) => d.inMicroseconds / Duration.microsecondsPerDay;
+
+/// A spacing part's score of the day ending at [end], how it was reached,
+/// and the events of its action that day. Its clock is followed from
+/// [spacingLeadDays] before the day, starting full.
+(int?, String, List<Event>) _spacing(
+  Part part,
+  DateTime end,
+  List<Event> events,
+  String? Function(String id)? parentOf,
+) {
+  final gap = Duration(minutes: ((part['max_gap_hours'] as num) * 60).round());
+  final dayStart = DateTime(end.year, end.month, end.day - 1);
+  final from = DateTime(end.year, end.month, end.day - 1 - spacingLeadDays);
+  final resets = [
+    for (final e in _ofAction(events, part['action'] as String?, parentOf))
+      if (e.start.isBefore(end) && !e.start.isBefore(from)) e,
+  ];
+  final exceptions = [
+    for (final x in spacingExceptions(part))
+      for (final e in events)
+        if (x.actions.any((a) => _isOf(e.actionIds, a, parentOf)) &&
+            e.end.isAfter(from) &&
+            e.start.isBefore(end))
+          (event: e, reset: x.resetHours),
+  ];
+  bool aside(DateTime t) => exceptions.any(
+    (x) => !t.isBefore(x.event.start) && t.isBefore(x.event.end),
+  );
+  // Where anything changes: each reset, and each exception's start and
+  // end, with the day's own edges.
+  final points = <DateTime>{from, dayStart, end};
+  for (final e in resets) {
+    points.add(e.start);
+  }
+  for (final x in exceptions) {
+    if (x.event.start.isAfter(from)) points.add(x.event.start);
+    if (x.event.end.isBefore(end)) points.add(x.event.end);
+  }
+  final ordered = points.toList()..sort();
+  var left = gap;
+  var counted = Duration.zero, overdue = Duration.zero;
+  for (var i = 0; i + 1 < ordered.length; i++) {
+    final at = ordered[i], next = ordered[i + 1];
+    // An exception ending here sets the clock; a reset here winds it back
+    // after that.
+    for (final x in exceptions) {
+      if (x.event.end == at && x.reset != null) {
+        left = Duration(minutes: (x.reset! * 60).round());
+      }
+    }
+    if (resets.any((e) => e.start == at)) left = gap;
+    final span = next.difference(at);
+    if (aside(at.add(span ~/ 2))) continue;
+    if (!at.isBefore(dayStart)) {
+      counted += span;
+      final late = span - (left.isNegative ? Duration.zero : left);
+      if (late > Duration.zero) overdue += late;
+    }
+    left -= span;
+  }
+  final behind = [
+    for (final e in resets)
+      if (!e.start.isBefore(dayStart)) e,
+  ];
+  if (counted == Duration.zero) {
+    return (null, 'All of the day was set aside', behind);
+  }
+  final share = 1 - overdue.inSeconds / counted.inSeconds;
+  return (
+    (100 * share).round(),
+    overdue == Duration.zero
+        ? 'Never over ${_g(gap.inMinutes / 60)} hours apart, in '
+              '${formatMinutes(counted.inMinutes)}'
+        : '${formatMinutes(overdue.inMinutes)} overdue of '
+              '${formatMinutes(counted.inMinutes)}',
+    behind,
+  );
+}
 
 /// A count or duration part's score, how it was reached, and the events
 /// behind it.
@@ -621,13 +724,16 @@ class TraitScores {
     this._ratings,
     this._eventsOf,
     this._events,
+    this._consistency,
   );
 
   /// Scores [people] (Self among them), and Self's [habits], by [traits]
   /// for the [days] days before [today]'s, from [events]. [parentOf]
   /// gives an action's group, as it is now: a habit's events are worked
   /// out from it. [windowDays] is how far back [events] go, for [digest]
-  /// to say.
+  /// to say. Each one's consistency is counted back from the last of
+  /// those days, rating days before them only while it holds, as far as
+  /// [maxConsistencyDays] and one more.
   factory TraitScores.compute({
     required List<Trait> traits,
     required List<Person> people,
@@ -649,6 +755,7 @@ class TraitScores {
         if (!e.isCancelled) e,
     ];
     final ratings = <String, List<TraitsRating>>{};
+    final consistency = <String, int>{};
     final eventsOf = <String, List<Event>>{};
     final subjects = [
       for (final person in people) Subject.person(person),
@@ -660,6 +767,34 @@ class TraitScores {
         for (var i = 0; i < starts.length; i++)
           _rate(subject, traits, starts[i], keys[i], kept, parentOf),
       ];
+      bool healthy(int? rating) => rating != null && rating >= healthyRating;
+      var streak = 0;
+      for (final r in ratings[subject.id]!.reversed) {
+        if (!healthy(r.rating)) break;
+        streak++;
+      }
+      // Healthy every day shown: back further, while it holds.
+      for (
+        var back = days + 1;
+        streak == back - 1 && back <= maxConsistencyDays + 1;
+        back++
+      ) {
+        final start = DateTime(
+          midnight.year,
+          midnight.month,
+          midnight.day - back,
+        );
+        final rated = _rate(
+          subject,
+          traits,
+          start,
+          _dayKey(start),
+          kept,
+          parentOf,
+        );
+        if (healthy(rated.rating)) streak++;
+      }
+      consistency[subject.id] = math.min(streak, maxConsistencyDays + 1);
       final involved = subject.isHabit
           ? _engaged(subject, 'with', kept, parentOf)
           : [
@@ -696,7 +831,15 @@ class TraitScores {
         );
       }
     }
-    return TraitScores._(keys, history, windowDays, ratings, eventsOf, kept);
+    return TraitScores._(
+      keys,
+      history,
+      windowDays,
+      ratings,
+      eventsOf,
+      kept,
+      consistency,
+    );
   }
 
   static TraitsRating _rate(
@@ -746,6 +889,12 @@ class TraitScores {
   final Map<String, List<TraitsRating>> _ratings;
   final Map<String, List<Event>> _eventsOf;
   final List<Event> _events;
+  final Map<String, int> _consistency;
+
+  /// How many days in a row, back from the last day scored, [subjectId]
+  /// has been healthy: up to [maxConsistencyDays], or one more for more
+  /// than that; 0 for none, or for anyone not scored.
+  int consistency(String subjectId) => _consistency[subjectId] ?? 0;
 
   late final Map<String, Event> _byId = {
     for (final e in _events)

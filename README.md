@@ -109,7 +109,12 @@ and Claude's judgments of them, as the server's scoring does: each
 person's score of each trait for each of the last 7 days, each trait's
 health (everyone's mean), and each person's relationship health (gray,
 disconnected, to green, healthy) and history; and each of Self's habits'
-scores and health (on track to off track). Follow-through counts the events the user cancelled that
+scores and health (on track to off track). Each habit and person also
+has a consistency: how many days in a row, back from yesterday, they've
+been on track (or healthy) -- rated 70 or more -- shown under their
+rating as "1d", "7d", up to ">30d". For it, the app rates further back
+than the week shown, only while it holds, and so keeps the 31 days
+before it too. Follow-through counts the events the user cancelled that
 count against each person or habit, which the server lists with them; their
 pages list them too. Every way the app cancels an event asks whether it
 counts: cancelling it, and making room for another -- each event a move,
@@ -790,9 +795,44 @@ judgments for a habit by the habit. Self's page lists them, with "Habit"
 to add one; each has a page of its own, and a pencil that opens another
 to edit it. They come from the server's `get_habits`,
 `create_habit` and `update_habit`; a server without them shows none, and
-nothing else changes. The sample data has two: one on the Guitar group
-with parts of its own, one on Cook lunch or dinner with every trait,
-each with Claude's judgments of a few of its events.
+nothing else changes. The sample data has three: one on the Guitar
+group with parts of its own; Eat well, with three meals a day never more
+than 6 hours apart; and, built on it, one on Cook lunch or dinner with
+every trait -- with Claude's judgments of a few of their events. Sam is
+on the habit graph too, built on cooking.
+
+### The habit graph
+
+The **Habits** pane draws them as a graph. Each habit can be built on
+others -- its **foundations** -- and on people; the people you put on
+the graph (the person button) can be built on habits and people too, a
+relationship on exercising and working well, say. Layer 0, at the
+bottom, has what's built on nothing; each layer above, what's built on
+the layers below it, a layer above the highest of its foundations. Each
+layer has a trend of its own: each day, its lowest rating.
+
+Each is a chip: a habit in its action's color, a person plain, with a
+person by their name. It has the name, the trend, the consistency, and a
+star if it's starred. Tapping one opens its page; holding it (or a right
+click) picks what it's built on, archives a habit, or takes a person off
+the graph. A habit's editor picks its foundations too.
+
+By default only what's unlocked is shown: what's built on nothing, and
+what has every foundation shown and on track -- or not rated yet. A note
+says how many more wait, and "Show all" (the lock) shows them. The
+search looks within what's shown, and shows each match, the matching
+text marked, with everything it's built on. The pane opens scrolled to
+the highest layer that's on track with every layer below it.
+
+Foundations are habits, as `habit:<id>`, and people, by id, in the
+server's `foundations` on a habit and on a person; a person with
+foundations, even none, is on the graph. The server refuses a cycle.
+
+A trait part of its own suits a habit like eating well: **spacing**, a
+clock that each event of its action winds back to the longest gap (6
+hours, say). Exceptions -- sleep -- stop it, and can set the time left
+after one: an hour to breakfast after waking. Each day scores the share
+of its waking time the clock hadn't run out.
 
 ## Development
 
@@ -811,7 +851,7 @@ server.
 for trying the app without a server. Its traits are made of facets and
 cadences; its people, Self and six others in five circles, run from
 healthy to disconnected, with Claude's judgments of their recent events
-behind each score; Self has two habits; its actions are a tree of groups three levels deep,
+behind each score; Self has three habits, one built on another, and Sam is on the habit graph; its actions are a tree of groups three levels deep,
 with every status, their own and inherited colors, and health ratings,
 including skipped periods, periods not yet assessed, and a proposed
 rating. It's dated relative to today, so it never goes stale. To run the app with it,
@@ -829,7 +869,7 @@ as listed and sorted, a person being edited, a Time spent part's target, a circl
 of people and actions, a trait's page, a trait and an action being
 edited, and its
 actions with every status, and the time summary on each page and folded
-away), a person's page, Self's habits, a habit's page, how one of its scores
+away), the habit graph (all of it, and searched), a person's page, Self's habits, a habit's page, how one of its scores
 was reached and one being edited, Events (with each page of its day summary, folded away, events that
 overlap,
 what happened at an event, and a compaction proposal: the band, its

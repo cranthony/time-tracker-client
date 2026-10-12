@@ -22,6 +22,7 @@ class TraitsField extends StatefulWidget {
     required this.partsExplanation,
     this.own = 'Their own',
     this.actions = const {},
+    this.exceptionActions,
     this.warnings,
   });
 
@@ -32,6 +33,9 @@ class TraitsField extends StatefulWidget {
   final String Function(Trait trait) partsExplanation;
   final String own;
   final Map<String, String> actions;
+
+  /// What a spacing part can set aside, by id; by default [actions].
+  final Map<String, String>? exceptionActions;
   final List<String> Function(List<Part> parts)? warnings;
 
   @override
@@ -69,6 +73,7 @@ class _TraitsFieldState extends State<TraitsField> {
       explanation: widget.partsExplanation(trait),
       parts: _parts[trait.id] ?? trait.parts,
       actions: widget.actions,
+      exceptionActions: widget.exceptionActions,
       warnings: widget.warnings,
     );
     if (edited != null) _changed(() => _parts[trait.id!] = edited);

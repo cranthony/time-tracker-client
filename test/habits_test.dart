@@ -16,6 +16,7 @@ import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/focus_store.dart';
 import 'package:time_tracker_client/services/habits_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
+import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/response_cache.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
@@ -382,6 +383,7 @@ void main() {
     Future<PlanMemory> pump(
       WidgetTester tester, {
       HabitsRepository? habits,
+      PeopleRepository? people,
       List<String> focus = const [],
     }) async {
       tester.view.physicalSize = const Size(800, 2400);
@@ -393,27 +395,28 @@ void main() {
               eventStore: EventStore(repository: InMemoryEventsRepository()),
             )
             ..traits = _traits
-            ..people = const PeopleList()
+            ..people = people == null
+                ? const PeopleList()
+                : await people.people()
             ..actions = ActionList(actions: _actions);
       await memory.eventStore!.warm();
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: HabitsPane(
-              repository: habits ?? InMemoryHabitsRepository(),
-              memory: memory,
-              actions: _actions,
-            ),
+      final pane = MaterialApp(
+        home: Scaffold(
+          body: HabitsPane(
+            repository: habits ?? InMemoryHabitsRepository(),
+            memory: memory,
+            actions: _actions,
           ),
         ),
+      );
+      await tester.pumpWidget(
+        people == null ? pane : PeopleScope(repository: people, child: pane),
       );
       await tester.pumpAndSettle();
       return memory;
     }
 
-    testWidgets('lists them by name and action, archived ones when asked', (
-      tester,
-    ) async {
+    testWidgets('shows them by name, archived ones when asked', (tester) async {
       await pump(
         tester,
         habits: InMemoryHabitsRepository([
@@ -434,12 +437,12 @@ void main() {
       );
 
       expect(find.text('Practice mindfully'), findsOneWidget);
-      expect(find.text('Creative › Guitar'), findsOneWidget);
+      expect(find.text('Layer 0'), findsOneWidget);
       expect(find.text('Walk daily'), findsNothing);
 
       await tester.tap(find.byTooltip('Show archived habits'));
       await tester.pumpAndSettle();
-      expect(find.text('Walk · Archived'), findsOneWidget);
+      expect(find.text('Walk daily'), findsOneWidget);
       expect(find.text('Gone'), findsNothing);
     });
 
@@ -456,9 +459,154 @@ void main() {
         focus: ['c', 'b'],
       );
 
-      double top(String name) => tester.getTopLeft(find.text(name)).dy;
-      expect(top('Cherries'), lessThan(top('Bananas')));
-      expect(top('Bananas'), lessThan(top('Apples')));
+      double left(String name) => tester.getTopLeft(find.text(name)).dx;
+      expect(left('Cherries'), lessThan(left('Bananas')));
+      expect(left('Bananas'), lessThan(left('Apples')));
+      expect(find.byIcon(Icons.star), findsNWidgets(2));
+    });
+
+    testWidgets('layers them by what they are built on, layer 0 lowest', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        habits: InMemoryHabitsRepository([
+          const Habit(id: 'sleep', name: 'Sleep well', actionId: 'walk'),
+          const Habit(id: 'eat', name: 'Eat well', actionId: 'walk'),
+          const Habit(
+            id: 'gym',
+            name: 'Exercise',
+            actionId: 'walk',
+            foundations: ['habit:sleep', 'habit:eat'],
+          ),
+          const Habit(
+            id: 'run',
+            name: 'Run a race',
+            actionId: 'walk',
+            foundations: ['habit:gym', 'habit:sleep'],
+          ),
+        ]),
+      );
+      // Rated 0, with no events: what's built on them waits.
+      expect(find.text('Exercise'), findsNothing);
+      expect(
+        find.text('2 more wait on foundations not yet on track.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byTooltip('Show all habits'));
+      await tester.pumpAndSettle();
+
+      double top(String text) => tester.getTopLeft(find.text(text)).dy;
+      expect(top('Layer 2'), lessThan(top('Layer 1')));
+      expect(top('Layer 1'), lessThan(top('Layer 0')));
+      expect(top('Run a race'), lessThan(top('Exercise')));
+      expect(top('Exercise'), lessThan(top('Sleep well')));
+      expect(top('Eat well'), top('Sleep well'));
+    });
+
+    testWidgets('searches what it shows, with everything a match is built on', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        habits: InMemoryHabitsRepository([
+          const Habit(id: 'sleep', name: 'Sleep well', actionId: 'walk'),
+          const Habit(id: 'eat', name: 'Eat well', actionId: 'walk'),
+          const Habit(
+            id: 'gym',
+            name: 'Exercise',
+            actionId: 'walk',
+            foundations: ['habit:sleep'],
+          ),
+        ]),
+      );
+      await tester.enterText(find.byType(TextField), 'exer');
+      await tester.pumpAndSettle();
+      // Waiting on a foundation rated 0, so not shown, nor found.
+      expect(find.text('Exercise'), findsNothing);
+
+      await tester.tap(find.byTooltip('Show all habits'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Exercise'), findsOneWidget);
+      expect(find.text('Sleep well'), findsOneWidget);
+      expect(find.text('Eat well'), findsNothing);
+      final spans =
+          (tester.widget<Text>(find.text('Exercise')).textSpan! as TextSpan)
+              .children!
+              .cast<TextSpan>();
+      expect([for (final s in spans) s.text], ['Exer', 'cise']);
+      expect(spans.first.style?.backgroundColor, isNotNull);
+      expect(spans.last.style, isNull);
+    });
+
+    testWidgets('puts people on it, and takes them off', (tester) async {
+      final people = InMemoryPeopleRepository(
+        people: const [
+          Person(id: 'fam', name: 'Family'),
+          Person(id: 'pal', name: 'Pal', foundations: ['habit:h1']),
+        ],
+      );
+      await pump(
+        tester,
+        habits: InMemoryHabitsRepository([_mindfully]),
+        people: people,
+      );
+      expect(find.text('Pal'), findsOneWidget);
+      expect(find.text('Family'), findsNothing);
+      double top(String text) => tester.getTopLeft(find.text(text)).dy;
+      expect(top('Pal'), lessThan(top('Practice mindfully')));
+
+      await tester.tap(find.byTooltip('Put people on the graph'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'Family'));
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      expect(
+        (await people.people()).people
+            .firstWhere((p) => p.id == 'fam')
+            .foundations,
+        isEmpty,
+      );
+      expect(find.text('Family'), findsOneWidget);
+
+      await tester.longPress(find.text('Family'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Take off the graph'));
+      await tester.pumpAndSettle();
+      expect(
+        (await people.people()).people
+            .firstWhere((p) => p.id == 'fam')
+            .foundations,
+        isNull,
+      );
+      expect(find.text('Family'), findsNothing);
+    });
+
+    testWidgets('picks what one is built on from its menu', (tester) async {
+      final repository = InMemoryHabitsRepository([
+        _mindfully,
+        const Habit(id: 'h2', name: 'Walk daily', actionId: 'walk'),
+      ]);
+      await pump(tester, habits: repository);
+
+      await tester.longPress(find.text('Walk daily'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Built on…'));
+      await tester.pumpAndSettle();
+      // Not itself.
+      expect(find.widgetWithText(CheckboxListTile, 'Walk daily'), findsNothing);
+      await tester.tap(
+        find.widgetWithText(CheckboxListTile, 'Practice mindfully'),
+      );
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+
+      expect(
+        (await repository.habits()).firstWhere((h) => h.id == 'h2').foundations,
+        ['habit:h1'],
+      );
+      expect(find.text('Layer 1'), findsOneWidget);
     });
 
     testWidgets('searches them by name, action and note', (tester) async {
@@ -484,7 +632,7 @@ void main() {
       final repository = InMemoryHabitsRepository([_mindfully]);
       await pump(tester, habits: repository);
 
-      await tester.tap(find.byTooltip('More for Practice mindfully'));
+      await tester.longPress(find.text('Practice mindfully'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Archive'));
       await tester.pumpAndSettle();

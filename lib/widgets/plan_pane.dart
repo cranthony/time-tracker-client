@@ -135,3 +135,32 @@ class NoMatches extends StatelessWidget {
     ),
   );
 }
+
+/// [text] as spans, the parts matching a word of [query] (ignoring case)
+/// in [match]'s style, the rest in none of their own.
+List<TextSpan> highlightMatches(String text, String query, TextStyle match) {
+  final lower = text.toLowerCase();
+  final marked = List.filled(text.length, false);
+  for (final word in query.toLowerCase().split(RegExp(r'\s+'))) {
+    if (word.isEmpty) continue;
+    for (
+      var at = lower.indexOf(word);
+      at >= 0;
+      at = lower.indexOf(word, at + 1)
+    ) {
+      marked.fillRange(at, at + word.length, true);
+    }
+  }
+  final spans = <TextSpan>[];
+  for (var i = 0; i < text.length;) {
+    var j = i;
+    while (j < text.length && marked[j] == marked[i]) {
+      j++;
+    }
+    spans.add(
+      TextSpan(text: text.substring(i, j), style: marked[i] ? match : null),
+    );
+    i = j;
+  }
+  return spans;
+}

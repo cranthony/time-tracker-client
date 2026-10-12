@@ -133,7 +133,10 @@ class _HabitScreenState extends State<HabitScreen> {
                     TrendSparkline(trend: trend),
                     const SizedBox(width: 8),
                   ],
-                  HealthDot(rating: _scores?.health(_habit.subject)),
+                  HealthDot(
+                    rating: _scores?.health(_habit.subject),
+                    consistency: _scores?.consistency(_habit.subject) ?? 0,
+                  ),
                 ],
               ),
             ),
