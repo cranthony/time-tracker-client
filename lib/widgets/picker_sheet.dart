@@ -399,7 +399,8 @@ class _MapLocationPageState extends State<_MapLocationPage> {
       children: [
         Text(
           'Where it was, as a maps app would find it: an address, or a '
-          "place's name. Kept apart from the location on the other page.",
+          "place's name -- or a link, to a map or a video call, say. Kept "
+          'apart from the location on the other page.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
