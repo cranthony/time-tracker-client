@@ -36,6 +36,7 @@ void main() {
       final settings = AppSettings(persist: false);
       final calendars = GoogleCalendars(
         source: SampleGoogleCalendarSource(_now),
+        persist: false,
         enabled: true,
         selected: const {'personal', 'family', 'birthdays', 'work'},
       );
@@ -194,11 +195,11 @@ void main() {
           events(),
           then: () async {
             final day = DateTime(_now.year, _now.month, _now.day);
-            final all = await SampleGoogleCalendarSource(_now).events(
-              day,
-              day.add(const Duration(days: 1)),
-              const {'personal', 'work'},
-            );
+            final all = await SampleGoogleCalendarSource(_now)
+                .events(day, day.add(const Duration(days: 1)), const [
+                  SampleGoogleCalendarSource.personal,
+                  SampleGoogleCalendarSource.work,
+                ]);
             final event = all.firstWhere((e) => e.id.startsWith(id));
             showGoogleEventSheet(
               tester.element(find.byType(EventsScreen)),

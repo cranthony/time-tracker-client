@@ -4,6 +4,8 @@
 /// written elsewhere as plain text; both are shown, links tappable.
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:html/dom.dart' as dom;
@@ -26,9 +28,22 @@ Future<void> _open(String url) async {
   await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
-/// Builds [text] as spans, making a recognizer for each link with
-/// [recognizer]: the caller disposes of them.
-TextSpan descriptionSpan(
+/// A paragraph of a description, or one of a list's items: its [marker]
+/// (a bullet, or its number) hung out to the left of its text, [depth]
+/// lists in.
+class DescriptionBlock {
+  const DescriptionBlock(this.span, {this.marker, this.depth = 0});
+
+  final TextSpan span;
+  final String? marker;
+  final int depth;
+
+  bool get isItem => marker != null;
+}
+
+/// [text] as paragraphs and list items, making a recognizer for each link
+/// with [recognizer]: the caller disposes of them.
+List<DescriptionBlock> descriptionBlocks(
   String text, {
   required Color linkColor,
   required TapGestureRecognizer Function(String url) recognizer,
@@ -38,67 +53,95 @@ TextSpan descriptionSpan(
     decoration: TextDecoration.underline,
     decorationColor: linkColor,
   );
-  // Plain text: its lines as written, its addresses links.
-  List<TextSpan> plain(String text) {
+  // Plain text, its addresses links.
+  List<TextSpan> plain(String text, TextStyle? style) {
     final spans = <TextSpan>[];
     var at = 0;
     for (final match in _url.allMatches(text)) {
       if (match.start > at) {
-        spans.add(TextSpan(text: text.substring(at, match.start)));
+        spans.add(
+          TextSpan(text: text.substring(at, match.start), style: style),
+        );
       }
       final url = match.group(0)!;
-      spans.add(TextSpan(text: url, style: link, recognizer: recognizer(url)));
+      spans.add(
+        TextSpan(
+          text: url,
+          style: style?.merge(link) ?? link,
+          recognizer: recognizer(url),
+        ),
+      );
       at = match.end;
     }
-    if (at < text.length) spans.add(TextSpan(text: text.substring(at)));
+    if (at < text.length) {
+      spans.add(TextSpan(text: text.substring(at), style: style));
+    }
     return spans;
   }
 
   if (!_isHtml(text)) {
-    return TextSpan(children: plain(text.replaceAll('\r\n', '\n').trim()));
+    final trimmed = text.replaceAll('\r\n', '\n').trim();
+    return [
+      if (trimmed.isNotEmpty)
+        DescriptionBlock(TextSpan(children: plain(trimmed, null))),
+    ];
   }
 
-  final spans = <InlineSpan>[];
-  // Whether the text so far ends a line, so a block starts on a new one
-  // without leaving a blank one.
-  var atLineStart = true;
-  void add(InlineSpan span, String text) {
+  final blocks = <DescriptionBlock>[];
+  // The block being built: its spans, each with its text.
+  var line = <(TextSpan, String)>[];
+  String? marker;
+  var depth = 0;
+  var listDepth = 0;
+  bool atLineStart() => line.isEmpty || line.last.$2.endsWith('\n');
+
+  void flush() {
+    // No line breaks at its end.
+    while (line.isNotEmpty && line.last.$2.trim().isEmpty) {
+      line.removeLast();
+    }
+    if (line.isNotEmpty) {
+      blocks.add(
+        DescriptionBlock(
+          TextSpan(children: [for (final (span, _) in line) span]),
+          marker: marker,
+          depth: depth,
+        ),
+      );
+    }
+    line = [];
+    marker = null;
+    depth = math.max(0, listDepth - 1);
+  }
+
+  void add(TextSpan span) {
+    final text = span.text ?? '';
     if (text.isEmpty) return;
-    spans.add(span);
-    atLineStart = text.endsWith('\n');
+    line.add((span, text));
   }
 
-  void newLine() {
-    if (!atLineStart) add(const TextSpan(text: '\n'), '\n');
-  }
-
-  void walk(dom.Node node, TextStyle? style, {String? href}) {
+  void walk(dom.Node node, TextStyle? style, String? href) {
     if (node is dom.Text) {
       // As HTML lays it out: runs of whitespace are one space.
       var text = node.text.replaceAll(RegExp(r'\s+'), ' ');
-      if (atLineStart) text = text.trimLeft();
+      if (atLineStart()) text = text.trimLeft();
+      if (text.isEmpty) return;
       if (href != null) {
         add(
-          TextSpan(text: text, style: style, recognizer: recognizer(href)),
-          text,
+          TextSpan(
+            text: text,
+            style: style?.merge(link) ?? link,
+            recognizer: recognizer(href),
+          ),
         );
       } else {
-        for (final span in plain(text)) {
-          add(
-            TextSpan(
-              text: span.text,
-              style: style?.merge(span.style) ?? span.style,
-              recognizer: span.recognizer,
-            ),
-            span.text!,
-          );
-        }
+        plain(text, style).forEach(add);
       }
       return;
     }
     if (node is! dom.Element) {
       for (final child in node.nodes) {
-        walk(child, style, href: href);
+        walk(child, style, href);
       }
       return;
     }
@@ -110,54 +153,73 @@ TextSpan descriptionSpan(
       's' ||
       'strike' ||
       'del' => const TextStyle(decoration: TextDecoration.lineThrough),
-      'a' when node.attributes['href'] != null => link,
       _ => null,
     };
     final merged = own == null ? style : (style?.merge(own) ?? own);
     final linkTo = tag == 'a' ? node.attributes['href'] ?? href : href;
     switch (tag) {
       case 'br':
-        add(const TextSpan(text: '\n'), '\n');
+        add(TextSpan(text: '\n', style: merged));
       case 'ul' || 'ol':
-        newLine();
-        var n = 1;
+        flush();
+        listDepth++;
+        var n = int.tryParse(node.attributes['start'] ?? '') ?? 1;
         for (final li in node.children) {
           if (li.localName != 'li') continue;
-          newLine();
-          final bullet = tag == 'ol' ? '${n++}. ' : '•  ';
-          add(TextSpan(text: bullet), bullet);
-          atLineStart = true;
+          flush();
+          marker = tag == 'ol' ? '${n++}.' : (listDepth.isOdd ? '•' : '◦');
+          depth = listDepth - 1;
           for (final child in li.nodes) {
-            walk(child, merged, href: linkTo);
+            walk(child, merged, linkTo);
           }
+          flush();
         }
-        newLine();
-      case 'p' || 'div' || 'h1' || 'h2' || 'h3' || 'h4' || 'blockquote':
-        newLine();
+        listDepth--;
+        flush();
+      case 'p' ||
+          'div' ||
+          'h1' ||
+          'h2' ||
+          'h3' ||
+          'h4' ||
+          'h5' ||
+          'h6' ||
+          'blockquote' ||
+          'pre':
+        // A paragraph inside a list item stays in it.
+        final inItem = marker != null;
+        if (!inItem) flush();
+        if (inItem && line.isNotEmpty) add(TextSpan(text: '\n', style: merged));
+        final heading = tag != null && tag.startsWith('h') && tag.length == 2;
         for (final child in node.nodes) {
-          walk(child, merged, href: linkTo);
+          walk(
+            child,
+            heading
+                ? (merged?.merge(
+                        const TextStyle(fontWeight: FontWeight.w700),
+                      ) ??
+                      const TextStyle(fontWeight: FontWeight.w700))
+                : merged,
+            linkTo,
+          );
         }
-        newLine();
-      case 'script' || 'style':
+        if (!inItem) flush();
+      case 'script' || 'style' || 'head' || 'title':
         break;
       default:
         for (final child in node.nodes) {
-          walk(child, merged, href: linkTo);
+          walk(child, merged, linkTo);
         }
     }
   }
 
-  walk(html.parseFragment(text), null);
-  // No blank line at the foot.
-  while (spans.isNotEmpty &&
-      spans.last is TextSpan &&
-      (spans.last as TextSpan).text == '\n') {
-    spans.removeLast();
-  }
-  return TextSpan(children: spans);
+  walk(html.parseFragment(text), null, null);
+  flush();
+  return blocks;
 }
 
-/// [description] as plain text, for an event of the user's own: a
+/// [description] as plain text, for an event of the user's own: its
+/// paragraphs a line each, its lists' items with their bullets, and a
 /// link's address after its text, unless that's the address already.
 String descriptionText(String description) {
   if (!_isHtml(description)) {
@@ -175,7 +237,7 @@ String descriptionText(String description) {
     );
   }
   final recognizers = <TapGestureRecognizer>[];
-  final text = descriptionSpan(
+  final blocks = descriptionBlocks(
     fragment.outerHtml,
     linkColor: const Color(0x00000000),
     recognizer: (_) {
@@ -183,16 +245,21 @@ String descriptionText(String description) {
       recognizers.add(r);
       return r;
     },
-  ).toPlainText();
+  );
   for (final r in recognizers) {
     r.dispose();
   }
-  return text;
+  return [
+    for (final b in blocks)
+      '${'  ' * b.depth}${b.marker == null ? '' : '${b.marker} '}'
+          '${b.span.toPlainText()}',
+  ].join('\n');
 }
 
-/// [description], up to [maxLines] of it until "More" is tapped.
+/// [description], up to about [maxLines] of it until "More" is tapped:
+/// its paragraphs, and its lists' items, their bullets hung to the left.
 class EventDescription extends StatefulWidget {
-  const EventDescription(this.description, {super.key, this.maxLines = 6});
+  const EventDescription(this.description, {super.key, this.maxLines = 8});
 
   final String description;
   final int maxLines;
@@ -201,16 +268,30 @@ class EventDescription extends StatefulWidget {
   State<EventDescription> createState() => _EventDescriptionState();
 }
 
+/// Between paragraphs, and between a list's items.
+const _paragraphGap = 6.0;
+const _itemGap = 2.0;
+
+/// How far in a list item's text is, from its bullet, and how far in a
+/// list in one is.
+const _markerWidth = 20.0;
+const _indent = 16.0;
+
 class _EventDescriptionState extends State<EventDescription> {
   final _recognizers = <TapGestureRecognizer>[];
   var _expanded = false;
 
   @override
   void dispose() {
+    _disposeRecognizers();
+    super.dispose();
+  }
+
+  void _disposeRecognizers() {
     for (final r in _recognizers) {
       r.dispose();
     }
-    super.dispose();
+    _recognizers.clear();
   }
 
   TapGestureRecognizer _recognizer(String url) {
@@ -219,38 +300,103 @@ class _EventDescriptionState extends State<EventDescription> {
     return r;
   }
 
+  double _gapBefore(List<DescriptionBlock> blocks, int i) => i == 0
+      ? 0
+      : blocks[i].isItem && blocks[i - 1].isItem
+      ? _itemGap
+      : _paragraphGap;
+
   @override
   Widget build(BuildContext context) {
-    for (final r in _recognizers) {
-      r.dispose();
-    }
-    _recognizers.clear();
+    _disposeRecognizers();
     final theme = Theme.of(context);
     final style = theme.textTheme.bodyMedium;
-    final span = descriptionSpan(
+    final blocks = descriptionBlocks(
       widget.description,
       linkColor: theme.colorScheme.primary,
       recognizer: _recognizer,
     );
+    if (blocks.isEmpty) return const SizedBox.shrink();
+    final direction = Directionality.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final painter = TextPainter(
-          text: TextSpan(style: style, children: [span]),
-          textDirection: Directionality.of(context),
-          textScaler: MediaQuery.textScalerOf(context),
-          maxLines: widget.maxLines,
-        )..layout(maxWidth: constraints.maxWidth);
-        final long = painter.didExceedMaxLines;
-        painter.dispose();
+        double width(DescriptionBlock b) => math.max(
+          0,
+          constraints.maxWidth -
+              b.depth * _indent -
+              (b.isItem ? _markerWidth : 0),
+        );
+        double measure(InlineSpan span, double maxWidth) {
+          final painter = TextPainter(
+            text: TextSpan(style: style, children: [span]),
+            textDirection: direction,
+            textScaler: scaler,
+          )..layout(maxWidth: maxWidth);
+          final height = painter.height;
+          painter.dispose();
+          return height;
+        }
+
+        var height = 0.0;
+        for (final (i, b) in blocks.indexed) {
+          height += _gapBefore(blocks, i) + measure(b.span, width(b));
+        }
+        final lineHeight = measure(const TextSpan(text: 'Hg'), 1000);
+        final limit = widget.maxLines * lineHeight;
+        // Not cut off for just a line more: "More" would take as much room.
+        final long = height > limit + lineHeight + 1;
+        final column = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final (i, b) in blocks.indexed)
+              Padding(
+                padding: EdgeInsetsDirectional.only(
+                  start: b.depth * _indent,
+                  top: _gapBefore(blocks, i),
+                ),
+                child: b.isItem
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: _markerWidth,
+                            child: Text(b.marker!, style: style),
+                          ),
+                          Expanded(child: Text.rich(b.span, style: style)),
+                        ],
+                      )
+                    : Text.rich(b.span, style: style),
+              ),
+          ],
+        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text.rich(
-              span,
-              style: style,
-              maxLines: _expanded ? null : widget.maxLines,
-              overflow: _expanded ? null : TextOverflow.ellipsis,
-            ),
+            if (long && !_expanded)
+              // Cut off, fading out at the foot.
+              ShaderMask(
+                blendMode: BlendMode.dstIn,
+                shaderCallback: (bounds) => const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: [0.75, 1],
+                  colors: [Colors.black, Colors.transparent],
+                ).createShader(bounds),
+                child: SizedBox(
+                  height: limit,
+                  child: ClipRect(
+                    child: OverflowBox(
+                      alignment: AlignmentDirectional.topStart,
+                      minHeight: 0,
+                      maxHeight: double.infinity,
+                      child: column,
+                    ),
+                  ),
+                ),
+              )
+            else
+              column,
             if (long)
               TextButton(
                 style: TextButton.styleFrom(

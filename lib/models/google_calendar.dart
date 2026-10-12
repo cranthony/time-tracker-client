@@ -26,7 +26,7 @@ class GoogleCalendar {
 /// An event in a [GoogleCalendar]: shown for reference, never edited, and
 /// never sent to the server. Each occurrence of a repeating one is its own.
 class GoogleEvent {
-  const GoogleEvent({
+  GoogleEvent({
     required this.id,
     required this.calendar,
     required this.title,
@@ -35,7 +35,9 @@ class GoogleEvent {
     this.allDay = false,
     this.location,
     this.description,
-  });
+    Color? color,
+    this.sourceId,
+  }) : color = color ?? calendar.color;
 
   final String id;
   final GoogleCalendar calendar;
@@ -50,4 +52,11 @@ class GoogleEvent {
   /// What it says about itself: HTML, if it was written on Google
   /// Calendar's website; plain text otherwise.
   final String? description;
+
+  /// Its own color, if it has one; else its calendar's.
+  final Color color;
+
+  /// The id of the event it's an occurrence of, to open it in the
+  /// calendar app.
+  final String? sourceId;
 }

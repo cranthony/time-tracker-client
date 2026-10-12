@@ -48,13 +48,21 @@ class SampleGoogleCalendarSource implements GoogleCalendarSource {
     isPrimary: true,
   );
 
-  var _granted = false;
+  /// Allowed to start with: it's only a sample.
+  var _permission = CalendarPermission.granted;
 
   @override
-  Future<bool> hasPermission() async => _granted;
+  Future<CalendarPermission> permission() async => _permission;
 
   @override
-  Future<bool> requestPermission() async => _granted = true;
+  Future<CalendarPermission> requestPermission() async =>
+      _permission = CalendarPermission.granted;
+
+  @override
+  Future<bool> open(GoogleEvent event) async => false;
+
+  @override
+  Future<void> openSettings() async {}
 
   @override
   Future<List<GoogleCalendar>> calendars() async => const [
@@ -69,8 +77,9 @@ class SampleGoogleCalendarSource implements GoogleCalendarSource {
   Future<List<GoogleEvent>> events(
     DateTime from,
     DateTime to,
-    Set<String> calendarIds,
+    List<GoogleCalendar> calendars,
   ) async {
+    final calendarIds = {for (final c in calendars) c.id};
     final today = DateTime(now.year, now.month, now.day);
     final all = <GoogleEvent>[];
     for (

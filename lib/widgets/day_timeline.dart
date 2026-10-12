@@ -838,7 +838,7 @@ List<Widget> _googleEvents(
   String time(DateTime t) =>
       local.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()));
   Widget ghost(GoogleEvent e) {
-    final color = e.calendar.color;
+    final color = e.color;
     final ink = dark
         ? Color.lerp(color, Colors.white, 0.55)!
         : Color.lerp(color, Colors.black, 0.45)!;
@@ -940,7 +940,7 @@ List<Widget> _googleMarks(
         onTap: onTap == null ? null : () => onTap(event),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: event.calendar.color,
+            color: event.color,
             borderRadius: BorderRadius.circular(2),
           ),
         ),

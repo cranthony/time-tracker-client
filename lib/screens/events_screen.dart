@@ -948,7 +948,11 @@ class _EventsScreenState extends State<EventsScreen> {
     _loads.bind(_refresh);
     _lifecycle = AppLifecycleListener(
       onHide: _savePlace,
-      onResume: _resumeProposal,
+      onResume: () {
+        _resumeProposal();
+        // Changed in the calendar app, maybe, while away.
+        GoogleCalendars.of(context)?.refresh();
+      },
     );
     final store = widget.placeStore;
     // Back from another tab: there at once.
@@ -1900,7 +1904,17 @@ class _EventsScreenState extends State<EventsScreen> {
   /// across its times, to make an event of the user's own there.
   Future<void> _openGoogleEvent(GoogleEvent event) async {
     final choice = await showGoogleEventSheet(context, event);
-    if (!mounted || choice != GoogleEventChoice.log) return;
+    if (!mounted) return;
+    if (choice == GoogleEventChoice.open) {
+      final calendars = GoogleCalendars.of(context);
+      if (!(await calendars?.source.open(event) ?? false) && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't open it in a calendar app")),
+        );
+      }
+      return;
+    }
+    if (choice != GoogleEventChoice.log) return;
     setState(() {
       _clearLists();
       _keepByRules(from: event.start, to: event.end);
@@ -4036,6 +4050,7 @@ class _EventsScreenState extends State<EventsScreen> {
               onRefresh: () {
                 unawaited(_loadNotes());
                 unawaited(_loadProposal());
+                GoogleCalendars.of(context)?.refresh();
                 return _refresh();
               },
               child: NotificationListener<ScrollEndNotification>(

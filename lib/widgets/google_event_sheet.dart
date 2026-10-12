@@ -62,7 +62,7 @@ Future<GoogleEventChoice?> showGoogleEventSheet(
                     width: 14,
                     height: 14,
                     decoration: BoxDecoration(
-                      color: event.calendar.color,
+                      color: event.color,
                       borderRadius: BorderRadius.circular(4),
                     ),
                   ),

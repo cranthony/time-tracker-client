@@ -17,6 +17,7 @@ class MainActivity : FlutterActivity() {
     private var oauthChannel: MethodChannel? = null
     private var addNoteChannel: MethodChannel? = null
     private var calendarChannel: MethodChannel? = null
+    private var googleCalendar: GoogleCalendarReader? = null
 
     /**
      * When a tap on the home screen calendar launched the app from scratch:
@@ -82,6 +83,7 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+        googleCalendar = GoogleCalendarReader(this, messenger)
         calendarChannel = MethodChannel(messenger, CalendarWidget.CHANNEL).apply {
             setMethodCallHandler { call, result ->
                 if (call.method == "takeLaunchRequest") {
@@ -92,6 +94,15 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        if (googleCalendar?.onRequestPermissionsResult(requestCode) == true) return
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     override fun onNewIntent(intent: Intent) {

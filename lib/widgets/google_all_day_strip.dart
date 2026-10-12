@@ -46,7 +46,7 @@ class GoogleAllDayStrip extends StatelessWidget {
                     for (final e in events.take(5))
                       Padding(
                         padding: const EdgeInsets.only(right: 3),
-                        child: _Dot(color: e.calendar.color),
+                        child: _Dot(color: e.color),
                       ),
                     const SizedBox(width: 6),
                     Expanded(
@@ -114,7 +114,7 @@ class _Pill extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final dark = theme.brightness == Brightness.dark;
-    final color = event.calendar.color;
+    final color = event.color;
     final ink = dark
         ? Color.lerp(color, Colors.white, 0.55)!
         : Color.lerp(color, Colors.black, 0.45)!;

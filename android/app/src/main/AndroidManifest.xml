@@ -4,6 +4,9 @@
     <!-- To set the home screen calendar's redraws again after a restart;
          see HomeWidgetScheduledUpdateReceiver below. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- To show the Google Calendar events synced to the phone on the
+         Events page, if the user turns that on; see GoogleCalendarReader. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR"/>
     <application
         android:label="Time Tracker"
         android:name="${applicationName}"
@@ -107,6 +110,20 @@
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
+        </intent>
+        <!-- And a Google Calendar event's map location in a maps app,
+             and the links in its description. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="geo"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="mailto"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
         </intent>
     </queries>
 </manifest>

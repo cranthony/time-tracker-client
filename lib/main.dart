@@ -38,6 +38,7 @@ import 'services/proposal_repository.dart';
 import 'services/response_cache.dart';
 import 'services/schedule_hints_repository.dart';
 import 'services/traits_repository.dart';
+import 'platform/google_calendar_source.dart';
 import 'services/google_calendars.dart';
 import 'services/work_timing.dart';
 import 'theme.dart';
@@ -115,6 +116,7 @@ Future<void> main() async {
             ? null
             : GoogleCalendars(
                 source: SampleGoogleCalendarSource(DateTime.now()),
+                persist: false,
                 enabled: true,
                 selected: const {'personal', 'family', 'birthdays', 'work'},
               ),
@@ -174,6 +176,12 @@ Future<void> main() async {
       habitsRepository: McpHabitsRepository(client, cache: cache),
       diagnosticsRepository: McpDiagnosticsRepository(client, cache: cache),
       calendarWidget: CalendarWidget(),
+      // Read on the phone, from Android's calendar provider: nowhere else
+      // has the Google calendars synced to it.
+      googleCalendars:
+          !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+          ? (GoogleCalendars(source: AndroidGoogleCalendarSource())..load())
+          : null,
       backgroundRefresh: BackgroundRefresh(
         repository: McpScheduleHintsRepository(client, cache: cache),
         settings: settings,
