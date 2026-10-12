@@ -152,9 +152,12 @@ if [ -z "$event" ]; then
 elif adb shell pidof "$PKG" >/dev/null; then
   fail event_cold "the app was still running after kill -9"
 # On the timeline, it's labelled with its times too: "Dinner, 7:00 PM to
-# 7:45 PM".
+# 7:45 PM". Not on today: the sample's are every day but today, so on
+# another (and a "Get up and get ready" today, from another series, isn't
+# it).
 elif tap_view "$event" && wait_for 'Previous day' 15 &&
-  ui_nodes | grep -qE "(text|content-desc)=\"$event[,\"]"; then
+  ui_nodes | grep -qE "(text|content-desc)=\"$event[,\"]" &&
+  ! on_screen Today; then
   adb exec-out screencap -p > "$OUT/calendar_event_cold.png"
   pass "event_cold ($event)"
 else

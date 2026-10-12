@@ -183,7 +183,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// events are kept for next time.
   late final DateTime _firstDay;
 
-  late final PageController _pages;
+  late PageController _pages;
 
   /// Whether it's still finding out where it was left, so not to scroll
   /// to the start yet.
@@ -732,7 +732,7 @@ class _EventsScreenState extends State<EventsScreen> {
       _restoreTop = null;
       _highlighted = event.id;
     });
-    _scrollToTime(event.start);
+    _scrollToTime(event.start, nearTop: true);
     _unhighlight = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _highlighted = null);
     });
@@ -749,22 +749,25 @@ class _EventsScreenState extends State<EventsScreen> {
     if (time == null) {
       _goToNow();
     } else {
-      _scrollToTime(time);
+      _scrollToTime(time, nearTop: true);
     }
   }
 
-  /// Shows [time]'s day, scrolled so [time] is in the middle of the view.
-  void _scrollToTime(DateTime time) {
+  /// Shows [time]'s day, scrolled so [time] is in the middle of the view;
+  /// or, [nearTop], a little below its top -- where it stays in view as
+  /// what's above the timeline loads and pushes its foot off the screen,
+  /// as it does when the app's just started.
+  void _scrollToTime(DateTime time, {bool nearTop = false}) {
     final at = time.toLocal();
     final day = _midnight(at);
-    if (_pages.hasClients && day != _day) _pages.jumpToPage(_pageOf(day));
+    if (day != _day) _goToDay(day);
     // Once it's laid out on that day.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
       final position = _scroll.position;
       final y =
           timelineOffset(at, day: day, dayEnd: _dayAfter(day), scale: _scale) -
-          position.viewportDimension / 2;
+          (nearTop ? 48 : position.viewportDimension / 2);
       _scroll.animateTo(
         y.clamp(0, position.maxScrollExtent),
         duration: const Duration(milliseconds: 300),
@@ -1145,7 +1148,7 @@ class _EventsScreenState extends State<EventsScreen> {
       _scale = place.scale;
       _restoreTop = place.top;
     });
-    if (kept && _pages.hasClients) _pages.jumpToPage(_pageOf(place.day));
+    if (kept) _goToDay(place.day);
   }
 
   /// Keeps where it is, for [EventsPlaceStore], while the timeline's
@@ -1436,9 +1439,7 @@ class _EventsScreenState extends State<EventsScreen> {
   void _goToNow() {
     final now = widget.clock();
     final today = _midnight(now);
-    if (_pages.hasClients && today != _day) {
-      _pages.jumpToPage(_pageOf(today));
-    }
+    if (today != _day) _goToDay(today);
     // Once it's laid out on today.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
@@ -1575,6 +1576,22 @@ class _EventsScreenState extends State<EventsScreen> {
     ]) {
       if (!_fresh.contains(other)) unawaited(_load(other));
     }
+  }
+
+  /// Shows [day], on its page and as the day shown. Sliding to a page
+  /// says which it's on ([_show]), but a jump before the days are laid
+  /// out -- as when a tap on the home screen calendar starts the app --
+  /// only takes effect as they are, saying nothing, so the day shown is
+  /// set here too. Before they're built at all (signing in), they start
+  /// there.
+  void _goToDay(DateTime day) {
+    if (_pages.hasClients) {
+      _pages.jumpToPage(_pageOf(day));
+    } else if (_pages.initialPage != _pageOf(day)) {
+      _pages.dispose();
+      _pages = PageController(initialPage: _pageOf(day));
+    }
+    _show(day);
   }
 
   /// Shows [day], the page slid to: at once if it's loaded, loading it
@@ -3450,7 +3467,7 @@ class _EventsScreenState extends State<EventsScreen> {
     if (proposal == null) return;
     final from = proposal.windowStart.toLocal();
     final day = _midnight(from);
-    if (_pages.hasClients && day != _day) _pages.jumpToPage(_pageOf(day));
+    if (day != _day) _goToDay(day);
     // Once it's laid out on that day.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
@@ -3481,9 +3498,7 @@ class _EventsScreenState extends State<EventsScreen> {
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
     );
-    if (picked != null && _pages.hasClients) {
-      _pages.jumpToPage(_pageOf(_midnight(picked)));
-    }
+    if (picked != null && mounted) _goToDay(_midnight(picked));
   }
 
   Future<void> _signIn() async {
