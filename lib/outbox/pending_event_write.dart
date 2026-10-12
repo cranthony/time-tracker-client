@@ -191,10 +191,8 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
   /// under a [pendingId]. One not among [events] (on another day, say) is
   /// changed from how it was when this was made.
   void projectEvents(Map<String, Event> events) {
-    // A repeat is shown once the server has made the series: kept on the
-    // event, it would be sent again with its next change.
     Event apply(Event? e, Map<String, Object?> changes) =>
-        Event.fromJson({...?e?.toJson(), ...changes}..remove('repeat'));
+        Event.fromJson({...?e?.toJson(), ...changes});
     void update(Event at, Map<String, Object?> changes) {
       final id = at.id;
       if (id == null) return;

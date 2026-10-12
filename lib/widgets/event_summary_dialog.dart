@@ -96,6 +96,11 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
         'summary': event.summary,
         'start': localIsoTimestamp(event.start),
         'end': localIsoTimestamp(event.end),
+        // One waiting to be saved, making it a series.
+        'repeat': switch (event.properties['repeat']) {
+          final Map repeat => Repeat.fromJson(repeat.cast()),
+          _ => null,
+        },
       },
       actions: actions,
       loadActions: loadActions,

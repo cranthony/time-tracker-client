@@ -1103,6 +1103,30 @@ void main() {
       ]);
     });
 
+    testWidgets('a repeat waiting to be saved is shown, not "No recurrence"', (
+      tester,
+    ) async {
+      final pending = Event.fromJson({
+        ...work().toJson(),
+        'repeat': {'every': 'day', 'interval': 1},
+      });
+      await open(tester, _RecordingRepository([pending]));
+      expect(inDialog(find.text('Every day')), findsOneWidget);
+      expect(inDialog(find.text('No recurrence')), findsNothing);
+    });
+
+    test("a repeat waiting to be saved isn't sent again with the next "
+        'change', () async {
+      final client = _RecurrenceClient();
+      final pending = Event.fromJson({
+        ...work().toJson(),
+        'repeat': {'every': 'day', 'interval': 1},
+      });
+      await McpEventsRepository(client).updateEvent(pending, {'summary': 'x'});
+      final update = (client.arguments!['updates'] as List).single as Map;
+      expect((update['event'] as Map).containsKey('repeat'), isFalse);
+    });
+
     testWidgets("an emptied summary isn't a change", (tester) async {
       final repo = _RecordingRepository([work()]);
       await open(tester, repo);
