@@ -23,6 +23,8 @@ import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/other_events.dart';
 import 'package:time_tracker_client/widgets/proposal_review.dart';
 
+import 'hold_drag.dart';
+
 void main() {
   final now = DateTime(2026, 9, 30, 12);
   DateTime at(int hour, [int minute = 0]) =>
@@ -684,13 +686,13 @@ void main() {
 
     /// Drags the box, by itself, [by].
     Future<void> dragBox(WidgetTester tester, Duration by) async {
-      final box = find.byTooltip(RegExp(r'^Drag to move the event'));
+      final box = find.byTooltip(RegExp(r'^Hold and drag to move the event'));
       await tester.ensureVisible(box);
       await tester.pumpAndSettle();
-      await tester.drag(
+      await holdAndDrag(
+        tester,
         box,
         Offset(0, by.inMinutes * defaultTimelineScale),
-        warnIfMissed: false,
       );
       await tester.pumpAndSettle();
     }

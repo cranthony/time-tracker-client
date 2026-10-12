@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.62.0
+
+- The pending event box, and its "+" buttons, are moved by pressing and
+  holding them for a moment, then dragging -- with a buzz, and the box
+  lifted while it's held. A quick swipe over them scrolls the timeline
+  instead of moving them. Tapping a "+" still stretches the box a step;
+  the handles at the right of its lines still drag at once.
+
 ## 7.61.0
 
 - Diagnostics: the median, p95 and max lines across the tool calls'

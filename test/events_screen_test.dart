@@ -28,6 +28,8 @@ import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/durations.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
 
+import 'hold_drag.dart';
+
 void main() {
   final now = DateTime(2026, 9, 30, 12);
   DateTime at(int day, int hour, [int minute = 0]) =>
@@ -1223,6 +1225,18 @@ void main() {
       await settle(tester);
     }
 
+    /// Holds [button] -- the box, or a "+" -- then drags it [by].
+    Future<void> hold(WidgetTester tester, Finder button, Duration by) async {
+      await tester.ensureVisible(button);
+      await settle(tester);
+      await holdAndDrag(
+        tester,
+        button,
+        Offset(0, by.inMinutes * defaultTimelineScale),
+      );
+      await settle(tester);
+    }
+
     FloatingActionButton continueButton(WidgetTester tester) =>
         tester.widget<FloatingActionButton>(
           find.ancestor(
@@ -1359,9 +1373,9 @@ void main() {
       await tapPulsing(tester, startHere);
       expect(box(tester).span, (at(30, 12), at(30, 14)));
       // Dragged into it, it stays.
-      await drag(
+      await hold(
         tester,
-        find.byTooltip(RegExp(r'^Drag to move the event')),
+        find.byTooltip(RegExp(r'^Hold and drag to move the event')),
         const Duration(hours: 2),
       );
       expect(box(tester).span, (at(30, 12), at(30, 14)));
@@ -1375,12 +1389,68 @@ void main() {
       await tapButton(tester, startHere);
       await tester.drag(find.byType(ListView).first, const Offset(0, 2000));
       await tester.pumpAndSettle();
-      final handle = find.byTooltip(RegExp(r'^Drag to move the event'));
+      final handle = find.byTooltip(
+        RegExp(r'^Hold and drag to move the event'),
+      );
       final list = tester.getRect(find.byType(ListView).first);
       expect(tester.getCenter(handle).dy, greaterThan(list.bottom));
       await tester.tap(find.byTooltip('Go to the new event'));
       await tester.pumpAndSettle();
       expect(tester.getCenter(handle).dy, closeTo(list.center.dy, 2));
+    });
+
+    testWidgets('swiped, the box and its "+" scroll the timeline; held, they '
+        'drag, the box lifted while it is', (tester) async {
+      final repo = _RecordingRepository([]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      await tapButton(tester, startHere);
+      final made = box(tester).span;
+      final boxFinder = find.byTooltip(RegExp(r'^Hold and drag'));
+      await tester.ensureVisible(boxFinder);
+      await settle(tester);
+      double scrolled() =>
+          Scrollable.of(tester.element(boxFinder)).position.pixels;
+      final before = scrolled();
+
+      // Swiped, at once: scrolled, not moved.
+      for (final f in [boxFinder, startHere]) {
+        await tester.drag(f, const Offset(0, -120), warnIfMissed: false);
+        await settle(tester);
+        expect(box(tester).span, made);
+      }
+      expect(scrolled(), greaterThan(before));
+
+      // Held: lifted, and moved.
+      await tester.ensureVisible(boxFinder);
+      await settle(tester);
+      BoxDecoration lift() =>
+          tester
+                  .widget<AnimatedContainer>(
+                    find.descendant(
+                      of: boxFinder,
+                      matching: find.byType(AnimatedContainer),
+                    ),
+                  )
+                  .decoration!
+              as BoxDecoration;
+      expect(lift().boxShadow!.single.color.a, 0);
+      final gesture = await tester.startGesture(
+        tester.getCenter(boxFinder, warnIfMissed: false),
+      );
+      await tester.pump(holdToDrag + const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(lift().boxShadow!.single.color.a, greaterThan(0));
+      await gesture.moveBy(const Offset(0, 60 * defaultTimelineScale));
+      await tester.pump();
+      await gesture.up();
+      await settle(tester);
+      expect(box(tester).span, (
+        made!.$1.add(const Duration(hours: 1)),
+        made.$2.add(const Duration(hours: 1)),
+      ));
+      expect(lift().boxShadow!.single.color.a, 0);
     });
 
     testWidgets('dragging a button makes the event up to where it goes; each '
@@ -1393,7 +1463,7 @@ void main() {
       await tester.pumpAndSettle();
       await plus(tester);
 
-      await drag(tester, startHere, const Duration(hours: 2));
+      await hold(tester, startHere, const Duration(hours: 2));
       expect(box(tester).span, (at(30, 12), at(30, 14)));
       // Each end alone.
       await drag(tester, otherHandle(tester), const Duration(minutes: -30));
@@ -1401,15 +1471,15 @@ void main() {
       await moveLine(tester, const Duration(minutes: 30));
       expect(box(tester).span, (at(30, 12, 30), at(30, 13, 30)));
       // Both together.
-      await drag(
+      await hold(
         tester,
-        find.byTooltip(RegExp(r'^Drag to move the event')),
+        find.byTooltip(RegExp(r'^Hold and drag to move the event')),
         const Duration(hours: -1),
       );
       expect(box(tester).span, (at(30, 11, 30), at(30, 12, 30)));
 
       // Its top dragged up, from the cursor, to 10.
-      await drag(tester, endHere, const Duration(minutes: -90));
+      await hold(tester, endHere, const Duration(minutes: -90));
       expect(box(tester).span, (at(30, 10), at(30, 12, 30)));
 
       await continueToDialog(tester);
@@ -1430,7 +1500,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('New event'));
       await settle(tester);
-      await drag(tester, startHere, const Duration(hours: 3));
+      await hold(tester, startHere, const Duration(hours: 3));
       expect(box(tester).span, (at(30, 12), at(30, 15)));
       expect(overwrites(tester), isTrue);
 
@@ -1954,9 +2024,9 @@ void main() {
 
       // Walk and Talk to push down; dragged onto Walk, both pushed along.
       await pickInto(tester, 'Push down', ['Walk', 'Talk']);
-      await drag(
+      await hold(
         tester,
-        find.byTooltip(RegExp(r'^Drag to move the event')),
+        find.byTooltip(RegExp(r'^Hold and drag to move the event')),
         const Duration(hours: 2),
       );
       expect(box(tester).span, (at(30, 14), at(30, 15)));
