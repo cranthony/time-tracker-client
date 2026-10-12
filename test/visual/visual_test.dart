@@ -45,6 +45,8 @@ import 'package:time_tracker_client/widgets/event_outbox_status.dart';
 import 'package:time_tracker_client/widgets/status_bar.dart';
 import 'package:time_tracker_client/widgets/parts_editor.dart';
 
+import '../hold_drag.dart';
+
 /// A fixed moment, so every run renders the same thing.
 final _now = DateTime(2026, 10, 2, 13, 30);
 
@@ -1059,10 +1061,10 @@ void main() {
             await tester.tap(find.byTooltip('New event'));
             await tester.pumpAndSettle();
             if (drag != 0) {
-              await tester.drag(
+              await holdAndDrag(
+                tester,
                 find.byTooltip('Stretch it later'),
                 Offset(0, drag * defaultTimelineScale),
-                warnIfMissed: false,
               );
               await settle();
             }
@@ -1133,10 +1135,10 @@ void main() {
             await tester.pumpAndSettle();
             // Up an hour, onto the call and what's after it: they're
             // pushed along after it.
-            await tester.drag(
-              find.byTooltip(RegExp(r'^Drag to move the event')),
+            await holdAndDrag(
+              tester,
+              find.byTooltip(RegExp(r'^Hold and drag to move the event')),
               Offset(0, -60 * defaultTimelineScale),
-              warnIfMissed: false,
             );
             await tester.pumpAndSettle();
           },

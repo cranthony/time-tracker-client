@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'cursor_modes.dart';
 import 'cursor_snap.dart';
@@ -108,8 +109,10 @@ typedef SnapMark = ({String what, String name});
 /// The box -- the event between the cursors -- is shaded
 /// ([PendingEventShadow]), unless [shaded] is false: tinged red and
 /// slowly pulsing where it [overwrites] events, and with its [mode]'s
-/// icon, unless it trims, as it does by default. Dragged, it moves whole ([onMoveBox]); tapped, its mode can be
-/// changed ([onTapBox]).
+/// icon, unless it trims, as it does by default. Held and dragged, it
+/// moves whole ([onMoveBox]); so is a "+", making or stretching the box
+/// to where it goes. A swipe that doesn't wait for the hold
+/// ([holdToDrag]) scrolls the timeline instead.
 class PendingEventBoxView extends StatefulWidget {
   const PendingEventBoxView({
     super.key,
@@ -122,7 +125,6 @@ class PendingEventBoxView extends StatefulWidget {
     required this.onMoveOther,
     required this.onMoveBox,
     required this.onStep,
-    this.onTapBox,
     required this.onEditTime,
     this.canStep,
     this.marks,
@@ -187,9 +189,6 @@ class PendingEventBoxView extends StatefulWidget {
   /// null.
   final bool Function(CursorRole role, {required bool later})? canStep;
 
-  /// The box tapped; nothing, if null.
-  final VoidCallback? onTapBox;
-
   /// A cursor's time tapped: to type it in.
   final ValueChanged<CursorRole> onEditTime;
 
@@ -210,9 +209,18 @@ class PendingEventBoxView extends StatefulWidget {
   State<PendingEventBoxView> createState() => _PendingEventBoxViewState();
 }
 
+/// How long the box, or a "+", is held before it drags: shorter, it's a
+/// tap, or a swipe scrolling the timeline.
+const holdToDrag = Duration(milliseconds: 250);
+
 class _PendingEventBoxViewState extends State<PendingEventBoxView> {
   /// Where a drag is, down the timeline.
   double _dragY = 0;
+
+  /// What's held, being dragged: [_box], or a "+" -- `(#plus, above)`,
+  /// above its line or below.
+  Object? _held;
+  static const _box = #box;
 
   double _y(DateTime time) => timelineOffset(
     time,
@@ -310,7 +318,8 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
                 ),
                 child: PushedEventOutline(label: pushed.label),
               ),
-            // The box itself: dragged, moved whole; tapped, its mode.
+            // The box itself: held and dragged, moved whole; lifted while
+            // it's held.
             if (span case (final start, final end))
               Positioned(
                 left: timelineCardsLeft,
@@ -318,18 +327,33 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
                 top: _y(start),
                 height: (_y(end) - _y(start)).clamp(8.0, double.infinity),
                 child: Tooltip(
-                  message:
-                      'Drag to move the event; tap for what it does '
-                      'with the events in its way',
-                  child: GestureDetector(
+                  message: 'Hold and drag to move the event',
+                  child: _holdDrag(
+                    _box,
+                    from: _y(box.cursor),
+                    onDragTo: widget.onMoveBox,
                     behavior: HitTestBehavior.opaque,
-                    dragStartBehavior: DragStartBehavior.down,
-                    onTap: widget.onTapBox,
-                    onVerticalDragStart: (_) => _dragY = _y(box.cursor),
-                    onVerticalDragUpdate: (details) {
-                      _dragY += details.delta.dy;
-                      widget.onMoveBox(_time(_dragY));
-                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _held == _box
+                              ? colors.primary
+                              : colors.primary.withValues(alpha: 0),
+                          width: 2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colors.shadow.withValues(
+                              alpha: _held == _box ? 0.3 : 0,
+                            ),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -337,7 +361,13 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
               ..._line(colors, role, time, top: alone ? null : top),
             for (final group in groups)
               if (!hidden(group))
-                Positioned.fromRect(rect: group.$2, child: group.$3),
+                // Keyed by the way it's out of its line, so the "+" held
+                // making the box goes on being held once it's made.
+                Positioned.fromRect(
+                  key: ValueKey((#group, group.$3.key)),
+                  rect: group.$2,
+                  child: group.$3,
+                ),
             // The label, above the box: what it's moving.
             if ((widget.label, span) case (final label?, (final start, _)))
               Positioned(
@@ -409,6 +439,7 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
           widget.onMoveOther(to);
         },
         from: y,
+        held: (#plus, above),
       ),
     ]);
   }
@@ -455,6 +486,7 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
               : widget.onMoveOther(to);
         },
         from: y,
+        held: (#plus, above),
       ),
     ]);
   }
@@ -477,6 +509,8 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
         _buttonSize,
       ),
       Row(
+        // Which way it is, keying where it's put.
+        key: ValueKey(above),
         mainAxisSize: MainAxisSize.min,
         children: [
           for (final (i, b) in buttons.indexed) ...[
@@ -497,6 +531,7 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
     bool primary = false,
     bool enabled = true,
     ValueChanged<DateTime>? onDragTo,
+    Object? held,
     double? from,
   }) {
     final color = !enabled
@@ -509,7 +544,11 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
           ? colors.primaryContainer
           : colors.surfaceContainerHigh,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: enabled ? 2 : 0,
+      elevation: !enabled
+          ? 0
+          : _held != null && _held == held
+          ? 8
+          : 2,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: enabled ? onTap : null,
@@ -529,18 +568,43 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
       message: tooltip,
       child: onDragTo == null || from == null
           ? button
-          : GestureDetector(
-              dragStartBehavior: DragStartBehavior.down,
-              // From the line it's by.
-              onVerticalDragStart: (_) => _dragY = from,
-              onVerticalDragUpdate: (details) {
-                _dragY += details.delta.dy;
-                onDragTo(_time(_dragY));
-              },
-              child: button,
-            ),
+          // From the line it's by.
+          : _holdDrag(held, from: from, onDragTo: onDragTo, child: button),
     );
   }
+
+  /// [child], [which] of the things dragged, held for [holdToDrag] then
+  /// dragged: [onDragTo] the time it's dragged to, [from] where it was
+  /// picked up.
+  Widget _holdDrag(
+    Object? which, {
+    required double from,
+    required ValueChanged<DateTime> onDragTo,
+    required Widget child,
+    HitTestBehavior? behavior,
+  }) => RawGestureDetector(
+    behavior: behavior,
+    gestures: {
+      LongPressGestureRecognizer:
+          GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+            () => LongPressGestureRecognizer(
+              duration: holdToDrag,
+              debugOwner: this,
+            ),
+            (recognizer) => recognizer
+              ..onLongPressStart = (_) {
+                HapticFeedback.mediumImpact();
+                _dragY = from;
+                setState(() => _held = which);
+              }
+              ..onLongPressMoveUpdate = (details) {
+                onDragTo(_time(_dragY + details.offsetFromOrigin.dy));
+              }
+              ..onLongPressEnd = (_) => setState(() => _held = null),
+          ),
+    },
+    child: child,
+  );
 
   /// [role]'s cursor, at [time]: a line across the timeline -- bolder if
   /// it's [PendingEventBoxView.selected] -- with its label at its left and
