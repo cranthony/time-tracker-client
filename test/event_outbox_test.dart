@@ -172,6 +172,21 @@ void main() {
       expect(outbox.pending, hasLength(2));
     });
 
+    test('an event being made a series waits whole', () async {
+      final server = _Server([_event('lunch', 'Lunch', 12, 13)]);
+      final outbox = _outbox(server);
+      final lunch = (await server.events(_day, _at(24))).single;
+
+      await outbox.update(lunch, {
+        'repeat': {'every': 'week', 'interval': 1},
+      });
+      expect(outbox.isWhollyLocked('lunch'), isTrue);
+      await expectLater(
+        outbox.update(lunch, {'summary': 'Long lunch'}),
+        throwsA(isA<WaitingForWrite>()),
+      );
+    });
+
     test('a cancelled event waits whole, and so does a new one', () async {
       final server = _Server([_event('lunch', 'Lunch', 12, 13)]);
       final outbox = _outbox(server);
