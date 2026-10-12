@@ -48,16 +48,7 @@ adb logcat -v time > "$OUT/calendar_logcat.txt" &
 logcat=$!
 
 launch() { adb shell am start -W -n "$PKG/.MainActivity" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER >/dev/null; }
-# Home, to the home screen: the launcher may open on its app drawer
-# instead (it has since October 2026's images), which Home again closes.
-home() {
-  adb shell input keyevent KEYCODE_HOME
-  sleep 1
-  if ui_nodes | grep -qE '(text|content-desc)="All apps"'; then
-    adb shell input keyevent KEYCODE_HOME
-    sleep 1
-  fi
-}
+home() { adb shell input keyevent KEYCODE_HOME; }
 
 # The on-screen views (Flutter's semantics, and the launcher's widget,
 # included), one per line.
@@ -116,15 +107,17 @@ else
   home
   sleep 3
   # The list may start with today's events, or with nothing planned:
-  # scroll it until an event shows, a few times at most.
+  # scroll it until an event shows, a few times at most. Within the
+  # widget's list: a swipe up that starts below the widget, on the home
+  # screen, opens the launcher's app drawer instead.
   for _ in 1 2 3 4; do
     ui_nodes | grep -qE "text=\"$SAMPLE_EVENTS\"" && break
-    b=$(ui_nodes | grep -E 'text="Today"' | head -1 |
+    b=$(ui_nodes | grep "class=\"android.widget.ListView\" package=\"$PKG\"" | head -1 |
       sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p')
     [ -n "$b" ] || break
     set -- $b
     x=$((($1 + $3) / 2))
-    adb shell input swipe $x $(($4 + 200)) $x $(($4 + 20)) 300
+    adb shell input swipe $x $(($4 - 10)) $x $(($2 + 10)) 300
     sleep 1
   done
   ui_nodes > "$OUT/calendar_shown.txt"
