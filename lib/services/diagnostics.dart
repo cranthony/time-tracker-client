@@ -194,6 +194,48 @@ double statisticOf(Statistic statistic, List<num> values) {
   };
 }
 
+/// Whose [statistic] of [values] is, by each one's entry in [names]: the
+/// sample it falls on -- or, for the median of an even number, which is
+/// halfway between two, both of theirs -- and every other of the same
+/// value, as many calls time out alike: each name once, the commonest
+/// first -- then the lower's, then the first given. Null for the mean,
+/// which no one sample is, and for none.
+List<String>? whoseStatistic(
+  Statistic statistic,
+  List<num> values,
+  List<String> names,
+) {
+  if (values.isEmpty) return null;
+  final sorted = [...values]..sort();
+  final n = sorted.length;
+  final ranks = switch (statistic) {
+    Statistic.mean => const <int>[],
+    Statistic.median => n.isOdd ? [n ~/ 2] : [n ~/ 2 - 1, n ~/ 2],
+    Statistic.p95 => [(0.95 * (n - 1)).round()],
+    Statistic.max => [n - 1],
+  };
+  if (ranks.isEmpty) return null;
+  final at = {for (final r in ranks) sorted[r]};
+  // Each name's count, lowest value and first place, in that order.
+  final seen = <String, (int, num, int)>{};
+  for (var i = 0; i < values.length; i++) {
+    if (!at.contains(values[i])) continue;
+    final (count, lowest, first) = seen[names[i]] ?? (0, values[i], i);
+    seen[names[i]] = (count + 1, min(lowest, values[i]), first);
+  }
+  final whose = seen.keys.toList()
+    ..sort((a, b) {
+      final (countA, lowA, firstA) = seen[a]!;
+      final (countB, lowB, firstB) = seen[b]!;
+      return countB != countA
+          ? countB.compareTo(countA)
+          : lowA != lowB
+          ? lowA.compareTo(lowB)
+          : firstA.compareTo(firstB);
+    });
+  return whose;
+}
+
 /// The mean, median, 95th percentile and max of some values.
 class Summary {
   const Summary({

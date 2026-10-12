@@ -6,6 +6,19 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.61.0
+
+- Diagnostics: the median, p95 and max lines across the tool calls'
+  graphs say whose call each falls on -- "Max · confirm_proposal ·
+  5.0 s" -- even with all the tools shown. A median halfway between
+  two calls names both their tools; a value several tools' calls share,
+  as timeouts do, names them all, the commonest first -- as many as
+  fit across, and how many more. The mean, which is no one call's,
+  still says which tools are shown.
+- Lines that fall together, as p95 and max often do, are labelled once
+  ("p95, Max · ..."), and the median's label sits under its line, clear
+  of the mean's.
+
 ## 7.60.1
 
 - Tapping the home screen calendar's "Today" or its title while the

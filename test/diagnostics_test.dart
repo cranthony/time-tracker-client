@@ -182,6 +182,41 @@ void main() {
       expect(Summary.of(const []), isNull);
     });
 
+    test("are each the tool's whose call they fall on, but the mean", () {
+      const values = [300, 100, 200, 400];
+      const names = ['c', 'a', 'b', 'd'];
+
+      expect(whoseStatistic(Statistic.mean, values, names), isNull);
+      expect(whoseStatistic(Statistic.max, values, names), ['d']);
+      expect(whoseStatistic(Statistic.p95, values, names), ['d']);
+      // Halfway between the second and third: both theirs.
+      expect(whoseStatistic(Statistic.median, values, names), ['b', 'c']);
+      expect(whoseStatistic(Statistic.median, values, ['x', 'x', 'x', 'x']), [
+        'x',
+      ]);
+      expect(whoseStatistic(Statistic.median, [3, 1, 2], ['c', 'a', 'b']), [
+        'b',
+      ]);
+      expect(whoseStatistic(Statistic.max, const [], const []), isNull);
+    });
+
+    test('are every tool whose calls tie at them, the commonest first', () {
+      // Timeouts, all alike.
+      const values = [100, 30000, 30000, 30000, 30000, 30000];
+      const names = ['a', 'b', 'c', 'c', 'd', 'e'];
+
+      expect(whoseStatistic(Statistic.max, values, names), [
+        'c',
+        'b',
+        'd',
+        'e',
+      ]);
+      expect(whoseStatistic(Statistic.max, const [5, 5], const ['a', 'b']), [
+        'a',
+        'b',
+      ]);
+    });
+
     test('of each bucket of calls stack the work under the whole', () {
       final calls = [
         _call('a', const Duration(minutes: 110), work: 100, total: 150),
@@ -227,9 +262,10 @@ void main() {
   group('The Diagnostics page', () {
     Future<void> open(
       WidgetTester tester,
-      DiagnosticsRepository repository,
-    ) async {
-      tester.view.physicalSize = const Size(900, 2400);
+      DiagnosticsRepository repository, {
+      double width = 900,
+    }) async {
+      tester.view.physicalSize = Size(width, 2400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
@@ -253,9 +289,8 @@ void main() {
     });
 
     testWidgets('draws the calls and memory as dots, unjoined, with the '
-        'mean, median, p95 and max marked, labelled with the tools', (
-      tester,
-    ) async {
+        "mean, median, p95 and max marked, each labelled with whose call it's "
+        'on, the mean with the tools shown', (tester) async {
       await open(tester, InMemoryDiagnosticsRepository(_health()));
       final [calls, memory, ...] = [
         for (final chart in tester.widgetList<LineChart>(
@@ -274,12 +309,13 @@ void main() {
         for (final line in data.extraLinesData.horizontalLines)
           line.label.labelResolver(line),
       ];
-      expect(
-        labels(calls),
-        everyElement(matches(r'^(Mean|Median|p95|Max) · All tools · ')),
-      );
-      expect(labels(calls), hasLength(4));
-      expect(labels(memory).last, 'Max · 210 MiB');
+      expect(labels(calls), [
+        'Mean · All tools · 587 ms',
+        'Median · list_events · 500 ms',
+        // The same line: one label.
+        'p95, Max · note · 1.0 s',
+      ]);
+      expect(labels(memory).last, 'p95, Max · 210 MiB');
 
       await tester.tap(find.text('All tools'));
       await tester.pumpAndSettle();
@@ -287,6 +323,45 @@ void main() {
       await tester.pumpAndSettle();
       final writes = tester.widget<LineChart>(find.byType(LineChart).first);
       expect(labels(writes.data).first, startsWith('Mean · Writes · '));
+    });
+
+    testWidgets('cuts short the tools a marker is on that are too many to '
+        'fit across', (tester) async {
+      const tools = [
+        'amend_proposal',
+        'confirm_proposal',
+        'get_proposal',
+        'list_events',
+        'update_event',
+      ];
+      await open(
+        tester,
+        InMemoryDiagnosticsRepository(
+          ServerHealth(
+            tools: [
+              for (final (i, tool) in tools.indexed)
+                ToolCalls(
+                  tool: tool,
+                  calls: [
+                    // Each timed out alike.
+                    _call(tool, Duration(hours: i + 1), total: 30000),
+                  ],
+                ),
+            ],
+            memory: const [],
+            restarts: const [],
+          ),
+        ),
+        // Room, in the tests' font, for one of them.
+        width: 680,
+      );
+      final calls = tester.widget<LineChart>(find.byType(LineChart).first);
+      final max = calls.data.extraLinesData.horizontalLines.last;
+      expect(
+        max.label.labelResolver(max),
+        // The calls are oldest first.
+        'Median, p95, Max · update_event / 4 more · 30 s',
+      );
     });
 
     testWidgets('filters to a kind of tool, and a range', (tester) async {
