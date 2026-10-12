@@ -7,8 +7,11 @@
 # and the like. Everything else, animations included, should be a Flutter
 # widget test in test/, which runs in seconds on a fake clock and can
 # check any frame; tests here take minutes and can only poke the app from
-# outside with adb. Each test is a script in tool/emulator/, run by a step
-# below.
+# outside with adb. Each test is a script in tool/emulator/, run by a job
+# of its own below, side by side, each on its own emulator; the two that
+# test the release app share the one APK the apk job builds. The
+# android-emulator job, which the main branch's rules require, passes
+# once they all have.
 #
 # Now:
 #   tool/emulator/keyboard_test.sh  the home screen "+" opens the New note
@@ -44,11 +47,15 @@ jobs:
         :!.github/workflows/android.yml :!.github/workflows/pages.yml
         :!.github/workflows/version.yml :!.github/workflows/visual.yml
 
-  android-emulator:
+  # The release app, for real start-up timing. Without MCP_URL it's the
+  # offline demo, with the sample data for the calendar widget to show,
+  # and its menu offering to add the widget to the home screen, which
+  # there's no adb command for.
+  apk:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -59,13 +66,26 @@ jobs:
         with:
           channel: stable
           cache: true
-      # A release build, for real start-up timing. Without MCP_URL it's the
-      # offline demo, with the sample data for the calendar widget to show,
-      # and its menu offering to add the widget to the home screen, which
-      # there's no adb command for.
       - run: >-
           flutter build apk --release --target-platform android-x64
           --dart-define=SAMPLE_DATA=true --dart-define=CALENDAR_PIN=true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 1
+
+  keyboard:
+    needs: apk
+    if: ${{ !cancelled() && needs.apk.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: build/app/outputs/flutter-apk
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
@@ -80,17 +100,30 @@ jobs:
           arch: x86_64
           disable-animations: false
           script: tool/emulator/keyboard_test.sh build/app/outputs/flutter-apk/app-release.apk
-      # Its own debug build, of integration_test/: the background task
-      # runs in an isolate of its own, as on a phone.
-      - name: Changes are handed off between the app and its background task
-        uses: reactivecircus/android-emulator-runner@v2
+      - if: always()
+        uses: actions/upload-artifact@v4
         with:
-          api-level: 36
-          target: google_apis
-          arch: x86_64
-          script: tool/emulator/handoff_test.sh
+          name: emulator-keyboard
+          path: build/emulator
+
+  calendar:
+    needs: apk
+    if: ${{ !cancelled() && needs.apk.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: build/app/outputs/flutter-apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
       - name: Home screen calendar shows the events, and its taps open the app
-        if: ${{ !cancelled() }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -100,5 +133,66 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: emulator
+          name: emulator-calendar
           path: build/emulator
+
+  # Its own debug build, of integration_test/: the background task runs
+  # in an isolate of its own, as on a phone. So it doesn't wait for the
+  # APK.
+  handoff:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Changes are handed off between the app and its background task
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          script: tool/emulator/handoff_test.sh
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-handoff
+          path: build/emulator
+
+  # The check the main branch's rules require: passes once every test
+  # has, or was skipped (nothing it tests changed).
+  android-emulator:
+    needs: [changes, apk, keyboard, calendar, handoff]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: >-
+            apk=${{ needs.apk.result }}
+            keyboard=${{ needs.keyboard.result }}
+            calendar=${{ needs.calendar.result }}
+            handoff=${{ needs.handoff.result }}
+        run: |
+          for r in $RESULTS; do
+            echo "$r"
+          done
+          for r in $RESULTS; do
+            case ${r#*=} in
+              success | skipped) ;;
+              *) echo "::error::${r%%=*}: ${r#*=}"; exit 1 ;;
+            esac
+          done

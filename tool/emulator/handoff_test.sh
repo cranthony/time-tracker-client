@@ -32,8 +32,13 @@ adb logcat -v time > "$OUT/handoff_logcat.txt" &
 logcat=$!
 
 device=$(command adb devices | awk 'NR > 1 && $2 == "device" { print $1; exit }')
-flutter test integration_test/outbox_handoff_test.dart -d "$device" --reporter expanded
+# It takes about 6 minutes, the build included. It has stalled once just
+# after installing the app, never starting a test, until the job's own
+# limit: fail at 15 instead, and say so.
+timeout 15m flutter test integration_test/outbox_handoff_test.dart -d "$device" --reporter expanded
 status=$?
+[ $status = 124 ] &&
+  echo "::error::The handoff test didn't finish within 15 minutes; it stalled"
 
 kill $logcat
 # What the outboxes and WorkManager said, to read beside the result.
