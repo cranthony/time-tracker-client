@@ -267,7 +267,9 @@ class McpEventsRepository implements EventsRepository {
       'updates': [
         {
           'event': {
-            ...event.toJson(),
+            // A repeat waiting to be saved (see PendingEventWrite) is
+            // sent by that write alone, not again with the next.
+            ...event.toJson()..remove('repeat'),
             ...changes,
             // Actions sent are set, not inferred from a label; left alone,
             // the server keeps inferred ones inferred.

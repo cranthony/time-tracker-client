@@ -1624,6 +1624,7 @@ class _EventsScreenState extends State<EventsScreen> {
       actions: _actionsById,
       loadActions: _actions,
       openSeries: (seriesId) => _openSeries(seriesId, event),
+      repeatable: true,
     );
     if (!mounted) return;
     switch (outcome) {
@@ -2496,6 +2497,8 @@ class _EventsScreenState extends State<EventsScreen> {
       loadActions: _actions,
       // What a proposal adds, named by its ref until it's made.
       additions: review ? _proposal?.additions ?? const [] : const [],
+      // A proposal's events don't repeat.
+      repeatable: !review,
     );
     if (created == null || !mounted) return;
     _endBox();

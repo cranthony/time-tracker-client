@@ -156,7 +156,9 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
       refused && (lastError?.contains('allow_compacted_changes') ?? false);
 
   /// The events it writes, by id, each with the fields it sets -- or
-  /// null, for all of it: one it cancels, creates, or puts back.
+  /// null, for all of it: one it cancels, creates, or puts back, or makes
+  /// a series by setting its repeat. That one's id becomes the series'
+  /// own, so another change sent to it would change every event in it.
   Map<String, Set<String>?> get locks {
     Map<String, Set<String>?> ofOver(Overwrite over, int firstCreate) => {
       for (final (e, changes) in over.updates) ?e.id: changes.keys.toSet(),
@@ -165,7 +167,9 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
         pendingId(firstCreate + i): null,
     };
     return switch (kind) {
-      EventWriteKind.update => {?event?.id: changes.keys.toSet()},
+      EventWriteKind.update => {
+        ?event?.id: changes.containsKey('repeat') ? null : changes.keys.toSet(),
+      },
       EventWriteKind.cancel => {?event?.id: null},
       EventWriteKind.create => {pendingId(): null},
       EventWriteKind.createOver => {pendingId(): null, ...ofOver(over, 1)},

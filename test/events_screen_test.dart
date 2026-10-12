@@ -814,8 +814,9 @@ void main() {
       expect(inDialog(find.text('Add location')), findsOneWidget);
       expect(inDialog(find.text('Deep work')), findsOneWidget);
       expect(inDialog(find.text('Deep focus')), findsOneWidget);
-      // Not in a series, so no link to one.
+      // Not in a series, so no link to one, but a way to make one.
       expect(inDialog(find.text('Repeats · see series')), findsNothing);
+      expect(inDialog(find.text('No recurrence')), findsOneWidget);
       // Nor the properties it leaves to Details.
       expect(inDialog(find.text('id')), findsNothing);
 
@@ -857,6 +858,25 @@ void main() {
       ]);
       expect(find.byType(AlertDialog), findsNothing);
       expect(find.text('Saved.'), findsOneWidget);
+    });
+
+    testWidgets('"No recurrence" opens to make it a weekly series', (
+      tester,
+    ) async {
+      final repo = _RecordingRepository([work()]);
+      await open(tester, repo);
+
+      await tester.tap(inDialog(find.text('No recurrence')));
+      await tester.pumpAndSettle();
+      // Weekly, on its own day, to change.
+      expect(inDialog(find.text('Every week on Wed')), findsOneWidget);
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {
+          'repeat': {'every': 'week', 'interval': 1},
+        },
+      ]);
     });
 
     testWidgets('changing history asks first, and goes through once agreed', (
@@ -1081,6 +1101,30 @@ void main() {
       expect(repo.saved, [
         {'priority': null, 'description': null},
       ]);
+    });
+
+    testWidgets('a repeat waiting to be saved is shown, not "No recurrence"', (
+      tester,
+    ) async {
+      final pending = Event.fromJson({
+        ...work().toJson(),
+        'repeat': {'every': 'day', 'interval': 1},
+      });
+      await open(tester, _RecordingRepository([pending]));
+      expect(inDialog(find.text('Every day')), findsOneWidget);
+      expect(inDialog(find.text('No recurrence')), findsNothing);
+    });
+
+    test("a repeat waiting to be saved isn't sent again with the next "
+        'change', () async {
+      final client = _RecurrenceClient();
+      final pending = Event.fromJson({
+        ...work().toJson(),
+        'repeat': {'every': 'day', 'interval': 1},
+      });
+      await McpEventsRepository(client).updateEvent(pending, {'summary': 'x'});
+      final update = (client.arguments!['updates'] as List).single as Map;
+      expect((update['event'] as Map).containsKey('repeat'), isFalse);
     });
 
     testWidgets("an emptied summary isn't a change", (tester) async {

@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.65.0
+
+- An event that doesn't repeat says "No recurrence" in its summary, and a
+  new event does too. Tapped, it opens the same editor a series has,
+  starting weekly on the event's day, to make it the first event of a
+  series; "Don't repeat" takes that back before it's saved.
+
 ## 7.64.0
 
 - An event's map location that's just a web link -- to a map, or a

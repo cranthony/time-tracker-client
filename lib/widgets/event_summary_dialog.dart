@@ -67,7 +67,8 @@ final class SummaryDetails<T> extends SummaryOutcome<T> {
 /// with [SummaryDetails]. Changing its times keeps them clear of the
 /// events in [otherEvents]. What of it's [waiting] for a change to be
 /// saved -- its fields, or with [allWaiting], all of it -- can't be
-/// changed, and says so.
+/// changed, and says so. With [repeatable], one that isn't in a series
+/// says "No recurrence", which opens to make it the first of one.
 Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
   BuildContext context,
   Event event, {
@@ -79,6 +80,7 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
   Future<bool> Function(String seriesId)? openSeries,
   List<ProposalAddition> additions = const [],
   Set<String> waiting = const {},
+  bool repeatable = false,
 }) {
   final seriesId = event.properties['recurring_event_id'] as String?;
   final day = MaterialLocalizations.of(context).formatMediumDate(event.start);
@@ -94,16 +96,22 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
         'summary': event.summary,
         'start': localIsoTimestamp(event.start),
         'end': localIsoTimestamp(event.end),
+        // One waiting to be saved, making it a series.
+        'repeat': switch (event.properties['repeat']) {
+          final Map repeat => Repeat.fromJson(repeat.cast()),
+          _ => null,
+        },
       },
       actions: actions,
       loadActions: loadActions,
       otherEvents: otherEvents,
       whoWhere: true,
       facets: true,
+      repeatable: repeatable && seriesId == null,
       save: save == null || event.id == null
           ? null
           : (changes) async =>
-                () => save(changes),
+                () => save(_encoded(changes)),
       remove: cancel == null || event.id == null || event.isCancelled
           ? null
           : _Removal(
@@ -136,7 +144,8 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
 /// server changed), or null if it was called off. Its times are kept
 /// clear of the events in [otherEvents]. With [clear], a trash can at its
 /// top right offers to make no new event, but just clear the time --
-/// asking first.
+/// asking first. With [repeatable], it says "No recurrence", which opens
+/// to make it the first event of a series.
 Future<List<Event>?> showNewEventDialog(
   BuildContext context, {
   required DateTime start,
@@ -148,6 +157,7 @@ Future<List<Event>?> showNewEventDialog(
   Future<List<PlanAction>> Function()? loadActions,
   List<ProposalAddition> additions = const [],
   Map<String, Object?> initial = const {},
+  bool repeatable = false,
 }) async {
   final values = {
     ...initial,
@@ -165,9 +175,10 @@ Future<List<Event>?> showNewEventDialog(
       // As an event's: who and where, from its facts, and its notes.
       whoWhere: true,
       facets: true,
+      repeatable: repeatable,
       additions: additions,
       save: (changes) async =>
-          () => create({...values, ...changes}),
+          () => create(_encoded({...values, ...changes})),
       remove: switch (clear) {
         final clear? => _Removal(
           tooltip: 'Clear this time instead',
@@ -231,10 +242,7 @@ Future<SummaryOutcome<List<Recurrence>>?> showSeriesSummaryDialog(
       save: (changes) async {
         final scope = await askSeriesScope(context, changes);
         if (scope == null) return null;
-        return () => save({
-          for (final MapEntry(:key, :value) in changes.entries)
-            key: value is Repeat ? value.toJson() : value,
-        }, scope);
+        return () => save(_encoded(changes), scope);
       },
       remove: switch (delete) {
         // Always this and following, never the whole series: see
@@ -254,6 +262,12 @@ Future<SummaryOutcome<List<Recurrence>>?> showSeriesSummaryDialog(
     ),
   );
 }
+
+/// [changes] as the server takes them: a [Repeat] as its JSON.
+Map<String, Object?> _encoded(Map<String, Object?> changes) => {
+  for (final MapEntry(:key, :value) in changes.entries)
+    key: value is Repeat ? value.toJson() : value,
+};
 
 /// The trash can's action: what it asks, and [run]s once confirmed --
 /// with whether [option], if it offers one, was switched on.
@@ -307,6 +321,7 @@ class _SummaryDialog<T> extends StatefulWidget {
     this.facets = false,
     this.additions = const [],
     this.waiting = const {},
+    this.repeatable = false,
   });
 
   /// What of it waits for a change to be saved, and so can't change; see
@@ -327,6 +342,11 @@ class _SummaryDialog<T> extends StatefulWidget {
 
   /// Whether it's a series, rather than an event.
   final bool series;
+
+  /// Whether it's an event that isn't in a series, but can be made the
+  /// first of one: "No recurrence" opens to say how it repeats, sent as
+  /// its `repeat`.
+  final bool repeatable;
 
   /// Whether it's a new event, not yet on the server: it opens with its
   /// summary to type, and "Create" sends it once it has one.
@@ -630,7 +650,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               if (_editing == _Field.priority) _priorityEditor(context),
               _summary(context),
               _timeLine(context),
-              if (widget.series) _repeatLine(context),
+              if (widget.series || widget.repeatable) _repeatLine(context),
               if (widget.openSeries case final open?) _seriesChip(open),
               const SizedBox(height: 8),
               // Its who, and its location; a new event's, where, as it's
@@ -1156,11 +1176,19 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   }
 
   /// A series' schedule in words, opening to change it; one made
-  /// elsewhere that the app can't say is shown, but can't be changed.
+  /// elsewhere that the app can't say is shown, but can't be changed. An
+  /// event that can be made a series says "No recurrence", which opens to
+  /// repeat it weekly, to change -- or, with "Don't repeat", not.
   Widget _repeatLine(BuildContext context) {
     final theme = Theme.of(context);
     final repeat = _value('repeat') as Repeat?;
-    final schedule = _changes.containsKey('repeat')
+    final adding = widget.repeatable;
+    final schedule = adding
+        ? switch (repeat) {
+            final repeat? => _onItsDay(repeat).describe(),
+            null => 'No recurrence',
+          }
+        : _changes.containsKey('repeat')
         ? repeat?.describe()
         : widget.values['schedule'] as String? ?? repeat?.describe();
     final editing = _editing == _Field.repeat;
@@ -1168,7 +1196,14 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         ? theme.colorScheme.primary
         : theme.colorScheme.onSurfaceVariant;
     final line = InkWell(
-      onTap: _editable && !_saving && repeat != null
+      onTap: !_editable || _saving || _waits('repeat')
+          ? null
+          : adding && repeat == null
+          ? () {
+              _set('repeat', const Repeat(every: 'week'));
+              _open(_Field.repeat);
+            }
+          : repeat != null
           ? () => _open(_Field.repeat)
           : null,
       borderRadius: BorderRadius.circular(6),
@@ -1187,7 +1222,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                     schedule ?? 'Repeats',
                     style: theme.textTheme.bodyMedium?.copyWith(color: color),
                   ),
-                  if (repeat == null)
+                  if (repeat == null && !adding)
                     Text(
                       "Made elsewhere, in a way the app can't change.",
                       style: theme.textTheme.bodySmall?.copyWith(
@@ -1214,10 +1249,29 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
             firstStart: _time('start'),
             onChanged: (repeat) => _set('repeat', repeat),
           ),
+          if (adding)
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: TextButton.icon(
+                icon: const Icon(Icons.close),
+                label: const Text("Don't repeat"),
+                onPressed: () {
+                  _set('repeat', null);
+                  setState(() => _editing = null);
+                },
+              ),
+            ),
         ],
       ),
     );
   }
+
+  /// [repeat], weekly without its weekdays, on the day it starts: as it
+  /// will repeat, to say so.
+  Repeat _onItsDay(Repeat repeat) =>
+      repeat.every == 'week' && repeat.weekdays == null
+      ? repeat.copyWith(weekdays: [Repeat.weekdayOf(_time('start'))])
+      : repeat;
 
   Widget _seriesChip(Future<bool> Function() open) => Align(
     alignment: AlignmentDirectional.centerStart,
