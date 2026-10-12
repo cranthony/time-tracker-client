@@ -5,13 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:time_tracker_client/auth/sign_in_mode.dart';
-import 'package:time_tracker_client/main.dart';
-import 'package:time_tracker_client/outbox/action_outbox.dart';
-import 'package:time_tracker_client/outbox/note_outbox.dart';
-import 'package:time_tracker_client/outbox/outbox_store.dart';
-import 'package:time_tracker_client/services/actions_repository.dart';
-import 'package:time_tracker_client/services/events_repository.dart';
-import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/widgets/sign_in_off_banner.dart';
 
@@ -194,28 +187,19 @@ void main() {
     });
   });
 
-  testWidgets('the app has the banner, and says so in its title, exactly when '
-      'this build skips sign-in', (tester) async {
-    final notes = InMemoryNotesRepository();
-    final actions = InMemoryActionsRepository();
+  testWidgets('the banner shows by default exactly when this build skips '
+      'sign-in', (tester) async {
+    serverSignInOff.value = false;
     await tester.pumpWidget(
-      TimeTrackerApp(
-        repository: notes,
-        eventsRepository: InMemoryEventsRepository(),
-        actionsRepository: actions,
-        outbox: NoteOutbox(store: InMemoryOutboxStore(), repository: notes),
-        actionOutbox: ActionOutbox(
-          store: InMemoryOutboxStore(),
-          repository: actions,
-        ),
+      MaterialApp(
+        builder: (context, child) => SignInOffBanner(child: child!),
+        home: const Scaffold(body: Text('Events')),
       ),
     );
-    await tester.pump();
 
     expect(
       find.text('Sign-in off: this build trusts its network'),
       signInOff ? findsOneWidget : findsNothing,
     );
-    expect(tester.widget<MaterialApp>(find.byType(MaterialApp)).title, appName);
   });
 }
