@@ -48,7 +48,16 @@ adb logcat -v time > "$OUT/calendar_logcat.txt" &
 logcat=$!
 
 launch() { adb shell am start -W -n "$PKG/.MainActivity" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER >/dev/null; }
-home() { adb shell input keyevent KEYCODE_HOME; }
+# Home, to the home screen: the launcher may open on its app drawer
+# instead (it has since October 2026's images), which Home again closes.
+home() {
+  adb shell input keyevent KEYCODE_HOME
+  sleep 1
+  if ui_nodes | grep -qE '(text|content-desc)="All apps"'; then
+    adb shell input keyevent KEYCODE_HOME
+    sleep 1
+  fi
+}
 
 # The on-screen views (Flutter's semantics, and the launcher's widget,
 # included), one per line.
@@ -100,6 +109,7 @@ if ! { tap_view 'Show menu' && sleep 1 &&
 else
   # The launcher's prompt: its button, not its title, which may read the
   # same.
+  adb exec-out screencap -p > "$OUT/calendar_prompt.png"
   tap_view '(Add|ADD|Add to home screen|ADD TO HOME SCREEN)' 'clickable="true"' ||
     echo "No prompt to accept; added already?"
   sleep 2
