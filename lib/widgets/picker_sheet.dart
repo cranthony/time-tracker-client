@@ -370,7 +370,8 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
 }
 
 /// The place an event was, as a maps app would find it -- an address,
-/// or a place's name -- to type in full, and open in Maps.
+/// or a place's name -- to type in full, and open in Maps; or a link, to
+/// open.
 class _MapLocationPage extends StatefulWidget {
   const _MapLocationPage({required this.text, required this.onChanged});
 
@@ -398,7 +399,8 @@ class _MapLocationPageState extends State<_MapLocationPage> {
       children: [
         Text(
           'Where it was, as a maps app would find it: an address, or a '
-          "place's name. Kept apart from the location on the other page.",
+          "place's name -- or a link, to a map or a video call, say. Kept "
+          'apart from the location on the other page.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -437,8 +439,8 @@ class _MapLocationPageState extends State<_MapLocationPage> {
             onPressed: _controller.text.trim().isEmpty
                 ? null
                 : () => openInMaps(_controller.text),
-            icon: const Icon(Icons.map_outlined),
-            label: const Text('Open in Maps'),
+            icon: Icon(placeButton(_controller.text).icon),
+            label: Text(placeButton(_controller.text).tooltip),
           ),
         ),
       ],

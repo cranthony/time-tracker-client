@@ -1428,7 +1428,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   /// ([showWhoWhereSheet]).
   ///
   /// Where, its map location shows if it has no location, and a map
-  /// button opens that in a maps app.
+  /// button opens that in a maps app -- an arrow, if it's a link, opens
+  /// the link.
   Widget _whoRow(BuildContext context, {bool where = false}) {
     final theme = Theme.of(context);
     final facts = Facts.fromJson(_value('facts')) ?? const Facts();
@@ -1477,8 +1478,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           ),
           if (where && map.isNotEmpty) ...[
             IconButton(
-              icon: const Icon(Icons.map_outlined),
-              tooltip: 'Open in Maps',
+              icon: Icon(placeButton(map).icon),
+              tooltip: placeButton(map).tooltip,
               visualDensity: VisualDensity.compact,
               color: theme.colorScheme.primary,
               onPressed: () => openInMaps(map),

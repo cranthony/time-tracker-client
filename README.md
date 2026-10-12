@@ -534,7 +534,9 @@ its location sheet: where it was as a maps app would find it, an address
 or a place's name, typed in full -- a logged calendar event's location
 lands there. With one, a map button at the right of the event's
 location opens it in your default maps app (with a `geo:` link; Google
-Maps in the browser on the web and Windows).
+Maps in the browser on the web and Windows). If it's just a web link --
+to a map, or a video call -- the button is an arrow instead, and opens
+the link. A calendar event's sheet has the same button by its location.
 
 ## Background updates
 

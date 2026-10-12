@@ -145,6 +145,9 @@ void main() {
       find.textContaining('Six-month cleaning.', findRichText: true),
       findsOneWidget,
     );
+    // Where it is, with the button to open it in a maps app.
+    expect(find.text('Bright Smile Dental'), findsOneWidget);
+    expect(find.byTooltip('Open in Maps'), findsOneWidget);
     await tester.tap(find.text('Open in Calendar'));
     await tester.pumpAndSettle();
     expect([for (final e in source.opened) e.title], ['Dentist']);
@@ -265,7 +268,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('12 Fifth Ave, New York'), findsOneWidget);
 
+    // A link, opened by an arrow instead.
     await tester.tap(find.text('12 Fifth Ave, New York'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(Tab, 'Map location'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, '12 Fifth Ave, New York'),
+      'https://maps.app.goo.gl/abc123',
+    );
+    await tester.pump();
+    expect(find.widgetWithText(TextButton, 'Open link'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Open link'), findsOneWidget);
+    expect(find.byTooltip('Open in Maps'), findsNothing);
+
+    await tester.tap(find.text('https://maps.app.goo.gl/abc123'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(Tab, 'Map location'));
     await tester.pumpAndSettle();

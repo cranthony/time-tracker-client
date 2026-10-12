@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../models/google_calendar.dart';
+import '../services/maps.dart';
 import 'event_description.dart';
 
 /// What to do with a Google Calendar event, from its sheet.
 enum GoogleEventChoice { log, open }
 
-/// Shows [event]: its title, times, calendar and where. Says whether the
+/// Shows [event]: its title, times, calendar and where -- with a button
+/// to open where in a maps app, or, if it's a link, to open that. Says whether the
 /// user chose to log it as an event of their own, or open it in Google
 /// Calendar; null if neither.
 Future<GoogleEventChoice?> showGoogleEventSheet(
@@ -34,20 +36,22 @@ Future<GoogleEventChoice?> showGoogleEventSheet(
               : 'All day, ${local.formatMediumDate(event.start)}'
         : '${local.formatMediumDate(event.start)}, '
               '${time(event.start)} – ${time(event.end)}';
-    Widget row(IconData icon, String text, {Color? color}) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 20,
-            color: color ?? theme.colorScheme.onSurfaceVariant,
+    Widget row(IconData icon, String text, {Color? color, Widget? end}) =>
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: color ?? theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 16),
+              Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
+              ?end,
+            ],
           ),
-          const SizedBox(width: 16),
-          Expanded(child: Text(text, style: theme.textTheme.bodyMedium)),
-        ],
-      ),
-    );
+        );
     return SafeArea(
       child: SingleChildScrollView(
         child: Padding(
@@ -74,8 +78,19 @@ Future<GoogleEventChoice?> showGoogleEventSheet(
               ),
               const SizedBox(height: 8),
               row(Icons.schedule, when),
-              if (event.location case final where?)
-                row(Icons.place_outlined, where),
+              if (event.location?.trim() case final where?
+                  when where.isNotEmpty)
+                row(
+                  Icons.place_outlined,
+                  where,
+                  end: IconButton(
+                    icon: Icon(placeButton(where).icon),
+                    tooltip: placeButton(where).tooltip,
+                    visualDensity: VisualDensity.compact,
+                    color: theme.colorScheme.primary,
+                    onPressed: () => openInMaps(where),
+                  ),
+                ),
               if (event.description case final about?
                   when about.trim().isNotEmpty)
                 Padding(
