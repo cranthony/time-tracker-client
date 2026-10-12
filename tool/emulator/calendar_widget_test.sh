@@ -130,11 +130,17 @@ fi
 # as it starts. Not force-stopped: Android hides a stopped app's widgets
 # until it's opened again.
 event=$(ui_nodes | grep -oE "text=\"$SAMPLE_EVENTS\"" | head -1 | sed 's/text="\(.*\)"/\1/')
-adb shell am kill "$PKG"
-sleep 1
-adb shell pidof "$PKG" >/dev/null && echo "Still running after am kill"
+# am kill only ends a process Android counts as safe to, which an app just
+# sent to the background may not be yet: so again, until it's gone.
+for _ in $(seq 1 15); do
+  adb shell am kill "$PKG"
+  sleep 1
+  adb shell pidof "$PKG" >/dev/null || break
+done
 if [ -z "$event" ]; then
   fail event_cold "no event in the widget to tap"
+elif adb shell pidof "$PKG" >/dev/null; then
+  fail event_cold "the app was still running 15 s after am kill"
 # On the timeline, it's labelled with its times too: "Dinner, 7:00 PM to
 # 7:45 PM".
 elif tap_view "$event" && wait_for 'Previous day' 15 &&
