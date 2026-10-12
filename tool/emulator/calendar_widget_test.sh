@@ -13,7 +13,7 @@
 #
 #   shown      added from the app's menu, it shows the header, today, and
 #              events from the sample data
-#   event_cold an event tapped, the app not running: Events, showing it
+#   event_cold an event tapped, the app's process gone: Events, showing it
 #   day_warm   a day's header tapped, the app in the background: Events
 #   add_note   its "+" tapped: the New note dialog
 #
@@ -125,11 +125,14 @@ else
   fi
 fi
 
-# An event, with the app not running: the tap that launched it is the one
-# the Dart side collects as it starts.
+# An event, with the app's process gone, as Android ends it in the
+# background: the tap that launched it is the one the Dart side collects
+# as it starts. Not force-stopped: Android hides a stopped app's widgets
+# until it's opened again.
 event=$(ui_nodes | grep -oE "text=\"$SAMPLE_EVENTS\"" | head -1 | sed 's/text="\(.*\)"/\1/')
-adb shell am force-stop "$PKG"
+adb shell am kill "$PKG"
 sleep 1
+adb shell pidof "$PKG" >/dev/null && echo "Still running after am kill"
 if [ -z "$event" ]; then
   fail event_cold "no event in the widget to tap"
 # On the timeline, it's labelled with its times too: "Dinner, 7:00 PM to

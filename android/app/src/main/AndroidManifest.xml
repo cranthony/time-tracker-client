@@ -29,6 +29,14 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Intents with a URI aren't routes: Flutter's default would push
+                 one for each, a second home page that fails to build. The
+                 home screen widgets' taps all have one (Glance gives each a
+                 URI of its own), and so does the sign-in redirect; MainActivity
+                 hands each to the Dart side itself. -->
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
             <!-- The "Add note" app shortcut; see res/xml/shortcuts.xml. -->
             <meta-data
                 android:name="android.app.shortcuts"
