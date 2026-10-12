@@ -907,16 +907,24 @@ List<double> _marked(Summary? summary) => summary == null
     : [summary.mean, summary.median, summary.p95, summary.max];
 
 /// A dashed line across the graph at each of [summary]'s mean, median,
-/// 95th percentile and max, each labelled with which it is, of [what] --
-/// the tools shown, say -- and its value. The labels take turns at the
-/// left, the right and the middle, so lines close together -- the mean
-/// and the median, or the mean and p95 under a far-off max -- don't
-/// cover each other's.
+/// 95th percentile and max, each labelled with which it is, whose -- the
+/// tools whose calls it falls on ([whose]), or for the mean, which is no
+/// one call's, [what], the tools shown -- and its value; lines that fall
+/// together, of the same tools, are one, labelled with all they are.
+/// Tools too many to fit across are cut short: "a / b / 3 more".
+///
+/// The labels take turns at the left, the right and the middle, so lines
+/// close together -- the mean and p95 under a far-off max, say -- don't
+/// cover each other's; the median's is under its line, as it's most often
+/// a little under the mean, whose label is over it -- unless that's off
+/// the foot of the graph, which runs over [range].
 ExtraLinesData _markers(
   BuildContext context,
   Summary? summary,
   String Function(num) format, {
+  required (double, double) range,
   String? what,
+  List<String>? Function(Statistic)? whose,
 }) {
   if (summary == null) return const ExtraLinesData();
   final colors = Theme.of(context).colorScheme;
@@ -925,14 +933,74 @@ ExtraLinesData _markers(
     background: Paint()
       ..color = colors.surfaceContainerLow.withValues(alpha: 0.85),
   );
+  const padding = EdgeInsets.symmetric(horizontal: 4, vertical: 1);
+  // The plot's width, as [_Zoomable] reckons it.
+  final room = MediaQuery.sizeOf(context).width - 104 - padding.horizontal;
+  final scaler = MediaQuery.textScalerOf(context);
+  bool fits(String text) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width <= room;
+  }
+
+  /// [head] · as many of [who] as fit · [tail].
+  String fitted(String head, List<String>? who, String tail) {
+    String label(List<String> who, [int more = 0]) => [
+      head,
+      if (who.isNotEmpty) [...who, if (more > 0) '$more more'].join(' / '),
+      tail,
+    ].join(' · ');
+    if (who == null || who.isEmpty) return label(const []);
+    for (var k = who.length; k > 0; k--) {
+      final text = label(who.take(k).toList(), who.length - k);
+      if (fits(text)) return text;
+    }
+    // Not even one whole: the first, shortened.
+    var first = who.first;
+    while (first.length > 1) {
+      first = first.substring(0, first.length - 1);
+      final text = label(['$first…'], who.length - 1);
+      if (fits(text)) return text;
+    }
+    return label(['$first…'], who.length - 1);
+  }
+
+  final (low, high) = range;
+  // A label's height is about a sixteenth of a graph's.
+  final nearFoot = (summary.median - low) / max(1e-9, high - low) < 0.06;
+  // Each line: which it is, whose, where, and its label's place.
+  final lines = <(List<String>, List<String>?, double, Alignment)>[];
+  for (final (statistic, name, y, alignment) in [
+    (Statistic.mean, 'Mean', summary.mean, Alignment.topLeft),
+    (
+      Statistic.median,
+      'Median',
+      summary.median,
+      nearFoot ? Alignment.topRight : Alignment.bottomRight,
+    ),
+    (Statistic.p95, 'p95', summary.p95, Alignment.topCenter),
+    (Statistic.max, 'Max', summary.max, Alignment.topRight),
+  ]) {
+    final who = whose?.call(statistic) ?? [?what];
+    final same = lines.indexWhere(
+      (l) => l.$3 == y && l.$2?.join(' / ') == who.join(' / '),
+    );
+    if (same >= 0) {
+      // Labelled as the highest of them is placed.
+      final (names, _, _, _) = lines[same];
+      lines[same] = ([...names, name], who, y, alignment);
+    } else {
+      lines.add(([name], who, y, alignment));
+    }
+  }
   return ExtraLinesData(
     horizontalLines: [
-      for (final (name, y, alignment) in [
-        ('Mean', summary.mean, Alignment.topLeft),
-        ('Median', summary.median, Alignment.topRight),
-        ('p95', summary.p95, Alignment.topCenter),
-        ('Max', summary.max, Alignment.topRight),
-      ])
+      for (final (names, who, y, alignment) in lines)
         HorizontalLine(
           y: y,
           color: colors.outline,
@@ -941,9 +1009,9 @@ ExtraLinesData _markers(
           label: HorizontalLineLabel(
             show: true,
             alignment: alignment,
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            padding: padding,
             style: style,
-            labelResolver: (_) => [name, ?what, format(y)].join(' · '),
+            labelResolver: (_) => fitted(names.join(', '), who, format(y)),
           ),
         ),
     ],
@@ -1017,7 +1085,18 @@ class _LatencyCard extends StatelessWidget {
                     rightTitles: _noTitles,
                   ),
                   borderData: FlBorderData(show: false),
-                  extraLinesData: _markers(context, total, _ms, what: tools),
+                  extraLinesData: _markers(
+                    context,
+                    total,
+                    _ms,
+                    range: (0, max(1, top)),
+                    what: tools,
+                    whose: (s) => whoseStatistic(
+                      s,
+                      [for (final c in calls) c.wholeMs],
+                      [for (final c in calls) c.tool],
+                    ),
+                  ),
                   lineBarsData: [
                     _dots([
                       for (final p in points) FlSpot(_x(p.at), p.work),
@@ -1109,7 +1188,12 @@ class _MemoryCard extends StatelessWidget {
                     rightTitles: _noTitles,
                   ),
                   borderData: FlBorderData(show: false),
-                  extraLinesData: _markers(context, summary, _mib),
+                  extraLinesData: _markers(
+                    context,
+                    summary,
+                    _mib,
+                    range: (max(0, low - pad), high + pad),
+                  ),
                   lineBarsData: [
                     _dots([
                       for (final p in points) FlSpot(_x(p.at), p.mib),
@@ -1331,7 +1415,16 @@ class _ClientCallsCard extends StatelessWidget {
                     rightTitles: _noTitles,
                   ),
                   borderData: FlBorderData(show: false),
-                  extraLinesData: _markers(context, summary, _ms, what: tools),
+                  extraLinesData: _markers(
+                    context,
+                    summary,
+                    _ms,
+                    range: (0, max(1, top)),
+                    what: tools,
+                    whose: (s) => whoseStatistic(s, msOf(null), [
+                      for (final c in calls) c.tool,
+                    ]),
+                  ),
                   lineBarsData: [
                     for (final (points, color) in series)
                       _dots(
