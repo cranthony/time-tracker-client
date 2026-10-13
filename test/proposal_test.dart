@@ -21,6 +21,7 @@ import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/other_events.dart';
+import 'package:time_tracker_client/widgets/proposal_problem_status.dart';
 import 'package:time_tracker_client/widgets/proposal_review.dart';
 
 import 'hold_drag.dart';
@@ -640,6 +641,7 @@ void main() {
       NotesRepository? notes,
       bool queued = false,
       bool hidden = false,
+      ProposalProblemStatus? problem,
     }) async {
       // A phone's height: the bar and its details, and the morning, in
       // view.
@@ -676,6 +678,7 @@ void main() {
               proposalSeen: ProposalSeenStore(persist: false, seen: seen),
               notesRepository: notes,
               eventOutbox: outbox,
+              proposalProblem: problem,
               clock: () => now,
             ),
           ),
@@ -698,6 +701,31 @@ void main() {
     }
 
     final confirmButton = find.widgetWithText(FilledButton, 'Confirm');
+
+    testWidgets('one that no longer plans says why at the foot of the page, '
+        'not in its bar over the calendar', (tester) async {
+      final problem = ProposalProblemStatus();
+      addTearDown(problem.dispose);
+      const why =
+          'Sleep at 11:00 PM overlaps Dinner, which the calendar moved since '
+          'it was planned, and much more besides.';
+      await open(
+        tester,
+        json: {...proposalJson(), 'events': null, 'problem': why},
+        problem: problem,
+      );
+
+      expect(find.byType(ProposalBar), findsOneWidget);
+      expect(find.textContaining('Sleep at 11:00 PM overlaps'), findsNothing);
+      expect(problem.problem, why);
+      final line = problem.line(tester.element(find.byType(EventsScreen)));
+      expect(line?.needsYou, isTrue);
+
+      // Gone with the page.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+      expect(problem.problem, isNull);
+    });
 
     testWidgets('queued, confirming waits to save, then says what came of '
         'it, even once the proposal is gone', (tester) async {

@@ -20,6 +20,7 @@ import '../services/traits_repository.dart';
 import '../widgets/event_outbox_status.dart';
 import '../widgets/load_status.dart';
 import '../widgets/outbox_status.dart';
+import '../widgets/proposal_problem_status.dart';
 import '../widgets/status_bar.dart';
 import 'events_screen.dart';
 import 'notes_screen.dart';
@@ -160,6 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _notesLoads.dispose();
     _eventsLoads.dispose();
     _actionsLoads.dispose();
+    _proposalProblem.dispose();
     super.dispose();
   }
 
@@ -169,12 +171,17 @@ class _HomeScreenState extends State<HomeScreen> {
   final _eventsLoads = LoadStatus('events');
   final _actionsLoads = LoadStatus('actions');
 
+  /// Why the open proposal can't be confirmed, while Events is shown.
+  final _proposalProblem = ProposalProblemStatus();
+
   /// What the bar at the foot of every page keeps the user posted on: the
-  /// page shown's load failing, then what's waiting to save.
+  /// page shown's load failing, or the open proposal's problem, then
+  /// what's waiting to save.
   late final _status = <StatusSource>[
     _notesLoads,
     _eventsLoads,
     _actionsLoads,
+    _proposalProblem,
     if (widget.eventOutbox case final outbox?)
       EventOutboxStatus(outbox, lookup: _lookup, onShow: _showEvent),
     ActionOutboxStatus(widget.actionOutbox, nameOf: _actionName),
@@ -220,6 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
           showEventRequests: _toEvents.stream,
           showTimeRequests: _toEventsTime.stream,
           loads: _eventsLoads,
+          proposalProblem: _proposalProblem,
         ),
         _Tab.plan => PlanScreen(
           repository: widget.actionsRepository,

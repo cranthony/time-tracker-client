@@ -46,6 +46,7 @@ import '../widgets/event_dialog.dart';
 import '../widgets/follow_through_dialog.dart';
 import '../widgets/other_events.dart';
 import '../widgets/event_summary_dialog.dart';
+import '../widgets/proposal_problem_status.dart';
 import '../widgets/proposal_review.dart';
 import '../widgets/recurrence_dialog.dart';
 import '../widgets/refreshing_bar.dart';
@@ -101,6 +102,7 @@ class EventsScreen extends StatefulWidget {
     this.onSignOut,
     this.version,
     this.placeStore,
+    this.proposalProblem,
     this.memory,
     this.proposals,
     this.proposalSeen,
@@ -129,6 +131,10 @@ class EventsScreen extends StatefulWidget {
   /// How loading the day shown is going, for the status bar: the app's,
   /// or else one of the page's own.
   final LoadStatus? loads;
+
+  /// Where to say why the open proposal can't be confirmed, for the
+  /// status bar; null to say nothing of it.
+  final ProposalProblemStatus? proposalProblem;
 
   /// Where to list actions from, to pick an event's; null to type their ids.
   final ActionsRepository? actionsRepository;
@@ -1316,6 +1322,7 @@ class _EventsScreenState extends State<EventsScreen> {
     _memory.removeListener(_memoryChanged);
     _lifecycle.dispose();
     _loads.unbind();
+    widget.proposalProblem?.clear();
     if (widget.loads == null) _loads.dispose();
     widget.outbox?.removeListener(_outboxChanged);
     widget.eventOutbox?.removeListener(_memoryChanged);
@@ -3531,6 +3538,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    _sayProblem();
     final today = widget.clock();
     // Back leaves the top mode, as ✕ does, before it leaves the page.
     final modes = _modes;
@@ -3742,6 +3750,23 @@ class _EventsScreenState extends State<EventsScreen> {
       _note != null ||
       _cancel != null ||
       _addition != null;
+
+  /// Says why the open proposal can't be confirmed, if it can't, at the
+  /// foot of the page ([ProposalProblemStatus]): once the frame's built,
+  /// as that's built with it.
+  void _sayProblem() {
+    final status = widget.proposalProblem;
+    if (status == null) return;
+    final problem = switch (_proposal) {
+      final proposal? when proposal.events == null =>
+        proposal.problem ?? ProposalProblemStatus.fallback,
+      _ => null,
+    };
+    if (problem == status.problem) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) status.show(problem);
+    });
+  }
 
   Widget _buildDetails(Proposal proposal) {
     final notes = _proposalNotes;
