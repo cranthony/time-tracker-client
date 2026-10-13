@@ -31,19 +31,6 @@ class SignInRequiredException implements Exception {
   String toString() => 'Sign-in required';
 }
 
-/// The server asked for a token, from a build that skips sign-in
-/// ([McpClient.signInOff]): signing in won't help, only another build of
-/// one or the other.
-class ServerRequiresSignInException extends McpException {
-  ServerRequiresSignInException(Uri endpoint)
-    : super(
-        'This build of the app has sign-in turned off (DISABLE_AUTH), but '
-        'the server at $endpoint requires it. Use a server built with '
-        'AUTH_DISABLED, or a build of the app without DISABLE_AUTH.',
-        statusCode: 401,
-      );
-}
-
 /// Supplies bearer tokens for MCP requests.
 abstract class McpAuth {
   /// A currently valid access token. Throws [SignInRequiredException] if
@@ -70,7 +57,6 @@ class McpClient {
   McpClient({
     required this.endpoint,
     this.auth,
-    this.signInOff = false,
     this.serverSignInOff,
     this.health,
     http.Client? httpClient,
@@ -85,10 +71,6 @@ class McpClient {
 
   final Uri endpoint;
   final McpAuth? auth;
-
-  /// Whether this build skips sign-in: it sends no token, and a server
-  /// that wants one is [ServerRequiresSignInException].
-  final bool signInOff;
 
   /// Set, as it connects, to whether the server says it skips sign-in.
   final ValueNotifier<bool>? serverSignInOff;
@@ -245,7 +227,14 @@ class McpClient {
     Map<String, Object?> body, {
     bool retryUnauthorized = true,
   }) async {
-    final token = await auth?.accessToken();
+    // Connected to before signing in: a server that wants a token says so
+    // (a 401), and one that skips sign-in never does.
+    String? token;
+    try {
+      token = await auth?.accessToken();
+    } on SignInRequiredException {
+      token = null;
+    }
     final response = await _http.post(
       endpoint,
       headers: {
@@ -258,9 +247,8 @@ class McpClient {
       body: jsonEncode(body),
     );
     if (response.statusCode == 401) {
-      if (signInOff) throw ServerRequiresSignInException(endpoint);
-      if (auth == null) throw SignInRequiredException();
-      await auth!.rejected(token!);
+      if (auth == null || token == null) throw SignInRequiredException();
+      await auth!.rejected(token);
       // Once with a refreshed token; after that, only signing in will help.
       if (!retryUnauthorized) throw SignInRequiredException();
       return _post(body, retryUnauthorized: false);

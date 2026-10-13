@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.68.0
+
+- The app connects to the server before it signs in, and asks you to sign
+  in only when the server wants it. A server built without sign-in
+  (`AUTH_DISABLED`) is used as it is, with the amber strip, About and
+  Settings saying so, and no Sign out.
+- So there's no longer a build of the app without sign-in:
+  `DISABLE_AUTH` is gone, and the same build works with either server.
+
 ## 7.67.1
 
 - The app knows a server skips sign-in by the flag in its handshake

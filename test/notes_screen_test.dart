@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:time_tracker_client/auth/sign_in_mode.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
@@ -396,14 +395,10 @@ void main() {
     await tester.tap(find.text('About'));
     await tester.pumpAndSettle();
 
-    // "(no sign-in)" too, in a build that skips it, and why.
-    expect(find.text(appName), findsOneWidget);
+    expect(find.text('Time Tracker'), findsOneWidget);
     expect(find.text('1.1.0 (25)'), findsOneWidget);
     expect(find.text('Server: offline demo'), findsOneWidget);
-    expect(
-      find.textContaining('Sign-in is off in this build'),
-      signInOff ? findsOneWidget : findsNothing,
-    );
+    expect(find.textContaining('Sign-in is off'), findsNothing);
   });
 
   screenTest('the home screen "+" opens the dialog at the time it was tapped', (

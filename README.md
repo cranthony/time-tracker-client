@@ -458,37 +458,22 @@ Redirect URIs it registers:
 ### Without sign-in, behind a corporate proxy
 
 On a network where a proxy in front of the server already signs people
-in, the web app can be built to skip sign-in, against a server built with
-`AUTH_DISABLED` (see the server's README):
+in, the server can be built to skip sign-in (`AUTH_DISABLED`; see the
+server's README). The app needs nothing different: the same build works
+with either server. It connects before it signs in, sending a token only
+once it has one, and asks you to sign in only when the server answers
+that it wants one (a 401). A server built with `AUTH_DISABLED` never does,
+so the app never signs in to it.
 
-```sh
-flutter build web --release --dart-define=DISABLE_AUTH=true   --dart-define=MCP_URL=https://your-server.example/mcp
-```
-
-`DISABLE_AUTH` is `true`, `1` or `yes`, in any case
-([`lib/auth/sign_in_mode.dart`](lib/auth/sign_in_mode.dart)); anything
-else, or nothing, signs in as usual. Such a build never signs in and sends
-the server no bearer token, and it's hard to miss:
+Such a server says so in its reply to the MCP handshake (a flag,
+`time-tracking/authDisabled`, in its `_meta`), which the app reads each
+time it connects. While it's set, the app makes it hard to miss:
 
 - **A strip on every screen.** Amber, across the top, above every page
-  and dialog, and never dismissed: "Sign-in off: this build trusts its
-  network".
-- **Its name says so.** The tab title and About read "Time Tracker (no
-  sign-in)", and About says what that means.
-- **Nothing to sign in or out of.** There's no sign-in prompt and no Sign
-  out; Settings says why.
-- **A server that wants a token says so.** Rather than asking to sign in,
-  the app explains that this build has sign-in off but the server requires
-  it.
-
-A normal build that connects to a server built with `AUTH_DISABLED` shows
-the strip too ("Sign-in off: the server trusts every request"): such a
-server sets a flag, `time-tracking/authDisabled`, in the `_meta` of its
-reply to the MCP handshake, which the app reads as it connects, and again
-whenever it connects anew. It works on every platform, but it's
-meant for the web app. The release builds (Pages, Android) never set it;
-CI checks this build's tests and web build on every PR (`no-sign-in.yml`),
-without publishing it.
+  and dialog, and never dismissed: "Sign-in off: the server trusts every
+  request".
+- **About and Settings say so**, and why.
+- **No Sign out**: there's nothing to sign out of.
 
 ## Notes that haven't been saved yet
 
