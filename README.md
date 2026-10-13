@@ -482,8 +482,10 @@ the server no bearer token, and it's hard to miss:
   it.
 
 A normal build that connects to a server built with `AUTH_DISABLED` shows
-the strip too ("Sign-in off: the server trusts every request"), since the
-server says so as it's connected to. It works on every platform, but it's
+the strip too ("Sign-in off: the server trusts every request"): such a
+server sets a flag, `time-tracking/authDisabled`, in the `_meta` of its
+reply to the MCP handshake, which the app reads as it connects, and again
+whenever it connects anew. It works on every platform, but it's
 meant for the web app. The release builds (Pages, Android) never set it;
 CI checks this build's tests and web build on every PR (`no-sign-in.yml`),
 without publishing it.

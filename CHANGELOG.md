@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.67.1
+
+- The app knows a server skips sign-in by the flag in its handshake
+  (`_meta`'s `time-tracking/authDisabled`), not by its wording, which may
+  change.
+
 ## 7.67.0
 
 - A build without sign-in, for a corporate network whose proxy signs
