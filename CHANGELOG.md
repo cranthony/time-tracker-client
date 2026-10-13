@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.69.1
+
+- Why a compaction proposal can't be confirmed any more is said in the
+  status bar at the foot of the page, as other errors are -- tap it for
+  the whole message -- instead of under the proposal's bar, where a long
+  one pushed the calendar out of view.
+
 ## 7.69.0
 
 - The web app can be built with a relative `MCP_URL`, such as `/mcp`,

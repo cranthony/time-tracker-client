@@ -93,6 +93,9 @@ bool _same(List<String> a, List<String> b) =>
 /// can't be confirmed. One whose apply stopped partway offers to
 /// [onRetry]. Tapping its heading calls [onGoTo]; its menu offers to
 /// [onAbandon] it. [changes] events changed since the user last looked.
+/// Why one no longer plans, if it doesn't, is said at the foot of the
+/// page (ProposalProblemStatus), not here, where a long one hid the
+/// calendar.
 /// While [busy], nothing can be tapped; nor while [closing] -- confirming,
 /// finishing or abandoning it, which it names -- waits to save.
 class ProposalBar extends StatelessWidget {
@@ -166,12 +169,6 @@ class ProposalBar extends StatelessWidget {
               'Claude picks ${open == 1 ? 'it' : 'them'} up on its next '
               'run, or ask it in a conversation.',
           colors.secondary,
-        ),
-      if (proposal.events == null)
-        (
-          Icons.report_outlined,
-          proposal.problem ?? 'It no longer fits the calendar.',
-          colors.error,
         ),
     ];
     return Material(
