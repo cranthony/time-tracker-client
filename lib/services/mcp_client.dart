@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+
+import '../auth/sign_in_mode.dart';
 
 import 'client_health.dart';
 
@@ -26,6 +29,19 @@ class McpException implements Exception {
 class SignInRequiredException implements Exception {
   @override
   String toString() => 'Sign-in required';
+}
+
+/// The server asked for a token, from a build that skips sign-in
+/// ([McpClient.signInOff]): signing in won't help, only another build of
+/// one or the other.
+class ServerRequiresSignInException extends McpException {
+  ServerRequiresSignInException(Uri endpoint)
+    : super(
+        'This build of the app has sign-in turned off (DISABLE_AUTH), but '
+        'the server at $endpoint requires it. Use a server built with '
+        'AUTH_DISABLED, or a build of the app without DISABLE_AUTH.',
+        statusCode: 401,
+      );
 }
 
 /// Supplies bearer tokens for MCP requests.
@@ -54,6 +70,8 @@ class McpClient {
   McpClient({
     required this.endpoint,
     this.auth,
+    this.signInOff = false,
+    this.serverSignInOff,
     this.health,
     http.Client? httpClient,
     this.retryDelays = const [
@@ -67,6 +85,13 @@ class McpClient {
 
   final Uri endpoint;
   final McpAuth? auth;
+
+  /// Whether this build skips sign-in: it sends no token, and a server
+  /// that wants one is [ServerRequiresSignInException].
+  final bool signInOff;
+
+  /// Set, as it connects, to whether the server says it skips sign-in.
+  final ValueNotifier<bool>? serverSignInOff;
   final http.Client _http;
 
   /// Where each tool call is recorded -- how long it took, retries and
@@ -164,11 +189,12 @@ class McpClient {
 
   Future<void> _ensureInitialized() async {
     if (_initialized) return;
-    await _request('initialize', {
+    final result = await _request('initialize', {
       'protocolVersion': _protocolVersion,
       'capabilities': {},
       'clientInfo': {'name': 'time-tracker-client', 'version': '1.0.0'},
     });
+    serverSignInOff?.value = handshakeSaysSignInOff(result);
     await _post({'jsonrpc': '2.0', 'method': 'notifications/initialized'});
     _initialized = true;
   }
@@ -232,6 +258,7 @@ class McpClient {
       body: jsonEncode(body),
     );
     if (response.statusCode == 401) {
+      if (signInOff) throw ServerRequiresSignInException(endpoint);
       if (auth == null) throw SignInRequiredException();
       await auth!.rejected(token!);
       // Once with a refreshed token; after that, only signing in will help.

@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.67.0
+
+- A build without sign-in, for a corporate network whose proxy signs
+  people in (`--dart-define=DISABLE_AUTH=true`): it never signs in and
+  sends the server no token. An amber strip across the top of every
+  screen says so, as do its title and About ("Time Tracker (no
+  sign-in)") and Settings; a server that still wants a token is
+  explained rather than asked to sign in to.
+- The app shows the same strip when the server it connects to says it
+  skips sign-in.
+
 ## 7.66.1
 
 - Tapping an event on the home screen calendar with the app closed opens

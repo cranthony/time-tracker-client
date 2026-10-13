@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:time_tracker_client/widgets/sign_in_off_banner.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/outbox/action_outbox.dart';
 import 'package:time_tracker_client/demo/sample_data.dart';
@@ -68,6 +69,7 @@ void main() {
       Future<void> Function()? then,
       bool scoped = false,
       EndMode? endMode,
+      bool signInOff = false,
     }) async {
       tester.view.physicalSize = _phone * 2;
       tester.view.devicePixelRatio = 2;
@@ -85,7 +87,12 @@ void main() {
           // settings as they start, for each screen.
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(disableAnimations: true),
-            child: AppSettingsScope(settings: settings, child: child!),
+            // Off only where asked, whichever build the tests are.
+            child: SignInOffBanner(
+              thisBuild: signInOff,
+              server: ValueNotifier(false),
+              child: AppSettingsScope(settings: settings, child: child!),
+            ),
           ),
           home: screen,
         );
@@ -163,6 +170,17 @@ void main() {
     // The page as it opens: its tabs, over the Actions pane.
     testWidgets('plan ($mode)', (tester) async {
       await render(tester, 'plan', plan(), scoped: true);
+    });
+
+    // As a build without sign-in shows it: the strip over every screen.
+    testWidgets('plan_sign_in_off ($mode)', (tester) async {
+      await render(
+        tester,
+        'plan_sign_in_off',
+        plan(),
+        scoped: true,
+        signInOff: true,
+      );
     });
 
     for (final (name, pane) in [

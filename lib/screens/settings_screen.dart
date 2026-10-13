@@ -1,3 +1,5 @@
+import '../auth/sign_in_mode.dart';
+
 import 'package:flutter/material.dart';
 
 import '../models/plan_action.dart';
@@ -140,6 +142,17 @@ class SettingsScreen extends StatelessWidget {
         builder: (context, _) => ListView(
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
+            if (signInOff)
+              const ListTile(
+                leading: Icon(Icons.lock_open),
+                title: Text('Sign-in'),
+                subtitle: Text(
+                  'Off in this build of the app (DISABLE_AUTH): it never '
+                  'signs in, and sends the server no token. The network in '
+                  "front of the server is what signs people in, so there's "
+                  'nothing to sign in or out of here.',
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
               child: Text('Snap to grid', style: theme.textTheme.titleMedium),

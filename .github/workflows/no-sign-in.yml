@@ -1,0 +1,49 @@
+# Checks the build that skips sign-in (DISABLE_AUTH, see
+# lib/auth/sign_in_mode.dart): every test passes in it, and the web app
+# builds with it. Nothing is published: the release builds (pages.yml,
+# android.yml) never set DISABLE_AUTH, and copies for a corporate network
+# are built by hand.
+name: No sign-in build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    uses: ./.github/workflows/needs-run.yml
+    permissions:
+      contents: read
+      checks: read
+    with:
+      check: no-sign-in
+      paths: >-
+        . :!.claude :!android :!windows :(exclude,glob)**/*.md
+        :!tool/check_version.sh :!tool/emulator :!tool/icon :!tool/visual_diff.py
+        :!.github/workflows/android.yml :!.github/workflows/emulator.yml
+        :!.github/workflows/pages.yml :!.github/workflows/version.yml
+        :!.github/workflows/visual.yml
+
+  no-sign-in:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter test --dart-define=DISABLE_AUTH=true
+      - name: Build the web app without sign-in
+        # A stand-in server URL: the build is checked, never deployed.
+        run: >
+          flutter build web --release --csp --no-web-resources-cdn
+          --dart-define=DISABLE_AUTH=true
+          --dart-define=MCP_URL=https://corporate.example/mcp
