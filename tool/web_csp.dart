@@ -5,7 +5,11 @@
 //     dart run tool/web_csp.dart build/web https://example.onrender.com/mcp
 //
 // The authorization server (AuthKit) is read from the MCP server's
-// protected-resource metadata, as the app itself finds it.
+// protected-resource metadata, as the app itself finds it. A server with
+// none -- one built without sign-in -- has no authorization server to
+// allow. A relative MCP_URL ("/mcp") is the page's own origin, which the
+// policy allows already ('self'), and there's no server to ask at build
+// time: nothing more is allowed.
 import 'dart:convert';
 import 'dart:io';
 
@@ -50,18 +54,31 @@ String withPolicy(String html, String policy) {
 }
 
 /// The MCP server's authorization servers, from its protected-resource
-/// metadata. Retries for a while: a sleeping Render service takes up to a
-/// minute to start.
-Future<List<Uri>> authorizationServers(Uri mcpEndpoint) async {
+/// metadata; none for a server without it (a 404: one built without
+/// sign-in). Retries for a while otherwise: a sleeping Render service
+/// takes up to a minute to start.
+Future<List<Uri>> authorizationServers(
+  Uri mcpEndpoint, {
+  http.Client? client,
+}) async {
+  final get = client?.get ?? http.get;
   final path = mcpEndpoint.path == '/' ? '' : mcpEndpoint.path;
   final url = mcpEndpoint.replace(
     path: '/.well-known/oauth-protected-resource$path',
   );
   for (var attempt = 1; ; attempt++) {
     try {
-      final response = await http
-          .get(url, headers: {'Accept': 'application/json'})
-          .timeout(const Duration(seconds: 90));
+      final response = await get(
+        url,
+        headers: {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 90));
+      if (response.statusCode == 404) {
+        stderr.writeln(
+          'No protected-resource metadata at $url: a server without '
+          'sign-in, so no authorization server is allowed.',
+        );
+        return const [];
+      }
       if (response.statusCode != 200) {
         throw HttpException('HTTP ${response.statusCode}', uri: url);
       }
@@ -77,17 +94,31 @@ Future<List<Uri>> authorizationServers(Uri mcpEndpoint) async {
   }
 }
 
+/// The origins besides its own that a page for the server at [mcpUrl]
+/// talks to: the server's, and its authorization servers'. None for a
+/// relative [mcpUrl], which is the page's own origin.
+Future<List<String>> connectOrigins(
+  String mcpUrl, {
+  http.Client? client,
+}) async {
+  final mcpEndpoint = Uri.parse(mcpUrl);
+  if (!mcpEndpoint.hasScheme) {
+    stderr.writeln(
+      "MCP_URL $mcpUrl is relative: the page's own origin, which the "
+      'policy allows already.',
+    );
+    return const [];
+  }
+  final servers = await authorizationServers(mcpEndpoint, client: client);
+  return [mcpEndpoint.origin, for (final server in servers) server.origin];
+}
+
 Future<void> main(List<String> args) async {
   if (args.length != 2) {
     stderr.writeln('Usage: dart run tool/web_csp.dart <build/web> <MCP_URL>');
     exit(64);
   }
-  final mcpEndpoint = Uri.parse(args[1]);
-  final servers = await authorizationServers(mcpEndpoint);
-  final policy = contentSecurityPolicy([
-    mcpEndpoint.origin,
-    for (final server in servers) server.origin,
-  ]);
+  final policy = contentSecurityPolicy(await connectOrigins(args[1]));
 
   final index = File('${args[0]}/index.html');
   index.writeAsStringSync(withPolicy(index.readAsStringSync(), policy));
