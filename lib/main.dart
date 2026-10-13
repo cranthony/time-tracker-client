@@ -38,6 +38,7 @@ import 'services/plan_memory.dart';
 import 'services/proposal_repository.dart';
 import 'services/response_cache.dart';
 import 'services/schedule_hints_repository.dart';
+import 'services/server_client.dart';
 import 'services/traits_repository.dart';
 import 'platform/google_calendar_source.dart';
 import 'services/google_calendars.dart';
@@ -337,13 +338,8 @@ AuthSession _authSession({required bool interactive}) => AuthSession(
 
 /// The server's client: without [auth] -- no token at all -- in a build
 /// that skips sign-in ([signInOff]).
-McpClient _client(AuthSession? auth, ClientHealthRecorder health) => McpClient(
-  endpoint: Uri.parse(_mcpUrl),
-  auth: signInOff ? null : auth,
-  signInOff: signInOff,
-  serverSignInOff: serverSignInOff,
-  health: health,
-);
+McpClient _client(AuthSession? auth, ClientHealthRecorder health) =>
+    serverClient(Uri.parse(_mcpUrl), auth: auth, health: health);
 
 class TimeTrackerApp extends StatefulWidget {
   const TimeTrackerApp({

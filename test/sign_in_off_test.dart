@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:time_tracker_client/auth/sign_in_mode.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
+import 'package:time_tracker_client/services/server_client.dart';
 import 'package:time_tracker_client/widgets/sign_in_off_banner.dart';
 
 /// A server that answers the handshake with [handshake] and every tool
@@ -113,31 +114,84 @@ void main() {
     });
   });
 
-  test("learns from the server's handshake whether it skips sign-in", () async {
-    final off = ValueNotifier(false);
-    final client = McpClient(
-      endpoint: Uri.parse('https://corp.example/mcp'),
-      auth: _FixedAuth(),
-      serverSignInOff: off,
-      httpClient: _server(
-        [],
-        handshake: {
+  test(
+    "learns from the server's handshake flag whether it skips sign-in",
+    () async {
+      Future<bool> says(Map<String, Object?> handshake) async {
+        final off = ValueNotifier(false);
+        await McpClient(
+          endpoint: Uri.parse('https://corp.example/mcp'),
+          auth: _FixedAuth(),
+          serverSignInOff: off,
+          httpClient: _server([], handshake: handshake),
+        ).callTool('get_notes', {});
+        return off.value;
+      }
+
+      expect(
+        await says({
           'protocolVersion': '2025-06-18',
-          'serverInfo': {
-            'name': 'time-tracking',
-            'version': '',
-            'title': 'time-tracking (sign-in off)',
-          },
+          '_meta': {authDisabledMetaKey: true},
+        }),
+        isTrue,
+      );
+      // The words are for people: only the flag counts.
+      expect(
+        await says({
+          'protocolVersion': '2025-06-18',
+          'serverInfo': {'name': 'time-tracking', 'title': 'x (sign-in off)'},
           'instructions': 'Authentication is disabled in this build.',
-        },
-      ),
-    );
+        }),
+        isFalse,
+      );
+      expect(
+        await says({
+          'protocolVersion': '2025-06-18',
+          '_meta': {authDisabledMetaKey: 'yes'},
+        }),
+        isFalse,
+      );
+    },
+  );
 
-    await client.callTool('get_notes', {});
+  testWidgets(
+    "the app's client turns the banner on when the server skips sign-in",
+    (tester) async {
+      addTearDown(() => serverSignInOff.value = false);
+      serverSignInOff.value = false;
+      // As the app makes it, in a build that signs in.
+      final client = serverClient(
+        Uri.parse('https://corp.example/mcp'),
+        auth: _FixedAuth(),
+        withoutSignIn: false,
+        httpClient: _server(
+          [],
+          handshake: {
+            'protocolVersion': '2025-06-18',
+            '_meta': {authDisabledMetaKey: true},
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          // The banner as the app has it: listening to what its clients
+          // learn.
+          builder: (context, child) =>
+              SignInOffBanner(thisBuild: false, child: child!),
+          home: const Scaffold(body: Text('Events')),
+        ),
+      );
+      expect(find.byIcon(Icons.lock_open), findsNothing);
 
-    expect(off.value, isTrue);
-    expect(handshakeSaysSignInOff({'protocolVersion': '2025-06-18'}), isFalse);
-  });
+      await tester.runAsync(() => client.callTool('get_notes', {}));
+      await tester.pump();
+
+      expect(
+        find.text('Sign-in off: the server trusts every request'),
+        findsOneWidget,
+      );
+    },
+  );
 
   group('the banner', () {
     Future<void> pump(

@@ -23,13 +23,14 @@ final serverSignInOff = ValueNotifier<bool>(false);
 /// The app's name, as its title and About give it.
 String get appName => signInOff ? 'Time Tracker (no sign-in)' : 'Time Tracker';
 
-/// What the server's handshake says, in a build of it that skips sign-in.
-bool handshakeSaysSignInOff(Map<String, dynamic> result) {
-  final title = switch (result['serverInfo']) {
-    {'title': final String title} => title,
-    _ => '',
-  };
-  final instructions = result['instructions'] as String? ?? '';
-  return title.endsWith('(sign-in off)') ||
-      instructions.startsWith('Authentication is disabled');
-}
+/// The flag a server built with AUTH_DISABLED sets in its handshake's
+/// `_meta` (its auth_mode::META_KEY).
+const authDisabledMetaKey = 'time-tracking/authDisabled';
+
+/// Whether the server's handshake says it skips sign-in: its `_meta`
+/// flag, not the words it also says it in, which may change.
+bool handshakeSaysSignInOff(Map<String, dynamic> result) =>
+    switch (result['_meta']) {
+      {authDisabledMetaKey: true} => true,
+      _ => false,
+    };
