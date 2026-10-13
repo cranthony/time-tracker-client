@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.69.0
+
+- The web app can be built with a relative `MCP_URL`, such as `/mcp`,
+  for a server on its own origin: it's resolved against the page's
+  address. The Android and Windows apps refuse one at startup, saying
+  why.
+- The web build's Content-Security-Policy tool takes a relative
+  `MCP_URL` too, and a server without sign-in, which has no
+  protected-resource metadata.
+
 ## 7.68.0
 
 - The app connects to the server before it signs in, and asks you to sign

@@ -154,6 +154,16 @@ needs no extra tooling, so it's the quickest way to try changes.
    `/mcp`, the same URL you gave Claude.ai. You'll find it in the Render
    dashboard.
 
+   The web app can also take a relative URL, such as `/mcp`, when it's
+   served from the server's own origin (behind one corporate proxy, say).
+   It's resolved against the page's address as a link would be: `/mcp`
+   from the origin's root, `mcp` from the app's own path
+   ([`lib/services/server_url.dart`](lib/services/server_url.dart)). The
+   Android and Windows apps have no page to resolve it against, so they
+   refuse a relative one at startup, saying so. In Git Bash on Windows,
+   set `MSYS_NO_PATHCONV=1` first, or it rewrites `/mcp` into a Windows
+   path before Flutter sees it.
+
    If you skip `--dart-define-from-file=config.json` in the commands below,
    the app runs in an **offline demo mode** with in-memory notes. That's
    handy for UI work. To fill it with sample notes, events and a plan, see
@@ -280,6 +290,8 @@ Content-Security-Policy to `index.html` that:
 - lets the page connect only to its own site, the MCP server, AuthKit
   (which the tool reads from the server's metadata during the build) and
   Google's font server, which supplies fonts for emoji and other scripts.
+  A server built without sign-in has no such metadata, so no AuthKit; a
+  relative `MCP_URL` is the page's own site, so neither is added.
 
 `web/callback.html` has its own fixed policy, and its script is in
 `web/callback.js`.

@@ -37,6 +37,7 @@ import 'services/plan_memory.dart';
 import 'services/proposal_repository.dart';
 import 'services/response_cache.dart';
 import 'services/schedule_hints_repository.dart';
+import 'services/server_url.dart';
 import 'services/server_client.dart';
 import 'services/traits_repository.dart';
 import 'platform/google_calendar_source.dart';
@@ -47,8 +48,13 @@ import 'widgets/sign_in_off_banner.dart';
 
 /// The Time Tracker MCP server's endpoint, passed at build time, e.g.
 ///   flutter run --dart-define=MCP_URL=https://your-service.onrender.com/mcp
-/// Without it the app runs against an in-memory demo store.
+/// or, for the web app served from the server's own origin, a relative
+/// one, such as /mcp (see [serverEndpoint]). Without it the app runs
+/// against an in-memory demo store.
 const _mcpUrl = String.fromEnvironment('MCP_URL');
+
+/// [_mcpUrl] as a full URL: a relative one resolved against the page.
+final Uri _endpoint = serverEndpoint(_mcpUrl, web: kIsWeb);
 
 /// With no server, start from a realistic sample of notes, events and actions
 /// (lib/demo/sample_data.dart) instead of an empty store:
@@ -320,7 +326,7 @@ Future<void> _refreshInBackground() async {
 
 AuthSession _authSession({required bool interactive}) => AuthSession(
   oauth: OAuthClient(
-    mcpEndpoint: Uri.parse(_mcpUrl),
+    mcpEndpoint: _endpoint,
     clientName: 'Time Tracker ($platformName)',
     viaResourceServer: oauthViaResourceServer,
   ),
@@ -336,7 +342,7 @@ AuthSession _authSession({required bool interactive}) => AuthSession(
 
 /// The server's client, signing in with [auth] when the server asks.
 McpClient _client(AuthSession? auth, ClientHealthRecorder health) =>
-    serverClient(Uri.parse(_mcpUrl), auth: auth, health: health);
+    serverClient(_endpoint, auth: auth, health: health);
 
 class TimeTrackerApp extends StatefulWidget {
   const TimeTrackerApp({
