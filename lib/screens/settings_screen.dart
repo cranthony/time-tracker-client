@@ -142,17 +142,21 @@ class SettingsScreen extends StatelessWidget {
         builder: (context, _) => ListView(
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
-            if (signInOff)
-              const ListTile(
-                leading: Icon(Icons.lock_open),
-                title: Text('Sign-in'),
-                subtitle: Text(
-                  'Off in this build of the app (DISABLE_AUTH): it never '
-                  'signs in, and sends the server no token. The network in '
-                  "front of the server is what signs people in, so there's "
-                  'nothing to sign in or out of here.',
-                ),
-              ),
+            ValueListenableBuilder<bool>(
+              valueListenable: serverSignInOff,
+              builder: (context, off, _) => off
+                  ? const ListTile(
+                      leading: Icon(Icons.lock_open),
+                      title: Text('Sign-in'),
+                      subtitle: Text(
+                        'Off on the server (built with AUTH_DISABLED): it '
+                        'trusts every request, and the network in front of '
+                        "it is what signs people in, so there's nothing to "
+                        'sign in or out of here.',
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
               child: Text('Snap to grid', style: theme.textTheme.titleMedium),

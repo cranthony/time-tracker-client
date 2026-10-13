@@ -89,8 +89,7 @@ void main() {
             data: MediaQuery.of(context).copyWith(disableAnimations: true),
             // Off only where asked, whichever build the tests are.
             child: SignInOffBanner(
-              thisBuild: signInOff,
-              server: ValueNotifier(false),
+              server: ValueNotifier(signInOff),
               child: AppSettingsScope(settings: settings, child: child!),
             ),
           ),
@@ -172,7 +171,7 @@ void main() {
       await render(tester, 'plan', plan(), scoped: true);
     });
 
-    // As a build without sign-in shows it: the strip over every screen.
+    // With a server that skips sign-in: the strip over every screen.
     testWidgets('plan_sign_in_off ($mode)', (tester) async {
       await render(
         tester,

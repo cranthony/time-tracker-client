@@ -59,17 +59,17 @@ class AppMenu extends StatelessWidget {
         ),
         _MenuItem.about => showAboutDialog(
           context: context,
-          applicationName: appName,
+          applicationName: 'Time Tracker',
           applicationVersion: version,
           children: [
             Text('Server: $serverLabel'),
-            if (signInOff)
+            if (serverSignInOff.value)
               const Padding(
                 padding: EdgeInsets.only(top: 12),
                 child: Text(
-                  'Sign-in is off in this build (DISABLE_AUTH): it never '
-                  'signs in and sends the server no token, trusting the '
-                  'network in front of the server to sign people in.',
+                  'Sign-in is off on the server (built with AUTH_DISABLED): '
+                  'it trusts every request, relying on the network in front '
+                  'of it to sign people in, so the app never signs in.',
                 ),
               ),
           ],
@@ -103,7 +103,8 @@ class AppMenu extends StatelessWidget {
             child: Text('Add calendar to home screen'),
           ),
         const PopupMenuItem(value: _MenuItem.about, child: Text('About')),
-        if (onSignOut != null)
+        // Nothing to sign out of, from a server that skips sign-in.
+        if (onSignOut != null && !serverSignInOff.value)
           const PopupMenuItem(
             value: _MenuItem.signOut,
             child: Text('Sign out'),

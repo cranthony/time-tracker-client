@@ -8,7 +8,6 @@ import 'auth/auth_session.dart';
 import 'auth/oauth.dart';
 import 'auth/platform_receiver.dart'
     if (dart.library.js_interop) 'auth/platform_receiver_web.dart';
-import 'auth/sign_in_mode.dart';
 import 'auth/token_store.dart';
 import 'demo/google_calendar_sample.dart';
 import 'demo/sample_data.dart';
@@ -137,8 +136,7 @@ Future<void> main() async {
   final health = ClientHealthRecorder(origin: CallOrigin.app);
   _recordUncaughtErrors(health);
   _recordWork(health);
-  // No sign-in at all, in a build that skips it: no Sign in, no Sign out.
-  final auth = signInOff ? null : _authSession(interactive: true);
+  final auth = _authSession(interactive: true);
   final client = _client(auth, health);
   final cache = PrefsResponseCache();
   final repository = McpNotesRepository(client, cache: cache);
@@ -336,8 +334,7 @@ AuthSession _authSession({required bool interactive}) => AuthSession(
   receiver: interactive ? platformRedirectReceiver() : null,
 );
 
-/// The server's client: without [auth] -- no token at all -- in a build
-/// that skips sign-in ([signInOff]).
+/// The server's client, signing in with [auth] when the server asks.
 McpClient _client(AuthSession? auth, ClientHealthRecorder health) =>
     serverClient(Uri.parse(_mcpUrl), auth: auth, health: health);
 
@@ -572,7 +569,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: appName,
+      title: 'Time Tracker',
       theme: appTheme(Brightness.light),
       darkTheme: appTheme(Brightness.dark),
       // Above the navigator, so every route and dialog finds it.
@@ -601,7 +598,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         if (widget.traitsRepository case final traits?) {
           scoped = TraitsScope(repository: traits, child: scoped);
         }
-        // Over every screen and dialog, while sign-in is off.
+        // Over every screen and dialog, while the server skips sign-in.
         return SignInOffBanner(child: scoped);
       },
       home: HomeScreen(
