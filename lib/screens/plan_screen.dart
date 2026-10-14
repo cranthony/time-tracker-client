@@ -1,8 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/plan_action.dart';
@@ -24,6 +22,7 @@ import '../services/traits_repository.dart';
 import 'locations_pane.dart';
 import 'people_pane.dart';
 import 'habits_pane.dart';
+import '../widgets/action_icon.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/load_status.dart';
 import '../widgets/action_dialog.dart';
@@ -38,6 +37,7 @@ import '../widgets/plan_summaries.dart';
 import '../widgets/time_summary.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
+import '../widgets/tree_tile.dart';
 import '../services/client_health.dart';
 import '../services/work_timing.dart';
 
@@ -157,9 +157,6 @@ class _PlanScreenState extends State<PlanScreen> {
 
   /// The statuses shown.
   final _shown = {...defaultActionStatuses};
-
-  /// The actions whose sub-actions are shown; every other action is collapsed.
-  final _expanded = <String>{};
 
   /// Whether actions are being dragged into a new order.
   bool _reordering = false;
@@ -620,8 +617,6 @@ class _PlanScreenState extends State<PlanScreen> {
   }, group: action.isGroup);
 
   Future<void> _add({String? parentId, bool group = false}) async {
-    // So the new one can be seen.
-    if (parentId != null) setState(() => _expanded.add(parentId));
     await showNewActionDialog(
       context,
       create: _create,
@@ -884,11 +879,11 @@ class _PlanScreenState extends State<PlanScreen> {
     final view = _summaryView;
     final actions = _actions;
     if (view == null || actions == null) return null;
-    final tree = _Tree(actions, _shown, _expanded, query: _query);
+    final tree = _Tree(actions, _shown, query: _query);
     final visible = {for (final action in tree.shown) action.id};
     return PlanSummary(
       view: view,
-      titles: const ['Visible actions', 'By priority'],
+      titles: const ['By action', 'By priority'],
       pages: (events) {
         final (day, week) = _actionTime(events, view.window, tree);
         List<SummarySlice> shares(Map<String?, Duration> time) => planShares(
@@ -959,7 +954,7 @@ class _PlanScreenState extends State<PlanScreen> {
       ];
     }
     if (actions == null) return const [LinearProgressIndicator()];
-    final tree = _Tree(actions, _shown, _expanded, query: _query);
+    final tree = _Tree(actions, _shown, query: _query);
     if (tree.all.isEmpty) {
       return const [
         StatusMessage(
@@ -1016,16 +1011,14 @@ class _PlanScreenState extends State<PlanScreen> {
                 icon: Icons.bolt_outlined,
                 text: 'No actions with these statuses.',
               ),
-      for (var i = 0; i < shown.length; i++) ...[
-        if (i > 0) tree.divider(i),
+      for (var i = 0; i < shown.length; i++)
         _tile(tree, i, time: time, searching: searching),
-      ],
     ];
   }
 
   /// The [i]th action [tree] shows, as its row: the row built for it
   /// before, if nothing it shows has changed since -- then it isn't built
-  /// again, nor are rows that haven't changed, as a group opens or closes.
+  /// again.
   Widget _tile(
     _Tree tree,
     int i, {
@@ -1050,10 +1043,7 @@ class _PlanScreenState extends State<PlanScreen> {
         !widget.outbox.busy &&
         !widget.outbox.saves.any((s) => s.isNew);
     final subActions = tree.subActions[id] ?? 0;
-    // A search shows what's in the groups it finds.
-    final expanded = searching || _expanded.contains(id);
     final ancestors = tree.ancestors[i];
-    final joined = tree.sharedAbove(i);
     final itsTime = switch (time) {
       (final day, final week) => (
         day[id] ?? Duration.zero,
@@ -1065,41 +1055,27 @@ class _PlanScreenState extends State<PlanScreen> {
     final shows = (
       action,
       [for (final a in ancestors) a.id].join('/'),
-      joined,
       itsTime,
       labels,
       _durations,
       subActions,
-      expanded,
       (saving, failed),
       (searching, reorderable),
     );
     if (_tiles[id] case (final kept, final tile) when kept == shows) {
       return tile;
     }
-    void toggle() => setState(() {
-      if (!_expanded.remove(id)) _expanded.add(id!);
-    });
     final tile = _ActionTile(
-      // By its action: opening or closing a group then keeps every row
-      // there was, rather than each taking the one at its place.
       key: ValueKey(id),
       action: action,
       ancestors: ancestors,
-      joined: joined,
       time: itsTime,
       timeLabels: labels,
       durations: _durations,
       subActions: subActions,
-      expanded: expanded,
-      onToggle: searching ? null : toggle,
       saving: saving,
       failed: failed,
-      onTap: save != null
-          ? () => _open(action)
-          : (action.isGroup || subActions > 0) && !searching
-          ? toggle
-          : () => _edit(action),
+      onTap: save != null ? () => _open(action) : () => _edit(action),
       onEdit: () => _edit(action),
       onRetry: () => widget.outbox.retry(id!),
       onDiscard: () => _discard(id!),
@@ -1120,7 +1096,7 @@ class _PlanScreenState extends State<PlanScreen> {
 
   /// The actions shown, to drag into a new order among their siblings.
   Widget _reorderable(ActionList actions) {
-    final tree = _Tree(actions, _shown, _expanded);
+    final tree = _Tree(actions, _shown);
     final shown = tree.shown;
     return ReorderableListView.builder(
       buildDefaultDragHandles: false,
@@ -1135,41 +1111,24 @@ class _PlanScreenState extends State<PlanScreen> {
       ),
       itemCount: shown.length,
       onReorderItem: (from, to) => _reorder(shown, from, to),
-      itemBuilder: (context, i) => Column(
+      itemBuilder: (context, i) => _ActionTile(
         key: ValueKey(shown[i].id),
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (i > 0) tree.divider(i),
-          _ActionTile(
-            action: shown[i],
-            ancestors: tree.ancestors[i],
-            joined: tree.sharedAbove(i),
-            subActions: tree.subActions[shown[i].id] ?? 0,
-            expanded: _expanded.contains(shown[i].id),
-            dragIndex: i,
-            onToggle: () => setState(() {
-              if (!_expanded.remove(shown[i].id)) _expanded.add(shown[i].id!);
-            }),
-            onTap: null,
-          ),
-        ],
+        action: shown[i],
+        ancestors: tree.ancestors[i],
+        subActions: tree.subActions[shown[i].id] ?? 0,
+        dragIndex: i,
+        onTap: null,
       ),
     );
   }
 }
 
-/// The actions and groups as the Actions pane shows them: those with the
-/// statuses shown, less those under a collapsed group -- or, searching
-/// for [query], those whose name, path or note match it, and the groups
-/// they're in -- each with the groups it's in, from the top, whose bands
-/// it carries.
+/// The actions and groups as the Actions pane shows them, every group
+/// open: those with the statuses shown -- or, searching for [query], those
+/// whose name, path or note match it, and the groups they're in -- each
+/// with the groups it's in, from the top, which it's indented under.
 class _Tree {
-  _Tree(
-    ActionList actions,
-    Set<String> statuses,
-    Set<String> expanded, {
-    String query = '',
-  }) {
+  _Tree(ActionList actions, Set<String> statuses, {String query = ''}) {
     all = actions.actions;
     byId = {for (final action in all) action.id: action};
     final withStatus = [
@@ -1179,26 +1138,10 @@ class _Tree {
     for (final action in withStatus) {
       subActions.update(action.parentId, (n) => n + 1, ifAbsent: () => 1);
     }
-    // One is hidden under any collapsed ancestor that's shown. One whose
-    // parent's status is filtered out still shows, where it always has.
-    bool underCollapsed(PlanAction action) {
-      for (
-        var parent = byId[action.parentId];
-        parent != null;
-        parent = byId[parent.parentId]
-      ) {
-        if (statuses.contains(parent.status) && !expanded.contains(parent.id)) {
-          return true;
-        }
-      }
-      return false;
-    }
-
     if (query.trim().isEmpty) {
-      shown = [
-        for (final action in withStatus)
-          if (!underCollapsed(action)) action,
-      ];
+      // One whose parent's status is filtered out still shows, where it
+      // always has.
+      shown = withStatus;
     } else {
       // What matches, and every group above it.
       final found = <String?>{};
@@ -1247,27 +1190,6 @@ class _Tree {
   final subActions = <String?, int>{};
   late final List<PlanAction> shown;
   late final List<List<PlanAction>> ancestors;
-
-  /// How many of the [i]th one's bands it shares with the one above it,
-  /// which run unbroken over the divider between them.
-  int sharedAbove(int i) {
-    if (i == 0) return 0;
-    final above = [...ancestors[i - 1], shown[i - 1]];
-    var shared = 0;
-    while (shared < ancestors[i].length &&
-        shared < above.length &&
-        ancestors[i][shared] == above[shared]) {
-      shared++;
-    }
-    return shared;
-  }
-
-  /// The divider above the [i]th, by it, as its row is.
-  Widget divider(int i) => Divider(
-    key: ValueKey(('above', shown[i].id)),
-    height: 1,
-    indent: sharedAbove(i) * actionBandWidth,
-  );
 }
 
 /// The Actions pane's filter: a drop-down of every status, each with a check
@@ -1315,30 +1237,15 @@ const _durationsKey = 'goal_time_durations';
 /// Where whether the time summary is folded away is kept.
 const _timeSummaryCollapsedKey = 'goal_time_summary_collapsed';
 
-/// How wide each action's band is, down the left of the Actions page: also
-/// how far each level of sub-actions is indented, its band beside its
-/// parent's.
-const actionBandWidth = 6.0;
-
-/// How long each dash of a dashed band is, and each gap between.
-const _dash = 5.0;
-
-/// How far an action's band juts out to say it has sub-actions: as an arrow,
-/// collapsed. (Expanded, it widens down over its sub-actions' bands.)
-const _bandTip = 8.0;
-
 class _ActionTile extends StatelessWidget {
   const _ActionTile({
     super.key,
     required this.action,
     this.ancestors = const [],
-    this.joined = 0,
     this.time,
     this.timeLabels,
     this.durations = true,
     required this.subActions,
-    required this.expanded,
-    required this.onToggle,
     required this.onTap,
     this.onLongPress,
     this.dragIndex,
@@ -1365,12 +1272,8 @@ class _ActionTile extends StatelessWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onDiscard;
 
-  /// Its ancestors, from the top: their bands run down beside its own.
+  /// Its ancestors, from the top: it's indented under them.
   final List<PlanAction> ancestors;
-
-  /// How many of [ancestors]' bands it shares with the row above, which
-  /// run on up over the divider between them.
-  final int joined;
 
   /// Its time, with what's in it, in the summaries' 24 hours and 7 days;
   /// null if it isn't known.
@@ -1383,17 +1286,11 @@ class _ActionTile extends StatelessWidget {
   /// Whether its time is in durations, rather than percentages.
   final bool durations;
 
-  /// How many sub-actions it has (of those shown); none, and it has no arrow.
+  /// How many sub-actions it has (of those shown): a group with none is
+  /// empty.
   final int subActions;
 
-  /// Whether its sub-actions are shown.
-  final bool expanded;
-
-  /// Shows or hides what's in it, for a group. Null while a search shows
-  /// everything found in it.
-  final VoidCallback? onToggle;
-
-  /// Tapping it: a group's opens or closes it; an action's edits it.
+  /// Tapping it: edits it.
   final VoidCallback? onTap;
 
   /// Edits its priority and color: "Edit" in its menu.
@@ -1436,11 +1333,12 @@ class _ActionTile extends StatelessWidget {
     // Its own priority, filled; else the one it inherits, outlined. Only
     // an active action's events take one.
     final priority = action.active ? action.effectivePriority : null;
-    final bands = [
-      for (final action in [...ancestors, action]) _bandOf(context, action),
-    ];
-    final listTile = ListTile(
-      contentPadding: const EdgeInsetsDirectional.only(start: 8, end: 4),
+    return TreeTile(
+      depth: ancestors.length,
+      end: 4,
+      leading: ActionIcon(action),
+      onTap: saving ? null : onTap,
+      onLongPress: saving ? null : onLongPress,
       // Its priority after its name, as the Events page puts it after an
       // event's summary.
       title: Text.rich(
@@ -1541,240 +1439,6 @@ class _ActionTile extends StatelessWidget {
         ],
       ),
     );
-    final parent = subActions > 0;
-    final bandsWidth = actionBandWidth * bands.length + _bandTip;
-    final tile = InkWell(
-      onTap: saving ? null : onTap,
-      onLongPress: saving ? null : onLongPress,
-      // The row is as tall as its text; the bands are drawn down beside it.
-      child: Stack(
-        children: [
-          Padding(
-            padding: EdgeInsetsDirectional.only(start: bandsWidth),
-            child: listTile,
-          ),
-          PositionedDirectional(
-            start: 0,
-            top: 0,
-            bottom: 0,
-            width: bandsWidth,
-            // Not a tooltip: on a phone, one opens on the long press that
-            // starts reordering.
-            child: Semantics(
-              label: parent
-                  ? '${expanded ? 'Expanded' : 'Collapsed'}: swipe right to '
-                        '${expanded ? 'collapse' : 'expand'}'
-                  : null,
-              child: ActionBands(
-                bands: bands,
-                joined: joined,
-                shape: !parent
-                    ? ActionBandShape.plain
-                    : expanded
-                    ? ActionBandShape.expanded
-                    : ActionBandShape.collapsed,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    return tile;
-  }
-
-  /// [action]'s band: its own color, solid, or the one it inherits, dashed.
-  /// Only an active action's is in color.
-  static ActionBand _bandOf(BuildContext context, PlanAction action) {
-    final own = parseColor(action.backgroundColor);
-    final color = action.active
-        ? own ?? parseColor(action.effectiveColor)
-        : null;
-    return ActionBand(
-      color: color ?? Theme.of(context).colorScheme.outlineVariant,
-      dashed: own == null || !action.active,
-    );
-  }
-}
-
-/// One action's band: its color, and whether it's dashed, for one inherited.
-class ActionBand {
-  const ActionBand({required this.color, required this.dashed});
-
-  final Color color;
-  final bool dashed;
-
-  @override
-  bool operator ==(Object other) =>
-      other is ActionBand && other.color == color && other.dashed == dashed;
-
-  @override
-  int get hashCode => Object.hash(color, dashed);
-}
-
-/// How an action's own band ends: plainly, with no sub-actions; as an arrow
-/// pointing right, its sub-actions hidden; or slanting down to them, shown.
-enum ActionBandShape { plain, collapsed, expanded }
-
-/// An action's [bands] side by side down the left of its row: its
-/// ancestors', then its own, shaped as [shape] says. The first [joined]
-/// run on up over the divider above, which they share with the row there.
-///
-/// Dashes are laid out from the top of the list, not of the row, so a
-/// dashed band runs evenly down every row it's in.
-class ActionBands extends LeafRenderObjectWidget {
-  const ActionBands({
-    super.key,
-    required this.bands,
-    required this.shape,
-    required this.joined,
-  });
-
-  final List<ActionBand> bands;
-  final ActionBandShape shape;
-  final int joined;
-
-  @override
-  RenderActionBands createRenderObject(BuildContext context) =>
-      RenderActionBands(
-        bands: bands,
-        shape: shape,
-        joined: joined,
-        scroll: Scrollable.maybeOf(context)?.position,
-      );
-
-  @override
-  void updateRenderObject(
-    BuildContext context,
-    RenderActionBands renderObject,
-  ) => renderObject
-    ..bands = bands
-    ..shape = shape
-    ..joined = joined
-    ..scroll = Scrollable.maybeOf(context)?.position
-    // Rows above may have grown or shrunk, moving this one without
-    // repainting it, which would leave its dashes out of step.
-    ..markNeedsPaint();
-}
-
-/// Lays out and paints [ActionBands].
-class RenderActionBands extends RenderBox {
-  RenderActionBands({
-    required this._bands,
-    required this._shape,
-    required this._joined,
-    required this.scroll,
-  });
-
-  /// The list's scrolling, to find where in the list the row is.
-  ScrollPosition? scroll;
-
-  List<ActionBand> _bands;
-  set bands(List<ActionBand> value) {
-    if (listEquals(value, _bands)) return;
-    _bands = value;
-    markNeedsPaint();
-  }
-
-  ActionBandShape _shape;
-  set shape(ActionBandShape value) {
-    if (value == _shape) return;
-    _shape = value;
-    markNeedsPaint();
-  }
-
-  int _joined;
-  set joined(int value) {
-    if (value == _joined) return;
-    _joined = value;
-    markNeedsPaint();
-  }
-
-  @override
-  bool get sizedByParent => true;
-
-  @override
-  Size computeDryLayout(BoxConstraints constraints) => constraints.biggest;
-
-  /// How far the row's top is from the list's: where it sits in the
-  /// viewport, plus how far that's scrolled. Rows painted at different
-  /// scrolls agree on it.
-  double get _top {
-    final viewport = RenderAbstractViewport.maybeOf(this);
-    final scroll = this.scroll;
-    if (viewport == null || scroll == null || !scroll.hasPixels) return 0;
-    return localToGlobal(Offset.zero, ancestor: viewport).dy + scroll.pixels;
-  }
-
-  @override
-  void paint(PaintingContext context, Offset offset) {
-    final canvas = context.canvas;
-    final h = size.height;
-    final top = _top;
-    canvas.save();
-    canvas.translate(offset.dx, offset.dy);
-    // Dashes [from] to [to] across, [y0] to [h] down, as the [column]th
-    // band's: every other band's are offset by one, so dashed bands side
-    // by side make a checkerboard, each level apart from the next.
-    void dashes(Paint paint, int column, double from, double to, double y0) {
-      const period = 2 * _dash;
-      var y = -(top % period) + (column.isOdd ? _dash : 0) - period;
-      for (; y < h; y += period) {
-        final rect = Rect.fromLTRB(from, y, to, y + _dash);
-        if (rect.bottom > y0) {
-          canvas.drawRect(
-            rect.intersect(Rect.fromLTRB(from, y0, to, h)),
-            paint,
-          );
-        }
-      }
-    }
-
-    for (final (i, band) in _bands.indexed) {
-      final x0 = actionBandWidth * i;
-      final x1 = x0 + actionBandWidth;
-      // Over the divider above, if it's shared with the row there.
-      final y0 = i < _joined ? -1.0 : 0.0;
-      final paint = Paint()..color = band.color;
-      final shape = i == _bands.length - 1 ? _shape : ActionBandShape.plain;
-      if (band.dashed) {
-        dashes(paint, i, x0, x1, y0);
-      } else {
-        canvas.drawRect(Rect.fromLTRB(x0, y0, x1, h), paint);
-      }
-      switch (shape) {
-        case ActionBandShape.plain:
-          break;
-        case ActionBandShape.collapsed:
-          // An arrow pointing right, as tall as the row, always solid:
-          // dashed, it'd be too faint to see.
-          final mid = h / 2;
-          canvas.drawPath(
-            Path()
-              ..moveTo(x1, 0)
-              ..lineTo(x1 + _bandTip, mid)
-              ..lineTo(x1, h)
-              ..close(),
-            paint,
-          );
-        case ActionBandShape.expanded:
-          // Widening down over where its sub-actions' bands start, dashed as
-          // the next band's would be.
-          final slant = Path()
-            ..moveTo(x1, 0)
-            ..lineTo(x1 + actionBandWidth, h)
-            ..lineTo(x1, h)
-            ..close();
-          if (!band.dashed) {
-            canvas.drawPath(slant, paint);
-          } else {
-            canvas.save();
-            canvas.clipPath(slant);
-            dashes(paint, i + 1, x1, x1 + actionBandWidth, 0);
-            canvas.restore();
-          }
-      }
-    }
-    canvas.restore();
   }
 }
 

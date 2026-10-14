@@ -3,14 +3,15 @@ import 'package:flutter/material.dart';
 /// A walking plow, drawn as an icon is, in the [IconTheme]'s color and
 /// size: its long beam down to the hitch and its hook at the front; two
 /// handles rising at the back, a rung between them; and the share and
-/// moldboard under the beam, pointing forward. What's done: an event's
-/// actions.
+/// moldboard under the beam, pointing forward -- solid, or with
+/// [filled] false, outlined. What's done: an event's actions.
 class PlowIcon extends StatelessWidget {
-  const PlowIcon({super.key, this.size, this.color});
+  const PlowIcon({super.key, this.size, this.color, this.filled = true});
 
   /// As an [Icon]'s: the [IconTheme]'s, if null.
   final double? size;
   final Color? color;
+  final bool filled;
 
   @override
   Widget build(BuildContext context) {
@@ -20,6 +21,7 @@ class PlowIcon extends StatelessWidget {
       size: Size.square(size),
       painter: _PlowPainter(
         color ?? theme.color ?? Theme.of(context).colorScheme.onSurface,
+        filled: filled,
       ),
     );
   }
@@ -27,9 +29,10 @@ class PlowIcon extends StatelessWidget {
 
 /// Draws on a 24-unit square, as Material's icons are.
 class _PlowPainter extends CustomPainter {
-  _PlowPainter(this.color);
+  _PlowPainter(this.color, {required this.filled});
 
   final Color color;
+  final bool filled;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -60,7 +63,7 @@ class _PlowPainter extends CustomPainter {
         ..lineTo(17.2, 19)
         ..lineTo(16.4, 14.4)
         ..close(),
-      Paint()..color = color,
+      filled ? (Paint()..color = color) : thin,
     );
     // The hitch, and its hook.
     canvas.drawPath(
@@ -77,5 +80,6 @@ class _PlowPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_PlowPainter old) => old.color != color;
+  bool shouldRepaint(_PlowPainter old) =>
+      old.color != color || old.filled != filled;
 }

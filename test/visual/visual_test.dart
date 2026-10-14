@@ -543,14 +543,8 @@ void main() {
         tester,
         'actions_expanded',
         plan(),
+        // Every group open, further down.
         then: () async {
-          for (final name in ['Creative', 'Guitar', 'Cooking']) {
-            final group = _tile(name);
-            await tester.ensureVisible(group);
-            await tester.pumpAndSettle();
-            await tester.tap(group);
-            await tester.pumpAndSettle();
-          }
           await tester.scrollUntilVisible(
             find.textContaining('Practice guitar', findRichText: true),
             200,
@@ -593,8 +587,6 @@ void main() {
         'action_dialog',
         plan(),
         then: () async {
-          await tester.tap(_tile('Creative'));
-          await tester.pumpAndSettle();
           await tester.scrollUntilVisible(
             find.textContaining('Guitar', findRichText: true),
             200,
@@ -627,8 +619,6 @@ void main() {
         'action_parent',
         plan(),
         then: () async {
-          await tester.tap(_tile('Creative'));
-          await tester.pumpAndSettle();
           await tester.scrollUntilVisible(
             find.textContaining('Guitar', findRichText: true),
             200,
