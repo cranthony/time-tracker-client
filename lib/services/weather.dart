@@ -195,7 +195,7 @@ Future<WeatherRefreshRecord?> refreshWeatherInBackground({
   try {
     final prefs = SharedPreferencesAsync();
     enabled = await prefs.getBool(KeptWeather.enabledKey) ?? false;
-    device = await prefs.getBool(KeptWeather.usesDeviceKey) ?? true;
+    device = await prefs.getBool(KeptWeather.usesDeviceKey) ?? false;
     final lat = await prefs.getDouble(KeptWeather.latitudeKey);
     final lon = await prefs.getDouble(KeptWeather.longitudeKey);
     if (lat != null && lon != null) place = Coordinates(lat, lon);
@@ -230,8 +230,9 @@ Future<WeatherRefreshRecord?> refreshWeatherInBackground({
 }
 
 /// Whether the weather's shown, where for, and its latest forecast: each
-/// one fetched replaces the last whole. It's for where the device is
-/// ([usesDevice]) -- asked only then -- or for a [place] the user gives.
+/// one fetched replaces the last whole. It's for a [place] the user
+/// gives -- to start -- or, if they pick it, for where the device is
+/// ([usesDevice]), asked only then.
 /// What's picked is kept on this device ([persist]); the forecast only
 /// while the app runs.
 class Weather extends ChangeNotifier {
@@ -240,7 +241,7 @@ class Weather extends ChangeNotifier {
     required this.location,
     this.persist = true,
     this._enabled = false,
-    this._usesDevice = true,
+    this._usesDevice = false,
     this._place,
     DateTime Function()? clock,
     this.maxAge = const Duration(minutes: 30),

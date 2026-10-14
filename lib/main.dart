@@ -139,6 +139,7 @@ Future<void> main() async {
                 location: FixedLocationSource(),
                 persist: false,
                 enabled: true,
+                place: const Coordinates(47.61, -122.33),
               )..load()),
         backgroundRefresh: BackgroundRefresh(
           repository: sample?.scheduleHintsRepository(),
@@ -178,8 +179,8 @@ Future<void> main() async {
     persistPause: true,
   );
   _watchQueues(health, noteOutbox, actionOutbox, eventOutbox);
-  // From Open-Meteo, for where the device is -- asked only once the user
-  // picks that, in Settings -- or a place they give.
+  // From Open-Meteo, for a place the user gives, or where the device is
+  // -- asked only once they pick that, in Settings.
   final weather = Weather(
     forecasts: OpenMeteoForecastSource(),
     location: DeviceLocationSource(),

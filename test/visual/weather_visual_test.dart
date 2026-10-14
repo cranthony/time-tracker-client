@@ -41,6 +41,7 @@ void main() {
         location: FixedLocationSource(),
         persist: false,
         enabled: true,
+        usesDevice: true,
         clock: () => _now,
       );
       // Fetched, as it would be by the time the page is looked at.
@@ -156,6 +157,24 @@ void main() {
             const Coordinates(0, 0),
             LocationAccess.denied,
           ),
+          persist: false,
+          enabled: true,
+          usesDevice: true,
+          clock: () => _now,
+        ),
+        then: () => toWeather(tester),
+      );
+    });
+
+    // Just turned on: for a place given, none yet, and nothing asked.
+    testWidgets('weather_settings_new ($mode)', (tester) async {
+      await render(
+        tester,
+        'weather_settings_new',
+        SettingsScreen(settings: AppSettings(persist: false)),
+        weather: Weather(
+          forecasts: SampleForecastSource(),
+          location: FixedLocationSource(),
           persist: false,
           enabled: true,
           clock: () => _now,

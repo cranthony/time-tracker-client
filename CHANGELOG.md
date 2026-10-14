@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.90.0
+
+- Turned on, the weather's for a place given by its latitude and
+  longitude, to start: turning it on no longer asks where the device
+  is. Its location is asked for only if "Where this device is" is
+  picked, now under the place in Settings. Weather already on for where
+  the device is stays so.
+
 ## 7.89.0
 
 - The weather's fetched in the background every 15 minutes, to start:
