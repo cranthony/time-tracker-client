@@ -864,7 +864,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(InputDecorator, 'Group (optional)'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('New York › Brooklyn').last);
+      // Picked in a sheet: New York opened, then Brooklyn in it tapped.
+      await tester.tap(find.byTooltip('Show 1 inside'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Brooklyn').last);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();

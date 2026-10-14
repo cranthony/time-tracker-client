@@ -8,6 +8,7 @@ import '../services/focus_store.dart';
 import 'edit_page.dart';
 import 'error_sheet.dart';
 import 'focus_buttons.dart';
+import 'picker_sheet.dart';
 import 'scoring_editor.dart';
 import 'traits_field.dart';
 
@@ -549,25 +550,13 @@ class _NamedDialogState extends State<_NamedDialog> {
             ],
             if (widget.group case final group?) ...[
               const SizedBox(height: 16),
-              DropdownButtonFormField<String?>(
-                initialValue: _group,
-                isExpanded: true,
-                decoration: InputDecoration(
-                  labelText: '${group.label} (optional)',
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                ),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('None')),
-                  for (final g in group.choices)
-                    DropdownMenuItem(
-                      value: g.id,
-                      child: Text(
-                        g.path ?? g.name,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
+              PickerField(
+                label: '${group.label} (optional)',
+                nodes: locationGroupNodes(group.choices),
+                value: _group,
+                none: 'None',
+                groupsPickable: true,
+                searchHint: 'Search groups',
                 onChanged: (picked) => setState(() => _group = picked),
               ),
             ],

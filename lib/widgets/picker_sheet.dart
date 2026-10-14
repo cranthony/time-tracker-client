@@ -11,6 +11,7 @@ import '../services/plan_memory.dart';
 import 'actions_picker.dart';
 import 'picker_edits.dart';
 import 'picker_search.dart';
+import 'tree_picker.dart';
 
 /// A sheet up from the foot of the screen, as a note's is, with room to
 /// pick from a long list: [title] and Done across its top, and [body]
@@ -279,32 +280,36 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
               (p.active || with_.contains(p.id) || for_.contains(p.id)))
             p,
       ];
+      final byId = {for (final p in known) p.id: p};
       void picking(Iterable<String> ids) => setState(() {
         picked
           ..clear()
           ..addAll(ids);
         other.removeAll(ids);
       });
-      return ListPicker<Person>(
-        items: [
-          ...known,
-          // Without the list, at least who's already there.
-          if (snapshot.data == null)
-            for (final id in {...with_, ...for_})
-              if (!addedPeople.any((p) => p.id == id)) Person(id: id, name: id),
-          ...addedPeople,
+      return TreePicker(
+        nodes: [
+          for (final p in [
+            ...known,
+            // Without the list, at least who's already there.
+            if (snapshot.data == null)
+              for (final id in {...with_, ...for_})
+                if (!addedPeople.any((p) => p.id == id))
+                  Person(id: id, name: id),
+            ...addedPeople,
+          ])
+            PickerNode(id: p.id, label: personName(p, context: true)),
         ],
-        id: (p) => p.id,
-        label: (p) => personName(p, context: true),
         picked: [...picked],
-        hint: hint,
+        caption: hint,
         empty: 'No one yet.',
         search: search,
         onChanged: picking,
         onEdit: repository == null
             ? null
-            : (p) async {
-                if (!known.contains(p)) return;
+            : (node) async {
+                final p = byId[node.id];
+                if (p == null) return;
                 if (await editPerson(context, person: p) == null) return;
                 setState(() => people = _people(repository, memory));
               },
@@ -325,25 +330,27 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
     },
   );
 
-  // Where it was: a location, or a new one.
+  // Where it was: the locations it was at, in their groups -- which
+  // can't be picked themselves -- or a new one.
   Widget place(StateSetter setState, PickerSearch search) => FutureBuilder(
     future: locations,
     initialData: memory?.locations,
     builder: (context, snapshot) {
       final loaded = snapshot.data ?? const <Location>[];
+      final byId = {for (final l in loaded) l.id: l};
       final known = [...loaded, ...addedLocations];
-      return ListPicker<Location>(
-        items: [
-          ...known,
-          for (final id in where_)
-            if (!known.any((l) => l.id == id)) Location(id: id, name: id),
+      return TreePicker(
+        nodes: [
+          ...locationGroupNodes(memory?.locationGroups ?? const []),
+          for (final l in [
+            ...known,
+            for (final id in where_)
+              if (!known.any((l) => l.id == id)) Location(id: id, name: id),
+          ])
+            locationNode(l),
         ],
-        id: (l) => l.id,
-        label: (l) => l.name,
-        detail: (l) => locationDetail(l, memory?.locationGroups ?? const []),
         picked: [...where_],
-        hint: 'Where it was: one place, or each it moved between',
-
+        caption: 'Where it was: one place, or each it moved between',
         empty: 'No locations yet.',
         search: search,
         onChanged: (ids) => setState(
@@ -353,8 +360,9 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
         ),
         onEdit: repository == null
             ? null
-            : (l) async {
-                if (!loaded.contains(l)) return;
+            : (node) async {
+                final l = byId[node.id];
+                if (l == null) return;
                 if (await editLocation(context, location: l) == null) return;
                 setState(() => locations = _locations(repository, memory));
               },
@@ -660,185 +668,112 @@ Future<T> _kept<T>(Future<void> loading, T? Function() kept) async {
   return kept() as T;
 }
 
-/// Picks from a flat list of [items], as [ActionsPicker] does from the
-/// actions: those [picked] as chips on top, a search over them, and the
-/// list under it, each with a check. With [single], picking one replaces
-/// any other, and there are no chips.
-///
-/// Its [search] is kept by whoever gives it, so it can start with words
-/// typed, and outlive the picker. Long-pressing an item calls [onEdit]
-/// with it; with [add], a row between the search and the list -- kept in
-/// view as the list scrolls -- adds one, given what's typed.
-class ListPicker<T> extends StatelessWidget {
-  const ListPicker({
+/// One of [nodes], or with [none], none: [label] over it, and in it, the
+/// one picked, by its path. Tapped, it opens a sheet up from the foot to
+/// search and browse them, as an event's actions are picked: tapping one
+/// picks it and closes the sheet. With [groupsPickable], a group is picked
+/// as anything else is, its arrow opening it; otherwise tapping a group
+/// opens it. [marker] goes before a name.
+class PickerField extends StatelessWidget {
+  const PickerField({
     super.key,
-    required this.items,
-    required this.id,
     required this.label,
-    required this.picked,
+    required this.nodes,
+    required this.value,
     required this.onChanged,
-    required this.hint,
-    required this.empty,
-    required this.search,
-    this.detail,
-    this.single = false,
-    this.onEdit,
-    this.add,
+    this.none,
+    this.groupsPickable = false,
+    this.marker,
+    this.searchHint = 'Search',
   });
 
-  final List<T> items;
-  final String Function(T item) id;
-  final String Function(T item) label;
-  final String? Function(T item)? detail;
-  final List<String> picked;
-  final ValueChanged<List<String>> onChanged;
+  final String label;
+  final List<PickerNode> nodes;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  final String? none;
+  final bool groupsPickable;
+  final Widget Function(PickerNode node)? marker;
+  final String searchHint;
 
-  /// What the list is of, over it.
-  final String hint;
-
-  /// What's said when there's nothing to pick.
-  final String empty;
-  final PickerSearch search;
-  final bool single;
-  final ValueChanged<T>? onEdit;
-
-  /// What one added is called, its icon, and how it's added.
-  final ({String noun, IconData icon, ValueChanged<String> onAdd})? add;
-
-  /// What [item] is searched by: its label and detail.
-  String _text(T item) => '${label(item)} ${detail?.call(item) ?? ''}';
-
-  void _toggle(String id, bool on) => onChanged(
-    single
-        ? [if (on) id]
-        : [
-            for (final other in picked)
-              if (other != id) other,
-            if (on) id,
-          ],
-  );
-
-  @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: search,
-    builder: (context, _) => _build(context),
-  );
-
-  Widget _build(BuildContext context) {
-    final theme = Theme.of(context);
-    final query = search.query;
-    final shown = query.isEmpty ? items : query.filter(items, _text);
-    final byId = {for (final item in items) id(item): item};
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: Text(hint, style: theme.textTheme.bodySmall),
+  Future<void> _pick(BuildContext context) async {
+    final picked = await showPickerSheet<({String? id})>(
+      context,
+      title: label,
+      result: () => (id: value),
+      body: (context, _) => _OwnSearch(
+        text: '',
+        matchAny: false,
+        builder: (context, search) => TreePicker(
+          nodes: nodes,
+          picked: [?value],
+          single: true,
+          groupsPickable: groupsPickable,
+          none: none,
+          search: search,
+          searchHint: searchHint,
+          marker: marker,
+          onChanged: (ids) => Navigator.of(context).pop((id: ids.firstOrNull)),
         ),
-        if (!single && picked.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final picked in picked)
-                  InputChip(
-                    label: Text(switch (byId[picked]) {
-                      final item? => label(item),
-                      null => picked,
-                    }),
-                    onDeleted: () => _toggle(picked, false),
-                  ),
-              ],
-            ),
-          ),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: PickerSearchField(
-            search: search,
-            // The top match, picked (or unpicked) from the keyboard.
-            // What's typed now, which may not have been built yet.
-            onSubmitted: (text) {
-              final query = PickerQuery(text, any: search.matchAny);
-              if (query.isEmpty) return;
-              final top = query.filter(items, _text).firstOrNull;
-              if (top == null) return;
-              final topId = id(top);
-              _toggle(topId, !picked.contains(topId));
-              search.controller.clear();
-            },
-          ),
-        ),
-        // Above the list, not in it: always to hand.
-        if (add case (:final noun, :final icon, :final onAdd))
-          PickerAddTile(noun: noun, search: search, icon: icon, onAdd: onAdd),
-        Expanded(
-          child: _oneOf(
-            ListView(
-              children: [
-                if (items.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Text(
-                      empty,
-                      style: TextStyle(color: theme.hintColor),
-                    ),
-                  )
-                else if (shown.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Text('Nothing matches.'),
-                  ),
-                for (final item in shown) _editable(item, _tile(item)),
-              ],
-            ),
-          ),
-        ),
-      ],
+      ),
     );
+    if (picked != null && picked.id != value) onChanged(picked.id);
   }
 
-  Widget _tile(T item) => single
-      // Only one: a radio button each. Tapped again, the one picked is
-      // unpicked, leaving none.
-      ? RadioListTile<String>(
-          value: id(item),
-          toggleable: true,
-          controlAffinity: ListTileControlAffinity.leading,
-          title: Text(label(item)),
-          subtitle: _detail(item),
-        )
-      : CheckboxListTile(
-          value: picked.contains(id(item)),
-          controlAffinity: ListTileControlAffinity.leading,
-          title: Text(label(item)),
-          subtitle: _detail(item),
-          onChanged: (on) => _toggle(id(item), on ?? false),
-        );
-
-  /// [tile], long-pressed to edit [item].
-  Widget _editable(T item, Widget tile) => switch (onEdit) {
-    final edit? => GestureDetector(
-      key: ValueKey(id(item)),
-      onLongPress: () => edit(item),
-      child: tile,
-    ),
-    null => tile,
-  };
-
-  Widget? _detail(T item) => switch (detail?.call(item)) {
-    final detail? when detail.isNotEmpty => Text(detail),
-    _ => null,
-  };
-
-  /// [list], its radio buttons grouped where only one is picked.
-  Widget _oneOf(Widget list) => single
-      ? RadioGroup<String>(
-          groupValue: picked.firstOrNull,
-          onChanged: (id) => onChanged([?id]),
-          child: list,
-        )
-      : list;
+  @override
+  Widget build(BuildContext context) {
+    final node = nodes.where((n) => n.id == value).firstOrNull;
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: () => _pick(context),
+      child: InputDecorator(
+        isEmpty: value == null && none == null,
+        decoration: InputDecoration(
+          labelText: label,
+          isDense: true,
+          border: const OutlineInputBorder(),
+          suffixIcon: const Icon(Icons.arrow_drop_down),
+        ),
+        child: switch (value) {
+          null => Text(none ?? ''),
+          final id => Row(
+            children: [
+              if ((marker, node) case (final marker?, final node?)) ...[
+                marker(node),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: Text(
+                  node?.path ?? node?.label ?? id,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        },
+      ),
+    );
+  }
 }
+
+/// [location] as a [TreePicker] shows it: by its name, in its group.
+PickerNode locationNode(Location location) => PickerNode(
+  id: location.id,
+  label: location.name,
+  parentId: location.groupId,
+  path: location.path,
+  detail: location.hint,
+);
+
+/// [groups] as a [TreePicker] shows them: folders.
+List<PickerNode> locationGroupNodes(List<LocationGroup> groups) => [
+  for (final g in groups)
+    PickerNode(
+      id: g.id,
+      label: g.name,
+      parentId: g.groupId,
+      path: g.path,
+      detail: g.note,
+      group: true,
+    ),
+];

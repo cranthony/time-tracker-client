@@ -8,11 +8,10 @@ import '../services/plan_memory.dart';
 import '../widgets/duration_field.dart';
 import '../widgets/edit_page.dart';
 import '../widgets/error_sheet.dart';
+import '../widgets/actions_picker.dart';
+import '../widgets/picker_sheet.dart';
 import '../widgets/status_message.dart';
-
-/// A place, or a way of getting there, as the travel times pick them: its
-/// id, what it's shown as, and whether it's a group.
-typedef TravelChoice = ({String id, String label, bool group});
+import '../widgets/tree_picker.dart';
 
 /// Roughly how long it takes to get between places -- each a location or a
 /// location group -- by each way of getting there: an action or action
@@ -59,22 +58,24 @@ class _TravelTimesScreenState extends State<TravelTimesScreen> {
   }
 
   /// Every location and group, groups first, each as its path.
-  List<TravelChoice> get _places => [
-    for (final g in widget.memory.locationGroups ?? const <LocationGroup>[])
-      (id: g.id, label: g.path ?? g.name, group: true),
+  List<PickerNode> get _places => [
+    ...locationGroupNodes(widget.memory.locationGroups ?? const []),
     for (final l in widget.memory.locations ?? const <Location>[])
-      (id: l.id, label: l.path ?? l.name, group: false),
+      locationNode(l),
   ];
 
   /// Every action and group that's in use, by its path.
-  List<TravelChoice> get _modes => [
+  List<PickerNode> get _modes => [
     for (final a in widget.memory.shownActions?.actions ?? const [])
       if (a.id != null && a.status != 'deleted' && a.status != 'archived')
-        (id: a.id!, label: a.path ?? a.name ?? a.id!, group: a.isGroup),
+        actionNode(a),
   ];
 
-  String _name(String id, List<TravelChoice> choices) =>
-      choices.where((c) => c.id == id).firstOrNull?.label ?? id;
+  String _name(String id, List<PickerNode> choices) =>
+      switch (choices.where((c) => c.id == id).firstOrNull) {
+        final c? => c.path ?? c.label,
+        null => id,
+      };
 
   Future<void> _edit(TravelTime? travel) async {
     final repository = widget.repository;
@@ -213,8 +214,8 @@ class TravelTimeEditor extends StatefulWidget {
   });
 
   final TravelTime? travel;
-  final List<TravelChoice> places;
-  final List<TravelChoice> modes;
+  final List<PickerNode> places;
+  final List<PickerNode> modes;
   final Future<void> Function(Map<String, Object?> fields) save;
   final Future<void> Function()? delete;
 
@@ -321,39 +322,22 @@ class _TravelTimeEditorState extends State<TravelTimeEditor> {
     if (deleted && mounted) Navigator.of(context).pop(true);
   }
 
-  /// A place or a way of getting there, picked from [choices]; one that
-  /// isn't among them, by its id.
+  /// A place or a way of getting there, picked from [choices] -- a
+  /// group, or anything in one; one that isn't among them, by its id.
   Widget _picker({
     required String label,
     required String? value,
-    required List<TravelChoice> choices,
+    required List<PickerNode> choices,
     required ValueChanged<String?> onChanged,
     IconData place = Icons.place_outlined,
-  }) => DropdownButtonFormField<String>(
-    initialValue: value,
-    isExpanded: true,
-    decoration: InputDecoration(
-      labelText: label,
-      border: const OutlineInputBorder(),
-      isDense: true,
-    ),
-    items: [
-      for (final c in [
-        ...choices,
-        if (value != null && !choices.any((c) => c.id == value))
-          (id: value, label: value, group: false),
-      ])
-        DropdownMenuItem(
-          value: c.id,
-          child: Row(
-            children: [
-              Icon(c.group ? Icons.folder_outlined : place, size: 20),
-              const SizedBox(width: 8),
-              Expanded(child: Text(c.label, overflow: TextOverflow.ellipsis)),
-            ],
-          ),
-        ),
-    ],
+    String searchHint = 'Search places',
+  }) => PickerField(
+    label: label,
+    nodes: choices,
+    value: value,
+    groupsPickable: true,
+    searchHint: searchHint,
+    marker: (c) => Icon(c.group ? Icons.folder_outlined : place, size: 20),
     onChanged: onChanged,
   );
 
@@ -372,6 +356,7 @@ class _TravelTimeEditorState extends State<TravelTimeEditor> {
                   value: way.mode,
                   choices: widget.modes,
                   place: Icons.directions,
+                  searchHint: 'Search actions',
                   onChanged: (picked) => setState(() => way.mode = picked),
                 ),
               ),
@@ -415,7 +400,10 @@ class _TravelTimeEditorState extends State<TravelTimeEditor> {
     final theme = Theme.of(context);
     final places = widget.places;
     String name(String? id) =>
-        places.where((p) => p.id == id).firstOrNull?.label ?? 'there';
+        switch (places.where((p) => p.id == id).firstOrNull) {
+          final p? => p.path ?? p.label,
+          null => 'there',
+        };
     return EditPage(
       title: widget.travel == null ? 'New travel time' : 'Edit travel time',
       problem: _problem,

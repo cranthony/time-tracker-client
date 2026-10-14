@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.79.0
+
+- One picker everywhere: a location or group's "Inside", and a travel
+  time's "From", "To" and "By", open the sheet the Events page picks
+  actions, people and locations in -- searched (with "Any"), and browsed
+  as a tree of folders -- where tapping one picks it. A group is picked
+  with a tap too; its arrow opens it.
+- An event's Location page shows the location groups as folders, as its
+  Actions page does the action groups.
+
 ## 7.78.2
 
 - An event's location is read only as a list (`location_ids`), as the
