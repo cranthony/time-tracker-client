@@ -1,0 +1,483 @@
+import 'package:flutter/material.dart';
+
+import '../models/person.dart';
+import '../models/travel_time.dart';
+import '../services/actions_repository.dart';
+import '../services/people_repository.dart';
+import '../services/plan_memory.dart';
+import '../widgets/duration_field.dart';
+import '../widgets/edit_page.dart';
+import '../widgets/error_sheet.dart';
+import '../widgets/status_message.dart';
+
+/// A place, or a way of getting there, as the travel times pick them: its
+/// id, what it's shown as, and whether it's a group.
+typedef TravelChoice = ({String id, String label, bool group});
+
+/// Roughly how long it takes to get between places -- each a location or a
+/// location group -- by each way of getting there: an action or action
+/// group, such as Drive or Transit. Tapping one edits or deletes it; "+"
+/// adds one. Each counts both ways unless it's one way. Shows what
+/// [memory] has while it loads afresh, with the actions from [actions].
+class TravelTimesScreen extends StatefulWidget {
+  const TravelTimesScreen({
+    super.key,
+    required this.repository,
+    required this.memory,
+    this.actions,
+  });
+
+  final PeopleRepository repository;
+  final PlanMemory memory;
+  final ActionsRepository? actions;
+
+  @override
+  State<TravelTimesScreen> createState() => _TravelTimesScreenState();
+}
+
+class _TravelTimesScreenState extends State<TravelTimesScreen> {
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load({bool again = false}) async {
+    final memory = widget.memory;
+    try {
+      await Future.wait([
+        memory.loadTravelTimes(widget.repository, again: again),
+        memory.loadLocations(widget.repository),
+        if (widget.actions case final actions?) memory.loadActions(actions),
+      ]);
+      if (mounted) setState(() => _error = null);
+    } catch (e) {
+      if (mounted) setState(() => _error = e);
+    }
+  }
+
+  /// Every location and group, groups first, each as its path.
+  List<TravelChoice> get _places => [
+    for (final g in widget.memory.locationGroups ?? const <LocationGroup>[])
+      (id: g.id, label: g.path ?? g.name, group: true),
+    for (final l in widget.memory.locations ?? const <Location>[])
+      (id: l.id, label: l.path ?? l.name, group: false),
+  ];
+
+  /// Every action and group that's in use, by its path.
+  List<TravelChoice> get _modes => [
+    for (final a in widget.memory.shownActions?.actions ?? const [])
+      if (a.id != null && a.status != 'deleted' && a.status != 'archived')
+        (id: a.id!, label: a.path ?? a.name ?? a.id!, group: a.isGroup),
+  ];
+
+  String _name(String id, List<TravelChoice> choices) =>
+      choices.where((c) => c.id == id).firstOrNull?.label ?? id;
+
+  Future<void> _edit(TravelTime? travel) async {
+    final repository = widget.repository;
+    final saved = await showEditPage<bool>(
+      context,
+      TravelTimeEditor(
+        travel: travel,
+        places: _places,
+        modes: _modes,
+        save: (fields) => travel == null
+            ? repository.createTravelTime(
+                TravelTime.fromJson({'id': '', ...fields}),
+              )
+            : repository.updateTravelTime(travel.id, fields),
+        delete: travel == null
+            ? null
+            : () => repository.deleteTravelTime(travel.id),
+      ),
+    );
+    if (saved == true) await _load(again: true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final travel = widget.memory.travelTimes;
+    final (places, modes) = (_places, _modes);
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Travel times'),
+        actions: [
+          IconButton(
+            tooltip: 'New travel time',
+            icon: const Icon(Icons.add),
+            onPressed: travel == null ? null : () => _edit(null),
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: () => _load(again: true),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(bottom: 24),
+          children: switch ((travel, _error)) {
+            (null, final error?) => [
+              LoadError(
+                what: 'the travel times',
+                error: error,
+                onRetry: () => _load(again: true),
+              ),
+            ],
+            (null, _) => const [LinearProgressIndicator()],
+            (final travel?, _) => [
+              for (final t in travel)
+                ListTile(
+                  leading: const Icon(Icons.commute),
+                  title: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(text: '${_name(t.fromId, places)} '),
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: Icon(
+                            t.oneWay ? Icons.arrow_forward : Icons.sync_alt,
+                            size: 18,
+                            semanticLabel: t.oneWay ? 'to' : 'and',
+                          ),
+                        ),
+                        TextSpan(text: ' ${_name(t.toId, places)}'),
+                      ],
+                    ),
+                  ),
+                  subtitle: Text(
+                    [
+                      if (t.times.isNotEmpty)
+                        [
+                          for (final m in t.times)
+                            '${_name(m.modeId, modes)} ${m.describe}',
+                        ].join(' · '),
+                      ?t.note,
+                    ].join('\n'),
+                  ),
+                  isThreeLine: t.times.isNotEmpty && t.note != null,
+                  onTap: () => _edit(t),
+                ),
+              if (travel.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'No travel times yet. Tap + to say roughly how long it '
+                    'takes between two places -- or neighborhoods, or cities '
+                    '-- by each way of getting there.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+            ],
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// One way of getting there, as it's edited: its mode, and how long it
+/// takes, in whole minutes -- at least, and at most if it varies.
+class _Way {
+  _Way([TravelMode? mode])
+    : mode = mode?.modeId,
+      minutes = TextEditingController(text: '${mode?.minutes ?? ''}'),
+      max = TextEditingController(text: '${mode?.maxMinutes ?? ''}');
+
+  String? mode;
+  final TextEditingController minutes;
+  final TextEditingController max;
+
+  void dispose() {
+    minutes.dispose();
+    max.dispose();
+  }
+}
+
+/// Adds a travel time (with no [travel]) or edits one, on a page of its
+/// own: where it's from and to (from [places]), whether it's one way, how
+/// long each way of getting there takes (each from [modes], with the
+/// hours and minutes it takes, and at most, if it varies), and a note.
+/// Saves with [save]; "Delete", asked first, calls [delete]. Closes with
+/// true once it's saved or deleted.
+class TravelTimeEditor extends StatefulWidget {
+  const TravelTimeEditor({
+    super.key,
+    this.travel,
+    required this.places,
+    required this.modes,
+    required this.save,
+    this.delete,
+  });
+
+  final TravelTime? travel;
+  final List<TravelChoice> places;
+  final List<TravelChoice> modes;
+  final Future<void> Function(Map<String, Object?> fields) save;
+  final Future<void> Function()? delete;
+
+  @override
+  State<TravelTimeEditor> createState() => _TravelTimeEditorState();
+}
+
+class _TravelTimeEditorState extends State<TravelTimeEditor> {
+  late String? _from = widget.travel?.fromId;
+  late String? _to = widget.travel?.toId;
+  late bool _oneWay = widget.travel?.oneWay ?? false;
+  late final _note = TextEditingController(text: widget.travel?.note);
+  late final List<_Way> _ways = [
+    for (final t in widget.travel?.times ?? const <TravelMode>[]) _Way(t),
+    if (widget.travel == null) _Way(),
+  ];
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _note.dispose();
+    for (final w in _ways) {
+      w.dispose();
+    }
+    super.dispose();
+  }
+
+  static int? _whole(TextEditingController c) => int.tryParse(c.text.trim());
+
+  /// What's wrong with it as it is, if anything.
+  String? get _problem {
+    if (_from == null || _to == null) return "Pick where it's from and to.";
+    if (_from == _to) return 'Pick two different places.';
+    for (final (i, w) in _ways.indexed) {
+      if (w.mode == null) return 'Pick how each way gets there.';
+      if (_ways.take(i).any((o) => o.mode == w.mode)) {
+        return 'Give each way of getting there once.';
+      }
+      final minutes = _whole(w.minutes);
+      if (minutes == null || minutes <= 0) {
+        return 'Say how long each way takes.';
+      }
+      if (w.max.text.trim().isNotEmpty) {
+        final max = _whole(w.max);
+        if (max == null || max < minutes) {
+          return '"Up to" is at least what it takes.';
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    final saved = await runOrShowError(
+      context,
+      title: "Couldn't save",
+      action: () => widget.save({
+        'from_id': _from,
+        'to_id': _to,
+        'one_way': _oneWay,
+        'times': [
+          for (final w in _ways)
+            TravelMode(
+              modeId: w.mode!,
+              minutes: _whole(w.minutes)!,
+              maxMinutes: switch (_whole(w.max)) {
+                final max? when max != _whole(w.minutes) => max,
+                _ => null,
+              },
+            ).toJson(),
+        ],
+        'note': _note.text.trim().isEmpty ? null : _note.text.trim(),
+      }),
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (saved) Navigator.of(context).pop(true);
+  }
+
+  Future<void> _delete() async {
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete this travel time?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep it'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (sure != true || !mounted) return;
+    final deleted = await runOrShowError(
+      context,
+      title: "Couldn't delete",
+      action: widget.delete!,
+    );
+    if (deleted && mounted) Navigator.of(context).pop(true);
+  }
+
+  /// A place or a way of getting there, picked from [choices]; one that
+  /// isn't among them, by its id.
+  Widget _picker({
+    required String label,
+    required String? value,
+    required List<TravelChoice> choices,
+    required ValueChanged<String?> onChanged,
+    IconData place = Icons.place_outlined,
+  }) => DropdownButtonFormField<String>(
+    initialValue: value,
+    isExpanded: true,
+    decoration: InputDecoration(
+      labelText: label,
+      border: const OutlineInputBorder(),
+      isDense: true,
+    ),
+    items: [
+      for (final c in [
+        ...choices,
+        if (value != null && !choices.any((c) => c.id == value))
+          (id: value, label: value, group: false),
+      ])
+        DropdownMenuItem(
+          value: c.id,
+          child: Row(
+            children: [
+              Icon(c.group ? Icons.folder_outlined : place, size: 20),
+              const SizedBox(width: 8),
+              Expanded(child: Text(c.label, overflow: TextOverflow.ellipsis)),
+            ],
+          ),
+        ),
+    ],
+    onChanged: onChanged,
+  );
+
+  Widget _way(ThemeData theme, _Way way) => Card.outlined(
+    margin: const EdgeInsets.only(top: 12),
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _picker(
+                  label: 'By',
+                  value: way.mode,
+                  choices: widget.modes,
+                  place: Icons.directions,
+                  onChanged: (picked) => setState(() => way.mode = picked),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Remove this way',
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => setState(() {
+                  _ways.remove(way);
+                  way.dispose();
+                }),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: DurationField(
+              controller: way.minutes,
+              label: 'Takes',
+              step: 5,
+              onChanged: () => setState(() {}),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: DurationField(
+              controller: way.max,
+              label: 'Up to (optional)',
+              step: 5,
+              onChanged: () => setState(() {}),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final places = widget.places;
+    String name(String? id) =>
+        places.where((p) => p.id == id).firstOrNull?.label ?? 'there';
+    return EditPage(
+      title: widget.travel == null ? 'New travel time' : 'Edit travel time',
+      problem: _problem,
+      saving: _saving,
+      onSave: _save,
+      actions: [
+        if (widget.delete != null)
+          IconButton(
+            tooltip: 'Delete',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _saving ? null : _delete,
+          ),
+      ],
+      children: [
+        _picker(
+          label: 'From',
+          value: _from,
+          choices: places,
+          onChanged: (picked) => setState(() => _from = picked),
+        ),
+        const SizedBox(height: 12),
+        _picker(
+          label: 'To',
+          value: _to,
+          choices: places,
+          onChanged: (picked) => setState(() => _to = picked),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('One way only'),
+          subtitle: Text(
+            _oneWay
+                ? 'Only from ${name(_from)} to ${name(_to)}: give the way '
+                      'back its own travel time.'
+                : 'It takes as long both ways.',
+          ),
+          value: _oneWay,
+          onChanged: (on) => setState(() => _oneWay = on),
+        ),
+        Text('Ways of getting there', style: theme.textTheme.titleSmall),
+        for (final way in _ways) _way(theme, way),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            icon: const Icon(Icons.add),
+            label: const Text('Add a way'),
+            onPressed: () => setState(() => _ways.add(_Way())),
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _note,
+          minLines: 1,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'Note (optional)',
+            hintText: 'e.g. "worse at rush hour"',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+      ],
+    );
+  }
+}

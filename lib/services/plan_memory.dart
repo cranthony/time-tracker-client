@@ -9,6 +9,7 @@ import '../models/habit.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/person.dart';
+import '../models/travel_time.dart';
 import '../models/scoring.dart';
 import '../models/time_split.dart';
 import '../models/trait.dart';
@@ -94,6 +95,9 @@ class PlanMemory extends ChangeNotifier {
 
   /// The groups [locations] are in; null until they've loaded.
   List<LocationGroup>? locationGroups;
+
+  /// How long it takes between [locations]; null until they've loaded.
+  List<TravelTime>? travelTimes;
 
   /// Self's habits, whatever their status; null until they're loaded, or
   /// if the server has none to give (see [loadHabits]).
@@ -435,6 +439,14 @@ class PlanMemory extends ChangeNotifier {
     final (found, grouped) = await (repository.locations(), groups()).wait;
     locations = found;
     locationGroups = grouped;
+  }, again: again);
+
+  /// Loads the travel times, this visit; [again] asks again.
+  Future<void> loadTravelTimes(
+    PeopleRepository repository, {
+    bool again = false,
+  }) => load('travel times', () async {
+    travelTimes = await repository.travelTimes();
   }, again: again);
 
   /// Loads [window]'s events into [eventStore], this visit; [again] asks

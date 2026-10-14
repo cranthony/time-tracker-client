@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/person.dart';
+import 'package:time_tracker_client/models/travel_time.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
@@ -380,6 +381,60 @@ void main() {
         'clear_fields': ['group_id'],
       });
       expectCall(client.calls[3], ('delete_location_group', {'group_id': 'q'}));
+    });
+
+    test('travel times are listed, made, changed and deleted', () async {
+      final made = {
+        'id': 't1',
+        'from_id': 'home',
+        'to_id': 'work',
+        'one_way': true,
+        'times': [
+          {'mode_id': 'drive', 'minutes': 25, 'max_minutes': 40},
+        ],
+      };
+      final client = _Client(
+        (name, _) => switch (name) {
+          'get_travel_times' => [made],
+          'create_travel_time' => {'travel_time': made, 'created_id': 't1'},
+          _ => made,
+        },
+      );
+      final repository = McpPeopleRepository(client);
+
+      final listed = (await repository.travelTimes()).single;
+      expect(listed.oneWay, isTrue);
+      expect(listed.times.single.describe, '25m–40m');
+      final created = await repository.createTravelTime(
+        const TravelTime(
+          id: '',
+          fromId: 'home',
+          toId: 'work',
+          times: [TravelMode(modeId: 'drive', minutes: 25)],
+        ),
+      );
+      expect(created.id, 't1');
+      await repository.updateTravelTime('t1', {'note': null, 'one_way': false});
+      await repository.deleteTravelTime('t1');
+
+      expect(client.calls[1].$2, {
+        'travel_time': {
+          'from_id': 'home',
+          'to_id': 'work',
+          'one_way': false,
+          'times': [
+            {'mode_id': 'drive', 'minutes': 25},
+          ],
+        },
+      });
+      expect(client.calls[2].$2, {
+        'travel_time': {'id': 't1', 'one_way': false},
+        'clear_fields': ['note'],
+      });
+      expectCall(client.calls[3], (
+        'delete_travel_time',
+        {'travel_time_id': 't1'},
+      ));
     });
   });
 }

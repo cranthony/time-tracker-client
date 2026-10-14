@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.78.0
+
+- Travel times: roughly how long it takes to get between two places --
+  locations, or location groups such as a neighborhood -- by each way of
+  getting there, such as Drive or Transit (any action or action group).
+  The Locations pane's commute button lists them. Each way's time is set
+  in hours and minutes as other durations are, with an "Up to" for one
+  that varies. A travel time counts both ways unless it's set to one way,
+  so the way back can have its own.
+
 ## 7.77.0
 
 - Locations can be grouped: by neighborhood, by city, and so on. The

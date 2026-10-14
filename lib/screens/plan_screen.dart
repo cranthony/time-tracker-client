@@ -756,6 +756,7 @@ class _PlanScreenState extends State<PlanScreen> {
           'where',
           LocationsPane(
             repository: people,
+            actions: widget.repository,
             memory: _memory,
             summary: _summaryView,
             onLocations: (_) => setState(() {}),
