@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.78.1
+
+- Habits pane: a person's trend sparkline is now in red, yellow and green,
+  as a habit's is. The People pane and a person's page keep their gray to
+  green.
+
 ## 7.78.0
 
 - Travel times: roughly how long it takes to get between two places --
