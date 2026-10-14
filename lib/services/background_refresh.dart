@@ -18,6 +18,7 @@ import 'people_repository.dart';
 import 'proposal_repository.dart';
 import 'schedule_hints_repository.dart';
 import 'traits_repository.dart';
+import 'weather.dart';
 
 /// How long after a routine's time the app fetches, unless it's changed
 /// ([AppSettings.refreshDelay]): it takes a while to run.
@@ -301,21 +302,62 @@ Future<RefreshRecord> refreshCaches({
 /// without the hints leaves them [unavailable], and the fallback stands.
 /// How long after each it fetches, and how often again while a proposal
 /// hasn't come, are the [settings]' -- rescheduled as they change.
+///
+/// The [weather], while it's on, is fetched on its own schedule, every
+/// [AppSettings.weatherRefresh] -- rescheduled as either changes -- and
+/// what its last fetch did is [weatherLast].
 class BackgroundRefresh extends ChangeNotifier {
   BackgroundRefresh({
     this.repository,
     AppSettings? settings,
+    this.weather,
     bool? supported,
     DateTime Function()? clock,
     Future<void> Function(Duration delay)? schedule,
+    Future<void> Function(Duration? every)? scheduleWeather,
     Future<RefreshRecord?> Function()? lastRecord,
+    Future<WeatherRefreshRecord?> Function()? lastWeather,
   }) : settings = settings ?? AppSettings(persist: false),
        supported = supported ?? BackgroundSync.supported,
        _clock = clock ?? DateTime.now,
        _schedule = schedule ?? BackgroundSync.scheduleRefresh,
-       _lastRecord = lastRecord ?? RefreshRecord.load {
+       _scheduleWeather = scheduleWeather ?? BackgroundSync.scheduleWeather,
+       _lastRecord = lastRecord ?? RefreshRecord.load,
+       _lastWeather = lastWeather ?? KeptWeather.lastBackground {
     _planned = _planning;
     this.settings.addListener(_settingsChanged);
+    weather?.addListener(_weatherChanged);
+    _weatherChanged();
+  }
+
+  /// The weather, to fetch in the background while it's on; null for
+  /// none.
+  final Weather? weather;
+  final Future<void> Function(Duration? every) _scheduleWeather;
+  final Future<WeatherRefreshRecord?> Function() _lastWeather;
+
+  /// What the weather's last background fetch did; null if there's been
+  /// none.
+  WeatherRefreshRecord? weatherLast;
+
+  /// How often the weather's fetched in the background now: null, not.
+  Duration? get weatherEvery =>
+      weather?.enabled ?? false ? settings.weatherRefresh : null;
+
+  /// What the weather's fetches were last scheduled for; unset till
+  /// they are.
+  Duration? _weatherScheduled;
+  var _weatherEverScheduled = false;
+
+  void _weatherChanged() {
+    // Not till it's known whether it's on: that would drop the schedule
+    // each time the app opens.
+    if (!supported || !(weather?.loaded ?? false)) return;
+    final every = weatherEvery;
+    if (_weatherEverScheduled && every == _weatherScheduled) return;
+    _weatherEverScheduled = true;
+    _weatherScheduled = every;
+    _scheduleWeather(every).catchError((Object _) {});
   }
 
   final ScheduleHintsRepository? repository;
@@ -340,6 +382,7 @@ class BackgroundRefresh extends ChangeNotifier {
   };
 
   void _settingsChanged() {
+    _weatherChanged();
     if (_planning == _planned) return;
     _planned = _planning;
     notifyListeners();
@@ -349,6 +392,7 @@ class BackgroundRefresh extends ChangeNotifier {
   @override
   void dispose() {
     settings.removeListener(_settingsChanged);
+    weather?.removeListener(_weatherChanged);
     super.dispose();
   }
 
@@ -395,6 +439,7 @@ class BackgroundRefresh extends ChangeNotifier {
       }
     }
     last = await _lastRecord();
+    if (weather != null) weatherLast = await _lastWeather();
     _planned = _planning;
     notifyListeners();
     await reschedule();

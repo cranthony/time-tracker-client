@@ -32,6 +32,9 @@ import '../models/google_calendar.dart';
 import '../services/google_calendars.dart';
 import '../widgets/event_description.dart';
 import '../widgets/google_all_day_strip.dart';
+import '../models/weather.dart';
+import '../services/weather.dart';
+import '../widgets/weather_strip.dart';
 import '../widgets/google_event_sheet.dart';
 import '../widgets/event_lists.dart';
 import '../widgets/mode_stack.dart';
@@ -321,6 +324,9 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Whether the strip of Google Calendar's all-day events is folded to
   /// a line.
   bool _allDayCollapsed = false;
+
+  /// Whether the weather strip is folded to its first line.
+  bool _weatherCollapsed = false;
 
   /// Whether Google Calendar's events are drawn over the user's own,
   /// rather than behind them.
@@ -1103,6 +1109,8 @@ class _EventsScreenState extends State<EventsScreen> {
         _resumeProposal();
         // Changed in the calendar app, maybe, while away.
         GoogleCalendars.of(context)?.refresh();
+        // Old by now, maybe, or somewhere else.
+        Weather.read(context)?.refresh();
       },
     );
     final store = widget.placeStore;
@@ -1132,6 +1140,11 @@ class _EventsScreenState extends State<EventsScreen> {
     _loadProposal();
     _loadSummaryCollapsed();
     _loadAllDayCollapsed();
+    _loadWeatherCollapsed();
+    // Once the scopes above can be read: if it's old by now.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Weather.read(context)?.refresh();
+    });
     _loadGoogleOnTop();
     _loadDetailsCollapsed();
     // Once the scopes can be read: everyone, every location and every
@@ -1364,6 +1377,42 @@ class _EventsScreenState extends State<EventsScreen> {
     } catch (_) {
       // Nowhere to keep it: it's open.
     }
+  }
+
+  /// Whether the weather strip was folded last time. Best effort:
+  /// without it, it's open.
+  Future<void> _loadWeatherCollapsed() async {
+    try {
+      final collapsed = await SharedPreferencesAsync().getBool(
+        _weatherCollapsedKey,
+      );
+      if (!mounted || collapsed == null) return;
+      setState(() => _weatherCollapsed = collapsed);
+    } catch (_) {
+      // Nowhere to keep it: it's open.
+    }
+  }
+
+  void _setWeatherCollapsed(bool collapsed) {
+    setState(() => _weatherCollapsed = collapsed);
+    try {
+      SharedPreferencesAsync()
+          .setBool(_weatherCollapsedKey, collapsed)
+          .catchError((_) {});
+    } catch (_) {
+      // Nowhere to keep it: it lasts until the app closes.
+    }
+  }
+
+  /// The weather to draw down [day]'s band, from now, if it's shown:
+  /// none yet, till there's a forecast.
+  List<WeatherSpan>? _weatherBand() {
+    final weather = Weather.of(context);
+    if (weather == null || !weather.enabled) return null;
+    return switch (weather.forecast) {
+      final forecast? => weatherTimeline(forecast, from: widget.clock()),
+      null => const [],
+    };
   }
 
   /// Whether Google Calendar's events were over the user's last time.
@@ -1762,6 +1811,8 @@ class _EventsScreenState extends State<EventsScreen> {
       if (_box case final box?) _keep(box, moved: true);
     });
     _refresh(reloadShown: !_fresh.contains(day));
+    // If it's old by now.
+    Weather.read(context)?.refresh();
   }
 
   /// Opens [event]'s summary, and from it, its details.
@@ -4463,6 +4514,15 @@ class _EventsScreenState extends State<EventsScreen> {
             durations: _summaryDurations,
             onDurations: _setSummaryDurations,
           ),
+        if (Weather.of(context) case final weather? when weather.enabled)
+          WeatherStrip(
+            weather: weather,
+            day: _day,
+            now: widget.clock(),
+            collapsed: _weatherCollapsed,
+            onCollapsed: _setWeatherCollapsed,
+            onDay: _goToDay,
+          ),
         if (GoogleCalendars.of(context) case final calendars?)
           GoogleAllDayStrip(
             events: [
@@ -4772,6 +4832,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 onLongPress: _box == null ? _startMoving : null,
                 googleEvents: GoogleCalendars.of(context)?.on(day) ?? const [],
                 googleOnTop: _googleOnTop,
+                weather: _weatherBand(),
                 onTapGoogle: _box == null && _selecting == null
                     ? _openGoogleEvent
                     : null,
@@ -4913,6 +4974,7 @@ const _detailsCollapsedKey = 'proposal_details_collapsed';
 /// Where whether the day's summary is folded away is kept.
 const _summaryCollapsedKey = 'day_summary_collapsed';
 const _allDayCollapsedKey = 'google_all_day_collapsed';
+const _weatherCollapsedKey = 'weather_strip_collapsed';
 const _googleOnTopKey = 'google_on_top';
 
 /// Where whether the day's summary shows durations is kept.

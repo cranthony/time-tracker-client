@@ -6,6 +6,24 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.88.0
+
+- The weather, from Open-Meteo, where the device is or for a latitude
+  and longitude given. Turned on in Settings -- the location's asked
+  for only if it's for where the device is -- a strip over the
+  Events page's timeline gives the day's sky, high and low and chance
+  of rain; today, whether rain's coming in the next three hours; and
+  the week's days, to go to. The band beside the timeline shows the
+  weather from now on in place of the priorities: the sky's color, and
+  a blue bar as wide as rain's likely, labeled with the chance. It's as
+  precise as a forecast can be: by the quarter hour, then the hour, then
+  parts of days, then whole days. Units (°F or °C, inches or
+  millimeters) are in Settings.
+- The forecast is kept on the device, shown at once as the app opens,
+  and fetched in the background on Android -- every hour, or as the
+  Background updates page sets -- for where the device was last found
+  while the app was open: never asking for its location there.
+
 ## 7.87.0
 
 - An action can be a way to commute -- getting from one place to

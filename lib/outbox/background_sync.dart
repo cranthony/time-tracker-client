@@ -25,6 +25,9 @@ class BackgroundSync {
   /// next.
   static const refreshTask = 'refresh-cache';
 
+  /// The weather's background fetch: every so often, while it's on.
+  static const weatherTask = 'refresh-weather';
+
   static bool get supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
@@ -62,6 +65,21 @@ class BackgroundSync {
     ),
   );
 
+  /// Fetches the weather [every] so often, once there's a network
+  /// connection -- Android's minimum is 15 minutes -- in place of any
+  /// schedule before; null, not at all.
+  static Future<void> scheduleWeather(Duration? every) => _guard(
+    () => every == null
+        ? Workmanager().cancelByUniqueName(weatherTask)
+        : Workmanager().registerPeriodicTask(
+            weatherTask,
+            weatherTask,
+            frequency: every,
+            constraints: Constraints(networkType: NetworkType.connected),
+            existingWorkPolicy: ExistingPeriodicWorkPolicy.update,
+          ),
+  );
+
   static Future<void> cancel() =>
       _guard(() => Workmanager().cancelByUniqueName(_task));
 
@@ -78,14 +96,21 @@ class BackgroundSync {
 
   /// Call from the background dispatcher. [build] creates the outboxes,
   /// wired to the server, without any UI; [refresh] runs the background
-  /// fetch; [done] runs as each task ends, however it went.
+  /// fetch, and [weather] the weather's; [done] runs as each task ends,
+  /// however it went.
   static void run(
     List<Outbox> Function() build, {
     Future<void> Function()? refresh,
+    Future<void> Function()? weather,
     Future<void> Function()? done,
   }) {
     Workmanager().executeTask((task, _) async {
       try {
+        if (task == weatherTask) {
+          // Every so often anyway: a failed one waits for the next.
+          await weather?.call();
+          return true;
+        }
         if (task == refreshTask) {
           // It schedules the next itself; a failed one waits for that.
           await refresh?.call();

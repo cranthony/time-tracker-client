@@ -6,14 +6,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'keep_rules.dart';
 
 import '../models/schedule_hints.dart';
+import '../models/weather.dart';
 import '../widgets/cursor_modes.dart';
 import '../widgets/cursor_snap.dart';
 
 /// The app's settings, kept on this device only: the [grid] a cursor on
 /// the timeline snaps to, what else cursors stop at ([snap]), what a new
 /// event does with the events in its way ([endMode]), and when background
-/// fetches run ([refreshDelay], [retryInterval], [expectsProposal]).
-/// Listeners hear every change.
+/// fetches run ([refreshDelay], [retryInterval], [expectsProposal]), and
+/// the units the weather's shown in ([temperatureUnit],
+/// [precipitationUnit]). Listeners hear every change.
 class AppSettings extends ChangeNotifier {
   /// Kept on the device with [persist]; otherwise only while the app
   /// runs. Starts with [grid], until what's kept is [load]ed.
@@ -66,6 +68,28 @@ class AppSettings extends ChangeNotifier {
   /// picked.
   EndMode get endMode => _endMode;
 
+  static const _temperatureUnitKey = 'settings_temperature_unit';
+  static const _precipitationUnitKey = 'settings_precipitation_unit';
+  TemperatureUnit _temperatureUnit = TemperatureUnit.fahrenheit;
+  PrecipitationUnit _precipitationUnit = PrecipitationUnit.inches;
+
+  /// What the weather's temperatures are shown in.
+  TemperatureUnit get temperatureUnit => _temperatureUnit;
+
+  /// What the weather's rain and snow are measured in.
+  PrecipitationUnit get precipitationUnit => _precipitationUnit;
+
+  /// Sets the [temperatureUnit], and keeps it.
+  Future<void> setTemperatureUnit(TemperatureUnit unit) =>
+      _setString(_temperatureUnitKey, unit.name, () => _temperatureUnit = unit);
+
+  /// Sets the [precipitationUnit], and keeps it.
+  Future<void> setPrecipitationUnit(PrecipitationUnit unit) => _setString(
+    _precipitationUnitKey,
+    unit.name,
+    () => _precipitationUnit = unit,
+  );
+
   /// The delays to pick from, after a routine's time, for the background
   /// fetch.
   static const refreshDelays = <Duration>[
@@ -87,6 +111,32 @@ class AppSettings extends ChangeNotifier {
     Duration(minutes: 30),
     Duration(minutes: 60),
   ];
+
+  /// How often to fetch the weather in the background, to pick from;
+  /// null is not to.
+  static const weatherRefreshIntervals = <Duration?>[
+    null,
+    Duration(minutes: 30),
+    Duration(hours: 1),
+    Duration(hours: 2),
+    Duration(hours: 3),
+    Duration(hours: 6),
+  ];
+
+  static const defaultWeatherRefresh = Duration(hours: 1);
+  static const _weatherRefreshKey = 'settings_weather_refresh_minutes';
+  Duration? _weatherRefresh = defaultWeatherRefresh;
+
+  /// How often the weather's fetched in the background, while it's on;
+  /// null for only while the app's open.
+  Duration? get weatherRefresh => _weatherRefresh;
+
+  /// Sets the [weatherRefresh], and keeps it.
+  Future<void> setWeatherRefresh(Duration? every) => _setInt(
+    _weatherRefreshKey,
+    every?.inMinutes ?? 0,
+    () => _weatherRefresh = every,
+  );
 
   static const defaultRefreshDelay = Duration(minutes: 10);
   static const defaultRetryInterval = Duration(minutes: 15);
@@ -151,12 +201,25 @@ class AppSettings extends ChangeNotifier {
       if (await prefs.getInt(_retryIntervalKey) case final m?) {
         _retryInterval = m <= 0 ? null : Duration(minutes: m);
       }
+      if (await prefs.getInt(_weatherRefreshKey) case final m?) {
+        _weatherRefresh = m <= 0 ? null : Duration(minutes: m);
+      }
       if (await prefs.getStringList(_expectingKey) case final keys?) {
         _expecting = {...keys};
       }
       _endMode =
           EndMode.values.asNameMap()[await prefs.getString(_endModeKey)] ??
           _endMode;
+      _temperatureUnit =
+          TemperatureUnit.values.asNameMap()[await prefs.getString(
+            _temperatureUnitKey,
+          )] ??
+          _temperatureUnit;
+      _precipitationUnit =
+          PrecipitationUnit.values.asNameMap()[await prefs.getString(
+            _precipitationUnitKey,
+          )] ??
+          _precipitationUnit;
       if (await prefs.getString(_keepRulesKey) case final json?) {
         _keepRules = [
           for (final r in jsonDecode(json) as List) ?KeepRule.fromJson(r),

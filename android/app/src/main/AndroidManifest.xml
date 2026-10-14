@@ -7,6 +7,9 @@
     <!-- To show the Google Calendar events synced to the phone on the
          Events page, if the user turns that on; see GoogleCalendarReader. -->
     <uses-permission android:name="android.permission.READ_CALENDAR"/>
+    <!-- For the forecast where the phone is, if the user turns the weather
+         on; roughly, a forecast needs no more. See device_location.dart. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="Time Tracker"
         android:name="${applicationName}"

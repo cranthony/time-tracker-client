@@ -42,6 +42,10 @@ import 'services/server_client.dart';
 import 'services/traits_repository.dart';
 import 'platform/google_calendar_source.dart';
 import 'services/google_calendars.dart';
+import 'services/open_meteo.dart';
+import 'services/weather.dart';
+import 'platform/device_location.dart';
+import 'demo/weather_sample.dart';
 import 'services/work_timing.dart';
 import 'theme.dart';
 import 'widgets/sign_in_off_banner.dart';
@@ -128,6 +132,14 @@ Future<void> main() async {
                 enabled: true,
                 selected: const {'personal', 'family', 'birthdays', 'work'},
               ),
+        weather: sample == null
+            ? null
+            : (Weather(
+                forecasts: SampleForecastSource(),
+                location: FixedLocationSource(),
+                persist: false,
+                enabled: true,
+              )..load()),
         backgroundRefresh: BackgroundRefresh(
           repository: sample?.scheduleHintsRepository(),
           // The offline demo has nothing to fetch.
@@ -166,6 +178,12 @@ Future<void> main() async {
     persistPause: true,
   );
   _watchQueues(health, noteOutbox, actionOutbox, eventOutbox);
+  // From Open-Meteo, for where the device is -- asked only once the user
+  // picks that, in Settings -- or a place they give.
+  final weather = Weather(
+    forecasts: OpenMeteoForecastSource(),
+    location: DeviceLocationSource(),
+  )..load();
   runApp(
     TimeTrackerApp(
       settings: settings,
@@ -190,22 +208,28 @@ Future<void> main() async {
           !kIsWeb && defaultTargetPlatform == TargetPlatform.android
           ? (GoogleCalendars(source: AndroidGoogleCalendarSource())..load())
           : null,
+      weather: weather,
       backgroundRefresh: BackgroundRefresh(
         repository: McpScheduleHintsRepository(client, cache: cache),
         settings: settings,
+        weather: weather,
       ),
     ),
   );
 }
 
 /// Runs WorkManager's background tasks (Android): the one that saves
-/// pending notes, action saves, and changes to events; and the background
-/// fetch ([_refreshInBackground]).
+/// pending notes, action saves, and changes to events; the background
+/// fetch ([_refreshInBackground]); and the weather's, for where it's for
+/// -- where the device was last found while the app was open, never
+/// asking where it is now.
 @pragma('vm:entry-point')
 void backgroundDispatcher() {
   _recordUncaughtErrors(_backgroundHealth);
   BackgroundSync.run(
     refresh: _refreshInBackground,
+    weather: () =>
+        refreshWeatherInBackground(forecasts: OpenMeteoForecastSource()),
     // What it recorded, kept for the Diagnostics page.
     done: _backgroundHealth.flush,
     () {
@@ -366,7 +390,12 @@ class TimeTrackerApp extends StatefulWidget {
     this.settings,
     this.calendarWidget,
     this.googleCalendars,
+    this.weather,
   });
+
+  /// The forecast where the device is, if the user turns it on; null for
+  /// none.
+  final Weather? weather;
 
   /// The app's settings; by default, those kept on the device.
   final AppSettings? settings;
@@ -584,6 +613,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         scoped = AppSettingsScope(settings: _settings, child: scoped);
         if (widget.googleCalendars case final calendars?) {
           scoped = GoogleCalendarsScope(calendars: calendars, child: scoped);
+        }
+        if (widget.weather case final weather?) {
+          scoped = WeatherScope(weather: weather, child: scoped);
         }
         if (widget.diagnosticsRepository case final diagnostics?) {
           scoped = DiagnosticsScope(

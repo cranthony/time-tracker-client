@@ -289,7 +289,8 @@ Content-Security-Policy to `index.html` that:
   scripts, no `eval`, nothing from other sites;
 - lets the page connect only to its own site, the MCP server, AuthKit
   (which the tool reads from the server's metadata during the build) and
-  Google's font server, which supplies fonts for emoji and other scripts.
+  Google's font server, which supplies fonts for emoji and other scripts,
+  and Open-Meteo's forecast servers, for the weather.
   A server built without sign-in has no such metadata, so no AuthKit; a
   relative `MCP_URL` is the page's own site, so neither is added.
 
@@ -534,6 +535,7 @@ the previous or next event, from the cursor, with an action or one in a
 group (never the event it starts in, nor the one moved).
 On Android, it's also where [Google Calendar events](#google-calendar-events)
 are turned on, and their calendars picked.
+So is the [weather](#weather), and the units it's shown in.
 
 ## Google Calendar events
 
@@ -574,6 +576,60 @@ location opens it in your default maps app (with a `geo:` link; Google
 Maps in the browser on the web and Windows). If it's just a web link --
 to a map, or a video call -- the button is an arrow instead, and opens
 the link. A calendar event's sheet has the same button by its location.
+
+## Weather
+
+The Events page can show the weather where the device is, or for a
+place you give. It's off until you turn on **Show the weather** in
+Settings' Weather section, then it's **for** one of:
+
+- **Where this device is**: only as this is picked does the app ask to
+  know where the device is (roughly: the coarse location on Android,
+  the browser's or Windows' location service elsewhere). Refused, the
+  section says so, with **Ask again** -- or, refused for good or with
+  the location off, a button to the device's settings.
+- **A place I give**: its latitude and longitude, in degrees, typed in.
+  The device is never asked where it is.
+
+The place, rounded to about a kilometer, goes to
+[Open-Meteo](https://open-meteo.com) for its forecast -- free for
+non-commercial use, needing no key -- and nothing about it goes to the
+server. Temperatures are in °F or °C, and
+rain in inches or millimeters, as Settings says (°F and inches to
+start).
+
+- **A strip over the timeline**, under the day's summary, gives the
+  day's sky, high and low, and its chance of rain (today's from now);
+  today, whether rain's coming in the next three hours, by the quarter
+  hour; and the week's days, each with its sky and chance of rain, to
+  tap to go to. Nothing shows for a day that's past.
+- **The band beside the timeline**, where the priorities are drawn
+  otherwise, is the weather from now on: the sky's color (sunny yellow,
+  clouds grey, a clear night indigo), with a blue bar across it as wide
+  as rain's likely, labeled with the chance where it changes. It's only
+  as precise as a forecast can be: by the quarter hour for the next
+  three hours, by the hour for a day and a half, then by night, morning,
+  afternoon and evening through the day after tomorrow, then by the
+  whole day for the rest of the week.
+- The chance of rain in a part of a day, or a day, is the share of
+  NOAA's GFS ensemble's 31 runs with a hundredth of an inch or more in
+  it -- not the likeliest hour's, which would understate it.
+- A forecast is fetched as the page opens, on coming back to the app
+  and going to another day, once the last is half an hour old; each
+  replaces the last whole, and is kept on the device, so the app shows
+  it at once as it opens. One that can't be had leaves the last, its
+  time shown.
+- **In the background** (Android), it's fetched every hour too, so it's
+  up to date when you open the app -- how often, or not at all, is set
+  on the Background updates page, which says what the last did. For
+  where the device is, that's where it was last found while the app was
+  open: the background fetch never asks where the device is, so needs no
+  background location permission.
+
+The forecast's source is behind an interface (`ForecastSource`, in
+`lib/services/weather.dart`), as is where the device is
+(`LocationSource`): another service, such as the National Weather
+Service's, would be one more of them.
 
 ## Background updates
 

@@ -7,9 +7,11 @@ import '../models/event.dart';
 import '../models/google_calendar.dart';
 import '../models/person.dart' show selfPersonId;
 import '../models/plan_action.dart';
+import '../models/weather.dart';
 import 'color_picker.dart';
 import 'durations.dart';
 import 'other_events.dart';
+import 'weather_style.dart';
 
 /// The zoom levels a [DayTimeline] can be shown at, in logical pixels
 /// per minute: from a day in about 720 pixels to one hour in 360.
@@ -356,7 +358,9 @@ List<T> placeLabels<T>(
 /// first, then the hours, as many as fit. Beside them, a band in the
 /// color of the priority of the most important event going on, clear
 /// where nothing is, labeled "P0" to "P3" where each run of it starts and
-/// stops. Beside that, a band as wide of the events, each where its
+/// stops -- or, given the [weather], a band of it: the sky's color, with
+/// the chance of rain a blue bar across it, as wide as it's likely,
+/// labeled with the chance where it changes. Beside that, a band as wide of the events, each where its
 /// times put it, in its [eventColor]. Then each event: its summary, then
 /// a line for each of its actions, the primary action first, each after a
 /// diamond in the action's color ([actions] gives them; one not among them
@@ -425,9 +429,15 @@ class DayTimeline extends StatelessWidget {
     this.googleEvents = const [],
     this.googleOnTop = false,
     this.onTapGoogle,
+    this.weather,
   });
 
   final List<Event> events;
+
+  /// The forecast, span by span, from now: drawn down the band in place
+  /// of the priorities. Empty, the band's empty; null, it's the
+  /// priorities'.
+  final List<WeatherSpan>? weather;
 
   /// Events from the user's Google calendars, for reference: the timed
   /// ones drawn faintly behind [events], each also marked down the right
@@ -561,7 +571,9 @@ class DayTimeline extends StatelessWidget {
       scale: scale,
       minHeight: minHeight,
     );
-    final runs = priorityRuns(events, day: day, dayEnd: dayEnd);
+    final runs = weather == null
+        ? priorityRuns(events, day: day, dayEnd: dayEnd)
+        : const <PriorityRun>[];
     double y(DateTime t) =>
         timelineOffset(t, day: day, dayEnd: dayEnd, scale: scale);
     final height = math.max(
@@ -631,6 +643,7 @@ class DayTimeline extends StatelessWidget {
       events: events,
       actions: actions,
       runs: runs,
+      weather: weather,
       placements: placements,
       timeLabel: (t) =>
           MaterialLocalizations.of(context)
@@ -2633,6 +2646,7 @@ class _RailPainter extends CustomPainter {
     required this.events,
     required this.actions,
     required this.runs,
+    required this.weather,
     required this.placements,
     required this.timeLabel,
     required this.scaler,
@@ -2654,6 +2668,9 @@ class _RailPainter extends CustomPainter {
   final List<Event> events;
   final Map<String, PlanAction> actions;
   final List<PriorityRun> runs;
+
+  /// The forecast, drawn on the band in place of the [runs].
+  final List<WeatherSpan>? weather;
   final List<TimelinePlacement> placements;
   final String Function(DateTime) timeLabel;
   final TextScaler scaler;
@@ -2709,6 +2726,7 @@ class _RailPainter extends CustomPainter {
       );
     }
     _paintBandLabels(canvas);
+    if (weather case final weather?) _paintWeather(canvas, weather);
     _paintTimeLabels(canvas);
     _paintEventBand(canvas);
     if (compactionY case final y?) {
@@ -2792,6 +2810,68 @@ class _RailPainter extends CustomPainter {
           rect.center.dy - painter.height / 2,
         ),
       );
+      painter.dispose();
+    }
+  }
+
+  /// The weather, each span the sky's color, with a bar of rain's color
+  /// across it from its left as wide as rain's likely; labeled with the
+  /// chance where it starts being much, and where it changes much, as
+  /// many as fit.
+  void _paintWeather(Canvas canvas, List<WeatherSpan> weather) {
+    const left = _timeWidth + _bandPadding;
+    const width = _bandWidth - 2 * _bandPadding;
+    final shown = [
+      for (final span in weather)
+        if (span.end.isAfter(day) && span.start.isBefore(dayEnd)) span,
+    ];
+    for (final span in shown) {
+      final top = _y(span.start);
+      final bottom = _y(span.end);
+      canvas.drawRect(
+        Rect.fromLTRB(left, top, left + width, bottom),
+        Paint()..color = skyBandColor(span.sky, daytime: span.daytime),
+      );
+      final chance = span.rainChance ?? 0;
+      if (chance > 0) {
+        canvas.drawRect(
+          Rect.fromLTRB(left, top, left + width * chance / 100, bottom),
+          Paint()..color = rainColor.withValues(alpha: 0.85),
+        );
+      }
+    }
+    // The chance, where it changes much: by the nearest ten.
+    int tens(WeatherSpan? span) => (((span?.rainChance ?? 0) + 5) ~/ 10) * 10;
+    final style = baseStyle.copyWith(
+      fontSize: _bandFontSize - 1,
+      fontWeight: FontWeight.w600,
+      color: Colors.white,
+      height: 1.2,
+    );
+    final labelHeight = scaler.scale(_bandFontSize - 1) * 1.2 + 2;
+    final starts = [
+      for (final (i, span) in shown.indexed)
+        if (tens(span) >= 20 && tens(span) != tens(i > 0 ? shown[i - 1] : null))
+          (top: math.max(_y(span.start), _y(day)), chance: span.rainChance!),
+    ];
+    for (final label in placeLabels(
+      starts,
+      top: (l) => l.top,
+      height: labelHeight,
+    )) {
+      final rect = Rect.fromLTWH(left, label.top, width, labelHeight);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(2)),
+        Paint()..color = rainColor,
+      );
+      final painter = _text('${label.chance}%', style);
+      // Narrowed to fit, if it must be.
+      final squeeze = math.min(1.0, (width - 1) / painter.width);
+      canvas.save();
+      canvas.translate(rect.center.dx, rect.center.dy);
+      canvas.scale(squeeze, 1);
+      painter.paint(canvas, Offset(-painter.width / 2, -painter.height / 2));
+      canvas.restore();
       painter.dispose();
     }
   }
@@ -2921,6 +3001,7 @@ class _RailPainter extends CustomPainter {
       old.day != day ||
       old.events != events ||
       old.actions != actions ||
+      !listEquals(old.weather, weather) ||
       old.edgeColor != edgeColor ||
       old.coverColor != coverColor ||
       old.nowY != nowY ||
