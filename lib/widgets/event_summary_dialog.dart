@@ -301,7 +301,7 @@ class _Removal {
 }
 
 /// The properties the dialog edits, one at a time.
-enum _Field { priority, summary, time, repeat, location, description }
+enum _Field { priority, commute, summary, time, repeat, location, description }
 
 /// The priorities offered as chips; "Other" takes any other.
 const _priorities = [0, 1, 2, 3];
@@ -659,6 +659,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 WaitingNote(waiting: widget.waiting),
               _topRow(context),
               if (_editing == _Field.priority) _priorityEditor(context),
+              if (_editing == _Field.commute) _commuteEditor(),
               _summary(context),
               _timeLine(context),
               if (widget.series || widget.repeatable) _repeatLine(context),
@@ -737,7 +738,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   }
 
   /// A dot saying [key] was changed, if it was.
-  Widget? _changedDot(String key) => _changes.containsKey(key)
+  Widget? _changedDot(String key, {bool? changed}) =>
+      changed ?? _changes.containsKey(key)
       ? Padding(
           padding: const EdgeInsetsDirectional.only(start: 6),
           child: Tooltip(
@@ -754,7 +756,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         )
       : null;
 
-  /// The priority chip, a series' "Series", and the trash can.
+  /// The priority chip, an event's commute chip, a series' "Series", and
+  /// the trash can.
   Widget _topRow(BuildContext context) {
     final theme = Theme.of(context);
     final own = _value('priority') as int?;
@@ -790,30 +793,58 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     );
     return Row(
       children: [
-        Tooltip(
-          message: own == null && shown != null
-              ? "Priority, from its actions"
-              : 'Priority',
-          child: InkWell(
-            onTap: _editable && !_saving && !_waits('priority')
-                ? () => _open(_Field.priority)
-                : null,
-            borderRadius: BorderRadius.circular(6),
-            child: Padding(padding: const EdgeInsets.all(4), child: chip),
+        // Wrapping to a second line when they don't fit beside the trash.
+        Expanded(
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Tooltip(
+                    message: own == null && shown != null
+                        ? "Priority, from its actions"
+                        : 'Priority',
+                    child: InkWell(
+                      onTap: _editable && !_saving && !_waits('priority')
+                          ? () => _open(_Field.priority)
+                          : null,
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: chip,
+                      ),
+                    ),
+                  ),
+                  ?_changedDot('priority'),
+                ],
+              ),
+              if (widget.facets) ...[
+                const SizedBox(width: 4),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _commuteChip(context),
+                    ?_changedDot(
+                      'facts',
+                      changed: _commute != _factsWere.commute,
+                    ),
+                  ],
+                ),
+              ],
+              if (widget.series)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(start: 8),
+                  child: Text(
+                    'Series',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
-        ?_changedDot('priority'),
-        if (widget.series)
-          Padding(
-            padding: const EdgeInsetsDirectional.only(start: 8),
-            child: Text(
-              'Series',
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        const Spacer(),
         if (widget.remove case final remove? when _editable)
           IconButton(
             tooltip: remove.tooltip,
@@ -823,6 +854,76 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       ],
     );
   }
+
+  /// Whether it's a commute, as it'll be saved.
+  bool get _commute => Facts.fromJson(_value('facts'))?.commute ?? false;
+
+  Facts get _factsWere =>
+      Facts.fromJson(widget.values['facts']) ?? const Facts();
+
+  /// Whether its facts were changed, besides whether it's a commute, which
+  /// its chip shows.
+  bool get _factsChanged =>
+      _changes.containsKey('facts') &&
+      (Facts.fromJson(_changes['facts']) ?? const Facts()).withCommute(
+            _factsWere.commute,
+          ) !=
+          _factsWere;
+
+  /// "Commute": filled when it's one, outlined and faded when it's not;
+  /// tapped, it opens its switch.
+  Widget _commuteChip(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final on = _commute;
+    final color = on ? colors.onSecondaryContainer : colors.outline;
+    return Tooltip(
+      message: on ? 'Part of a commute' : 'Not part of a commute',
+      child: InkWell(
+        onTap: _editable && !_saving && !_waits('facts')
+            ? () => _open(_Field.commute)
+            : null,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: on ? colors.secondaryContainer : null,
+              border: Border.all(
+                color: on ? colors.secondaryContainer : colors.outlineVariant,
+                width: 1.5,
+              ),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.commute, size: 16, color: color),
+                const SizedBox(width: 4),
+                Text(
+                  'Commute',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _commuteEditor() => SwitchListTile(
+    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+    title: const Text('This event is part of a commute'),
+    value: _commute,
+    onChanged: (on) => _setFacts(
+      (Facts.fromJson(_value('facts')) ?? const Facts()).withCommute(on),
+    ),
+  );
 
   Widget _priorityEditor(BuildContext context) {
     final own = _value('priority') as int?;
@@ -1312,6 +1413,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     required VoidCallback? onTap,
     bool editing = false,
     String? changedKey,
+    bool? changed,
   }) {
     final theme = Theme.of(context);
     final waits = changedKey != null && _waits(changedKey);
@@ -1340,7 +1442,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 if (changedKey != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: _changedDot(changedKey) ?? const SizedBox(),
+                    child:
+                        _changedDot(changedKey, changed: changed) ??
+                        const SizedBox(),
                   ),
               ],
             ),
@@ -1525,6 +1629,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       context,
       icon: where ? Icons.place_outlined : Icons.person_outline,
       changedKey: 'facts',
+      changed: _factsChanged,
       onTap: () async {
         setState(() => _editing = null);
         final edited = await showWhoWhereSheet(
@@ -1621,6 +1726,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       context,
       icon: Icons.note_alt_outlined,
       changedKey: 'facts',
+      changed: _factsChanged,
       onTap: () async {
         setState(() => _editing = null);
         final edited = await showFactsDialog(

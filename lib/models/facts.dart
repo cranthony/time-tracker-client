@@ -45,6 +45,15 @@ class Facts {
       notes.isEmpty &&
       !commute;
 
+  /// These, but a commute or not as [commute] says.
+  Facts withCommute(bool commute) => Facts(
+    locationIds: locationIds,
+    withIds: withIds,
+    forIds: forIds,
+    notes: notes,
+    commute: commute,
+  );
+
   /// Everyone it involves, with them or for them, each once.
   List<String> get personIds => {...withIds, ...forIds}.toList();
 

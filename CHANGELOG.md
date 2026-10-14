@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.91.0
+
+- An event's dialog has a Commute chip next to its priority: filled when
+  the event is part of a commute, outlined and faded when it isn't.
+  Tapping it opens a switch, "This event is part of a commute".
+
 ## 7.90.0
 
 - Turned on, the weather's for a place given by its latitude and
