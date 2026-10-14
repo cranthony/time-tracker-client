@@ -7,6 +7,9 @@ import 'package:home_widget/home_widget.dart';
 
 import '../models/event.dart';
 import '../models/plan_action.dart';
+import '../models/weather.dart';
+import '../services/app_settings.dart';
+import '../services/weather.dart';
 import '../services/event_store.dart';
 import '../widgets/day_timeline.dart' show eventColor;
 
@@ -23,6 +26,12 @@ typedef CalendarTap = ({DateTime? at, String? eventId});
 /// [EventStore] -- and has it drawn again. The widget leaves out what's
 /// over as it's drawn, and [publish] has it drawn again as each event
 /// starts or ends, and as each day does, so it always starts at now.
+///
+/// Each day's header also gives its weather, if it's on: its sky's icon,
+/// its chance of rain -- today's from now -- and its high and low, the
+/// rest of today's for today. [publishWeather] keeps those apart from the
+/// events, so a forecast fetched in the background redraws it without
+/// them.
 ///
 /// Taps on it open the app on Events ([taps]): at the event tapped, or
 /// the day, or now. Its "+" opens the New note dialog, as the add-note
@@ -73,6 +82,10 @@ class CalendarWidget {
   Object? _published = _unpublished;
   static const _unpublished = Object();
 
+  /// The weather last published, to publish again only when it changes;
+  /// [_unpublished] until the first.
+  Object? _weatherPublished = _unpublished;
+
   /// Taps on the widget, a tap that launched the app among them, buffered
   /// until the first listener.
   Stream<CalendarTap> get taps => _taps.stream;
@@ -99,6 +112,27 @@ class CalendarWidget {
       await _host.schedule(redrawTimes(snapshot));
       await _host.redraw();
       _published = json;
+    } on Exception catch (e) {
+      debugPrint('Home screen calendar unavailable: $e');
+    }
+  }
+
+  /// Keeps [forecast]'s days' weather for the widget's headers, its
+  /// temperatures in [unit], and has it drawn again, unless it's as it
+  /// was; null, the weather's off: none.
+  Future<void> publishWeather(
+    Forecast? forecast, {
+    TemperatureUnit unit = TemperatureUnit.fahrenheit,
+  }) async {
+    if (!enabled) return;
+    final weather = forecast == null
+        ? null
+        : jsonEncode(calendarWeather(forecast, unit: unit));
+    if (weather == _weatherPublished) return;
+    try {
+      await _host.saveWeather(weather);
+      await _host.redraw();
+      _weatherPublished = weather;
     } on Exception catch (e) {
       debugPrint('Home screen calendar unavailable: $e');
     }
@@ -169,6 +203,90 @@ Map<String, Object?>? calendarSnapshot(
   return {'days': days};
 }
 
+/// Keeps [widget]'s headers' weather as [weather] has it: each forecast
+/// as it comes, in the [settings]' temperature unit, and none while it's
+/// off -- not till it's known whether it's on, so as not to clear it as
+/// the app opens.
+class CalendarWeatherLink {
+  CalendarWeatherLink({
+    required this.widget,
+    required this.weather,
+    required this.settings,
+  }) {
+    weather.addListener(_changed);
+    settings.addListener(_changed);
+    _changed();
+  }
+
+  final CalendarWidget widget;
+  final Weather weather;
+  final AppSettings settings;
+
+  void _changed() {
+    if (!weather.loaded) return;
+    unawaited(
+      widget.publishWeather(
+        weather.enabled ? weather.forecast : null,
+        unit: settings.temperatureUnit,
+      ),
+    );
+  }
+
+  void dispose() {
+    weather.removeListener(_changed);
+    settings.removeListener(_changed);
+  }
+}
+
+/// [forecast]'s days for the widget's headers, by their midnights
+/// (milliseconds since the epoch): each's sky as an [skyEmoji], its chance
+/// of rain if it's more than none, and its high and low in [unit] -- in
+/// full, and [compact] for a narrow widget -- or one temperature where
+/// they round the same. Today's are from when it was fetched: what's left
+/// of it.
+Map<String, Object?> calendarWeather(
+  Forecast forecast, {
+  TemperatureUnit unit = TemperatureUnit.fahrenheit,
+}) => {
+  'days': [
+    for (final day in forecast.days)
+      {
+        'start': DateTime(
+          day.start.year,
+          day.start.month,
+          day.start.day,
+        ).millisecondsSinceEpoch,
+        'icon': skyEmoji(day.sky, daytime: day.daytime),
+        if (day.rainChance case final chance? when chance > 0)
+          'rain': '$chance%',
+        ...?_temperatures(day, unit),
+      },
+  ],
+};
+
+/// [day]'s high and low, as "72° / 55°" and, compact, "72/55°"; one
+/// temperature where they round the same.
+Map<String, String>? _temperatures(WeatherSpan day, TemperatureUnit unit) {
+  final (high, low) = (day.high, day.low);
+  if (high == null || low == null) return null;
+  final (h, l) = (unit.format(high), unit.format(low));
+  if (h == l) return {'temps': h, 'temps_compact': h};
+  return {'temps': '$h / $l', 'temps_compact': '${h.replaceAll('°', '')}/$l'};
+}
+
+/// [sky] as an emoji, for the widget, which draws text more easily than
+/// icons: a clear night's a moon.
+String skyEmoji(Sky sky, {bool daytime = true}) => switch (sky) {
+  Sky.clear => daytime ? '☀️' : '🌙',
+  Sky.partlyCloudy => daytime ? '⛅' : '☁️',
+  Sky.cloudy => '☁️',
+  Sky.fog => '🌫️',
+  Sky.drizzle => '🌦️',
+  Sky.rain => '🌧️',
+  Sky.snow => '🌨️',
+  Sky.thunderstorm => '⛈️',
+};
+
 Map<String, Object?> _event(Event e, Map<String, PlanAction> actions) => {
   'id': e.id,
   'summary': e.summary,
@@ -201,6 +319,10 @@ abstract class CalendarWidgetHost {
   /// Keeps [snapshot] (JSON) for the widget; null for none.
   Future<void> save(String? snapshot);
 
+  /// Keeps [weather] (JSON, see [calendarWeather]) for the widget's
+  /// headers; null for none.
+  Future<void> saveWeather(String? weather);
+
   /// Has the widget drawn again at [times], in place of those before.
   Future<void> schedule(List<DateTime> times);
 
@@ -218,11 +340,18 @@ class HomeWidgetHost implements CalendarWidgetHost {
 
   /// Where CalendarWidget.kt reads it.
   static const snapshotKey = 'calendar_snapshot';
+
+  /// Where CalendarWidget.kt reads the weather.
+  static const weatherKey = 'calendar_weather';
   static const _receiver = 'com.cranthony.timetracker.CalendarWidgetReceiver';
 
   @override
   Future<void> save(String? snapshot) =>
       HomeWidget.saveWidgetData<String>(snapshotKey, snapshot);
+
+  @override
+  Future<void> saveWeather(String? weather) =>
+      HomeWidget.saveWidgetData<String>(weatherKey, weather);
 
   @override
   Future<void> schedule(List<DateTime> times) => times.isEmpty

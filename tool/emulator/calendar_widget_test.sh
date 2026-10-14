@@ -12,7 +12,8 @@
 # The cases, in order:
 #
 #   shown      added from the app's menu, it shows the header, today, and
-#              events from the sample data
+#              events from the sample data, and today's weather in its
+#              header: the sample forecast's chance of rain
 #   event_cold an event tapped, the app's process gone: Events, showing it
 #   day_warm   a day's header tapped, the app in the background: Events
 #   add_note   its "+" tapped: the New note dialog
@@ -106,6 +107,11 @@ else
   sleep 2
   home
   sleep 3
+  # Today's header, before the list's scrolled past it: its weather's
+  # chance of rain, from the sample forecast.
+  ui_nodes > "$OUT/calendar_weather.txt"
+  adb exec-out screencap -p > "$OUT/calendar_weather.png"
+  grep -qE 'text="[^"]*[0-9]+%"' "$OUT/calendar_weather.txt" && weather=yes || weather=no
   # The list may start with today's events, or with nothing planned:
   # scroll it until an event shows, a dozen times at most -- after 7:45
   # AM, today's other events (Breakfast to Get ready for bed) fill more
@@ -128,6 +134,7 @@ else
   on_screen Calendar || missing+=(Calendar)
   on_screen 'Add note' || missing+=('"+"')
   ui_nodes | grep -qE "text=\"$SAMPLE_EVENTS\"" || missing+=(events)
+  [ "$weather" = yes ] || missing+=(weather)
   if [ ${#missing[@]} -eq 0 ]; then
     pass shown
   else

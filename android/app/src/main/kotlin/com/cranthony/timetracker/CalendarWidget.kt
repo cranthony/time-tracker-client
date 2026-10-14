@@ -15,6 +15,7 @@ import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.LocalSize
 import androidx.glance.action.Action
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
@@ -53,6 +54,11 @@ import org.json.JSONObject
  * change, and as each event starts or ends; what's over is left out
  * as it's drawn, so it always starts at now.
  *
+ * Each day's header also gives its weather, while it's on: its sky, its
+ * chance of rain and its high and low -- today's, what's left of it --
+ * as the app keeps them apart (calendar_weather), redrawing it with each
+ * forecast. Too narrow for all of it, the high and low go first.
+ *
  * Tapping an event, a day, or the header opens the app on Events there
  * (see MainActivity); the "+" opens the New note dialog, as AddNoteWidget
  * does.
@@ -68,13 +74,17 @@ class CalendarWidget : GlanceAppWidget() {
             // read afresh each time.
             val state = currentState<HomeWidgetGlanceState>()
             val days = CalendarDay.parse(state.preferences.getString(SNAPSHOT_KEY, null))
-            GlanceTheme { Content(context, days, System.currentTimeMillis()) }
+            val weather = DayWeather.parse(state.preferences.getString(WEATHER_KEY, null))
+            GlanceTheme { Content(context, days, weather, System.currentTimeMillis()) }
         }
     }
 
     companion object {
         /** Where the app keeps the snapshot; see HomeWidgetHost. */
         const val SNAPSHOT_KEY = "calendar_snapshot"
+
+        /** Where the app keeps each day's weather; see HomeWidgetHost. */
+        const val WEATHER_KEY = "calendar_weather"
 
         const val ACTION_SHOW_EVENTS = "com.cranthony.timetracker.SHOW_EVENTS"
         const val CHANNEL = "time_tracker/calendar_widget"
@@ -143,6 +153,40 @@ private class CalendarDay(val start: Long, val end: Long, val events: List<Calen
     }
 }
 
+/**
+ * A day's weather, for its header: its sky as an emoji, its chance of
+ * rain ("40%", if any), and its high and low ("72° / 55°", and compact,
+ * "72/55°"), if they're known.
+ */
+private class DayWeather(
+    val icon: String,
+    val rain: String?,
+    val temps: String?,
+    val tempsCompact: String?,
+) {
+    companion object {
+        /** Each day's, by its start; none if there isn't any, or it won't read. */
+        fun parse(json: String?): Map<Long, DayWeather> {
+            if (json == null) return emptyMap()
+            return try {
+                val days = JSONObject(json).getJSONArray("days")
+                (0 until days.length()).associate { i ->
+                    val day = days.getJSONObject(i)
+                    fun text(key: String) = if (day.isNull(key)) null else day.optString(key, "").ifEmpty { null }
+                    day.getLong("start") to DayWeather(
+                        icon = day.optString("icon", ""),
+                        rain = text("rain"),
+                        temps = text("temps"),
+                        tempsCompact = text("temps_compact"),
+                    )
+                }
+            } catch (e: org.json.JSONException) {
+                emptyMap()
+            }
+        }
+    }
+}
+
 private class CalendarEvent(
     val id: String?,
     val summary: String?,
@@ -152,7 +196,12 @@ private class CalendarEvent(
 )
 
 @Composable
-private fun Content(context: Context, days: List<CalendarDay>, now: Long) {
+private fun Content(
+    context: Context,
+    days: List<CalendarDay>,
+    weather: Map<Long, DayWeather>,
+    now: Long,
+) {
     // What's over is left out: the days that have ended, and their events.
     val shown = days.filter { it.end > now }.map { day ->
         CalendarDay(day.start, day.end, day.events.filter { it.end > now })
@@ -183,7 +232,7 @@ private fun Content(context: Context, days: List<CalendarDay>, now: Long) {
         }
         LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
             for (day in shown) {
-                item(itemId = day.start) { DayHeader(context, day, now) }
+                item(itemId = day.start) { DayHeader(context, day, weather[day.start], now) }
                 if (day.events.isEmpty()) {
                     item(itemId = day.start + 1) {
                         Text(
@@ -242,9 +291,14 @@ private fun Header(context: Context) {
     }
 }
 
-/** "Today", "Tomorrow", or the date; opens Events on that day. */
+/**
+ * "Today", "Tomorrow", or the date; then its [weather], if there is any:
+ * its sky, its chance of rain, and its high and low. Where they don't all
+ * fit, the day's named shorter ("Thu"), then the high and low compact,
+ * then left out. Opens Events on that day.
+ */
 @Composable
-private fun DayHeader(context: Context, day: CalendarDay, now: Long) {
+private fun DayHeader(context: Context, day: CalendarDay, weather: DayWeather?, now: Long) {
     val today = day.start <= now
     val label = when {
         today -> "Today"
@@ -256,19 +310,101 @@ private fun DayHeader(context: Context, day: CalendarDay, now: Long) {
                 DateUtils.FORMAT_ABBREV_ALL or DateUtils.FORMAT_NO_YEAR,
         )
     }
-    Text(
-        text = label,
+    val shortLabel = if (today) {
+        label
+    } else {
+        DateUtils.formatDateTime(
+            context,
+            day.start,
+            DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_ABBREV_WEEKDAY,
+        )
+    }
+    val (shown, temps) = if (weather == null) {
+        label to null
+    } else {
+        // The header's width: the widget's, less its padding.
+        val room = LocalSize.current.width.value - 24f
+        val scale = context.resources.configuration.fontScale
+        fun width(vararg parts: String?): Float {
+            val present = parts.filterNotNull()
+            return present.sumOf { textWidth(it).toDouble() }.toFloat() * scale +
+                HEADER_GAP * (present.size - 1)
+        }
+        val icon = weather.icon
+        val rain = weather.rain?.let { "💧$it" }
+        listOf(
+            label to weather.temps,
+            shortLabel to weather.temps,
+            shortLabel to weather.tempsCompact,
+            shortLabel to null,
+        ).firstOrNull { (name, t) -> width(name, icon, rain, t) <= room }
+            ?: (shortLabel to null)
+    }
+    Row(
         modifier = GlanceModifier
             .fillMaxWidth()
             .padding(top = 8.dp, bottom = 2.dp)
             .clickable(open(context, at = if (today) null else day.start)),
-        style = TextStyle(
-            color = GlanceTheme.colors.primary,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-        ),
-        maxLines = 1,
-    )
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = shown,
+            modifier = GlanceModifier.defaultWeight(),
+            style = TextStyle(
+                color = GlanceTheme.colors.primary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+            ),
+            maxLines = 1,
+        )
+        if (weather != null) {
+            Text(text = weather.icon, style = TextStyle(fontSize = 12.sp), maxLines = 1)
+            weather.rain?.let {
+                Spacer(modifier = GlanceModifier.width(HEADER_GAP.dp))
+                Text(
+                    text = "💧$it",
+                    style = TextStyle(
+                        color = ColorProvider(Color(0xFF1E88E5)),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                    ),
+                    maxLines = 1,
+                )
+            }
+            temps?.let {
+                Spacer(modifier = GlanceModifier.width(HEADER_GAP.dp))
+                Text(
+                    text = it,
+                    style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+/** The space between a header's parts, in dp. */
+private const val HEADER_GAP = 6f
+
+/**
+ * About how wide [text] is in the header, in dp at the phone's usual text
+ * size: the day's name at 13sp, the weather at 12sp; an emoji wider than
+ * a letter. Erring wide, so what's chosen fits.
+ */
+private fun textWidth(text: String): Float {
+    var width = 0f
+    var i = 0
+    while (i < text.length) {
+        val point = text.codePointAt(i)
+        width += when {
+            // The selector that asks for an emoji's color: no width.
+            point == 0xFE0F -> 0f
+            point >= 0x2190 -> 1.3f * 13f
+            else -> 0.6f * 13f
+        }
+        i += Character.charCount(point)
+    }
+    return width
 }
 
 /** Its color, times and summary; opens Events on it. */
