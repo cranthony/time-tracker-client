@@ -659,11 +659,19 @@ void main() {
       expect(priya.context, 'college');
       expect(priya.circleIds, ['family']);
       expect(priya.traits.select, ['present']);
-      expect(priya.traits.parts, {
-        'present': [
-          {'kind': 'follow_through', 'look_back_days': 14},
-        ],
-      });
+      expect(
+        {
+          for (final MapEntry(:key, :value) in priya.traits.parts.entries)
+            key: [
+              for (final part in value) {...part}..remove('id'),
+            ],
+        },
+        {
+          'present': [
+            {'kind': 'follow_through', 'look_back_days': 14},
+          ],
+        },
+      );
       await openAll(tester);
       expect(find.text('Priya'), findsOneWidget);
     });

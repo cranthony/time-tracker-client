@@ -8,6 +8,7 @@ import '../models/server_health.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/person.dart';
+import '../models/scoring.dart';
 import '../models/proposal.dart';
 import '../models/recurrence.dart';
 import '../models/trait.dart';
@@ -398,7 +399,8 @@ class SampleData {
   };
 
   /// The traits: four made of judgments -- one with continuity beside
-  /// it -- one of a cadence and follow-through, and one turned off.
+  /// it, weighed twice as much, and one by its events' time -- one of a
+  /// cadence and follow-through, and one turned off.
   List<Trait> get traits => const [
     Trait(
       id: 'adventurous',
@@ -437,6 +439,7 @@ class SampleData {
         },
         {'kind': 'continuity', 'last_within_days': 14, 'next_within_days': 14},
       ],
+      scoring: Aggregation(weights: {'judgment': 2}),
     ),
     Trait(
       id: 'creative',
@@ -471,6 +474,7 @@ class SampleData {
             '3': 'Fully present, listening closely',
           },
           'facts': ['general_notes', 'person_notes'],
+          'scoring': {'weight_by': 'duration'},
         },
       ],
     ),

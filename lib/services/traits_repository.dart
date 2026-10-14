@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../models/scoring.dart';
 import '../models/trait.dart';
+import '../models/trait_scores.dart' show withPartIds;
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
@@ -32,6 +33,10 @@ abstract class TraitsRepository {
   /// What [scoringDefaults] last returned, kept from an earlier run of
   /// the app; null if there's nothing kept.
   Future<ScoringDefaults?> cachedScoringDefaults();
+
+  /// Saves [defaults] whole: a level without one goes back to the plain
+  /// mean (a habit layer's, to its lowest). Returns them as saved.
+  Future<ScoringDefaults> setScoringDefaults(ScoringDefaults defaults);
 }
 
 /// Reaches traits via the Time Tracker MCP server.
@@ -84,6 +89,22 @@ class McpTraitsRepository implements TraitsRepository {
   }
 
   @override
+  Future<ScoringDefaults> setScoringDefaults(ScoringDefaults defaults) async {
+    final json = defaults.toJson();
+    final result = await _client.callTool('set_scoring_defaults', {
+      'defaults': {
+        for (final MapEntry(:key, :value) in json.entries) key: ?value,
+      },
+      'clear_fields': [
+        for (final MapEntry(:key, :value) in json.entries)
+          if (value == null) key,
+      ],
+    });
+    await _cache?.write(_defaultsKey, result);
+    return ScoringDefaults.fromJson(result);
+  }
+
+  @override
   Future<ScoringDefaults?> cachedScoringDefaults() async {
     try {
       final result = await _cache?.read(_defaultsKey);
@@ -124,16 +145,34 @@ class InMemoryTraitsRepository implements TraitsRepository {
   InMemoryTraitsRepository({
     List<Trait> traits = const [],
     this.defaults = const ScoringDefaults(),
-  }) : _traits = [...traits];
+  }) : _traits = [for (final t in traits) _withIds(t)];
 
   final List<Trait> _traits;
   ScoringDefaults defaults;
+
+  /// [trait] with an id for each part, as the server keeps them: a new
+  /// one's made, with [fresh].
+  static Trait _withIds(Trait trait, {bool fresh = false}) => Trait.fromJson({
+    ...trait.toJson(),
+    'parts': withPartIds(trait.parts, fresh: fresh),
+  });
 
   @override
   Future<ScoringDefaults> scoringDefaults() async => defaults;
 
   @override
   Future<ScoringDefaults?> cachedScoringDefaults() async => null;
+
+  @override
+  Future<ScoringDefaults> setScoringDefaults(ScoringDefaults defaults) async {
+    for (final level in defaults.toJson().values) {
+      if (level == null) continue;
+      if (aggregationProblem(level) case final problem?) {
+        throw McpException(problem);
+      }
+    }
+    return this.defaults = defaults;
+  }
 
   @override
   Future<List<Trait>?> cachedTraits({List<String>? statuses}) async => null;
@@ -155,7 +194,10 @@ class InMemoryTraitsRepository implements TraitsRepository {
     for (var n = 2; _traits.any((t) => t.id == id); n++) {
       id = '$base-$n';
     }
-    final created = Trait.fromJson({...trait.toJson(), 'id': id});
+    final created = _withIds(
+      Trait.fromJson({...trait.toJson(), 'id': id}),
+      fresh: true,
+    );
     _traits.add(created);
     return created;
   }
@@ -164,7 +206,10 @@ class InMemoryTraitsRepository implements TraitsRepository {
   Future<Trait> updateTrait(String id, Map<String, Object?> changes) async {
     final i = _traits.indexWhere((t) => t.id == id);
     if (i < 0) throw McpException("'$id' isn't a trait");
-    final updated = Trait.fromJson({..._traits[i].toJson(), ...changes});
+    final updated = _withIds(
+      Trait.fromJson({..._traits[i].toJson(), ...changes}),
+      fresh: true,
+    );
     if (traitProblem(updated) case final problem?) throw McpException(problem);
     _traits[i] = updated;
     return updated;

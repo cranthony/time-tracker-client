@@ -23,7 +23,7 @@ const judgmentLimitBy = {
 };
 
 /// What a judgment counts for, in a judgment part's score.
-const judgmentWeightBy = {'event': 'Each event', 'duration': 'Its time'};
+const judgmentWeightBy = {'event': 'Event', 'duration': 'Time'};
 
 /// [items], each a score and its weight, as [statistic] says: the weighted
 /// mean, or -- with [percentile], from 0 to 100 -- the lowest score with

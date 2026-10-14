@@ -114,6 +114,50 @@ List<String> partKeys(List<Part> parts) {
   ];
 }
 
+/// [parts], each with an id, as the server keeps them: its own; or, for
+/// one without, the name it had before parts had ids ([partKeys]) -- or,
+/// with [fresh], a new one, as the server makes for a part added: short
+/// and random. For what stands in for the server, without one.
+List<Part> withPartIds(List<Part> parts, {bool fresh = false}) {
+  final keys = partKeys(parts);
+  final taken = {...keys};
+  const letters = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  final random = math.Random();
+  return [
+    for (final (i, part) in parts.indexed)
+      if (part['id'] is String)
+        part
+      else
+        {
+          'id': fresh
+              ? () {
+                  String id;
+                  do {
+                    id = String.fromCharCodes([
+                      for (var n = 0; n < 6; n++)
+                        letters.codeUnitAt(random.nextInt(letters.length)),
+                    ]);
+                  } while (!taken.add(id));
+                  return id;
+                }()
+              : keys[i],
+          ...part,
+        },
+  ];
+}
+
+/// [traits] with an id for each of their own parts, as [withPartIds].
+PersonTraits traitsWithPartIds(PersonTraits traits, {bool fresh = false}) =>
+    PersonTraits(
+      select: traits.select,
+      parts: {
+        for (final MapEntry(:key, :value) in traits.parts.entries)
+          key: withPartIds(value, fresh: fresh),
+      },
+      partScoring: traits.partScoring,
+      scoring: traits.scoring,
+    );
+
 /// How [trait]'s parts combine for [subject]: their own scoring for it,
 /// or the trait's; the plain mean without either.
 Aggregation partsAggregation(Subject subject, Trait trait) =>

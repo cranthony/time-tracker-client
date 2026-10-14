@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/people_times.dart';
 import '../models/person.dart';
+import '../models/scoring.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../widgets/status_message.dart';
@@ -195,12 +196,20 @@ class PeoplePaneState extends State<PeoplePane> {
     final saved = await showCircleDialog(
       context,
       circle: circle,
+      members: {
+        if (circle != null)
+          for (final p
+              in widget.memory.people?.inCircle(circle.id) ?? <Person>[])
+            p.id: personName(p),
+      },
+      defaultScoring: widget.memory.scoringDefaults.circles,
       save: (fields) async => circle == null
           ? await repository.createCircle(
               Circle(
                 id: '',
                 name: fields['name'] as String,
                 note: fields['note'] as String?,
+                scoring: Aggregation.fromJson(fields['scoring']),
               ),
             )
           : await repository.updateCircle(circle.id, fields),

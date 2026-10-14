@@ -476,7 +476,9 @@ void main() {
 
       final created = (await repository.traits()).last;
       expect(created.id, 'kind');
-      expect(created.parts.single, {
+      // Given an id of its own, as the server would.
+      expect(created.parts.single['id'], isA<String>());
+      expect({...created.parts.single}..remove('id'), {
         'kind': 'judgment',
         'engagement_type': 'for',
         'rubric': 'Was I kind?',
@@ -509,7 +511,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        (await repository.traits()).firstWhere((t) => t.id == 'reliable').parts,
+        [
+          for (final part
+              in (await repository.traits())
+                  .firstWhere((t) => t.id == 'reliable')
+                  .parts)
+            {...part}..remove('id'),
+        ],
         [
           {
             'kind': 'count',
