@@ -127,6 +127,38 @@ class WeatherSpan {
     low,
   );
 
+  Map<String, Object?> toJson() => {
+    'start': start.toUtc().toIso8601String(),
+    'end': end.toUtc().toIso8601String(),
+    'sky': sky.name,
+    if (!daytime) 'night': true,
+    'rain': ?rainChance,
+    'mm': ?precipitation,
+    't': ?temperature,
+    'high': ?high,
+    'low': ?low,
+  };
+
+  /// What [toJson] made; null if it isn't one.
+  static WeatherSpan? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final start = DateTime.tryParse('${json['start']}');
+    final end = DateTime.tryParse('${json['end']}');
+    if (start == null || end == null) return null;
+    double? number(Object? n) => (n as num?)?.toDouble();
+    return WeatherSpan(
+      start: start.toLocal(),
+      end: end.toLocal(),
+      sky: Sky.values.asNameMap()[json['sky']] ?? Sky.cloudy,
+      daytime: json['night'] != true,
+      rainChance: (json['rain'] as num?)?.round(),
+      precipitation: number(json['mm']),
+      temperature: number(json['t']),
+      high: number(json['high']),
+      low: number(json['low']),
+    );
+  }
+
   @override
   String toString() =>
       'WeatherSpan($start, $end, ${sky.name}'
@@ -171,6 +203,33 @@ class Forecast {
 
   /// Where it came from, to credit it.
   final String source;
+
+  Map<String, Object?> toJson() => {
+    'fetched_at': fetchedAt.toUtc().toIso8601String(),
+    'source': source,
+    'quarter_hours': [for (final s in quarterHours) s.toJson()],
+    'hours': [for (final s in hours) s.toJson()],
+    'day_parts': [for (final s in dayParts) s.toJson()],
+    'days': [for (final s in days) s.toJson()],
+  };
+
+  /// What [toJson] made; null if it isn't one.
+  static Forecast? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final fetchedAt = DateTime.tryParse('${json['fetched_at']}');
+    if (fetchedAt == null) return null;
+    List<WeatherSpan> spans(Object? list) => [
+      for (final s in list is List ? list : const []) ?WeatherSpan.fromJson(s),
+    ];
+    return Forecast(
+      fetchedAt: fetchedAt.toLocal(),
+      source: '${json['source'] ?? ''}',
+      quarterHours: spans(json['quarter_hours']),
+      hours: spans(json['hours']),
+      dayParts: spans(json['day_parts']),
+      days: spans(json['days']),
+    );
+  }
 
   /// The forecast for the day starting at midnight [day]: from now, if
   /// it's today; null if it's past or beyond the forecast.

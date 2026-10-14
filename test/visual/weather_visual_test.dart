@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/demo/sample_data.dart';
 import 'package:time_tracker_client/demo/weather_sample.dart';
+import 'package:time_tracker_client/screens/background_updates_screen.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/settings_screen.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
+import 'package:time_tracker_client/services/background_refresh.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/weather.dart';
 import 'package:time_tracker_client/theme.dart';
@@ -181,6 +183,47 @@ void main() {
           clock: () => _now,
         ),
         then: () => toWeather(tester),
+      );
+    });
+
+    // Background updates' Weather section: how often, and the last.
+    testWidgets('weather_background ($mode)', (tester) async {
+      final weather = Weather(
+        forecasts: SampleForecastSource(),
+        location: FixedLocationSource(),
+        persist: false,
+        enabled: true,
+        clock: () => _now,
+      );
+      await render(
+        tester,
+        'weather_background',
+        BackgroundUpdatesScreen(
+          refresh: BackgroundRefresh(
+            repository: sample.scheduleHintsRepository(),
+            weather: weather,
+            supported: true,
+            clock: () => _now,
+            schedule: (_) async {},
+            scheduleWeather: (_) async {},
+            lastRecord: () async => null,
+            lastWeather: () async =>
+                WeatherRefreshRecord(at: DateTime(2026, 10, 2, 12, 58)),
+          ),
+        ),
+        weather: weather,
+        then: () async {
+          await tester.scrollUntilVisible(
+            find.text('Forecast'),
+            200,
+            scrollable: find.byType(Scrollable).first,
+          );
+          await tester.drag(
+            find.byType(Scrollable).first,
+            const Offset(0, -150),
+          );
+          await tester.pumpAndSettle();
+        },
       );
     });
   }

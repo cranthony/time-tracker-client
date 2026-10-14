@@ -616,8 +616,15 @@ start).
   it -- not the likeliest hour's, which would understate it.
 - A forecast is fetched as the page opens, on coming back to the app
   and going to another day, once the last is half an hour old; each
-  replaces the last whole. One that can't be had leaves the last, its
+  replaces the last whole, and is kept on the device, so the app shows
+  it at once as it opens. One that can't be had leaves the last, its
   time shown.
+- **In the background** (Android), it's fetched every hour too, so it's
+  up to date when you open the app -- how often, or not at all, is set
+  on the Background updates page, which says what the last did. For
+  where the device is, that's where it was last found while the app was
+  open: the background fetch never asks where the device is, so needs no
+  background location permission.
 
 The forecast's source is behind an interface (`ForecastSource`, in
 `lib/services/weather.dart`), as is where the device is

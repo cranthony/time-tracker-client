@@ -112,6 +112,32 @@ class AppSettings extends ChangeNotifier {
     Duration(minutes: 60),
   ];
 
+  /// How often to fetch the weather in the background, to pick from;
+  /// null is not to.
+  static const weatherRefreshIntervals = <Duration?>[
+    null,
+    Duration(minutes: 30),
+    Duration(hours: 1),
+    Duration(hours: 2),
+    Duration(hours: 3),
+    Duration(hours: 6),
+  ];
+
+  static const defaultWeatherRefresh = Duration(hours: 1);
+  static const _weatherRefreshKey = 'settings_weather_refresh_minutes';
+  Duration? _weatherRefresh = defaultWeatherRefresh;
+
+  /// How often the weather's fetched in the background, while it's on;
+  /// null for only while the app's open.
+  Duration? get weatherRefresh => _weatherRefresh;
+
+  /// Sets the [weatherRefresh], and keeps it.
+  Future<void> setWeatherRefresh(Duration? every) => _setInt(
+    _weatherRefreshKey,
+    every?.inMinutes ?? 0,
+    () => _weatherRefresh = every,
+  );
+
   static const defaultRefreshDelay = Duration(minutes: 10);
   static const defaultRetryInterval = Duration(minutes: 15);
   static const _refreshDelayKey = 'settings_refresh_delay_minutes';
@@ -174,6 +200,9 @@ class AppSettings extends ChangeNotifier {
       }
       if (await prefs.getInt(_retryIntervalKey) case final m?) {
         _retryInterval = m <= 0 ? null : Duration(minutes: m);
+      }
+      if (await prefs.getInt(_weatherRefreshKey) case final m?) {
+        _weatherRefresh = m <= 0 ? null : Duration(minutes: m);
       }
       if (await prefs.getStringList(_expectingKey) case final keys?) {
         _expecting = {...keys};

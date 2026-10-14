@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -70,6 +71,164 @@ class WeatherException implements Exception {
   String toString() => message;
 }
 
+/// What a background fetch of the weather did: when, and why it
+/// couldn't, if it couldn't.
+@immutable
+class WeatherRefreshRecord {
+  const WeatherRefreshRecord({required this.at, this.problem});
+
+  final DateTime at;
+  final String? problem;
+
+  bool get ok => problem == null;
+
+  Map<String, Object?> toJson() => {
+    'at': at.toUtc().toIso8601String(),
+    'problem': ?problem,
+  };
+
+  static WeatherRefreshRecord? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final at = DateTime.tryParse('${json['at']}');
+    if (at == null) return null;
+    return WeatherRefreshRecord(
+      at: at.toLocal(),
+      problem: json['problem'] as String?,
+    );
+  }
+}
+
+/// What's kept of the weather on the device, for the app and its
+/// background task to share: what's picked (on or off, where for), the
+/// last forecast and where it was for, where the device was last found
+/// while the app was open, and what the last background fetch did. Best
+/// effort, each.
+abstract final class KeptWeather {
+  static const enabledKey = 'weather_enabled';
+  static const usesDeviceKey = 'weather_uses_device';
+  static const latitudeKey = 'weather_latitude';
+  static const longitudeKey = 'weather_longitude';
+  static const _forecastKey = 'weather_forecast';
+  static const _deviceKey = 'weather_device_place';
+  static const _backgroundKey = 'weather_background_last';
+
+  static Map<String, Object?> _place(Coordinates at) => {
+    'lat': at.latitude,
+    'lon': at.longitude,
+  };
+
+  static Coordinates? _placeOf(Object? json) => switch (json) {
+    {'lat': final num lat, 'lon': final num lon} => Coordinates(
+      lat.toDouble(),
+      lon.toDouble(),
+    ),
+    _ => null,
+  };
+
+  static Future<Object?> _json(String key) async {
+    try {
+      final text = await SharedPreferencesAsync().getString(key);
+      return text == null ? null : jsonDecode(text);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _keep(String key, Object? json) async {
+    try {
+      await SharedPreferencesAsync().setString(key, jsonEncode(json));
+    } catch (_) {
+      // Not kept, then.
+    }
+  }
+
+  /// The last forecast, whether it was for where the device was, and the
+  /// place it was for, rounded.
+  static Future<({Forecast forecast, bool device, Coordinates at})?>
+  forecast() async {
+    final json = await _json(_forecastKey);
+    if (json is! Map) return null;
+    final forecast = Forecast.fromJson(json['forecast']);
+    final at = _placeOf(json['at']);
+    if (forecast == null || at == null) return null;
+    return (forecast: forecast, device: json['device'] == true, at: at);
+  }
+
+  /// Keeps [forecast], in place of the last.
+  static Future<void> keepForecast(
+    Forecast forecast, {
+    required bool device,
+    required Coordinates at,
+  }) => _keep(_forecastKey, {
+    'device': device,
+    'at': _place(at),
+    'forecast': forecast.toJson(),
+  });
+
+  /// Where the device was last found, rounded, while the app was open.
+  static Future<Coordinates?> devicePlace() async =>
+      _placeOf(await _json(_deviceKey));
+
+  static Future<void> keepDevicePlace(Coordinates at) =>
+      _keep(_deviceKey, _place(at));
+
+  /// What the last background fetch did; null if there's been none.
+  static Future<WeatherRefreshRecord?> lastBackground() async =>
+      WeatherRefreshRecord.fromJson(await _json(_backgroundKey));
+
+  static Future<void> keepBackground(WeatherRefreshRecord record) =>
+      _keep(_backgroundKey, record.toJson());
+}
+
+/// Fetches the weather in the background, if it's on, for where it's for
+/// -- for where the device is, where it was last found while the app was
+/// open: it never asks where the device is now, so needs no permission to
+/// in the background. Keeps the forecast, in place of the last, for the
+/// app to show as it opens, and what it did; null if the weather's off.
+Future<WeatherRefreshRecord?> refreshWeatherInBackground({
+  required ForecastSource forecasts,
+  DateTime Function() clock = DateTime.now,
+}) async {
+  bool enabled;
+  bool device;
+  Coordinates? place;
+  try {
+    final prefs = SharedPreferencesAsync();
+    enabled = await prefs.getBool(KeptWeather.enabledKey) ?? false;
+    device = await prefs.getBool(KeptWeather.usesDeviceKey) ?? true;
+    final lat = await prefs.getDouble(KeptWeather.latitudeKey);
+    final lon = await prefs.getDouble(KeptWeather.longitudeKey);
+    if (lat != null && lon != null) place = Coordinates(lat, lon);
+  } catch (_) {
+    return null;
+  }
+  if (!enabled) return null;
+  final at = device ? await KeptWeather.devicePlace() : place?.rounded;
+  WeatherRefreshRecord record;
+  if (at == null) {
+    record = WeatherRefreshRecord(
+      at: clock(),
+      problem: device
+          ? "The device hasn't been found yet: open the app for that."
+          : 'No place is given.',
+    );
+  } else {
+    try {
+      final forecast = await forecasts.fetch(at, now: clock());
+      await KeptWeather.keepForecast(forecast, device: device, at: at);
+      record = WeatherRefreshRecord(at: clock());
+    } catch (e) {
+      final problem = '$e';
+      record = WeatherRefreshRecord(
+        at: clock(),
+        problem: problem.isEmpty ? "Couldn't get the forecast." : problem,
+      );
+    }
+  }
+  await KeptWeather.keepBackground(record);
+  return record;
+}
+
 /// Whether the weather's shown, where for, and its latest forecast: each
 /// one fetched replaces the last whole. It's for where the device is
 /// ([usesDevice]) -- asked only then -- or for a [place] the user gives.
@@ -95,10 +254,10 @@ class Weather extends ChangeNotifier {
   /// How old a forecast gets before a [refresh] fetches another.
   final Duration maxAge;
 
-  static const _enabledKey = 'weather_enabled';
-  static const _usesDeviceKey = 'weather_uses_device';
-  static const _latitudeKey = 'weather_latitude';
-  static const _longitudeKey = 'weather_longitude';
+  static const _enabledKey = KeptWeather.enabledKey;
+  static const _usesDeviceKey = KeptWeather.usesDeviceKey;
+  static const _latitudeKey = KeptWeather.latitudeKey;
+  static const _longitudeKey = KeptWeather.longitudeKey;
 
   bool _enabled;
 
@@ -126,6 +285,12 @@ class Weather extends ChangeNotifier {
   /// is, allowed, or the [place] given.
   bool get located =>
       _usesDevice ? _access == LocationAccess.granted : _place != null;
+
+  var _loaded = false;
+
+  /// Whether what's kept on the device has been read ([load]), so what's
+  /// picked is known.
+  bool get loaded => _loaded;
 
   Forecast? _forecast;
 
@@ -166,8 +331,30 @@ class Weather extends ChangeNotifier {
       }
     }
     if (_enabled && _usesDevice) await _checkAccess();
+    await _adoptKept();
+    _loaded = true;
     notifyListeners();
     await refresh();
+  }
+
+  /// The forecast kept on the device -- the last fetched, here or in the
+  /// background -- if it's newer than this one, and for where it's for
+  /// now: shown at once, till a newer one comes.
+  Future<void> _adoptKept() async {
+    if (!persist || !_enabled) return;
+    final generation = _generation;
+    final kept = await KeptWeather.forecast();
+    if (kept == null || generation != _generation) return;
+    final matches = kept.device
+        ? _usesDevice
+        : !_usesDevice && kept.at == _place?.rounded;
+    final last = _forecast;
+    if (!matches ||
+        (last != null && !kept.forecast.fetchedAt.isAfter(last.fetchedAt))) {
+      return;
+    }
+    _forecast = kept.forecast;
+    notifyListeners();
   }
 
   Future<void> _checkAccess() async {
@@ -261,16 +448,19 @@ class Weather extends ChangeNotifier {
   /// where the device is, checking, without asking, if it hasn't -- and
   /// the last is older than [maxAge] -- or whatever its age, with [force]
   /// -- unless one's being fetched already.
-  Future<void> refresh({bool force = false}) {
-    if (!_enabled) return Future.value();
-    if (!located && !(_usesDevice && _access == null)) return Future.value();
+  Future<void> refresh({bool force = false}) async {
+    if (!_enabled) return;
+    // Fetched in the background, maybe, since.
+    if (!force && _fetching == null) await _adoptKept();
+    if (!_enabled) return;
+    if (!located && !(_usesDevice && _access == null)) return;
     if (_fetching case final fetching?) return fetching;
     final last = _forecast;
     if (!force &&
         _error == null &&
         last != null &&
         _clock().difference(last.fetchedAt) < maxAge) {
-      return Future.value();
+      return;
     }
     final generation = _generation;
     final fetching = _fetch(generation);
@@ -293,8 +483,14 @@ class Weather extends ChangeNotifier {
       }
     }
     try {
-      final at = _usesDevice ? await location.current() : _place!;
-      forecast = await forecasts.fetch(at.rounded, now: _clock());
+      final at = (_usesDevice ? await location.current() : _place!).rounded;
+      final fetched = await forecasts.fetch(at, now: _clock());
+      forecast = fetched;
+      if (persist && generation == _generation) {
+        // For the background fetch: where to, and what it had.
+        if (_usesDevice) await KeptWeather.keepDevicePlace(at);
+        await KeptWeather.keepForecast(fetched, device: _usesDevice, at: at);
+      }
     } catch (e) {
       error = e;
     }

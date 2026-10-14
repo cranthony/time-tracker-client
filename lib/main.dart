@@ -178,6 +178,12 @@ Future<void> main() async {
     persistPause: true,
   );
   _watchQueues(health, noteOutbox, actionOutbox, eventOutbox);
+  // From Open-Meteo, for where the device is -- asked only once the user
+  // picks that, in Settings -- or a place they give.
+  final weather = Weather(
+    forecasts: OpenMeteoForecastSource(),
+    location: DeviceLocationSource(),
+  )..load();
   runApp(
     TimeTrackerApp(
       settings: settings,
@@ -202,28 +208,28 @@ Future<void> main() async {
           !kIsWeb && defaultTargetPlatform == TargetPlatform.android
           ? (GoogleCalendars(source: AndroidGoogleCalendarSource())..load())
           : null,
-      // From Open-Meteo, for where the device is: asked only once the user
-      // turns it on, in Settings.
-      weather: Weather(
-        forecasts: OpenMeteoForecastSource(),
-        location: DeviceLocationSource(),
-      )..load(),
+      weather: weather,
       backgroundRefresh: BackgroundRefresh(
         repository: McpScheduleHintsRepository(client, cache: cache),
         settings: settings,
+        weather: weather,
       ),
     ),
   );
 }
 
 /// Runs WorkManager's background tasks (Android): the one that saves
-/// pending notes, action saves, and changes to events; and the background
-/// fetch ([_refreshInBackground]).
+/// pending notes, action saves, and changes to events; the background
+/// fetch ([_refreshInBackground]); and the weather's, for where it's for
+/// -- where the device was last found while the app was open, never
+/// asking where it is now.
 @pragma('vm:entry-point')
 void backgroundDispatcher() {
   _recordUncaughtErrors(_backgroundHealth);
   BackgroundSync.run(
     refresh: _refreshInBackground,
+    weather: () =>
+        refreshWeatherInBackground(forecasts: OpenMeteoForecastSource()),
     // What it recorded, kept for the Diagnostics page.
     done: _backgroundHealth.flush,
     () {

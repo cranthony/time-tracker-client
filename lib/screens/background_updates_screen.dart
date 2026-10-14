@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/schedule_hints.dart';
 import '../services/app_settings.dart';
 import '../services/background_refresh.dart';
+import '../services/weather.dart';
 
 /// How the app keeps what it shows fresh while it's closed: a fetch a
 /// while after each time Claude's routines run -- their times read from
@@ -11,8 +12,9 @@ import '../services/background_refresh.dart';
 /// (the user says which, with each's "Expect proposal"), and
 /// otherwise every [refreshFallback], said plainly; when the next is
 /// due, and why; and what the last did. How long after, and how often
-/// again, are set here. Background fetches are Android's: elsewhere it
-/// says the app fetches only while it's open.
+/// again, are set here. So is how often the weather's fetched, while
+/// it's on, and what its last fetch did. Background fetches are
+/// Android's: elsewhere it says the app fetches only while it's open.
 class BackgroundUpdatesScreen extends StatefulWidget {
   const BackgroundUpdatesScreen({super.key, required this.refresh});
 
@@ -55,7 +57,11 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Background updates')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([widget.refresh, widget.refresh.settings]),
+        listenable: Listenable.merge([
+          widget.refresh,
+          widget.refresh.settings,
+          ?widget.refresh.weather,
+        ]),
         builder: (context, _) {
           final refresh = widget.refresh;
           final settings = refresh.settings;
@@ -183,6 +189,8 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
                     "while the phone's idle or the app's little used -- "
                     'by hours, sometimes.',
                   ),
+                  if (refresh.weather case final weather?)
+                    ..._weather(theme, refresh, weather, day, at),
                 ],
                 _heading(theme, "When Claude's routines run"),
                 if (refresh.unavailable && hints == null)
@@ -248,6 +256,72 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
         },
       ),
     );
+  }
+
+  /// The weather's own background fetch: how often, and what the last
+  /// did.
+  List<Widget> _weather(
+    ThemeData theme,
+    BackgroundRefresh refresh,
+    Weather weather,
+    String Function(DateTime) day,
+    String Function(DateTime) at,
+  ) {
+    final settings = refresh.settings;
+    final last = refresh.weatherLast;
+    String every(Duration? d) => switch (d?.inMinutes) {
+      null => 'Off',
+      60 => 'Every hour',
+      final m when m % 60 == 0 => 'Every ${m ~/ 60} hours',
+      final m => 'Every $m min',
+    };
+    return [
+      _heading(theme, 'Weather'),
+      ListTile(
+        leading: const Icon(Icons.cloud_outlined),
+        title: const Text('Forecast'),
+        subtitle: const Text(
+          "Fetched this often, so it's up to date when you open the app.",
+        ),
+        trailing: DropdownButton<Duration?>(
+          value: settings.weatherRefresh,
+          onChanged: settings.setWeatherRefresh,
+          items: [
+            for (final d in {
+              ...AppSettings.weatherRefreshIntervals,
+              settings.weatherRefresh,
+            })
+              DropdownMenuItem(value: d, child: Text(every(d))),
+          ],
+        ),
+      ),
+      if (!weather.enabled)
+        _note(theme, 'The weather is off: turn it on in Settings.')
+      else ...[
+        if (weather.usesDevice)
+          _note(
+            theme,
+            'For where the device was last found while the app was open: '
+            "in the background, it's never asked where it is, so needs no "
+            'leave to be.',
+          ),
+        if (settings.weatherRefresh != null)
+          ListTile(
+            leading: Icon(
+              last == null || last.ok ? Icons.history : Icons.error_outline,
+            ),
+            title: Text(switch (last) {
+              null => 'Last: none yet',
+              final l => 'Last: ${day(l.at)}, ${at(l.at)}',
+            }),
+            subtitle: switch (last) {
+              WeatherRefreshRecord(:final problem?) => Text(problem),
+              null => null,
+              _ => const Text('Fetched the forecast.'),
+            },
+          ),
+      ],
+    ];
   }
 
   Widget _heading(ThemeData theme, String text) => Padding(

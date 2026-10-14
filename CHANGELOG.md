@@ -19,6 +19,10 @@ on. Add the new version's section here at the same time; CI checks both.
   precise as a forecast can be: by the quarter hour, then the hour, then
   parts of days, then whole days. Units (°F or °C, inches or
   millimeters) are in Settings.
+- The forecast is kept on the device, shown at once as the app opens,
+  and fetched in the background on Android -- every hour, or as the
+  Background updates page sets -- for where the device was last found
+  while the app was open: never asking for its location there.
 
 ## 7.87.0
 
