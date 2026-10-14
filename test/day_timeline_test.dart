@@ -288,6 +288,29 @@ void main() {
       expect(find.text('overlap'), findsNothing);
     });
 
+    testWidgets("doesn't label the overlaps of an event being moved", (
+      tester,
+    ) async {
+      Widget withFaded(String? faded) => MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: DayTimeline(
+              events: [
+                Event(id: 'work', start: at(9), end: at(12), summary: 'Work'),
+                Event(id: 'call', start: at(10), end: at(11), summary: 'Call'),
+              ],
+              day: day,
+              faded: faded,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(withFaded(null));
+      expect(find.text('overlap'), findsOneWidget);
+      await tester.pumpWidget(withFaded('call'));
+      expect(find.text('overlap'), findsNothing);
+    });
+
     testWidgets('a tap on an event says which', (tester) async {
       Event? tapped;
       final work = event('Work', at(0, 10), at(1));
