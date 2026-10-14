@@ -1,19 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/weather.dart';
 import '../services/app_settings.dart';
+import '../services/maps.dart';
 import '../services/weather.dart';
 
 /// Settings' section for the weather: whether it's shown on the Events
 /// page; where for -- where this device is, asked to know only once
 /// that's picked, or a place given by its latitude and longitude, never
-/// asking; and the units it's shown in. Refused the location, it says so,
+/// asking -- pasted as a maps app copies them, and opened in one
+/// ([openMaps]) to check; and the units it's shown in. Refused the location, it says so,
 /// and, refused for good, offers the device's settings to allow it there.
 /// Nothing where there's no [Weather].
 class WeatherSettings extends StatefulWidget {
-  const WeatherSettings({super.key, required this.settings});
+  const WeatherSettings({
+    super.key,
+    required this.settings,
+    this.openMaps = openInMaps,
+  });
 
   final AppSettings settings;
+
+  /// Opens a place, "47.61,-122.33", in a maps app.
+  final Future<bool> Function(String place) openMaps;
 
   @override
   State<WeatherSettings> createState() => _WeatherSettingsState();
@@ -62,6 +72,43 @@ class _WeatherSettingsState extends State<WeatherSettings> {
       _ => null,
     };
     return _problem == null ? Coordinates(latitude!, longitude!) : null;
+  }
+
+  /// The place typed, if it's one, leaving [_problem] be.
+  Coordinates? get _shown => switch ((
+    double.tryParse(_latitude.text.trim()),
+    double.tryParse(_longitude.text.trim()),
+  )) {
+    (final lat?, final lon?) when lat.abs() <= 90 && lon.abs() <= 180 =>
+      Coordinates(lat, lon),
+    _ => null,
+  };
+
+  /// Fills both fields from [place].
+  void _put(Coordinates place) {
+    _latitude.text = '${place.latitude}';
+    _longitude.text = '${place.longitude}';
+    _problem = null;
+  }
+
+  /// A field typed in: split across both if it's a whole place, pasted
+  /// as a maps app copies one.
+  void _typedIn(String text) => setState(() {
+    if (Coordinates.tryParse(text) case final place?) _put(place);
+  });
+
+  Future<void> _paste() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted) return;
+    setState(() {
+      if (Coordinates.tryParse(data?.text ?? '') case final place?) {
+        _put(place);
+      } else {
+        _problem =
+            "What's copied isn't a latitude and longitude, like "
+            '"47.61, -122.33".';
+      }
+    });
   }
 
   void _usePlace(Weather weather) {
@@ -160,6 +207,7 @@ class _WeatherSettingsState extends State<WeatherSettings> {
                                       signed: true,
                                       decimal: true,
                                     ),
+                                onChanged: _typedIn,
                                 decoration: const InputDecoration(
                                   labelText: 'Latitude',
                                   hintText: '47.61',
@@ -176,6 +224,7 @@ class _WeatherSettingsState extends State<WeatherSettings> {
                                       signed: true,
                                       decimal: true,
                                     ),
+                                onChanged: _typedIn,
                                 decoration: const InputDecoration(
                                   labelText: 'Longitude',
                                   hintText: '-122.33',
@@ -184,6 +233,35 @@ class _WeatherSettingsState extends State<WeatherSettings> {
                                 onSubmitted: (_) => _usePlace(weather),
                               ),
                             ),
+                          ],
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            'In a maps app, drop a pin where you want the '
+                            'weather for and copy its coordinates, then paste '
+                            'them here.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            TextButton.icon(
+                              onPressed: _paste,
+                              icon: const Icon(Icons.content_paste),
+                              label: const Text('Paste coordinates'),
+                            ),
+                            if (_shown case final place?)
+                              TextButton.icon(
+                                onPressed: () => widget.openMaps(
+                                  '${place.latitude},${place.longitude}',
+                                ),
+                                icon: const Icon(Icons.map_outlined),
+                                label: const Text('Open in maps'),
+                              ),
                           ],
                         ),
                         if (_problem case final problem?)

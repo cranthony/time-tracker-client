@@ -14,6 +14,24 @@ class Coordinates {
   final double latitude;
   final double longitude;
 
+  /// The place [text] holds, if that's all it holds: a latitude and a
+  /// longitude as a maps app copies them -- "47.6062, -122.3321", or
+  /// "47.6062° N, 122.3321° W" -- in range; otherwise null.
+  static Coordinates? tryParse(String text) {
+    final match = RegExp(
+      r'^\s*\(?\s*(-?\d+(?:\.\d+)?)\s*°?\s*([NS])?\s*[,;\s]\s*'
+      r'(-?\d+(?:\.\d+)?)\s*°?\s*([EW])?\s*\)?\s*$',
+      caseSensitive: false,
+    ).firstMatch(text);
+    if (match == null) return null;
+    var latitude = double.parse(match[1]!);
+    var longitude = double.parse(match[3]!);
+    if (match[2]?.toUpperCase() == 'S') latitude = -latitude;
+    if (match[4]?.toUpperCase() == 'W') longitude = -longitude;
+    if (latitude.abs() > 90 || longitude.abs() > 180) return null;
+    return Coordinates(latitude, longitude);
+  }
+
   /// Rounded to the hundredth of a degree, about a kilometer: as near as
   /// a forecast needs, and no nearer than the weather service needs to
   /// know.

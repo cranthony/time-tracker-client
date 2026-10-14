@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -11,6 +12,7 @@ import 'package:time_tracker_client/screens/settings_screen.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/services/open_meteo.dart';
 import 'package:time_tracker_client/services/weather.dart';
+import 'package:time_tracker_client/widgets/weather_settings.dart';
 import 'package:time_tracker_client/widgets/weather_strip.dart';
 
 /// Where the device is, counting how often it's asked: to be sure it's
@@ -823,6 +825,115 @@ void main() {
       );
       expect(weather.usesDevice, isTrue);
       expect(forecasts.fetched, isEmpty);
+    });
+  });
+
+  test('a place is read as a maps app copies it', () {
+    for (final (text, place) in [
+      ('47.6062, -122.3321', const Coordinates(47.6062, -122.3321)),
+      ('47.6062,-122.3321', const Coordinates(47.6062, -122.3321)),
+      (' 47.6062 -122.3321 ', const Coordinates(47.6062, -122.3321)),
+      ('(47.6062, -122.3321)', const Coordinates(47.6062, -122.3321)),
+      ('47.6062° N, 122.3321° W', const Coordinates(47.6062, -122.3321)),
+      ('33.8688° S, 151.2093° E', const Coordinates(-33.8688, 151.2093)),
+    ]) {
+      expect(Coordinates.tryParse(text), place, reason: text);
+    }
+    for (final text in ['', '47.6062', '95, 10', '10, 190', 'Seattle']) {
+      expect(Coordinates.tryParse(text), isNull, reason: text);
+    }
+  });
+
+  group('Settings, a place pasted', () {
+    /// What's copied, for the app's paste.
+    String? copied;
+    final opened = <String>[];
+
+    Future<void> pump(WidgetTester tester) async {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async =>
+            call.method == 'Clipboard.getData' ? {'text': copied} : null,
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      opened.clear();
+      final weather = Weather(
+        forecasts: _FakeForecasts(),
+        location: _CountingLocation(LocationAccess.denied),
+        persist: false,
+      );
+      await weather.enable();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: WeatherScope(
+            weather: weather,
+            child: Scaffold(
+              body: ListView(
+                children: [
+                  WeatherSettings(
+                    settings: AppSettings(persist: false),
+                    openMaps: (place) async {
+                      opened.add(place);
+                      return true;
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('A place I give'));
+      await tester.pumpAndSettle();
+    }
+
+    String field(WidgetTester tester, String label) => tester
+        .widget<TextField>(find.widgetWithText(TextField, label))
+        .controller!
+        .text;
+
+    testWidgets('pasted, it fills both, and opens in maps', (tester) async {
+      await pump(tester);
+      expect(find.text('Open in maps'), findsNothing);
+
+      copied = 'Seattle';
+      await tester.tap(find.text('Paste coordinates'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining("isn't a latitude and longitude"), findsOne);
+
+      copied = '47.6062° N, 122.3321° W';
+      await tester.tap(find.text('Paste coordinates'));
+      await tester.pumpAndSettle();
+      expect(field(tester, 'Latitude'), '47.6062');
+      expect(field(tester, 'Longitude'), '-122.3321');
+      expect(
+        find.textContaining("isn't a latitude and longitude"),
+        findsNothing,
+      );
+
+      await tester.tap(find.text('Open in maps'));
+      await tester.pumpAndSettle();
+      expect(opened, ['47.6062,-122.3321']);
+    });
+
+    testWidgets('a place pasted into one field is split across both', (
+      tester,
+    ) async {
+      await pump(tester);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Longitude'),
+        '-33.8688, 151.2093',
+      );
+      await tester.pumpAndSettle();
+      expect(field(tester, 'Latitude'), '-33.8688');
+      expect(field(tester, 'Longitude'), '151.2093');
+      expect(find.text('Open in maps'), findsOneWidget);
     });
   });
 }

@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+
+## 7.94.0
+
+- The weather's place given by latitude and longitude is easier to set
+  and check: "Paste coordinates" fills both from what a maps app copied
+  ("47.6062, -122.3321", or "47.6062° N, 122.3321° W"), and pasting that
+  into either field splits it across both. Once both are a place, "Open
+  in maps" shows it in a maps app.
+
 ## 7.93.1
 
 - The Background updates page has the weather first, then everything
