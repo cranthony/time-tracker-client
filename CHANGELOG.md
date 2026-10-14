@@ -6,6 +6,11 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.78.2
+
+- An event's location is read only as a list (`location_ids`), as the
+  server now sends it; the single `location_id` from before is gone.
+
 ## 7.78.1
 
 - Habits pane: a person's trend sparkline is now in red, yellow and green,
