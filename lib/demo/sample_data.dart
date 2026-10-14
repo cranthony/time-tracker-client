@@ -8,6 +8,7 @@ import '../models/server_health.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/person.dart';
+import '../models/travel_time.dart';
 import '../models/scoring.dart';
 import '../models/proposal.dart';
 import '../models/recurrence.dart';
@@ -70,6 +71,7 @@ class SampleData {
     circles: circles,
     locations: locations,
     locationGroups: locationGroups,
+    travelTimes: travelTimes,
   );
 
   HabitsRepository habitsRepository() => InMemoryHabitsRepository(habits);
@@ -527,6 +529,23 @@ class SampleData {
     LocationGroup(id: 'city', name: 'The city'),
     LocationGroup(id: 'downtown', name: 'Downtown', groupId: 'city'),
     LocationGroup(id: 'riverside', name: 'Riverside', groupId: 'city'),
+  ];
+
+  /// Roughly how long it takes to walk from home to the neighborhoods.
+  List<TravelTime> get travelTimes => const [
+    TravelTime(
+      id: 'home-downtown',
+      fromId: 'home',
+      toId: 'downtown',
+      times: [TravelMode(modeId: 'walk', minutes: 25, maxMinutes: 35)],
+      note: 'longer with the hill on the way back',
+    ),
+    TravelTime(
+      id: 'home-riverside',
+      fromId: 'home',
+      toId: 'riverside',
+      times: [TravelMode(modeId: 'walk', minutes: 15)],
+    ),
   ];
 
   /// Where events happen.

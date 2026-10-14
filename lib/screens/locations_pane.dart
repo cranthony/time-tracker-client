@@ -2,17 +2,21 @@ import 'package:flutter/material.dart';
 
 import '../models/person.dart';
 import '../widgets/status_message.dart';
+import '../services/actions_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../widgets/person_dialog.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
+import 'travel_times_screen.dart';
 
 /// The Plan page's Locations pane -- where: each place events happen,
 /// with the hint the assistant recognizes it by, under the location
 /// groups it's in (a neighborhood, a city). Tapping one edits or deletes
 /// it; "+" adds a location, and the folder a group. The search finds them
-/// by name and hint, each shown with the groups it's in.
+/// by name and hint, each shown with the groups it's in. The commute
+/// button opens how long it takes between them ([TravelTimesScreen]), by
+/// way of [actions].
 /// Above it all, with a [summary] to measure, the time at each location
 /// in its window. It shows what [memory] has, while it loads afresh.
 class LocationsPane extends StatefulWidget {
@@ -22,9 +26,13 @@ class LocationsPane extends StatefulWidget {
     required this.memory,
     this.summary,
     this.onLocations,
+    this.actions,
   });
 
   final PeopleRepository repository;
+
+  /// The actions a travel time's ways of getting there are from.
+  final ActionsRepository? actions;
   final PlanMemory memory;
 
   /// What the summary measures, and how it's shown; null for none.
@@ -184,6 +192,19 @@ class LocationsPaneState extends State<LocationsPane> {
       searchHint: 'Search locations',
       onSearch: (query) => setState(() => _query = query),
       actions: [
+        IconButton(
+          tooltip: 'Travel times',
+          icon: const Icon(Icons.commute),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => TravelTimesScreen(
+                repository: widget.repository,
+                memory: widget.memory,
+                actions: widget.actions,
+              ),
+            ),
+          ),
+        ),
         IconButton(
           tooltip: 'New location group',
           icon: const Icon(Icons.create_new_folder_outlined),

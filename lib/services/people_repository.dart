@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../models/person.dart';
 import '../models/scoring.dart';
+import '../models/travel_time.dart';
 import '../models/trait_scores.dart' show traitsWithPartIds;
 import 'mcp_client.dart';
 import 'response_cache.dart';
@@ -70,6 +71,19 @@ abstract class PeopleRepository {
   /// Deletes location group [id]: what was in it moves up into the group
   /// it was in.
   Future<void> deleteLocationGroup(String id);
+
+  /// Every travel time.
+  Future<List<TravelTime>> travelTimes();
+
+  /// Creates a travel time from [travel]'s fields; returns it with its id.
+  Future<TravelTime> createTravelTime(TravelTime travel);
+
+  /// Saves [changes] to travel time [id]: its `times` are replaced whole,
+  /// and a null note clears it.
+  Future<TravelTime> updateTravelTime(String id, Map<String, Object?> changes);
+
+  /// Deletes travel time [id].
+  Future<void> deleteTravelTime(String id);
 }
 
 /// Reaches people, circles and locations via the Time Tracker MCP
@@ -270,6 +284,41 @@ class McpPeopleRepository implements PeopleRepository {
   @override
   Future<void> deleteLocationGroup(String id) =>
       _client.callTool('delete_location_group', {'group_id': id});
+
+  @override
+  Future<List<TravelTime>> travelTimes() async => [
+    for (final t in await _client.callTool('get_travel_times', {}) as List)
+      TravelTime.fromJson((t as Map).cast<String, dynamic>()),
+  ];
+
+  @override
+  Future<TravelTime> createTravelTime(TravelTime travel) async =>
+      TravelTime.fromJson(
+        _map(
+          _map(
+            await _client.callTool('create_travel_time', {
+              'travel_time': travel.toJson()..remove('id'),
+            }),
+          )['travel_time'],
+        ),
+      );
+
+  @override
+  Future<TravelTime> updateTravelTime(
+    String id,
+    Map<String, Object?> changes,
+  ) async => TravelTime.fromJson(
+    _map(
+      await _client.callTool(
+        'update_travel_time',
+        _update('travel_time', id, changes),
+      ),
+    ),
+  );
+
+  @override
+  Future<void> deleteTravelTime(String id) =>
+      _client.callTool('delete_travel_time', {'travel_time_id': id});
 }
 
 /// Keeps people, circles and locations in memory, checked as the server
@@ -281,15 +330,18 @@ class InMemoryPeopleRepository implements PeopleRepository {
     List<Circle> circles = const [],
     List<Location> locations = const [],
     List<LocationGroup> locationGroups = const [],
+    List<TravelTime> travelTimes = const [],
   }) : _people = [for (final p in people) _withIds(p)],
        _circles = [...circles],
        _locations = [...locations],
-       _groups = [...locationGroups];
+       _groups = [...locationGroups],
+       _travel = [...travelTimes];
 
   final List<Person> _people;
   final List<Circle> _circles;
   final List<Location> _locations;
   final List<LocationGroup> _groups;
+  final List<TravelTime> _travel;
 
   /// [person] with an id for each of their own parts, as the server keeps
   /// them: a new one's made, with [fresh].
@@ -588,6 +640,54 @@ class InMemoryPeopleRepository implements PeopleRepository {
       }
     }
   }
+
+  @override
+  Future<List<TravelTime>> travelTimes() async => [..._travel];
+
+  void _checkTravel(TravelTime travel) {
+    bool place(String id) =>
+        _locations.any((l) => l.id == id) || _groups.any((g) => g.id == id);
+    if (!place(travel.fromId) || !place(travel.toId)) {
+      throw McpException('Pick where it is from and to.');
+    }
+    if (travel.fromId == travel.toId) {
+      throw McpException("It can't be from a place to itself.");
+    }
+    for (final t in travel.times) {
+      if (t.minutes <= 0) throw McpException('A time takes more than 0m.');
+      if (t.maxMinutes case final max? when max < t.minutes) {
+        throw McpException("A time can't take less at most than at least.");
+      }
+    }
+  }
+
+  @override
+  Future<TravelTime> createTravelTime(TravelTime travel) async {
+    final created = TravelTime.fromJson({
+      ...travel.toJson(),
+      'id': _id('travel', _travel.map((t) => t.id)),
+    });
+    _checkTravel(created);
+    _travel.add(created);
+    return created;
+  }
+
+  @override
+  Future<TravelTime> updateTravelTime(
+    String id,
+    Map<String, Object?> changes,
+  ) async {
+    final i = _travel.indexWhere((t) => t.id == id);
+    if (i < 0) throw McpException("'$id' isn't a travel time");
+    final updated = TravelTime.fromJson({..._travel[i].toJson(), ...changes});
+    _checkTravel(updated);
+    _travel[i] = updated;
+    return updated;
+  }
+
+  @override
+  Future<void> deleteTravelTime(String id) async =>
+      _travel.removeWhere((t) => t.id == id);
 }
 
 /// Provides a [PeopleRepository] to the screens and dialogs below it, so
