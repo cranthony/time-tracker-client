@@ -76,12 +76,6 @@ class _TravelTimesScreenState extends State<TravelTimesScreen> {
   List<PickerNode> get _places => travelPlaces(widget.memory);
   List<PickerNode> get _modes => travelModes(widget.memory);
 
-  String _name(String id, List<PickerNode> choices) =>
-      switch (choices.where((c) => c.id == id).firstOrNull) {
-        final c? => c.path ?? c.label,
-        null => id,
-      };
-
   Future<void> _edit(TravelTime? travel) async {
     final repository = widget.repository;
     final saved = await showEditPage<bool>(
@@ -135,35 +129,10 @@ class _TravelTimesScreenState extends State<TravelTimesScreen> {
             (null, _) => const [LinearProgressIndicator()],
             (final travel?, _) => [
               for (final t in travel)
-                ListTile(
-                  leading: const Icon(Icons.commute),
-                  title: Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(text: '${_name(t.fromId, places)} '),
-                        WidgetSpan(
-                          alignment: PlaceholderAlignment.middle,
-                          child: Icon(
-                            t.oneWay ? Icons.arrow_forward : Icons.sync_alt,
-                            size: 18,
-                            semanticLabel: t.oneWay ? 'to' : 'and',
-                          ),
-                        ),
-                        TextSpan(text: ' ${_name(t.toId, places)}'),
-                      ],
-                    ),
-                  ),
-                  subtitle: Text(
-                    [
-                      if (t.times.isNotEmpty)
-                        [
-                          for (final m in t.times)
-                            '${_name(m.modeId, modes)} ${m.describe}',
-                        ].join(' · '),
-                      ?t.note,
-                    ].join('\n'),
-                  ),
-                  isThreeLine: t.times.isNotEmpty && t.note != null,
+                TravelTimeTile(
+                  travel: t,
+                  places: places,
+                  modes: modes,
                   onTap: () => _edit(t),
                 ),
               if (travel.isEmpty)
@@ -180,6 +149,242 @@ class _TravelTimesScreenState extends State<TravelTimesScreen> {
           },
         ),
       ),
+    );
+  }
+}
+
+/// [id]'s name among [choices] -- its path, if it's in a group -- or the
+/// id, if it isn't among them.
+String _name(String id, List<PickerNode> choices) =>
+    switch (choices.where((c) => c.id == id).firstOrNull) {
+      final c? => c.path ?? c.label,
+      null => id,
+    };
+
+/// [travel] in a list: where it's between, with an arrow one way or both,
+/// and how long each way of getting there takes, named from [places] and
+/// [modes]; then its note.
+class TravelTimeTile extends StatelessWidget {
+  const TravelTimeTile({
+    super.key,
+    required this.travel,
+    required this.places,
+    required this.modes,
+    this.onTap,
+    this.dense,
+    this.contentPadding,
+  });
+
+  final TravelTime travel;
+  final List<PickerNode> places;
+  final List<PickerNode> modes;
+  final VoidCallback? onTap;
+  final bool? dense;
+  final EdgeInsetsGeometry? contentPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = travel;
+    return ListTile(
+      dense: dense,
+      contentPadding: contentPadding,
+      leading: const Icon(Icons.commute),
+      title: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: '${_name(t.fromId, places)} '),
+            WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: Icon(
+                t.oneWay ? Icons.arrow_forward : Icons.sync_alt,
+                size: 18,
+                semanticLabel: t.oneWay ? 'to' : 'and',
+              ),
+            ),
+            TextSpan(text: ' ${_name(t.toId, places)}'),
+          ],
+        ),
+      ),
+      subtitle: Text(
+        [
+          if (t.times.isNotEmpty)
+            [for (final m in t.times) '${_name(m.modeId, modes)} ${m.describe}']
+                .join(' · '),
+          ?t.note,
+        ].join('\n'),
+      ),
+      isThreeLine: t.times.isNotEmpty && t.note != null,
+      onTap: onTap,
+    );
+  }
+}
+
+/// The travel times to and from [placeId] -- a location or a location
+/// group -- under its edit dialog: each tapped to edit, and "Add travel
+/// time", which picks the other place and opens the travel time both ways
+/// between them. Loads into [memory] what it doesn't have, and the
+/// actions from [actions].
+class LocationTravelTimes extends StatefulWidget {
+  const LocationTravelTimes({
+    super.key,
+    required this.placeId,
+    required this.repository,
+    required this.memory,
+    this.actions,
+  });
+
+  final String placeId;
+  final PeopleRepository repository;
+  final PlanMemory memory;
+  final ActionsRepository? actions;
+
+  @override
+  State<LocationTravelTimes> createState() => _LocationTravelTimesState();
+}
+
+class _LocationTravelTimesState extends State<LocationTravelTimes> {
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load({bool again = false}) async {
+    final memory = widget.memory;
+    try {
+      await Future.wait([
+        memory.loadTravelTimes(widget.repository, again: again),
+        memory.loadLocations(widget.repository),
+        if (widget.actions case final actions?) memory.loadActions(actions),
+      ]);
+      if (mounted) setState(() => _error = null);
+    } catch (e) {
+      if (mounted) setState(() => _error = e);
+    }
+  }
+
+  /// Edits [travel], or adds one from [fromId] to [toId].
+  Future<void> _edit({TravelTime? travel, String? fromId, String? toId}) async {
+    final repository = widget.repository;
+    final saved = await showEditPage<bool>(
+      context,
+      TravelTimeEditor(
+        travel: travel,
+        fromId: fromId,
+        toId: toId,
+        places: travelPlaces(widget.memory),
+        modes: travelModes(widget.memory),
+        save: (fields) => travel == null
+            ? repository.createTravelTime(
+                TravelTime.fromJson({'id': '', ...fields}),
+              )
+            : repository.updateTravelTime(travel.id, fields),
+        delete: travel == null
+            ? null
+            : () => repository.deleteTravelTime(travel.id),
+      ),
+    );
+    if (saved == true) await _load(again: true);
+  }
+
+  /// Picks the other place, then edits the travel time both ways between
+  /// here and there: the one there is, or a new one, from here.
+  Future<void> _add() async {
+    final here = widget.placeId;
+    final picked = await pickNode(
+      context,
+      title: 'Travel time between here and',
+      nodes: [
+        for (final p in travelPlaces(widget.memory))
+          if (p.id != here) p,
+      ],
+      groupsPickable: true,
+      searchHint: 'Search places',
+      marker: (c) => Icon(
+        c.group ? Icons.folder_outlined : Icons.place_outlined,
+        size: 20,
+      ),
+    );
+    final other = picked?.id;
+    if (other == null || !mounted) return;
+    final existing = widget.memory.travelTimes
+        ?.where(
+          (t) =>
+              !t.oneWay &&
+              ((t.fromId == here && t.toId == other) ||
+                  (t.fromId == other && t.toId == here)),
+        )
+        .firstOrNull;
+    await _edit(travel: existing, fromId: here, toId: other);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final here = widget.placeId;
+    final travel = widget.memory.travelTimes;
+    final (places, modes) = (
+      travelPlaces(widget.memory),
+      travelModes(widget.memory),
+    );
+    final mine = [
+      for (final t in travel ?? const <TravelTime>[])
+        if (t.fromId == here || t.toId == here) t,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('Travel times', style: theme.textTheme.titleSmall),
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.add_road, size: 18),
+              label: const Text('Add travel time'),
+              onPressed: travel == null ? null : _add,
+            ),
+          ],
+        ),
+        ...switch ((travel, _error)) {
+          (null, final error?) => [
+            LoadError(
+              what: 'the travel times',
+              error: error,
+              onRetry: () => _load(again: true),
+            ),
+          ],
+          (null, _) => const [
+            Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: LinearProgressIndicator(),
+            ),
+          ],
+          (_?, _) when mine.isEmpty => [
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'No travel times to or from here yet.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ],
+          (_?, _) => [
+            for (final t in mine)
+              TravelTimeTile(
+                travel: t,
+                places: places,
+                modes: modes,
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                onTap: () => _edit(travel: t),
+              ),
+          ],
+        },
+      ],
     );
   }
 }
@@ -435,7 +640,17 @@ class _TravelTimeEditorState extends State<TravelTimeEditor> {
           choices: places,
           onChanged: (picked) => setState(() => _from = picked),
         ),
-        const SizedBox(height: 12),
+        Align(
+          child: IconButton(
+            tooltip: 'Switch from and to',
+            icon: const Icon(Icons.swap_vert),
+            onPressed: () => setState(() {
+              final from = _from;
+              _from = _to;
+              _to = from;
+            }),
+          ),
+        ),
         _picker(
           label: 'To',
           value: _to,

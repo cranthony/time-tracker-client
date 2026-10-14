@@ -312,7 +312,8 @@ Future<bool> showCircleDialog(
 /// for recognizing it, its map location, and -- if there are [groups] --
 /// the group it's in. Saves with [save], returning what it returned, or
 /// null if it was called off. "Delete", asked first, calls [delete]: then
-/// [location] is returned. One added starts with [name], if given.
+/// [location] is returned. One added starts with [name], if given; [extra]
+/// shows under the rest -- its travel times, from the Locations pane.
 Future<Location?> showLocationDialog(
   BuildContext context, {
   Location? location,
@@ -320,6 +321,7 @@ Future<Location?> showLocationDialog(
   List<LocationGroup> groups = const [],
   required Future<Location> Function(Map<String, Object?> fields) save,
   Future<void> Function()? delete,
+  Widget? extra,
 }) async {
   Location? saved;
   final done = await showDialog<bool>(
@@ -341,6 +343,7 @@ Future<Location?> showLocationDialog(
           : (value: location?.groupId, choices: groups, label: 'Group'),
       save: (fields) async => saved = await save(fields),
       delete: delete,
+      extra: extra,
     ),
   );
   return done == true ? saved ?? location : null;
@@ -350,13 +353,15 @@ Future<Location?> showLocationDialog(
 /// and the group it's inside, from [groups] -- never itself, or one inside
 /// it. Saves with [save], returning what it returned, or null if it was
 /// called off. "Delete", asked first, calls [delete]: then [group] is
-/// returned.
+/// returned. [extra] shows under the rest -- its travel times, from the
+/// Locations pane.
 Future<LocationGroup?> showLocationGroupDialog(
   BuildContext context, {
   LocationGroup? group,
   List<LocationGroup> groups = const [],
   required Future<LocationGroup> Function(Map<String, Object?> fields) save,
   Future<void> Function()? delete,
+  Widget? extra,
 }) async {
   LocationGroup? saved;
   final choices = [
@@ -382,6 +387,7 @@ Future<LocationGroup?> showLocationGroupDialog(
           : (value: group?.groupId, choices: choices, label: 'Inside'),
       save: (fields) async => saved = await save(fields),
       delete: delete,
+      extra: extra,
     ),
   );
   return done == true ? saved ?? group : null;
@@ -404,6 +410,7 @@ class _NamedDialog extends StatefulWidget {
     this.map,
     this.group,
     this.typed,
+    this.extra,
   });
 
   final String noun;
@@ -436,6 +443,9 @@ class _NamedDialog extends StatefulWidget {
   /// The location group it's in, for a location or a group: as it is, and
   /// the groups it can be in, by [label].
   final ({String? value, List<LocationGroup> choices, String label})? group;
+
+  /// More, under the rest: for a location, its travel times.
+  final Widget? extra;
 
   @override
   State<_NamedDialog> createState() => _NamedDialogState();
@@ -500,6 +510,7 @@ class _NamedDialogState extends State<_NamedDialog> {
   Widget build(BuildContext context) {
     final named = _name.text.trim().isNotEmpty;
     return AlertDialog(
+      scrollable: widget.extra != null,
       title: Text(
         widget.name == null ? 'New ${widget.noun}' : 'Edit ${widget.noun}',
       ),
@@ -575,6 +586,10 @@ class _NamedDialogState extends State<_NamedDialog> {
                   _scoringChanged = true;
                 }),
               ),
+            if (widget.extra case final extra?) ...[
+              const SizedBox(height: 16),
+              extra,
+            ],
           ],
         ),
       ),

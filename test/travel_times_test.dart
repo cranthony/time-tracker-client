@@ -192,4 +192,116 @@ void main() {
     expect(await repository.travelTimes(), isEmpty);
     expect(find.textContaining('No travel times yet'), findsOneWidget);
   });
+
+  group("a location's travel times", () {
+    /// Home's travel times, as its edit dialog shows them.
+    Future<InMemoryPeopleRepository> pumpHome(
+      WidgetTester tester, {
+      List<TravelTime> travelTimes = const [],
+    }) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final repository = InMemoryPeopleRepository(
+        locations: const [
+          Location(id: 'home', name: 'Home'),
+          Location(id: 'work', name: 'Work'),
+          Location(id: 'gym', name: 'Gym'),
+        ],
+        travelTimes: travelTimes,
+      );
+      final memory = PlanMemory()
+        ..actions = const ActionList(
+          actions: [PlanAction(id: 'walk', name: 'Walk', path: 'Walk')],
+        );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: LocationTravelTimes(
+              placeId: 'home',
+              repository: repository,
+              memory: memory,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return repository;
+    }
+
+    testWidgets('lists only those to or from it', (tester) async {
+      await pumpHome(
+        tester,
+        travelTimes: const [
+          TravelTime(
+            id: 't1',
+            fromId: 'work',
+            toId: 'home',
+            oneWay: true,
+            times: [TravelMode(modeId: 'walk', minutes: 30)],
+          ),
+          TravelTime(id: 't2', fromId: 'work', toId: 'gym'),
+        ],
+      );
+      expect(route('Work', Icons.arrow_forward, 'Home'), findsOneWidget);
+      expect(find.text('Walk 30m'), findsOneWidget);
+      expect(find.textContaining('Gym'), findsNothing);
+    });
+
+    testWidgets('adds one both ways to a place picked, or switched round one '
+        'way', (tester) async {
+      final repository = await pumpHome(tester);
+      expect(find.text('No travel times to or from here yet.'), findsOneWidget);
+
+      await tester.tap(find.text('Add travel time'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(BottomSheet),
+          matching: find.widgetWithText(ListTile, 'Work'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('New travel time'), findsOneWidget);
+      expect(find.text('It takes as long both ways.'), findsOneWidget);
+      await tester.tap(find.byTooltip('Switch from and to'));
+      await tester.pump();
+      await tester.tap(find.text('One way only'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Only from Work to Home'), findsOneWidget);
+      await pick(tester, 'By', 'Walk');
+      await tester.enterText(find.widgetWithText(TextField, 'Takes'), '20');
+      await tester.pump();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      final saved = (await repository.travelTimes()).single;
+      expect((saved.fromId, saved.toId, saved.oneWay), ('work', 'home', true));
+      expect(route('Work', Icons.arrow_forward, 'Home'), findsOneWidget);
+    });
+
+    testWidgets('edits the one there is, either way round', (tester) async {
+      await pumpHome(
+        tester,
+        travelTimes: const [
+          TravelTime(
+            id: 't1',
+            fromId: 'gym',
+            toId: 'home',
+            times: [TravelMode(modeId: 'walk', minutes: 10)],
+          ),
+        ],
+      );
+      await tester.tap(find.text('Add travel time'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(BottomSheet),
+          matching: find.widgetWithText(ListTile, 'Gym'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Edit travel time'), findsOneWidget);
+    });
+  });
 }

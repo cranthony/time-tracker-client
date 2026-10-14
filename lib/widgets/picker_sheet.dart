@@ -698,25 +698,15 @@ class PickerField extends StatelessWidget {
   final String searchHint;
 
   Future<void> _pick(BuildContext context) async {
-    final picked = await showPickerSheet<({String? id})>(
+    final picked = await pickNode(
       context,
       title: label,
-      result: () => (id: value),
-      body: (context, _) => _OwnSearch(
-        text: '',
-        matchAny: false,
-        builder: (context, search) => TreePicker(
-          nodes: nodes,
-          picked: [?value],
-          single: true,
-          groupsPickable: groupsPickable,
-          none: none,
-          search: search,
-          searchHint: searchHint,
-          marker: marker,
-          onChanged: (ids) => Navigator.of(context).pop((id: ids.firstOrNull)),
-        ),
-      ),
+      nodes: nodes,
+      value: value,
+      none: none,
+      groupsPickable: groupsPickable,
+      marker: marker,
+      searchHint: searchHint,
     );
     if (picked != null && picked.id != value) onChanged(picked.id);
   }
@@ -756,6 +746,39 @@ class PickerField extends StatelessWidget {
     );
   }
 }
+
+/// Picks one of [nodes] in a [showPickerSheet] under [title], searched as
+/// [searchHint] says, [value] picked to start with: the one picked (null
+/// for [none]), or null if it's dismissed.
+Future<({String? id})?> pickNode(
+  BuildContext context, {
+  required String title,
+  required List<PickerNode> nodes,
+  String? value,
+  String? none,
+  bool groupsPickable = false,
+  Widget Function(PickerNode node)? marker,
+  String searchHint = 'Search',
+}) => showPickerSheet<({String? id})>(
+  context,
+  title: title,
+  result: () => (id: value),
+  body: (context, _) => _OwnSearch(
+    text: '',
+    matchAny: false,
+    builder: (context, search) => TreePicker(
+      nodes: nodes,
+      picked: [?value],
+      single: true,
+      groupsPickable: groupsPickable,
+      none: none,
+      search: search,
+      searchHint: searchHint,
+      marker: marker,
+      onChanged: (ids) => Navigator.of(context).pop((id: ids.firstOrNull)),
+    ),
+  ),
+);
 
 /// [location] as a [TreePicker] shows it: by its name, in its group.
 PickerNode locationNode(Location location) => PickerNode(

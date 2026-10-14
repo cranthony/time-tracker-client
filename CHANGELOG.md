@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.86.0
+
+- A location's or location group's travel times, in its edit dialog from
+  the Locations pane: each one to or from it, tapped to edit, and "Add
+  travel time", which picks the other place and opens the travel time
+  both ways between them (the one there is, or a new one).
+- The travel time editor has a button between From and To that switches
+  them round.
+
 ## 7.85.0
 
 - A person's page and a habit's share their health, Traits, Events and
