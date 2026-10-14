@@ -8,8 +8,9 @@ on. Add the new version's section here at the same time; CI checks both.
 
 ## 7.88.0
 
-- The weather, where the device is, from Open-Meteo. Turned on in
-  Settings -- only then is the location asked for -- a strip over the
+- The weather, from Open-Meteo, where the device is or for a latitude
+  and longitude given. Turned on in Settings -- the location's asked
+  for only if it's for where the device is -- a strip over the
   Events page's timeline gives the day's sky, high and low and chance
   of rain; today, whether rain's coming in the next three hours; and
   the week's days, to go to. The band beside the timeline shows the

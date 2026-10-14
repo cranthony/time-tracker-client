@@ -27,13 +27,14 @@ void main() {
       String name,
       Widget screen, {
       Future<void> Function()? then,
+      Weather? weather,
     }) async {
       tester.view.physicalSize = _phone * 2;
       tester.view.devicePixelRatio = 2;
       addTearDown(tester.view.reset);
       debugDisableShadows = false;
       final settings = AppSettings(persist: false);
-      final weather = Weather(
+      weather ??= Weather(
         forecasts: SampleForecastSource(),
         location: FixedLocationSource(),
         persist: false,
@@ -41,7 +42,7 @@ void main() {
         clock: () => _now,
       );
       // Fetched, as it would be by the time the page is looked at.
-      await weather.refresh();
+      await weather.load();
       try {
         await tester.pumpWidget(
           PeopleScope(
@@ -53,7 +54,7 @@ void main() {
                 data: MediaQuery.of(context).copyWith(disableAnimations: true),
                 child: AppSettingsScope(
                   settings: settings,
-                  child: WeatherScope(weather: weather, child: child!),
+                  child: WeatherScope(weather: weather!, child: child!),
                 ),
               ),
               home: screen is SettingsScreen
@@ -120,19 +121,66 @@ void main() {
       );
     });
 
+    /// Settings, scrolled to its Weather section.
+    Future<void> toWeather(WidgetTester tester) async {
+      await tester.scrollUntilVisible(
+        find.text('Weather'),
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -260));
+      await tester.pumpAndSettle();
+    }
+
+    // For where the device is, allowed.
     testWidgets('weather_settings ($mode)', (tester) async {
       await render(
         tester,
         'weather_settings',
         SettingsScreen(settings: AppSettings(persist: false)),
-        then: () async {
-          await tester.scrollUntilVisible(
-            find.text('Show the weather'),
-            200,
-            scrollable: find.byType(Scrollable).first,
-          );
-          await tester.pumpAndSettle();
-        },
+        then: () => toWeather(tester),
+      );
+    });
+
+    // The location refused.
+    testWidgets('weather_settings_refused ($mode)', (tester) async {
+      await render(
+        tester,
+        'weather_settings_refused',
+        SettingsScreen(settings: AppSettings(persist: false)),
+        weather: Weather(
+          forecasts: SampleForecastSource(),
+          location: FixedLocationSource(
+            const Coordinates(0, 0),
+            LocationAccess.denied,
+          ),
+          persist: false,
+          enabled: true,
+          clock: () => _now,
+        ),
+        then: () => toWeather(tester),
+      );
+    });
+
+    // For a place given.
+    testWidgets('weather_settings_place ($mode)', (tester) async {
+      await render(
+        tester,
+        'weather_settings_place',
+        SettingsScreen(settings: AppSettings(persist: false)),
+        weather: Weather(
+          forecasts: SampleForecastSource(),
+          location: FixedLocationSource(
+            const Coordinates(0, 0),
+            LocationAccess.denied,
+          ),
+          persist: false,
+          enabled: true,
+          usesDevice: false,
+          place: const Coordinates(47.6062, -122.3321),
+          clock: () => _now,
+        ),
+        then: () => toWeather(tester),
       );
     });
   }

@@ -579,14 +579,22 @@ the link. A calendar event's sheet has the same button by its location.
 
 ## Weather
 
-The Events page can show the weather where the device is. It's off
-until you turn on **Show the weather** in Settings' Weather section:
-only then does the app ask to know where the device is (roughly: the
-coarse location on Android, the browser's or Windows' location service
-elsewhere), and refused, it stays off and says why. The place, rounded
-to about a kilometer, goes to [Open-Meteo](https://open-meteo.com) for
-its forecast -- free for non-commercial use, needing no key -- and
-nothing about it goes to the server. Temperatures are in °F or °C, and
+The Events page can show the weather where the device is, or for a
+place you give. It's off until you turn on **Show the weather** in
+Settings' Weather section, then it's **for** one of:
+
+- **Where this device is**: only as this is picked does the app ask to
+  know where the device is (roughly: the coarse location on Android,
+  the browser's or Windows' location service elsewhere). Refused, the
+  section says so, with **Ask again** -- or, refused for good or with
+  the location off, a button to the device's settings.
+- **A place I give**: its latitude and longitude, in degrees, typed in.
+  The device is never asked where it is.
+
+The place, rounded to about a kilometer, goes to
+[Open-Meteo](https://open-meteo.com) for its forecast -- free for
+non-commercial use, needing no key -- and nothing about it goes to the
+server. Temperatures are in °F or °C, and
 rain in inches or millimeters, as Settings says (°F and inches to
 start).
 

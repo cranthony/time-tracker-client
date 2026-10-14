@@ -145,16 +145,26 @@ class WeatherStrip extends StatelessWidget {
   Widget _status(BuildContext context, TextStyle? style) {
     final (text, action) = switch (weather) {
       Weather(loading: true) => ('Getting the forecast…', null),
-      Weather(access: final access?) when access != LocationAccess.granted => (
+      Weather(usesDevice: true, :final access) when !weather.located => (
         access == LocationAccess.serviceOff
-            ? "The device's location is off: the weather needs it."
-            : 'The weather needs to know roughly where the device is.',
+            ? "The device's location is off: turn it on, or give the "
+                  'weather a place in Settings.'
+            : 'The weather needs to know roughly where the device is, or a '
+                  'place given in Settings.',
         TextButton(
-          onPressed: access == LocationAccess.denied
-              ? weather.enable
+          onPressed: access == LocationAccess.denied || access == null
+              ? weather.useDevice
               : weather.location.openSettings,
-          child: Text(access == LocationAccess.denied ? 'Allow' : 'Settings'),
+          child: Text(
+            access == LocationAccess.denied || access == null
+                ? 'Allow'
+                : 'Settings',
+          ),
         ),
+      ),
+      Weather(located: false) => (
+        'Give the weather a place in Settings.',
+        null,
       ),
       Weather(error: _?) => (
         "Couldn't get the forecast.",

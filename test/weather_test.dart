@@ -306,13 +306,17 @@ void main() {
         clock: () => now,
       );
 
+      // On, but it doesn't know where: nothing to fetch.
       expect(await weather.enable(), isFalse);
+      expect(weather.enabled, isTrue);
       expect(location.requested, 1);
       expect(weather.access, LocationAccess.denied);
+      await weather.refresh(force: true);
       expect(forecasts.fetched, isEmpty);
+      expect(location.read, 0);
 
       location.granted = LocationAccess.granted;
-      expect(await weather.enable(), isTrue);
+      expect(await weather.useDevice(), isTrue);
       await weather.refresh();
       expect(forecasts.fetched, [const Coordinates(47.61, -122.33)]);
       expect(weather.forecast, isNotNull);
@@ -328,6 +332,71 @@ void main() {
       expect(await weather.enable(), isFalse);
       expect(location.requested, 0);
       expect(weather.access, LocationAccess.blocked);
+    });
+
+    test('refused the location, it fetches for a place given', () async {
+      final location = _CountingLocation(LocationAccess.denied);
+      final forecasts = _FakeForecasts();
+      final weather = Weather(
+        forecasts: forecasts,
+        location: location,
+        persist: false,
+        clock: () => now,
+      );
+      expect(await weather.enable(), isFalse);
+      expect(location.requested, 1);
+
+      weather.usePlace(const Coordinates(40.7128, -74.006));
+      await weather.refresh();
+
+      expect(weather.located, isTrue);
+      expect(forecasts.fetched, [const Coordinates(40.71, -74.01)]);
+      expect(weather.forecast, isNotNull);
+      // Never where the device is, nor asked again.
+      expect(location.read, 0);
+      expect(location.requested, 1);
+    });
+
+    test('for a place given, it never asks where the device is', () async {
+      final location = _CountingLocation(LocationAccess.denied);
+      final forecasts = _FakeForecasts();
+      final weather = Weather(
+        forecasts: forecasts,
+        location: location,
+        persist: false,
+        enabled: true,
+        usesDevice: false,
+        place: const Coordinates(51.5072, -0.1276),
+        clock: () => now,
+      );
+
+      await weather.load();
+      expect(await weather.enable(), isTrue);
+      await weather.refresh(force: true);
+
+      expect(forecasts.fetched.toSet(), {const Coordinates(51.51, -0.13)});
+      expect(location.asked + location.requested + location.read, 0);
+    });
+
+    test('moved, the forecast for where it was goes', () async {
+      final forecasts = _FakeForecasts();
+      final weather = Weather(
+        forecasts: forecasts,
+        location: _CountingLocation(),
+        persist: false,
+        enabled: true,
+        clock: () => now,
+      );
+      await weather.useDevice();
+      await weather.refresh();
+      expect(weather.forecast, isNotNull);
+
+      forecasts.make = (now) => Forecast(fetchedAt: now, source: 'there');
+      weather.usePlace(const Coordinates(35.68, 139.69));
+      expect(weather.forecast, isNull);
+      await weather.refresh();
+      expect(weather.forecast!.source, 'there');
+      expect(forecasts.fetched.last, const Coordinates(35.68, 139.69));
     });
 
     test('each forecast replaces the last whole; a failure keeps it till '
@@ -518,7 +587,10 @@ void main() {
     testWidgets('refused the location, it says so', (tester) async {
       await pump(tester, day: today, access: LocationAccess.blocked);
       expect(
-        find.text('The weather needs to know roughly where the device is.'),
+        find.text(
+          'The weather needs to know roughly where the device is, or a '
+          'place given in Settings.',
+        ),
         findsOneWidget,
       );
       expect(find.text('Settings'), findsOneWidget);
@@ -556,15 +628,114 @@ void main() {
     expect(location.asked, 1);
 
     expect(settings.temperatureUnit, TemperatureUnit.fahrenheit);
+    final menu = find.byType(DropdownMenu<TemperatureUnit>);
     await tester.scrollUntilVisible(
-      find.text('Fahrenheit (°F)'),
+      menu,
       100,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.tap(find.text('Fahrenheit (°F)'));
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -150));
+    await tester.pumpAndSettle();
+    await tester.tap(menu);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Celsius (°C)').last);
     await tester.pumpAndSettle();
     expect(settings.temperatureUnit, TemperatureUnit.celsius);
+  });
+
+  group('Settings, for a place given', () {
+    Future<(Weather, _CountingLocation, _FakeForecasts)> pump(
+      WidgetTester tester,
+    ) async {
+      final location = _CountingLocation(LocationAccess.denied);
+      final forecasts = _FakeForecasts();
+      final weather = Weather(
+        forecasts: forecasts,
+        location: location,
+        persist: false,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: WeatherScope(
+            weather: weather,
+            child: SettingsScreen(settings: AppSettings(persist: false)),
+          ),
+        ),
+      );
+      final list = find.byType(Scrollable).first;
+      await tester.scrollUntilVisible(
+        find.text('Show the weather'),
+        200,
+        scrollable: list,
+      );
+      await tester.tap(find.text('Show the weather'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('A place I give'),
+        200,
+        scrollable: list,
+      );
+      return (weather, location, forecasts);
+    }
+
+    testWidgets('refused the location, a place typed is used', (tester) async {
+      final (weather, location, forecasts) = await pump(tester);
+      expect(weather.access, LocationAccess.denied);
+      expect(find.textContaining("wasn't allowed to know"), findsOneWidget);
+      expect(forecasts.fetched, isEmpty);
+
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -200));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('A place I give'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Use this place'),
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Latitude'),
+        '47.6062',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Longitude'),
+        '-122.3321',
+      );
+      await tester.ensureVisible(find.text('Use this place'));
+      await tester.tap(find.text('Use this place'));
+      await tester.pumpAndSettle();
+
+      expect(weather.usesDevice, isFalse);
+      expect(weather.place, const Coordinates(47.6062, -122.3321));
+      expect(forecasts.fetched, [const Coordinates(47.61, -122.33)]);
+      expect(weather.forecast, isNotNull);
+      expect(location.read, 0);
+      expect(find.text('Using 47.6062, -122.3321'), findsOneWidget);
+    });
+
+    testWidgets('a place that is none is refused, saying why', (tester) async {
+      final (weather, _, forecasts) = await pump(tester);
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -200));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('A place I give'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Use this place'),
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.enterText(find.widgetWithText(TextField, 'Latitude'), '95');
+      await tester.enterText(find.widgetWithText(TextField, 'Longitude'), '10');
+      await tester.ensureVisible(find.text('Use this place'));
+      await tester.tap(find.text('Use this place'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Latitude is from -90 (south) to 90 (north).'),
+        findsOneWidget,
+      );
+      expect(weather.usesDevice, isTrue);
+      expect(forecasts.fetched, isEmpty);
+    });
   });
 }

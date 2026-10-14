@@ -70,15 +70,19 @@ class WeatherException implements Exception {
   String toString() => message;
 }
 
-/// Whether the weather's shown, and the forecast for wherever the device
-/// is: each one fetched replaces the last whole. Whether it's on is kept
-/// on this device ([persist]); the forecast only while the app runs.
+/// Whether the weather's shown, where for, and its latest forecast: each
+/// one fetched replaces the last whole. It's for where the device is
+/// ([usesDevice]) -- asked only then -- or for a [place] the user gives.
+/// What's picked is kept on this device ([persist]); the forecast only
+/// while the app runs.
 class Weather extends ChangeNotifier {
   Weather({
     required this.forecasts,
     required this.location,
     this.persist = true,
     this._enabled = false,
+    this._usesDevice = true,
+    this._place,
     DateTime Function()? clock,
     this.maxAge = const Duration(minutes: 30),
   }) : _clock = clock ?? DateTime.now;
@@ -92,17 +96,36 @@ class Weather extends ChangeNotifier {
   final Duration maxAge;
 
   static const _enabledKey = 'weather_enabled';
+  static const _usesDeviceKey = 'weather_uses_device';
+  static const _latitudeKey = 'weather_latitude';
+  static const _longitudeKey = 'weather_longitude';
 
   bool _enabled;
 
-  /// Whether it's shown: only while the app may know where it is.
+  /// Whether it's shown.
   bool get enabled => _enabled;
+
+  bool _usesDevice;
+
+  /// Whether it's for where the device is, rather than the [place] given.
+  bool get usesDevice => _usesDevice;
+
+  Coordinates? _place;
+
+  /// The place it's for, as the user gave it, unless it's for where the
+  /// device is; kept, either way, to go back to.
+  Coordinates? get place => _place;
 
   LocationAccess? _access;
 
   /// What the user last said to letting the app know where it is, once
-  /// asked.
+  /// asked, or checked; null while it's never needed to know.
   LocationAccess? get access => _access;
+
+  /// Whether it knows where to fetch the forecast for: where the device
+  /// is, allowed, or the [place] given.
+  bool get located =>
+      _usesDevice ? _access == LocationAccess.granted : _place != null;
 
   Forecast? _forecast;
 
@@ -120,78 +143,127 @@ class Weather extends ChangeNotifier {
   /// Whether a forecast is being fetched.
   bool get loading => _fetching != null;
 
-  /// Bumped as it's turned off, so a fetch begun before is dropped as it
-  /// comes.
+  /// Bumped as it's turned off, or moved, so a fetch begun before is
+  /// dropped as it comes.
   var _generation = 0;
 
-  /// Reads whether it's on, kept on the device, and whether the app may
-  /// still know where it is: if not, it's off. Then fetches. Best effort.
+  /// Reads what's kept on the device, and, if it's on for where the
+  /// device is, whether the app may still know -- without asking. Then
+  /// fetches. Best effort.
   Future<void> load() async {
     if (persist) {
       try {
-        _enabled =
-            await SharedPreferencesAsync().getBool(_enabledKey) ?? _enabled;
+        final prefs = SharedPreferencesAsync();
+        _enabled = await prefs.getBool(_enabledKey) ?? _enabled;
+        _usesDevice = await prefs.getBool(_usesDeviceKey) ?? _usesDevice;
+        final latitude = await prefs.getDouble(_latitudeKey);
+        final longitude = await prefs.getDouble(_longitudeKey);
+        if (latitude != null && longitude != null) {
+          _place = Coordinates(latitude, longitude);
+        }
       } catch (_) {
         // Nothing kept: as it was.
       }
     }
-    if (_enabled) {
-      try {
-        _access = await location.access();
-      } catch (_) {
-        _access = LocationAccess.denied;
-      }
-      if (_access != LocationAccess.granted) _enabled = false;
-    }
+    if (_enabled && _usesDevice) await _checkAccess();
     notifyListeners();
     await refresh();
   }
 
-  /// Turns it on, asking to know where the device is if need be; whether
-  /// it's on. Refused, [access] says how.
+  Future<void> _checkAccess() async {
+    try {
+      _access = await location.access();
+    } catch (_) {
+      _access = LocationAccess.denied;
+    }
+  }
+
+  /// Asks to know where the device is, if it may be asked; what it said.
+  Future<LocationAccess> _askAccess() async {
+    await _checkAccess();
+    if (_access == LocationAccess.denied) {
+      try {
+        _access = await location.requestAccess();
+      } catch (_) {}
+    }
+    return _access!;
+  }
+
+  /// Turns it on: for where the device is, asking to know if need be,
+  /// unless it's for a [place] given. Whether it knows where it's for:
+  /// refused, it's on all the same, and [access] says how.
   Future<bool> enable() async {
-    var access = await location.access();
-    if (access == LocationAccess.denied) {
-      access = await location.requestAccess();
-    }
-    _access = access;
-    if (access != LocationAccess.granted) {
-      notifyListeners();
-      return false;
-    }
     _enabled = true;
     _keep();
+    if (_usesDevice) await _askAccess();
     notifyListeners();
     unawaited(refresh(force: true));
-    return true;
+    return located;
   }
 
   void disable() {
     _enabled = false;
+    _forget();
+    _keep();
+    notifyListeners();
+  }
+
+  /// Makes it for where the device is, asking to know if need be; whether
+  /// it may.
+  Future<bool> useDevice() async {
+    if (!_usesDevice) {
+      _usesDevice = true;
+      _forget();
+      _keep();
+    }
+    await _askAccess();
+    notifyListeners();
+    unawaited(refresh(force: true));
+    return located;
+  }
+
+  /// Makes it for [place], never asking where the device is.
+  void usePlace(Coordinates place) {
+    if (!_usesDevice && place == _place) return;
+    _usesDevice = false;
+    _place = place;
+    _forget();
+    _keep();
+    notifyListeners();
+    unawaited(refresh(force: true));
+  }
+
+  /// Drops the forecast, and any being fetched: it's not for what's
+  /// picked now.
+  void _forget() {
     _generation++;
     _forecast = null;
     _error = null;
     _fetching = null;
-    _keep();
-    notifyListeners();
   }
 
   void _keep() {
     if (!persist) return;
     try {
-      SharedPreferencesAsync()
-          .setBool(_enabledKey, _enabled)
-          .catchError((_) {});
+      final prefs = SharedPreferencesAsync();
+      prefs.setBool(_enabledKey, _enabled).catchError((_) {});
+      prefs.setBool(_usesDeviceKey, _usesDevice).catchError((_) {});
+      if (_place case final place?) {
+        prefs.setDouble(_latitudeKey, place.latitude).catchError((_) {});
+        prefs.setDouble(_longitudeKey, place.longitude).catchError((_) {});
+      }
     } catch (_) {
       // Nowhere to keep it: it lasts until the app closes.
     }
   }
 
-  /// Fetches a forecast for where the device is now, if it's on and the
-  /// last is older than [maxAge] -- or whatever its age, with [force] --
-  /// unless one's being fetched already.
+  /// Fetches a forecast for where it's for, if it's on, knows where -- for
+  /// where the device is, checking, without asking, if it hasn't -- and
+  /// the last is older than [maxAge] -- or whatever its age, with [force]
+  /// -- unless one's being fetched already.
   Future<void> refresh({bool force = false}) {
     if (!_enabled) return Future.value();
+    if (!located && !(_usesDevice && _access == null)) return Future.value();
     if (_fetching case final fetching?) return fetching;
     final last = _forecast;
     if (!force &&
@@ -210,8 +282,18 @@ class Weather extends ChangeNotifier {
   Future<void> _fetch(int generation) async {
     Forecast? forecast;
     Object? error;
+    if (_usesDevice && _access == null) {
+      await _checkAccess();
+      if (!located) {
+        if (generation == _generation) {
+          _fetching = null;
+          notifyListeners();
+        }
+        return;
+      }
+    }
     try {
-      final at = await location.current();
+      final at = _usesDevice ? await location.current() : _place!;
       forecast = await forecasts.fetch(at.rounded, now: _clock());
     } catch (e) {
       error = e;
