@@ -2,12 +2,16 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/demo/weather_sample.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
+import 'package:time_tracker_client/models/weather.dart';
 import 'package:time_tracker_client/platform/calendar_widget.dart';
+import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/services/weather.dart';
 
 /// Today, at noon.
 final _now = DateTime(2026, 10, 8, 12);
@@ -62,6 +66,11 @@ class _FakeHost implements CalendarWidgetHost {
 
   @override
   Future<void> save(String? snapshot) async => saved.add(snapshot);
+
+  final weathers = <String?>[];
+
+  @override
+  Future<void> saveWeather(String? weather) async => weathers.add(weather);
 
   @override
   Future<void> schedule(List<DateTime> times) async => scheduled.add(times);
@@ -269,6 +278,180 @@ void main() {
 
       expect(taps, isEmpty);
       widget.dispose();
+    });
+  });
+
+  group('the weather in its headers', () {
+    Map<String, Object?> day(Map<String, Object?> weather, DateTime midnight) =>
+        (weather['days'] as List).cast<Map<String, Object?>>().firstWhere(
+          (d) => d['start'] == midnight.millisecondsSinceEpoch,
+        );
+
+    test(
+      "each day's sky, chance of rain and high and low; today's from now",
+      () {
+        final weather = calendarWeather(sampleForecast(_now));
+
+        expect(weather['days'], hasLength(7));
+        expect(day(weather, _day(0)), {
+          'start': _day(0).millisecondsSinceEpoch,
+          'icon': '☁️',
+          'rain': '70%',
+          'temps': '61° / 50°',
+          'temps_compact': '61/50°',
+        });
+        expect(day(weather, _day(2))['icon'], '🌧️');
+        expect(day(weather, _day(2))['rain'], '90%');
+      },
+    );
+
+    test('a chance of rain shows whenever it is more than none', () {
+      final weather = calendarWeather(sampleForecast(_now));
+      // Clear, with none.
+      expect(day(weather, _day(5)).containsKey('rain'), isFalse);
+      expect(day(weather, _day(5))['icon'], '☀️');
+      final forecast = Forecast(
+        fetchedAt: _now,
+        days: [
+          WeatherSpan(
+            start: _now,
+            end: _day(1),
+            sky: Sky.partlyCloudy,
+            rainChance: 1,
+            high: 20,
+            low: 19.9,
+          ),
+        ],
+      );
+      final today = day(calendarWeather(forecast), _day(0));
+      expect(today['rain'], '1%');
+      // Late in the day, they round the same: one temperature.
+      expect(today['temps'], '68°');
+      expect(today['temps_compact'], '68°');
+    });
+
+    test('in the units set', () {
+      final weather = calendarWeather(
+        sampleForecast(_now),
+        unit: TemperatureUnit.celsius,
+      );
+      expect(day(weather, _day(0))['temps'], '16° / 10°');
+    });
+
+    test('publishes it apart from the events, again only as it changes, and '
+        'none when the weather is off', () async {
+      final host = _FakeHost();
+      final widget = CalendarWidget(host: host, enabled: true);
+      final forecast = sampleForecast(_now);
+
+      await widget.publishWeather(forecast);
+      await widget.publishWeather(forecast);
+      expect(host.weathers, [jsonEncode(calendarWeather(forecast))]);
+      expect(host.saved, isEmpty);
+      expect(host.redraws, 1);
+
+      await widget.publishWeather(forecast, unit: TemperatureUnit.celsius);
+      expect(host.redraws, 2);
+
+      await widget.publishWeather(null);
+      expect(host.weathers.last, isNull);
+      expect(host.redraws, 3);
+    });
+  });
+
+  group('the weather, linked to the app', () {
+    Weather weather({required bool enabled}) => Weather(
+      forecasts: SampleForecastSource(),
+      location: FixedLocationSource(),
+      persist: false,
+      enabled: enabled,
+      place: const Coordinates(47.61, -122.33),
+      clock: () => _now,
+    );
+
+    test('on: each forecast, in the units set', () async {
+      final host = _FakeHost();
+      final settings = AppSettings(persist: false);
+      final on = weather(enabled: true);
+      final link = CalendarWeatherLink(
+        widget: CalendarWidget(host: host, enabled: true),
+        weather: on,
+        settings: settings,
+      );
+      addTearDown(link.dispose);
+      // Not till it's known whether it's on.
+      expect(host.weathers, isEmpty);
+
+      await on.load();
+      await pumpEventQueue();
+      expect(host.weathers.last, jsonEncode(calendarWeather(on.forecast!)));
+      expect(jsonDecode(host.weathers.last!)['days'], isNotEmpty);
+
+      await settings.setTemperatureUnit(TemperatureUnit.celsius);
+      await pumpEventQueue();
+      expect(
+        host.weathers.last,
+        jsonEncode(
+          calendarWeather(on.forecast!, unit: TemperatureUnit.celsius),
+        ),
+      );
+    });
+
+    test('turned off, it goes', () async {
+      final host = _FakeHost();
+      final on = weather(enabled: true);
+      final link = CalendarWeatherLink(
+        widget: CalendarWidget(host: host, enabled: true),
+        weather: on,
+        settings: AppSettings(persist: false),
+      );
+      addTearDown(link.dispose);
+      await on.load();
+      await pumpEventQueue();
+      expect(host.weathers.last, isNotNull);
+
+      on.disable();
+      await pumpEventQueue();
+      expect(host.weathers.last, isNull);
+    });
+
+    test('off: none -- any kept from before is cleared -- and nothing '
+        'fetched for it', () async {
+      final host = _FakeHost();
+      final off = weather(enabled: false);
+      final link = CalendarWeatherLink(
+        widget: CalendarWidget(host: host, enabled: true),
+        weather: off,
+        settings: AppSettings(persist: false),
+      );
+      addTearDown(link.dispose);
+
+      await off.load();
+      await pumpEventQueue();
+
+      expect(off.forecast, isNull);
+      expect(host.weathers, [null]);
+      expect(host.redraws, 1);
+      // The events are left as they are.
+      expect(host.saved, isEmpty);
+    });
+
+    test('turned on, it comes', () async {
+      final host = _FakeHost();
+      final off = weather(enabled: false);
+      final link = CalendarWeatherLink(
+        widget: CalendarWidget(host: host, enabled: true),
+        weather: off,
+        settings: AppSettings(persist: false),
+      );
+      addTearDown(link.dispose);
+      await off.load();
+      await off.enable();
+      await off.refresh();
+      await pumpEventQueue();
+
+      expect(host.weathers.first, isNull);
+      expect(host.weathers.last, jsonEncode(calendarWeather(off.forecast!)));
     });
   });
 }

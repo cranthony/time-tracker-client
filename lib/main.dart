@@ -229,8 +229,7 @@ void backgroundDispatcher() {
   _recordUncaughtErrors(_backgroundHealth);
   BackgroundSync.run(
     refresh: _refreshInBackground,
-    weather: () =>
-        refreshWeatherInBackground(forecasts: OpenMeteoForecastSource()),
+    weather: _refreshWeatherInBackground,
     // What it recorded, kept for the Diagnostics page.
     done: _backgroundHealth.flush,
     () {
@@ -260,6 +259,21 @@ void backgroundDispatcher() {
       _watchQueues(_backgroundHealth, notes, actions, events);
       return [notes, actions, events];
     },
+  );
+}
+
+/// Fetches the weather in the background ([refreshWeatherInBackground]),
+/// and, if it's on, has the home screen calendar's headers show it.
+Future<void> _refreshWeatherInBackground() async {
+  final record = await refreshWeatherInBackground(
+    forecasts: OpenMeteoForecastSource(),
+  );
+  if (record == null) return;
+  final settings = AppSettings();
+  await settings.load();
+  await CalendarWidget().publishWeather(
+    (await KeptWeather.forecast())?.forecast,
+    unit: settings.temperatureUnit,
   );
 }
 
@@ -509,11 +523,21 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     if (calendar == null || !calendar.enabled) return;
     _planMemory.addListener(_calendarChanged);
     _calendarChanged();
+    if (widget.weather case final weather?) {
+      _calendarWeather = CalendarWeatherLink(
+        widget: calendar,
+        weather: weather,
+        settings: _settings,
+      );
+    }
     calendar.start();
   }
 
   /// Publishes the events to the home screen calendar a moment after
   /// they change: a run of changes, once.
+  /// Keeps the home screen calendar's headers' weather up to date.
+  CalendarWeatherLink? _calendarWeather;
+
   void _calendarChanged() {
     _calendarTimer?.cancel();
     _calendarTimer = Timer(const Duration(seconds: 1), () {
@@ -594,6 +618,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     _addNoteShortcut.dispose();
     _calendarTimer?.cancel();
     _planMemory.removeListener(_calendarChanged);
+    _calendarWeather?.dispose();
     widget.calendarWidget?.dispose();
     widget.outbox.dispose();
     widget.actionOutbox.dispose();

@@ -627,6 +627,11 @@ start).
   where the device is, that's where it was last found while the app was
   open: the background fetch never asks where the device is, so needs no
   background location permission.
+- **The home screen calendar** (Android) gives each day's weather in its
+  header: the chance of rain (whenever there's any), the high and low --
+  today's, what's left of it -- and the sky's icon. It's redrawn with each
+  forecast, in the app or in the background. On a narrow widget the
+  days are named shorter ("Thu"), then the high and low go.
 
 The forecast's source is behind an interface (`ForecastSource`, in
 `lib/services/weather.dart`), as is where the device is
