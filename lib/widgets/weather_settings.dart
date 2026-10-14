@@ -136,6 +136,87 @@ class _WeatherSettingsState extends State<WeatherSettings> {
             },
             child: Column(
               children: [
+                const RadioListTile<bool>(
+                  value: false,
+                  title: Text('A place I give'),
+                  subtitle: Text(
+                    'By its latitude and longitude, in degrees. The device '
+                    "isn't asked where it is.",
+                  ),
+                ),
+                if (givesPlace)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(72, 4, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _latitude,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      signed: true,
+                                      decimal: true,
+                                    ),
+                                decoration: const InputDecoration(
+                                  labelText: 'Latitude',
+                                  hintText: '47.61',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextField(
+                                controller: _longitude,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      signed: true,
+                                      decimal: true,
+                                    ),
+                                decoration: const InputDecoration(
+                                  labelText: 'Longitude',
+                                  hintText: '-122.33',
+                                  border: OutlineInputBorder(),
+                                ),
+                                onSubmitted: (_) => _usePlace(weather),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_problem case final problem?)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              problem,
+                              style: theme.textTheme.bodySmall?.merge(error),
+                            ),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Row(
+                            children: [
+                              FilledButton.tonal(
+                                onPressed: () => _usePlace(weather),
+                                child: const Text('Use this place'),
+                              ),
+                              const SizedBox(width: 12),
+                              if (!weather.usesDevice && weather.place != null)
+                                Expanded(
+                                  child: Text(
+                                    'Using ${weather.place!.latitude}, '
+                                    '${weather.place!.longitude}',
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 RadioListTile<bool>(
                   value: true,
                   title: const Text('Where this device is'),
@@ -164,88 +245,9 @@ class _WeatherSettingsState extends State<WeatherSettings> {
                             ),
                     ),
                   ),
-                const RadioListTile<bool>(
-                  value: false,
-                  title: Text('A place I give'),
-                  subtitle: Text(
-                    'By its latitude and longitude, in degrees. The device '
-                    "isn't asked where it is.",
-                  ),
-                ),
               ],
             ),
           ),
-          if (givesPlace)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(72, 4, 16, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _latitude,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            signed: true,
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Latitude',
-                            hintText: '47.61',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _longitude,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            signed: true,
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Longitude',
-                            hintText: '-122.33',
-                            border: OutlineInputBorder(),
-                          ),
-                          onSubmitted: (_) => _usePlace(weather),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_problem case final problem?)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        problem,
-                        style: theme.textTheme.bodySmall?.merge(error),
-                      ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Row(
-                      children: [
-                        FilledButton.tonal(
-                          onPressed: () => _usePlace(weather),
-                          child: const Text('Use this place'),
-                        ),
-                        const SizedBox(width: 12),
-                        if (!weather.usesDevice && weather.place != null)
-                          Expanded(
-                            child: Text(
-                              'Using ${weather.place!.latitude}, '
-                              '${weather.place!.longitude}',
-                              style: theme.textTheme.bodySmall,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
         ],
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),

@@ -278,6 +278,7 @@ void main() {
         location: FixedLocationSource(),
         persist: false,
         enabled: true,
+        usesDevice: true,
       );
       await weather.load();
       final refresh = BackgroundRefresh(

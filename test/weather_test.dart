@@ -303,6 +303,7 @@ void main() {
         forecasts: forecasts,
         location: location,
         persist: false,
+        usesDevice: true,
         clock: () => now,
       );
 
@@ -328,6 +329,7 @@ void main() {
         forecasts: _FakeForecasts(),
         location: location,
         persist: false,
+        usesDevice: true,
       );
       expect(await weather.enable(), isFalse);
       expect(location.requested, 0);
@@ -341,6 +343,7 @@ void main() {
         forecasts: forecasts,
         location: location,
         persist: false,
+        usesDevice: true,
         clock: () => now,
       );
       expect(await weather.enable(), isFalse);
@@ -407,6 +410,7 @@ void main() {
         forecasts: forecasts,
         location: _CountingLocation(),
         persist: false,
+        usesDevice: true,
         enabled: true,
         clock: () => time,
       );
@@ -506,6 +510,7 @@ void main() {
         forecasts: _FakeForecasts(),
         location: _CountingLocation(access),
         persist: false,
+        usesDevice: true,
         enabled: access == LocationAccess.granted,
         clock: () => now,
       );
@@ -625,6 +630,22 @@ void main() {
     await tester.tap(find.text('Show the weather'));
     await tester.pumpAndSettle();
     expect(weather.enabled, isTrue);
+    // For a place given, to start: nothing's asked where the device is.
+    expect(weather.usesDevice, isFalse);
+    expect(location.asked + location.requested + location.read, 0);
+    expect(find.text('Use this place'), findsOneWidget);
+
+    // Asked only once it's picked.
+    await tester.scrollUntilVisible(
+      find.text('Where this device is'),
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(find.text('Where this device is'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Where this device is'));
+    await tester.pumpAndSettle();
+    expect(weather.usesDevice, isTrue);
     expect(location.asked, 1);
 
     expect(settings.temperatureUnit, TemperatureUnit.fahrenheit);
@@ -675,6 +696,16 @@ void main() {
         200,
         scrollable: list,
       );
+      // Where the device is, refused.
+      await tester.scrollUntilVisible(
+        find.text('Where this device is'),
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(find.text('Where this device is'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Where this device is'));
+      await tester.pumpAndSettle();
       return (weather, location, forecasts);
     }
 
@@ -685,6 +716,13 @@ void main() {
       expect(forecasts.fetched, isEmpty);
 
       await tester.drag(find.byType(Scrollable).first, const Offset(0, -200));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('A place I give'),
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(find.text('A place I give'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('A place I give'));
       await tester.pumpAndSettle();
@@ -716,6 +754,13 @@ void main() {
     testWidgets('a place that is none is refused, saying why', (tester) async {
       final (weather, _, forecasts) = await pump(tester);
       await tester.drag(find.byType(Scrollable).first, const Offset(0, -200));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('A place I give'),
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(find.text('A place I give'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('A place I give'));
       await tester.pumpAndSettle();
