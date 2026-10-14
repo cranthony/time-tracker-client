@@ -28,6 +28,13 @@ List<PickerNode> travelModes(PlanMemory memory) => [
       actionNode(a),
 ];
 
+/// The actions in [memory] a travel time can be by: those that are a way
+/// to commute.
+Set<String> travelCommutes(PlanMemory memory) => {
+  for (final a in memory.shownActions?.actions ?? const [])
+    if (a.commute) ?a.id,
+};
+
 /// Roughly how long it takes to get between places -- each a location or a
 /// location group -- by each way of getting there: an action or action
 /// group, such as Drive or Transit. Tapping one edits or deletes it; "+"
@@ -84,6 +91,7 @@ class _TravelTimesScreenState extends State<TravelTimesScreen> {
         travel: travel,
         places: _places,
         modes: _modes,
+        commutes: travelCommutes(widget.memory),
         save: (fields) => travel == null
             ? repository.createTravelTime(
                 TravelTime.fromJson({'id': '', ...fields}),
@@ -276,6 +284,7 @@ class _LocationTravelTimesState extends State<LocationTravelTimes> {
         toId: toId,
         places: travelPlaces(widget.memory),
         modes: travelModes(widget.memory),
+        commutes: travelCommutes(widget.memory),
         save: (fields) => travel == null
             ? repository.createTravelTime(
                 TravelTime.fromJson({'id': '', ...fields}),
@@ -419,6 +428,7 @@ class TravelTimeEditor extends StatefulWidget {
     this.travel,
     required this.places,
     required this.modes,
+    this.commutes = const {},
     required this.save,
     this.delete,
     this.fromId,
@@ -432,6 +442,10 @@ class TravelTimeEditor extends StatefulWidget {
   final String? toId;
   final List<PickerNode> places;
   final List<PickerNode> modes;
+
+  /// The ids among [modes] that are a way to commute: only they, the
+  /// groups they're in, and what [travel] was already by are offered.
+  final Set<String> commutes;
   final Future<void> Function(Map<String, Object?> fields) save;
   final Future<void> Function()? delete;
 
@@ -449,6 +463,26 @@ class _TravelTimeEditorState extends State<TravelTimeEditor> {
     if (widget.travel == null) _Way(),
   ];
   bool _saving = false;
+
+  /// What a way can be by: the commute actions and what [travel] was
+  /// already by, with the groups they're in.
+  late final List<PickerNode> _modes = () {
+    final byId = {for (final m in widget.modes) m.id: m};
+    final offered = <String>{};
+    for (final id in {
+      ...widget.commutes,
+      for (final t in widget.travel?.times ?? const <TravelMode>[]) t.modeId,
+    }) {
+      // Up through its groups, until one's already offered.
+      for (var at = byId[id]; at != null && offered.add(at.id);) {
+        at = byId[at.parentId];
+      }
+    }
+    return [
+      for (final m in widget.modes)
+        if (offered.contains(m.id)) m,
+    ];
+  }();
 
   @override
   void dispose() {
@@ -570,7 +604,7 @@ class _TravelTimeEditorState extends State<TravelTimeEditor> {
                 child: _picker(
                   label: 'By',
                   value: way.mode,
-                  choices: widget.modes,
+                  choices: _modes,
                   place: Icons.directions,
                   searchHint: 'Search actions',
                   onChanged: (picked) => setState(() => way.mode = picked),
@@ -670,6 +704,17 @@ class _TravelTimeEditorState extends State<TravelTimeEditor> {
           onChanged: (on) => setState(() => _oneWay = on),
         ),
         Text('Ways of getting there', style: theme.textTheme.titleSmall),
+        if (widget.commutes.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Only actions that are a way to commute can be picked: turn '
+              "that on for one, such as Drive, in the Plan page's Actions.",
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         for (final way in _ways) _way(theme, way),
         Align(
           alignment: AlignmentDirectional.centerStart,

@@ -9,7 +9,8 @@ import 'package:time_tracker_client/services/plan_memory.dart';
 
 void main() {
   /// Home, in Park Slope; and the ways of getting about: walking, and
-  /// transit, a group with the subway in it.
+  /// transit, a group with the subway in it -- and cooking, which isn't
+  /// one.
   Future<InMemoryPeopleRepository> pump(
     WidgetTester tester, {
     List<TravelTime> travelTimes = const [],
@@ -28,7 +29,12 @@ void main() {
     final memory = PlanMemory()
       ..actions = const ActionList(
         actions: [
-          PlanAction(id: 'walk', name: 'Walk', path: 'Walk'),
+          PlanAction(
+            id: 'walk',
+            name: 'Walk',
+            path: 'Walk',
+            properties: {'commute': true},
+          ),
           PlanAction(
             id: 'transit',
             name: 'Transit',
@@ -40,7 +46,9 @@ void main() {
             name: 'Subway',
             parentId: 'transit',
             path: 'Transit › Subway',
+            properties: {'commute': true},
           ),
+          PlanAction(id: 'cook', name: 'Cook', path: 'Cook'),
         ],
       );
     await tester.pumpWidget(
@@ -133,6 +141,57 @@ void main() {
     expect(find.text('Transit 55m–1h 15m · Walk 2h\nthe F'), findsOneWidget);
   });
 
+  /// Which of [names] the "By" field's sheet offers, closing it again.
+  Future<List<String>> offered(WidgetTester tester, List<String> names) async {
+    await tester.tap(find.widgetWithText(InputDecorator, 'By').last);
+    await tester.pumpAndSettle();
+    final shown = [
+      for (final name in names)
+        if (find
+            .descendant(of: find.byType(BottomSheet), matching: find.text(name))
+            .evaluate()
+            .isNotEmpty)
+          name,
+    ];
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    return shown;
+  }
+
+  testWidgets('is by only a way to commute, or what it was by already', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      travelTimes: const [
+        TravelTime(
+          id: 't1',
+          fromId: 'work',
+          toId: 'home',
+          times: [TravelMode(modeId: 'cook', minutes: 30)],
+        ),
+      ],
+    );
+    await tester.tap(route('Work', Icons.sync_alt, 'Park Slope › Home'));
+    await tester.pumpAndSettle();
+    expect(await offered(tester, ['Walk', 'Transit', 'Cook']), [
+      'Walk',
+      'Transit',
+      'Cook',
+    ]);
+  });
+
+  testWidgets('offers a new one only the ways to commute', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byTooltip('New travel time'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Only actions that are a way'), findsNothing);
+    expect(await offered(tester, ['Walk', 'Transit', 'Cook']), [
+      'Walk',
+      'Transit',
+    ]);
+  });
+
   testWidgets('says what keeps one from being saved', (tester) async {
     await pump(tester);
     await tester.tap(find.byTooltip('New travel time'));
@@ -212,7 +271,14 @@ void main() {
       );
       final memory = PlanMemory()
         ..actions = const ActionList(
-          actions: [PlanAction(id: 'walk', name: 'Walk', path: 'Walk')],
+          actions: [
+            PlanAction(
+              id: 'walk',
+              name: 'Walk',
+              path: 'Walk',
+              properties: {'commute': true},
+            ),
+          ],
         );
       await tester.pumpWidget(
         MaterialApp(

@@ -124,16 +124,22 @@ void main() {
         'status': 'active',
         'parent_id': null,
         'priority': 1,
+        'commute': true,
       });
       await repository.updateAction(
         const PlanAction(id: 'g1', properties: {'kind': 'group'}),
-        {'name': 'Making', 'background_color': null},
+        {'name': 'Making', 'background_color': null, 'commute': true},
       );
 
       expectCall(client.calls[0], (
         'update_action',
         {
-          'action': {'id': 'a1', 'status': 'active', 'priority': 1},
+          'action': {
+            'id': 'a1',
+            'status': 'active',
+            'priority': 1,
+            'commute': true,
+          },
           'clear_fields': ['group_id'],
         },
       ));

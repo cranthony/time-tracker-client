@@ -24,7 +24,12 @@ const _locations = [
 ];
 const _groups = [LocationGroup(id: 'downtown', name: 'Downtown')];
 const _actions = [
-  PlanAction(id: 'drive', name: 'Drive', path: 'Drive'),
+  PlanAction(
+    id: 'drive',
+    name: 'Drive',
+    path: 'Drive',
+    properties: {'commute': true},
+  ),
   PlanAction(
     id: 'transit',
     name: 'Transit',
@@ -36,8 +41,14 @@ const _actions = [
     name: 'Subway',
     parentId: 'transit',
     path: 'Transit › Subway',
+    properties: {'commute': true},
   ),
-  PlanAction(id: 'walk', name: 'Walk', path: 'Walk'),
+  PlanAction(
+    id: 'walk',
+    name: 'Walk',
+    path: 'Walk',
+    properties: {'commute': true},
+  ),
 ];
 const _travel = [
   TravelTime(

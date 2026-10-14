@@ -2312,6 +2312,7 @@ class _EventsScreenState extends State<EventsScreen> {
         toId: toId,
         places: travelPlaces(memory),
         modes: travelModes(memory),
+        commutes: travelCommutes(memory),
         save: (fields) => existing == null
             ? people.createTravelTime(
                 TravelTime.fromJson({'id': '', ...fields}),

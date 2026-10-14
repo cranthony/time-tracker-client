@@ -1744,7 +1744,13 @@ class SampleData {
     ('eat_meal', 'Eat a meal', 'food', false, {}),
     ('eat_snack', 'Eat a snack', 'food', false, {}),
     ('drink_water', 'Drink water', 'food', false, {}),
-    ('walk', 'Walk', null, false, {'background_color': '#0b8043'}),
+    (
+      'walk',
+      'Walk',
+      null,
+      false,
+      {'background_color': '#0b8043', 'commute': true},
+    ),
     (
       'screens',
       'Screen logistics',
