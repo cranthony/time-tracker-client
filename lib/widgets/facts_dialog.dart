@@ -130,13 +130,8 @@ class _FactsDialogState extends State<_FactsDialog> {
     if (repository == null) return;
     final created = await showLocationDialog(
       context,
-      save: (fields) => repository.createLocation(
-        Location(
-          id: '',
-          name: fields['name'] as String,
-          hint: fields['hint'] as String?,
-        ),
-      ),
+      save: (fields) =>
+          repository.createLocation(Location.fromJson({'id': '', ...fields})),
     );
     if (created == null || !mounted) return;
     setState(() {

@@ -70,13 +70,7 @@ class LocationsPaneState extends State<LocationsPane> {
       context,
       location: location,
       save: (fields) => location == null
-          ? repository.createLocation(
-              Location(
-                id: '',
-                name: fields['name'] as String,
-                hint: fields['hint'] as String?,
-              ),
-            )
+          ? repository.createLocation(Location.fromJson({'id': '', ...fields}))
           : repository.updateLocation(location.id, fields),
       delete: location == null
           ? null

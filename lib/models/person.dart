@@ -287,10 +287,15 @@ class Circle {
 }
 
 /// A place events happen -- home, the salsa studio -- with a hint for
-/// recognizing when an event or note refers to it, mirroring the server's
-/// `Location` (its utilities/locations.py).
+/// recognizing when an event or note refers to it, and where it is on a
+/// map, mirroring the server's `Location` (its stores/locations.rs).
 class Location {
-  const Location({required this.id, required this.name, this.hint});
+  const Location({
+    required this.id,
+    required this.name,
+    this.hint,
+    this.mapLocation,
+  });
 
   final String id;
   final String name;
@@ -299,13 +304,24 @@ class Location {
   /// 'home', 'my place'".
   final String? hint;
 
+  /// Where it is, as a maps app would find it -- an address, a place's
+  /// name, or a link -- opened for an event there with no map location
+  /// of its own.
+  final String? mapLocation;
+
   factory Location.fromJson(Map<String, dynamic> json) => Location(
     id: json['id'] as String,
     name: json['name'] as String? ?? '',
     hint: _text(json['hint']),
+    mapLocation: _text(json['map_location']),
   );
 
-  Map<String, Object?> toJson() => {'id': id, 'name': name, 'hint': ?hint};
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'hint': ?hint,
+    'map_location': ?mapLocation,
+  };
 }
 
 /// Everyone, and their circles.

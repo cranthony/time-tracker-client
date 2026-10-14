@@ -187,8 +187,9 @@ class _TextSheetFieldState extends State<_TextSheetField> {
 /// added from here.
 ///
 /// Where, there's a second page, swiped to: its [mapLocation], the place
-/// as a maps app would find it, to see and edit in full. It's returned
-/// as typed, or as it was.
+/// as a maps app would find it, to see and edit in full -- or, without
+/// one, its location's, shown as a hint. It's returned as typed, or as it
+/// was.
 Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
   BuildContext context,
   Facts facts, {
@@ -280,11 +281,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
                   final created = await showLocationDialog(
                     context,
                     save: (fields) => repository.createLocation(
-                      Location(
-                        id: '',
-                        name: fields['name'] as String,
-                        hint: fields['hint'] as String?,
-                      ),
+                      Location.fromJson({'id': '', ...fields}),
                     ),
                   );
                   if (created == null) return;
@@ -329,9 +326,17 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
                   child: TabBarView(
                     children: [
                       place(setState),
-                      _MapLocationPage(
-                        text: map ?? '',
-                        onChanged: (typed) => map = typed,
+                      FutureBuilder(
+                        future: locations,
+                        initialData: memory?.locations,
+                        builder: (context, snapshot) => _MapLocationPage(
+                          text: map ?? '',
+                          fallback: snapshot.data
+                              ?.where((l) => l.id == location)
+                              .firstOrNull
+                              ?.mapLocation,
+                          onChanged: (typed) => map = typed,
+                        ),
                       ),
                     ],
                   ),
@@ -373,9 +378,16 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
 /// or a place's name -- to type in full, and open in Maps; or a link, to
 /// open.
 class _MapLocationPage extends StatefulWidget {
-  const _MapLocationPage({required this.text, required this.onChanged});
+  const _MapLocationPage({
+    required this.text,
+    required this.onChanged,
+    this.fallback,
+  });
 
   final String text;
+
+  /// Its location's map location, used while it has none of its own.
+  final String? fallback;
   final ValueChanged<String> onChanged;
 
   @override
@@ -394,6 +406,9 @@ class _MapLocationPageState extends State<_MapLocationPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final fallback = widget.fallback?.trim() ?? '';
+    final typed = _controller.text.trim();
+    final opened = typed.isEmpty ? fallback : _controller.text;
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 12),
       children: [
@@ -413,7 +428,9 @@ class _MapLocationPageState extends State<_MapLocationPage> {
           keyboardType: TextInputType.multiline,
           textCapitalization: TextCapitalization.words,
           decoration: InputDecoration(
-            hintText: 'e.g. 1600 Amphitheatre Pkwy, Mountain View',
+            hintText: fallback.isEmpty
+                ? 'e.g. 1600 Amphitheatre Pkwy, Mountain View'
+                : "The location's: $fallback",
             border: const OutlineInputBorder(),
             suffixIcon: _controller.text.isEmpty
                 ? null
@@ -436,11 +453,9 @@ class _MapLocationPageState extends State<_MapLocationPage> {
         Align(
           alignment: Alignment.centerRight,
           child: TextButton.icon(
-            onPressed: _controller.text.trim().isEmpty
-                ? null
-                : () => openInMaps(_controller.text),
-            icon: Icon(placeButton(_controller.text).icon),
-            label: Text(placeButton(_controller.text).tooltip),
+            onPressed: opened.trim().isEmpty ? null : () => openInMaps(opened),
+            icon: Icon(placeButton(opened).icon),
+            label: Text(placeButton(opened).tooltip),
           ),
         ),
       ],

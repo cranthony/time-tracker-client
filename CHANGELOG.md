@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.74.0
+
+- A location can have a map location: an address, a place's name or a
+  link, set where it's added or edited. An event there with no map
+  location of its own still gets the map (or arrow) button, which opens
+  its location's; one with its own opens that, as before. On the event's
+  Map location page, the location's shows as a hint.
+
 ## 7.73.1
 
 - "Scoring defaults" is in Settings now, saying what each default is,

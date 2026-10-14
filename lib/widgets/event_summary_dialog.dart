@@ -397,6 +397,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   /// [TraitsScope], for its judgments.
   Map<String?, String> _personNames = {selfPersonId: defaultSelf.name};
   Map<String?, String> _locationNames = const {};
+
+  /// Each location's map location, by id, where it has one.
+  Map<String, String> _locationMaps = const {};
   Map<String?, String> _traitNames = const {};
 
   @override
@@ -455,6 +458,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     }
     if (locations != null) {
       _locationNames = {for (final l in locations) l.id: l.name};
+      _locationMaps = {for (final l in locations) l.id: ?l.mapLocation};
     }
     // What a proposal adds, by ref, until it's made.
     for (final a in widget.additions) {
@@ -1483,15 +1487,19 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   ///
   /// Where, its map location shows if it has no location, and a map
   /// button opens that in a maps app -- an arrow, if it's a link, opens
-  /// the link.
+  /// the link. Without one, the button opens its location's, if that
+  /// has one.
   Widget _whoRow(BuildContext context, {bool where = false}) {
     final theme = Theme.of(context);
     final facts = Facts.fromJson(_value('facts')) ?? const Facts();
-    final map = (_value('location') as String?)?.trim() ?? '';
+    final own = (_value('location') as String?)?.trim() ?? '';
+    final map = own.isNotEmpty
+        ? own
+        : _locationMaps[facts.locationId]?.trim() ?? '';
     final line = where
         ? switch (facts.locationId) {
             final id? => _locationNames[id] ?? id,
-            null => map,
+            null => own,
           }
         : Facts(
             withIds: facts.withIds,

@@ -300,8 +300,8 @@ Future<bool> showCircleDialog(
     ) ??
     false;
 
-/// Adds a location (with no [location]) or edits one: its name and a hint
-/// for recognizing it. Saves with [save], returning what it returned, or
+/// Adds a location (with no [location]) or edits one: its name, a hint
+/// for recognizing it, and its map location. Saves with [save], returning what it returned, or
 /// null if it was called off. "Delete", asked first, calls [delete]: then
 /// [location] is returned.
 Future<Location?> showLocationDialog(
@@ -323,6 +323,7 @@ Future<Location?> showLocationDialog(
       nameHint: 'e.g. Home',
       deleteExplanation:
           "Events there keep its id, but won't say where they were.",
+      map: (value: location?.mapLocation),
       save: (fields) async => saved = await save(fields),
       delete: delete,
     ),
@@ -344,6 +345,7 @@ class _NamedDialog extends StatefulWidget {
     required this.save,
     required this.delete,
     this.scoring,
+    this.map,
   });
 
   final String noun;
@@ -367,6 +369,9 @@ class _NamedDialog extends StatefulWidget {
   })?
   scoring;
 
+  /// Where it is on a map, for a location: as it is.
+  final ({String? value})? map;
+
   @override
   State<_NamedDialog> createState() => _NamedDialogState();
 }
@@ -374,6 +379,7 @@ class _NamedDialog extends StatefulWidget {
 class _NamedDialogState extends State<_NamedDialog> {
   late final _name = TextEditingController(text: widget.name);
   late final _detail = TextEditingController(text: widget.detail);
+  late final _map = TextEditingController(text: widget.map?.value);
   late Aggregation? _scoring = widget.scoring?.value;
   bool _scoringChanged = false;
 
@@ -381,6 +387,7 @@ class _NamedDialogState extends State<_NamedDialog> {
   void dispose() {
     _name.dispose();
     _detail.dispose();
+    _map.dispose();
     super.dispose();
   }
 
@@ -460,6 +467,21 @@ class _NamedDialogState extends State<_NamedDialog> {
                 isDense: true,
               ),
             ),
+            if (widget.map != null) ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _map,
+                minLines: 1,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Map location (optional)',
+                  hintText:
+                      'An address or a link, for events there without one',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ],
             if (widget.scoring case final scoring?)
               AggregationTile(
                 title: 'How its people combine',
@@ -493,6 +515,13 @@ class _NamedDialogState extends State<_NamedDialog> {
                     widget.detailField: _detail.text.trim().isEmpty
                         ? null
                         : _detail.text.trim(),
+                    // Only if it's changed, so a server without map
+                    // locations can still save the rest.
+                    if (widget.map case final map?
+                        when _map.text.trim() != (map.value ?? ''))
+                      'map_location': _map.text.trim().isEmpty
+                          ? null
+                          : _map.text.trim(),
                     if (_scoringChanged) 'scoring': _scoring?.toJson(),
                   }),
                 )
