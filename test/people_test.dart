@@ -632,6 +632,18 @@ void main() {
         'college',
       );
       await tester.tap(find.widgetWithText(FilterChip, 'Family').last);
+      // How the traits combine is above them, edited by its sigma.
+      expect(
+        tester.getTopLeft(find.text('How the traits combine')).dy,
+        lessThan(tester.getTopLeft(find.text('Every active trait')).dy),
+      );
+      expect(
+        find.descendant(
+          of: find.byTooltip('Edit how the traits combine'),
+          matching: find.byIcon(Icons.functions),
+        ),
+        findsOneWidget,
+      );
       // Only Present, with a part of her own.
       await tester.tap(find.text('Every active trait'));
       await tester.pumpAndSettle();

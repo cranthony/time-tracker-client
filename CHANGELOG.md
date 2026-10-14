@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.83.0
+
+- Editing a person or a habit, how their traits combine is above the
+  traits, not below them, and edited with a sigma in place of the tuner
+  -- as is every "how they combine". Their page says in brief how the
+  traits combine: their own way, or the defaults'.
+- A habit's page shows its events and its cancelled events in brief, as
+  a person's does -- how many, their time, the most recent and the
+  oldest -- with "All events" and "All cancelled events" opening the
+  lot. Pulling it down loads the events again, as on a person's page.
+
 ## 7.82.0
 
 - On the Events page, a commute has a small icon before its summary.

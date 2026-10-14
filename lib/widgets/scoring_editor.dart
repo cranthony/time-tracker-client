@@ -86,7 +86,7 @@ class AggregationTile extends StatelessWidget {
     }),
     trailing: IconButton(
       tooltip: 'Edit ${label.toLowerCase()}',
-      icon: const Icon(Icons.tune),
+      icon: const Icon(Icons.functions),
       onPressed: () async {
         final picked = await showAggregationEditor(
           context,
