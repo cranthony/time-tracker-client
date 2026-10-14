@@ -1,9 +1,10 @@
 /// Scoring a subject's traits for a day -- a person's, or one of Self's
-/// habits' -- from their events: each part
-/// 0-100, each trait the weighted mean of its parts (leaving out any with
-/// nothing to rate it by), over a trailing window that ends with the day.
-/// A port of the server's utilities/trait_scores.py, worked out in the
-/// app from the events it has.
+/// habits' -- from their events, in the app, from the events it has:
+/// each part 0-100, over a trailing window that ends with the day; each
+/// trait its parts' scores combined as its scoring says (by default their
+/// mean, leaving out any with nothing to rate it by); and the subject's
+/// rating of the day, their traits' scores combined as theirs, or the
+/// defaults', say (see models/scoring.dart).
 ///
 /// **A person's events.** The user ([selfPersonId]) was at every event.
 /// Anyone else's "with" events are those whose facts name them in
@@ -24,8 +25,9 @@
 ///
 /// | kind             | scores                                              |
 /// | ---------------- | --------------------------------------------------- |
-/// | `judgment`       | the mean of its judgments (rating / scale) on the   |
-/// |                  | person's events in the last `window_days` (30)      |
+/// | `judgment`       | its judgments (rating / scale) on the person's      |
+/// |                  | events in the last `window_days` (30), combined as  |
+/// |                  | its `scoring` says: by default, their mean          |
 /// | `continuity`     | 100 if the last event ended within                  |
 /// |                  | `last_within_days` of the day's end and the next    |
 /// |                  | starts within `next_within_days` after it; 50 for   |
@@ -56,6 +58,7 @@ import 'event.dart';
 import 'facts.dart';
 import 'habit.dart';
 import 'person.dart';
+import 'scoring.dart';
 import 'trait.dart';
 import '../widgets/durations.dart' show formatMinutes;
 
@@ -82,10 +85,16 @@ const followThroughPenalty = 25;
 const followThroughRecovery = 25;
 const followThroughLookBackDays = 30;
 
-/// A name for each of [parts], unique within them: its kind, then
-/// "kind#2", "kind#3" for later ones of the same kind. Judgments name
-/// parts by these.
+/// Each of [parts]' id, what its judgments and weight are kept under, as
+/// the server's `part_keys`: its own "id", or for one without -- as every
+/// part was before parts had ids -- the name it had then: its kind for
+/// the first of its kind, then "kind#2", "kind#3", passing over any
+/// another part has as its id.
 List<String> partKeys(List<Part> parts) {
+  final taken = {
+    for (final part in parts)
+      if (part['id'] case final String id when id.isNotEmpty) id,
+  };
   final seen = <String, int>{};
   return [
     for (final part in parts)
@@ -94,11 +103,26 @@ List<String> partKeys(List<Part> parts) {
           final String kind => kind,
           _ => 'part',
         };
-        final n = seen[kind] = (seen[kind] ?? 0) + 1;
-        return n == 1 ? kind : '$kind#$n';
+        var n = seen[kind] = (seen[kind] ?? 0) + 1;
+        if (part['id'] case final String id when id.isNotEmpty) return id;
+        while (true) {
+          final key = n == 1 ? kind : '$kind#$n';
+          if (taken.add(key)) return key;
+          n++;
+        }
       }(),
   ];
 }
+
+/// How [trait]'s parts combine for [subject]: their own scoring for it,
+/// or the trait's; the plain mean without either.
+Aggregation partsAggregation(Subject subject, Trait trait) =>
+    subject.traits.partScoring[trait.id] ?? trait.scoring ?? Aggregation.mean;
+
+/// How [subject]'s traits combine into their rating: their own scoring,
+/// or [defaults]'; the plain mean without either.
+Aggregation traitsAggregation(Subject subject, ScoringDefaults defaults) =>
+    subject.traits.scoring ?? defaults.traits ?? Aggregation.mean;
 
 /// Who or what is scored: a person (Self among them), by their id, or
 /// one of Self's habits, by `habit:<id>` -- which traits apply to them,
@@ -209,7 +233,8 @@ List<TraitScore> scorePerson(
 
 /// [subject]'s score of each trait that applies to them, as
 /// [scorePerson]'s: a habit's from its events, leaving out the parts it
-/// doesn't read, and any trait left with none.
+/// doesn't read, and any trait left with none. Each is weighed as their
+/// traits combine, [defaults]' unless they say.
 List<TraitScore> scoreSubject(
   Subject subject,
   List<Trait> traits,
@@ -217,24 +242,43 @@ List<TraitScore> scoreSubject(
   DateTime end,
   List<Event> events, {
   String? Function(String id)? parentOf,
-}) => [
-  for (final (trait, parts) in traitsFor(subject, traits))
-    if (_read(subject, parts) case final read when read.isNotEmpty)
-      () {
-        // Keyed among all its parts, as its judgments are.
-        final keys = partKeys(parts);
-        final scores = [
-          for (final i in read)
-            _part(subject, trait.id!, parts[i], keys[i], end, events, parentOf),
-        ];
-        return TraitScore(
-          traitId: trait.id!,
-          name: trait.name,
-          score: _weightedMean([for (final p in scores) (p.score, p.weight)]),
-          parts: scores,
-        );
-      }(),
-];
+  ScoringDefaults defaults = const ScoringDefaults(),
+}) {
+  final combined = traitsAggregation(subject, defaults);
+  return [
+    for (final (trait, parts) in traitsFor(subject, traits))
+      if (_read(subject, parts) case final read when read.isNotEmpty)
+        () {
+          final aggregation = partsAggregation(subject, trait);
+          // Keyed among all its parts, as its judgments are.
+          final keys = partKeys(parts);
+          final scores = [
+            for (final i in read)
+              _part(
+                subject,
+                trait.id!,
+                parts[i],
+                keys[i],
+                end,
+                events,
+                parentOf,
+                weight: aggregation.weightOf(keys[i]),
+              ),
+          ];
+          return TraitScore(
+            traitId: trait.id!,
+            name: trait.name,
+            weight: combined.weightOf(trait.id!),
+            score: aggregation.combine([
+              for (final p in scores)
+                // A part that's wrong isn't rated, whatever it says.
+                if (!p.said.startsWith(_notScored)) (p.key, p.score),
+            ]),
+            parts: scores,
+          );
+        }(),
+  ];
+}
 
 /// Scores [parts] -- the trait [traitId]'s for [subject], as they're
 /// being edited, say -- for the day ending at [end], as [scoreSubject]
@@ -270,17 +314,6 @@ List<int> _read(Subject subject, List<Part> parts) => [
   for (var i = 0; i < parts.length; i++)
     if (subject.reads(parts[i])) i,
 ];
-
-/// The weighted mean of [scores] with a score; null if none has one.
-int? _weightedMean(List<(int?, num)> scores) {
-  final rated = [
-    for (final (score, weight) in scores)
-      if (score != null) (score, weight),
-  ];
-  final total = rated.fold<num>(0, (sum, s) => sum + s.$2);
-  if (rated.isEmpty || total <= 0) return null;
-  return (rated.fold<num>(0, (sum, s) => sum + s.$1 * s.$2) / total).round();
-}
 
 /// The events [subject] took part in by [engagement]: for a habit, those
 /// in its scope.
@@ -341,6 +374,8 @@ num _num(Object? value, num fallback) => value is num ? value : fallback;
 
 String _g(num n) => n == n.roundToDouble() ? '${n.round()}' : '$n';
 
+const _notScored = 'Not scored: ';
+
 PartScore _part(
   Subject subject,
   String traitId,
@@ -348,8 +383,9 @@ PartScore _part(
   String key,
   DateTime end,
   List<Event> events,
-  String? Function(String id)? parentOf,
-) {
+  String? Function(String id)? parentOf, {
+  num weight = 1,
+}) {
   final kind = switch (part['kind']) {
     final String kind => kind,
     _ => '?',
@@ -359,10 +395,9 @@ PartScore _part(
       key: key,
       kind: kind,
       weight: 0,
-      said: 'Not scored: $problem',
+      said: '$_notScored$problem',
     );
   }
-  final weight = _num(part['weight'], 1);
   final rubric = part['rubric'] as String?;
   final engagement = part['engagement_type'] as String? ?? 'with';
   var engaged = _engaged(subject, engagement, events, parentOf);
@@ -401,16 +436,24 @@ PartScore _part(
       if (judged.isEmpty) {
         return score(null, 'No judgments in the last ${_g(days)} days', []);
       }
-      final mean =
-          judged.map((j) => j.rating / j.scale!).reduce((a, b) => a + b) /
-          judged.length;
+      final scoring =
+          JudgmentScoring.fromJson(part['scoring']) ?? JudgmentScoring.mean;
+      final value = scoring.combine([
+        for (final (i, j) in judged.indexed)
+          (
+            score: 100 * j.rating / j.scale!,
+            minutes: behind[i].end.difference(behind[i].start).inSeconds / 60,
+            at: behind[i].start,
+          ),
+      ]);
       return PartScore(
         key: key,
         kind: kind,
         weight: weight,
-        score: (100 * mean).round(),
+        score: value?.round(),
         said:
-            'Mean of ${judged.length} judgment(s) in the last ${_g(days)} '
+            '${scoring.describe(judged.length)}${scoring.byDuration ? ',' : ''} '
+            'in the last ${_g(days)} '
             'days',
         rubric: rubric,
         eventIds: [for (final e in behind) ?e.id],
@@ -750,6 +793,7 @@ class TraitScores {
     this.days,
     this.history,
     this.windowDays,
+    this.defaults,
     this._ratings,
     this._eventsOf,
     this._events,
@@ -762,7 +806,8 @@ class TraitScores {
   /// out from it. [windowDays] is how far back [events] go, for [digest]
   /// to say. Each one's consistency is counted back from the last of
   /// those days, rating days before them only while it holds, as far as
-  /// [maxConsistencyDays] and one more.
+  /// [maxConsistencyDays] and one more. Scores combine as each says, or
+  /// else as [defaults] do.
   factory TraitScores.compute({
     required List<Trait> traits,
     required List<Person> people,
@@ -772,6 +817,7 @@ class TraitScores {
     String? Function(String id)? parentOf,
     int days = 7,
     int windowDays = defaultWindowDays,
+    ScoringDefaults defaults = const ScoringDefaults(),
   }) {
     final midnight = DateTime(today.year, today.month, today.day);
     final starts = [
@@ -794,7 +840,7 @@ class TraitScores {
       if (!subject.active) continue;
       ratings[subject.id] = [
         for (var i = 0; i < starts.length; i++)
-          _rate(subject, traits, starts[i], keys[i], kept, parentOf),
+          _rate(subject, traits, starts[i], keys[i], kept, parentOf, defaults),
       ];
       bool healthy(int? rating) => rating != null && rating >= healthyRating;
       var streak = 0;
@@ -820,6 +866,7 @@ class TraitScores {
           _dayKey(start),
           kept,
           parentOf,
+          defaults,
         );
         if (healthy(rated.rating)) streak++;
       }
@@ -864,6 +911,7 @@ class TraitScores {
       keys,
       history,
       windowDays,
+      defaults,
       ratings,
       eventsOf,
       kept,
@@ -878,6 +926,7 @@ class TraitScores {
     String day,
     List<Event> events,
     String? Function(String id)? parentOf,
+    ScoringDefaults defaults,
   ) {
     final end = DateTime(start.year, start.month, start.day + 1);
     final scores = scoreSubject(
@@ -887,14 +936,17 @@ class TraitScores {
       end,
       events,
       parentOf: parentOf,
+      defaults: defaults,
     );
+    final combined = traitsAggregation(subject, defaults);
     return TraitsRating(
-      rating: _mean([for (final s in scores) s.score]),
+      rating: combined.combine([for (final s in scores) (s.traitId, s.score)]),
       traits: scores,
       leftOut: [
         for (final t in traits)
           if (t.status != 'active' ||
               !subject.traits.applies(t.id ?? '') ||
+              combined.weightOf(t.id ?? '') == 0 ||
               // A habit's, with no part it reads.
               (subject.isHabit &&
                   t.id != null &&
@@ -914,6 +966,9 @@ class TraitScores {
 
   /// How far back the events go, in days.
   final int windowDays;
+
+  /// How scores combine where nothing says otherwise.
+  final ScoringDefaults defaults;
 
   final Map<String, List<TraitsRating>> _ratings;
   final Map<String, List<Event>> _eventsOf;
@@ -953,16 +1008,29 @@ class TraitScores {
     for (final r in _ratings[personId] ?? const <TraitsRating>[]) r.rating,
   ];
 
-  /// The mean health of [personIds], as a circle's: of those rated.
-  int? groupHealth(Iterable<String> personIds) =>
-      _mean([for (final id in personIds) health(id)]);
+  /// The health of [personIds], as a circle's: their healths combined as
+  /// [scoring] -- the circle's own -- says, or else the defaults' circles;
+  /// by default, the mean of those rated.
+  int? groupHealth(Iterable<String> personIds, {Aggregation? scoring}) =>
+      _circles(scoring).combine([for (final id in personIds) (id, health(id))]);
 
   /// [groupHealth] of each day, oldest first.
-  List<int?> groupTrend(Iterable<String> personIds) => [
+  List<int?> groupTrend(Iterable<String> personIds, {Aggregation? scoring}) =>
+      _trend(personIds, _circles(scoring));
+
+  Aggregation _circles(Aggregation? scoring) =>
+      scoring ?? defaults.circles ?? Aggregation.mean;
+
+  /// The rating of each day, oldest first, of a layer of the habit graph
+  /// of [subjectIds] (habits by `habit:<id>`, people by id): theirs
+  /// combined as the defaults' habit layers say, by default the lowest.
+  List<int?> layerTrend(Iterable<String> subjectIds) =>
+      _trend(subjectIds, defaults.habitLayers ?? Aggregation.lowest);
+
+  List<int?> _trend(Iterable<String> ids, Aggregation aggregation) => [
     for (var i = 0; i < days.length; i++)
-      _mean([
-        for (final id in personIds)
-          if (_ratings[id] case final r? when r.length > i) r[i].rating,
+      aggregation.combine([
+        for (final id in ids) (id, _ratings[id]?.elementAtOrNull(i)?.rating),
       ]),
   ];
 

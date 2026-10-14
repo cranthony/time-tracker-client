@@ -1,10 +1,12 @@
 import '../widgets/durations.dart' show formatMinutes;
 import 'facts.dart';
+import 'scoring.dart';
 
 /// A trait: how the user wants to be -- adventurous, thoughtful, present
 /// -- each rated for each person (Self included) from its [parts]. None
 /// is built in: every trait, and every part, is the user's to define.
-/// Its score of a person's day is the weighted mean of its parts' scores.
+/// Its score of a person's day combines its parts' scores as its
+/// [scoring] says: by default, their mean.
 class Trait {
   const Trait({
     this.id,
@@ -12,6 +14,7 @@ class Trait {
     this.status = 'active',
     this.definition,
     this.parts = const [],
+    this.scoring,
     this.problems = const [],
   });
 
@@ -23,6 +26,10 @@ class Trait {
   final String status;
   final String? definition;
   final List<Part> parts;
+
+  /// How its parts' scores combine, their weights by part id; null for
+  /// the plain mean.
+  final Aggregation? scoring;
 
   /// What's wrong with it, as the server says, for one edited by hand:
   /// its bad parts aren't rated.
@@ -37,6 +44,7 @@ class Trait {
       for (final part in json['parts'] as List? ?? const [])
         if (part is Map) Map<String, Object?>.unmodifiable(part.cast()),
     ],
+    scoring: Aggregation.fromJson(json['scoring']),
     problems: [for (final p in json['problems'] as List? ?? const []) '$p'],
   );
 
@@ -47,11 +55,14 @@ class Trait {
     'status': status,
     'definition': ?definition,
     'parts': parts,
+    'scoring': ?scoring?.toJson(),
   };
 }
 
-/// One part of a trait: `{"kind": ..., "weight": 1, ...}`, the fields its
-/// kind takes ([partKinds]).
+/// One part of a trait: `{"id": ..., "kind": ..., ...}`, the fields its
+/// kind takes ([partKinds]). Its id is the server's, made when it's added
+/// and never changed: its judgments and weight are kept under it, so a
+/// part keeps it as it's edited, and a new one has none until it's saved.
 typedef Part = Map<String, Object?>;
 
 /// The statuses a trait can have, as the server names them, and as the app
@@ -360,10 +371,6 @@ String? partProblem(Part part) {
   final kind = partKinds[part['kind']];
   if (kind == null) return 'pick a kind.';
   bool positive(Object? n) => n is num && n > 0;
-  final weight = part['weight'];
-  if (weight != null && (weight is! num || weight < 0)) {
-    return 'the weight must be 0 or more.';
-  }
   final engagement = part['engagement_type'];
   if (engagement != null && !engagementTypes.containsKey(engagement)) {
     return 'pick whether it reads events with them or for them.';
@@ -415,6 +422,9 @@ String? partProblem(Part part) {
       if (days != null && (days is! int || days < 1)) {
         return 'a lookback must be a whole number of days, 1 or more.';
       }
+    }
+    if (part['scoring'] case final scoring?) {
+      if (judgmentScoringProblem(scoring) case final problem?) return problem;
     }
   }
   if (part['kind'] == 'spacing') {

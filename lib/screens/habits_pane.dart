@@ -25,8 +25,9 @@ import 'person_screen.dart';
 /// and the people they've put here, as a graph in layers by what each is
 /// built on ([HabitGraph]). Layer 0, at the bottom, has those built on
 /// nothing; each layer above, those built on the ones below. Each layer
-/// has its own trend: each day, the lowest of its habits' and people's
-/// ratings.
+/// has its own trend: each day, its habits' and people's ratings
+/// combined as the scoring defaults' habit layers say -- by default, the
+/// lowest.
 ///
 /// Each habit or person is a chip: a habit's in its action's color, a
 /// person's plain, with a person by its name. It has their name, their
@@ -540,21 +541,6 @@ class HabitsPaneState extends State<HabitsPane> {
         null => habit.actionId,
       };
 
-  /// Each day's lowest rating of [members], oldest first.
-  List<int?> _lowest(List<GraphNode> members) {
-    final trends = [
-      for (final m in members) _scores?.healthTrend(m.id) ?? const <int?>[],
-    ];
-    final days = trends.fold(0, (n, t) => t.length > n ? t.length : n);
-    return [
-      for (var i = 0; i < days; i++)
-        [
-          for (final t in trends)
-            if (i < t.length) ?t[i],
-        ].fold<int?>(null, (low, r) => low == null || r < low ? r : low),
-    ];
-  }
-
   Widget _layer(
     BuildContext context,
     int number,
@@ -562,7 +548,8 @@ class HabitsPaneState extends State<HabitsPane> {
     Map<String?, PlanAction> byId,
   ) {
     final theme = Theme.of(context);
-    final trend = _lowest(members);
+    final trend =
+        _scores?.layerTrend([for (final m in members) m.id]) ?? const <int?>[];
     return Padding(
       key: _layerKeys[number] ??= GlobalKey(),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),

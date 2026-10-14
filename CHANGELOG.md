@@ -6,6 +6,24 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.71.0
+
+- Scores combine as the server's new scoring settings say. A judgment
+  part can weigh each judgment by its event's time and take a
+  percentile, or only the best, worst or most recent few events or
+  hours; a trait, a person's or habit's traits, and a circle can each
+  set how theirs combine -- weights, a percentile, only the best or
+  worst few, a cap while any is low, a score for what isn't rated --
+  with the scoring defaults for the rest. Without any, nothing changes:
+  the mean, and a habit layer's lowest.
+- A part's weight is its trait's now, kept by the part's id, so the
+  Weight field has left the parts editor; a trait's page still shows
+  each part's weight, and how its parts combine.
+- Editing parts keeps each one's id, so its judgments stay with it, and
+  a judgment's lookback and scoring, which the editor doesn't show.
+- The defaults are loaded with the traits; a server from before them
+  has none.
+
 ## 7.70.1
 
 - Once a proposal is confirmed and applied -- here, or by the background

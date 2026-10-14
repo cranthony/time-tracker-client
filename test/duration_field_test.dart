@@ -163,4 +163,48 @@ void main() {
 
     expect(edited!.single['target_min'], 120);
   });
+
+  testWidgets("a part keeps its id, and a judgment what isn't edited here", (
+    tester,
+  ) async {
+    List<Part>? edited;
+    const judgment = {
+      'id': 'k3j9xq',
+      'kind': 'judgment',
+      'rubric': 'New?',
+      'ratings': {'0': 'No', '1': 'Yes'},
+      'facts': ['action'],
+      'window_days': 14,
+      'scoring': {'weight_by': 'duration'},
+    };
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => edited = await showPartsEditor(
+              context,
+              title: 'Daring',
+              parts: const [
+                judgment,
+                // From before weights were the trait's: left behind.
+                {'id': 'count', 'kind': 'count', 'target': 2, 'weight': 3},
+              ],
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Weight'), findsNothing);
+    await tester.enterText(find.widgetWithText(TextField, 'New?'), 'Bold?');
+    await tester.pump();
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    expect(edited!.first, {...judgment, 'rubric': 'Bold?'});
+    expect(edited!.last, {'id': 'count', 'kind': 'count', 'target': 2});
+  });
 }

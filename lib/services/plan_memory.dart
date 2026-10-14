@@ -9,6 +9,7 @@ import '../models/habit.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/person.dart';
+import '../models/scoring.dart';
 import '../models/time_split.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
@@ -84,6 +85,10 @@ class PlanMemory extends ChangeNotifier {
   }
 
   List<Trait>? traits;
+
+  /// How scores combine where nothing says otherwise; loaded with the
+  /// traits.
+  ScoringDefaults scoringDefaults = const ScoringDefaults();
   PeopleList? people;
   List<Location>? locations;
 
@@ -124,6 +129,7 @@ class PlanMemory extends ChangeNotifier {
       _signature(actions, _actionsSignature),
       DateTime(now.year, now.month, now.day),
       _signature(habits, _habitsSignature),
+      jsonEncode(scoringDefaults.toJson()),
     );
     if (_scores case (final kept, final scores) when kept == key) return scores;
     if (_rescoring == null && _failed != key) {
@@ -203,6 +209,7 @@ class PlanMemory extends ChangeNotifier {
           if (g.id != null) g.id!: g.parentId,
       },
       windowDays: span == null ? 0 : today.difference(span.$1).inDays,
+      defaults: scoringDefaults,
     );
     final why = _why(_scores?.$1, key);
     final watch = Stopwatch()..start();
@@ -245,6 +252,7 @@ class PlanMemory extends ChangeNotifier {
     required DateTime today,
     required Map<String, String?> parents,
     required int windowDays,
+    required ScoringDefaults defaults,
   }) =>
       () => TraitScores.compute(
         traits: traits,
@@ -255,6 +263,7 @@ class PlanMemory extends ChangeNotifier {
         parentOf: (id) => parents[id],
         days: scoredDays,
         windowDays: windowDays,
+        defaults: defaults,
       );
 
   /// What changed from [was] to [now], that the scores are worked out
@@ -268,6 +277,7 @@ class PlanMemory extends ChangeNotifier {
       if (was.$4 != now.$4) 'actions',
       if (was.$5 != now.$5) 'day',
       if (was.$6 != now.$6) 'habits',
+      if (was.$7 != now.$7) 'scoring',
     ].join(', ');
   }
 
@@ -378,7 +388,12 @@ class PlanMemory extends ChangeNotifier {
   /// Loads every trait and their scores, this visit; [again] asks again.
   Future<void> loadTraits(TraitsRepository repository, {bool again = false}) =>
       load('traits', () async {
-        traits = await repository.traits(statuses: [...traitStatuses.keys]);
+        final (loaded, defaults) = await (
+          repository.traits(statuses: [...traitStatuses.keys]),
+          repository.scoringDefaults(),
+        ).wait;
+        traits = loaded;
+        scoringDefaults = defaults;
       }, again: again);
 
   /// Loads everyone and their circles, this visit; [again] asks again.
@@ -555,6 +570,9 @@ class PlanMemory extends ChangeNotifier {
         traits?.cachedTraits(statuses: [...traitStatuses.keys]),
         (v) => this.traits ??= v,
       ),
+      keep(traits?.cachedScoringDefaults(), (v) {
+        if (this.traits == null) scoringDefaults = v;
+      }),
       keep(people?.cachedPeople(), (v) => this.people ??= v),
       keep(people?.cachedLocations(), (v) => locations ??= v),
       keep(habits?.cachedHabits(), (v) => this.habits ??= v),
@@ -587,5 +605,13 @@ class PlanMemoryScope extends InheritedWidget {
 }
 
 /// What the scores are from: the events' version, the traits', people's,
-/// actions' and habits' signatures, and the day.
-typedef _ScoresKey = (int, String?, String?, String?, DateTime, String?);
+/// actions' and habits' signatures, the day, and the scoring defaults.
+typedef _ScoresKey = (
+  int,
+  String?,
+  String?,
+  String?,
+  DateTime,
+  String?,
+  String,
+);
