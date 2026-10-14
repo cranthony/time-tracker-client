@@ -107,10 +107,12 @@ else
   home
   sleep 3
   # The list may start with today's events, or with nothing planned:
-  # scroll it until an event shows, a few times at most. Within the
-  # widget's list: a swipe up that starts below the widget, on the home
-  # screen, opens the launcher's app drawer instead.
-  for _ in 1 2 3 4; do
+  # scroll it until an event shows, a dozen times at most -- after 7:45
+  # AM, today's other events (Breakfast to Get ready for bed) fill more
+  # than four swipes of the widget's two rows. Within the widget's list:
+  # a swipe up that starts below the widget, on the home screen, opens
+  # the launcher's app drawer instead.
+  for _ in $(seq 1 12); do
     ui_nodes | grep -qE "text=\"$SAMPLE_EVENTS\"" && break
     b=$(ui_nodes | grep "class=\"android.widget.ListView\" package=\"$PKG\"" | head -1 |
       sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p')
