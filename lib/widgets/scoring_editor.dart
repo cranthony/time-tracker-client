@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../models/scoring.dart';
@@ -13,8 +15,9 @@ typedef AggregationPicked = ({Aggregation? scoring});
 /// percentile, each item's weight (by id, named as [items] has them),
 /// only the best or worst few, a cap while any is low, and what an item
 /// with nothing to rate it by counts as. [fallback] says what's used
-/// without one ("The defaults': mean"); "Reset to default" goes back to
-/// it, and closing the page calls it off.
+/// without one ("The defaults': mean") -- [fallbackValue], which the page
+/// starts from without [value] -- and "Reset to default" goes back to it,
+/// as does saving it unchanged; closing the page calls it off.
 /// [checkWeights] checks the weights name [items], as a trait's must its
 /// parts. Returns what was picked, or null if it was called off.
 Future<AggregationPicked?> showAggregationEditor(
@@ -25,6 +28,7 @@ Future<AggregationPicked?> showAggregationEditor(
   Map<String, String> items = const {},
   required String noun,
   required String fallback,
+  Aggregation fallbackValue = Aggregation.mean,
   bool checkWeights = false,
 }) => showEditPage<AggregationPicked>(
   context,
@@ -35,6 +39,7 @@ Future<AggregationPicked?> showAggregationEditor(
     items: items,
     noun: noun,
     fallback: fallback,
+    fallbackValue: fallbackValue,
     checkWeights: checkWeights,
   ),
 );
@@ -54,6 +59,7 @@ class AggregationTile extends StatelessWidget {
     this.items = const {},
     this.checkWeights = false,
     this.label = 'How they combine',
+    this.fallbackValue = Aggregation.mean,
   });
 
   final String title;
@@ -65,6 +71,9 @@ class AggregationTile extends StatelessWidget {
   final Map<String, String> items;
   final bool checkWeights;
   final String label;
+
+  /// What's used without [value], which its page starts from.
+  final Aggregation fallbackValue;
 
   @override
   Widget build(BuildContext context) => ListTile(
@@ -87,6 +96,7 @@ class AggregationTile extends StatelessWidget {
           items: items,
           noun: noun,
           fallback: fallback,
+          fallbackValue: fallbackValue,
           checkWeights: checkWeights,
         );
         if (picked != null) onChanged(picked.scoring);
@@ -94,6 +104,9 @@ class AggregationTile extends StatelessWidget {
     ),
   );
 }
+
+bool _same(Aggregation a, Aggregation b) =>
+    jsonEncode(a.toJson()) == jsonEncode(b.toJson());
 
 String _capitalized(String s) =>
     s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
@@ -106,6 +119,7 @@ class _AggregationPage extends StatefulWidget {
     required this.items,
     required this.noun,
     required this.fallback,
+    required this.fallbackValue,
     required this.checkWeights,
   });
 
@@ -115,6 +129,7 @@ class _AggregationPage extends StatefulWidget {
   final Map<String, String> items;
   final String noun;
   final String fallback;
+  final Aggregation fallbackValue;
   final bool checkWeights;
 
   @override
@@ -122,7 +137,8 @@ class _AggregationPage extends StatefulWidget {
 }
 
 class _AggregationPageState extends State<_AggregationPage> {
-  late final _value = widget.value ?? Aggregation.mean;
+  // What's in effect, without its own.
+  late final _value = widget.value ?? widget.fallbackValue;
   late String _statistic = _value.statistic;
   late final _percentile = _field(_value.percentile ?? 50);
   late bool _limited = _value.limit != null;
@@ -193,8 +209,10 @@ class _AggregationPageState extends State<_AggregationPage> {
       title: widget.title,
       saveLabel: 'Done',
       problem: problem == null ? null : _capitalized(problem),
-      onSave: () => Navigator.of(context)
-          .pop<AggregationPicked>((scoring: scoring.isMean ? null : scoring)),
+      // Saved as the default is, it goes on following the default.
+      onSave: () => Navigator.of(context).pop<AggregationPicked>((
+        scoring: _same(scoring, widget.fallbackValue) ? null : scoring,
+      )),
       actions: [
         TextButton(
           onPressed: () =>

@@ -111,6 +111,7 @@ class _ScoringDefaultsPageState extends State<_ScoringDefaultsPage> {
           value: _defaults.habitLayers,
           noun: 'habits and people',
           fallback: 'Lowest',
+          fallbackValue: Aggregation.lowest,
           onChanged: (scoring) => setState(
             () => _defaults = ScoringDefaults(
               traits: _defaults.traits,

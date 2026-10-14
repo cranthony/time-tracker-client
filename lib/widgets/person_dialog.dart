@@ -292,6 +292,7 @@ Future<bool> showCircleDialog(
             final scoring? => "The defaults': ${scoring.describe()}",
             null => 'Mean',
           },
+          fallbackValue: defaultScoring ?? Aggregation.mean,
         ),
         save: save,
         delete: delete,
@@ -358,7 +359,12 @@ class _NamedDialog extends StatefulWidget {
 
   /// How its people's scores combine, for a circle: as it is, its people
   /// by id, and what's used without it.
-  final ({Aggregation? value, Map<String, String> items, String fallback})?
+  final ({
+    Aggregation? value,
+    Map<String, String> items,
+    String fallback,
+    Aggregation fallbackValue,
+  })?
   scoring;
 
   @override
@@ -463,6 +469,7 @@ class _NamedDialogState extends State<_NamedDialog> {
                 items: scoring.items,
                 noun: 'people',
                 fallback: scoring.fallback,
+                fallbackValue: scoring.fallbackValue,
                 onChanged: (picked) => setState(() {
                   _scoring = picked;
                   _scoringChanged = true;

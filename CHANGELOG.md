@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.73.1
+
+- "Scoring defaults" is in Settings now, saying what each default is,
+  rather than under the traits.
+- A scoring page starts from what's in effect without its own: a habit
+  layer's from the lowest score -- the 0th percentile -- and a person's,
+  habit's or circle's from the defaults', rather than from the mean. Saved
+  as it starts, it goes on following the default.
+
 ## 7.73.0
 
 - How scores combine is edited in the app. A judgment part's card says

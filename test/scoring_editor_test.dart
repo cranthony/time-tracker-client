@@ -150,8 +150,8 @@ void main() {
       ),
     );
 
-    expect(find.text("The defaults': lowest"), findsNothing);
-    expect(find.text("The defaults': mean of the worst 1"), findsOneWidget);
+    expect(find.text("The defaults': mean of the worst 1"), findsNothing);
+    expect(find.text("The defaults': lowest"), findsOneWidget);
     await tester.tap(find.byTooltip('Edit how its people combine'));
     await tester.pumpAndSettle();
     await tester.enterText(_field('Sam'), '2');
@@ -161,7 +161,10 @@ void main() {
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
+    // Started from the default's, the lowest.
     expect(fields!['scoring'], {
+      'statistic': 'percentile',
+      'percentile': 0,
       'weights': {'sam': 2},
     });
   });
@@ -224,5 +227,32 @@ void main() {
     final added = updated.parts.last['id'] as String;
     expect(added.length, 6);
     expect(added, isNot(anyOf('follow_through', 'count', 'count#2')));
+  });
+
+  testWidgets("a scoring page starts from what's in effect, and saved as it "
+      'is, goes on following it', (tester) async {
+    final repository = InMemoryTraitsRepository();
+    final memory = PlanMemory();
+    await memory.loadTraits(repository);
+    await _open(
+      tester,
+      (context) =>
+          showScoringDefaults(context, repository: repository, memory: memory),
+    );
+
+    await tester.tap(find.byTooltip('Edit a layer of the habits pane'));
+    await tester.pumpAndSettle();
+    // The lowest: the 0th percentile.
+    expect(
+      tester.widget<TextField>(_field('Percentile, 0 to 100')).controller!.text,
+      '0',
+    );
+    expect(find.text('Lowest'), findsWidgets);
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(repository.defaults.habitLayers, isNull);
   });
 }
