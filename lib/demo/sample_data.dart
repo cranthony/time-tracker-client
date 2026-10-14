@@ -537,7 +537,10 @@ class SampleData {
       id: 'home-downtown',
       fromId: 'home',
       toId: 'downtown',
-      times: [TravelMode(modeId: 'walk', minutes: 25, maxMinutes: 35)],
+      times: [
+        TravelMode(modeId: 'walk', minutes: 25, maxMinutes: 35),
+        TravelMode(modeId: 'bike', minutes: 10),
+      ],
       note: 'longer with the hill on the way back',
     ),
     TravelTime(
@@ -569,7 +572,7 @@ class SampleData {
       hint: 'the jazz club',
       groupId: 'downtown',
     ),
-    Location(id: 'school', name: 'The culinary school'),
+    Location(id: 'school', name: 'The culinary school', groupId: 'downtown'),
     Location(id: 'ramen', name: 'Ramen Ya'),
     Location(id: 'trail', name: 'The river trail', groupId: 'riverside'),
     Location(id: 'cafe', name: 'The café', hint: 'by the office'),
@@ -1257,6 +1260,7 @@ class SampleData {
       actions: ['cooking_class'],
       fromLabel: true,
       priority: 2,
+      facts: const Facts(locationIds: ['school']),
     ),
     _event(
       'dinner',
@@ -1784,6 +1788,8 @@ class SampleData {
     ('read', 'Read a book', 'entertainment', false, {'status': 'proposed'}),
     ('commute', 'Commute', null, false, {'status': 'archived'}),
     ('typo', 'Tpyo', null, false, {'status': 'deleted'}),
+    // A way of getting about, with a travel time: commutes can be by it.
+    ('bike', 'Bike', null, false, {'background_color': '#039be5'}),
   ];
 
   static final _names = {for (final (id, name, _, _, _) in _tree) id: name};

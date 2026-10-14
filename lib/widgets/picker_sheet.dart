@@ -397,6 +397,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
           for (final MapEntry(:key, :value) in facts.notes.entries)
             if (key == selfPersonId || with_.contains(key)) key: value,
         },
+        commute: facts.commute,
       ),
       mapLocation: map,
     ),

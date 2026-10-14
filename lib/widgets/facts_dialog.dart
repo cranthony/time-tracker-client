@@ -123,6 +123,7 @@ class _FactsDialogState extends State<_FactsDialog> {
         if (key == selfPersonId || _with.contains(key))
           if (value.text.trim().isNotEmpty) key: value.text.trim(),
     },
+    commute: widget.facts.commute,
   );
 
   Future<void> _newLocation() async {
@@ -263,6 +264,7 @@ class _FactsDialogState extends State<_FactsDialog> {
                 locationIds: widget.facts.locationIds,
                 withIds: widget.facts.withIds,
                 forIds: widget.facts.forIds,
+                commute: widget.facts.commute,
               ),
             ),
             child: const Text('Clear notes'),

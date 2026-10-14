@@ -6,6 +6,22 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.81.0
+
+- Commutes. Moving an event that has a location, a commute button shows
+  outside the "−" and "+" at an end of the box, when the nearest event
+  that way is at another place. It offers the ways the travel times have
+  of getting between them (actions, by their own time or their group's),
+  each with how long it takes: a range taken at its middle, rounded up to
+  five minutes. With none yet, or to add another, "Add a travel time…"
+  opens one from there to there, then offers it. The one picked is made with the
+  move, against the box's edge, and rides with it as the box changes,
+  trimming what it runs into; tapped again, the button takes it away.
+- A commute is marked as one on the event (its facts' commute), not
+  known by its action, so a walk for its own sake is never taken for
+  one. A commute right before or after an event that's moved starts out
+  pushed up or down with it.
+
 ## 7.80.0
 
 - The Plan page's Actions pane is laid out as the Locations pane is:

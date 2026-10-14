@@ -4,9 +4,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/commute.dart';
 import '../models/event.dart';
+import '../models/facts.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
+import '../models/travel_time.dart';
 import '../models/note.dart';
 import '../models/proposal.dart';
 import '../models/recurrence.dart';
@@ -40,6 +43,9 @@ import '../widgets/day_header.dart';
 import '../widgets/day_summary.dart';
 import '../widgets/pending_event_box.dart';
 import '../widgets/day_timeline.dart';
+import '../widgets/edit_page.dart';
+import 'travel_times_screen.dart';
+import '../widgets/durations.dart' show formatMinutes;
 import '../widgets/error_sheet.dart';
 import '../widgets/load_status.dart';
 import '../widgets/event_dialog.dart';
@@ -238,6 +244,12 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// The event the box is moving, if it's moving one.
   Event? _moving;
+
+  /// The commutes queued to be made with the move: at the box's top
+  /// (true), from the event before, and at its foot (false), to the event
+  /// after. Each rides with the box's edge, trimming what it runs into as
+  /// the box does.
+  final Map<bool, _QueuedCommute> _commutes = {};
 
   /// The cursor last touched: its buttons win where they'd overlap
   /// another's.
@@ -1046,11 +1058,18 @@ class _EventsScreenState extends State<EventsScreen> {
     final memory = _memory;
     // Asked afresh each time the page opens.
     memory.newVisit();
-    await memory.prefetchNames(
-      traits: TraitsScope.of(context),
-      people: PeopleScope.of(context),
-      habits: HabitsScope.of(context),
-    );
+    final people = PeopleScope.of(context);
+    await Future.wait([
+      memory.prefetchNames(
+        traits: TraitsScope.of(context),
+        people: people,
+        habits: HabitsScope.of(context),
+      ),
+      // For the commutes a moved event can have: best effort.
+      if (people != null)
+        memory.loadTravelTimes(people).catchError((Object _) {}),
+    ]);
+    if (mounted) setState(() {});
   }
 
   @override
@@ -2066,12 +2085,247 @@ class _EventsScreenState extends State<EventsScreen> {
     if (event.isCancelled || _saidReadOnly()) return;
     setState(() {
       _moving = event;
+      _commutes.clear();
       _setBox(PendingEventBox(event.start, other: event.end));
       _clearLists();
       _keepByRules(from: event.start, to: event.end, except: event.id);
+      _pushCommutes(event);
       _selected = CursorRole.anchor;
     });
   }
+
+  /// Puts the commutes right before [event] in the Push up list, and right
+  /// after it in Push down, so they go where it goes.
+  void _pushCommutes(Event event) {
+    for (final e in _otherEvents(event).events) {
+      if (!(Facts.fromJson(e.properties['facts'])?.commute ?? false)) continue;
+      final list = e.end == event.start
+          ? EventList.pushUp
+          : e.start == event.end
+          ? EventList.pushDown
+          : null;
+      if (list == null || e.id == null) continue;
+      _lists[EventList.keep]!.remove(e.id!);
+      _lists[list]!.set({..._lists[list]!.ids, e.id!});
+    }
+  }
+
+  /// [span], stretched over the commutes queued at its ends.
+  (DateTime, DateTime) _withCommutes((DateTime, DateTime) span) => (
+    switch (_commutes[true]) {
+      final c? => span.$1.subtract(c.length),
+      null => span.$1,
+    },
+    switch (_commutes[false]) {
+      final c? => span.$2.add(c.length),
+      null => span.$2,
+    },
+  );
+
+  /// Where a commute could go at the box's [top] or foot: between the
+  /// event being moved and the nearest event before (or after) it -- from
+  /// the last place one's at to the first the other's at -- and the ways
+  /// the travel times say it can be done, if any. Null if there's no such
+  /// event, it or the event moved has no location, they're at the same
+  /// place, or it's a commute already.
+  ({String fromId, String toId, List<CommuteOption> options})? _commuteAt(
+    bool top,
+  ) {
+    final event = _moving;
+    final span = _box?.span;
+    if (event == null || span == null) return null;
+    final here = Facts.fromJson(event.properties['facts'])?.locationIds;
+    if (here == null || here.isEmpty) return null;
+    final (start, end) = span;
+    Event? next;
+    for (final e in _otherEvents(event).events) {
+      if (top
+          ? !e.end.isAfter(start) && (next == null || e.end.isAfter(next.end))
+          : !e.start.isBefore(end) &&
+                (next == null || e.start.isBefore(next.start))) {
+        next = e;
+      }
+    }
+    if (next == null) return null;
+    final there = Facts.fromJson(next.properties['facts']);
+    if (there == null || there.commute || there.locationIds.isEmpty) {
+      return null;
+    }
+    final (fromId, toId) = top
+        ? (there.locationIds.last, here.first)
+        : (here.last, there.locationIds.first);
+    if (fromId == toId) return null;
+    final memory = _memory;
+    return (
+      fromId: fromId,
+      toId: toId,
+      options: commuteOptions(
+        fromId: fromId,
+        toId: toId,
+        actions: memory.shownActions?.actions ?? const [],
+        travelTimes: memory.travelTimes ?? const [],
+        locations: memory.locations ?? const [],
+        groups: memory.locationGroups ?? const [],
+      ),
+    );
+  }
+
+  /// The ends a commute can be queued at, now.
+  Set<bool> get _commuteEnds => {
+    for (final top in const [true, false])
+      if (!_commutes.containsKey(top) && _commuteAt(top) != null) top,
+  };
+
+  /// The commute button at the box's [top] or foot: takes away the one
+  /// queued there, or asks which way to go -- from the ways the travel
+  /// times have, or one added there and then -- and queues it.
+  Future<void> _commute(bool top) async {
+    if (_commutes.containsKey(top)) {
+      setState(() => _commutes.remove(top));
+      return;
+    }
+    while (mounted) {
+      final at = _commuteAt(top);
+      if (at == null) return;
+      final picked = await _pickCommute(at.fromId, at.toId, at.options);
+      if (picked == null || !mounted) return;
+      if (picked case final CommuteOption option) {
+        setState(
+          () => _commutes[top] = (
+            actionId: option.action.id!,
+            name: option.action.name ?? 'Commute',
+            length: Duration(minutes: option.minutes),
+          ),
+        );
+        return;
+      }
+      // A travel time to add first: then asked again, with it.
+      if (!await _addTravelTime(at.fromId, at.toId)) return;
+    }
+  }
+
+  /// A location's name, by id.
+  String _placeName(String id) =>
+      _memory.locations?.where((l) => l.id == id).firstOrNull?.name ?? id;
+
+  /// Which way to go from [fromId] to [toId], of [options]: the one
+  /// picked, [_addingTravel] to add a travel time first, or null.
+  Future<Object?> _pickCommute(
+    String fromId,
+    String toId,
+    List<CommuteOption> options,
+  ) {
+    final canAdd = PeopleScope.of(context) != null;
+    return showModalBottomSheet<Object>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        final theme = Theme.of(context);
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                title: Text(
+                  'Commute from ${_placeName(fromId)} to ${_placeName(toId)}',
+                ),
+                subtitle: Text(
+                  options.isEmpty
+                      ? "No travel times say how long it takes between these "
+                            "places yet, or the neighborhoods they're in."
+                      : 'Made with the move, against its edge, and pushed '
+                            'with it.',
+                ),
+              ),
+              for (final option in options)
+                ListTile(
+                  leading: const Icon(Icons.commute),
+                  title: Text(option.action.name ?? option.action.id!),
+                  subtitle: Text(
+                    option.time.maxMinutes == null
+                        ? formatMinutes(option.minutes)
+                        : '${formatMinutes(option.minutes)} '
+                              '(${option.time.describe})',
+                  ),
+                  onTap: () => Navigator.of(context).pop(option),
+                ),
+              if (canAdd)
+                ListTile(
+                  leading: Icon(
+                    Icons.add_road,
+                    color: theme.colorScheme.primary,
+                  ),
+                  title: Text(
+                    options.isEmpty ? 'Add a travel time…' : 'Add a way…',
+                    style: TextStyle(color: theme.colorScheme.primary),
+                  ),
+                  subtitle: Text(
+                    'How long it takes from ${_placeName(fromId)} to '
+                    '${_placeName(toId)}, by each way of getting there',
+                  ),
+                  onTap: () => Navigator.of(context).pop(_addingTravel),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// What [_pickCommute] gives back to add a travel time first.
+  static const _addingTravel = #addTravel;
+
+  /// Adds a travel time from [fromId] to [toId] -- or adds ways to the
+  /// one between them, if there's one -- in its editor; whether it was
+  /// saved.
+  Future<bool> _addTravelTime(String fromId, String toId) async {
+    final people = PeopleScope.of(context);
+    if (people == null) return false;
+    final memory = _memory;
+    final existing = memory.travelTimes
+        ?.where(
+          (t) =>
+              (t.fromId == fromId && t.toId == toId) ||
+              (!t.oneWay && t.fromId == toId && t.toId == fromId),
+        )
+        .firstOrNull;
+    final saved = await showEditPage<bool>(
+      context,
+      TravelTimeEditor(
+        travel: existing,
+        fromId: fromId,
+        toId: toId,
+        places: travelPlaces(memory),
+        modes: travelModes(memory),
+        save: (fields) => existing == null
+            ? people.createTravelTime(
+                TravelTime.fromJson({'id': '', ...fields}),
+              )
+            : people.updateTravelTime(existing.id, fields),
+      ),
+    );
+    if (saved != true) return false;
+    try {
+      await memory.loadTravelTimes(people, again: true);
+    } catch (_) {
+      // As they were, till they load.
+    }
+    if (mounted) setState(() {});
+    return mounted;
+  }
+
+  /// The commutes queued, as `create_event` takes them, against [span]'s
+  /// ends.
+  List<Map<String, Object?>> _commuteCreates((DateTime, DateTime) span) => [
+    for (final MapEntry(key: top, value: c) in _commutes.entries)
+      {
+        'summary': c.name,
+        'start': localIsoTimestamp(top ? span.$1.subtract(c.length) : span.$2),
+        'end': localIsoTimestamp(top ? span.$1 : span.$2.add(c.length)),
+        'action_ids': [c.actionId],
+        'facts': const Facts(commute: true).toJson(),
+      },
+  ];
 
   /// Puts in the Keep list what the rules in [AppSettings] pick, for a box
   /// from [from] to [to], [except] the event being edited.
@@ -2104,6 +2358,7 @@ class _EventsScreenState extends State<EventsScreen> {
     _clearLists();
     _setBox(null);
     _moving = null;
+    _commutes.clear();
   });
 
   /// Saves the move of [_moving] to the box, and what it does to the
@@ -2113,10 +2368,20 @@ class _EventsScreenState extends State<EventsScreen> {
     final span = _box?.span;
     if (event == null || span == null) return;
     final (start, end) = span;
-    if (start == event.start && end == event.end) return _endBox();
+    if (start == event.start && end == event.end && _commutes.isEmpty) {
+      return _endBox();
+    }
+    // Room made for the commutes too, as they ride with the box.
+    final (top, foot) = _withCommutes(span);
     final makingRoom = _overwritesAny
-        ? _overwrite(_otherEvents(event), start, end)
+        ? _overwrite(_otherEvents(event), top, foot)
         : const Overwrite();
+    final commutes = _commuteCreates(span);
+    final adding = switch (commutes.length) {
+      0 => '',
+      1 => ', adding a commute',
+      _ => ', adding commutes',
+    };
     final asked = await askFollowThrough(context, makingRoom.cancels);
     // Called off: the box stays up, as it was.
     if (asked == null || !mounted) return;
@@ -2133,8 +2398,12 @@ class _EventsScreenState extends State<EventsScreen> {
     try {
       if (review) {
         amended = await _amend(
-          ProposalEdits.over(inTheWay, updates: [proposalUpdate(event, times)]),
-          label: 'Move ${_named(event)}, in what happened',
+          ProposalEdits.over(
+            inTheWay,
+            updates: [proposalUpdate(event, times)],
+            creates: [for (final c in commutes) proposalCreate(c)],
+          ),
+          label: 'Move ${_named(event)}$adding, in what happened',
         );
       } else {
         changed = await _approvingHistory(
@@ -2143,13 +2412,14 @@ class _EventsScreenState extends State<EventsScreen> {
             Overwrite(
               updates: [(event, times), ...inTheWay.updates],
               cancels: inTheWay.cancels,
-              creates: inTheWay.creates,
+              creates: [...inTheWay.creates, ...commutes],
               countsAgainst: inTheWay.countsAgainst,
             ),
             allowHistory: allow,
             label: inTheWay.isEmpty
-                ? 'Move ${_named(event)}'
-                : 'Move ${_named(event)}, changing ${_events(inTheWay.count)}',
+                ? 'Move ${_named(event)}$adding'
+                : 'Move ${_named(event)}$adding, changing '
+                      '${_events(inTheWay.count)}',
           ),
         );
       }
@@ -2207,10 +2477,10 @@ class _EventsScreenState extends State<EventsScreen> {
   /// What [box] does to the events in its way, as the lists say; null if
   /// it's no box yet.
   BoxEffect? _effectOf(PendingEventBox? box) => switch (box?.span) {
-    (final start, final end) => BoxEffect(
+    final span? => BoxEffect(
       _otherEvents(_moving),
-      start: start,
-      end: end,
+      start: _withCommutes(span).$1,
+      end: _withCommutes(span).$2,
       // A new event's first cursor splits what it's inside of; a moved
       // one's box is the event itself.
       anchor: _moving == null ? box!.cursor : null,
@@ -2285,6 +2555,13 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Where the events the new one pushes go, up or down, and the rest of
   /// the one it was started in, pushed.
   List<PushedEvent> get _pushed => [
+    if (_box?.span case final span?)
+      for (final MapEntry(key: top, value: c) in _commutes.entries)
+        (
+          start: top ? span.$1.subtract(c.length) : span.$2,
+          end: top ? span.$1 : span.$2.add(c.length),
+          label: '${c.name} (commute)',
+        ),
     for (final (event, from, to, rest)
         in _effectOf(_box)?.pushed ??
             const <(Event, DateTime, DateTime, bool)>[])
@@ -4324,6 +4601,9 @@ class _EventsScreenState extends State<EventsScreen> {
                                   ),
                                   onStep: _stepCursor,
                                   canStep: _canStep,
+                                  commuteEnds: _commuteEnds,
+                                  queued: _commutes.keys.toSet(),
+                                  onCommute: _commute,
                                   onEditTime: _editTime,
                                   // Picking, taps go to the events.
                                   interactive: _selecting == null,
@@ -4638,3 +4918,7 @@ class _InsetClipper extends CustomClipper<Rect> {
 
 /// What clearing the time does, mostly (see [_EventsScreenState._clearing]).
 enum _Clearing { cancels, pushes, trims }
+
+/// A commute queued to be made with a move: by [actionId] (named [name]),
+/// taking [length].
+typedef _QueuedCommute = ({String actionId, String name, Duration length});
