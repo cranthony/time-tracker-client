@@ -88,6 +88,14 @@ class LocationsPaneState extends State<LocationsPane> {
       delete: location == null
           ? null
           : () => repository.deleteLocation(location.id),
+      extra: location == null
+          ? null
+          : LocationTravelTimes(
+              placeId: location.id,
+              repository: repository,
+              memory: widget.memory,
+              actions: widget.actions,
+            ),
     );
     if (saved != null) await reload();
   }
@@ -106,6 +114,14 @@ class LocationsPaneState extends State<LocationsPane> {
       delete: group == null
           ? null
           : () => repository.deleteLocationGroup(group.id),
+      extra: group == null
+          ? null
+          : LocationTravelTimes(
+              placeId: group.id,
+              repository: repository,
+              memory: widget.memory,
+              actions: widget.actions,
+            ),
     );
     if (saved != null) await reload();
   }
