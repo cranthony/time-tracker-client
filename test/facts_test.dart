@@ -14,16 +14,8 @@ void main() {
     });
   });
 
-  test("a server's single location_id is a list of one", () {
-    expect(Facts.fromJson({'location_id': 'home'})!.locationIds, ['home']);
-    expect(Facts.fromJson({'location_id': ' '})!.locationIds, isEmpty);
-    expect(
-      Facts.fromJson({
-        'location_ids': ['park'],
-        'location_id': 'park',
-      })!.locationIds,
-      ['park'],
-    );
+  test('a single location_id is no longer read', () {
+    expect(Facts.fromJson({'location_id': 'home'})!.locationIds, isEmpty);
   });
 
   test('describes each location, after who', () {

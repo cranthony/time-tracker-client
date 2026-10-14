@@ -46,12 +46,7 @@ class Facts {
     String? text(Object? value) =>
         value is String && value.trim().isNotEmpty ? value : null;
     return Facts(
-      // A single location_id, from a server before there could be
-      // several, as a list of one.
-      locationIds: switch (json['location_ids']) {
-        final List list => ids(list),
-        _ => [?text(json['location_id'])],
-      },
+      locationIds: ids(json['location_ids']),
       withIds: ids(json['with_ids']),
       forIds: ids(json['for_ids']),
       notes: {
