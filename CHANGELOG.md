@@ -6,6 +6,19 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.72.0
+
+- A proposal that no longer plans against the calendar -- because
+  something it decided about was changed or deleted since -- goes on
+  showing its events as it last planned, rather than the calendar under
+  it, with a line under its bar saying so. Why it no longer plans is
+  still said at the foot of the page. The app keeps them from run to run.
+- A proposal's menu can hide it, to show the calendar under it ("Hide
+  proposal"), and show it again. Hidden while it no longer plans, the
+  calendar can be changed directly, to fix what it no longer fits: once
+  it plans again, it's shown again by itself. Hidden while it plans, the
+  calendar is there to look at, but not to change.
+
 ## 7.71.0
 
 - Scores combine as the server's new scoring settings say. A judgment

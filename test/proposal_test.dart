@@ -19,6 +19,7 @@ import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
+import 'package:time_tracker_client/services/response_cache.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/other_events.dart';
 import 'package:time_tracker_client/widgets/proposal_problem_status.dart';
@@ -441,6 +442,46 @@ void main() {
 
       open = false;
       expect(await repository.current(), isNull);
+    });
+
+    test('once it no longer plans, keeps the events it last planned, from '
+        'run to run', () async {
+      Map<String, Object?> answer = proposalJson();
+      final client = _Client(
+        (name, _) => switch (name) {
+          'get_compaction_status' => {
+            'proposal': {
+              'id': 'abc123def456',
+              'revision': 2,
+              'open_feedback': 0,
+            },
+          },
+          'get_proposal' => answer,
+          _ => null,
+        },
+      );
+      final cache = InMemoryResponseCache();
+      final repository = McpProposalRepository(client, cache: cache);
+      expect((await repository.current())!.plans, isTrue);
+
+      answer = {...proposalJson(), 'events': null, 'problem': 'Work went.'};
+      final broken = (await repository.current())!;
+      expect(broken.plans, isFalse);
+      expect(broken.lastPlanned, isTrue);
+      expect(broken.problem, 'Work went.');
+      expect(broken.event('abc123def456c1')?.summary, 'Email');
+      // Kept so, and still, while it doesn't plan.
+      final kept = await McpProposalRepository(
+        client,
+        cache: cache,
+      ).cachedCurrent();
+      expect(kept!.lastPlanned, isTrue);
+      expect(kept.events, hasLength(5));
+      expect((await repository.current())!.events, hasLength(5));
+
+      // Not another proposal's.
+      answer = {...proposalJson(), 'id': 'fedcba987654', 'events': null};
+      expect((await repository.current())!.events, isNull);
     });
 
     test('amends, from the revision shown; a refusal throws', () async {
@@ -1305,6 +1346,91 @@ void main() {
       expect(find.text('Moved in what happened, to confirm.'), findsOneWidget);
     });
 
+    /// Pulls the page down, to load it again.
+    Future<void> reload(WidgetTester tester) async {
+      unawaited(
+        tester
+            .state<RefreshIndicatorState>(find.byType(RefreshIndicator).first)
+            .show(),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    /// Picks [item] from the proposal's bar's menu.
+    Future<void> fromMenu(WidgetTester tester, String item) async {
+      await tester.tap(
+        find.descendant(
+          of: find.byType(ProposalBar),
+          matching: find.byTooltip('More'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(item));
+      await tester.pumpAndSettle();
+    }
+
+    Proposal broken() => Proposal.fromJson({
+      ...proposalJson(),
+      'events': null,
+      'problem': 'it no longer plans against the calendar: Work went.',
+    });
+
+    testWidgets('one that stops planning is shown as it last planned, why '
+        'said at the foot of the page', (tester) async {
+      final problem = ProposalProblemStatus();
+      addTearDown(problem.dispose);
+      await open(tester, problem: problem);
+      proposals.asNow = broken();
+      await reload(tester);
+
+      expect(find.text('Email'), findsOneWidget);
+      expect(find.textContaining('Shown as it last planned'), findsOneWidget);
+      expect(problem.problem, contains('Work went.'));
+    });
+
+    testWidgets('hidden while it no longer plans, the calendar is shown and '
+        'changed; once that fixes it, it shows again', (tester) async {
+      await open(tester);
+      proposals.asNow = broken();
+      await reload(tester);
+      await fromMenu(tester, 'Hide proposal');
+      expect(find.text('Email'), findsNothing);
+      expect(find.text('Hidden · showing the calendar'), findsOneWidget);
+
+      await toBand(tester);
+      await tester.longPress(find.text('Tea'));
+      await tester.pumpAndSettle();
+      await dragBox(tester, const Duration(hours: -1));
+      // The calendar's fixed by it: asked again, it plans.
+      proposals.asNow = null;
+      await tester.tap(find.byTooltip('Move it here'));
+      await tester.pumpAndSettle();
+
+      expect(proposals.amends, isEmpty);
+      expect((await onCalendar('tea')).start.isAtSameMomentAs(at(8)), isTrue);
+      expect(find.text('Email'), findsOneWidget);
+      expect(find.text('Hidden · showing the calendar'), findsNothing);
+      // Said once what the move did has been.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('plans again'), findsOneWidget);
+    });
+
+    testWidgets('hidden while it plans, the calendar is there to see, not '
+        'change', (tester) async {
+      await open(tester);
+      await fromMenu(tester, 'Hide proposal');
+      expect(find.text('Email'), findsNothing);
+
+      await tap(tester, find.text('Walk'));
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.textContaining('The proposal is hidden'), findsOneWidget);
+      await tester.tap(find.text('Show it'));
+      await tester.pumpAndSettle();
+      expect(find.text('Email'), findsOneWidget);
+      expect(proposals.amends, isEmpty);
+    });
+
     testWidgets('moving an event an earlier compaction recorded asks to '
         'change history first', (tester) async {
       // The last compaction ran at 9:30, as tea, from 9, was going on.
@@ -1560,11 +1686,15 @@ class _Proposals extends InMemoryProposalRepository {
   /// What [cachedCurrent] gives: one kept -- by the background task, say.
   Proposal? kept;
 
+  /// While set, what [current] answers: the proposal as the server has it
+  /// now -- one that no longer plans, say.
+  Proposal? asNow;
+
   @override
   Future<Proposal?> current({int? sinceRevision}) async {
     final answer = hidden
         ? null
-        : await super.current(sinceRevision: sinceRevision);
+        : asNow ?? await super.current(sinceRevision: sinceRevision);
     await hold?.future;
     return answer;
   }
