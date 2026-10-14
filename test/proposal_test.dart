@@ -1431,6 +1431,34 @@ void main() {
       expect(proposals.amends, isEmpty);
     });
 
+    testWidgets('one whose apply stopped partway is shown as it is being '
+        'applied, with no problem of its own; hidden, nothing changes under '
+        'it', (tester) async {
+      final problem = ProposalProblemStatus();
+      addTearDown(problem.dispose);
+      await open(tester, problem: problem);
+      // As the server gives one applying: no events, and no problem.
+      proposals.asNow = Proposal.fromJson({
+        ...proposalJson(state: 'applying'),
+        'events': null,
+      });
+      await reload(tester);
+
+      expect(find.text('Email'), findsOneWidget);
+      expect(
+        find.textContaining("Shown as it's being applied"),
+        findsOneWidget,
+      );
+      expect(problem.problem, isNull);
+
+      await fromMenu(tester, 'Hide proposal');
+      expect(find.text('Email'), findsNothing);
+      await tap(tester, find.text('Walk'));
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.textContaining('The proposal is hidden'), findsOneWidget);
+      expect(proposals.amends, isEmpty);
+    });
+
     testWidgets('moving an event an earlier compaction recorded asks to '
         'change history first', (tester) async {
       // The last compaction ran at 9:30, as tea, from 9, was going on.

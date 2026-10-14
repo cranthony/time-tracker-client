@@ -383,15 +383,22 @@ class _EventsScreenState extends State<EventsScreen> {
   /// The open proposal, as the timeline shows it: none, while it's hidden.
   Proposal? get _shownProposal => _hidden ? null : _proposal;
 
-  /// The proposal edits in its window go to: the open one -- unless it's
-  /// hidden while it no longer plans, so they're the calendar's, to fix
-  /// it under the proposal.
-  Proposal? get _editedProposal =>
-      _hidden && !(_proposal?.plans ?? true) ? null : _proposal;
+  /// Whether the calendar's being fixed under the open proposal: it's
+  /// hidden while it no longer plans -- not while its apply stopped
+  /// partway, which finishing writes over.
+  bool get _fixing => switch (_proposal) {
+    final p? => _hidden && !p.plans && p.state != ProposalState.applying,
+    null => false,
+  };
 
-  /// Whether the calendar's shown under a proposal that plans: there to
+  /// The proposal edits in its window go to: the open one -- unless the
+  /// calendar's being fixed under it, so they're the calendar's.
+  Proposal? get _editedProposal => _fixing ? null : _proposal;
+
+  /// Whether the calendar's shown under a proposal it isn't being fixed
+  /// under -- one that plans, or whose apply stopped partway: there to
   /// see, not edit, so nothing changes under it.
-  bool get _readOnly => _hidden && (_proposal?.plans ?? false);
+  bool get _readOnly => _hidden && !_fixing;
 
   /// Hides the open proposal, to show the calendar under it, or shows it
   /// again.
@@ -423,7 +430,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// under a proposal that no longer plans, asks whether it does now.
   void _putEvents(Iterable<Event> changed) {
     _store.putEvents(changed);
-    if (_hidden && !(_proposal?.plans ?? true)) unawaited(_loadProposal());
+    if (_fixing) unawaited(_loadProposal());
   }
 
   /// The proposals closed while the page has been open: here, or as the
@@ -3862,7 +3869,9 @@ class _EventsScreenState extends State<EventsScreen> {
     final status = widget.proposalProblem;
     if (status == null) return;
     final problem = switch (_proposal) {
-      final proposal? when !proposal.plans =>
+      // One whose apply stopped partway says so in its bar.
+      final proposal?
+          when !proposal.plans && proposal.state != ProposalState.applying =>
         proposal.problem ?? ProposalProblemStatus.fallback,
       _ => null,
     };

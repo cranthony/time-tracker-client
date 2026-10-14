@@ -18,6 +18,10 @@ on. Add the new version's section here at the same time; CI checks both.
   calendar can be changed directly, to fix what it no longer fits: once
   it plans again, it's shown again by itself. Hidden while it plans, the
   calendar is there to look at, but not to change.
+- A proposal whose apply stopped partway no longer says at the foot of
+  the page that it no longer fits the calendar: its bar says to retry.
+  It's shown as it's being applied, and hidden, the calendar under it
+  can be looked at but not changed, so nothing changes under the apply.
 
 ## 7.71.0
 

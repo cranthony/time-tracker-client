@@ -168,7 +168,10 @@ class ProposalBar extends StatelessWidget {
       else if (stopped)
         (
           Icons.error_outline,
-          'Applying it stopped partway. Retry to finish.',
+          proposal.lastPlanned && !hidden
+              ? 'Applying it stopped partway. Retry to finish. Shown as '
+                    "it's being applied."
+              : 'Applying it stopped partway. Retry to finish.',
           colors.error,
         )
       else if (open > 0)
@@ -182,7 +185,7 @@ class ProposalBar extends StatelessWidget {
       if (hidden)
         (
           Icons.visibility_off_outlined,
-          proposal.plans
+          proposal.plans || stopped
               ? 'Hidden: the calendar is shown as it is, to look at. Show '
                     'the proposal again to make changes.'
               : 'Hidden: the calendar is shown as it is, and changes go '
