@@ -340,7 +340,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
         ],
         id: (l) => l.id,
         label: (l) => l.name,
-        detail: (l) => l.hint,
+        detail: (l) => locationDetail(l, memory?.locationGroups ?? const []),
         picked: [...where_],
         hint: 'Where it was: one place, or each it moved between',
 

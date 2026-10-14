@@ -334,6 +334,53 @@ void main() {
       });
       expect(client.calls[6].$2, {'location_id': 'l1'});
     });
+
+    test('location groups are listed with their paths, made, changed and '
+        'deleted', () async {
+      final client = _Client(
+        (name, _) => switch (name) {
+          'get_location_groups' => [
+            {'id': 'ny', 'name': 'New York', 'path': 'New York'},
+            {
+              'id': 'bk',
+              'name': 'Brooklyn',
+              'group_id': 'ny',
+              'path': 'New York › Brooklyn',
+            },
+          ],
+          'create_location_group' => {
+            'group': {'id': 'q', 'name': 'Queens', 'path': 'Queens'},
+            'created_id': 'q',
+          },
+          'update_location_group' => {'id': 'q', 'name': 'Queens'},
+          _ => {'deleted': {}, 'moved_groups': [], 'moved_locations': []},
+        },
+      );
+      final repository = McpPeopleRepository(client);
+
+      final groups = await repository.locationGroups();
+      expect(groups.map((g) => (g.groupId, g.path)), [
+        (null, 'New York'),
+        ('ny', 'New York › Brooklyn'),
+      ]);
+      expect(
+        (await repository.createLocationGroup(
+          const LocationGroup(id: '', name: 'Queens', groupId: 'ny'),
+        )).id,
+        'q',
+      );
+      await repository.updateLocationGroup('q', {'group_id': null});
+      await repository.deleteLocationGroup('q');
+
+      expect(client.calls[1].$2, {
+        'group': {'name': 'Queens', 'group_id': 'ny'},
+      });
+      expect(client.calls[2].$2, {
+        'group': {'id': 'q'},
+        'clear_fields': ['group_id'],
+      });
+      expectCall(client.calls[3], ('delete_location_group', {'group_id': 'q'}));
+    });
   });
 }
 

@@ -52,6 +52,24 @@ abstract class PeopleRepository {
 
   /// Deletes location [id].
   Future<void> deleteLocation(String id);
+
+  /// Every location group, enclosing ones before those inside them.
+  Future<List<LocationGroup>> locationGroups();
+
+  /// Creates a location group from [group]'s fields; returns it with its
+  /// id.
+  Future<LocationGroup> createLocationGroup(LocationGroup group);
+
+  /// Saves [changes] to location group [id]; a null clears its note, or
+  /// takes it out of the group it was in.
+  Future<LocationGroup> updateLocationGroup(
+    String id,
+    Map<String, Object?> changes,
+  );
+
+  /// Deletes location group [id]: what was in it moves up into the group
+  /// it was in.
+  Future<void> deleteLocationGroup(String id);
 }
 
 /// Reaches people, circles and locations via the Time Tracker MCP
@@ -217,6 +235,41 @@ class McpPeopleRepository implements PeopleRepository {
   @override
   Future<void> deleteLocation(String id) =>
       _client.callTool('delete_location', {'location_id': id});
+
+  @override
+  Future<List<LocationGroup>> locationGroups() async => [
+    for (final g in await _client.callTool('get_location_groups', {}) as List)
+      LocationGroup.fromJson((g as Map).cast<String, dynamic>()),
+  ];
+
+  @override
+  Future<LocationGroup> createLocationGroup(LocationGroup group) async =>
+      LocationGroup.fromJson(
+        _map(
+          _map(
+            await _client.callTool('create_location_group', {
+              'group': group.toJson()..remove('id'),
+            }),
+          )['group'],
+        ),
+      );
+
+  @override
+  Future<LocationGroup> updateLocationGroup(
+    String id,
+    Map<String, Object?> changes,
+  ) async => LocationGroup.fromJson(
+    _map(
+      await _client.callTool(
+        'update_location_group',
+        _update('group', id, changes),
+      ),
+    ),
+  );
+
+  @override
+  Future<void> deleteLocationGroup(String id) =>
+      _client.callTool('delete_location_group', {'group_id': id});
 }
 
 /// Keeps people, circles and locations in memory, checked as the server
@@ -227,13 +280,16 @@ class InMemoryPeopleRepository implements PeopleRepository {
     List<Person> people = const [],
     List<Circle> circles = const [],
     List<Location> locations = const [],
+    List<LocationGroup> locationGroups = const [],
   }) : _people = [for (final p in people) _withIds(p)],
        _circles = [...circles],
-       _locations = [...locations];
+       _locations = [...locations],
+       _groups = [...locationGroups];
 
   final List<Person> _people;
   final List<Circle> _circles;
   final List<Location> _locations;
+  final List<LocationGroup> _groups;
 
   /// [person] with an id for each of their own parts, as the server keeps
   /// them: a new one's made, with [fresh].
@@ -382,11 +438,24 @@ class InMemoryPeopleRepository implements PeopleRepository {
   }
 
   @override
-  Future<List<Location>> locations() async =>
-      [..._locations]..sort((a, b) => a.name.compareTo(b.name));
+  Future<List<Location>> locations() async => [
+    for (final l in [..._locations]..sort((a, b) => a.name.compareTo(b.name)))
+      Location(
+        id: l.id,
+        name: l.name,
+        hint: l.hint,
+        mapLocation: l.mapLocation,
+        groupId: l.groupId,
+        path: groupPath(l.name, l.groupId, _groups),
+      ),
+  ];
 
   void _checkLocation(Location location) {
     if (location.name.trim().isEmpty) throw McpException('Give it a name.');
+    if (location.groupId case final group?
+        when !_groups.any((g) => g.id == group)) {
+      throw McpException("'$group' isn't a location group.");
+    }
     if (_locations.any(
       (l) =>
           l.id != location.id &&
@@ -403,6 +472,7 @@ class InMemoryPeopleRepository implements PeopleRepository {
       name: location.name,
       hint: location.hint,
       mapLocation: location.mapLocation,
+      groupId: location.groupId,
     );
     _checkLocation(created);
     _locations.add(created);
@@ -425,6 +495,99 @@ class InMemoryPeopleRepository implements PeopleRepository {
   @override
   Future<void> deleteLocation(String id) async =>
       _locations.removeWhere((l) => l.id == id);
+
+  @override
+  Future<List<LocationGroup>> locationGroups() async {
+    // Enclosing groups first, as the server lists them.
+    final ordered = <LocationGroup>[];
+    void visit(String? parent) {
+      for (final g in _groups.where((g) => g.groupId == parent)) {
+        ordered.add(
+          LocationGroup(
+            id: g.id,
+            name: g.name,
+            groupId: g.groupId,
+            note: g.note,
+            path: groupPath(g.name, g.groupId, _groups),
+          ),
+        );
+        visit(g.id);
+      }
+    }
+
+    visit(null);
+    return ordered;
+  }
+
+  void _checkGroup(LocationGroup group) {
+    if (group.name.trim().isEmpty) throw McpException('Give it a name.');
+    if (_groups.any(
+      (g) =>
+          g.id != group.id && g.name.toLowerCase() == group.name.toLowerCase(),
+    )) {
+      throw McpException(
+        "There's already a location group named ${group.name}.",
+      );
+    }
+    if (group.groupId case final parent?) {
+      if (!_groups.any((g) => g.id == parent)) {
+        throw McpException("'$parent' isn't a location group.");
+      }
+      final others = [..._groups.where((g) => g.id != group.id), group];
+      if (enclosingGroupIds(parent, others).contains(group.id)) {
+        throw McpException("A group can't be inside itself.");
+      }
+    }
+  }
+
+  @override
+  Future<LocationGroup> createLocationGroup(LocationGroup group) async {
+    final created = LocationGroup(
+      id: _id(group.name, [
+        ..._groups.map((g) => g.id),
+        ..._locations.map((l) => l.id),
+      ]),
+      name: group.name,
+      groupId: group.groupId,
+      note: group.note,
+    );
+    _checkGroup(created);
+    _groups.add(created);
+    return created;
+  }
+
+  @override
+  Future<LocationGroup> updateLocationGroup(
+    String id,
+    Map<String, Object?> changes,
+  ) async {
+    final i = _groups.indexWhere((g) => g.id == id);
+    if (i < 0) throw McpException("'$id' isn't a location group");
+    final updated = LocationGroup.fromJson({
+      ..._groups[i].toJson(),
+      ...changes,
+    });
+    _checkGroup(updated);
+    _groups[i] = updated;
+    return updated;
+  }
+
+  @override
+  Future<void> deleteLocationGroup(String id) async {
+    final i = _groups.indexWhere((g) => g.id == id);
+    if (i < 0) return;
+    final up = _groups.removeAt(i).groupId;
+    for (final (j, g) in _groups.indexed) {
+      if (g.groupId == id) {
+        _groups[j] = LocationGroup.fromJson({...g.toJson(), 'group_id': up});
+      }
+    }
+    for (final (j, l) in _locations.indexed) {
+      if (l.groupId == id) {
+        _locations[j] = Location.fromJson({...l.toJson(), 'group_id': up});
+      }
+    }
+  }
 }
 
 /// Provides a [PeopleRepository] to the screens and dialogs below it, so

@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.77.0
+
+- Locations can be grouped: by neighborhood, by city, and so on. The
+  Locations pane's folder button adds a group, which can sit inside
+  another. A location's editor picks the group it's in. The pane shows
+  each group with what's in it indented under it; tapping one edits or
+  deletes it, and deleting one moves what was in it up a level.
+- Searching the locations, and picking an event's location, shows the
+  groups each one is in beside its hint.
+
 ## 7.76.0
 
 - An event can be at several locations, when it moved between them: the

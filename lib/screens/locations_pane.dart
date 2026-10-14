@@ -9,8 +9,10 @@ import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
 
 /// The Plan page's Locations pane -- where: each place events happen,
-/// with the hint the assistant recognizes it by. Tapping one edits or
-/// deletes it; "+" adds one. The search finds them by name and hint.
+/// with the hint the assistant recognizes it by, under the location
+/// groups it's in (a neighborhood, a city). Tapping one edits or deletes
+/// it; "+" adds a location, and the folder a group. The search finds them
+/// by name and hint, each shown with the groups it's in.
 /// Above it all, with a [summary] to measure, the time at each location
 /// in its window. It shows what [memory] has, while it loads afresh.
 class LocationsPane extends StatefulWidget {
@@ -37,6 +39,7 @@ class LocationsPane extends StatefulWidget {
 
 class LocationsPaneState extends State<LocationsPane> {
   List<Location>? get _locations => widget.memory.locations;
+  List<LocationGroup> get _groups => widget.memory.locationGroups ?? const [];
   Object? _error;
 
   /// What the search has in it.
@@ -69,6 +72,7 @@ class LocationsPaneState extends State<LocationsPane> {
     final saved = await showLocationDialog(
       context,
       location: location,
+      groups: _groups,
       save: (fields) => location == null
           ? repository.createLocation(Location.fromJson({'id': '', ...fields}))
           : repository.updateLocation(location.id, fields),
@@ -77,6 +81,87 @@ class LocationsPaneState extends State<LocationsPane> {
           : () => repository.deleteLocation(location.id),
     );
     if (saved != null) await reload();
+  }
+
+  Future<void> _editGroup(LocationGroup? group) async {
+    final repository = widget.repository;
+    final saved = await showLocationGroupDialog(
+      context,
+      group: group,
+      groups: _groups,
+      save: (fields) => group == null
+          ? repository.createLocationGroup(
+              LocationGroup.fromJson({'id': '', ...fields}),
+            )
+          : repository.updateLocationGroup(group.id, fields),
+      delete: group == null
+          ? null
+          : () => repository.deleteLocationGroup(group.id),
+    );
+    if (saved != null) await reload();
+  }
+
+  /// [location], [depth] groups in -- or, from the search, with the
+  /// groups it's in ([path]).
+  Widget _locationTile(Location location, {int depth = 0, bool path = false}) {
+    final detail = path ? locationDetail(location, _groups) : location.hint;
+    return ListTile(
+      contentPadding: EdgeInsetsDirectional.only(
+        start: 16 + 24.0 * depth,
+        end: 16,
+      ),
+      leading: const Icon(Icons.place_outlined),
+      title: Text(location.name),
+      subtitle: detail == null ? null : Text(detail),
+      onTap: () => _edit(location),
+    );
+  }
+
+  /// [group], as [_locationTile] shows a location.
+  Widget _groupTile(LocationGroup group, {int depth = 0, bool path = false}) {
+    final detail = [
+      if (path) ?groupsPath(group.groupId, _groups),
+      ?group.note,
+    ].join(' · ');
+    return ListTile(
+      contentPadding: EdgeInsetsDirectional.only(
+        start: 16 + 24.0 * depth,
+        end: 16,
+      ),
+      leading: const Icon(Icons.folder_outlined),
+      title: Text(group.name),
+      subtitle: detail.isEmpty ? null : Text(detail),
+      onTap: () => _editGroup(group),
+    );
+  }
+
+  /// Every group, with what's in it indented under it, then the locations
+  /// in no group.
+  List<Widget> _tree(List<Location> locations) {
+    final groups = _groups;
+    final known = {for (final g in groups) g.id};
+    final tiles = <Widget>[];
+    final shown = <String>{};
+    void visit(LocationGroup group, int depth) {
+      if (!shown.add(group.id)) return;
+      tiles.add(_groupTile(group, depth: depth));
+      for (final l in locations.where((l) => l.groupId == group.id)) {
+        tiles.add(_locationTile(l, depth: depth + 1));
+      }
+      for (final g in groups.where((g) => g.groupId == group.id)) {
+        visit(g, depth + 1);
+      }
+    }
+
+    for (final g in groups) {
+      if (g.groupId == null || !known.contains(g.groupId)) visit(g, 0);
+    }
+    for (final l in locations) {
+      if (l.groupId == null || !known.contains(l.groupId)) {
+        tiles.add(_locationTile(l));
+      }
+    }
+    return tiles;
   }
 
   @override
@@ -100,6 +185,11 @@ class LocationsPaneState extends State<LocationsPane> {
       onSearch: (query) => setState(() => _query = query),
       actions: [
         IconButton(
+          tooltip: 'New location group',
+          icon: const Icon(Icons.create_new_folder_outlined),
+          onPressed: locations == null ? null : () => _editGroup(null),
+        ),
+        IconButton(
           tooltip: 'New location',
           icon: const Icon(Icons.add),
           onPressed: locations == null ? null : () => _edit(null),
@@ -115,21 +205,29 @@ class LocationsPaneState extends State<LocationsPane> {
               LoadError(what: 'the locations', error: error, onRetry: reload),
             ],
             (null, _) => const [LinearProgressIndicator()],
+            (final locations?, _) when _query.trim().isEmpty => [
+              ..._tree(locations),
+              if (locations.isEmpty && _groups.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'No locations yet. Tap + to add one, or let compaction '
+                    'add them as notes mention places.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+            ],
             (final locations?, _) => [
+              for (final group in _groups)
+                if (matchesSearch(_query, [group.name, group.note]))
+                  _groupTile(group, path: true),
               for (final location in locations)
                 if (matchesSearch(_query, [location.name, location.hint]))
-                  ListTile(
-                    leading: const Icon(Icons.place_outlined),
-                    title: Text(location.name),
-                    subtitle: location.hint == null
-                        ? null
-                        : Text(location.hint!),
-                    onTap: () => _edit(location),
-                  ),
-              if (locations.isNotEmpty &&
-                  !locations.any(
+                  _locationTile(location, path: true),
+              if (!locations.any(
                     (l) => matchesSearch(_query, [l.name, l.hint]),
-                  ))
+                  ) &&
+                  !_groups.any((g) => matchesSearch(_query, [g.name, g.note])))
                 NoMatches(query: _query),
               if (locations.isEmpty)
                 Padding(
