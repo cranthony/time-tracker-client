@@ -264,19 +264,8 @@ void main() {
                 WeatherRefreshRecord(at: DateTime(2026, 10, 2, 12, 58)),
           ),
         ),
+        // The weather's at the top.
         weather: weather,
-        then: () async {
-          await tester.scrollUntilVisible(
-            find.text('Forecast'),
-            200,
-            scrollable: find.byType(Scrollable).first,
-          );
-          await tester.drag(
-            find.byType(Scrollable).first,
-            const Offset(0, -150),
-          );
-          await tester.pumpAndSettle();
-        },
       );
     });
   }
