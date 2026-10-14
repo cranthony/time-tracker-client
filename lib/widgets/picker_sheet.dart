@@ -9,7 +9,8 @@ import '../services/people_repository.dart';
 import '../services/server_errors.dart';
 import '../services/plan_memory.dart';
 import 'actions_picker.dart';
-import 'person_dialog.dart';
+import 'picker_edits.dart';
+import 'picker_search.dart';
 
 /// A sheet up from the foot of the screen, as a note's is, with room to
 /// pick from a long list: [title] and Done across its top, and [body]
@@ -66,48 +67,84 @@ Future<T?> showPickerSheet<T>(
 /// Picks an event's actions in a [showPickerSheet]: an [ActionsPicker]
 /// over the [actions], with the room to search them and show what's
 /// found. Returns the ids picked, in order; null if dismissed.
+///
+/// With a [query] -- the event's summary, say -- the search starts with
+/// it, matching any of its words, selected, with the keyboard up to type
+/// over it. Where the app can (see [canEditActions]), an action can be
+/// added from the sheet, and picked at once, and one long-pressed is
+/// edited; then [reload] gives the actions as they are after.
 Future<List<String>?> showActionsSheet(
   BuildContext context, {
   required Future<List<PlanAction>> actions,
   List<PlanAction>? loaded,
   required List<String> picked,
   required Widget Function(PlanAction action) marker,
+  String? query,
+  Future<List<PlanAction>> Function()? reload,
 }) {
   var ids = [...picked];
+  var listed = actions;
+  final editable = reload != null && canEditActions(context);
+  final typed = query?.trim() ?? '';
   return showPickerSheet(
     context,
     title: 'Actions',
     result: () => ids,
-    body: (context, setState) => FutureBuilder(
-      future: actions,
-      initialData: loaded,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Text(
-            "Couldn't load actions. "
-            '${describeServerError(snapshot.error!).message}',
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
+    body: (context, setState) => _OwnSearch(
+      text: typed,
+      matchAny: typed.isNotEmpty,
+      builder: (context, search) => FutureBuilder(
+        future: listed,
+        initialData: loaded,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Text(
+              "Couldn't load actions. "
+              '${describeServerError(snapshot.error!).message}',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            );
+          }
+          final list = snapshot.data;
+          if (list == null) {
+            return const Align(
+              alignment: Alignment.topCenter,
+              child: LinearProgressIndicator(),
+            );
+          }
+          return LayoutBuilder(
+            builder: (context, constraints) => ActionsPicker(
+              actions: list,
+              picked: ids,
+              leavesOnly: true,
+              marker: marker,
+              search: search,
+              autofocus: typed.isNotEmpty,
+              onChanged: (changed) => setState(() => ids = changed),
+              onEdit: !editable
+                  ? null
+                  : (action) async {
+                      if (await editAction(context, action)) {
+                        setState(() => listed = reload());
+                      }
+                    },
+              onAdd: !editable
+                  ? null
+                  : (name) async {
+                      final id = await addAction(context, name);
+                      if (id == null) return;
+                      search.controller.clear();
+                      setState(() {
+                        listed = reload();
+                        if (!ids.contains(id)) ids = [...ids, id];
+                      });
+                    },
+              // The rest of the sheet, under the chips, the search and
+              // the row to add one.
+              maxListHeight: constraints.maxHeight - (editable ? 170 : 120),
+            ),
           );
-        }
-        final list = snapshot.data;
-        if (list == null) {
-          return const Align(
-            alignment: Alignment.topCenter,
-            child: LinearProgressIndicator(),
-          );
-        }
-        return LayoutBuilder(
-          builder: (context, constraints) => ActionsPicker(
-            actions: list,
-            picked: ids,
-            leavesOnly: true,
-            marker: marker,
-            onChanged: (changed) => setState(() => ids = changed),
-            // The rest of the sheet, under the chips and the search.
-            maxListHeight: constraints.maxHeight - 120,
-          ),
-        );
-      },
+        },
+      ),
     ),
   );
 }
@@ -183,8 +220,14 @@ class _TextSheetFieldState extends State<_TextSheetField> {
 /// the notes, and the other of who or where -- kept. Returns them; null
 /// if dismissed. The people and locations come from the [PeopleScope],
 /// as [showFactsDialog]'s do, with those a compaction proposal adds --
-/// its [additions], by their refs, marked new; a new location can be
-/// added from here.
+/// its [additions], by their refs, marked new. Someone, or a location,
+/// can be added from here, and picked at once; one long-pressed is
+/// edited.
+///
+/// With a [query] -- the event's summary, say -- each search starts with
+/// it, matching any of its words. Each tab keeps its own search as it's
+/// swiped away and back, and takes the keyboard as it's swiped to, what's
+/// typed selected; with a [query], the first takes it at once.
 ///
 /// Where, there's a second page, swiped to: its [mapLocation], the place
 /// as a maps app would find it, to see and edit in full -- or, without
@@ -195,9 +238,11 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
   Facts facts, {
   bool where = false,
   String? mapLocation,
+  String? query,
   List<ProposalAddition> additions = const [],
 }) {
   var map = mapLocation;
+  final typed = query?.trim() ?? '';
   final addedPeople = [
     for (final a in additions)
       if (a.kind == AdditionKind.person)
@@ -213,51 +258,80 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
   var location = facts.locationId;
   final repository = PeopleScope.of(context);
   final memory = PlanMemoryScope.of(context);
-  final people = _people(repository, memory);
+  var people = _people(repository, memory);
   var locations = _locations(repository, memory);
 
   // Who it was with, or for: everyone to pick from, [picked] picked;
   // picking one takes them out of [other], since no one is both.
   Widget pick(
     StateSetter setState,
+    PickerSearch search,
     Set<String> picked,
     Set<String> other,
     String hint,
   ) => FutureBuilder(
     future: people,
     initialData: memory?.people,
-    builder: (context, snapshot) => ListPicker<Person>(
-      items: [
+    builder: (context, snapshot) {
+      final known = [
         for (final p in snapshot.data?.withSelf ?? const <Person>[])
           if (!p.isSelf &&
               (p.active || with_.contains(p.id) || for_.contains(p.id)))
             p,
-        // Without the list, at least who's already there.
-        if (snapshot.data == null)
-          for (final id in {...with_, ...for_})
-            if (!addedPeople.any((p) => p.id == id)) Person(id: id, name: id),
-        ...addedPeople,
-      ],
-      id: (p) => p.id,
-      label: (p) => personName(p, context: true),
-      picked: [...picked],
-      hint: hint,
-      empty: 'No one yet: add people on the Plan page.',
-      onChanged: (ids) => setState(() {
+      ];
+      void picking(Iterable<String> ids) => setState(() {
         picked
           ..clear()
           ..addAll(ids);
         other.removeAll(ids);
-      }),
-    ),
+      });
+      return ListPicker<Person>(
+        items: [
+          ...known,
+          // Without the list, at least who's already there.
+          if (snapshot.data == null)
+            for (final id in {...with_, ...for_})
+              if (!addedPeople.any((p) => p.id == id)) Person(id: id, name: id),
+          ...addedPeople,
+        ],
+        id: (p) => p.id,
+        label: (p) => personName(p, context: true),
+        picked: [...picked],
+        hint: hint,
+        empty: 'No one yet.',
+        search: search,
+        onChanged: picking,
+        onEdit: repository == null
+            ? null
+            : (p) async {
+                if (!known.contains(p)) return;
+                if (await editPerson(context, person: p) == null) return;
+                setState(() => people = _people(repository, memory));
+              },
+        add: repository == null
+            ? null
+            : (
+                noun: 'person',
+                icon: Icons.person_add_alt,
+                onAdd: (name) async {
+                  final added = await editPerson(context, name: name);
+                  if (added == null) return;
+                  search.controller.clear();
+                  people = _people(repository, memory);
+                  picking({...picked, added.id});
+                },
+              ),
+      );
+    },
   );
 
   // Where it was: a location, or a new one.
-  Widget place(StateSetter setState) => FutureBuilder(
+  Widget place(StateSetter setState, PickerSearch search) => FutureBuilder(
     future: locations,
     initialData: memory?.locations,
     builder: (context, snapshot) {
-      final known = [...snapshot.data ?? const <Location>[], ...addedLocations];
+      final loaded = snapshot.data ?? const <Location>[];
+      final known = [...loaded, ...addedLocations];
       return ListPicker<Location>(
         items: [
           ...known,
@@ -271,23 +345,27 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
         single: true,
         hint: 'Where it was',
         empty: 'No locations yet.',
+        search: search,
         onChanged: (ids) => setState(() => location = ids.firstOrNull),
-        extra: repository == null
+        onEdit: repository == null
             ? null
-            : ListTile(
-                leading: const Icon(Icons.add_location_alt),
-                title: const Text('New location…'),
-                onTap: () async {
-                  final created = await showLocationDialog(
-                    context,
-                    save: (fields) => repository.createLocation(
-                      Location.fromJson({'id': '', ...fields}),
-                    ),
-                  );
-                  if (created == null) return;
+            : (l) async {
+                if (!loaded.contains(l)) return;
+                if (await editLocation(context, location: l) == null) return;
+                setState(() => locations = _locations(repository, memory));
+              },
+        add: repository == null
+            ? null
+            : (
+                noun: 'location',
+                icon: Icons.add_location_alt,
+                onAdd: (name) async {
+                  final added = await editLocation(context, name: name);
+                  if (added == null) return;
+                  search.controller.clear();
                   setState(() {
-                    location = created.id;
-                    locations = _locations(repository, memory, again: true);
+                    location = added.id;
+                    locations = _locations(repository, memory);
                   });
                 },
               ),
@@ -311,154 +389,233 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
       mapLocation: map,
     ),
     body: (context, setState) => where
-        ? DefaultTabController(
-            length: 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const TabBar(
-                  tabs: [
-                    Tab(text: 'Location'),
-                    Tab(text: 'Map location'),
-                  ],
+        ? _TabbedSearches(
+            tabs: const ['Location', 'Map location'],
+            texts: [typed, map ?? ''],
+            matchAny: typed.isNotEmpty,
+            focusFirst: typed.isNotEmpty,
+            pages: (searches) => [
+              place(setState, searches[0]),
+              FutureBuilder(
+                future: locations,
+                initialData: memory?.locations,
+                builder: (context, snapshot) => _MapLocationPage(
+                  search: searches[1],
+                  fallback: snapshot.data
+                      ?.where((l) => l.id == location)
+                      .firstOrNull
+                      ?.mapLocation,
+                  onChanged: (typed) => map = typed,
                 ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      place(setState),
-                      FutureBuilder(
-                        future: locations,
-                        initialData: memory?.locations,
-                        builder: (context, snapshot) => _MapLocationPage(
-                          text: map ?? '',
-                          fallback: snapshot.data
-                              ?.where((l) => l.id == location)
-                              .firstOrNull
-                              ?.mapLocation,
-                          onChanged: (typed) => map = typed,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           )
-        : DefaultTabController(
-            length: 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const TabBar(
-                  tabs: [
-                    Tab(text: 'With'),
-                    Tab(text: 'For'),
-                  ],
-                ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      pick(setState, with_, for_, 'Who was there'),
-                      pick(
-                        setState,
-                        for_,
-                        with_,
-                        "Who it was for, who wasn't there",
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+        : _TabbedSearches(
+            tabs: const ['With', 'For'],
+            texts: [typed, typed],
+            matchAny: typed.isNotEmpty,
+            focusFirst: typed.isNotEmpty,
+            pages: (searches) => [
+              pick(setState, searches[0], with_, for_, 'Who was there'),
+              pick(
+                setState,
+                searches[1],
+                for_,
+                with_,
+                "Who it was for, who wasn't there",
+              ),
+            ],
           ),
+  );
+}
+
+/// A [PickerSearch] of its own for what [builder] builds, kept as long as
+/// it is, starting with [text]; [matchAny] as given.
+class _OwnSearch extends StatefulWidget {
+  const _OwnSearch({
+    required this.text,
+    required this.matchAny,
+    required this.builder,
+  });
+
+  final String text;
+  final bool matchAny;
+  final Widget Function(BuildContext context, PickerSearch search) builder;
+
+  @override
+  State<_OwnSearch> createState() => _OwnSearchState();
+}
+
+class _OwnSearchState extends State<_OwnSearch> {
+  late final _search = PickerSearch(
+    text: widget.text,
+    matchAny: widget.matchAny,
+  );
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _search);
+}
+
+/// Pages swiped between under a tab each, each with a [PickerSearch] of
+/// its own -- starting with its [texts], [matchAny] as given -- kept as
+/// they're swiped away and back. Each takes the keyboard as it's swiped
+/// to, what's typed in it selected; with [focusFirst], the first does at
+/// once.
+class _TabbedSearches extends StatefulWidget {
+  const _TabbedSearches({
+    required this.tabs,
+    required this.texts,
+    required this.matchAny,
+    required this.focusFirst,
+    required this.pages,
+  });
+
+  final List<String> tabs;
+  final List<String> texts;
+  final bool matchAny;
+  final bool focusFirst;
+  final List<Widget> Function(List<PickerSearch> searches) pages;
+
+  @override
+  State<_TabbedSearches> createState() => _TabbedSearchesState();
+}
+
+class _TabbedSearchesState extends State<_TabbedSearches>
+    with SingleTickerProviderStateMixin {
+  late final _searches = [
+    for (final text in widget.texts)
+      PickerSearch(text: text, matchAny: widget.matchAny),
+  ];
+  late final _tabs = TabController(length: widget.tabs.length, vsync: this)
+    ..addListener(_swiped);
+  var _shown = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.focusFirst) _focus(0);
+  }
+
+  /// Once a page is settled on, its search takes the keyboard.
+  void _swiped() {
+    if (_tabs.indexIsChanging || _tabs.index == _shown) return;
+    _shown = _tabs.index;
+    _focus(_shown);
+  }
+
+  /// After this frame, once [index]'s page is built.
+  void _focus(int index) => WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (mounted && _tabs.index == index) _searches[index].focusAll();
+  });
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    for (final search in _searches) {
+      search.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      TabBar(
+        controller: _tabs,
+        tabs: [for (final tab in widget.tabs) Tab(text: tab)],
+      ),
+      Expanded(
+        child: TabBarView(controller: _tabs, children: widget.pages(_searches)),
+      ),
+    ],
   );
 }
 
 /// The place an event was, as a maps app would find it -- an address,
 /// or a place's name -- to type in full, and open in Maps; or a link, to
-/// open.
-class _MapLocationPage extends StatefulWidget {
+/// open. Typed in [search]'s box, so it's kept as the page is swiped
+/// away and back, and selected as it's swiped to.
+class _MapLocationPage extends StatelessWidget {
   const _MapLocationPage({
-    required this.text,
+    required this.search,
     required this.onChanged,
     this.fallback,
   });
 
-  final String text;
+  final PickerSearch search;
 
   /// Its location's map location, used while it has none of its own.
   final String? fallback;
   final ValueChanged<String> onChanged;
 
   @override
-  State<_MapLocationPage> createState() => _MapLocationPageState();
-}
-
-class _MapLocationPageState extends State<_MapLocationPage> {
-  late final _controller = TextEditingController(text: widget.text);
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final fallback = widget.fallback?.trim() ?? '';
-    final typed = _controller.text.trim();
-    final opened = typed.isEmpty ? fallback : _controller.text;
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      children: [
-        Text(
-          'Where it was, as a maps app would find it: an address, or a '
-          "place's name -- or a link, to a map or a video call, say. Kept "
-          'apart from the location on the other page.',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _controller,
-          minLines: 3,
-          maxLines: null,
-          keyboardType: TextInputType.multiline,
-          textCapitalization: TextCapitalization.words,
-          decoration: InputDecoration(
-            hintText: fallback.isEmpty
-                ? 'e.g. 1600 Amphitheatre Pkwy, Mountain View'
-                : "The location's: $fallback",
-            border: const OutlineInputBorder(),
-            suffixIcon: _controller.text.isEmpty
-                ? null
-                : IconButton(
-                    tooltip: 'Clear',
-                    icon: const Icon(Icons.clear),
-                    onPressed: () {
-                      _controller.clear();
-                      widget.onChanged('');
-                      setState(() {});
-                    },
-                  ),
-          ),
-          onChanged: (typed) {
-            widget.onChanged(typed);
-            setState(() {});
-          },
-        ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton.icon(
-            onPressed: opened.trim().isEmpty ? null : () => openInMaps(opened),
-            icon: Icon(placeButton(opened).icon),
-            label: Text(placeButton(opened).tooltip),
-          ),
-        ),
-      ],
+    final controller = search.controller;
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final fallback = this.fallback?.trim() ?? '';
+        final typed = controller.text.trim();
+        final opened = typed.isEmpty ? fallback : controller.text;
+        return ListView(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          children: [
+            Text(
+              'Where it was, as a maps app would find it: an address, or a '
+              "place's name -- or a link, to a map or a video call, say. "
+              'Kept apart from the location on the other page.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              focusNode: search.focus,
+              minLines: 3,
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                hintText: fallback.isEmpty
+                    ? 'e.g. 1600 Amphitheatre Pkwy, Mountain View'
+                    : "The location's: $fallback",
+                border: const OutlineInputBorder(),
+                suffixIcon: controller.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear',
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          controller.clear();
+                          onChanged('');
+                        },
+                      ),
+              ),
+              onChanged: onChanged,
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: opened.trim().isEmpty
+                    ? null
+                    : () => openInMaps(opened),
+                icon: Icon(placeButton(opened).icon),
+                label: Text(placeButton(opened).tooltip),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -499,10 +656,13 @@ Future<T> _kept<T>(Future<void> loading, T? Function() kept) async {
 /// Picks from a flat list of [items], as [ActionsPicker] does from the
 /// actions: those [picked] as chips on top, a search over them, and the
 /// list under it, each with a check. With [single], picking one replaces
-/// any other, and there are no chips. [extra] goes between the search
-/// and the list, kept in view as the list scrolls: a way to add one,
-/// say.
-class ListPicker<T> extends StatefulWidget {
+/// any other, and there are no chips.
+///
+/// Its [search] is kept by whoever gives it, so it can start with words
+/// typed, and outlive the picker. Long-pressing an item calls [onEdit]
+/// with it; with [add], a row between the search and the list -- kept in
+/// view as the list scrolls -- adds one, given what's typed.
+class ListPicker<T> extends StatelessWidget {
   const ListPicker({
     super.key,
     required this.items,
@@ -512,9 +672,11 @@ class ListPicker<T> extends StatefulWidget {
     required this.onChanged,
     required this.hint,
     required this.empty,
+    required this.search,
     this.detail,
     this.single = false,
-    this.extra,
+    this.onEdit,
+    this.add,
   });
 
   final List<T> items;
@@ -529,115 +691,91 @@ class ListPicker<T> extends StatefulWidget {
 
   /// What's said when there's nothing to pick.
   final String empty;
+  final PickerSearch search;
   final bool single;
-  final Widget? extra;
+  final ValueChanged<T>? onEdit;
 
-  @override
-  State<ListPicker<T>> createState() => _ListPickerState<T>();
-}
+  /// What one added is called, its icon, and how it's added.
+  final ({String noun, IconData icon, ValueChanged<String> onAdd})? add;
 
-class _ListPickerState<T> extends State<ListPicker<T>> {
-  final _search = TextEditingController();
+  /// What [item] is searched by: its label and detail.
+  String _text(T item) => '${label(item)} ${detail?.call(item) ?? ''}';
 
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
-
-  /// Whether every word typed is in [item]'s label or detail.
-  bool _matches(T item, List<String> words) {
-    final text = '${widget.label(item)} ${widget.detail?.call(item) ?? ''}'
-        .toLowerCase();
-    return words.every(text.contains);
-  }
-
-  void _toggle(String id, bool on) => widget.onChanged(
-    widget.single
+  void _toggle(String id, bool on) => onChanged(
+    single
         ? [if (on) id]
         : [
-            for (final picked in widget.picked)
-              if (picked != id) picked,
+            for (final other in picked)
+              if (other != id) other,
             if (on) id,
           ],
   );
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: search,
+    builder: (context, _) => _build(context),
+  );
+
+  Widget _build(BuildContext context) {
     final theme = Theme.of(context);
-    final words = [
-      for (final w in _search.text.toLowerCase().split(RegExp(r'\s+')))
-        if (w.isNotEmpty) w,
-    ];
-    final shown = [
-      for (final item in widget.items)
-        if (_matches(item, words)) item,
-    ];
-    final byId = {for (final item in widget.items) widget.id(item): item};
+    final query = search.query;
+    final shown = query.isEmpty ? items : query.filter(items, _text);
+    final byId = {for (final item in items) id(item): item};
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 12),
-          child: Text(widget.hint, style: theme.textTheme.bodySmall),
+          child: Text(hint, style: theme.textTheme.bodySmall),
         ),
-        if (!widget.single && widget.picked.isNotEmpty)
+        if (!single && picked.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Wrap(
               spacing: 6,
               runSpacing: 6,
               children: [
-                for (final id in widget.picked)
+                for (final picked in picked)
                   InputChip(
-                    label: Text(switch (byId[id]) {
-                      final item? => widget.label(item),
-                      null => id,
+                    label: Text(switch (byId[picked]) {
+                      final item? => label(item),
+                      null => picked,
                     }),
-                    onDeleted: () => _toggle(id, false),
+                    onDeleted: () => _toggle(picked, false),
                   ),
               ],
             ),
           ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          child: TextField(
-            controller: _search,
-            decoration: InputDecoration(
-              isDense: true,
-              border: const OutlineInputBorder(),
-              prefixIcon: const Icon(Icons.search),
-              hintText: 'Search',
-              suffixIcon: _search.text.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: 'Clear search',
-                      icon: const Icon(Icons.close),
-                      onPressed: () => setState(_search.clear),
-                    ),
-            ),
-            onChanged: (_) => setState(() {}),
+          child: PickerSearchField(
+            search: search,
             // The top match, picked (or unpicked) from the keyboard.
-            onSubmitted: (_) {
-              final top = shown.firstOrNull;
+            // What's typed now, which may not have been built yet.
+            onSubmitted: (text) {
+              final query = PickerQuery(text, any: search.matchAny);
+              if (query.isEmpty) return;
+              final top = query.filter(items, _text).firstOrNull;
               if (top == null) return;
-              final id = widget.id(top);
-              _toggle(id, !widget.picked.contains(id));
-              setState(_search.clear);
+              final topId = id(top);
+              _toggle(topId, !picked.contains(topId));
+              search.controller.clear();
             },
           ),
         ),
         // Above the list, not in it: always to hand.
-        ?widget.extra,
+        if (add case (:final noun, :final icon, :final onAdd))
+          PickerAddTile(noun: noun, search: search, icon: icon, onAdd: onAdd),
         Expanded(
           child: _oneOf(
             ListView(
               children: [
-                if (widget.items.isEmpty)
+                if (items.isEmpty)
                   Padding(
                     padding: const EdgeInsets.all(8),
                     child: Text(
-                      widget.empty,
+                      empty,
                       style: TextStyle(color: theme.hintColor),
                     ),
                   )
@@ -646,25 +784,7 @@ class _ListPickerState<T> extends State<ListPicker<T>> {
                     padding: EdgeInsets.all(8),
                     child: Text('Nothing matches.'),
                   ),
-                for (final item in shown)
-                  if (widget.single)
-                    // Only one: a radio button each. Tapped again, the one
-                    // picked is unpicked, leaving none.
-                    RadioListTile<String>(
-                      value: widget.id(item),
-                      toggleable: true,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: Text(widget.label(item)),
-                      subtitle: _detail(item),
-                    )
-                  else
-                    CheckboxListTile(
-                      value: widget.picked.contains(widget.id(item)),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: Text(widget.label(item)),
-                      subtitle: _detail(item),
-                      onChanged: (on) => _toggle(widget.id(item), on ?? false),
-                    ),
+                for (final item in shown) _editable(item, _tile(item)),
               ],
             ),
           ),
@@ -673,16 +793,44 @@ class _ListPickerState<T> extends State<ListPicker<T>> {
     );
   }
 
-  Widget? _detail(T item) => switch (widget.detail?.call(item)) {
+  Widget _tile(T item) => single
+      // Only one: a radio button each. Tapped again, the one picked is
+      // unpicked, leaving none.
+      ? RadioListTile<String>(
+          value: id(item),
+          toggleable: true,
+          controlAffinity: ListTileControlAffinity.leading,
+          title: Text(label(item)),
+          subtitle: _detail(item),
+        )
+      : CheckboxListTile(
+          value: picked.contains(id(item)),
+          controlAffinity: ListTileControlAffinity.leading,
+          title: Text(label(item)),
+          subtitle: _detail(item),
+          onChanged: (on) => _toggle(id(item), on ?? false),
+        );
+
+  /// [tile], long-pressed to edit [item].
+  Widget _editable(T item, Widget tile) => switch (onEdit) {
+    final edit? => GestureDetector(
+      key: ValueKey(id(item)),
+      onLongPress: () => edit(item),
+      child: tile,
+    ),
+    null => tile,
+  };
+
+  Widget? _detail(T item) => switch (detail?.call(item)) {
     final detail? when detail.isNotEmpty => Text(detail),
     _ => null,
   };
 
   /// [list], its radio buttons grouped where only one is picked.
-  Widget _oneOf(Widget list) => widget.single
+  Widget _oneOf(Widget list) => single
       ? RadioGroup<String>(
-          groupValue: widget.picked.firstOrNull,
-          onChanged: (id) => widget.onChanged([?id]),
+          groupValue: picked.firstOrNull,
+          onChanged: (id) => onChanged([?id]),
           child: list,
         )
       : list;

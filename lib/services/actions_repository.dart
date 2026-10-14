@@ -1,4 +1,7 @@
+import 'package:flutter/widgets.dart';
+
 import '../models/plan_action.dart';
+import '../outbox/action_outbox.dart';
 import '../widgets/color_picker.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
@@ -285,4 +288,28 @@ class InMemoryActionsRepository implements ActionsRepository {
     if (i < 0) throw StateError('No action ${action.id}');
     _actions[i] = PlanAction.fromJson({..._actions[i].toJson(), ...changes});
   }
+}
+
+/// Provides the [ActionsRepository], and the [ActionOutbox] its edits go
+/// out through, to the dialogs below it, so they needn't be passed through
+/// each: an event's actions can be added to, and edited, as they're
+/// picked. Without one, they're only picked.
+class ActionsScope extends InheritedWidget {
+  const ActionsScope({
+    super.key,
+    required this.repository,
+    required this.outbox,
+    required super.child,
+  });
+
+  final ActionsRepository repository;
+  final ActionOutbox outbox;
+
+  /// The nearest [ActionsScope], or null if there's none.
+  static ActionsScope? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<ActionsScope>();
+
+  @override
+  bool updateShouldNotify(ActionsScope oldWidget) =>
+      repository != oldWidget.repository || outbox != oldWidget.outbox;
 }

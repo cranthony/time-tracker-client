@@ -601,6 +601,11 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         if (widget.peopleRepository case final people?) {
           scoped = PeopleScope(repository: people, child: scoped);
         }
+        scoped = ActionsScope(
+          repository: widget.actionsRepository,
+          outbox: widget.actionOutbox,
+          child: scoped,
+        );
         if (widget.traitsRepository case final traits?) {
           scoped = TraitsScope(repository: traits, child: scoped);
         }

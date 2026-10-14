@@ -52,6 +52,10 @@ void main() {
     // without one has none.
     await tester.tap(find.text('Home'));
     await tester.pumpAndSettle();
+    // The search starts with its summary, typed over or cleared.
+    expect(find.widgetWithText(TextField, 'Dinner'), findsOneWidget);
+    await tester.tap(find.byTooltip('Clear search').hitTestable());
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(Tab, 'Map location'));
     await tester.pumpAndSettle();
     expect(find.text("The location's: 1 Main St"), findsOneWidget);
@@ -66,6 +70,8 @@ void main() {
 
     // Its own, a link, wins over the location's.
     await tester.tap(find.text('The park'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Clear search').hitTestable());
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(RadioListTile<String>, 'Home'));
     await tester.tap(find.widgetWithText(Tab, 'Map location'));
@@ -130,8 +136,12 @@ void main() {
     // Who, with and for, in a sheet.
     await tester.tap(find.text('Add who'));
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Clear search').hitTestable());
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(CheckboxListTile, 'Sam'));
     await tester.tap(find.widgetWithText(Tab, 'For'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Clear search').hitTestable());
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(CheckboxListTile, 'Priya'));
     await tester.pumpAndSettle();
@@ -141,6 +151,8 @@ void main() {
 
     // Where, from the list.
     await tester.tap(find.text('Add location'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Clear search').hitTestable());
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(RadioListTile<String>, 'Home'));
     await tester.pumpAndSettle();

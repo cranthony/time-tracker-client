@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/plan_action.dart';
+import 'picker_search.dart';
 
 /// Picks several actions from a long list: the picked ones as chips on top,
 /// the first marked as the primary action; a search over every action's whole
@@ -15,7 +16,12 @@ import '../models/plan_action.dart';
 /// With [single], it picks one action, with no chips: tapping an action (or
 /// Enter, for the top match) calls [onChanged] with just that one. With
 /// [leavesOnly], groups are shown, to find what's in them, but can't be
-/// picked: only actions can be given to an event.
+/// picked: only actions can be given to an event -- tapping one opens or
+/// closes it.
+///
+/// Its [search] can be given, to start it with words typed, or keep
+/// them past it. Long-pressing an action or group calls [onEdit] with it;
+/// with [onAdd], a row over the list adds one, given what's typed.
 class ActionsPicker extends StatefulWidget {
   const ActionsPicker({
     super.key,
@@ -29,6 +35,9 @@ class ActionsPicker extends StatefulWidget {
     this.leavesOnly = false,
     this.autofocus = false,
     this.maxListHeight = 320,
+    this.search,
+    this.onEdit,
+    this.onAdd,
   });
 
   final List<PlanAction> actions;
@@ -39,8 +48,13 @@ class ActionsPicker extends StatefulWidget {
   final Set<String> exclude;
   final bool leavesOnly;
 
-  /// Whether the search takes the keyboard at once.
+  /// Whether the search takes the keyboard at once, what's typed in it
+  /// selected.
   final bool autofocus;
+
+  final PickerSearch? search;
+  final ValueChanged<PlanAction>? onEdit;
+  final ValueChanged<String>? onAdd;
 
   /// Drawn before each action's name, e.g. a dot in its color.
   final Widget Function(PlanAction action) marker;
@@ -53,14 +67,40 @@ class ActionsPicker extends StatefulWidget {
 }
 
 class _ActionsPickerState extends State<ActionsPicker> {
-  final _search = TextEditingController();
+  /// Its own search, unless it was given one.
+  PickerSearch? _own;
+  PickerSearch get _search => widget.search ?? (_own ??= PickerSearch());
 
   /// The actions whose sub-actions are shown, while the search is empty.
   late final Set<String> _open = _ancestorsOf(widget.picked);
 
   @override
+  void initState() {
+    super.initState();
+    _search.addListener(_searched);
+    if (widget.autofocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _search.focusAll();
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(ActionsPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final was = oldWidget.search ?? _own;
+    if (was != _search) {
+      was?.removeListener(_searched);
+      _search.addListener(_searched);
+    }
+  }
+
+  void _searched() => setState(() {});
+
+  @override
   void dispose() {
-    _search.dispose();
+    _search.removeListener(_searched);
+    _own?.dispose();
     super.dispose();
   }
 
@@ -114,29 +154,21 @@ class _ActionsPickerState extends State<ActionsPicker> {
     return cut < 0 ? null : path.substring(0, cut);
   }
 
-  /// The words of [query], to match in any order.
-  static List<String> _words(String query) => [
-    for (final word in query.toLowerCase().split(RegExp(r'\s+')))
-      if (word.isNotEmpty) word,
-  ];
-
-  /// Whether every word of [query] is in [action]'s path (or name).
-  static bool _matches(PlanAction action, List<String> words) {
-    final text = (action.path ?? actionName(action)).toLowerCase();
-    return words.every(text.contains);
-  }
+  /// What an action is searched by: its whole path (or name).
+  static String _text(PlanAction action) => action.path ?? actionName(action);
 
   @override
   Widget build(BuildContext context) {
     final shown = _shown;
-    if (shown.isEmpty) return const Text('No active actions.');
-    final words = _words(_search.text);
-    final rows = words.isEmpty
+    if (shown.isEmpty && widget.onAdd == null) {
+      return const Text('No active actions.');
+    }
+    final query = _search.query;
+    final rows = query.isEmpty
         ? _tree(shown)
         : [
-            for (final action in shown)
-              if (_matches(action, words))
-                _row(action, subtitle: _above(action)),
+            for (final action in query.filter(shown, _text))
+              _row(action, subtitle: _above(action)),
           ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -145,41 +177,32 @@ class _ActionsPickerState extends State<ActionsPicker> {
         if (widget.picked.isNotEmpty && !widget.single) _chips(context),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          child: TextField(
-            controller: _search,
-            autofocus: widget.autofocus,
-            decoration: InputDecoration(
-              isDense: true,
-              border: const OutlineInputBorder(),
-              prefixIcon: const Icon(Icons.search),
-              hintText: 'Search actions',
-              suffixIcon: _search.text.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: 'Clear search',
-                      icon: const Icon(Icons.close),
-                      onPressed: () => setState(_search.clear),
-                    ),
-            ),
-            onChanged: (_) => setState(() {}),
-            // Kept focused after Enter, ready for the next action.
-            onEditingComplete: () {},
+          child: PickerSearchField(
+            search: _search,
+            hint: 'Search actions',
             // The top match, picked (or unpicked) from the keyboard.
             // What's typed now, which may not have been built yet.
             onSubmitted: (text) {
-              final words = _words(text);
-              if (words.isEmpty) return;
-              for (final action in shown) {
-                if (widget.leavesOnly && action.isGroup) continue;
-                if (_matches(action, words)) {
-                  _toggle(action, !widget.picked.contains(action.id));
-                  setState(_search.clear);
-                  return;
-                }
-              }
+              final query = PickerQuery(text, any: _search.matchAny);
+              if (query.isEmpty) return;
+              final pickable = [
+                for (final action in shown)
+                  if (!widget.leavesOnly || !action.isGroup) action,
+              ];
+              final top = query.filter(pickable, _text).firstOrNull;
+              if (top == null) return;
+              _toggle(top, !widget.picked.contains(top.id));
+              _search.controller.clear();
             },
           ),
         ),
+        if (widget.onAdd case final add?)
+          PickerAddTile(
+            noun: 'action',
+            search: _search,
+            icon: Icons.add,
+            onAdd: add,
+          ),
         ConstrainedBox(
           constraints: BoxConstraints(maxHeight: widget.maxListHeight),
           child: rows.isEmpty
@@ -247,11 +270,13 @@ class _ActionsPickerState extends State<ActionsPicker> {
       final id = action.id!;
       final subActions = children[id] ?? const <PlanAction>[];
       final open = _open.contains(id);
+      void toggle() => setState(() => open ? _open.remove(id) : _open.add(id));
       rows.add(
         _row(
           action,
           depth: depth,
           subtitle: depth == 0 ? _above(action) : null,
+          onOpen: subActions.isEmpty ? null : toggle,
           trailing: subActions.isEmpty
               ? null
               : IconButton(
@@ -259,8 +284,7 @@ class _ActionsPickerState extends State<ActionsPicker> {
                       ? "Hide what's inside"
                       : 'Show ${subActions.length} inside',
                   icon: Icon(open ? Icons.expand_less : Icons.expand_more),
-                  onPressed: () =>
-                      setState(() => open ? _open.remove(id) : _open.add(id)),
+                  onPressed: toggle,
                 ),
         ),
       );
@@ -277,11 +301,37 @@ class _ActionsPickerState extends State<ActionsPicker> {
     return rows;
   }
 
+  /// [action]'s row, long-pressed to edit it; [onOpen] opens or closes
+  /// what's in it, where it can't be picked.
   Widget _row(
     PlanAction action, {
     int depth = 0,
     String? subtitle,
     Widget? trailing,
+    VoidCallback? onOpen,
+  }) {
+    final row = _tile(
+      action,
+      depth: depth,
+      subtitle: subtitle,
+      trailing: trailing,
+      onOpen: onOpen,
+    );
+    final edit = widget.onEdit;
+    if (edit == null) return row;
+    return GestureDetector(
+      key: ValueKey(action.id!),
+      onLongPress: () => edit(action),
+      child: row,
+    );
+  }
+
+  Widget _tile(
+    PlanAction action, {
+    required int depth,
+    required String? subtitle,
+    required Widget? trailing,
+    required VoidCallback? onOpen,
   }) {
     final hint = Theme.of(context).hintColor;
     final picked = widget.picked.contains(action.id);
@@ -313,6 +363,7 @@ class _ActionsPickerState extends State<ActionsPicker> {
         trailing: trailing,
         title: title,
         subtitle: under,
+        onTap: onOpen,
       );
     }
     if (widget.single) {

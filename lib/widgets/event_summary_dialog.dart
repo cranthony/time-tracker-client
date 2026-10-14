@@ -383,10 +383,17 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   /// [_priorities].
   bool _otherPriority = false;
 
-  late final Future<List<PlanAction>>? _actionList = widget.loadActions?.call()
-    ?..then((list) {
-      if (mounted) setState(() => _actionsLoaded = list);
-    }, onError: (Object _) {});
+  late Future<List<PlanAction>>? _actionList = _loadActions();
+
+  Future<List<PlanAction>>? _loadActions() =>
+      widget.loadActions?.call()?..then((list) {
+        if (mounted) setState(() => _actionsLoaded = list);
+      }, onError: (Object _) {});
+
+  /// The action [id], as last loaded, or as the page had it.
+  PlanAction? _action(String id) =>
+      _actionsLoaded?.where((a) => a.id == id).firstOrNull ??
+      widget.actions[id];
 
   /// [_actionList], once it's in: the picker is drawn from it at once,
   /// rather than waiting a frame on a future that's done.
@@ -1420,13 +1427,18 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
             actions: actions,
             loaded: _actionsLoaded,
             picked: _actionIds,
+            query: _value('summary') as String?,
+            reload: widget.loadActions,
             marker: (action) => ActionDiamond(
               color: parseColor(
                 action.effectiveColor ?? action.backgroundColor,
               ),
             ),
           );
-          if (picked != null && mounted) _set('action_ids', picked);
+          if (!mounted) return;
+          // One may have been added, or edited, from the sheet.
+          _actionList = _loadActions();
+          if (picked != null) _set('action_ids', picked);
         },
         null => null,
       },
@@ -1446,7 +1458,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               child: Row(
                 children: [
                   ActionDiamond(
-                    color: switch (widget.actions[id]) {
+                    color: switch (_action(id)) {
                       final action? => parseColor(
                         action.effectiveColor ?? action.backgroundColor,
                       ),
@@ -1455,7 +1467,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(switch (widget.actions[id]) {
+                    child: Text(switch (_action(id)) {
                       final action? => actionName(action),
                       null => (i < names.length ? names[i] : null) ?? id,
                     }, style: theme.textTheme.bodyLarge),
@@ -1516,9 +1528,18 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           facts,
           where: where,
           mapLocation: _value('location') as String?,
+          query: _value('summary') as String?,
           additions: widget.additions,
         );
-        if (edited == null || !mounted) return;
+        if (!mounted) return;
+        // Someone, or a location, may have been added, or renamed, from
+        // the sheet.
+        if (PlanMemoryScope.of(this.context) case final memory?) {
+          setState(
+            () => _named(memory.people, memory.locations, memory.traits),
+          );
+        }
+        if (edited == null) return;
         _setFacts(edited.facts);
         if (where) {
           final typed = edited.mapLocation?.trim() ?? '';
