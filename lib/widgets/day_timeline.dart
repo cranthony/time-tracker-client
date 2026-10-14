@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/google_calendar.dart';
+import '../models/person.dart' show selfPersonId;
 import '../models/plan_action.dart';
 import 'color_picker.dart';
 import 'durations.dart';
@@ -60,6 +61,10 @@ const _cardRadius = 8.0;
 
 /// The padding inside an event, around its text.
 const _cardPadding = EdgeInsets.fromLTRB(8, 4, 8, 4);
+
+/// How wide an event's card, inside its padding, must be to list its
+/// locations and people down its right.
+const _detailsMinCardWidth = 220.0;
 
 /// The time labels' and priority labels' text, and how tall they are.
 const _labelFontSize = 11.0;
@@ -347,7 +352,10 @@ List<T> placeLabels<T>(
 /// a line for each of its actions, the primary action first, each after a
 /// diamond in the action's color ([actions] gives them; one not among them
 /// gets an outline). Its color fills the gutter from its piece of the
-/// band to it, and a thin line of it runs round it.
+/// band to it, and a thin line of it runs round it. A commute has a
+/// small icon before its summary. Where there's room, down its right,
+/// are the locations and the people its facts name, from
+/// [locationNames] and [personNames].
 ///
 /// An event too short for that is drawn as tall as its text needs, and
 /// says how long it is. One pushed down by the event above it is joined
@@ -386,6 +394,8 @@ class DayTimeline extends StatelessWidget {
     required this.events,
     required this.day,
     this.actions = const {},
+    this.personNames = const {},
+    this.locationNames = const {},
     this.scale = defaultTimelineScale,
     this.now,
     this.lastCompaction,
@@ -426,6 +436,11 @@ class DayTimeline extends StatelessWidget {
 
   /// The actions by id, for their colors and names.
   final Map<String, PlanAction> actions;
+
+  /// Names by id, for the people and locations events' facts name; one
+  /// not among them is shown by its id.
+  final Map<String, String> personNames;
+  final Map<String, String> locationNames;
   final double scale;
   final DateTime? now;
 
@@ -475,6 +490,18 @@ class DayTimeline extends StatelessWidget {
 
   /// Midnight at the end of the day.
   DateTime get dayEnd => DateTime(day.year, day.month, day.day + 1);
+
+  /// The locations, then the people, [event]'s facts name, each with its
+  /// icon: never Self, who's at every event.
+  List<(IconData, String)> _details(Event event) => switch (event.facts) {
+    null => const [],
+    final facts => [
+      for (final id in facts.locationIds)
+        (Icons.place_outlined, locationNames[id] ?? id),
+      for (final id in facts.personIds)
+        if (id != selfPersonId) (Icons.person_outline, personNames[id] ?? id),
+    ],
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -678,6 +705,7 @@ class DayTimeline extends StatelessWidget {
                               ? theme.scaffoldBackgroundColor
                               : null,
                           actions: actions,
+                          details: _details(placement.event),
                           styles: styles,
                           onTap: onTap == null
                               ? null
@@ -1664,6 +1692,7 @@ class _EventCard extends StatelessWidget {
     required this.joinedBelow,
     required this.seamColor,
     required this.actions,
+    required this.details,
     required this.styles,
     required this.onTap,
     required this.onLongPress,
@@ -1685,6 +1714,10 @@ class _EventCard extends StatelessWidget {
   /// from the one above's, if they're too alike to tell apart.
   final Color? seamColor;
   final Map<String, PlanAction> actions;
+
+  /// Its locations and people, each with its icon, listed down its right
+  /// where there's room.
+  final List<(IconData, String)> details;
   final _CardStyles styles;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
@@ -1728,6 +1761,7 @@ class _EventCard extends StatelessWidget {
     final card = Semantics(
       label:
           '$summary, ${timeLabel(event.start)} to ${timeLabel(event.end)}'
+          '${event.isCommute ? ', commute' : ''}'
           '${cancelled ? ', cancelled' : ''}'
           '${switch (mark) {
             null => '',
@@ -1779,11 +1813,26 @@ class _EventCard extends StatelessWidget {
                           labelled: mark?.label != null,
                           count: ids.length,
                         );
+                        // Its locations and people, only where there's
+                        // room beside its actions.
+                        final detailed =
+                            constraints.maxWidth < _detailsMinCardWidth
+                            ? 0
+                            : _actionsThatFit(
+                                context,
+                                constraints.maxHeight,
+                                labelled: mark?.label != null,
+                                count: details.length,
+                              );
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               children: [
+                                if (event.isCommute) ...[
+                                  Icon(Icons.commute, size: 14, color: muted),
+                                  const SizedBox(width: 4),
+                                ],
                                 Expanded(
                                   child: Text(
                                     summary,
@@ -1861,29 +1910,75 @@ class _EventCard extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                            for (final (i, id) in ids.take(listed).indexed)
+                            if (listed > 0 || detailed > 0)
                               Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  _Diamond(color: _colorOf(id), outline: muted),
-                                  const SizedBox(width: 6),
                                   Expanded(
-                                    child: Text(
-                                      switch (actions[id]) {
-                                        final action? => actionName(action),
-                                        null =>
-                                          (i < names.length
-                                                  ? names[i]
-                                                  : null) ??
-                                              id,
-                                      },
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: styles.action?.copyWith(
-                                        color: muted,
-                                        decoration: strike,
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        for (final (i, id)
+                                            in ids.take(listed).indexed)
+                                          Row(
+                                            children: [
+                                              _Diamond(
+                                                color: _colorOf(id),
+                                                outline: muted,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Expanded(
+                                                child: Text(
+                                                  switch (actions[id]) {
+                                                    final action? => actionName(
+                                                      action,
+                                                    ),
+                                                    null =>
+                                                      (i < names.length
+                                                              ? names[i]
+                                                              : null) ??
+                                                          id,
+                                                  },
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: styles.action
+                                                      ?.copyWith(
+                                                        color: muted,
+                                                        decoration: strike,
+                                                      ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                      ],
                                     ),
                                   ),
+                                  if (detailed > 0) ...[
+                                    const SizedBox(width: 8),
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: constraints.maxWidth * 0.4,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          for (final (icon, name)
+                                              in details.take(detailed))
+                                            _DetailLine(
+                                              icon: icon,
+                                              text: name,
+                                              style: styles.action?.copyWith(
+                                                color: muted,
+                                                decoration: strike,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                           ],
@@ -2020,6 +2115,33 @@ enum _ChipShape {
 
   /// Rounded, with no top edge.
   openTop,
+}
+
+/// One of an event's locations or people, after its [icon], as much of
+/// its [text] as fits.
+class _DetailLine extends StatelessWidget {
+  const _DetailLine({required this.icon, required this.text, this.style});
+
+  final IconData icon;
+  final String text;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icon, size: 12, color: style?.color),
+      const SizedBox(width: 2),
+      Flexible(
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: style,
+        ),
+      ),
+    ],
+  );
 }
 
 /// A small box of [text] at the end of an event's summary: its duration,

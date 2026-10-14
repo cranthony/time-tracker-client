@@ -291,6 +291,21 @@ class _EventsScreenState extends State<EventsScreen> {
       ?action.id: action,
   };
 
+  /// Everyone's names by id, and those the shown proposal adds by ref,
+  /// for the people events' facts name.
+  Map<String, String> get _personNames => {
+    ...?_shownProposal?.addedNames,
+    for (final p in _memory.people?.withSelf ?? const <Person>[])
+      p.id: personName(p),
+  };
+
+  /// Every location's name by id, and those the shown proposal adds by
+  /// ref, for the locations events' facts name.
+  Map<String, String> get _locationNames => {
+    ...?_shownProposal?.addedNames,
+    for (final l in _memory.locations ?? const <Location>[]) l.id: l.name,
+  };
+
   /// When notes were last compacted; null until it's known.
   DateTime? get _lastCompaction => _memory.lastCompaction;
 
@@ -4722,6 +4737,8 @@ class _EventsScreenState extends State<EventsScreen> {
                 events: events,
                 day: day,
                 actions: _actionsById,
+                personNames: _personNames,
+                locationNames: _locationNames,
                 scale: _scale,
                 now: widget.clock(),
                 lastCompaction: _lastCompaction,

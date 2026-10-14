@@ -14,6 +14,18 @@ void main() {
     });
   });
 
+  test('a commute round-trips, and false is left out', () {
+    final facts = Facts.fromJson({'commute': true})!;
+    expect(facts.commute, isTrue);
+    expect(facts.isEmpty, isFalse);
+    expect(facts.toJson(), {'commute': true});
+    expect(facts == const Facts(), isFalse);
+    // The server sends null when it's unset.
+    final unset = Facts.fromJson({'commute': null})!;
+    expect(unset.commute, isFalse);
+    expect(unset.toJson(), isEmpty);
+  });
+
   test('a single location_id is no longer read', () {
     expect(Facts.fromJson({'location_id': 'home'})!.locationIds, isEmpty);
   });

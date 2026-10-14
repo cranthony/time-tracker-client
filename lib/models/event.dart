@@ -1,3 +1,4 @@
+import 'facts.dart';
 import 'note.dart';
 
 /// A calendar event, mirroring the Time Tracker MCP server's `PublicEvent`.
@@ -40,6 +41,12 @@ class Event {
     for (final name in properties['action_names'] as List? ?? const [])
       name as String?,
   ];
+
+  /// What compaction established about it, if anything.
+  Facts? get facts => Facts.fromJson(properties['facts']);
+
+  /// Whether it's getting from one place to another.
+  bool get isCommute => facts?.commute ?? false;
 
   factory Event.fromJson(Map<String, dynamic> json) => Event(
     start: DateTime.parse(json['start'] as String),
