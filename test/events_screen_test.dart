@@ -1029,6 +1029,9 @@ void main() {
       await tester.tap(inDialog(find.text('Deep focus')));
       await tester.pumpAndSettle();
       expect(inSheet(find.text('Search actions')), findsOneWidget);
+      // Searched for its summary at first.
+      await tester.tap(inSheet(find.byTooltip('Clear search')));
+      await tester.pumpAndSettle();
       await tester.tap(inSheet(find.text('Exercise')));
       await tester.pumpAndSettle();
       await tester.tap(inSheet(find.text('Done')));

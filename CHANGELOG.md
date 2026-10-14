@@ -6,6 +6,20 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.75.0
+
+- Picking an event's actions, people and location is quicker:
+  - The search starts with the event's summary, selected, with the
+    keyboard up, so you can type over it or pick from what it finds.
+  - An "Any" toggle beside each search shows what matches any word typed,
+    the best matches first, rather than only what matches every word.
+  - Tapping anywhere on an action group opens or closes it.
+  - "Add action", "Add person" and "Add location" open the usual editor,
+    named as you searched, and pick what's added.
+  - Long-pressing an action, group, person or location edits it.
+  - Swiping between With and For, or to Map location, puts the keyboard
+    in that page's box, its text selected; each keeps what you typed.
+
 ## 7.74.0
 
 - A location can have a map location: an address, a place's name or a

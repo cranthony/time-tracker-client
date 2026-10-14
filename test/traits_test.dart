@@ -845,10 +845,15 @@ void main() {
     // Who, in a sheet: with, and for, a tab each.
     await tester.tap(find.text('Add who'));
     await tester.pumpAndSettle();
+    // Searched for its summary at first.
+    await tester.tap(find.byTooltip('Clear search').hitTestable());
+    await tester.pumpAndSettle();
     // Self is at every event: not to pick.
     expect(find.widgetWithText(CheckboxListTile, 'Self'), findsNothing);
     await tester.tap(find.widgetWithText(CheckboxListTile, 'Sam'));
     await tester.tap(find.widgetWithText(Tab, 'For'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Clear search').hitTestable());
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(CheckboxListTile, 'Priya'));
     await tester.pumpAndSettle();
@@ -959,10 +964,14 @@ void main() {
     expect(find.text('Home'), findsOneWidget);
     await tester.tap(find.text('With Sam'));
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Clear search').hitTestable());
+    await tester.pumpAndSettle();
     expect(find.widgetWithText(CheckboxListTile, 'Sam'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Home'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Clear search').hitTestable());
     await tester.pumpAndSettle();
     expect(find.widgetWithText(RadioListTile<String>, 'Home'), findsOneWidget);
     // Asked once, not again for the facts.
@@ -1055,6 +1064,8 @@ void main() {
     expect(find.text('Add what happened'), findsNothing);
     await tester.tap(find.text('Add who'));
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Clear search').hitTestable());
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(CheckboxListTile, 'Sam'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
@@ -1106,7 +1117,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add location'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('New location…'));
+    await tester.tap(find.byTooltip('Clear search').hitTestable());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add location…'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Home');
     await tester.pump();

@@ -22,10 +22,12 @@ import 'traits_field.dart';
 /// if it was called off. [actions] names the actions and groups a part
 /// can count. With [focus], a star beside Save prioritizes someone
 /// already there, at once. With [scoreParts], the parts of their own of
-/// someone already there are scored as they're edited.
+/// someone already there are scored as they're edited. Someone added
+/// starts with [name], if given.
 Future<Person?> showPersonEditor(
   BuildContext context, {
   Person? person,
+  String? name,
   List<Circle> circles = const [],
   List<Trait> traits = const [],
   Map<String, String> actions = const {},
@@ -36,6 +38,7 @@ Future<Person?> showPersonEditor(
   context,
   _PersonEditor(
     person: person,
+    name: name,
     circles: circles,
     traits: traits,
     actions: actions,
@@ -48,6 +51,7 @@ Future<Person?> showPersonEditor(
 class _PersonEditor extends StatefulWidget {
   const _PersonEditor({
     required this.person,
+    required this.name,
     required this.circles,
     required this.traits,
     required this.actions,
@@ -57,6 +61,7 @@ class _PersonEditor extends StatefulWidget {
   });
 
   final Person? person;
+  final String? name;
   final List<Circle> circles;
   final List<Trait> traits;
   final Map<String, String> actions;
@@ -69,7 +74,9 @@ class _PersonEditor extends StatefulWidget {
 }
 
 class _PersonEditorState extends State<_PersonEditor> {
-  late final _name = TextEditingController(text: widget.person?.name);
+  late final _name = TextEditingController(
+    text: widget.person?.name ?? widget.name,
+  );
   late final _context = TextEditingController(text: widget.person?.context);
   late final _whatMatters = TextEditingController(
     text: widget.person?.whatMatters,
@@ -303,10 +310,11 @@ Future<bool> showCircleDialog(
 /// Adds a location (with no [location]) or edits one: its name, a hint
 /// for recognizing it, and its map location. Saves with [save], returning what it returned, or
 /// null if it was called off. "Delete", asked first, calls [delete]: then
-/// [location] is returned.
+/// [location] is returned. One added starts with [name], if given.
 Future<Location?> showLocationDialog(
   BuildContext context, {
   Location? location,
+  String? name,
   required Future<Location> Function(Map<String, Object?> fields) save,
   Future<void> Function()? delete,
 }) async {
@@ -316,6 +324,7 @@ Future<Location?> showLocationDialog(
     builder: (_) => _NamedDialog(
       noun: 'location',
       name: location?.name,
+      typed: name,
       detail: location?.hint,
       detailField: 'hint',
       detailLabel: 'Hint (optional)',
@@ -346,10 +355,14 @@ class _NamedDialog extends StatefulWidget {
     required this.delete,
     this.scoring,
     this.map,
+    this.typed,
   });
 
   final String noun;
   final String? name;
+
+  /// The name a new one starts with.
+  final String? typed;
   final String? detail;
   final String detailField;
   final String detailLabel;
@@ -377,7 +390,7 @@ class _NamedDialog extends StatefulWidget {
 }
 
 class _NamedDialogState extends State<_NamedDialog> {
-  late final _name = TextEditingController(text: widget.name);
+  late final _name = TextEditingController(text: widget.name ?? widget.typed);
   late final _detail = TextEditingController(text: widget.detail);
   late final _map = TextEditingController(text: widget.map?.value);
   late Aggregation? _scoring = widget.scoring?.value;

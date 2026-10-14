@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/widgets/picker_search.dart';
 import 'package:time_tracker_client/widgets/picker_sheet.dart';
 
 void main() {
   testWidgets('searches by every word, picks the top match with Enter, and '
       'shows the picked as chips to take off', (tester) async {
     var picked = <String>[];
+    final search = PickerSearch();
+    addTearDown(search.dispose);
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -17,6 +20,7 @@ void main() {
               picked: picked,
               hint: 'Who was there',
               empty: 'No one yet',
+              search: search,
               onChanged: (ids) => setState(() => picked = ids),
             ),
           ),
