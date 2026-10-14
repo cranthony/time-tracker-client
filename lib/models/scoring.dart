@@ -75,8 +75,8 @@ class Aggregation {
   /// The plain mean, of what has a score.
   static const mean = Aggregation();
 
-  /// The lowest score.
-  static const lowest = Aggregation(limit: 1, limitBy: 'worst');
+  /// The lowest score: the 0th percentile.
+  static const lowest = Aggregation(statistic: 'percentile', percentile: 0);
 
   /// One of [scoringStatistics]' keys.
   final String statistic;

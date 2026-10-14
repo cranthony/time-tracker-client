@@ -3,17 +3,21 @@ import '../auth/sign_in_mode.dart';
 import 'package:flutter/material.dart';
 
 import '../models/plan_action.dart';
+import '../models/scoring.dart';
 import '../services/app_settings.dart';
 import '../services/keep_rules.dart';
 import '../services/plan_memory.dart';
+import '../services/traits_repository.dart';
 import '../widgets/google_calendar_settings.dart';
 import '../widgets/actions_picker.dart';
 import '../widgets/habit_dialog.dart';
 import '../widgets/cursor_snap.dart';
+import 'scoring_defaults_screen.dart';
 
 /// The app's [settings], to change: the grid the timeline's cursors snap
 /// to, every so many minutes, or none, and what else they stop at; and the
-/// rules for what a new or moved event's Keep list starts with.
+/// rules for what a new or moved event's Keep list starts with; and,
+/// with traits, the scoring defaults.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key, required this.settings});
 
@@ -25,6 +29,46 @@ class SettingsScreen extends StatelessWidget {
     60 => 'Every hour',
     final m => 'Every $m minutes',
   };
+
+  /// How scores combine wherever nothing says otherwise, opening the
+  /// page that edits them; nothing without traits.
+  List<Widget> _scoring(BuildContext context, ThemeData theme) {
+    final repository = TraitsScope.of(context);
+    final memory = PlanMemoryScope.of(context);
+    if (repository == null || memory == null) return const [];
+    String said(Aggregation? scoring, String fallback) => switch (scoring) {
+      final s? => s.describe(),
+      null => fallback,
+    };
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+        child: Text('Scoring', style: theme.textTheme.titleMedium),
+      ),
+      // As they are, once saved.
+      ListenableBuilder(
+        listenable: memory,
+        builder: (context, _) {
+          final defaults = memory.scoringDefaults;
+          return ListTile(
+            leading: const Icon(Icons.functions),
+            title: const Text('Scoring defaults'),
+            subtitle: Text(
+              "A person's or habit's traits: ${said(defaults.traits, 'mean')}. "
+              "A circle's people: ${said(defaults.circles, 'mean')}. "
+              'A habit layer: ${said(defaults.habitLayers, 'lowest')}.',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => showScoringDefaults(
+              context,
+              repository: repository,
+              memory: memory,
+            ),
+          );
+        },
+      ),
+    ];
+  }
 
   /// The rules for a new or moved event's Keep list, each removable, and
   /// a way to add another.
@@ -210,6 +254,7 @@ class SettingsScreen extends StatelessWidget {
                 }),
               ),
             ..._keepRules(context, theme),
+            ..._scoring(context, theme),
             const GoogleCalendarSettings(),
           ],
         ),

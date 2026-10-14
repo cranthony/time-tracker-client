@@ -113,6 +113,7 @@ class _TraitsFieldState extends State<TraitsField> {
         final scoring? => "The trait's: ${scoring.describe()}",
         null => "The trait's: mean",
       },
+      fallbackValue: trait.scoring ?? Aggregation.mean,
     );
     if (picked == null) return;
     _changed(() {
@@ -239,6 +240,9 @@ class _TraitsFieldState extends State<TraitsField> {
             final scoring? => "The defaults': ${scoring.describe()}",
             null => 'Mean',
           },
+          fallbackValue:
+              PlanMemoryScope.of(context)?.scoringDefaults.traits ??
+              Aggregation.mean,
           onChanged: (scoring) => _changed(() => _scoring = scoring),
         ),
       ],
