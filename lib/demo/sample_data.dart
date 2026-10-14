@@ -1270,7 +1270,8 @@ class SampleData {
       actions: ['cooking_class'],
       fromLabel: true,
       priority: 2,
-      facts: const Facts(locationIds: ['school']),
+      // Learning a dish for Priya, who isn't there.
+      facts: const Facts(locationIds: ['school'], forIds: ['priya']),
     ),
     _event(
       'dinner',

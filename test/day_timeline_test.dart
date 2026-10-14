@@ -239,8 +239,8 @@ void main() {
       );
     });
 
-    testWidgets("lists an event's locations, then its people, down its "
-        'right, never Self', (tester) async {
+    testWidgets("lists an event's locations, then those with the user, then "
+        'those it was for, each kind side by side, never Self', (tester) async {
       await tester.pumpWidget(
         timeline([
           event(
@@ -259,20 +259,52 @@ void main() {
         ]),
       );
       double top(String text) => tester.getTopLeft(find.text(text)).dy;
-      expect(top('Home'), lessThan(top('The school')));
+      double left(String text) => tester.getTopLeft(find.text(text)).dx;
+      // Both locations on one line, each after its icon.
+      expect(top('Home'), top('The school'));
+      expect(left('Home'), lessThan(left('The school')));
+      expect(find.byIcon(Icons.place_outlined), findsNWidgets(2));
+      // Then who was there, then who it was for -- someone not among the
+      // names by their id -- after a dotted outline.
       expect(top('The school'), lessThan(top('Sam')));
-      // Someone not among the names, by their id.
       expect(top('Sam'), lessThan(top('jo')));
+      expect(find.byIcon(Icons.person_outline), findsOneWidget);
+      expect(find.byType(DottedPersonIcon), findsOneWidget);
       expect(find.text('Me'), findsNothing);
       // To the right of its actions, beside them.
       expect(
-        tester.getTopLeft(find.text('Home')).dx,
+        left('Home'),
         greaterThan(tester.getTopRight(find.text('Cook')).dx),
       );
       expect(top('Home'), top('Cook'));
     });
 
-    testWidgets("lists only as many as fit, and none where it's narrow", (
+    testWidgets('puts those that no longer fit side by side on the next line', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        timeline([
+          event(
+            'Party',
+            at(1),
+            at(4),
+            facts: {
+              'with_ids': ['sam', 'priya', 'jordan', 'alex', 'robin', 'casey'],
+            },
+          ),
+        ], width: 480),
+      );
+      double top(String text) => tester.getTopLeft(find.text(text)).dy;
+      final tops = {
+        for (final name in ['Sam', 'priya', 'jordan', 'alex', 'robin', 'casey'])
+          top(name),
+      };
+      expect(tops.length, greaterThan(1));
+      expect(tops.length, lessThan(6));
+      expect(top('priya'), top('Sam'));
+    });
+
+    testWidgets("lists only as many lines as fit, and none where it's narrow", (
       tester,
     ) async {
       final dinner = event(
@@ -286,6 +318,7 @@ void main() {
       );
       await tester.pumpWidget(timeline([dinner]));
       expect(find.text('Home'), findsOneWidget);
+      expect(find.text('The school'), findsOneWidget);
       expect(find.text('Sam'), findsNothing);
 
       await tester.pumpWidget(timeline([dinner], width: 320));
