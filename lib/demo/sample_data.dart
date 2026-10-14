@@ -1251,6 +1251,16 @@ class SampleData {
       _at(13, 35),
       actions: ['doomscroll'],
     ),
+    // Getting from one place to another.
+    _event(
+      'walk_class',
+      'Walk to class',
+      _at(13, 35),
+      _at(14, 0),
+      actions: ['walk'],
+      priority: 2,
+      facts: const Facts(locationIds: ['home', 'school'], commute: true),
+    ),
     // Never given actions: its action is inferred from its label.
     _event(
       'class',
@@ -1260,7 +1270,8 @@ class SampleData {
       actions: ['cooking_class'],
       fromLabel: true,
       priority: 2,
-      facts: const Facts(locationIds: ['school']),
+      // Learning a dish for Priya, who isn't there.
+      facts: const Facts(locationIds: ['school'], forIds: ['priya']),
     ),
     _event(
       'dinner',
@@ -1527,7 +1538,7 @@ class SampleData {
           'follow_through': <String>[],
         },
         event('scroll', 'on_schedule'),
-        for (final id in ['class', 'dinner', 'guitar', 'bed'])
+        for (final id in ['walk_class', 'class', 'dinner', 'guitar', 'bed'])
           event(id, 'planned'),
       ],
       // Someone, something done and somewhere new, made when it's

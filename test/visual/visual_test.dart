@@ -1421,7 +1421,8 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.text('Lunch with Sam'));
           await tester.pumpAndSettle();
-          await tester.tap(find.text('The noodle bar'));
+          // The event's, over the one its card lists.
+          await tester.tap(find.text('The noodle bar').last);
           await tester.pumpAndSettle();
         },
       );

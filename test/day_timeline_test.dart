@@ -19,6 +19,7 @@ void main() {
     List<String> actions = const [],
     List<String>? names,
     bool cancelled = false,
+    Map<String, Object?>? facts,
   }) => Event(
     start: start,
     end: end,
@@ -28,6 +29,7 @@ void main() {
       'effective_priority': ?priority,
       'action_ids': actions,
       'action_names': ?names,
+      'facts': ?facts,
     },
   );
 
@@ -203,13 +205,125 @@ void main() {
     Widget timeline(
       List<Event> events, {
       Map<String, PlanAction> actions = const {},
+      double? width,
     }) => MaterialApp(
       home: Scaffold(
         body: SingleChildScrollView(
-          child: DayTimeline(events: events, day: day, actions: actions),
+          child: SizedBox(
+            width: width,
+            child: DayTimeline(
+              events: events,
+              day: day,
+              actions: actions,
+              personNames: const {'self': 'Me', 'sam': 'Sam'},
+              locationNames: const {'home': 'Home', 'school': 'The school'},
+            ),
+          ),
         ),
       ),
     );
+
+    testWidgets('marks a commute with an icon, and no other event', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        timeline([
+          event('Walk to class', at(1), at(2), facts: {'commute': true}),
+          event('Walk', at(3), at(4), facts: {'commute': null}),
+        ]),
+      );
+      expect(find.byIcon(Icons.commute), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byIcon(Icons.commute)).dy,
+        lessThan(tester.getTopLeft(find.text('Walk')).dy),
+      );
+    });
+
+    testWidgets("lists an event's locations, then those with the user, then "
+        'those it was for, each kind side by side, never Self', (tester) async {
+      await tester.pumpWidget(
+        timeline([
+          event(
+            'Dinner',
+            at(1),
+            at(3),
+            actions: ['cook'],
+            names: ['Cook'],
+            facts: {
+              'location_ids': ['home', 'school'],
+              'with_ids': ['sam'],
+              'for_ids': ['jo'],
+              'notes': {'self': 'Good'},
+            },
+          ),
+        ]),
+      );
+      double top(String text) => tester.getTopLeft(find.text(text)).dy;
+      double left(String text) => tester.getTopLeft(find.text(text)).dx;
+      // Both locations on one line, each after its icon.
+      expect(top('Home'), top('The school'));
+      expect(left('Home'), lessThan(left('The school')));
+      expect(find.byIcon(Icons.place_outlined), findsNWidgets(2));
+      // Then who was there, then who it was for -- someone not among the
+      // names by their id -- after a dotted outline.
+      expect(top('The school'), lessThan(top('Sam')));
+      expect(top('Sam'), lessThan(top('jo')));
+      expect(find.byIcon(Icons.person_outline), findsOneWidget);
+      expect(find.byType(DottedPersonIcon), findsOneWidget);
+      expect(find.text('Me'), findsNothing);
+      // To the right of its actions, beside them.
+      expect(
+        left('Home'),
+        greaterThan(tester.getTopRight(find.text('Cook')).dx),
+      );
+      expect(top('Home'), top('Cook'));
+    });
+
+    testWidgets('puts those that no longer fit side by side on the next line', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        timeline([
+          event(
+            'Party',
+            at(1),
+            at(4),
+            facts: {
+              'with_ids': ['sam', 'priya', 'jordan', 'alex', 'robin', 'casey'],
+            },
+          ),
+        ], width: 480),
+      );
+      double top(String text) => tester.getTopLeft(find.text(text)).dy;
+      final tops = {
+        for (final name in ['Sam', 'priya', 'jordan', 'alex', 'robin', 'casey'])
+          top(name),
+      };
+      expect(tops.length, greaterThan(1));
+      expect(tops.length, lessThan(6));
+      expect(top('priya'), top('Sam'));
+    });
+
+    testWidgets("lists only as many lines as fit, and none where it's narrow", (
+      tester,
+    ) async {
+      final dinner = event(
+        'Dinner',
+        at(1),
+        at(1, 30),
+        facts: {
+          'location_ids': ['home', 'school'],
+          'with_ids': ['sam'],
+        },
+      );
+      await tester.pumpWidget(timeline([dinner]));
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.text('The school'), findsOneWidget);
+      expect(find.text('Sam'), findsNothing);
+
+      await tester.pumpWidget(timeline([dinner], width: 320));
+      expect(find.text('Home'), findsNothing);
+    });
 
     testWidgets("shows each event's summary, then its actions, primary first", (
       tester,

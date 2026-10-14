@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/google_calendar.dart';
+import '../models/person.dart' show selfPersonId;
 import '../models/plan_action.dart';
 import 'color_picker.dart';
 import 'durations.dart';
@@ -60,6 +61,19 @@ const _cardRadius = 8.0;
 
 /// The padding inside an event, around its text.
 const _cardPadding = EdgeInsets.fromLTRB(8, 4, 8, 4);
+
+/// How wide an event's card, inside its padding, must be to list its
+/// locations and people down its right.
+const _detailsMinCardWidth = 220.0;
+
+/// The most of a card's width its locations and people take.
+const _detailsWidthFraction = 0.5;
+
+/// The size of each location's and person's icon, the space after it,
+/// and the space between them side by side.
+const _detailIconSize = 12.0;
+const _detailIconGap = 2.0;
+const _detailGap = 8.0;
 
 /// The time labels' and priority labels' text, and how tall they are.
 const _labelFontSize = 11.0;
@@ -347,7 +361,10 @@ List<T> placeLabels<T>(
 /// a line for each of its actions, the primary action first, each after a
 /// diamond in the action's color ([actions] gives them; one not among them
 /// gets an outline). Its color fills the gutter from its piece of the
-/// band to it, and a thin line of it runs round it.
+/// band to it, and a thin line of it runs round it. A commute has a
+/// small icon before its summary. Where there's room, down its right,
+/// are the locations and the people its facts name, from
+/// [locationNames] and [personNames].
 ///
 /// An event too short for that is drawn as tall as its text needs, and
 /// says how long it is. One pushed down by the event above it is joined
@@ -386,6 +403,8 @@ class DayTimeline extends StatelessWidget {
     required this.events,
     required this.day,
     this.actions = const {},
+    this.personNames = const {},
+    this.locationNames = const {},
     this.scale = defaultTimelineScale,
     this.now,
     this.lastCompaction,
@@ -426,6 +445,11 @@ class DayTimeline extends StatelessWidget {
 
   /// The actions by id, for their colors and names.
   final Map<String, PlanAction> actions;
+
+  /// Names by id, for the people and locations events' facts name; one
+  /// not among them is shown by its id.
+  final Map<String, String> personNames;
+  final Map<String, String> locationNames;
   final double scale;
   final DateTime? now;
 
@@ -475,6 +499,26 @@ class DayTimeline extends StatelessWidget {
 
   /// Midnight at the end of the day.
   DateTime get dayEnd => DateTime(day.year, day.month, day.day + 1);
+
+  /// The names of the locations [event]'s facts name, then of the people
+  /// with the user, then of those it was for, each kind apart: never
+  /// Self, who's at every event.
+  List<(_Detail, List<String>)> _details(Event event) => switch (event.facts) {
+    null => const [],
+    final facts => [
+      for (final (kind, ids, names) in [
+        (_Detail.location, facts.locationIds, locationNames),
+        (_Detail.withPerson, facts.withIds, personNames),
+        (_Detail.forPerson, facts.forIds, personNames),
+      ])
+        if ([
+              for (final id in ids)
+                if (id != selfPersonId) names[id] ?? id,
+            ]
+            case final shown when shown.isNotEmpty)
+          (kind, shown),
+    ],
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -678,6 +722,7 @@ class DayTimeline extends StatelessWidget {
                               ? theme.scaffoldBackgroundColor
                               : null,
                           actions: actions,
+                          details: _details(placement.event),
                           styles: styles,
                           onTap: onTap == null
                               ? null
@@ -1664,6 +1709,7 @@ class _EventCard extends StatelessWidget {
     required this.joinedBelow,
     required this.seamColor,
     required this.actions,
+    required this.details,
     required this.styles,
     required this.onTap,
     required this.onLongPress,
@@ -1685,6 +1731,10 @@ class _EventCard extends StatelessWidget {
   /// from the one above's, if they're too alike to tell apart.
   final Color? seamColor;
   final Map<String, PlanAction> actions;
+
+  /// The names of its locations, of the people with the user, and of
+  /// those it was for, listed down its right where there's room.
+  final List<(_Detail, List<String>)> details;
   final _CardStyles styles;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
@@ -1728,6 +1778,7 @@ class _EventCard extends StatelessWidget {
     final card = Semantics(
       label:
           '$summary, ${timeLabel(event.start)} to ${timeLabel(event.end)}'
+          '${event.isCommute ? ', commute' : ''}'
           '${cancelled ? ', cancelled' : ''}'
           '${switch (mark) {
             null => '',
@@ -1779,11 +1830,33 @@ class _EventCard extends StatelessWidget {
                           labelled: mark?.label != null,
                           count: ids.length,
                         );
+                        // Its locations and people, only where there's
+                        // room beside its actions.
+                        final detailStyle = styles.action?.copyWith(
+                          color: muted,
+                          decoration: strike,
+                        );
+                        final detailWidth =
+                            constraints.maxWidth * _detailsWidthFraction;
+                        final detailLines =
+                            constraints.maxWidth < _detailsMinCardWidth
+                            ? const <List<(_Detail, String)>>[]
+                            : _packDetails(context, detailWidth, detailStyle);
+                        final detailed = _actionsThatFit(
+                          context,
+                          constraints.maxHeight,
+                          labelled: mark?.label != null,
+                          count: detailLines.length,
+                        );
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               children: [
+                                if (event.isCommute) ...[
+                                  Icon(Icons.commute, size: 14, color: muted),
+                                  const SizedBox(width: 4),
+                                ],
                                 Expanded(
                                   child: Text(
                                     summary,
@@ -1861,29 +1934,72 @@ class _EventCard extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                            for (final (i, id) in ids.take(listed).indexed)
+                            if (listed > 0 || detailed > 0)
                               Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  _Diamond(color: _colorOf(id), outline: muted),
-                                  const SizedBox(width: 6),
                                   Expanded(
-                                    child: Text(
-                                      switch (actions[id]) {
-                                        final action? => actionName(action),
-                                        null =>
-                                          (i < names.length
-                                                  ? names[i]
-                                                  : null) ??
-                                              id,
-                                      },
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: styles.action?.copyWith(
-                                        color: muted,
-                                        decoration: strike,
-                                      ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        for (final (i, id)
+                                            in ids.take(listed).indexed)
+                                          Row(
+                                            children: [
+                                              _Diamond(
+                                                color: _colorOf(id),
+                                                outline: muted,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Expanded(
+                                                child: Text(
+                                                  switch (actions[id]) {
+                                                    final action? => actionName(
+                                                      action,
+                                                    ),
+                                                    null =>
+                                                      (i < names.length
+                                                              ? names[i]
+                                                              : null) ??
+                                                          id,
+                                                  },
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: styles.action
+                                                      ?.copyWith(
+                                                        color: muted,
+                                                        decoration: strike,
+                                                      ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                      ],
                                     ),
                                   ),
+                                  if (detailed > 0) ...[
+                                    const SizedBox(width: 8),
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: detailWidth,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          for (final line in detailLines.take(
+                                            detailed,
+                                          ))
+                                            _DetailLine(
+                                              items: line,
+                                              style: detailStyle,
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                           ],
@@ -1923,6 +2039,47 @@ class _EventCard extends StatelessWidget {
 }
 
 extension on _EventCard {
+  /// Its [details] in lines no wider than [width], in [style]: each kind
+  /// on lines of its own, side by side while they fit. One too wide even
+  /// alone is on a line by itself, cut short.
+  List<List<(_Detail, String)>> _packDetails(
+    BuildContext context,
+    double width,
+    TextStyle? style,
+  ) {
+    final base = DefaultTextStyle.of(context).style.merge(style);
+    final scaler = MediaQuery.textScalerOf(context);
+    double widthOf(String text) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: base),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    final lines = <List<(_Detail, String)>>[];
+    for (final (kind, names) in details) {
+      var line = <(_Detail, String)>[];
+      var used = 0.0;
+      for (final name in names) {
+        final each = _detailIconSize + _detailIconGap + widthOf(name);
+        if (line.isNotEmpty && used + _detailGap + each > width) {
+          lines.add(line);
+          line = [];
+          used = 0;
+        }
+        used += (line.isEmpty ? 0 : _detailGap) + each;
+        line.add((kind, name));
+      }
+      lines.add(line);
+    }
+    return lines;
+  }
+
   /// How many of its [count] actions' lines fit whole in [height], under
   /// its summary and chips -- and its mark's line, if it's [labelled].
   int _actionsThatFit(
@@ -2020,6 +2177,120 @@ enum _ChipShape {
 
   /// Rounded, with no top edge.
   openTop,
+}
+
+/// What one of an event's details is: a location it was at, someone
+/// with the user, or someone it was for.
+enum _Detail { location, withPerson, forPerson }
+
+/// A line of an event's details, side by side, each after its kind's
+/// icon, as much of each as fits.
+class _DetailLine extends StatelessWidget {
+  const _DetailLine({required this.items, this.style});
+
+  final List<(_Detail, String)> items;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      for (final (i, (kind, text)) in items.indexed) ...[
+        if (i > 0) const SizedBox(width: _detailGap),
+        switch (kind) {
+          _Detail.location => Icon(
+            Icons.place_outlined,
+            size: _detailIconSize,
+            color: style?.color,
+          ),
+          _Detail.withPerson => Icon(
+            Icons.person_outline,
+            size: _detailIconSize,
+            color: style?.color,
+          ),
+          _Detail.forPerson => DottedPersonIcon(
+            size: _detailIconSize,
+            color: style?.color,
+          ),
+        },
+        const SizedBox(width: _detailIconGap),
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+      ],
+    ],
+  );
+}
+
+/// A person's outline, as [Icons.person_outline] draws it, but dotted:
+/// someone an event was for, who wasn't there.
+class DottedPersonIcon extends StatelessWidget {
+  const DottedPersonIcon({super.key, this.size = 24, this.color});
+
+  final double size;
+
+  /// Its color; by default, the [IconTheme]'s.
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: size,
+    child: CustomPaint(
+      painter: _DottedPersonPainter(
+        color ?? IconTheme.of(context).color ?? const Color(0xFF000000),
+      ),
+    ),
+  );
+}
+
+class _DottedPersonPainter extends CustomPainter {
+  _DottedPersonPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final unit = size.width / 24;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2 * unit
+      ..strokeCap = StrokeCap.round;
+    // On the 24-unit grid Material's icons are drawn on: a head, and
+    // shoulders below it.
+    final outline = Path()
+      ..addOval(
+        Rect.fromCircle(center: Offset(12 * unit, 8 * unit), radius: 4 * unit),
+      )
+      ..moveTo(4 * unit, 20 * unit)
+      ..lineTo(4 * unit, 18 * unit)
+      ..cubicTo(4 * unit, 15 * unit, 9 * unit, 14 * unit, 12 * unit, 14 * unit)
+      ..cubicTo(
+        15 * unit,
+        14 * unit,
+        20 * unit,
+        15 * unit,
+        20 * unit,
+        18 * unit,
+      )
+      ..lineTo(20 * unit, 20 * unit)
+      ..close();
+    final dash = 2.5 * unit;
+    final gap = 2.5 * unit;
+    for (final metric in outline.computeMetrics()) {
+      for (var d = 0.0; d < metric.length; d += dash + gap) {
+        canvas.drawPath(metric.extractPath(d, d + dash), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DottedPersonPainter old) => old.color != color;
 }
 
 /// A small box of [text] at the end of an event's summary: its duration,
