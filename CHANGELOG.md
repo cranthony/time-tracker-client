@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.70.1
+
+- Once a proposal is confirmed and applied -- here, or by the background
+  task -- each of its days goes on showing what it said happened until
+  that day has been loaded again, rather than flashing back to the
+  calendar as it was before the apply.
+
 ## 7.70.0
 
 - A number-of-events or time-spent part says what happens when you're

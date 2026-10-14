@@ -627,7 +627,7 @@ void main() {
     Finder inDialog(Finder f) =>
         find.descendant(of: find.byType(AlertDialog), matching: f);
 
-    late InMemoryEventsRepository events;
+    late _HeldEvents events;
     late _Proposals proposals;
     EventOutbox? outbox;
 
@@ -648,7 +648,7 @@ void main() {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      events = InMemoryEventsRepository(calendar());
+      events = _HeldEvents(calendar());
       proposals = _Proposals(
         Proposal.fromJson(json ?? proposalJson()),
         events: events,
@@ -819,6 +819,43 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(ProposalBar), findsNothing);
+    });
+
+    testWidgets('applied, what it says happened is shown till the day is '
+        'loaded again, not the calendar as it was before', (tester) async {
+      await open(tester, queued: true);
+      expect(find.text('Email'), findsOneWidget);
+
+      // The calendar as the apply left it, loaded slowly.
+      events
+        ..hold = Completer()
+        ..answer = [
+          for (final e in calendar())
+            if (e.id != 'walk') e,
+          Event(
+            id: 'email',
+            start: at(11, 30),
+            end: at(11, 45),
+            summary: 'Email, applied',
+          ),
+        ];
+      await outbox!.notices!.add(
+        ProposalNotice(
+          id: 'elsewhere-applied',
+          kind: ProposalNoticeKind.applied,
+          proposalId: Proposal.fromJson(proposalJson()).id,
+          at: now,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(ProposalBar), findsNothing);
+      expect(find.text('Email'), findsOneWidget);
+
+      events.hold!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Email'), findsNothing);
+      expect(find.text('Email, applied'), findsOneWidget);
     });
 
     testWidgets("its through tab extends it: the end's cursor, stepped, "
@@ -1474,6 +1511,31 @@ void main() {
       expect(find.text('What happened — to confirm'), findsNothing);
     });
   });
+}
+
+/// In-memory events that can answer slowly, and as the calendar has
+/// changed meanwhile.
+class _HeldEvents extends InMemoryEventsRepository {
+  _HeldEvents(super.events);
+
+  /// While set, [events] answers only once it's done.
+  Completer<void>? hold;
+
+  /// While set, what [events] answers from, in place of what it has.
+  List<Event>? answer;
+
+  @override
+  Future<List<Event>> events(DateTime from, DateTime to) async {
+    final had = await super.events(from, to);
+    await hold?.future;
+    return switch (answer) {
+      final answer? => [
+        for (final e in answer)
+          if (e.start.isBefore(to) && e.end.isAfter(from)) e,
+      ],
+      null => had,
+    };
+  }
 }
 
 /// An in-memory proposal that records the edits made to it, and can

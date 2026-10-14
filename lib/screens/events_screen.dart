@@ -363,6 +363,21 @@ class _EventsScreenState extends State<EventsScreen> {
   };
   final _closedHere = <String>{};
 
+  /// The proposal last applied while the page has been open, and when:
+  /// what it says happened is shown on each of its days kept from before
+  /// then, till that day's asked for again -- not the calendar as it was
+  /// before it was applied.
+  ({Proposal proposal, DateTime at})? _applied;
+
+  /// The proposal applied, if [day]'s events were asked for before it
+  /// was: what's on the calendar now.
+  Proposal? _appliedOn(DateTime day) => switch (_applied) {
+    (:final proposal, :final at)
+        when _store.askedAt(day)?.isBefore(at) ?? true =>
+      proposal,
+    _ => null,
+  };
+
   /// Takes the proposal [id] away, once, as closed: [applied], the events
   /// and notes it compacted are loaded again.
   void _closeProposal(String id, {required bool applied}) {
@@ -371,6 +386,7 @@ class _EventsScreenState extends State<EventsScreen> {
       // Kept as seen: nothing in it is new any more.
       final loaded = _loadedProposal!;
       if (_proposalLoaded) _seen.saw(loaded.id, loaded.revision);
+      _applied = (proposal: loaded, at: _store.clock());
     }
     setState(() {
       if (_loadedProposal?.id == id) _proposal = null;
@@ -786,12 +802,14 @@ class _EventsScreenState extends State<EventsScreen> {
   List<Event>? get _shown => _eventsOn(_day);
 
   /// [day]'s events, if they're loaded, as they're shown: in what an
-  /// open proposal says happened, as it says.
+  /// open proposal says happened, as it says -- or one just applied, till
+  /// the day's loaded again.
   List<Event>? _eventsOn(DateTime day) => switch (_store.day(day)) {
     final events? => _withProposal(
       _waiting(events, day, _dayAfter(day)),
       day,
       _dayAfter(day),
+      proposal: _proposal ?? _appliedOn(day),
     ),
     null => null,
   };
@@ -802,10 +820,17 @@ class _EventsScreenState extends State<EventsScreen> {
       widget.eventOutbox?.project(events, from, to) ?? events;
 
   /// [calendar], the calendar's events from [from] to [to], with those
-  /// that the open proposal says happened as it says: a new one added,
-  /// and a cancelled one shown cancelled -- unless another is in its place.
-  List<Event> _withProposal(List<Event> calendar, DateTime from, DateTime to) {
-    final reviewed = _proposal?.reviewed ?? const <ProposalEvent>[];
+  /// that [proposal] -- the open one by default -- says happened as it
+  /// says: a new one added, and a cancelled one shown cancelled -- unless
+  /// another is in its place.
+  List<Event> _withProposal(
+    List<Event> calendar,
+    DateTime from,
+    DateTime to, {
+    Proposal? proposal,
+  }) {
+    proposal ??= _proposal;
+    final reviewed = proposal?.reviewed ?? const <ProposalEvent>[];
     if (reviewed.isEmpty) return calendar;
     final ids = {for (final e in reviewed) e.id};
     final byId = {for (final e in calendar) ?e.id: e};
@@ -824,7 +849,7 @@ class _EventsScreenState extends State<EventsScreen> {
         if (!ids.contains(e.id)) e,
       for (final e in here)
         if (e.live || !covered(e))
-          e.toEvent(byId[e.id], _proposal?.addedNames ?? const {}),
+          e.toEvent(byId[e.id], proposal?.addedNames ?? const {}),
     ]..sort((a, b) => a.start.compareTo(b.start));
   }
 
@@ -1542,10 +1567,11 @@ class _EventsScreenState extends State<EventsScreen> {
   /// shown's errors are shown; another day's is loaded again when it is.
   Future<void> _load([DateTime? day]) async {
     final which = day ?? _day;
+    final asked = _store.clock();
     try {
       final events = await widget.repository.events(which, _dayAfter(which));
       if (!mounted) return;
-      _store.putDay(which, events);
+      _store.putDay(which, events, asked: asked);
       setState(() {
         _fresh.add(which);
         if (which == _day) {
