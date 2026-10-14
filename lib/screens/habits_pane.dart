@@ -197,6 +197,7 @@ class HabitsPaneState extends State<HabitsPane> {
       traits: [..._traits.values],
       foundationChoices: foundationChoices(_graph, _people, id: habit?.subject),
       foundationNames: _names,
+      scoreParts: widget.memory.scoreDraftParts,
       save: (fields) => habit == null
           ? repository.createHabit(
               Habit.fromJson({'id': '', 'action_id': '', ...fields}),

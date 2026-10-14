@@ -5,6 +5,7 @@ import '../models/habit_graph.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/trait.dart';
+import '../models/trait_scores.dart';
 import 'actions_picker.dart';
 import 'color_picker.dart';
 import '../services/focus_store.dart';
@@ -25,7 +26,8 @@ import 'traits_field.dart';
 /// returned, or null if it was called off. With [focus], a star beside
 /// Save focuses on one already there, at once. With [foundationChoices],
 /// what it's built on is picked from them; [foundationNames] names its
-/// foundations by id.
+/// foundations by id. With [scoreParts], its own parts are scored as
+/// they're edited, for the action picked.
 Future<Habit?> showHabitEditor(
   BuildContext context, {
   Habit? habit,
@@ -34,6 +36,7 @@ Future<Habit?> showHabitEditor(
   FocusStore? focus,
   List<GraphNode>? foundationChoices,
   Map<String, String> foundationNames = const {},
+  PartsScorer? scoreParts,
   required Future<Habit> Function(Map<String, Object?> fields) save,
 }) => showEditPage<Habit>(
   context,
@@ -44,6 +47,7 @@ Future<Habit?> showHabitEditor(
     focus: focus,
     foundationChoices: foundationChoices,
     foundationNames: foundationNames,
+    scoreParts: scoreParts,
     save: save,
   ),
 );
@@ -63,6 +67,7 @@ class _HabitEditor extends StatefulWidget {
     required this.focus,
     required this.foundationChoices,
     required this.foundationNames,
+    required this.scoreParts,
     required this.save,
   });
 
@@ -72,6 +77,7 @@ class _HabitEditor extends StatefulWidget {
   final FocusStore? focus;
   final List<GraphNode>? foundationChoices;
   final Map<String, String> foundationNames;
+  final PartsScorer? scoreParts;
   final Future<Habit> Function(Map<String, Object?> fields) save;
 
   @override
@@ -263,6 +269,18 @@ class _HabitEditorState extends State<_HabitEditor> {
                   (id) => _byId[id]?.parentId,
                   {for (final id in _byId.keys) id: _actionName(id)},
                 ),
+          preview: switch ((widget.scoreParts, _actionId)) {
+            (final score?, final actionId?) => (trait, parts) => score(
+              Subject(
+                id: widget.habit?.subject ?? 'habit:',
+                cancelledEvents: widget.habit?.cancelledEvents ?? const [],
+                scope: actionId,
+              ),
+              trait.id!,
+              parts,
+            ),
+            _ => null,
+          },
           onChanged: (traits) => setState(() => _traits = traits),
         ),
         ..._warnings(theme),

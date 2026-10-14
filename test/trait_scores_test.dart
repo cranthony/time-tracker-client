@@ -293,6 +293,38 @@ void main() {
     expect(score.parts.single.said, '3h of 4h in the last 7 days');
   });
 
+  test('parts being edited are scored as the trait would score them, '
+      "leaving out those a habit doesn't read", () {
+    final events = [
+      for (var day = 1; day <= 5; day++)
+        _event('work$day', day, hours: 7, actions: ['work']),
+    ];
+    const habit = Subject(id: 'habit:w', scope: 'work');
+    const partial = {
+      'kind': 'duration',
+      'target_min': 2400,
+      'interval_days': 7,
+    };
+    final scores = scoreParts(
+      habit,
+      'reliable',
+      [
+        partial,
+        {...partial, 'zero_at_days': 14},
+        {...partial, 'engagement_type': 'for'},
+      ],
+      _end,
+      events,
+    );
+
+    // 35h of 40h: in proportion, or, never met, faded to nothing.
+    expect(scores[0]!.score, 88);
+    expect(scores[0]!.said, '35h of 40h in the last 7 days');
+    expect(scores[1]!.score, 0);
+    expect(scores[1]!.said, contains('not met in the last 14 days'));
+    expect(scores[2], isNull);
+  });
+
   group('follow-through', () {
     /// Sam, with the events the user cancelled that count against him.
     Person samWith(List<CancelledEvent> cancelled) =>

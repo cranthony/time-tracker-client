@@ -182,6 +182,7 @@ class PeoplePaneState extends State<PeoplePane> {
       circles: _people?.circles ?? const [],
       traits: traits,
       actions: widget.actions,
+      scoreParts: widget.memory.scoreDraftParts,
       save: (fields) => person == null
           ? repository.createPerson(Person.fromJson({'id': '', ...fields}))
           : repository.updatePerson(person.id, fields),

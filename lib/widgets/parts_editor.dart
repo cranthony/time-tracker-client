@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/trait.dart';
+import '../models/trait_scores.dart' show defaultWindowDays;
 import 'duration_field.dart';
 import 'edit_page.dart';
 
@@ -13,6 +14,10 @@ import 'edit_page.dart';
 /// whether or not they're valid yet; see [partProblem]. [actions] names
 /// the actions and groups a part can count, by id; [exceptionActions]
 /// (by default those) those a spacing part can set aside.
+/// With [preview], each card ends with its part's score as it stands --
+/// "[previewLabel]: 88 · 35h of 40h in the last 7 days" -- and, for a
+/// part that fades instead of giving partial credit, what partial credit
+/// would score.
 class PartsEditor extends StatefulWidget {
   const PartsEditor({
     super.key,
@@ -20,16 +25,24 @@ class PartsEditor extends StatefulWidget {
     required this.onChanged,
     this.actions = const {},
     this.exceptionActions,
+    this.preview,
+    this.previewLabel = 'Yesterday',
   });
 
   final List<Part> parts;
   final ValueChanged<List<Part>> onChanged;
   final Map<String, String> actions;
   final Map<String, String>? exceptionActions;
+  final PartsPreview? preview;
+  final String previewLabel;
 
   @override
   State<PartsEditor> createState() => _PartsEditorState();
 }
+
+/// Scores [parts] as they're being edited, each by its index; null, or
+/// null for one, without a score of it.
+typedef PartsPreview = List<PartScore?>? Function(List<Part> parts);
 
 /// What a new judgment starts with: a scale of 0 to 3, judged from the
 /// event's actions and notes.
@@ -57,14 +70,42 @@ class _PartsEditorState extends State<PartsEditor> {
     widget.onChanged([for (final draft in _drafts) draft.part]);
   }
 
+  /// Each part's preview: its score as it stands and, for one that fades,
+  /// what partial credit would score. Null without [PartsEditor.preview].
+  List<(PartScore, PartScore?)?>? get _previews {
+    final preview = widget.preview;
+    if (preview == null) return null;
+    final parts = [for (final draft in _drafts) draft.part];
+    final scores = preview(parts);
+    if (scores == null) return null;
+    return [
+      for (final (i, part) in parts.indexed)
+        switch (scores.elementAtOrNull(i)) {
+          final score? when partProblem(part) == null => (
+            score,
+            part['zero_at_days'] != null && (score.score ?? 100) < 100
+                ? preview([
+                    ...parts.take(i),
+                    {...part}..remove('zero_at_days'),
+                    ...parts.skip(i + 1),
+                  ])?.elementAtOrNull(i)
+                : null,
+          ),
+          _ => null,
+        },
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final previews = _previews;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final (i, draft) in _drafts.indexed) _card(theme, i, draft),
+        for (final (i, draft) in _drafts.indexed)
+          _card(theme, i, draft, previews?.elementAtOrNull(i)),
         Align(
           alignment: AlignmentDirectional.centerStart,
           child: TextButton.icon(
@@ -80,7 +121,12 @@ class _PartsEditorState extends State<PartsEditor> {
     );
   }
 
-  Widget _card(ThemeData theme, int index, _PartDraft draft) {
+  Widget _card(
+    ThemeData theme,
+    int index,
+    _PartDraft draft,
+    (PartScore, PartScore?)? preview,
+  ) {
     final kind = partKinds[draft.kind];
     return Card(
       margin: const EdgeInsets.only(top: 8),
@@ -151,6 +197,8 @@ class _PartsEditorState extends State<PartsEditor> {
             for (final field in kind?.fields ?? const [])
               if (field.field == 'action')
                 _actionPicker(draft, required: field.required)
+              else if (field.field == 'zero_at_days')
+                ..._fadeFields(theme, draft)
               else if (field.field == 'target_min')
                 Padding(
                   padding: const EdgeInsets.only(top: 8, right: 8),
@@ -170,6 +218,8 @@ class _PartsEditorState extends State<PartsEditor> {
                 ),
             if (draft.kind == 'judgment') ..._judgmentFields(theme, draft),
             if (draft.kind == 'spacing') ..._spacingFields(theme, draft),
+            if (preview case (final score, final partial))
+              _preview(theme, score, partial),
           ],
         ),
       ),
@@ -208,6 +258,96 @@ class _PartsEditorState extends State<PartsEditor> {
       ),
     );
   }
+
+  /// Whether a count or duration part short of its target gets partial
+  /// credit or, with none, fades from when it was last met -- and over
+  /// how many days.
+  List<Widget> _fadeFields(ThemeData theme, _PartDraft draft) => [
+    Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Text(
+        'When short of the target',
+        style: theme.textTheme.labelLarge,
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(top: 8, right: 8),
+      child: SegmentedButton<bool>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment(value: false, label: Text('Partial credit')),
+          ButtonSegment(value: true, label: Text('Fade when missed')),
+        ],
+        selected: {draft.fades},
+        onSelectionChanged: (picked) {
+          draft.fades = picked.single;
+          if (draft.fades && draft.fade.text.trim().isEmpty) {
+            // As long as it looks back, to start with.
+            final interval = draft.controller('interval_days').text.trim();
+            draft.fade.text = interval.isEmpty
+                ? '$defaultWindowDays'
+                : interval;
+          }
+          _changed();
+        },
+      ),
+    ),
+    if (draft.fades)
+      _input(draft.fade, 'Fades to 0 over, in days', number: true),
+    Padding(
+      padding: const EdgeInsets.only(top: 4, right: 8),
+      child: Text(
+        draft.fades
+            ? 'No partial credit: 100 while the target is met, then '
+                  'falling to 0 over these days after the last time it was.'
+            : 'Scores its share of the target: half of it scores 50.',
+        style: theme.textTheme.bodySmall,
+      ),
+    ),
+  ];
+
+  /// A part's score as it stands, how it was reached, and what partial
+  /// credit would score instead.
+  Widget _preview(ThemeData theme, PartScore score, PartScore? partial) =>
+      Padding(
+        padding: const EdgeInsets.only(top: 12, right: 8),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.visibility_outlined,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: '${widget.previewLabel}: ${score.score ?? '–'}',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        TextSpan(text: ' · ${score.said}'),
+                        if (partial?.score case final credit?)
+                          TextSpan(text: '\nWith partial credit: $credit'),
+                      ],
+                    ),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 
   /// A judgment's rating scale and facts.
   List<Widget> _judgmentFields(ThemeData theme, _PartDraft draft) => [
@@ -499,8 +639,14 @@ class _PartDraft {
     for (final MapEntry(:key, :value) in part.entries) {
       if (value == null || value is List || value is Map) continue;
       if (key == 'kind' || key == 'engagement_type') continue;
+      if (key == 'zero_at_days') continue;
       controller(key).text = '$value';
     }
+    fades = part['zero_at_days'] != null;
+    fade.text = switch (fadeDays(part)) {
+      final days? => days == days.roundToDouble() ? '${days.round()}' : '$days',
+      null => '${part['zero_at_days'] ?? ''}',
+    };
     engagement = part['engagement_type'] as String? ?? 'with';
     // Ready, should it become a judgment.
     final judgment = part['kind'] == 'judgment' ? part : newJudgment;
@@ -518,6 +664,12 @@ class _PartDraft {
 
   String kind;
   late String engagement;
+
+  /// Whether a count or duration part fades, short of its target, rather
+  /// than giving partial credit; and over how many days after its
+  /// interval (kept as its `zero_at_days`).
+  var fades = false;
+  final fade = TextEditingController();
   final ratings = <_RatingDraft>[];
 
   /// A spacing part's exceptions.
@@ -550,6 +702,7 @@ class _PartDraft {
       'kind': kind,
       if (engagement != 'with') 'engagement_type': engagement,
       for (final field in fields) field: ?value(field),
+      if (fades && fields.contains('zero_at_days')) 'zero_at_days': _zeroAt,
       if (kind == 'spacing' && exceptions.isNotEmpty)
         'exceptions': [
           for (final e in exceptions)
@@ -583,7 +736,18 @@ class _PartDraft {
     };
   }
 
+  /// Its `zero_at_days`: its interval and [fade]'s days; one that doesn't
+  /// parse is kept as typed, for [partProblem].
+  Object get _zeroAt {
+    final text = fade.text.trim();
+    final days = num.tryParse(text);
+    if (days == null) return text;
+    final interval = num.tryParse(controller('interval_days').text.trim());
+    return (interval ?? defaultWindowDays) + days;
+  }
+
   void dispose() {
+    fade.dispose();
     for (final c in _controllers.values) {
       c.dispose();
     }
@@ -602,8 +766,9 @@ class _PartDraft {
 /// Edits [parts] on a page of its own ([EditPage]) titled [title], with
 /// [explanation] above them, refusing to be done while they're empty or
 /// a part is wrong. Below them, [warnings] says what's amiss with them
-/// that doesn't stop them being saved. Returns the parts, or null if it
-/// was called off.
+/// that doesn't stop them being saved; with [preview], each part's
+/// score shows as it's edited (see [PartsEditor.preview]). Returns the
+/// parts, or null if it was called off.
 Future<List<Part>?> showPartsEditor(
   BuildContext context, {
   required String title,
@@ -612,6 +777,7 @@ Future<List<Part>?> showPartsEditor(
   Map<String, String> actions = const {},
   Map<String, String>? exceptionActions,
   List<String> Function(List<Part> parts)? warnings,
+  PartsPreview? preview,
 }) => showEditPage<List<Part>>(
   context,
   _PartsPage(
@@ -621,6 +787,7 @@ Future<List<Part>?> showPartsEditor(
     actions: actions,
     exceptionActions: exceptionActions,
     warnings: warnings,
+    preview: preview,
   ),
 );
 
@@ -632,6 +799,7 @@ class _PartsPage extends StatefulWidget {
     required this.actions,
     required this.exceptionActions,
     required this.warnings,
+    required this.preview,
   });
 
   final String title;
@@ -640,6 +808,7 @@ class _PartsPage extends StatefulWidget {
   final Map<String, String> actions;
   final Map<String, String>? exceptionActions;
   final List<String> Function(List<Part> parts)? warnings;
+  final PartsPreview? preview;
 
   @override
   State<_PartsPage> createState() => _PartsPageState();
@@ -665,6 +834,7 @@ class _PartsPageState extends State<_PartsPage> {
           parts: widget.parts,
           actions: widget.actions,
           exceptionActions: widget.exceptionActions,
+          preview: widget.preview,
           onChanged: (parts) => setState(() => _parts = parts),
         ),
         for (final warning in widget.warnings?.call(_parts) ?? const [])

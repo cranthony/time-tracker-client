@@ -10,8 +10,9 @@ import 'parts_editor.dart';
 /// after every change. A trait's tune button edits its own parts on a
 /// page of its own titled [partsTitle], with [partsExplanation] above them and
 /// [warnings] below; [actions] names the actions and groups a part can
-/// count. [own] is whose they are: "Their own", "Its own". Shows nothing
-/// without [traits].
+/// count. [own] is whose they are: "Their own", "Its own". With
+/// [preview], a trait's own parts are scored as they're edited (see
+/// [PartsEditor.preview]). Shows nothing without [traits].
 class TraitsField extends StatefulWidget {
   const TraitsField({
     super.key,
@@ -24,6 +25,7 @@ class TraitsField extends StatefulWidget {
     this.actions = const {},
     this.exceptionActions,
     this.warnings,
+    this.preview,
   });
 
   final List<Trait> traits;
@@ -37,6 +39,7 @@ class TraitsField extends StatefulWidget {
   /// What a spacing part can set aside, by id; by default [actions].
   final Map<String, String>? exceptionActions;
   final List<String> Function(List<Part> parts)? warnings;
+  final List<PartScore?>? Function(Trait trait, List<Part> parts)? preview;
 
   @override
   State<TraitsField> createState() => _TraitsFieldState();
@@ -75,6 +78,10 @@ class _TraitsFieldState extends State<TraitsField> {
       actions: widget.actions,
       exceptionActions: widget.exceptionActions,
       warnings: widget.warnings,
+      preview: switch (widget.preview) {
+        final preview? => (parts) => preview(trait, parts),
+        null => null,
+      },
     );
     if (edited != null) _changed(() => _parts[trait.id!] = edited);
   }

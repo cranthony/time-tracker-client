@@ -9,15 +9,17 @@ import 'parts_editor.dart';
 /// ([EditPage]) -- its name, definition, status and parts -- checking it as the server does ([traitProblem]),
 /// then saving it with [save], which gets it whole. Returns what [save]
 /// returned, or null if it was called off. [actions] names the actions
-/// a cadence part can count, by id.
+/// a cadence part can count, by id. With [preview], its parts are scored
+/// as they're edited, for Self (see [PartsEditor.preview]).
 Future<Trait?> showTraitEditor(
   BuildContext context, {
   Trait? trait,
   required Future<Trait> Function(Trait trait) save,
   Map<String, String> actions = const {},
+  PartsPreview? preview,
 }) => showEditPage<Trait>(
   context,
-  _TraitEditor(trait: trait, save: save, actions: actions),
+  _TraitEditor(trait: trait, save: save, actions: actions, preview: preview),
 );
 
 class _TraitEditor extends StatefulWidget {
@@ -25,11 +27,13 @@ class _TraitEditor extends StatefulWidget {
     required this.trait,
     required this.save,
     required this.actions,
+    required this.preview,
   });
 
   final Trait? trait;
   final Future<Trait> Function(Trait trait) save;
   final Map<String, String> actions;
+  final PartsPreview? preview;
 
   @override
   State<_TraitEditor> createState() => _TraitEditorState();
@@ -145,6 +149,8 @@ class _TraitEditorState extends State<_TraitEditor> {
         PartsEditor(
           parts: _parts,
           actions: widget.actions,
+          preview: widget.preview,
+          previewLabel: 'Yesterday, for you',
           onChanged: (parts) => setState(() => _parts = parts),
         ),
       ],

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../models/person.dart';
 import '../models/trait.dart';
+import '../models/trait_scores.dart';
 import '../widgets/status_message.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
@@ -115,6 +117,14 @@ class TraitsSectionState extends State<TraitsSection> {
       context,
       trait: trait,
       actions: widget.actions,
+      preview: (parts) => widget.memory.scoreDraftParts(
+        Subject.person(
+          widget.memory.people?.withSelf.firstWhere((p) => p.isSelf) ??
+              defaultSelf,
+        ),
+        trait?.id ?? '',
+        parts,
+      ),
       save: (edited) => trait?.id == null
           ? repository.createTrait(edited)
           : repository.updateTrait(trait!.id!, {

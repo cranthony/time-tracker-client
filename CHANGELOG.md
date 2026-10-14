@@ -6,6 +6,19 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.70.0
+
+- A number-of-events or time-spent part says what happens when you're
+  short of its target: "Partial credit" (35h of 40h scores 88) or "Fade
+  when missed" -- no partial credit, falling from 100 to 0 over the days
+  you give it after the target was last met. That replaces the bare
+  "Zero at, in days" field, and a part's one-line description says
+  when it fades.
+- Every part in the parts editor -- for a habit, a person or a trait --
+  ends with its score as it stands: "Yesterday: 0 · 35h of 40h in the
+  last 7 days; not met in the last 14 days", and, for one that fades,
+  what partial credit would score. A trait's parts are scored for you.
+
 ## 7.69.2
 
 - While an event is being moved, the red "overlap" tint where it was

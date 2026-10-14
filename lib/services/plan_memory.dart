@@ -132,6 +132,33 @@ class PlanMemory extends ChangeNotifier {
     return _scores?.$2;
   }
 
+  /// [parts] -- the trait [traitId]'s for [subject], as they're being
+  /// edited -- scored for the last day that's over, as [scores] would
+  /// score them, from [eventStore]'s events; null without any. A
+  /// [PartsScorer], for the parts editor's preview.
+  List<PartScore?>? scoreDraftParts(
+    Subject subject,
+    String traitId,
+    List<Part> parts,
+  ) {
+    final store = _eventStore;
+    final span = store?.span;
+    if (store == null || span == null) return null;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final parents = {
+      for (final g in actions?.actions ?? const <PlanAction>[])
+        if (g.id != null) g.id!: g.parentId,
+    };
+    return scoreParts(subject, traitId, parts, today, [
+      for (final e in store.between(
+        span.$1,
+        span.$2.add(const Duration(days: 1)),
+      ))
+        if (!e.isCancelled) e,
+    ], parentOf: (id) => parents[id]);
+  }
+
   /// Whether [scores] are being worked out again: they're as they were
   /// till then.
   bool get rescoring => _rescoring != null;

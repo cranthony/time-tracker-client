@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/person.dart';
 import '../models/trait.dart';
+import '../models/trait_scores.dart';
 import '../services/focus_store.dart';
 import 'edit_page.dart';
 import 'error_sheet.dart';
@@ -18,7 +19,8 @@ import 'traits_field.dart';
 /// takes them (null to clear one), and returns what it returned, or null
 /// if it was called off. [actions] names the actions and groups a part
 /// can count. With [focus], a star beside Save prioritizes someone
-/// already there, at once.
+/// already there, at once. With [scoreParts], the parts of their own of
+/// someone already there are scored as they're edited.
 Future<Person?> showPersonEditor(
   BuildContext context, {
   Person? person,
@@ -26,6 +28,7 @@ Future<Person?> showPersonEditor(
   List<Trait> traits = const [],
   Map<String, String> actions = const {},
   FocusStore? focus,
+  PartsScorer? scoreParts,
   required Future<Person> Function(Map<String, Object?> fields) save,
 }) => showEditPage<Person>(
   context,
@@ -35,6 +38,7 @@ Future<Person?> showPersonEditor(
     traits: traits,
     actions: actions,
     focus: focus,
+    scoreParts: scoreParts,
     save: save,
   ),
 );
@@ -46,6 +50,7 @@ class _PersonEditor extends StatefulWidget {
     required this.traits,
     required this.actions,
     required this.focus,
+    required this.scoreParts,
     required this.save,
   });
 
@@ -54,6 +59,7 @@ class _PersonEditor extends StatefulWidget {
   final List<Trait> traits;
   final Map<String, String> actions;
   final FocusStore? focus;
+  final PartsScorer? scoreParts;
   final Future<Person> Function(Map<String, Object?> fields) save;
 
   @override
@@ -218,6 +224,14 @@ class _PersonEditorState extends State<_PersonEditor> {
           partsExplanation: (trait) =>
               "Their own parts for ${trait.name}, in place of the "
               "trait's: their own cadence, say.",
+          preview: switch ((widget.scoreParts, widget.person)) {
+            (final score?, final person?) => (trait, parts) => score(
+              Subject.person(person),
+              trait.id!,
+              parts,
+            ),
+            _ => null,
+          },
           onChanged: (traits) => _traits = traits,
         ),
         if (!_isSelf && widget.person != null) ...[
