@@ -10,7 +10,7 @@ import '../services/traits_repository.dart';
 import '../widgets/durations.dart';
 import '../widgets/focus_buttons.dart';
 import '../widgets/health.dart';
-import 'event_list_screen.dart';
+import 'subject_sections.dart';
 import 'trait_breakdown.dart';
 
 /// A person -- Self included -- on one page: who they are (their context
@@ -59,7 +59,7 @@ class PersonScreen extends StatefulWidget {
   State<PersonScreen> createState() => _PersonScreenState();
 }
 
-class _PersonScreenState extends State<PersonScreen> {
+class _PersonScreenState extends State<PersonScreen> with Rescored {
   late Person _person = widget.person;
 
   /// Every trait, by id, to name those that apply to them.
@@ -70,21 +70,12 @@ class _PersonScreenState extends State<PersonScreen> {
   bool get _scored => widget.memory != null;
 
   @override
-  void initState() {
-    super.initState();
-    widget.memory?.addListener(_rescored);
-    _loadTraitList();
-  }
+  PlanMemory? get memory => widget.memory;
 
   @override
-  void dispose() {
-    widget.memory?.removeListener(_rescored);
-    super.dispose();
-  }
-
-  /// Shows the scores again, as they're worked out again.
-  void _rescored() {
-    if (mounted) setState(() {});
+  void initState() {
+    super.initState();
+    _loadTraitList();
   }
 
   /// The traits again, and the week either side of today's events.
@@ -126,18 +117,33 @@ class _PersonScreenState extends State<PersonScreen> {
       for (final c in widget.circles)
         if (_person.circleIds.contains(c.id)) c,
     ];
+    final sections = SubjectSections(
+      context,
+      memory: widget.memory,
+      scored: _scored,
+      subjectId: _person.id,
+      name: personName(_person),
+      healthTitle: 'Relationship health',
+      scale: HealthScale.relationship,
+      traits: _person.traits,
+      cancelled: _person.cancelledEvents,
+      traitList: _traitList,
+      whom: _person.isSelf ? 'you' : 'them',
+      whose: _person.isSelf ? 'your' : 'their',
+      withWhom: _person.isSelf ? null : 'with them',
+      why: 'off, archived, or not theirs',
+      noteOf: _person.id,
+      actionNames: widget.actionNames,
+      personNames: widget.personNames,
+      locationNames: widget.locationNames,
+    );
     return Scaffold(
       appBar: AppBar(
         title: Text(personName(_person)),
         actions: [
           if (widget.memory?.focus case final focus? when !_person.isSelf)
             prioritizeButton(focus, _person),
-          if (widget.onEdit != null)
-            IconButton(
-              tooltip: 'Edit ${personName(_person)}',
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: _edit,
-            ),
+          if (widget.onEdit != null) editButton(personName(_person), _edit),
         ],
       ),
       body: RefreshIndicator(
@@ -145,32 +151,7 @@ class _PersonScreenState extends State<PersonScreen> {
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
-            if (_scored)
-              ListTile(
-                title: const Text('Relationship health'),
-                subtitle: Text(switch (_scores?.health(_person.id)) {
-                  final h? => relationshipBand(h),
-                  null => 'Not rated yet',
-                }),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_scores?.healthTrend(_person.id) case final trend?
-                        when trend.nonNulls.isNotEmpty) ...[
-                      TrendSparkline(
-                        trend: trend,
-                        scale: HealthScale.relationship,
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    HealthDot(
-                      rating: _scores?.health(_person.id),
-                      scale: HealthScale.relationship,
-                      consistency: _scores?.consistency(_person.id) ?? 0,
-                    ),
-                  ],
-                ),
-              ),
+            ...sections.health(),
             if (_person.context case final context?)
               ListTile(
                 dense: true,
@@ -183,14 +164,12 @@ class _PersonScreenState extends State<PersonScreen> {
                 title: const Text('Circles'),
                 subtitle: Text(circles.map((c) => c.name).join(', ')),
               ),
-            _heading(theme, 'Traits'),
-            ..._applies(theme),
-            if (_scored) ..._traits(context),
-            _heading(
+            ...sections.traitSection(),
+            sectionHeading(
               theme,
               _person.isSelf ? 'What matters to you' : 'What matters to them',
             ),
-            _padded(switch (_person.whatMatters) {
+            sectionPadded(switch (_person.whatMatters) {
               final text? when text.trim().isNotEmpty => Text(text),
               _ => Text(
                 'Nothing yet. Compaction adds to it as notes reveal things.',
@@ -198,41 +177,20 @@ class _PersonScreenState extends State<PersonScreen> {
               ),
             }),
             if (_scored) ...[
-              _heading(theme, 'History'),
+              sectionHeading(theme, 'History'),
               ..._history(theme),
-              _heading(theme, 'Events'),
-              ..._timeline(theme),
             ],
-            _heading(theme, 'Cancelled'),
-            ..._cancelled(theme),
+            ...sections.events(),
+            ...sections.cancelledSection(),
           ],
         ),
       ),
     );
   }
 
-  /// Which traits apply to them, and their own parts for any.
-  List<Widget> _applies(ThemeData theme) => traitsApplied(
-    theme,
-    _person.traits,
-    traitList: _traitList,
-    actionNames: widget.actionNames,
-    defaults: PlanMemoryScope.of(context)?.scoringDefaults.traits,
-  );
-
-  List<Widget> _traits(BuildContext context) => traitScoreTiles(
-    context,
-    _scores,
-    _person.id,
-    whom: 'them',
-    why: 'off, archived, or not theirs',
-    personNames: widget.personNames,
-    locationNames: widget.locationNames,
-  );
-
   List<Widget> _history(ThemeData theme) {
     final digest = _scores?.digest(_person.id);
-    if (digest == null) return [_padded(const LinearProgressIndicator())];
+    if (digest == null) return [sectionPadded(const LinearProgressIndicator())];
     String entries(List<DigestEntry> list) => list.isEmpty
         ? 'None recorded'
         : [
@@ -241,7 +199,7 @@ class _PersonScreenState extends State<PersonScreen> {
                   '(${e.first == e.last ? e.first : '${e.first} – ${e.last}'})',
           ].join('\n');
     return [
-      _padded(
+      sectionPadded(
         Text(
           '${digest.eventsCounted} events in the last ${digest.windowDays} '
           'days.',
@@ -260,77 +218,6 @@ class _PersonScreenState extends State<PersonScreen> {
       ),
     ];
   }
-
-  /// Their events in brief -- how many, their time, the most recent and
-  /// the oldest -- with "All events" opening the lot on a page of its
-  /// own.
-  List<Widget> _timeline(ThemeData theme) => eventsSummary(
-    context,
-    _scores?.digest(_person.id),
-    noteOf: _person.id,
-    actionNames: widget.actionNames,
-    personNames: widget.personNames,
-    locationNames: widget.locationNames,
-    onAll: () => _openList(
-      'Events',
-      (context) => eventTiles(
-        context,
-        _scores?.digest(_person.id),
-        noteOf: _person.id,
-        actionNames: widget.actionNames,
-        personNames: widget.personNames,
-        locationNames: widget.locationNames,
-      ),
-    ),
-  );
-
-  /// The events the user cancelled that count against their
-  /// follow-through, in brief as their events are, with "All cancelled
-  /// events" opening the lot.
-  List<Widget> _cancelled(ThemeData theme) => cancelledSummary(
-    context,
-    _person.cancelledEvents,
-    whose: _person.isSelf ? 'your' : 'their',
-    whom: _person.isSelf ? 'you' : 'them',
-    withWhom: _person.isSelf ? null : 'with them',
-    traitList: _traitList,
-    actionNames: widget.actionNames,
-    onAll: () => _openList(
-      'Cancelled',
-      (context) => cancelledTiles(
-        context,
-        _person.cancelledEvents,
-        whose: _person.isSelf ? 'your' : 'their',
-        whom: _person.isSelf ? 'you' : 'them',
-        withWhom: _person.isSelf ? null : 'with them',
-        traitList: _traitList,
-        actionNames: widget.actionNames,
-      ),
-    ),
-  );
-
-  /// A page of [title] listing what [tiles] builds, built again as
-  /// they're scored again.
-  void _openList(String title, List<Widget> Function(BuildContext) tiles) =>
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => EventListScreen(
-            title: '$title · ${personName(_person)}',
-            listenable: widget.memory,
-            tiles: tiles,
-          ),
-        ),
-      );
-
-  Widget _heading(ThemeData theme, String text) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
-    child: Text(text, style: theme.textTheme.titleMedium),
-  );
-
-  Widget _padded(Widget child) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-    child: child,
-  );
 }
 
 /// How the traits combine -- [traits.scoring], or else [defaults] --

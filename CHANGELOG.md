@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.85.0
+
+- A person's page and a habit's share their health, Traits, Events and
+  Cancelled sections, their headings and their pencil, so the two stay
+  alike. Nothing on either page looks or reads differently.
+
 ## 7.84.0
 
 - Tapping an action or group in the Actions pane, or "Edit" in its menu,
