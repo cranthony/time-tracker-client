@@ -110,7 +110,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    await tester.tap(find.text('Its time'));
+    await tester.tap(find.text('Time'));
     await tester.pump();
     await tester.tap(find.text('Only some of their time'));
     await tester.pump();
@@ -196,5 +196,33 @@ void main() {
       'limit_by': 'worst',
     });
     expect(memory.scoringDefaults.circles?.limit, 2);
+  });
+
+  test('without a server, parts are given ids as the server gives them, '
+      'for their weights', () async {
+    final repository = InMemoryTraitsRepository(
+      traits: const [
+        Trait(
+          id: 'reliable',
+          name: 'Reliable',
+          parts: [
+            {'kind': 'count', 'target': 1},
+            {'kind': 'count', 'target': 2},
+          ],
+        ),
+      ],
+    );
+    final kept = (await repository.traits()).single;
+    expect([for (final p in kept.parts) p['id']], ['count', 'count#2']);
+
+    final updated = await repository.updateTrait('reliable', {
+      'parts': [
+        ...kept.parts,
+        {'kind': 'follow_through'},
+      ],
+    });
+    final added = updated.parts.last['id'] as String;
+    expect(added.length, 6);
+    expect(added, isNot(anyOf('follow_through', 'count', 'count#2')));
   });
 }

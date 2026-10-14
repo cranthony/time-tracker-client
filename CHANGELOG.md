@@ -9,13 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 ## 7.73.0
 
 - How scores combine is edited in the app. A judgment part's card says
-  how its judgments combine: each event once or for its time, the mean
+  how to aggregate its judgments: by event or by time, the mean
   or a percentile, and only the best, worst or most recent few events --
   or, by time, hours, entered as a duration.
 - A trait's page edits how its parts combine, each part's weight among
   it; a person's or habit's traits, how their traits combine and, trait
   by trait, how its parts do for them; a circle, how its people do. Each
-  says what's used without one, and "Use that" goes back to it.
+  says what's used without one, and "Reset to default" goes back to
+  it.
 - "Scoring defaults", under the traits, sets them for everyone: a
   person's or habit's traits, a circle's people, and a habit layer.
 - The sample data weighs Thoughtful's judgment twice, and scores

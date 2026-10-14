@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../models/person.dart';
 import '../models/scoring.dart';
+import '../models/trait_scores.dart' show traitsWithPartIds;
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
@@ -225,13 +226,23 @@ class InMemoryPeopleRepository implements PeopleRepository {
     List<Person> people = const [],
     List<Circle> circles = const [],
     List<Location> locations = const [],
-  }) : _people = [...people],
+  }) : _people = [for (final p in people) _withIds(p)],
        _circles = [...circles],
        _locations = [...locations];
 
   final List<Person> _people;
   final List<Circle> _circles;
   final List<Location> _locations;
+
+  /// [person] with an id for each of their own parts, as the server keeps
+  /// them: a new one's made, with [fresh].
+  static Person _withIds(Person person, {bool fresh = false}) =>
+      person.traits.parts.isEmpty
+      ? person
+      : Person.fromJson({
+          ...person.toJson(),
+          'traits': traitsWithPartIds(person.traits, fresh: fresh).toJson(),
+        }).withCancelledEvents(person.cancelledEvents);
 
   @override
   Future<PeopleList?> cachedPeople() async => null;
@@ -284,10 +295,13 @@ class InMemoryPeopleRepository implements PeopleRepository {
   @override
   Future<Person> createPerson(Person person) async {
     _checkPerson(person);
-    final created = Person.fromJson({
-      ...person.toJson(),
-      'id': _id(person.name, _people.map((p) => p.id)),
-    });
+    final created = _withIds(
+      Person.fromJson({
+        ...person.toJson(),
+        'id': _id(person.name, _people.map((p) => p.id)),
+      }),
+      fresh: true,
+    );
     _people.add(created);
     return created;
   }
@@ -303,8 +317,11 @@ class InMemoryPeopleRepository implements PeopleRepository {
     if (before.isSelf && (changes['status'] ?? 'active') != 'active') {
       throw McpException('Self is always active.');
     }
-    final updated = Person.fromJson({...before.toJson(), ...changes})
-        .withCancelledEvents(before.cancelledEvents);
+    final updated = _withIds(
+      Person.fromJson({...before.toJson(), ...changes})
+          .withCancelledEvents(before.cancelledEvents),
+      fresh: true,
+    );
     _checkPerson(updated);
     if (i >= 0) {
       _people[i] = updated;

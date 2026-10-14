@@ -13,7 +13,8 @@ typedef AggregationPicked = ({Aggregation? scoring});
 /// percentile, each item's weight (by id, named as [items] has them),
 /// only the best or worst few, a cap while any is low, and what an item
 /// with nothing to rate it by counts as. [fallback] says what's used
-/// without one ("The defaults': mean"); "Use that" goes back to it.
+/// without one ("The defaults': mean"); "Reset to default" goes back to
+/// it, and closing the page calls it off.
 /// [checkWeights] checks the weights name [items], as a trait's must its
 /// parts. Returns what was picked, or null if it was called off.
 Future<AggregationPicked?> showAggregationEditor(
@@ -198,7 +199,7 @@ class _AggregationPageState extends State<_AggregationPage> {
         TextButton(
           onPressed: () =>
               Navigator.of(context).pop<AggregationPicked>((scoring: null)),
-          child: const Text('Use that'),
+          child: const Text('Reset to default'),
         ),
       ],
       children: [
@@ -207,8 +208,9 @@ class _AggregationPageState extends State<_AggregationPage> {
         Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Text(
-            'Without its own: ${widget.fallback.toLowerCase()}. "Use that" '
-            'goes back to it.',
+            'The default: ${widget.fallback.toLowerCase()}. "Reset to '
+            'default" goes back to it; closing this page keeps what was '
+            'there.',
             style: theme.textTheme.bodySmall,
           ),
         ),
@@ -414,7 +416,7 @@ List<Widget> judgmentScoringFields(
   return [
     Padding(
       padding: const EdgeInsets.only(top: 12),
-      child: Text('Its judgments combined', style: theme.textTheme.labelLarge),
+      child: Text('Aggregate judgments by', style: theme.textTheme.labelLarge),
     ),
     segments(judgmentWeightBy, draft.weightBy, (v) => draft.weightBy = v),
     segments(scoringStatistics, draft.statistic, (v) => draft.statistic = v),
