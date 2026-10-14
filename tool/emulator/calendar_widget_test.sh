@@ -149,11 +149,13 @@ fi
 event=$(ui_nodes | grep -oE "text=\"$SAMPLE_EVENTS\"" | head -1 | sed 's/text="\(.*\)"/\1/')
 # Whether it's under the widget's "Today": the sample's events are every
 # day but today, but a "Get up and get ready" today, from another series,
-# shows first while it's on (7:00 to 7:45 AM) -- and opens today.
+# shows first while it's on (7:00 to 7:45 AM) -- and opens today. The
+# next day's header is "Tomorrow", or, made room for the weather, its
+# weekday ("Thu").
 today=$(ui_nodes | grep -oE 'text="[^"]*"' | sed 's/text="\(.*\)"/\1/' |
   awk -v event="$event" '
     $0 == "Today" { under = 1; next }
-    $0 == "Tomorrow" { under = 0; next }
+    $0 ~ /^(Tomorrow|Mon|Tue|Wed|Thu|Fri|Sat|Sun)/ { under = 0; next }
     $0 == event { print (under ? "yes" : "no"); exit }')
 # Not by am kill either: it won't end a process running a job, as Glance's
 # session (a WorkManager job) is for a minute after the widget updates. So
