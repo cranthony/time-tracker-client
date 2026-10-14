@@ -90,6 +90,8 @@ Forecast sampleForecast(DateTime now) {
           // Showers from a quarter to three.
           rainChance: s.isBefore(at(0, 14, 45)) ? 5 : 55,
           precipitation: s.isBefore(at(0, 14, 45)) ? 0 : 0.3,
+          // Its hour's, as Open-Meteo's are.
+          temperature: 14 + 6 * (1 - ((s.hour - 15).abs() / 12)),
         ),
   ];
   final hoursEnd = hours.last.end;

@@ -93,6 +93,42 @@ void main() {
     });
   });
 
+  test("a span's temperature is its own, or else midway between its high "
+      'and low', () {
+    final start = DateTime(2026, 10, 14);
+    final end = DateTime(2026, 10, 14, 6);
+    expect(
+      WeatherSpan(
+        start: start,
+        end: end,
+        sky: Sky.clear,
+        temperature: 12,
+      ).celsius,
+      12,
+    );
+    expect(
+      WeatherSpan(
+        start: start,
+        end: end,
+        sky: Sky.clear,
+        high: 14,
+        low: 8,
+      ).celsius,
+      11,
+    );
+    expect(WeatherSpan(start: start, end: end, sky: Sky.clear).celsius, isNull);
+  });
+
+  test("the sample's quarter hours have their hour's temperature", () {
+    final forecast = sampleForecast(DateTime(2026, 10, 2, 13, 30));
+    for (final q in forecast.quarterHours) {
+      final hour = forecast.hours.firstWhere(
+        (h) => !q.start.isBefore(h.start) && q.start.isBefore(h.end),
+      );
+      expect(q.temperature, hour.temperature, reason: '${q.start}');
+    }
+  });
+
   group('weatherTimeline', () {
     final now = DateTime(2026, 10, 14, 10, 20);
 

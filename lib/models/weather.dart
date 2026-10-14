@@ -84,6 +84,14 @@ class WeatherSpan {
 
   Duration get length => end.difference(start);
 
+  /// Its temperature: the [temperature], or else midway between its
+  /// [high] and [low]; null without either.
+  double? get celsius => switch (this) {
+    WeatherSpan(:final temperature?) => temperature,
+    WeatherSpan(:final high?, :final low?) => (high + low) / 2,
+    _ => null,
+  };
+
   /// It from [from], if it starts before; null if it's over by then.
   WeatherSpan? from(DateTime from) {
     if (!end.isAfter(from)) return null;

@@ -77,12 +77,12 @@ void main() {
       }
     }
 
-    Widget events() => EventsScreen(
+    Widget events({DateTime? now}) => EventsScreen(
       repository: sample.eventsRepository(),
       notesRepository: sample.notesRepository(),
       actionsRepository: sample.actionsRepository(),
       serverLabel: 'sample',
-      clock: () => _now,
+      clock: () => now ?? _now,
     );
 
     /// Scrolls the timeline so [hour] is near the top.
@@ -107,6 +107,18 @@ void main() {
         'weather_today',
         events(),
         then: () => scrollTo(tester, 11.5),
+      );
+    });
+
+    // Fifty minutes after the forecast was fetched: its temperatures
+    // still every third hour from a quarter hour after it was -- 1:45,
+    // though it's past, then 4:45.
+    testWidgets('weather_temperatures_later ($mode)', (tester) async {
+      await render(
+        tester,
+        'weather_temperatures_later',
+        events(now: _now.add(const Duration(minutes: 50))),
+        then: () => scrollTo(tester, 12.5),
       );
     });
 

@@ -81,6 +81,9 @@ const _detailGap = 8.0;
 const _labelFontSize = 11.0;
 const _bandFontSize = 10.0;
 
+/// How tall a sunrise's or sunset's badge on the band is.
+const _sunBadgeHeight = 18.0;
+
 /// Where [event] sits on a [DayTimeline]: where its times put it
 /// ([trueTop] to [trueBottom]) and where it's drawn ([top] to [bottom]).
 /// An event too short for its text is drawn taller than its time
@@ -362,7 +365,11 @@ List<T> placeLabels<T>(
 /// the chance of rain a blue bar across it, as wide as it's likely,
 /// labeled with the chance where it changes, and each of the [sun]'s
 /// rising and setting an orange badge across it, the sun on the horizon,
-/// its time beside it in orange after an arrow up or down. Beside that, a band as wide of the events, each where its
+/// its time beside it in orange after an arrow up or down. Given a
+/// [temperatureLabel], the temperature is on it too: every third hour
+/// where the forecast is by the hour -- counted from [temperaturesFrom]
+/// -- once in each part of a day where it's coarser, just below the chance of rain where that's labeled at
+/// the same time. Beside that, a band as wide of the events, each where its
 /// times put it, in its [eventColor]. Then each event: its summary, then
 /// a line for each of its actions, the primary action first, each after a
 /// diamond in the action's color ([actions] gives them; one not among them
@@ -433,9 +440,27 @@ class DayTimeline extends StatelessWidget {
     this.onTapGoogle,
     this.weather,
     this.sun = const [],
+    this.temperatureLabel,
+    this.temperaturesFrom,
+    this.temperatures,
   });
 
   final List<Event> events;
+
+  /// When the temperature's labels count every third hour from, in the
+  /// day it's in -- a quarter hour after the forecast was fetched, so
+  /// they hold still till it's fetched again. Other days, and without
+  /// it, they count from midnight.
+  final DateTime? temperaturesFrom;
+
+  /// The forecast to label the temperature from: from when it was
+  /// fetched, so the labels before now stay, as [weather] -- from now --
+  /// doesn't. Without it, [weather]'s.
+  final List<WeatherSpan>? temperatures;
+
+  /// A temperature, in degrees Celsius, in the units shown: for the
+  /// temperature on the [weather] band. Without it, none is.
+  final String Function(double celsius)? temperatureLabel;
 
   /// The sunrises and sunsets in the day, marked on the band: only with
   /// the [weather].
@@ -536,6 +561,34 @@ class DayTimeline extends StatelessWidget {
           (kind, shown),
     ],
   };
+
+  /// [child] under the temperature on the band, if it's shown: fading
+  /// out and back in as the forecast is fetched again.
+  Widget _withTemperatures(BuildContext context, {required Widget child}) {
+    final weather = this.weather;
+    final label = temperatureLabel;
+    if (weather == null || label == null) return child;
+    final scaler = MediaQuery.textScalerOf(context);
+    final baseStyle =
+        Theme.of(context).textTheme.labelSmall ?? const TextStyle();
+    return _FadingTemperatures(
+      from: temperaturesFrom,
+      painter: (from, opacity) => TemperatureLabelsPainter(
+        day: day,
+        dayEnd: dayEnd,
+        scale: scale,
+        weather: weather,
+        temperatures: temperatures ?? weather,
+        sun: sun,
+        label: label,
+        from: from,
+        opacity: opacity,
+        scaler: scaler,
+        baseStyle: baseStyle,
+      ),
+      child: child,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -696,145 +749,148 @@ class DayTimeline extends StatelessWidget {
                     style: markerStyle,
                     scaler: scaler,
                   ),
-            child: GestureDetector(
-              // The events' own taps win where they are.
-              behavior: HitTestBehavior.opaque,
-              onTapUp: onTapTime == null
-                  ? null
-                  : (details) => onTapTime!(
-                      timelineTime(
-                        details.localPosition.dy,
-                        day: day,
-                        dayEnd: dayEnd,
-                        scale: scale,
-                      ),
-                    ),
-              child: SizedBox(
-                width: constraints.maxWidth,
-                height: height,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    ...?band?.under,
-                    if (!googleOnTop)
-                      ..._googleEvents(
-                        context,
-                        googleEvents,
-                        day: day,
-                        dayEnd: dayEnd,
-                        y: y,
-                        width: cardWidth,
-                        onTap: onTapGoogle,
-                      ),
-                    for (final (i, placement) in placements.indexed)
-                      Positioned(
-                        left: _cardsLeft,
-                        top: placement.top,
-                        width: cardWidth,
-                        height: placement.bottom - placement.top,
-                        child: _EventCard(
-                          placement: placement,
-                          joinedAbove:
-                              i > 0 &&
-                              placements[i - 1].bottom >= placement.top,
-                          joinedBelow:
-                              i + 1 < placements.length &&
-                              placements[i + 1].top <= placement.bottom,
-                          seamColor: _seamAbove(placements, i, actions)
-                              ? theme.scaffoldBackgroundColor
-                              : null,
-                          actions: actions,
-                          details: _details(placement.event),
-                          styles: styles,
-                          onTap: onTap == null
-                              ? null
-                              : () => onTap!(placement.event),
-                          onLongPress: onLongPress == null
-                              ? null
-                              : () => onLongPress!(placement.event),
-                          faded: faded != null && placement.event.id == faded,
-                          mark: marks[placement.event.id],
-                          timeLabel: (t) => MaterialLocalizations.of(context)
-                              .formatTimeOfDay(
-                                TimeOfDay.fromDateTime(t.toLocal()),
-                              ),
+            child: _withTemperatures(
+              context,
+              child: GestureDetector(
+                // The events' own taps win where they are.
+                behavior: HitTestBehavior.opaque,
+                onTapUp: onTapTime == null
+                    ? null
+                    : (details) => onTapTime!(
+                        timelineTime(
+                          details.localPosition.dy,
+                          day: day,
+                          dayEnd: dayEnd,
+                          scale: scale,
                         ),
                       ),
-                    if (googleOnTop)
-                      ..._googleEvents(
-                        context,
-                        googleEvents,
-                        day: day,
-                        dayEnd: dayEnd,
-                        y: y,
-                        width: cardWidth,
-                        onTap: onTapGoogle,
-                        onTop: true,
-                      ),
-                    for (final placement in placements)
-                      if (listed[placement.event.id] case final icon?)
+                child: SizedBox(
+                  width: constraints.maxWidth,
+                  height: height,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      ...?band?.under,
+                      if (!googleOnTop)
+                        ..._googleEvents(
+                          context,
+                          googleEvents,
+                          day: day,
+                          dayEnd: dayEnd,
+                          y: y,
+                          width: cardWidth,
+                          onTap: onTapGoogle,
+                        ),
+                      for (final (i, placement) in placements.indexed)
                         Positioned(
-                          left: _cardsLeft - 2,
-                          top: placement.top - 2,
-                          width: cardWidth + 4,
-                          height: placement.bottom - placement.top + 4,
-                          child: IgnorePointer(child: _Listed(icon: icon)),
-                        ),
-                    for (final placement in placements)
-                      if (highlighted != null &&
-                          placement.event.id == highlighted)
-                        Positioned(
-                          left: _cardsLeft - 3,
-                          top: placement.top - 3,
-                          width: cardWidth + 6,
-                          height: placement.bottom - placement.top + 6,
-                          child: const IgnorePointer(child: _Highlight()),
-                        ),
-                    if (pulseNotes || pulseEdges)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: _SnapMarks(
-                            notes: pulseNotes
-                                ? [
-                                    ...noteYs,
-                                    for (final note in reviewNotes)
-                                      ?yIfToday(note.time),
-                                  ]
-                                : const [],
-                            edges: pulseEdges
-                                ? {
-                                    for (final p in placements)
-                                      if (!p.event.isCancelled) ...[
-                                        p.trueTop,
-                                        p.trueBottom,
-                                      ],
-                                  }.toList()
-                                : const [],
-                            noteColor: colors.tertiary,
-                            edgeColor: colors.primary,
+                          left: _cardsLeft,
+                          top: placement.top,
+                          width: cardWidth,
+                          height: placement.bottom - placement.top,
+                          child: _EventCard(
+                            placement: placement,
+                            joinedAbove:
+                                i > 0 &&
+                                placements[i - 1].bottom >= placement.top,
+                            joinedBelow:
+                                i + 1 < placements.length &&
+                                placements[i + 1].top <= placement.bottom,
+                            seamColor: _seamAbove(placements, i, actions)
+                                ? theme.scaffoldBackgroundColor
+                                : null,
+                            actions: actions,
+                            details: _details(placement.event),
+                            styles: styles,
+                            onTap: onTap == null
+                                ? null
+                                : () => onTap!(placement.event),
+                            onLongPress: onLongPress == null
+                                ? null
+                                : () => onLongPress!(placement.event),
+                            faded: faded != null && placement.event.id == faded,
+                            mark: marks[placement.event.id],
+                            timeLabel: (t) => MaterialLocalizations.of(context)
+                                .formatTimeOfDay(
+                                  TimeOfDay.fromDateTime(t.toLocal()),
+                                ),
                           ),
                         ),
+                      if (googleOnTop)
+                        ..._googleEvents(
+                          context,
+                          googleEvents,
+                          day: day,
+                          dayEnd: dayEnd,
+                          y: y,
+                          width: cardWidth,
+                          onTap: onTapGoogle,
+                          onTop: true,
+                        ),
+                      for (final placement in placements)
+                        if (listed[placement.event.id] case final icon?)
+                          Positioned(
+                            left: _cardsLeft - 2,
+                            top: placement.top - 2,
+                            width: cardWidth + 4,
+                            height: placement.bottom - placement.top + 4,
+                            child: IgnorePointer(child: _Listed(icon: icon)),
+                          ),
+                      for (final placement in placements)
+                        if (highlighted != null &&
+                            placement.event.id == highlighted)
+                          Positioned(
+                            left: _cardsLeft - 3,
+                            top: placement.top - 3,
+                            width: cardWidth + 6,
+                            height: placement.bottom - placement.top + 6,
+                            child: const IgnorePointer(child: _Highlight()),
+                          ),
+                      if (pulseNotes || pulseEdges)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: _SnapMarks(
+                              notes: pulseNotes
+                                  ? [
+                                      ...noteYs,
+                                      for (final note in reviewNotes)
+                                        ?yIfToday(note.time),
+                                    ]
+                                  : const [],
+                              edges: pulseEdges
+                                  ? {
+                                      for (final p in placements)
+                                        if (!p.event.isCancelled) ...[
+                                          p.trueTop,
+                                          p.trueBottom,
+                                        ],
+                                    }.toList()
+                                  : const [],
+                              noteColor: colors.tertiary,
+                              edgeColor: colors.primary,
+                            ),
+                          ),
+                        ),
+                      // Not the one being moved: its overlaps go with it.
+                      for (final overlap in eventOverlaps(
+                        OtherEvents(events, except: faded).events,
+                        day: day,
+                        dayEnd: dayEnd,
+                      ))
+                        ..._overlap(context, y(overlap.start), y(overlap.end)),
+                      ...?band?.over,
+                      ..._googleMarks(
+                        googleEvents,
+                        day: day,
+                        dayEnd: dayEnd,
+                        y: y,
+                        left: _cardsLeft + cardWidth + 2,
+                        onTap: onTapGoogle,
                       ),
-                    // Not the one being moved: its overlaps go with it.
-                    for (final overlap in eventOverlaps(
-                      OtherEvents(events, except: faded).events,
-                      day: day,
-                      dayEnd: dayEnd,
-                    ))
-                      ..._overlap(context, y(overlap.start), y(overlap.end)),
-                    ...?band?.over,
-                    ..._googleMarks(
-                      googleEvents,
-                      day: day,
-                      dayEnd: dayEnd,
-                      y: y,
-                      left: _cardsLeft + cardWidth + 2,
-                      onTap: onTapGoogle,
-                    ),
-                    for (final note in reviewNotes)
-                      if (yIfToday(note.time) case final y?)
-                        ..._reviewNote(context, note, y),
-                  ],
+                      for (final note in reviewNotes)
+                        if (yIfToday(note.time) case final y?)
+                          ..._reviewNote(context, note, y),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -2643,6 +2699,263 @@ class _AxisPainter extends CustomPainter {
       old.scaler != scaler;
 }
 
+/// How tall a label on the band of weather is: a chance of rain's, or a
+/// temperature's.
+double _bandLabelHeight(TextScaler scaler) =>
+    scaler.scale(_bandFontSize - 1) * 1.2 + 2;
+
+/// Where the chance of rain is labeled down the band, [y] placing a time:
+/// where it starts being much, and where it changes much -- by the
+/// nearest ten -- as many as fit, none above the [day]'s start.
+List<({double top, int chance})> _rainLabels(
+  List<WeatherSpan> shown, {
+  required double Function(DateTime) y,
+  required DateTime day,
+  required TextScaler scaler,
+}) {
+  int tens(WeatherSpan? span) => (((span?.rainChance ?? 0) + 5) ~/ 10) * 10;
+  final starts = [
+    for (final (i, span) in shown.indexed)
+      if (tens(span) >= 20 && tens(span) != tens(i > 0 ? shown[i - 1] : null))
+        (top: math.max(y(span.start), y(day)), chance: span.rainChance!),
+  ];
+  return placeLabels(
+    starts,
+    top: (l) => l.top,
+    height: _bandLabelHeight(scaler),
+  );
+}
+
+/// The temperature down a [DayTimeline]'s band of [weather], as [label]
+/// says it, at [opacity], of the [temperatures] -- before now too: every
+/// third hour, in the spans an hour long or shorter, from [from] if
+/// that's in the day or else from midnight; and
+/// once in the middle of each longer span. One that would cover a chance
+/// of rain's label goes just below it, and one that would cover a
+/// sunrise or sunset ([sun]) is left out.
+@visibleForTesting
+class TemperatureLabelsPainter extends CustomPainter {
+  TemperatureLabelsPainter({
+    required this.day,
+    required this.dayEnd,
+    required this.scale,
+    required this.weather,
+    required this.temperatures,
+    required this.sun,
+    required this.label,
+    required this.from,
+    required this.opacity,
+    required this.scaler,
+    required this.baseStyle,
+  });
+
+  final DateTime day;
+  final DateTime dayEnd;
+  final double scale;
+  final List<WeatherSpan> weather;
+
+  /// The spans the temperatures are of: from when the forecast was
+  /// fetched, before now too.
+  final List<WeatherSpan> temperatures;
+  final List<SunTime> sun;
+  final String Function(double celsius) label;
+  final DateTime? from;
+  final double opacity;
+  final TextScaler scaler;
+  final TextStyle baseStyle;
+
+  double _y(DateTime t) =>
+      timelineOffset(t, day: day, dayEnd: dayEnd, scale: scale);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (opacity <= 0) return;
+    const left = _timeWidth + _bandPadding;
+    const width = _bandWidth - 2 * _bandPadding;
+    final labelHeight = _bandLabelHeight(scaler);
+    final inDay = [
+      for (final span in weather)
+        if (span.end.isAfter(day) && span.start.isBefore(dayEnd)) span,
+    ];
+    final rainLabels = [
+      for (final l in _rainLabels(inDay, y: _y, day: day, scaler: scaler))
+        l.top,
+    ];
+    final sunYs = [
+      for (final s in sun)
+        if (!s.at.isBefore(day) && s.at.isBefore(dayEnd)) _y(s.at),
+    ];
+    final shown = [
+      for (final span in temperatures)
+        if (span.celsius != null &&
+            span.end.isAfter(day) &&
+            span.start.isBefore(dayEnd))
+          span,
+    ];
+    if (shown.isEmpty) return;
+    // Every third hour from [from], if it's in the day, or else from
+    // midnight, where the forecast says.
+    final anchor = switch (from) {
+      final from? when !from.isBefore(day) && from.isBefore(dayEnd) => from,
+      _ => day,
+    };
+    final times = <(DateTime, double)>[
+      for (
+        var t = anchor;
+        t.isBefore(dayEnd);
+        t = t.add(const Duration(hours: 3))
+      )
+        if (shown
+                .where((s) => !t.isBefore(s.start) && t.isBefore(s.end))
+                .firstOrNull
+            case final span? when span.length <= const Duration(hours: 1))
+          (t, span.celsius!),
+      // Once in the middle of each longer span.
+      for (final span in shown)
+        if (span.length > const Duration(hours: 1))
+          if ((
+                span.start.isBefore(day) ? day : span.start,
+                span.end.isAfter(dayEnd) ? dayEnd : span.end,
+              )
+              case (final from, final to))
+            (from.add(to.difference(from) ~/ 2), span.celsius!),
+    ]..sort((a, b) => a.$1.compareTo(b.$1));
+    final candidates = <({double top, double celsius})>[];
+    for (final (t, celsius) in times) {
+      var top = _y(t) - labelHeight / 2;
+      // Just below a chance of rain labeled there.
+      for (final rain in rainLabels) {
+        if ((rain - top).abs() < labelHeight) top = rain + labelHeight + 1;
+      }
+      if (rainLabels.any((r) => (r - top).abs() < labelHeight)) continue;
+      if (sunYs.any(
+        (y) =>
+            (y - (top + labelHeight / 2)).abs() <
+            (_sunBadgeHeight + labelHeight) / 2,
+      )) {
+        continue;
+      }
+      candidates.add((top: top, celsius: celsius));
+    }
+    final style = baseStyle.copyWith(
+      fontSize: _bandFontSize - 1,
+      fontWeight: FontWeight.w700,
+      color: Colors.black87.withValues(alpha: 0.87 * opacity),
+      height: 1.2,
+    );
+    final fill = Paint()
+      ..color = Colors.white.withValues(alpha: 0.95 * opacity);
+    for (final l in placeLabels(
+      candidates,
+      top: (l) => l.top,
+      height: labelHeight,
+    )) {
+      final rect = Rect.fromLTWH(left, l.top, width, labelHeight);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(2)),
+        fill,
+      );
+      final painter = TextPainter(
+        text: TextSpan(text: label(l.celsius), style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      // Narrowed to fit, if it must be.
+      final squeeze = math.min(1.0, (width - 1) / painter.width);
+      canvas.save();
+      canvas.translate(rect.center.dx, rect.center.dy);
+      canvas.scale(squeeze, 1);
+      painter.paint(canvas, Offset(-painter.width / 2, -painter.height / 2));
+      canvas.restore();
+      painter.dispose();
+    }
+  }
+
+  @override
+  bool shouldRepaint(TemperatureLabelsPainter old) =>
+      old.opacity != opacity ||
+      old.from != from ||
+      old.scale != scale ||
+      old.day != day ||
+      old.label != label ||
+      old.scaler != scaler ||
+      !listEquals(old.weather, weather) ||
+      !listEquals(old.temperatures, temperatures) ||
+      !listEquals(old.sun, sun);
+}
+
+/// [child] under the temperatures [painter] draws, counted [from] a
+/// time: when that changes -- the forecast fetched again -- the old ones
+/// fade out, then the new ones in. At once, with animations off.
+class _FadingTemperatures extends StatefulWidget {
+  const _FadingTemperatures({
+    required this.from,
+    required this.painter,
+    required this.child,
+  });
+
+  final DateTime? from;
+  final CustomPainter Function(DateTime? from, double opacity) painter;
+  final Widget child;
+
+  @override
+  State<_FadingTemperatures> createState() => _FadingTemperaturesState();
+}
+
+class _FadingTemperaturesState extends State<_FadingTemperatures>
+    with SingleTickerProviderStateMixin {
+  /// Out over the first half, in over the second.
+  late final _fade = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 800),
+  )..addListener(_faded);
+
+  /// What the labels shown count from.
+  late DateTime? _shown = widget.from;
+
+  @override
+  void didUpdateWidget(_FadingTemperatures old) {
+    super.didUpdateWidget(old);
+    if (widget.from == old.from) return;
+    if (_shown == null || MediaQuery.disableAnimationsOf(context)) {
+      _fade.stop();
+      _fade.value = 0;
+      _shown = widget.from;
+      return;
+    }
+    // Fading in already: out again from as faded as it is.
+    if (_fade.value >= 0.5) _fade.value = 1 - _fade.value;
+    if (!_fade.isAnimating) _fade.forward(from: _fade.value);
+  }
+
+  /// Halfway, the new labels in place of the old.
+  void _faded() {
+    if (_fade.value >= 0.5 && _shown != widget.from) {
+      setState(() => _shown = widget.from);
+    }
+    if (_fade.isCompleted) _fade.value = 0;
+  }
+
+  @override
+  void dispose() {
+    _fade.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _fade,
+    child: widget.child,
+    builder: (context, child) {
+      final t = Curves.easeInOut.transform(
+        _fade.value < 0.5 ? 1 - 2 * _fade.value : 2 * _fade.value - 1,
+      );
+      return CustomPaint(painter: widget.painter(_shown, t), child: child);
+    },
+  );
+}
+
 /// The rail down the left edge, under the events and over the
 /// [TimelineAxis]: the times events start and end, the priority band and
 /// its labels, and the band of events, with the fill from each piece of
@@ -2856,25 +3169,14 @@ class _RailPainter extends CustomPainter {
         );
       }
     }
-    // The chance, where it changes much: by the nearest ten.
-    int tens(WeatherSpan? span) => (((span?.rainChance ?? 0) + 5) ~/ 10) * 10;
     final style = baseStyle.copyWith(
       fontSize: _bandFontSize - 1,
       fontWeight: FontWeight.w600,
       color: Colors.white,
       height: 1.2,
     );
-    final labelHeight = scaler.scale(_bandFontSize - 1) * 1.2 + 2;
-    final starts = [
-      for (final (i, span) in shown.indexed)
-        if (tens(span) >= 20 && tens(span) != tens(i > 0 ? shown[i - 1] : null))
-          (top: math.max(_y(span.start), _y(day)), chance: span.rainChance!),
-    ];
-    for (final label in placeLabels(
-      starts,
-      top: (l) => l.top,
-      height: labelHeight,
-    )) {
+    final labelHeight = _bandLabelHeight(scaler);
+    for (final label in _rainLabels(shown, y: _y, day: day, scaler: scaler)) {
       final rect = Rect.fromLTWH(left, label.top, width, labelHeight);
       canvas.drawRRect(
         RRect.fromRectAndRadius(rect, const Radius.circular(2)),
@@ -2919,7 +3221,7 @@ class _RailPainter extends CustomPainter {
       final badge = Rect.fromCenter(
         center: Offset(left + width / 2, y),
         width: width + 2,
-        height: 18,
+        height: _sunBadgeHeight,
       );
       canvas.drawRRect(
         RRect.fromRectAndRadius(badge, const Radius.circular(4)),
