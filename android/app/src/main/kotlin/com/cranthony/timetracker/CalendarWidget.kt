@@ -325,10 +325,12 @@ private fun DayHeader(context: Context, day: CalendarDay, weather: DayWeather?, 
         // The header's width: the widget's, less its padding.
         val room = LocalSize.current.width.value - 24f
         val scale = context.resources.configuration.fontScale
-        fun width(vararg parts: String?): Float {
+        // The day's name at its size, then the weather's parts at theirs.
+        fun width(name: String, vararg parts: String?): Float {
             val present = parts.filterNotNull()
-            return present.sumOf { textWidth(it).toDouble() }.toFloat() * scale +
-                HEADER_GAP * (present.size - 1)
+            val text = textWidth(name, LABEL_SP) +
+                present.sumOf { textWidth(it, WEATHER_SP).toDouble() }.toFloat()
+            return text * scale + HEADER_GAP * present.size
         }
         val icon = weather.icon
         val rain = weather.rain?.let { "💧$it" }
@@ -352,20 +354,21 @@ private fun DayHeader(context: Context, day: CalendarDay, weather: DayWeather?, 
             modifier = GlanceModifier.defaultWeight(),
             style = TextStyle(
                 color = GlanceTheme.colors.primary,
-                fontSize = 13.sp,
+                fontSize = LABEL_SP.sp,
                 fontWeight = FontWeight.Medium,
             ),
             maxLines = 1,
         )
         if (weather != null) {
-            Text(text = weather.icon, style = TextStyle(fontSize = 12.sp), maxLines = 1)
+            Spacer(modifier = GlanceModifier.width(HEADER_GAP.dp))
+            Text(text = weather.icon, style = TextStyle(fontSize = WEATHER_SP.sp), maxLines = 1)
             weather.rain?.let {
                 Spacer(modifier = GlanceModifier.width(HEADER_GAP.dp))
                 Text(
                     text = "💧$it",
                     style = TextStyle(
                         color = ColorProvider(Color(0xFF1E88E5)),
-                        fontSize = 12.sp,
+                        fontSize = WEATHER_SP.sp,
                         fontWeight = FontWeight.Medium,
                     ),
                     maxLines = 1,
@@ -375,7 +378,7 @@ private fun DayHeader(context: Context, day: CalendarDay, weather: DayWeather?, 
                 Spacer(modifier = GlanceModifier.width(HEADER_GAP.dp))
                 Text(
                     text = it,
-                    style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
+                    style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = WEATHER_SP.sp),
                     maxLines = 1,
                 )
             }
@@ -383,15 +386,20 @@ private fun DayHeader(context: Context, day: CalendarDay, weather: DayWeather?, 
     }
 }
 
-/** The space between a header's parts, in dp. */
-private const val HEADER_GAP = 6f
+/** The space before each of a header's weather's parts, in dp. */
+private const val HEADER_GAP = 4f
+
+/** The day's name's text size, and the weather's, in sp. */
+private const val LABEL_SP = 13f
+private const val WEATHER_SP = 12f
 
 /**
- * About how wide [text] is in the header, in dp at the phone's usual text
- * size: the day's name at 13sp, the weather at 12sp; an emoji wider than
- * a letter. Erring wide, so what's chosen fits.
+ * About how wide [text] is at [sp], in dp at the phone's usual text
+ * size: a letter or digit about half as wide as it's tall, an emoji a
+ * little wider than tall. Measured against the emulator's widget: at 3
+ * cells wide, every day's chance of rain and high and low fit.
  */
-private fun textWidth(text: String): Float {
+private fun textWidth(text: String, sp: Float): Float {
     var width = 0f
     var i = 0
     while (i < text.length) {
@@ -399,8 +407,8 @@ private fun textWidth(text: String): Float {
         width += when {
             // The selector that asks for an emoji's color: no width.
             point == 0xFE0F -> 0f
-            point >= 0x2190 -> 1.3f * 13f
-            else -> 0.6f * 13f
+            point >= 0x2190 -> 1.2f * sp
+            else -> 0.55f * sp
         }
         i += Character.charCount(point)
     }
