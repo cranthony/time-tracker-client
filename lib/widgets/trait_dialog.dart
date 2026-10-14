@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../models/scoring.dart';
 import '../models/trait.dart';
+import '../models/trait_scores.dart' show partKeys;
 import 'edit_page.dart';
 import 'error_sheet.dart';
 import 'parts_editor.dart';
+import 'scoring_editor.dart';
 
 /// Creates a trait (with no [trait]) or edits one, on a page of its own
-/// ([EditPage]) -- its name, definition, status and parts -- checking it as the server does ([traitProblem]),
+/// ([EditPage]) -- its name, definition, status, parts and how they
+/// combine -- checking it as the server does ([traitProblem]),
 /// then saving it with [save], which gets it whole. Returns what [save]
 /// returned, or null if it was called off. [actions] names the actions
 /// a cadence part can count, by id. With [preview], its parts are scored
@@ -47,6 +51,30 @@ class _TraitEditorState extends State<_TraitEditor> {
   late String _status = widget.trait?.status ?? 'active';
 
   late List<Part> _parts = [...?widget.trait?.parts];
+  late Aggregation? _scoring = widget.trait?.scoring;
+
+  /// Its parts that can be weighed, by id, each in a line: those saved,
+  /// a new one having no id till then.
+  Map<String, String> get _weighable => {
+    for (final part in _parts)
+      if (part['id'] case final String id)
+        id: describePart(part, widget.actions),
+  };
+
+  /// [_scoring], without the weights of parts let go.
+  Aggregation? get _kept {
+    final scoring = _scoring;
+    if (scoring == null) return null;
+    final ids = partKeys(_parts);
+    final json = scoring.toJson()..remove('weights');
+    final weights = {
+      for (final MapEntry(:key, :value) in scoring.weights.entries)
+        if (ids.contains(key)) key: value,
+    };
+    if (weights.isNotEmpty) json['weights'] = weights;
+    final kept = Aggregation.fromJson(json)!;
+    return kept.isMean ? null : kept;
+  }
 
   bool _saving = false;
 
@@ -65,6 +93,7 @@ class _TraitEditorState extends State<_TraitEditor> {
         ? null
         : _definition.text.trim(),
     parts: _parts,
+    scoring: _kept,
   );
 
   Future<void> _save() async {
@@ -141,9 +170,9 @@ class _TraitEditorState extends State<_TraitEditor> {
           child: Text('Parts', style: theme.textTheme.titleSmall),
         ),
         Text(
-          "Its score for a person is the weighted mean of its parts', "
-          'each scored over the events with or for them, leaving out '
-          'a part with nothing to score it by.',
+          "Its score for a person combines its parts', each scored over "
+          'the events with or for them, leaving out a part with nothing to '
+          'score it by.',
           style: theme.textTheme.bodySmall,
         ),
         PartsEditor(
@@ -152,6 +181,19 @@ class _TraitEditorState extends State<_TraitEditor> {
           preview: widget.preview,
           previewLabel: 'Yesterday, for you',
           onChanged: (parts) => setState(() => _parts = parts),
+        ),
+        AggregationTile(
+          title: 'How its parts combine',
+          label: 'How its parts combine',
+          explanation:
+              "Into its score for a person, unless their own say. A new "
+              'part can be weighed once the trait is saved.',
+          value: _kept,
+          items: _weighable,
+          checkWeights: true,
+          noun: 'parts',
+          fallback: 'Mean',
+          onChanged: (scoring) => setState(() => _scoring = scoring),
         ),
       ],
     );

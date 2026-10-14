@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../models/person.dart';
+import '../models/scoring.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
@@ -320,6 +321,7 @@ class InMemoryPeopleRepository implements PeopleRepository {
       id: _id(circle.name, _circles.map((c) => c.id)),
       name: circle.name,
       note: circle.note,
+      scoring: circle.scoring,
     );
     _circles.add(created);
     return created;
@@ -336,6 +338,9 @@ class InMemoryPeopleRepository implements PeopleRepository {
       note: changes.containsKey('note')
           ? changes['note'] as String?
           : before.note,
+      scoring: changes.containsKey('scoring')
+          ? Aggregation.fromJson(changes['scoring'])
+          : before.scoring,
     );
     if (updated.name.trim().isEmpty) throw McpException('Give it a name.');
     _circles[i] = updated;

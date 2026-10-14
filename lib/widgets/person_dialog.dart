@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../models/person.dart';
+import '../models/scoring.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/focus_store.dart';
 import 'edit_page.dart';
 import 'error_sheet.dart';
 import 'focus_buttons.dart';
+import 'scoring_editor.dart';
 import 'traits_field.dart';
 
 /// Adds a person (with no [person]) or edits one, on a page of its own
@@ -260,12 +262,15 @@ class _PersonEditorState extends State<_PersonEditor> {
   }
 }
 
-/// Adds a circle (with no [circle]) or edits one: its name and note.
-/// Saves with [save]; "Delete", asked first, calls [delete]. Returns true
-/// if anything was saved or deleted.
+/// Adds a circle (with no [circle]) or edits one: its name, note, and
+/// how its people's scores combine -- its [members], by id, named --
+/// in place of [defaultScoring]. Saves with [save]; "Delete", asked
+/// first, calls [delete]. Returns true if anything was saved or deleted.
 Future<bool> showCircleDialog(
   BuildContext context, {
   Circle? circle,
+  Map<String, String> members = const {},
+  Aggregation? defaultScoring,
   required Future<void> Function(Map<String, Object?> fields) save,
   Future<void> Function()? delete,
 }) async =>
@@ -280,6 +285,14 @@ Future<bool> showCircleDialog(
         detailHint: 'Who they are to you',
         nameHint: 'e.g. Family',
         deleteExplanation: 'Everyone in it stays; they just leave the circle.',
+        scoring: (
+          value: circle?.scoring,
+          items: members,
+          fallback: switch (defaultScoring) {
+            final scoring? => "The defaults': ${scoring.describe()}",
+            null => 'Mean',
+          },
+        ),
         save: save,
         delete: delete,
       ),
@@ -329,6 +342,7 @@ class _NamedDialog extends StatefulWidget {
     required this.deleteExplanation,
     required this.save,
     required this.delete,
+    this.scoring,
   });
 
   final String noun;
@@ -342,6 +356,11 @@ class _NamedDialog extends StatefulWidget {
   final Future<void> Function(Map<String, Object?> fields) save;
   final Future<void> Function()? delete;
 
+  /// How its people's scores combine, for a circle: as it is, its people
+  /// by id, and what's used without it.
+  final ({Aggregation? value, Map<String, String> items, String fallback})?
+  scoring;
+
   @override
   State<_NamedDialog> createState() => _NamedDialogState();
 }
@@ -349,6 +368,8 @@ class _NamedDialog extends StatefulWidget {
 class _NamedDialogState extends State<_NamedDialog> {
   late final _name = TextEditingController(text: widget.name);
   late final _detail = TextEditingController(text: widget.detail);
+  late Aggregation? _scoring = widget.scoring?.value;
+  bool _scoringChanged = false;
 
   @override
   void dispose() {
@@ -433,6 +454,20 @@ class _NamedDialogState extends State<_NamedDialog> {
                 isDense: true,
               ),
             ),
+            if (widget.scoring case final scoring?)
+              AggregationTile(
+                title: 'How its people combine',
+                label: 'How its people combine',
+                explanation: "Their health, into the circle's.",
+                value: _scoring,
+                items: scoring.items,
+                noun: 'people',
+                fallback: scoring.fallback,
+                onChanged: (picked) => setState(() {
+                  _scoring = picked;
+                  _scoringChanged = true;
+                }),
+              ),
           ],
         ),
       ),
@@ -451,6 +486,7 @@ class _NamedDialogState extends State<_NamedDialog> {
                     widget.detailField: _detail.text.trim().isEmpty
                         ? null
                         : _detail.text.trim(),
+                    if (_scoringChanged) 'scoring': _scoring?.toJson(),
                   }),
                 )
               : null,

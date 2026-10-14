@@ -4,6 +4,7 @@ import '../models/trait.dart';
 import '../models/trait_scores.dart' show defaultWindowDays;
 import 'duration_field.dart';
 import 'edit_page.dart';
+import 'scoring_editor.dart';
 
 /// Edits a trait's parts -- each one's kind, settings and whether it
 /// reads events with someone or for them -- as cards, with "Add part"
@@ -211,7 +212,10 @@ class _PartsEditorState extends State<PartsEditor> {
                   number: !textFields.contains(field.field),
                   maxLines: field.field == 'rubric' ? 4 : 1,
                 ),
-            if (draft.kind == 'judgment') ..._judgmentFields(theme, draft),
+            if (draft.kind == 'judgment') ...[
+              ..._judgmentFields(theme, draft),
+              ...judgmentScoringFields(theme, draft.scoring, _changed),
+            ],
             if (draft.kind == 'spacing') ..._spacingFields(theme, draft),
             if (preview case (final score, final partial))
               _preview(theme, score, partial),
@@ -633,8 +637,9 @@ class _PartDraft {
   _PartDraft.from(Part part)
     : kind = '${part['kind']}',
       id = part['id'] as String?,
+      _scoring = part['scoring'],
       judgmentKept = {
-        for (final key in const ['window_days', 'scoring']) key: ?part[key],
+        for (final key in const ['window_days']) key: ?part[key],
       } {
     for (final MapEntry(:key, :value) in part.entries) {
       if (value == null || value is List || value is Map) continue;
@@ -670,9 +675,13 @@ class _PartDraft {
   /// The server's id for it; null for a new one.
   final String? id;
 
-  /// A judgment's settings this doesn't edit -- how far back it looks,
-  /// and how its judgments combine -- kept as they were.
+  /// A judgment's settings this doesn't edit -- how far back it looks --
+  /// kept as they were.
   final Map<String, Object?> judgmentKept;
+
+  /// How a judgment's judgments combine.
+  late final scoring = JudgmentScoringDraft(_scoring);
+  final Object? _scoring;
 
   /// Whether a count or duration part fades, short of its target, rather
   /// than giving partial credit; and over how many days after its
@@ -724,6 +733,7 @@ class _PartDraft {
         ],
       if (kind == 'judgment') ...{
         ...judgmentKept,
+        'scoring': ?scoring.json,
         // Two sharing a score can't be a map: partProblem says so.
         'ratings': scores.toSet().length == scores.length
             ? {
@@ -757,6 +767,7 @@ class _PartDraft {
   }
 
   void dispose() {
+    scoring.dispose();
     fade.dispose();
     for (final c in _controllers.values) {
       c.dispose();

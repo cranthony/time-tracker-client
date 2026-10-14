@@ -32,6 +32,10 @@ abstract class TraitsRepository {
   /// What [scoringDefaults] last returned, kept from an earlier run of
   /// the app; null if there's nothing kept.
   Future<ScoringDefaults?> cachedScoringDefaults();
+
+  /// Saves [defaults] whole: a level without one goes back to the plain
+  /// mean (a habit layer's, to its lowest). Returns them as saved.
+  Future<ScoringDefaults> setScoringDefaults(ScoringDefaults defaults);
 }
 
 /// Reaches traits via the Time Tracker MCP server.
@@ -79,6 +83,22 @@ class McpTraitsRepository implements TraitsRepository {
     } on McpException {
       return const ScoringDefaults(); // A server from before them.
     }
+    await _cache?.write(_defaultsKey, result);
+    return ScoringDefaults.fromJson(result);
+  }
+
+  @override
+  Future<ScoringDefaults> setScoringDefaults(ScoringDefaults defaults) async {
+    final json = defaults.toJson();
+    final result = await _client.callTool('set_scoring_defaults', {
+      'defaults': {
+        for (final MapEntry(:key, :value) in json.entries) key: ?value,
+      },
+      'clear_fields': [
+        for (final MapEntry(:key, :value) in json.entries)
+          if (value == null) key,
+      ],
+    });
     await _cache?.write(_defaultsKey, result);
     return ScoringDefaults.fromJson(result);
   }
@@ -134,6 +154,17 @@ class InMemoryTraitsRepository implements TraitsRepository {
 
   @override
   Future<ScoringDefaults?> cachedScoringDefaults() async => null;
+
+  @override
+  Future<ScoringDefaults> setScoringDefaults(ScoringDefaults defaults) async {
+    for (final level in defaults.toJson().values) {
+      if (level == null) continue;
+      if (aggregationProblem(level) case final problem?) {
+        throw McpException(problem);
+      }
+    }
+    return this.defaults = defaults;
+  }
 
   @override
   Future<List<Trait>?> cachedTraits({List<String>? statuses}) async => null;

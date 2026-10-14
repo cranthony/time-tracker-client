@@ -9,6 +9,7 @@ import '../services/traits_repository.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/health.dart';
 import '../widgets/trait_dialog.dart';
+import 'scoring_defaults_screen.dart';
 import 'trait_breakdown.dart';
 import 'trait_screen.dart';
 
@@ -132,6 +133,7 @@ class TraitsSectionState extends State<TraitsSection> {
               'status': edited.status,
               'definition': edited.definition,
               'parts': edited.parts,
+              'scoring': edited.scoring?.toJson(),
             }),
     );
     if (saved != null) await reload();
@@ -184,6 +186,15 @@ class TraitsSectionState extends State<TraitsSection> {
                   onPressed: () => _edit(null),
                   icon: const Icon(Icons.add),
                   label: const Text('Trait'),
+                ),
+                TextButton.icon(
+                  onPressed: () => showScoringDefaults(
+                    context,
+                    repository: widget.repository,
+                    memory: widget.memory,
+                  ),
+                  icon: const Icon(Icons.functions),
+                  label: const Text('Scoring defaults'),
                 ),
                 TextButton.icon(
                   onPressed: () => setState(() => _archived = !_archived),
