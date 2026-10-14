@@ -6,14 +6,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'keep_rules.dart';
 
 import '../models/schedule_hints.dart';
+import '../models/weather.dart';
 import '../widgets/cursor_modes.dart';
 import '../widgets/cursor_snap.dart';
 
 /// The app's settings, kept on this device only: the [grid] a cursor on
 /// the timeline snaps to, what else cursors stop at ([snap]), what a new
 /// event does with the events in its way ([endMode]), and when background
-/// fetches run ([refreshDelay], [retryInterval], [expectsProposal]).
-/// Listeners hear every change.
+/// fetches run ([refreshDelay], [retryInterval], [expectsProposal]), and
+/// the units the weather's shown in ([temperatureUnit],
+/// [precipitationUnit]). Listeners hear every change.
 class AppSettings extends ChangeNotifier {
   /// Kept on the device with [persist]; otherwise only while the app
   /// runs. Starts with [grid], until what's kept is [load]ed.
@@ -65,6 +67,28 @@ class AppSettings extends ChangeNotifier {
   /// What a new event's end does with the events the box reaches, as last
   /// picked.
   EndMode get endMode => _endMode;
+
+  static const _temperatureUnitKey = 'settings_temperature_unit';
+  static const _precipitationUnitKey = 'settings_precipitation_unit';
+  TemperatureUnit _temperatureUnit = TemperatureUnit.fahrenheit;
+  PrecipitationUnit _precipitationUnit = PrecipitationUnit.inches;
+
+  /// What the weather's temperatures are shown in.
+  TemperatureUnit get temperatureUnit => _temperatureUnit;
+
+  /// What the weather's rain and snow are measured in.
+  PrecipitationUnit get precipitationUnit => _precipitationUnit;
+
+  /// Sets the [temperatureUnit], and keeps it.
+  Future<void> setTemperatureUnit(TemperatureUnit unit) =>
+      _setString(_temperatureUnitKey, unit.name, () => _temperatureUnit = unit);
+
+  /// Sets the [precipitationUnit], and keeps it.
+  Future<void> setPrecipitationUnit(PrecipitationUnit unit) => _setString(
+    _precipitationUnitKey,
+    unit.name,
+    () => _precipitationUnit = unit,
+  );
 
   /// The delays to pick from, after a routine's time, for the background
   /// fetch.
@@ -157,6 +181,16 @@ class AppSettings extends ChangeNotifier {
       _endMode =
           EndMode.values.asNameMap()[await prefs.getString(_endModeKey)] ??
           _endMode;
+      _temperatureUnit =
+          TemperatureUnit.values.asNameMap()[await prefs.getString(
+            _temperatureUnitKey,
+          )] ??
+          _temperatureUnit;
+      _precipitationUnit =
+          PrecipitationUnit.values.asNameMap()[await prefs.getString(
+            _precipitationUnitKey,
+          )] ??
+          _precipitationUnit;
       if (await prefs.getString(_keepRulesKey) case final json?) {
         _keepRules = [
           for (final r in jsonDecode(json) as List) ?KeepRule.fromJson(r),

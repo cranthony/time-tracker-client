@@ -9,6 +9,7 @@ import '../services/keep_rules.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import '../widgets/google_calendar_settings.dart';
+import '../widgets/weather_settings.dart';
 import '../widgets/actions_picker.dart';
 import '../widgets/habit_dialog.dart';
 import '../widgets/cursor_snap.dart';
@@ -17,7 +18,7 @@ import 'scoring_defaults_screen.dart';
 /// The app's [settings], to change: the grid the timeline's cursors snap
 /// to, every so many minutes, or none, and what else they stop at; and the
 /// rules for what a new or moved event's Keep list starts with; and,
-/// with traits, the scoring defaults.
+/// with traits, the scoring defaults; and the weather, and its units.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key, required this.settings});
 
@@ -255,6 +256,7 @@ class SettingsScreen extends StatelessWidget {
               ),
             ..._keepRules(context, theme),
             ..._scoring(context, theme),
+            WeatherSettings(settings: settings),
             const GoogleCalendarSettings(),
           ],
         ),

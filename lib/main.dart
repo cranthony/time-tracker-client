@@ -42,6 +42,10 @@ import 'services/server_client.dart';
 import 'services/traits_repository.dart';
 import 'platform/google_calendar_source.dart';
 import 'services/google_calendars.dart';
+import 'services/open_meteo.dart';
+import 'services/weather.dart';
+import 'platform/device_location.dart';
+import 'demo/weather_sample.dart';
 import 'services/work_timing.dart';
 import 'theme.dart';
 import 'widgets/sign_in_off_banner.dart';
@@ -128,6 +132,14 @@ Future<void> main() async {
                 enabled: true,
                 selected: const {'personal', 'family', 'birthdays', 'work'},
               ),
+        weather: sample == null
+            ? null
+            : (Weather(
+                forecasts: SampleForecastSource(),
+                location: FixedLocationSource(),
+                persist: false,
+                enabled: true,
+              )..load()),
         backgroundRefresh: BackgroundRefresh(
           repository: sample?.scheduleHintsRepository(),
           // The offline demo has nothing to fetch.
@@ -190,6 +202,12 @@ Future<void> main() async {
           !kIsWeb && defaultTargetPlatform == TargetPlatform.android
           ? (GoogleCalendars(source: AndroidGoogleCalendarSource())..load())
           : null,
+      // From Open-Meteo, for where the device is: asked only once the user
+      // turns it on, in Settings.
+      weather: Weather(
+        forecasts: OpenMeteoForecastSource(),
+        location: DeviceLocationSource(),
+      )..load(),
       backgroundRefresh: BackgroundRefresh(
         repository: McpScheduleHintsRepository(client, cache: cache),
         settings: settings,
@@ -366,7 +384,12 @@ class TimeTrackerApp extends StatefulWidget {
     this.settings,
     this.calendarWidget,
     this.googleCalendars,
+    this.weather,
   });
+
+  /// The forecast where the device is, if the user turns it on; null for
+  /// none.
+  final Weather? weather;
 
   /// The app's settings; by default, those kept on the device.
   final AppSettings? settings;
@@ -584,6 +607,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         scoped = AppSettingsScope(settings: _settings, child: scoped);
         if (widget.googleCalendars case final calendars?) {
           scoped = GoogleCalendarsScope(calendars: calendars, child: scoped);
+        }
+        if (widget.weather case final weather?) {
+          scoped = WeatherScope(weather: weather, child: scoped);
         }
         if (widget.diagnosticsRepository case final diagnostics?) {
           scoped = DiagnosticsScope(

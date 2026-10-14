@@ -1,6 +1,6 @@
 // Adds a Content-Security-Policy to a web build's index.html, so the page
-// runs only the app's own code and talks only to the MCP server and its
-// authorization server. See "Content-Security-Policy" in README.md.
+// runs only the app's own code and talks only to the MCP server, its
+// authorization server and the weather's. See "Content-Security-Policy" in README.md.
 //
 //     dart run tool/web_csp.dart build/web https://example.onrender.com/mcp
 //
@@ -20,6 +20,12 @@ import 'package:http/http.dart' as http;
 /// Fonts are data, not code.
 const fontsOrigin = 'https://fonts.gstatic.com';
 
+/// Open-Meteo's forecast and ensemble servers, for the weather.
+const weatherOrigins = [
+  'https://api.open-meteo.com',
+  'https://ensemble-api.open-meteo.com',
+];
+
 /// The policy for a page that talks to [connectOrigins] besides its own.
 String contentSecurityPolicy(Iterable<String> connectOrigins) => [
   "default-src 'self'",
@@ -30,7 +36,8 @@ String contentSecurityPolicy(Iterable<String> connectOrigins) => [
   // The engine adds <style> elements and style attributes.
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
-  "connect-src 'self' ${{...connectOrigins, fontsOrigin}.join(' ')}",
+  "connect-src 'self' "
+      "${{...connectOrigins, fontsOrigin, ...weatherOrigins}.join(' ')}",
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",

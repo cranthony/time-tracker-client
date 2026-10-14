@@ -17,7 +17,8 @@ void main() {
       policy,
       contains(
         "connect-src 'self' https://mcp.example https://auth.example "
-        'https://fonts.gstatic.com;',
+        'https://fonts.gstatic.com https://api.open-meteo.com '
+        'https://ensemble-api.open-meteo.com;',
       ),
     );
     expect(policy, isNot(contains("'unsafe-eval'")));
