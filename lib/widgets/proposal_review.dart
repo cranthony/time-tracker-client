@@ -96,6 +96,9 @@ bool _same(List<String> a, List<String> b) =>
 /// Why one no longer plans, if it doesn't, is said at the foot of the
 /// page (ProposalProblemStatus), not here, where a long one hid the
 /// calendar.
+/// Its menu offers to [onHide] it, to show the calendar under it, or --
+/// [hidden] -- to show it again; while it's hidden, or shown as it last
+/// planned, a line under it says so.
 /// While [busy], nothing can be tapped; nor while [closing] -- confirming,
 /// finishing or abandoning it, which it names -- waits to save.
 class ProposalBar extends StatelessWidget {
@@ -112,6 +115,8 @@ class ProposalBar extends StatelessWidget {
     this.onRetry,
     this.onGoTo,
     this.onAbandon,
+    this.hidden = false,
+    this.onHide,
   });
 
   final Proposal proposal;
@@ -130,6 +135,10 @@ class ProposalBar extends StatelessWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onGoTo;
   final VoidCallback? onAbandon;
+
+  /// Whether it's hidden: the calendar's shown under it.
+  final bool hidden;
+  final VoidCallback? onHide;
 
   @override
   Widget build(BuildContext context) {
@@ -159,7 +168,10 @@ class ProposalBar extends StatelessWidget {
       else if (stopped)
         (
           Icons.error_outline,
-          'Applying it stopped partway. Retry to finish.',
+          proposal.lastPlanned && !hidden
+              ? 'Applying it stopped partway. Retry to finish. Shown as '
+                    "it's being applied."
+              : 'Applying it stopped partway. Retry to finish.',
           colors.error,
         )
       else if (open > 0)
@@ -169,6 +181,26 @@ class ProposalBar extends StatelessWidget {
               'Claude picks ${open == 1 ? 'it' : 'them'} up on its next '
               'run, or ask it in a conversation.',
           colors.secondary,
+        ),
+      if (hidden)
+        (
+          Icons.visibility_off_outlined,
+          proposal.plans || stopped
+              ? 'Hidden: the calendar is shown as it is, to look at. Show '
+                    'the proposal again to make changes.'
+              : 'Hidden: the calendar is shown as it is, and changes go '
+                    'straight to it. Fix what the proposal no longer fits, '
+                    'and it shows again once it does.',
+          colors.secondary,
+        )
+      else if (!proposal.plans && !stopped)
+        (
+          Icons.history,
+          proposal.lastPlanned
+              ? 'Shown as it last planned. Hide it to see and fix the '
+                    'calendar under it.'
+              : 'Hide it to see and fix the calendar under it.',
+          colors.error,
         ),
     ];
     return Material(
@@ -205,7 +237,9 @@ class ProposalBar extends StatelessWidget {
                             TextSpan(
                               children: [
                                 TextSpan(
-                                  text: 'To confirm · rev ${proposal.revision}',
+                                  text: hidden
+                                      ? 'Hidden · showing the calendar'
+                                      : 'To confirm · rev ${proposal.revision}',
                                 ),
                                 if (changes > 0 && !stopped)
                                   TextSpan(
@@ -274,6 +308,11 @@ class ProposalBar extends StatelessWidget {
                       ),
                     if (onGoTo case final goTo?)
                       PopupMenuItem(value: goTo, child: const Text('Go to it')),
+                    if (onHide case final hide?)
+                      PopupMenuItem(
+                        value: hide,
+                        child: Text(hidden ? 'Show proposal' : 'Hide proposal'),
+                      ),
                     if (onAbandon case final abandon?)
                       PopupMenuItem(
                         value: abandon,

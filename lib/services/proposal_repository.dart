@@ -383,14 +383,31 @@ class McpProposalRepository implements ProposalRepository {
       await _cache?.write(_key, null);
       return null;
     }
-    final result = await _client.callTool('get_proposal', {
+    final answer = await _client.callTool('get_proposal', {
       'proposal_id': open['id'],
       'since_revision': ?sinceRevision,
     });
-    final proposal = _proposal(result);
+    final result = await _keepingPlan((answer as Map).cast<String, dynamic>());
     // What changed since is the asker's: kept, nothing has.
-    await _cache?.write(_key, {...(result as Map)}..remove('changed_since'));
-    return proposal;
+    await _cache?.write(_key, {...result}..remove('changed_since'));
+    return _proposal(result);
+  }
+
+  /// [result], with the events of the one kept if it no longer plans and
+  /// that -- the same proposal -- did, or had its own kept: from run to
+  /// run, it's shown as it last planned.
+  Future<Map<String, dynamic>> _keepingPlan(Map<String, dynamic> result) async {
+    if (result['events'] != null) return result;
+    try {
+      final kept = await _cache?.read(_key);
+      if (kept case {'id': final id, 'events': final List events}
+          when '$id' == '${result['id']}') {
+        return {...result, 'events': events, 'last_planned': true};
+      }
+    } catch (_) {
+      // Nothing kept, then.
+    }
+    return result;
   }
 
   @override

@@ -400,6 +400,7 @@ class Proposal {
     required this.through,
     this.claudeThrough,
     this.events,
+    this.lastPlanned = false,
     this.problem,
     this.reason,
     this.byUser = false,
@@ -449,6 +450,14 @@ class Proposal {
   /// clear of, and confirming checks it hasn't changed. Null when it no
   /// longer plans, with [problem] saying why.
   final List<ProposalEvent>? events;
+
+  /// Whether [events] are as it last planned, kept by the app from an
+  /// earlier answer: it no longer plans, and the server gave none.
+  final bool lastPlanned;
+
+  /// Whether it plans against the calendar as it is: it can be edited,
+  /// and confirmed as shown.
+  bool get plans => events != null && !lastPlanned;
   final String? problem;
 
   /// Why this revision was made: "proposed", "user edit", "recheck"...
@@ -565,6 +574,16 @@ class Proposal {
   bool covers(DateTime start, DateTime end) =>
       start.isBefore(through) && end.isAfter(windowStart);
 
+  /// This, with [earlier]'s events if it no longer plans and [earlier] --
+  /// the same proposal, as it was -- did, or had its own kept: shown as
+  /// it last planned.
+  Proposal keepingPlanOf(Proposal? earlier) => switch (earlier) {
+    Proposal(:final id, events: final kept?)
+        when events == null && id == this.id =>
+      copyWith(events: kept, lastPlanned: true),
+    _ => this,
+  };
+
   factory Proposal.fromJson(Map<String, dynamic> json) => Proposal(
     id: '${json['id']}',
     revision: (json['revision'] as num).toInt(),
@@ -584,6 +603,7 @@ class Proposal {
       ],
       _ => null,
     },
+    lastPlanned: json['last_planned'] == true,
     problem: json['problem'] as String?,
     reason: json['reason'] as String?,
     byUser: json['by'] == 'user',
@@ -622,6 +642,7 @@ class Proposal {
     DateTime? through,
     ProposalState? state,
     List<ProposalEvent>? events,
+    bool? lastPlanned,
     List<ProposalFeedback>? feedback,
     List<Map<String, Object?>>? userEdits,
     Set<String>? changedSince,
@@ -640,6 +661,7 @@ class Proposal {
     // Claude's end, kept where the user extends it.
     claudeThrough: claudeThrough ?? this.through,
     events: events ?? this.events,
+    lastPlanned: lastPlanned ?? this.lastPlanned,
     problem: problem,
     reason: reason ?? this.reason,
     byUser: byUser ?? this.byUser,

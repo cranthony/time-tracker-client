@@ -350,7 +350,88 @@ class _EventsScreenState extends State<EventsScreen> {
       widget.eventOutbox?.projectProposal(loaded) ?? loaded,
     _ => null,
   };
-  set _proposal(Proposal? proposal) => _loadedProposal = proposal;
+
+  /// One that no longer plans keeps the events it last planned, as they
+  /// were, to show. Hidden while it didn't, it's shown again once it
+  /// does: the calendar fixed under it.
+  set _proposal(Proposal? proposal) {
+    final earlier = _loadedProposal;
+    final next = _loadedProposal = proposal?.keepingPlanOf(earlier);
+    if (_hidden &&
+        next != null &&
+        next.plans &&
+        earlier?.id == next.id &&
+        !earlier!.plans) {
+      _hiddenId = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('The proposal plans again, so it\'s shown again.'),
+          ),
+        );
+      });
+    }
+  }
+
+  /// The proposal hidden, by id, to show the calendar under it.
+  String? _hiddenId;
+
+  /// Whether the open proposal is hidden: the calendar's shown under it.
+  bool get _hidden => _hiddenId != null && _hiddenId == _loadedProposal?.id;
+
+  /// The open proposal, as the timeline shows it: none, while it's hidden.
+  Proposal? get _shownProposal => _hidden ? null : _proposal;
+
+  /// Whether the calendar's being fixed under the open proposal: it's
+  /// hidden while it no longer plans -- not while its apply stopped
+  /// partway, which finishing writes over.
+  bool get _fixing => switch (_proposal) {
+    final p? => _hidden && !p.plans && p.state != ProposalState.applying,
+    null => false,
+  };
+
+  /// The proposal edits in its window go to: the open one -- unless the
+  /// calendar's being fixed under it, so they're the calendar's.
+  Proposal? get _editedProposal => _fixing ? null : _proposal;
+
+  /// Whether the calendar's shown under a proposal it isn't being fixed
+  /// under -- one that plans, or whose apply stopped partway: there to
+  /// see, not edit, so nothing changes under it.
+  bool get _readOnly => _hidden && !_fixing;
+
+  /// Hides the open proposal, to show the calendar under it, or shows it
+  /// again.
+  void _toggleHidden() {
+    final proposal = _proposal;
+    if (proposal == null) return;
+    setState(() {
+      _hiddenId = _hidden ? null : proposal.id;
+      _extendTo = null;
+    });
+  }
+
+  /// Says, while [_readOnly], that the calendar can't be changed under a
+  /// proposal that plans; returns whether it is.
+  bool _saidReadOnly() {
+    if (!_readOnly) return false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text(
+          'The proposal is hidden: show it again to make changes.',
+        ),
+        action: SnackBarAction(label: 'Show it', onPressed: _toggleHidden),
+      ),
+    );
+    return true;
+  }
+
+  /// Takes in [changed], as saved: and, while the calendar's being fixed
+  /// under a proposal that no longer plans, asks whether it does now.
+  void _putEvents(Iterable<Event> changed) {
+    _store.putEvents(changed);
+    if (_fixing) unawaited(_loadProposal());
+  }
 
   /// The proposals closed while the page has been open: here, or as the
   /// notices say -- by the background task, say.
@@ -615,6 +696,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// The proposal's notes, as the timeline draws them: the note shown
   /// selected, or those the point of Claude's recap shown names.
   List<ReviewNote> get _reviewNotes {
+    if (_hidden) return const [];
     final selected = switch (_shownPage) {
       ProposalDetailPage.notes => {?_note?.id},
       ProposalDetailPage.claude => {...?_recapPoint?.noteIds},
@@ -809,7 +891,7 @@ class _EventsScreenState extends State<EventsScreen> {
       _waiting(events, day, _dayAfter(day)),
       day,
       _dayAfter(day),
-      proposal: _proposal ?? _appliedOn(day),
+      proposal: _shownProposal ?? _appliedOn(day),
     ),
     null => null,
   };
@@ -829,7 +911,7 @@ class _EventsScreenState extends State<EventsScreen> {
     DateTime to, {
     Proposal? proposal,
   }) {
-    proposal ??= _proposal;
+    proposal ??= _shownProposal;
     final reviewed = proposal?.reviewed ?? const <ProposalEvent>[];
     if (reviewed.isEmpty) return calendar;
     final ids = {for (final e in reviewed) e.id};
@@ -855,12 +937,13 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Whether [event] is in what the open proposal says happened: changed
   /// in it, not on the calendar.
-  bool _inReview(Event event) => _proposal?.event(event.id)?.reviewed ?? false;
+  bool _inReview(Event event) =>
+      _editedProposal?.event(event.id)?.reviewed ?? false;
 
   /// Whether an event from [start] to [end] would be in what the open
   /// proposal says happened.
   bool _reviews(DateTime start, DateTime end) =>
-      _proposal?.covers(start, end) ?? false;
+      _editedProposal?.covers(start, end) ?? false;
 
   /// The events changed since the user last looked at the proposal.
   Set<String> get _changedSince => {
@@ -906,7 +989,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// What the open proposal does to each of its events, to mark them.
   Map<String, EventMark> get _proposalMarks {
-    final proposal = _proposal;
+    final proposal = _shownProposal;
     if (proposal == null) return const {};
     final calendar = {
       for (final e in _store.between(
@@ -1030,7 +1113,7 @@ class _EventsScreenState extends State<EventsScreen> {
     final (write, result) = saved;
     switch (result) {
       case final List<Event> events:
-        _store.putEvents(events);
+        _putEvents(events);
       case final Proposal amended:
         final loaded = _loadedProposal;
         if (loaded == null || loaded.id != amended.id) return;
@@ -1649,6 +1732,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Opens [event]'s summary, and from it, its details.
   Future<void> _openEvent(Event event) async {
+    if (_saidReadOnly()) return;
     if (_inReview(event)) return _openReviewed(event);
     final outcome = await showEventSummaryDialog(
       context,
@@ -1922,6 +2006,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Starts making a new event: a cursor across the day shown, at now if
   /// that's today, or else the middle of what's in view.
   void _startCreating() {
+    if (_saidReadOnly()) return;
     final now = widget.clock();
     DateTime at;
     if (!now.isBefore(_day) && now.isBefore(_dayEnd)) {
@@ -1965,7 +2050,7 @@ class _EventsScreenState extends State<EventsScreen> {
       }
       return;
     }
-    if (choice != GoogleEventChoice.log) return;
+    if (choice != GoogleEventChoice.log || _saidReadOnly()) return;
     setState(() {
       _clearLists();
       _keepByRules(from: event.start, to: event.end);
@@ -1978,7 +2063,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Starts moving [event]: the box around it, pushing the events in its
   /// way to start with.
   void _startMoving(Event event) {
-    if (event.isCancelled) return;
+    if (event.isCancelled || _saidReadOnly()) return;
     setState(() {
       _moving = event;
       _setBox(PendingEventBox(event.start, other: event.end));
@@ -2101,7 +2186,7 @@ class _EventsScreenState extends State<EventsScreen> {
         ),
       ),
     );
-    _store.putEvents(changed);
+    _putEvents(changed);
     _fresh.clear();
     // The proposal is planned from the calendar as it is now.
     unawaited(_loadProposal());
@@ -2294,7 +2379,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Whether the proposal's window can be extended: it's being reviewed,
   /// nothing else is up, and there's time since it ends.
-  bool get _canExtend => switch (_proposal) {
+  bool get _canExtend => switch (_shownProposal) {
     final p? =>
       p.state == ProposalState.awaitingReview &&
           !_proposalBusy &&
@@ -2574,7 +2659,7 @@ class _EventsScreenState extends State<EventsScreen> {
         ),
       ),
     );
-    _store.putEvents(created);
+    _putEvents(created);
     _fresh.clear();
     unawaited(_loadProposal());
     await _refresh();
@@ -2783,7 +2868,7 @@ class _EventsScreenState extends State<EventsScreen> {
       _endBox();
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('$said.')));
-      _store.putEvents(changed);
+      _putEvents(changed);
       _fresh.clear();
       await _refresh();
     } catch (e) {
@@ -2939,7 +3024,7 @@ class _EventsScreenState extends State<EventsScreen> {
     );
     // The traits are scored from it at once; it may have moved others, on
     // other days too.
-    _store.putEvents(updated);
+    _putEvents(updated);
     _fresh.clear();
     unawaited(_loadProposal());
     await _refresh();
@@ -3784,7 +3869,9 @@ class _EventsScreenState extends State<EventsScreen> {
     final status = widget.proposalProblem;
     if (status == null) return;
     final problem = switch (_proposal) {
-      final proposal? when proposal.events == null =>
+      // One whose apply stopped partway says so in its bar.
+      final proposal?
+          when !proposal.plans && proposal.state != ProposalState.applying =>
         proposal.problem ?? ProposalProblemStatus.fallback,
       _ => null,
     };
@@ -4111,8 +4198,10 @@ class _EventsScreenState extends State<EventsScreen> {
             onRetry: _finishProposal,
             onGoTo: _goToProposal,
             onAbandon: _abandonProposal,
+            hidden: _hidden,
+            onHide: _toggleHidden,
           ),
-        if (_proposal case final proposal?) _buildDetails(proposal),
+        if (_shownProposal case final proposal?) _buildDetails(proposal),
         Expanded(
           child: LayoutBuilder(
             builder: (context, view) => RefreshIndicator(
@@ -4334,7 +4423,7 @@ class _EventsScreenState extends State<EventsScreen> {
     required bool shaded,
   }) {
     final events = _eventsOn(day);
-    final proposal = _proposal;
+    final proposal = _shownProposal;
     return ClipRect(
       clipper: _InsetClipper(top: clipTop, bottom: clipBottom),
       child: Stack(
