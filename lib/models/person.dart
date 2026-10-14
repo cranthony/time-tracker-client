@@ -1,3 +1,4 @@
+import 'scoring.dart';
 import 'trait.dart';
 
 /// Who the user wants to be with, mirroring the Time Tracker MCP server's
@@ -176,7 +177,12 @@ class CancelledEvent {
 /// server's `traits` field has it: {"select": "all" or [trait ids],
 /// "parts": {trait id: [parts]}}.
 class PersonTraits {
-  const PersonTraits({this.select, this.parts = const {}});
+  const PersonTraits({
+    this.select,
+    this.parts = const {},
+    this.partScoring = const {},
+    this.scoring,
+  });
 
   /// The traits that apply to them, by id; null for every active one.
   final List<String>? select;
@@ -185,8 +191,19 @@ class PersonTraits {
   /// their own cadence, say.
   final Map<String, List<Part>> parts;
 
-  /// Whether it's as for everyone: every active trait, with its parts.
-  bool get isDefault => select == null && parts.isEmpty;
+  /// How a trait's parts combine for them alone, by trait id, in place of
+  /// the trait's own scoring: weights by part id (their own parts', if
+  /// they have them).
+  final Map<String, Aggregation> partScoring;
+
+  /// How their traits combine into their score, in place of the
+  /// defaults': weights by trait id.
+  final Aggregation? scoring;
+
+  /// Whether it's as for everyone: every active trait, with its parts,
+  /// combined as everyone's are.
+  bool get isDefault =>
+      select == null && parts.isEmpty && partScoring.isEmpty && scoring == null;
 
   /// Whether [traitId] applies to them, if it's active.
   bool applies(String traitId) => select?.contains(traitId) ?? true;
@@ -207,12 +224,24 @@ class PersonTraits {
                 if (part is Map) Map<String, Object?>.of(part.cast()),
             ],
       },
+      partScoring: {
+        for (final MapEntry(:key, :value)
+            in (json['part_scoring'] as Map? ?? const {}).entries)
+          '$key': ?Aggregation.fromJson(value),
+      },
+      scoring: Aggregation.fromJson(json['scoring']),
     );
   }
 
   Map<String, Object?> toJson() => {
     'select': select ?? 'all',
     if (parts.isNotEmpty) 'parts': parts,
+    if (partScoring.isNotEmpty)
+      'part_scoring': {
+        for (final MapEntry(:key, :value) in partScoring.entries)
+          key: value.toJson(),
+      },
+    'scoring': ?scoring?.toJson(),
   };
 }
 
@@ -223,12 +252,17 @@ class Circle {
     required this.id,
     required this.name,
     this.note,
+    this.scoring,
     this.memberIds = const [],
   });
 
   final String id;
   final String name;
   final String? note;
+
+  /// How its people's scores combine into its own, in place of the
+  /// defaults': weights by person id.
+  final Aggregation? scoring;
 
   /// The people in it, as the server lists them.
   final List<String> memberIds;
@@ -237,13 +271,19 @@ class Circle {
     id: json['id'] as String,
     name: json['name'] as String? ?? '',
     note: _text(json['note']),
+    scoring: Aggregation.fromJson(json['scoring']),
     memberIds: [
       for (final id in json['member_ids'] as List? ?? const []) '$id',
     ],
   );
 
   /// As `create_circle` and `update_circle` take it.
-  Map<String, Object?> toJson() => {'id': id, 'name': name, 'note': ?note};
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'note': ?note,
+    'scoring': ?scoring?.toJson(),
+  };
 }
 
 /// A place events happen -- home, the salsa studio -- with a hint for

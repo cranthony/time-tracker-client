@@ -3,6 +3,7 @@ import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/habit.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
+import 'package:time_tracker_client/models/scoring.dart';
 import 'package:time_tracker_client/models/trait.dart';
 import 'package:time_tracker_client/models/trait_scores.dart';
 
@@ -39,7 +40,8 @@ Event _event(
   });
 }
 
-Trait _trait(List<Part> parts) => Trait(id: 't', name: 'T', parts: parts);
+Trait _trait(List<Part> parts, {Aggregation? scoring}) =>
+    Trait(id: 't', name: 'T', parts: parts, scoring: scoring);
 
 /// Sam's score of a trait made of [parts], from [events], and its parts'.
 TraitScore _score(
@@ -47,9 +49,10 @@ TraitScore _score(
   List<Event> events, {
   Person person = _sam,
   String? Function(String id)? parentOf,
+  Aggregation? scoring,
 }) => scorePerson(
   person,
-  [_trait(parts)],
+  [_trait(parts, scoring: scoring)],
   _start,
   _end,
   events,
@@ -76,6 +79,49 @@ Map<String, Object?> _judged(
 };
 
 void main() {
+  test("parts are keyed by their ids, and those without by the name they "
+      'had before parts had ids', () {
+    expect(
+      partKeys([
+        {'kind': 'judgment'},
+        {'id': 'judgment', 'kind': 'judgment'},
+        {'id': 'x1', 'kind': 'count'},
+      ]),
+      ['judgment#2', 'judgment', 'x1'],
+    );
+  });
+
+  test("a judgment part's judgments combine as its scoring says", () {
+    final events = [
+      _event(
+        'long',
+        1,
+        hours: 3,
+        withIds: ['sam'],
+        judgments: _judged('sam', 2),
+      ),
+      _event('short', 2, withIds: ['sam'], judgments: _judged('sam', 0)),
+    ];
+    final byTime = _score([
+      {
+        ..._judgment,
+        'scoring': {'weight_by': 'duration'},
+      },
+    ], events);
+    expect(byTime.score, 75);
+    expect(
+      byTime.parts.single.said,
+      'Mean of 2 judgments, by time, in the last 30 days',
+    );
+    final recent = _score([
+      {
+        ..._judgment,
+        'scoring': {'limit': 1, 'limit_by': 'recent'},
+      },
+    ], events);
+    expect(recent.score, 100);
+  });
+
   test('parts are keyed by kind, then kind#2 for a second', () {
     expect(
       partKeys([
@@ -115,7 +161,7 @@ void main() {
 
       expect(score.score, 75);
       final part = score.parts.single;
-      expect(part.said, 'Mean of 2 judgment(s) in the last 30 days');
+      expect(part.said, 'Mean of 2 judgments in the last 30 days');
       expect(part.eventIds, ['a', 'b']);
       expect(part.judgments.map((j) => j.rating), [2, 1]);
     });
@@ -467,7 +513,7 @@ void main() {
       'score and those that aren\'t well formed', () {
     final score = _score(
       [
-        {'kind': 'count', 'target': 1, 'interval_days': 7, 'weight': 3},
+        {'kind': 'count', 'target': 1, 'interval_days': 7},
         {'kind': 'continuity', 'last_within_days': 7, 'next_within_days': 7},
         _judgment,
         {'kind': 'count'},
@@ -475,10 +521,13 @@ void main() {
       [
         _event('a', 1, withIds: ['sam']),
       ],
+      // Its weights are its trait's, by part id.
+      scoring: const Aggregation(weights: {'count': 3}),
     );
 
     // (100 x 3 + 50) / 4.
     expect(score.score, 88);
+    expect(score.parts.first.weight, 3);
     expect(score.parts.last.weight, 0);
     expect(score.parts.last.said, startsWith('Not scored'));
   });
@@ -568,6 +617,12 @@ void main() {
       ]);
       expect(scores.health('jo'), isNull);
       expect(scores.groupHealth(['sam', 'jo', selfPersonId]), 75);
+      // A circle's own scoring, and a habit layer's lowest by default.
+      expect(
+        scores.groupHealth(['sam', selfPersonId], scoring: Aggregation.lowest),
+        50,
+      );
+      expect(scores.layerTrend(['sam', selfPersonId]).last, 50);
       expect(scores.rating('sam', '2026-10-05')?.rating, isNull);
 
       final digest = scores.digest('sam');
@@ -932,5 +987,56 @@ void main() {
         maxConsistencyDays + 1,
       );
     });
+  });
+
+  test("a person's traits combine as theirs, or the defaults', say", () {
+    final traits = [
+      const Trait(id: 'a', name: 'A', parts: [_judgment]),
+      const Trait(id: 'b', name: 'B', parts: [_judgment]),
+    ];
+    final events = [
+      _event(
+        'x',
+        1,
+        withIds: ['sam'],
+        judgments: {
+          'sam': {
+            'a': {
+              'judgment': {'rating': 2, 'scale': 2},
+            },
+            'b': {
+              'judgment': {'rating': 0, 'scale': 2},
+            },
+          },
+        },
+      ),
+    ];
+    TraitScores compute({
+      PersonTraits own = const PersonTraits(),
+      ScoringDefaults defaults = const ScoringDefaults(),
+    }) => TraitScores.compute(
+      traits: traits,
+      people: [Person(id: 'sam', name: 'Sam', traits: own)],
+      events: events,
+      today: DateTime(2026, 10, 2),
+      days: 1,
+      defaults: defaults,
+    );
+
+    expect(compute().health('sam'), 50);
+    expect(
+      compute(
+        defaults: const ScoringDefaults(traits: Aggregation(weights: {'a': 3})),
+      ).health('sam'),
+      75,
+    );
+    // Their own, over the defaults'.
+    expect(
+      compute(
+        own: const PersonTraits(scoring: Aggregation.lowest),
+        defaults: const ScoringDefaults(traits: Aggregation(weights: {'a': 3})),
+      ).health('sam'),
+      0,
+    );
   });
 }

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/person.dart';
+import '../models/scoring.dart';
 import '../models/trait.dart';
+import '../models/trait_scores.dart' show partKeys;
 import '../widgets/health.dart';
 import 'trait_breakdown.dart';
 
@@ -89,7 +91,20 @@ class _TraitScreenState extends State<TraitScreen> {
           for (final problem in _trait.problems)
             Text(problem, style: TextStyle(color: theme.colorScheme.error)),
           _heading(theme, 'Parts'),
-          for (final part in _trait.parts) _PartCard(part, widget.actionNames),
+          if (_trait.scoring case final scoring? when !scoring.isMean)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('Combined: ${scoring.describe()}', style: muted),
+            ),
+          for (final (part, key) in [
+            for (final (i, k) in partKeys(_trait.parts).indexed)
+              (_trait.parts[i], k),
+          ])
+            _PartCard(
+              part,
+              widget.actionNames,
+              weight: _trait.scoring?.weightOf(key) ?? 1,
+            ),
           const SizedBox(height: 8),
           if (days.isEmpty)
             ListTile(
@@ -153,13 +168,15 @@ class _TraitScreenState extends State<TraitScreen> {
 }
 
 /// One of a trait's parts, to read: what kind it is, what it reads
-/// (events with someone, or done for them), its weight if it isn't 1,
-/// and for a judgment, its rubric, rating scale and facts.
+/// (events with someone, or done for them), its [weight] if it isn't 1,
+/// and for a judgment, its rubric, rating scale, facts, and how its
+/// judgments combine.
 class _PartCard extends StatelessWidget {
-  const _PartCard(this.part, this.actionNames);
+  const _PartCard(this.part, this.actionNames, {this.weight = 1});
 
   final Part part;
   final Map<String?, String> actionNames;
+  final num weight;
 
   @override
   Widget build(BuildContext context) {
@@ -167,8 +184,8 @@ class _PartCard extends StatelessWidget {
     final small = theme.textTheme.bodySmall;
     final muted = small?.copyWith(color: theme.colorScheme.onSurfaceVariant);
     final kind = partKinds[part['kind']];
-    final weight = part['weight'];
     final judgment = part['kind'] == 'judgment';
+    final scoring = JudgmentScoring.fromJson(part['scoring']);
     return Card.outlined(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
@@ -180,7 +197,7 @@ class _PartCard extends StatelessWidget {
               [
                 kind?.label ?? '${part['kind']}',
                 part['engagement_type'] == 'for' ? 'for them' : 'with them',
-                if (weight != null && weight != 1) 'weight $weight',
+                if (weight != 1) 'weight $weight',
               ].join(' · '),
               style: muted,
             ),
@@ -215,6 +232,8 @@ class _PartCard extends StatelessWidget {
                 'Judged from ${[for (final MapEntry(:key, :value) in judgmentFactsOf(part).entries) '${(judgmentFacts[key]?.label ?? key).toLowerCase()}${value == null ? '' : ' (last $value days)'}'].join(', ')}',
                 style: muted,
               ),
+              if (scoring case final scoring? when !scoring.isMean)
+                Text('Judgments combined: ${scoring.summary()}', style: muted),
             ],
           ],
         ),

@@ -93,8 +93,10 @@ class _AllPeopleScreenState extends State<AllPeopleScreen> {
     };
   });
 
-  int? _circleHealth(Circle c) =>
-      _scores?.groupHealth(_people?.inCircle(c.id).map((p) => p.id) ?? []);
+  int? _circleHealth(Circle c) => _scores?.groupHealth(
+    _people?.inCircle(c.id).map((p) => p.id) ?? [],
+    scoring: c.scoring,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -279,6 +281,7 @@ class _AllPeopleScreenState extends State<AllPeopleScreen> {
               ),
               if (_scores?.groupTrend(
                     people.inCircle(circle.id).map((p) => p.id),
+                    scoring: circle.scoring,
                   )
                   case final trend? when trend.nonNulls.isNotEmpty) ...[
                 TrendSparkline(trend: trend, scale: HealthScale.relationship),

@@ -5,11 +5,12 @@ import '../models/trait_scores.dart' show defaultWindowDays;
 import 'duration_field.dart';
 import 'edit_page.dart';
 
-/// Edits a trait's parts -- each one's kind, settings, weight and whether
-/// it reads events with someone or for them -- as cards, with "Add part"
+/// Edits a trait's parts -- each one's kind, settings and whether it
+/// reads events with someone or for them -- as cards, with "Add part"
 /// below them. A judgment's card edits its rubric, its rating scale and
 /// the facts Claude judges it from, each history with its lookback; a
-/// spacing part's, its exceptions.
+/// spacing part's, its exceptions. Each part keeps its id, which its
+/// judgments and weight are kept under; a new one has none until saved.
 /// Calls [onChanged] with the parts as they stand after every edit,
 /// whether or not they're valid yet; see [partProblem]. [actions] names
 /// the actions and groups a part can count, by id; [exceptionActions]
@@ -187,12 +188,6 @@ class _PartsEditorState extends State<PartsEditor> {
                     : 'Reads the events they were at with you.',
                 style: theme.textTheme.bodySmall,
               ),
-            ),
-            _input(
-              draft.controller('weight'),
-              'Weight',
-              hint: '1',
-              number: true,
             ),
             for (final field in kind?.fields ?? const [])
               if (field.field == 'action')
@@ -635,10 +630,17 @@ class _ExceptionDraft {
 /// field for each of its settings, kept across changes of kind; and a
 /// judgment's ratings and facts (each history's lookback in a field).
 class _PartDraft {
-  _PartDraft.from(Part part) : kind = '${part['kind']}' {
+  _PartDraft.from(Part part)
+    : kind = '${part['kind']}',
+      id = part['id'] as String?,
+      judgmentKept = {
+        for (final key in const ['window_days', 'scoring']) key: ?part[key],
+      } {
     for (final MapEntry(:key, :value) in part.entries) {
       if (value == null || value is List || value is Map) continue;
-      if (key == 'kind' || key == 'engagement_type') continue;
+      if (const {'kind', 'engagement_type', 'id', 'weight'}.contains(key)) {
+        continue;
+      }
       if (key == 'zero_at_days') continue;
       controller(key).text = '$value';
     }
@@ -665,6 +667,13 @@ class _PartDraft {
   String kind;
   late String engagement;
 
+  /// The server's id for it; null for a new one.
+  final String? id;
+
+  /// A judgment's settings this doesn't edit -- how far back it looks,
+  /// and how its judgments combine -- kept as they were.
+  final Map<String, Object?> judgmentKept;
+
   /// Whether a count or duration part fades, short of its target, rather
   /// than giving partial credit; and over how many days after its
   /// interval (kept as its `zero_at_days`).
@@ -682,12 +691,11 @@ class _PartDraft {
   TextEditingController controller(String field) =>
       _controllers.putIfAbsent(field, TextEditingController.new);
 
-  /// The part as its fields have it: only its kind's, and the weight; a
-  /// number that doesn't parse is kept as typed, for [partProblem]. With
-  /// "with", the default, its engagement type is left out.
+  /// The part as its fields have it: its id, and only its kind's fields;
+  /// a number that doesn't parse is kept as typed, for [partProblem].
+  /// With "with", the default, its engagement type is left out.
   Part get part {
     final fields = {
-      'weight',
       for (final f in partKinds[kind]?.fields ?? const []) f.field,
     };
     Object? value(String field) {
@@ -699,6 +707,7 @@ class _PartDraft {
 
     final scores = [for (final r in ratings) r.score.text.trim()];
     return {
+      'id': ?id,
       'kind': kind,
       if (engagement != 'with') 'engagement_type': engagement,
       for (final field in fields) field: ?value(field),
@@ -714,6 +723,7 @@ class _PartDraft {
             },
         ],
       if (kind == 'judgment') ...{
+        ...judgmentKept,
         // Two sharing a score can't be a map: partProblem says so.
         'ratings': scores.toSet().length == scores.length
             ? {

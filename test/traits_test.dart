@@ -154,8 +154,14 @@ void main() {
       );
       expect(partProblem(const {'kind': 'facet'}), 'pick a kind.');
       expect(
-        partProblem(const {'kind': 'count', 'target': 1, 'weight': -1}),
-        'the weight must be 0 or more.',
+        partProblem(const {
+          'kind': 'judgment',
+          'rubric': 'New?',
+          'ratings': {'0': 'No', '1': 'Yes'},
+          'facts': ['action'],
+          'scoring': {'limit': 2},
+        }),
+        'say which to keep within the limit.',
       );
       expect(
         partProblem(const {
@@ -396,7 +402,7 @@ void main() {
       await tester.tap(find.text('Sam'));
       await tester.pumpAndSettle();
       expect(
-        find.text('Mean of 1 judgment(s) in the last 30 days'),
+        find.text('Mean of 1 judgment in the last 30 days'),
         findsOneWidget,
       );
       expect(find.textContaining('Dinner — With Sam'), findsOneWidget);
@@ -683,7 +689,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text('Mean of 1 judgment(s) in the last 30 days'),
+        find.text('Mean of 1 judgment in the last 30 days'),
         findsOneWidget,
       );
       expect(

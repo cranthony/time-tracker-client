@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../models/scoring.dart';
 import '../models/trait.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
@@ -23,6 +24,14 @@ abstract class TraitsRepository {
   /// Saves [changes], keyed as `update_trait` takes them, to the trait
   /// [id]; a null definition clears it. Returns it as saved.
   Future<Trait> updateTrait(String id, Map<String, Object?> changes);
+
+  /// How scores combine where nothing says otherwise. A server without
+  /// them has none: everything combines by the plain mean.
+  Future<ScoringDefaults> scoringDefaults();
+
+  /// What [scoringDefaults] last returned, kept from an earlier run of
+  /// the app; null if there's nothing kept.
+  Future<ScoringDefaults?> cachedScoringDefaults();
 }
 
 /// Reaches traits via the Time Tracker MCP server.
@@ -35,6 +44,8 @@ class McpTraitsRepository implements TraitsRepository {
 
   static String _cacheKey(List<String>? statuses) =>
       'traits:${(statuses ?? const ['default']).join(',')}';
+
+  static const _defaultsKey = 'scoring_defaults';
 
   static List<Trait> _decode(Object? result) => [
     for (final t in result as List)
@@ -57,6 +68,28 @@ class McpTraitsRepository implements TraitsRepository {
       return result == null ? null : _decode(result);
     } catch (_) {
       return null; // From an older version of the app, perhaps.
+    }
+  }
+
+  @override
+  Future<ScoringDefaults> scoringDefaults() async {
+    final Object? result;
+    try {
+      result = await _client.callTool('get_scoring_defaults');
+    } on McpException {
+      return const ScoringDefaults(); // A server from before them.
+    }
+    await _cache?.write(_defaultsKey, result);
+    return ScoringDefaults.fromJson(result);
+  }
+
+  @override
+  Future<ScoringDefaults?> cachedScoringDefaults() async {
+    try {
+      final result = await _cache?.read(_defaultsKey);
+      return result == null ? null : ScoringDefaults.fromJson(result);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -88,10 +121,19 @@ class McpTraitsRepository implements TraitsRepository {
 /// Keeps traits in memory. Used when no server is configured, and in
 /// tests.
 class InMemoryTraitsRepository implements TraitsRepository {
-  InMemoryTraitsRepository({List<Trait> traits = const []})
-    : _traits = [...traits];
+  InMemoryTraitsRepository({
+    List<Trait> traits = const [],
+    this.defaults = const ScoringDefaults(),
+  }) : _traits = [...traits];
 
   final List<Trait> _traits;
+  ScoringDefaults defaults;
+
+  @override
+  Future<ScoringDefaults> scoringDefaults() async => defaults;
+
+  @override
+  Future<ScoringDefaults?> cachedScoringDefaults() async => null;
 
   @override
   Future<List<Trait>?> cachedTraits({List<String>? statuses}) async => null;
