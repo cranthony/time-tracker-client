@@ -133,6 +133,7 @@ class _ActionDialogState extends State<_ActionDialog> {
     'priority': _action.priority,
     'background_color': _action.backgroundColor,
     'note': _action.properties['note'] as String?,
+    'commute': _action.commute,
   };
 
   @override
@@ -151,6 +152,7 @@ class _ActionDialogState extends State<_ActionDialog> {
   String get _status => _value('status') as String? ?? 'active';
   int? get _priority => _value('priority') as int?;
   String? get _color => _value('background_color') as String?;
+  bool get _commute => _value('commute')! as bool;
 
   /// Sets [key] to [value], dropping the change if that's how it was.
   void _set(String key, Object? value) => setState(() {
@@ -366,6 +368,18 @@ class _ActionDialogState extends State<_ActionDialog> {
                 ),
                 onChanged: (typed) => _set('note', _trimmed(typed)),
               ),
+              if (!_action.isGroup)
+                SwitchListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  secondary: const Icon(Icons.commute),
+                  title: const Text('A way to commute'),
+                  subtitle: const Text(
+                    'Getting from one place to another, such as Drive: '
+                    'travel times can be by it.',
+                  ),
+                  value: _commute,
+                  onChanged: (on) => _set('commute', on),
+                ),
             ],
           ),
         ),

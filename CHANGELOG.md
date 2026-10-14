@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.87.0
+
+- An action can be a way to commute -- getting from one place to
+  another, such as Drive or Walk -- switched on in its dialog. A travel
+  time's "By" offers only those, and the groups they're in, plus whatever
+  it was already by. Needs a server that keeps an action's commute.
+
 ## 7.86.0
 
 - A location's or location group's travel times, in its edit dialog from

@@ -39,6 +39,10 @@ class PlanAction {
   /// an event, and has no label of its own.
   bool get isGroup => properties['kind'] == 'group';
 
+  /// Whether it's a way of getting from one place to another ("drive",
+  /// "walk"), which a travel time can be by.
+  bool get commute => properties['commute'] == true;
+
   /// Whether Claude made it, and the user hasn't looked at it yet.
   bool get proposed => status == 'proposed';
 

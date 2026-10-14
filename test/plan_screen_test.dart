@@ -422,6 +422,33 @@ void main() {
     );
   });
 
+  testWidgets("an action's dialog makes it a way to commute; a group's "
+      "doesn't", (tester) async {
+    final repo = tree();
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(titled('Hosting'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('A way to commute'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A way to commute'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(
+      (await repo.actions()).actions.firstWhere((a) => a.id == 'host').commute,
+      isTrue,
+    );
+
+    await tester.tap(find.byTooltip('More for Cooking'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.text('A way to commute'), findsNothing);
+  });
+
   testWidgets('tapping a group opens it; swiping goes to the next pane', (
     tester,
   ) async {

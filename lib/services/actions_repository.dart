@@ -106,7 +106,8 @@ class McpActionsRepository implements ActionsRepository {
     for (final MapEntry(:key, :value) in fields.entries)
       if (key == 'parent_id')
         'group_id': value
-      else if (_actionFields.contains(key) && !(group && key == 'status'))
+      else if (_actionFields.contains(key) &&
+          !(group && _actionOnlyFields.contains(key)))
         key: value,
   };
 
@@ -116,7 +117,11 @@ class McpActionsRepository implements ActionsRepository {
     'background_color',
     'priority',
     'note',
+    'commute',
   };
+
+  /// What an action has and a group doesn't.
+  static const _actionOnlyFields = {'status', 'commute'};
 
   @override
   Future<String?> createAction(Map<String, Object?> fields) async {
