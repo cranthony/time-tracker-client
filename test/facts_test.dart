@@ -1,0 +1,51 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/models/facts.dart';
+
+void main() {
+  test('several locations round-trip as location_ids', () {
+    final facts = Facts.fromJson({
+      'location_ids': ['home', 'park'],
+      'with_ids': ['sam'],
+    })!;
+    expect(facts.locationIds, ['home', 'park']);
+    expect(facts.toJson(), {
+      'location_ids': ['home', 'park'],
+      'with_ids': ['sam'],
+    });
+  });
+
+  test("a server's single location_id is a list of one", () {
+    expect(Facts.fromJson({'location_id': 'home'})!.locationIds, ['home']);
+    expect(Facts.fromJson({'location_id': ' '})!.locationIds, isEmpty);
+    expect(
+      Facts.fromJson({
+        'location_ids': ['park'],
+        'location_id': 'park',
+      })!.locationIds,
+      ['park'],
+    );
+  });
+
+  test('describes each location, after who', () {
+    expect(
+      const Facts(
+        withIds: ['sam'],
+        locationIds: ['home', 'park'],
+      ).describe({'sam': 'Sam'}, {'home': 'Home', 'park': 'The park'}),
+      'With Sam · @ Home, The park',
+    );
+  });
+
+  test('no locations, and nothing else, is empty', () {
+    expect(const Facts().isEmpty, isTrue);
+    expect(const Facts(locationIds: ['home']).isEmpty, isFalse);
+    expect(
+      const Facts(locationIds: ['home', 'park']),
+      const Facts(locationIds: ['home', 'park']),
+    );
+    expect(
+      const Facts(locationIds: ['home']) == const Facts(locationIds: ['park']),
+      isFalse,
+    );
+  });
+}

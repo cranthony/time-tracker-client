@@ -59,7 +59,7 @@ class _FactsDialog extends StatefulWidget {
 class _FactsDialogState extends State<_FactsDialog> {
   late final _with = {...widget.facts.withIds}..remove(selfPersonId);
   late final _for = {...widget.facts.forIds}..remove(selfPersonId);
-  late String? _location = widget.facts.locationId;
+  late final _where = [...widget.facts.locationIds];
   final _notes = <String, TextEditingController>{};
   PeopleRepository? _repository;
   PlanMemory? _memory;
@@ -115,7 +115,7 @@ class _FactsDialogState extends State<_FactsDialog> {
   }
 
   Facts get _facts => Facts(
-    locationId: _location,
+    locationIds: [..._where],
     withIds: [..._with],
     forIds: [..._for],
     notes: {
@@ -135,7 +135,7 @@ class _FactsDialogState extends State<_FactsDialog> {
     );
     if (created == null || !mounted) return;
     setState(() {
-      _location = created.id;
+      if (!_where.contains(created.id)) _where.add(created.id);
       _locations = switch (_memory) {
         final memory? => _kept(
           memory.loadLocations(repository, again: true),
@@ -259,7 +259,7 @@ class _FactsDialogState extends State<_FactsDialog> {
           TextButton(
             onPressed: () => Navigator.of(context).pop(
               Facts(
-                locationId: widget.facts.locationId,
+                locationIds: widget.facts.locationIds,
                 withIds: widget.facts.withIds,
                 forIds: widget.facts.forIds,
               ),
@@ -344,48 +344,55 @@ class _FactsDialogState extends State<_FactsDialog> {
     ),
   );
 
-  /// Where it was: none, a location, or a new one.
+  /// Where it was: none, a location, several, or a new one, as chips.
   Widget _locationPicker() => Padding(
     padding: const EdgeInsets.only(top: 12),
     child: FutureBuilder(
       future: _locations,
       initialData: _memory?.locations,
       builder: (context, snapshot) {
+        final theme = Theme.of(context);
         final locations = [
           ...snapshot.data ?? const <Location>[],
           for (final a in widget.additions)
             if (a.kind == AdditionKind.location)
               Location(id: a.ref, name: '${a.name} (new)', hint: a.detail),
         ];
-        final known = locations.any((l) => l.id == _location);
-        return DropdownButtonFormField<String?>(
-          key: ValueKey((_location, locations.length)),
-          initialValue: _location,
-          isExpanded: true,
-          decoration: const InputDecoration(
-            labelText: 'Location',
-            isDense: true,
-            border: OutlineInputBorder(),
-          ),
-          items: [
-            const DropdownMenuItem(value: null, child: Text('Not said')),
-            for (final l in locations)
-              DropdownMenuItem(value: l.id, child: Text(l.name)),
-            if (_location != null && !known)
-              DropdownMenuItem(value: _location, child: Text(_location!)),
-            if (_repository != null)
-              const DropdownMenuItem(
-                value: _newLocationValue,
-                child: Text('New location…'),
-              ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Where', style: theme.textTheme.labelLarge),
+            Text(
+              'Where it was: one place, or each it moved between',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final l in [
+                  ...locations,
+                  for (final id in _where)
+                    if (!locations.any((l) => l.id == id))
+                      Location(id: id, name: id),
+                ])
+                  FilterChip(
+                    label: Text(l.name),
+                    selected: _where.contains(l.id),
+                    onSelected: (on) => setState(
+                      () => on ? _where.add(l.id) : _where.remove(l.id),
+                    ),
+                  ),
+                if (_repository != null)
+                  ActionChip(
+                    avatar: const Icon(Icons.add_location_alt, size: 18),
+                    label: const Text('New location…'),
+                    onPressed: _newLocation,
+                  ),
+              ],
+            ),
           ],
-          onChanged: (picked) {
-            if (picked == _newLocationValue) {
-              _newLocation();
-              return;
-            }
-            setState(() => _location = picked);
-          },
         );
       },
     ),
@@ -414,4 +421,3 @@ class _FactsDialogState extends State<_FactsDialog> {
 }
 
 /// The location picker's value for adding one.
-const _newLocationValue = '\u0000new';

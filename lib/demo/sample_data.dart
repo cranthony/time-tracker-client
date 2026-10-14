@@ -1114,7 +1114,7 @@ class SampleData {
       _at(22, 0, 3),
       actions: ['dance_class'],
       priority: 2,
-      facts: const Facts(withIds: ['sam', 'jordan'], locationId: 'hall'),
+      facts: const Facts(withIds: ['sam', 'jordan'], locationIds: ['hall']),
     ),
     _event(
       'next-ramen',
@@ -1123,7 +1123,7 @@ class SampleData {
       _at(20, 0, 2),
       actions: ['eat_meal', 'deep_talk'],
       priority: 2,
-      facts: const Facts(withIds: ['priya'], locationId: 'ramen'),
+      facts: const Facts(withIds: ['priya'], locationIds: ['ramen']),
     ),
     _event(
       'next-parents',
@@ -1180,7 +1180,7 @@ class SampleData {
       priority: 2,
       facts: const Facts(
         withIds: ['sam'],
-        locationId: 'noodles',
+        locationIds: ['noodles'],
         notes: {
           selfPersonId: 'Talked through the job offer; phones away',
           'sam': 'Excited, and a little anxious',
@@ -1225,7 +1225,7 @@ class SampleData {
       priority: 2,
       facts: const Facts(
         withIds: ['sam', 'priya'],
-        locationId: 'home',
+        locationIds: ['home'],
         notes: {selfPersonId: 'Made dal and naan from scratch'},
       ),
     ),
@@ -1235,7 +1235,7 @@ class SampleData {
       _at(21, 0),
       _at(22, 0),
       actions: ['practice_guitar'],
-      facts: const Facts(locationId: 'home'),
+      facts: const Facts(locationIds: ['home']),
     ),
     _event(
       'bed',
@@ -1353,7 +1353,9 @@ class SampleData {
       'schedule': 'Every week on Mon, Tue, Wed, Thu, Fri',
       'action_ids': ['get_up'],
       'action_names': [_names['get_up']],
-      'facts': {'location_id': 'home'},
+      'facts': {
+        'location_ids': ['home'],
+      },
     }),
   ];
 
@@ -1437,7 +1439,9 @@ class SampleData {
           'start': localIsoTimestamp(_at(8, 20)),
           'end': localIsoTimestamp(_at(8, 45)),
           'action_ids': ['email', 'new:inbox_zero'],
-          'facts': {'location_id': 'new:cowork'},
+          'facts': {
+            'location_ids': ['new:cowork'],
+          },
           'status': 'new',
           'decided_by': 'claude',
         },
@@ -1455,7 +1459,7 @@ class SampleData {
           'facts': {
             ...const Facts(
               withIds: ['sam'],
-              locationId: 'noodles',
+              locationIds: ['noodles'],
               notes: {
                 selfPersonId: 'Talked through the job offer; phones away',
                 'sam': 'Excited, and a little anxious',
@@ -1806,7 +1810,7 @@ class _PastEvent {
   final Map<String, Map<String, (int, String)>> habitJudgments;
 
   Facts get facts => Facts(
-    locationId: location,
+    locationIds: [?location],
     withIds: withIds,
     forIds: forIds,
     notes: notes,

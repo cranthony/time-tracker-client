@@ -30,7 +30,9 @@ void main() {
                 end: DateTime(2026, 10, 1, 20),
                 initial: const {
                   'summary': 'Dinner',
-                  'facts': {'location_id': 'home'},
+                  'facts': {
+                    'location_ids': ['home'],
+                  },
                 },
                 create: (fields) async {
                   created = fields;
@@ -62,7 +64,9 @@ void main() {
     expect(find.widgetWithText(TextButton, 'Open in Maps'), findsOneWidget);
     await tester.tap(find.widgetWithText(Tab, 'Location'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(RadioListTile<String>, 'The park'));
+    await tester.tap(find.widgetWithText(CheckboxListTile, 'Home'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(CheckboxListTile, 'The park'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     await tester.pumpAndSettle();
@@ -73,7 +77,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Clear search').hitTestable());
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(RadioListTile<String>, 'Home'));
+    // Several: each place it moved between.
+    await tester.tap(find.widgetWithText(CheckboxListTile, 'Home'));
     await tester.tap(find.widgetWithText(Tab, 'Map location'));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -84,10 +89,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('Open link'), findsOneWidget);
     expect(find.byTooltip('Open in Maps'), findsNothing);
+    expect(find.text('The park, Home'), findsOneWidget);
 
     await tester.tap(find.text('Create'));
     await tester.pumpAndSettle();
     expect(created!['location'], 'https://maps.app.goo.gl/abc123');
+    expect(created!['facts'], {
+      'location_ids': ['park', 'home'],
+    });
   });
 
   testWidgets("a new event's dialog has who, where and notes, as an "
@@ -154,7 +163,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Clear search').hitTestable());
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(RadioListTile<String>, 'Home'));
+    await tester.tap(find.widgetWithText(CheckboxListTile, 'Home'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     await tester.pumpAndSettle();
@@ -165,7 +174,7 @@ void main() {
 
     expect(created!['summary'], 'Dinner');
     expect(created!['facts'], {
-      'location_id': 'home',
+      'location_ids': ['home'],
       'with_ids': ['sam'],
       'for_ids': ['priya'],
     });

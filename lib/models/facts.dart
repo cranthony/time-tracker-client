@@ -2,21 +2,22 @@ import 'person.dart';
 
 /// What compaction established about an event, kept in its private
 /// properties, mirroring the Time Tracker MCP server's `Facts` (its
-/// utilities/facts.py): where it was, who was there with the user, who it
+/// facts.rs): where it was, who was there with the user, who it
 /// was done for while they weren't there, and a subjective note on each
 /// person who was there ("self" for the user). Every field is optional.
 /// What was done at it isn't here: that's its actions, which set its
 /// label. They're saved whole through `update_event`.
 class Facts {
   const Facts({
-    this.locationId,
+    this.locationIds = const [],
     this.withIds = const [],
     this.forIds = const [],
     this.notes = const {},
   });
 
-  /// Where it was: a location's id.
-  final String? locationId;
+  /// Where it was: the ids of the locations it was at, usually one;
+  /// several when it moved between them.
+  final List<String> locationIds;
 
   /// The people there with the user: never [selfPersonId], who's at every
   /// event.
@@ -31,7 +32,7 @@ class Facts {
   final Map<String, String> notes;
 
   bool get isEmpty =>
-      locationId == null && withIds.isEmpty && forIds.isEmpty && notes.isEmpty;
+      locationIds.isEmpty && withIds.isEmpty && forIds.isEmpty && notes.isEmpty;
 
   /// Everyone it involves, with them or for them, each once.
   List<String> get personIds => {...withIds, ...forIds}.toList();
@@ -45,7 +46,12 @@ class Facts {
     String? text(Object? value) =>
         value is String && value.trim().isNotEmpty ? value : null;
     return Facts(
-      locationId: text(json['location_id']),
+      // A single location_id, from a server before there could be
+      // several, as a list of one.
+      locationIds: switch (json['location_ids']) {
+        final List list => ids(list),
+        _ => [?text(json['location_id'])],
+      },
       withIds: ids(json['with_ids']),
       forIds: ids(json['for_ids']),
       notes: {
@@ -58,7 +64,7 @@ class Facts {
 
   /// As `update_event` takes them, leaving out what's unset.
   Map<String, Object?> toJson() => {
-    'location_id': ?locationId,
+    if (locationIds.isNotEmpty) 'location_ids': locationIds,
     if (withIds.isNotEmpty) 'with_ids': withIds,
     if (forIds.isNotEmpty) 'for_ids': forIds,
     if (notes.isNotEmpty) 'notes': notes,
@@ -83,8 +89,8 @@ class Facts {
     return null;
   }
 
-  /// In a line, e.g. "With Sam · For Priya · @ Home"; people named from
-  /// [personNames], and the location from [locationNames].
+  /// In a line, e.g. "With Sam · For Priya · @ Home, Park"; people named
+  /// from [personNames], and the locations from [locationNames].
   String describe([
     Map<String?, String> personNames = const {},
     Map<String?, String> locationNames = const {},
@@ -94,14 +100,15 @@ class Facts {
     return [
       if (withIds.isNotEmpty) 'With ${names(withIds)}',
       if (forIds.isNotEmpty) 'For ${names(forIds)}',
-      if (locationId case final where?) '@ ${locationNames[where] ?? where}',
+      if (locationIds.isNotEmpty)
+        '@ ${locationIds.map((id) => locationNames[id] ?? id).join(', ')}',
     ].join(' · ');
   }
 
   @override
   bool operator ==(Object other) =>
       other is Facts &&
-      locationId == other.locationId &&
+      _sameList(locationIds, other.locationIds) &&
       _sameList(withIds, other.withIds) &&
       _sameList(forIds, other.forIds) &&
       notes.length == other.notes.length &&
@@ -109,7 +116,7 @@ class Facts {
 
   @override
   int get hashCode => Object.hash(
-    locationId,
+    Object.hashAll(locationIds),
     Object.hashAll(withIds),
     Object.hashAll(forIds),
     Object.hashAllUnordered(notes.entries.map((e) => (e.key, e.value))),

@@ -1507,12 +1507,16 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     final own = (_value('location') as String?)?.trim() ?? '';
     final map = own.isNotEmpty
         ? own
-        : _locationMaps[facts.locationId]?.trim() ?? '';
+        : [for (final id in facts.locationIds) ?_locationMaps[id]?.trim()]
+                  .where((m) => m.isNotEmpty)
+                  .firstOrNull ??
+              '';
     final line = where
-        ? switch (facts.locationId) {
-            final id? => _locationNames[id] ?? id,
-            null => own,
-          }
+        ? facts.locationIds.isEmpty
+              ? own
+              : facts.locationIds
+                    .map((id) => _locationNames[id] ?? id)
+                    .join(', ')
         : Facts(
             withIds: facts.withIds,
             forIds: facts.forIds,

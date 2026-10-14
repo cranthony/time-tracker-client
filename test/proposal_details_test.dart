@@ -48,7 +48,7 @@ void main() {
         'action_ids': ['drink', 'new:matcha'],
         'facts': {
           'with_ids': ['sam', 'new:jo'],
-          'location_id': 'new:teahouse',
+          'location_ids': ['new:teahouse'],
         },
         'planned_start': iso(9),
         'planned_end': iso(10),
