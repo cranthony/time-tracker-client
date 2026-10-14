@@ -257,6 +257,48 @@ void main() {
       }
     });
 
+    test("each day's sunrise and sunset, today's even if past; none where "
+        "the sun doesn't set", () {
+      final at = DateTime(2026, 10, 15, 13);
+      int t(int day, int hour, int minute) =>
+          DateTime(2026, 10, 15 + day, hour, minute).millisecondsSinceEpoch ~/
+          1000;
+      final forecast = {
+        'daily': {
+          'time': [t(0, 0, 0), t(1, 0, 0)],
+          'sunrise': [t(0, 7, 21), t(1, 7, 23)],
+          'sunset': [t(0, 18, 14), null],
+        },
+      };
+
+      final parsed = parseOpenMeteo(forecast, null, now: at);
+
+      expect(parsed.sun, [
+        (at: DateTime(2026, 10, 15, 7, 21), rise: true),
+        (at: DateTime(2026, 10, 15, 18, 14), rise: false),
+        (at: DateTime(2026, 10, 16, 7, 23), rise: true),
+      ]);
+      expect(parsed.sunOn(DateTime(2026, 10, 16)), [
+        (at: DateTime(2026, 10, 16, 7, 23), rise: true),
+      ]);
+      expect(parsed.sunOn(DateTime(2026, 10, 17)), isEmpty);
+    });
+
+    test('asks for the sunrise and sunset', () async {
+      final asked = <Uri>[];
+      final client = MockClient((request) async {
+        asked.add(request.url);
+        return http.Response(jsonEncode(forecastJson), 200);
+      });
+      await OpenMeteoForecastSource(client: client)
+          .fetch(const Coordinates(47.6062, -122.3321), now: now);
+      final daily = asked
+          .firstWhere((u) => u.host == 'api.open-meteo.com')
+          .queryParameters['daily']!
+          .split(',');
+      expect(daily, containsAll(['sunrise', 'sunset']));
+    });
+
     test("a refused forecast says why", () async {
       final client = MockClient(
         (_) async => http.Response('{"error":true,"reason":"Bad place"}', 400),

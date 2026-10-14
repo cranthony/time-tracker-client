@@ -61,7 +61,7 @@ class OpenMeteoForecastSource implements ForecastSource {
               'weather_code,cloud_cover,is_day',
           'daily':
               'temperature_2m_max,temperature_2m_min,precipitation_sum,'
-              'precipitation_probability_max',
+              'precipitation_probability_max,sunrise,sunset',
         },
       ),
     );
@@ -213,12 +213,25 @@ Forecast parseOpenMeteo(
     );
   }
 
+  // Each day's sunrise and sunset, today's even if past; none where the
+  // sun doesn't rise or set.
+  final sun = <SunTime>[
+    for (final (key, rise) in [('sunrise', true), ('sunset', false)])
+      for (final t in daily[key] as List? ?? const [])
+        if (t is num)
+          (
+            at: DateTime.fromMillisecondsSinceEpoch(t.toInt() * 1000),
+            rise: rise,
+          ),
+  ]..sort((a, b) => a.at.compareTo(b.at));
+
   return Forecast(
     fetchedAt: now,
     quarterHours: quarters,
     hours: hourSpans,
     dayParts: parts,
     days: daySpans,
+    sun: sun,
     source: 'Open-Meteo',
   );
 }

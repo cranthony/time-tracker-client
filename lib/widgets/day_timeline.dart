@@ -360,7 +360,9 @@ List<T> placeLabels<T>(
 /// where nothing is, labeled "P0" to "P3" where each run of it starts and
 /// stops -- or, given the [weather], a band of it: the sky's color, with
 /// the chance of rain a blue bar across it, as wide as it's likely,
-/// labeled with the chance where it changes. Beside that, a band as wide of the events, each where its
+/// labeled with the chance where it changes, and each of the [sun]'s
+/// rising and setting an orange badge across it, the sun on the horizon,
+/// its time beside it in orange after an arrow up or down. Beside that, a band as wide of the events, each where its
 /// times put it, in its [eventColor]. Then each event: its summary, then
 /// a line for each of its actions, the primary action first, each after a
 /// diamond in the action's color ([actions] gives them; one not among them
@@ -430,9 +432,14 @@ class DayTimeline extends StatelessWidget {
     this.googleOnTop = false,
     this.onTapGoogle,
     this.weather,
+    this.sun = const [],
   });
 
   final List<Event> events;
+
+  /// The sunrises and sunsets in the day, marked on the band: only with
+  /// the [weather].
+  final List<SunTime> sun;
 
   /// The forecast, span by span, from now: drawn down the band in place
   /// of the priorities. Empty, the band's empty; null, it's the
@@ -644,6 +651,8 @@ class DayTimeline extends StatelessWidget {
       actions: actions,
       runs: runs,
       weather: weather,
+      sun: weather == null ? const [] : sun,
+      sunColor: sunColor(theme.brightness),
       placements: placements,
       timeLabel: (t) =>
           MaterialLocalizations.of(context)
@@ -2647,6 +2656,8 @@ class _RailPainter extends CustomPainter {
     required this.actions,
     required this.runs,
     required this.weather,
+    required this.sun,
+    required this.sunColor,
     required this.placements,
     required this.timeLabel,
     required this.scaler,
@@ -2671,6 +2682,10 @@ class _RailPainter extends CustomPainter {
 
   /// The forecast, drawn on the band in place of the [runs].
   final List<WeatherSpan>? weather;
+
+  /// Sunrises and sunsets, badged on the band, their times beside it.
+  final List<SunTime> sun;
+  final Color sunColor;
   final List<TimelinePlacement> placements;
   final String Function(DateTime) timeLabel;
   final TextScaler scaler;
@@ -2728,6 +2743,7 @@ class _RailPainter extends CustomPainter {
     _paintBandLabels(canvas);
     if (weather case final weather?) _paintWeather(canvas, weather);
     _paintTimeLabels(canvas);
+    _paintSun(canvas);
     _paintEventBand(canvas);
     if (compactionY case final y?) {
       final paint = Paint()
@@ -2876,6 +2892,99 @@ class _RailPainter extends CustomPainter {
     }
   }
 
+  /// Where each of the [sun]'s times in the day is.
+  List<double> get _sunYs => [
+    for (final s in sun)
+      if (!s.at.isBefore(day) && s.at.isBefore(dayEnd)) _y(s.at),
+  ];
+
+  /// Each sunrise and sunset: a badge across the band, the sun on the
+  /// horizon, and its time beside it after an arrow up or down, in
+  /// [sunColor], where an axis time would be.
+  void _paintSun(Canvas canvas) {
+    const left = _timeWidth + _bandPadding;
+    const width = _bandWidth - 2 * _bandPadding;
+    final color = Paint()..color = sunColor;
+    // The axis' times under them are covered with the others'.
+    for (final (:at, :rise) in sun) {
+      if (at.isBefore(day) || !at.isBefore(dayEnd)) continue;
+      final y = _y(at);
+      canvas.drawLine(
+        Offset(left - 2, y),
+        Offset(left + width + 2, y),
+        Paint()
+          ..color = sunColor
+          ..strokeWidth = 1.5,
+      );
+      final badge = Rect.fromCenter(
+        center: Offset(left + width / 2, y),
+        width: width + 2,
+        height: 18,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(badge, const Radius.circular(4)),
+        color,
+      );
+      _paintIcon(canvas, Icons.wb_twilight, 15, Colors.white, badge.center);
+      final time = _text(
+        timeLabel(at),
+        baseStyle.copyWith(
+          fontSize: _labelFontSize,
+          height: 1.3,
+          color: sunColor,
+          fontWeight: FontWeight.w700,
+        ),
+      );
+      final timeLeft = _timeWidth - 6 - time.width;
+      time.paint(canvas, Offset(timeLeft, y - time.height / 2));
+      time.dispose();
+      final arrow = rise ? Icons.north : Icons.south;
+      final arrowSize = scaler.scale(_labelFontSize);
+      _paintIcon(
+        canvas,
+        arrow,
+        arrowSize,
+        sunColor,
+        Offset(timeLeft - 1 - arrowSize / 2, y),
+      );
+      canvas.drawLine(
+        Offset(_timeWidth - 4, y),
+        Offset(_timeWidth, y),
+        Paint()
+          ..color = sunColor
+          ..strokeWidth = 1,
+      );
+    }
+  }
+
+  /// [icon], [size] across, centered on [center].
+  void _paintIcon(
+    Canvas canvas,
+    IconData icon,
+    double size,
+    Color color,
+    Offset center,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(icon.codePoint),
+        style: TextStyle(
+          fontFamily: icon.fontFamily,
+          package: icon.fontPackage,
+          fontSize: size,
+          color: color,
+          height: 1,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(
+      canvas,
+      center - Offset(painter.width / 2, painter.height / 2),
+    );
+    painter.dispose();
+  }
+
   /// The times events start or end, as many as fit after the midnights
   /// at both ends, over the axis' times they'd overlap.
   void _paintTimeLabels(Canvas canvas) {
@@ -2889,10 +2998,14 @@ class _RailPainter extends CustomPainter {
       (time: dayEnd, y: _y(dayEnd), edge: false),
       for (final t in edges) (time: t, y: _y(t), edge: true),
     ];
-    // The lines' labels come first; any time they'd cover isn't shown.
-    bool clearOfMarkers(_TimeLabel label) => markers.every(
-      (m) => (m.y - label.y).abs() >= (m.height + labelHeight) / 2,
-    );
+    // The lines' labels and the sun's come first; any time they'd cover
+    // isn't shown.
+    final sunYs = _sunYs;
+    bool clearOfMarkers(_TimeLabel label) =>
+        markers.every(
+          (m) => (m.y - label.y).abs() >= (m.height + labelHeight) / 2,
+        ) &&
+        sunYs.every((y) => (y - label.y).abs() >= labelHeight);
     final placed = placeLabels(
       candidates.where(clearOfMarkers),
       top: (l) => l.y - labelHeight / 2,
@@ -3002,6 +3115,8 @@ class _RailPainter extends CustomPainter {
       old.events != events ||
       old.actions != actions ||
       !listEquals(old.weather, weather) ||
+      !listEquals(old.sun, sun) ||
+      old.sunColor != sunColor ||
       old.edgeColor != edgeColor ||
       old.coverColor != coverColor ||
       old.nowY != nowY ||

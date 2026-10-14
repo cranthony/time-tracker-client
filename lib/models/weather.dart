@@ -177,13 +177,17 @@ String dayPartName(int hour) => switch (hour) {
   _ => 'Evening',
 };
 
+/// A sunrise ([rise]) or a sunset, [at] when.
+typedef SunTime = ({DateTime at, bool rise});
+
 /// A forecast, as precise as the weather allows: the [quarterHours] of
 /// the next few hours, the [hours] of the next day and a half, then the
 /// [dayParts] (night, morning, afternoon and evening) of the next couple
 /// of days, and the [days] of the week -- today's from now. Each list is
 /// in order and covers its own stretch; each may start before the one
 /// before it ends, but the finer one says it better there
-/// ([weatherTimeline]).
+/// ([weatherTimeline]). With them, the [sun]'s rising and setting on
+/// each of its days.
 @immutable
 class Forecast {
   const Forecast({
@@ -192,6 +196,7 @@ class Forecast {
     this.hours = const [],
     this.dayParts = const [],
     this.days = const [],
+    this.sun = const [],
     this.source = '',
   });
 
@@ -200,6 +205,10 @@ class Forecast {
   final List<WeatherSpan> hours;
   final List<WeatherSpan> dayParts;
   final List<WeatherSpan> days;
+
+  /// Each day's sunrise and sunset, in order: today's, even if past. A
+  /// day the sun doesn't rise or set, near the poles, has none.
+  final List<SunTime> sun;
 
   /// Where it came from, to credit it.
   final String source;
@@ -211,6 +220,10 @@ class Forecast {
     'hours': [for (final s in hours) s.toJson()],
     'day_parts': [for (final s in dayParts) s.toJson()],
     'days': [for (final s in days) s.toJson()],
+    'sun': [
+      for (final (:at, :rise) in sun)
+        {'at': at.toUtc().toIso8601String(), 'rise': rise},
+    ],
   };
 
   /// What [toJson] made; null if it isn't one.
@@ -228,7 +241,22 @@ class Forecast {
       hours: spans(json['hours']),
       dayParts: spans(json['day_parts']),
       days: spans(json['days']),
+      sun: [
+        for (final s in json['sun'] is List ? json['sun'] as List : const [])
+          if (s is Map)
+            if (DateTime.tryParse('${s['at']}') case final at?)
+              (at: at.toLocal(), rise: s['rise'] == true),
+      ],
     );
+  }
+
+  /// The sunrises and sunsets in the day starting at midnight [day].
+  List<SunTime> sunOn(DateTime day) {
+    final next = DateTime(day.year, day.month, day.day + 1);
+    return [
+      for (final s in sun)
+        if (!s.at.isBefore(day) && s.at.isBefore(next)) s,
+    ];
   }
 
   /// The forecast for the day starting at midnight [day]: from now, if

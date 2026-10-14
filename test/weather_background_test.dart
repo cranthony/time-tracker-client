@@ -70,6 +70,8 @@ void main() {
     expect(back.hours, forecast.hours);
     expect(back.dayParts, forecast.dayParts);
     expect(back.days, forecast.days);
+    expect(back.sun, forecast.sun);
+    expect(back.sun, isNotEmpty);
   });
 
   group('the background fetch', () {

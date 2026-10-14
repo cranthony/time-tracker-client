@@ -110,6 +110,40 @@ void main() {
       );
     });
 
+    // Sunset today, badged on the band, its time beside it.
+    testWidgets('weather_sunset ($mode)', (tester) async {
+      await render(
+        tester,
+        'weather_sunset',
+        events(),
+        then: () => scrollTo(tester, 16.5),
+      );
+    });
+
+    // Today's sunrise, though it's past, before the forecast starts.
+    testWidgets('weather_sunrise_past ($mode)', (tester) async {
+      await render(
+        tester,
+        'weather_sunrise_past',
+        events(),
+        then: () => scrollTo(tester, 4.5),
+      );
+    });
+
+    // Sunrise tomorrow, as the night's band turns to day.
+    testWidgets('weather_sunrise ($mode)', (tester) async {
+      await render(
+        tester,
+        'weather_sunrise',
+        events(),
+        then: () async {
+          await tester.tap(find.bySemanticsLabel(RegExp(r'^Sat, ')));
+          await tester.pumpAndSettle();
+          await scrollTo(tester, 4.5);
+        },
+      );
+    });
+
     // Two days on: by parts of the day.
     testWidgets('weather_day_parts ($mode)', (tester) async {
       await render(
