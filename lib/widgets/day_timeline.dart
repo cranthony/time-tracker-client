@@ -8,6 +8,7 @@ import '../models/google_calendar.dart';
 import '../models/plan_action.dart';
 import 'color_picker.dart';
 import 'durations.dart';
+import 'other_events.dart';
 
 /// The zoom levels a [DayTimeline] can be shown at, in logical pixels
 /// per minute: from a day in about 720 pixels to one hour in 360.
@@ -354,7 +355,7 @@ List<T> placeLabels<T>(
 /// the one before it in the same color, or one too close to tell apart,
 /// a hairline of the background divides them. Where events overlap
 /// ([eventOverlaps]), that time is tinted red over them, labeled
-/// "overlap".
+/// "overlap" -- but not the [faded] one's, being moved from there.
 /// [now], the [lastCompaction] and each of the [pendingNotes], if
 /// they're in the day, are marked with lines across, under the events;
 /// zoomed in past the [defaultTimelineScale], they're labeled "now",
@@ -747,8 +748,9 @@ class DayTimeline extends StatelessWidget {
                           ),
                         ),
                       ),
+                    // Not the one being moved: its overlaps go with it.
                     for (final overlap in eventOverlaps(
-                      events,
+                      OtherEvents(events, except: faded).events,
                       day: day,
                       dayEnd: dayEnd,
                     ))

@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.69.2
+
+- While an event is being moved, the red "overlap" tint where it was
+  goes away: the faded event left behind no longer counts as
+  overlapping anything. It comes back if the move is called off.
+
 ## 7.69.1
 
 - Why a compaction proposal can't be confirmed any more is said in the
