@@ -36,5 +36,11 @@ Color skyBandColor(Sky sky, {bool daytime = true}) => switch (sky) {
   _ => const Color(0xFFB0BEC5),
 };
 
+/// The color sunrise and sunset are marked in: a deep orange, lighter on
+/// a dark background.
+Color sunColor(Brightness brightness) => brightness == Brightness.dark
+    ? const Color(0xFFFFB74D)
+    : const Color(0xFFE65100);
+
 /// The color rain's chance is drawn in.
 const rainColor = Color(0xFF1E88E5);

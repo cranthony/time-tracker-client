@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.92.0
+
+- The Events page's weather bar marks sunrise and sunset, from the
+  forecast: an orange badge across the bar, the sun on the horizon, with
+  its time beside it in orange after an arrow up or down. Today's are
+  marked even once they're past; days past and beyond the forecast have
+  none.
+
 ## 7.91.0
 
 - An event's dialog has a Commute chip next to its priority: filled when

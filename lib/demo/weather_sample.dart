@@ -28,7 +28,8 @@ class FixedLocationSource implements LocationSource {
 
 /// A made-up week's weather, the same every time: a clear morning
 /// clouding over, showers likely late this afternoon, a wet day after
-/// tomorrow, then clearing for the weekend.
+/// tomorrow, then clearing for the weekend; the sun up about seven to
+/// seven.
 class SampleForecastSource implements ForecastSource {
   @override
   Future<Forecast> fetch(Coordinates at, {required DateTime now}) async =>
@@ -131,6 +132,13 @@ Forecast sampleForecast(DateTime now) {
           high: high.toDouble(),
           low: low.toDouble(),
         ),
+    ],
+    // Day from about seven to seven, as the hours have it, drawing in.
+    sun: [
+      for (var day = 0; day < days.length; day++) ...[
+        (at: at(day, 7, 2 + day), rise: true),
+        (at: at(day, 18, 52 - 2 * day), rise: false),
+      ],
     ],
     source: 'Open-Meteo',
   );

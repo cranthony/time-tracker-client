@@ -1404,6 +1404,14 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
+  /// [day]'s sunrise and sunset, to mark on its band, if the weather's
+  /// shown and the forecast has the day.
+  List<SunTime> _sunOn(DateTime day) {
+    final weather = Weather.of(context);
+    if (weather == null || !weather.enabled) return const [];
+    return weather.forecast?.sunOn(day) ?? const [];
+  }
+
   /// The weather to draw down [day]'s band, from now, if it's shown:
   /// none yet, till there's a forecast.
   List<WeatherSpan>? _weatherBand() {
@@ -4833,6 +4841,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 googleEvents: GoogleCalendars.of(context)?.on(day) ?? const [],
                 googleOnTop: _googleOnTop,
                 weather: _weatherBand(),
+                sun: _sunOn(day),
                 onTapGoogle: _box == null && _selecting == null
                     ? _openGoogleEvent
                     : null,
