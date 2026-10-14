@@ -130,6 +130,7 @@ class _FactsDialogState extends State<_FactsDialog> {
     if (repository == null) return;
     final created = await showLocationDialog(
       context,
+      groups: _memory?.locationGroups ?? const [],
       save: (fields) =>
           repository.createLocation(Location.fromJson({'id': '', ...fields})),
     );

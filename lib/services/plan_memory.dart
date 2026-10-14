@@ -92,6 +92,9 @@ class PlanMemory extends ChangeNotifier {
   PeopleList? people;
   List<Location>? locations;
 
+  /// The groups [locations] are in; null until they've loaded.
+  List<LocationGroup>? locationGroups;
+
   /// Self's habits, whatever their status; null until they're loaded, or
   /// if the server has none to give (see [loadHabits]).
   List<Habit>? habits;
@@ -414,12 +417,24 @@ class PlanMemory extends ChangeNotifier {
         }
       }, again: again);
 
-  /// Loads every location, this visit; [again] asks again.
+  /// Loads every location, and the groups they're in, this visit;
+  /// [again] asks again. The groups are best effort: a server without
+  /// them leaves none.
   Future<void> loadLocations(
     PeopleRepository repository, {
     bool again = false,
   }) => load('locations', () async {
-    locations = await repository.locations();
+    Future<List<LocationGroup>> groups() async {
+      try {
+        return await repository.locationGroups();
+      } catch (_) {
+        return locationGroups ?? const [];
+      }
+    }
+
+    final (found, grouped) = await (repository.locations(), groups()).wait;
+    locations = found;
+    locationGroups = grouped;
   }, again: again);
 
   /// Loads [window]'s events into [eventStore], this visit; [again] asks

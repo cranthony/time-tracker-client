@@ -295,6 +295,8 @@ class Location {
     required this.name,
     this.hint,
     this.mapLocation,
+    this.groupId,
+    this.path,
   });
 
   final String id;
@@ -309,19 +311,108 @@ class Location {
   /// of its own.
   final String? mapLocation;
 
+  /// The location group it's in, if any.
+  final String? groupId;
+
+  /// Its name after its groups' ("New York › Brooklyn › Home"), as the
+  /// server lists it; null where it isn't listed so.
+  final String? path;
+
   factory Location.fromJson(Map<String, dynamic> json) => Location(
     id: json['id'] as String,
     name: json['name'] as String? ?? '',
     hint: _text(json['hint']),
     mapLocation: _text(json['map_location']),
+    groupId: _text(json['group_id']),
+    path: _text(json['path']),
   );
 
+  /// As `create_location` and `update_location` take it: without its
+  /// path, which is the server's to work out.
   Map<String, Object?> toJson() => {
     'id': id,
     'name': name,
     'hint': ?hint,
     'map_location': ?mapLocation,
+    'group_id': ?groupId,
   };
+}
+
+/// A group of locations -- a neighborhood, a city -- inside another, if
+/// it has a [groupId], mirroring the server's `LocationGroup`. A location
+/// is in at most one.
+class LocationGroup {
+  const LocationGroup({
+    required this.id,
+    required this.name,
+    this.groupId,
+    this.note,
+    this.path,
+  });
+
+  final String id;
+  final String name;
+
+  /// The group it's inside, if any.
+  final String? groupId;
+  final String? note;
+
+  /// Its name after the groups it's inside ("New York › Brooklyn").
+  final String? path;
+
+  factory LocationGroup.fromJson(Map<String, dynamic> json) => LocationGroup(
+    id: json['id'] as String,
+    name: json['name'] as String? ?? '',
+    groupId: _text(json['group_id']),
+    note: _text(json['note']),
+    path: _text(json['path']),
+  );
+
+  /// As `create_location_group` and `update_location_group` take it.
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'group_id': ?groupId,
+    'note': ?note,
+  };
+}
+
+/// [groups]' and their ancestors' ids, from [id] out: the groups a
+/// location or group in [id] is inside, nearest first. Stops at a group
+/// that isn't there, or one already passed.
+List<String> enclosingGroupIds(String? id, List<LocationGroup> groups) {
+  final out = <String>[];
+  var next = id;
+  while (next != null && !out.contains(next)) {
+    final current = next;
+    final group = groups.where((g) => g.id == current).firstOrNull;
+    if (group == null) break;
+    out.add(group.id);
+    next = group.groupId;
+  }
+  return out;
+}
+
+/// [name] after the names of the groups [groupId] is inside, outermost
+/// first ("New York › Brooklyn › Home").
+String groupPath(String name, String? groupId, List<LocationGroup> groups) =>
+    [?groupsPath(groupId, groups), name].join(' › ');
+
+/// The names of group [groupId] and the groups it's inside, outermost
+/// first ("New York › Brooklyn"); null for none.
+String? groupsPath(String? groupId, List<LocationGroup> groups) {
+  final names = [
+    for (final id in enclosingGroupIds(groupId, groups).reversed)
+      groups.firstWhere((g) => g.id == id).name,
+  ];
+  return names.isEmpty ? null : names.join(' › ');
+}
+
+/// What tells [location] apart in a list: the groups it's in, and its
+/// hint; null if it has neither.
+String? locationDetail(Location location, List<LocationGroup> groups) {
+  final detail = [?groupsPath(location.groupId, groups), ?location.hint];
+  return detail.isEmpty ? null : detail.join(' · ');
 }
 
 /// Everyone, and their circles.

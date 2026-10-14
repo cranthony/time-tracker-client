@@ -830,6 +830,110 @@ void main() {
       expect(hall.mapLocation, isNull);
       expect(hall.hint, 'salsa on Thursdays');
     });
+
+    testWidgets('groups them, and shows each under its group', (tester) async {
+      final repository = await pump(tester);
+
+      // A city, and a neighborhood in it.
+      Future<void> addGroup(String name, {String? inside}) async {
+        await tester.tap(find.byTooltip('New location group'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.widgetWithText(TextField, 'Name'), name);
+        await tester.pump();
+        if (inside != null) {
+          await tester.tap(
+            find.widgetWithText(InputDecorator, 'Inside (optional)'),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(inside).last);
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.text('Save'));
+        await tester.pumpAndSettle();
+      }
+
+      await addGroup('New York');
+      await addGroup('Brooklyn', inside: 'New York');
+      expect((await repository.locationGroups()).map((g) => g.path), [
+        'New York',
+        'New York › Brooklyn',
+      ]);
+
+      // The hall goes in the neighborhood, and shows under it.
+      await tester.tap(find.text('The hall'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(InputDecorator, 'Group (optional)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New York › Brooklyn').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect((await repository.locations()).single.groupId, isNotNull);
+      double left(String text) => tester.getTopLeft(find.text(text)).dx;
+      expect(left('New York'), lessThan(left('Brooklyn')));
+      expect(left('Brooklyn'), lessThan(left('The hall')));
+
+      // Searched for, it says where it is.
+      await tester.enterText(find.byType(TextField).first, 'hall');
+      await tester.pumpAndSettle();
+      expect(
+        find.text('New York › Brooklyn · salsa on Thursdays'),
+        findsOneWidget,
+      );
+      await tester.enterText(find.byType(TextField).first, '');
+      await tester.pumpAndSettle();
+
+      // Deleting the neighborhood moves the hall up into the city.
+      await tester.tap(find.text('Brooklyn'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete').last);
+      await tester.pumpAndSettle();
+      expect((await repository.locations()).single.path, 'New York › The hall');
+      expect(find.text('Brooklyn'), findsNothing);
+    });
+
+    testWidgets("a group can't go inside itself, or one inside it", (
+      tester,
+    ) async {
+      final repository = InMemoryPeopleRepository(
+        locationGroups: const [
+          LocationGroup(id: 'ny', name: 'New York'),
+          LocationGroup(id: 'bk', name: 'Brooklyn', groupId: 'ny'),
+        ],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: _Fill(
+              child: LocationsPane(
+                repository: repository,
+                memory: PlanMemory(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // New York can't go in Brooklyn, inside it -- so there's nowhere
+      // to put it.
+      await tester.tap(find.text('New York'));
+      await tester.pumpAndSettle();
+      expect(find.text('Inside (optional)'), findsNothing);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      // Brooklyn can go in New York, but not in itself.
+      await tester.tap(find.text('Brooklyn'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(InputDecorator, 'Inside (optional)'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('New York › Brooklyn'), findsNothing);
+      expect(find.text('New York'), findsWidgets);
+    });
   });
 }
 

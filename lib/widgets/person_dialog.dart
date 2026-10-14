@@ -308,13 +308,15 @@ Future<bool> showCircleDialog(
     false;
 
 /// Adds a location (with no [location]) or edits one: its name, a hint
-/// for recognizing it, and its map location. Saves with [save], returning what it returned, or
+/// for recognizing it, its map location, and -- if there are [groups] --
+/// the group it's in. Saves with [save], returning what it returned, or
 /// null if it was called off. "Delete", asked first, calls [delete]: then
 /// [location] is returned. One added starts with [name], if given.
 Future<Location?> showLocationDialog(
   BuildContext context, {
   Location? location,
   String? name,
+  List<LocationGroup> groups = const [],
   required Future<Location> Function(Map<String, Object?> fields) save,
   Future<void> Function()? delete,
 }) async {
@@ -333,11 +335,55 @@ Future<Location?> showLocationDialog(
       deleteExplanation:
           "Events there keep its id, but won't say where they were.",
       map: (value: location?.mapLocation),
+      group: groups.isEmpty
+          ? null
+          : (value: location?.groupId, choices: groups, label: 'Group'),
       save: (fields) async => saved = await save(fields),
       delete: delete,
     ),
   );
   return done == true ? saved ?? location : null;
+}
+
+/// Adds a location group (with no [group]) or edits one: its name, a note,
+/// and the group it's inside, from [groups] -- never itself, or one inside
+/// it. Saves with [save], returning what it returned, or null if it was
+/// called off. "Delete", asked first, calls [delete]: then [group] is
+/// returned.
+Future<LocationGroup?> showLocationGroupDialog(
+  BuildContext context, {
+  LocationGroup? group,
+  List<LocationGroup> groups = const [],
+  required Future<LocationGroup> Function(Map<String, Object?> fields) save,
+  Future<void> Function()? delete,
+}) async {
+  LocationGroup? saved;
+  final choices = [
+    for (final g in groups)
+      if (group == null || !enclosingGroupIds(g.id, groups).contains(group.id))
+        g,
+  ];
+  final done = await showDialog<bool>(
+    context: context,
+    builder: (_) => _NamedDialog(
+      noun: 'location group',
+      name: group?.name,
+      detail: group?.note,
+      detailField: 'note',
+      detailLabel: 'Note (optional)',
+      detailHint: 'What it covers: "the blocks around the park"',
+      nameHint: 'e.g. Brooklyn',
+      deleteExplanation:
+          'Its locations and groups stay: they move up into the group it '
+          'was in.',
+      group: choices.isEmpty
+          ? null
+          : (value: group?.groupId, choices: choices, label: 'Inside'),
+      save: (fields) async => saved = await save(fields),
+      delete: delete,
+    ),
+  );
+  return done == true ? saved ?? group : null;
 }
 
 /// A name, and one more line of text, to save or delete.
@@ -355,6 +401,7 @@ class _NamedDialog extends StatefulWidget {
     required this.delete,
     this.scoring,
     this.map,
+    this.group,
     this.typed,
   });
 
@@ -385,6 +432,10 @@ class _NamedDialog extends StatefulWidget {
   /// Where it is on a map, for a location: as it is.
   final ({String? value})? map;
 
+  /// The location group it's in, for a location or a group: as it is, and
+  /// the groups it can be in, by [label].
+  final ({String? value, List<LocationGroup> choices, String label})? group;
+
   @override
   State<_NamedDialog> createState() => _NamedDialogState();
 }
@@ -393,6 +444,7 @@ class _NamedDialogState extends State<_NamedDialog> {
   late final _name = TextEditingController(text: widget.name ?? widget.typed);
   late final _detail = TextEditingController(text: widget.detail);
   late final _map = TextEditingController(text: widget.map?.value);
+  late String? _group = widget.group?.value;
   late Aggregation? _scoring = widget.scoring?.value;
   bool _scoringChanged = false;
 
@@ -495,6 +547,30 @@ class _NamedDialogState extends State<_NamedDialog> {
                 ),
               ),
             ],
+            if (widget.group case final group?) ...[
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String?>(
+                initialValue: _group,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: '${group.label} (optional)',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('None')),
+                  for (final g in group.choices)
+                    DropdownMenuItem(
+                      value: g.id,
+                      child: Text(
+                        g.path ?? g.name,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (picked) => setState(() => _group = picked),
+              ),
+            ],
             if (widget.scoring case final scoring?)
               AggregationTile(
                 title: 'How its people combine',
@@ -535,6 +611,9 @@ class _NamedDialogState extends State<_NamedDialog> {
                       'map_location': _map.text.trim().isEmpty
                           ? null
                           : _map.text.trim(),
+                    if (widget.group case final group?
+                        when _group != group.value)
+                      'group_id': _group,
                     if (_scoringChanged) 'scoring': _scoring?.toJson(),
                   }),
                 )

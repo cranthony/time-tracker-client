@@ -69,6 +69,7 @@ class SampleData {
     people: people,
     circles: circles,
     locations: locations,
+    locationGroups: locationGroups,
   );
 
   HabitsRepository habitsRepository() => InMemoryHabitsRepository(habits);
@@ -521,15 +522,37 @@ class SampleData {
       Circle.fromJson({'id': id, 'name': name, 'note': note}),
   ];
 
+  /// The neighborhoods some of [locations] are in, in the city.
+  List<LocationGroup> get locationGroups => const [
+    LocationGroup(id: 'city', name: 'The city'),
+    LocationGroup(id: 'downtown', name: 'Downtown', groupId: 'city'),
+    LocationGroup(id: 'riverside', name: 'Riverside', groupId: 'city'),
+  ];
+
   /// Where events happen.
   List<Location> get locations => const [
     Location(id: 'home', name: 'Home', hint: "the apartment; 'my place'"),
-    Location(id: 'hall', name: 'The hall', hint: 'the salsa social, Thursdays'),
-    Location(id: 'noodles', name: 'The noodle bar', hint: 'on Fifth'),
-    Location(id: 'cellar', name: 'The Cellar', hint: 'the jazz club'),
+    Location(
+      id: 'hall',
+      name: 'The hall',
+      hint: 'the salsa social, Thursdays',
+      groupId: 'downtown',
+    ),
+    Location(
+      id: 'noodles',
+      name: 'The noodle bar',
+      hint: 'on Fifth',
+      groupId: 'downtown',
+    ),
+    Location(
+      id: 'cellar',
+      name: 'The Cellar',
+      hint: 'the jazz club',
+      groupId: 'downtown',
+    ),
     Location(id: 'school', name: 'The culinary school'),
     Location(id: 'ramen', name: 'Ramen Ya'),
-    Location(id: 'trail', name: 'The river trail'),
+    Location(id: 'trail', name: 'The river trail', groupId: 'riverside'),
     Location(id: 'cafe', name: 'The café', hint: 'by the office'),
     Location(id: 'jordans', name: "Jordan's place"),
   ];

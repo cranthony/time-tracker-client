@@ -137,6 +137,7 @@ Future<Location?> editLocation(
     context,
     location: location,
     name: name,
+    groups: memory?.locationGroups ?? const [],
     save: (fields) => location == null
         ? repository.createLocation(Location.fromJson({'id': '', ...fields}))
         : repository.updateLocation(location.id, fields),
