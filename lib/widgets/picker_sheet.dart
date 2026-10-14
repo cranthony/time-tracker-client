@@ -255,7 +255,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
   ];
   final with_ = {...facts.withIds}..remove(selfPersonId);
   final for_ = {...facts.forIds}..remove(selfPersonId);
-  var location = facts.locationId;
+  final where_ = [...facts.locationIds];
   final repository = PeopleScope.of(context);
   final memory = PlanMemoryScope.of(context);
   var people = _people(repository, memory);
@@ -335,18 +335,22 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
       return ListPicker<Location>(
         items: [
           ...known,
-          if (location != null && !known.any((l) => l.id == location))
-            Location(id: location!, name: location!),
+          for (final id in where_)
+            if (!known.any((l) => l.id == id)) Location(id: id, name: id),
         ],
         id: (l) => l.id,
         label: (l) => l.name,
         detail: (l) => l.hint,
-        picked: [?location],
-        single: true,
-        hint: 'Where it was',
+        picked: [...where_],
+        hint: 'Where it was: one place, or each it moved between',
+
         empty: 'No locations yet.',
         search: search,
-        onChanged: (ids) => setState(() => location = ids.firstOrNull),
+        onChanged: (ids) => setState(
+          () => where_
+            ..clear()
+            ..addAll(ids),
+        ),
         onEdit: repository == null
             ? null
             : (l) async {
@@ -364,7 +368,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
                   if (added == null) return;
                   search.controller.clear();
                   setState(() {
-                    location = added.id;
+                    if (!where_.contains(added.id)) where_.add(added.id);
                     locations = _locations(repository, memory);
                   });
                 },
@@ -378,7 +382,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
     title: where ? 'Location' : 'Who',
     result: () => (
       facts: Facts(
-        locationId: location,
+        locationIds: [...where_],
         withIds: [...with_],
         forIds: [...for_],
         notes: {
@@ -401,10 +405,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
                 initialData: memory?.locations,
                 builder: (context, snapshot) => _MapLocationPage(
                   search: searches[1],
-                  fallback: snapshot.data
-                      ?.where((l) => l.id == location)
-                      .firstOrNull
-                      ?.mapLocation,
+                  fallback: _firstMap(snapshot.data, where_),
                   onChanged: (typed) => map = typed,
                 ),
               ),
@@ -428,6 +429,12 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
           ),
   );
 }
+
+/// The map location of the first of [ids] in [locations] to have one.
+String? _firstMap(List<Location>? locations, List<String> ids) => [
+  for (final id in ids)
+    ?locations?.where((l) => l.id == id).firstOrNull?.mapLocation,
+].firstOrNull;
 
 /// A [PickerSearch] of its own for what [builder] builds, kept as long as
 /// it is, starting with [text]; [matchAny] as given.

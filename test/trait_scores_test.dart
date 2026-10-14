@@ -590,7 +590,7 @@ void main() {
           'end': localIsoTimestamp(DateTime(2026, 10, 6, 20)),
           'facts': {
             'with_ids': ['sam'],
-            'location_id': 'home',
+            'location_ids': ['home'],
           },
           'action_ids': ['eat'],
           'judgments': {..._judged('sam', 2), ..._judged(selfPersonId, 1)},

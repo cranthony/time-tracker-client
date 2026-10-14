@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.76.0
+
+- An event can be at several locations, when it moved between them: the
+  Location page picks as many as it was at, as With and For pick people,
+  and the event shows each ("Home, The park"). Time by location counts
+  each, and an event with no map location of its own opens the first of
+  its locations' that has one.
+
 ## 7.75.0
 
 - Picking an event's actions, people and location is quicker:

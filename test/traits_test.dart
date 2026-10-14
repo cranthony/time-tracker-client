@@ -54,14 +54,14 @@ void main() {
   group('Facts', () {
     test('read from the server and written back without what is unset', () {
       final facts = Facts.fromJson({
-        'location_id': 'hall',
+        'location_ids': ['hall'],
         'with_ids': ['sam'],
         'for_ids': null,
         'notes': {'sam': 'Tired', selfPersonId: ' '},
       })!;
 
       expect(facts.toJson(), {
-        'location_id': 'hall',
+        'location_ids': ['hall'],
         'with_ids': ['sam'],
         'notes': {'sam': 'Tired'},
       });
@@ -72,7 +72,7 @@ void main() {
       const facts = Facts(
         withIds: ['sam'],
         forIds: ['priya'],
-        locationId: 'home',
+        locationIds: ['home'],
       );
 
       expect(
@@ -797,7 +797,9 @@ void main() {
       start: DateTime(2026, 10, 1, 18),
       end: DateTime(2026, 10, 1, 20),
       properties: const {
-        'facts': {'location_id': 'home'},
+        'facts': {
+          'location_ids': ['home'],
+        },
         'judgments': {
           selfPersonId: {
             'adventurous': {
@@ -880,7 +882,7 @@ void main() {
 
     expect(saved, {
       'facts': {
-        'location_id': 'home',
+        'location_ids': ['home'],
         'with_ids': ['sam'],
         'for_ids': ['priya'],
         'notes': {'sam': 'Glad to be out'},
@@ -931,7 +933,7 @@ void main() {
       end: DateTime(2026, 10, 1, 20),
       properties: const {
         'facts': {
-          'location_id': 'home',
+          'location_ids': ['home'],
           'with_ids': ['sam'],
         },
       },
@@ -973,7 +975,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Clear search').hitTestable());
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(RadioListTile<String>, 'Home'), findsOneWidget);
+    expect(find.widgetWithText(CheckboxListTile, 'Home'), findsOneWidget);
     // Asked once, not again for the facts.
     expect(people.calls, ['people', 'locations']);
     people.gate!.complete();
@@ -1027,7 +1029,9 @@ void main() {
         'weekdays': ['mon'],
       },
       'location': 'Room 4',
-      'facts': {'location_id': 'home'},
+      'facts': {
+        'location_ids': ['home'],
+      },
     });
     final people = InMemoryPeopleRepository(
       people: const [Person(id: 'sam', name: 'Sam')],
@@ -1078,7 +1082,7 @@ void main() {
 
     expect(saved, {
       'facts': {
-        'location_id': 'home',
+        'location_ids': ['home'],
         'with_ids': ['sam'],
       },
     });
@@ -1128,13 +1132,11 @@ void main() {
     // Picked, once it's made.
     expect(
       tester
-          .widget<RadioListTile<String>>(
-            find.widgetWithText(RadioListTile<String>, 'Home'),
+          .widget<CheckboxListTile>(
+            find.widgetWithText(CheckboxListTile, 'Home'),
           )
           .value,
-      tester
-          .widget<RadioGroup<String>>(find.byType(RadioGroup<String>))
-          .groupValue,
+      isTrue,
     );
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     await tester.pumpAndSettle();
@@ -1143,7 +1145,9 @@ void main() {
 
     expect((await people.locations()).single.name, 'Home');
     expect(saved, {
-      'facts': {'location_id': 'home'},
+      'facts': {
+        'location_ids': ['home'],
+      },
     });
   });
 }
@@ -1219,7 +1223,7 @@ Event _yesterday(
     'action_ids': actions,
     'facts': Facts(
       withIds: withIds,
-      locationId: location,
+      locationIds: [?location],
       notes: notes,
     ).toJson(),
     if (judgments.isNotEmpty) 'judgments': judgments,

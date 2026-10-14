@@ -1116,8 +1116,9 @@ class TraitScores {
       ]),
       locations: entries([
         for (final e in events)
-          if (Facts.fromJson(e.properties['facts'])?.locationId
-              case final where?)
+          for (final where
+              in Facts.fromJson(e.properties['facts'])?.locationIds ??
+                  const <String>[])
             (where, e.start),
       ]),
       events: [for (final e in events) e.toJson().cast<String, dynamic>()],

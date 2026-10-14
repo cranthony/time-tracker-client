@@ -217,7 +217,8 @@ const individuals = '\u0000individuals';
 ) {
   final (day, week) = window.split<String>(
     events,
-    (event) => [?Facts.fromJson(event.properties['facts'])?.locationId],
+    (event) =>
+        Facts.fromJson(event.properties['facts'])?.locationIds ?? const [],
     '',
   );
   List<SummarySlice> shares(Map<String?, Duration> time) => planShares(
