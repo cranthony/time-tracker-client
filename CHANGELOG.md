@@ -10,10 +10,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 - Commutes. Moving an event that has a location, a commute button shows
   outside the "−" and "+" at an end of the box, when the nearest event
-  that way is at another place and the travel times have a way of
-  getting between them. It offers just those ways (actions, by their own
-  time or their group's), each with how long it takes: a range taken at
-  its middle, rounded up to five minutes. The one picked is made with the
+  that way is at another place. It offers the ways the travel times have
+  of getting between them (actions, by their own time or their group's),
+  each with how long it takes: a range taken at its middle, rounded up to
+  five minutes. With none yet, or to add another, "Add a travel time…"
+  opens one from there to there, then offers it. The one picked is made with the
   move, against the box's edge, and rides with it as the box changes,
   trimming what it runs into; tapped again, the button takes it away.
 - A commute is marked as one on the event (its facts' commute), not

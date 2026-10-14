@@ -9,6 +9,7 @@ import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
+import '../models/travel_time.dart';
 import '../models/note.dart';
 import '../models/proposal.dart';
 import '../models/recurrence.dart';
@@ -42,6 +43,8 @@ import '../widgets/day_header.dart';
 import '../widgets/day_summary.dart';
 import '../widgets/pending_event_box.dart';
 import '../widgets/day_timeline.dart';
+import '../widgets/edit_page.dart';
+import 'travel_times_screen.dart';
 import '../widgets/durations.dart' show formatMinutes;
 import '../widgets/error_sheet.dart';
 import '../widgets/load_status.dart';
@@ -2120,11 +2123,11 @@ class _EventsScreenState extends State<EventsScreen> {
   );
 
   /// Where a commute could go at the box's [top] or foot: between the
-  /// event being moved and the nearest event before (or after) it --
-  /// from the last place one's at to the first the other's at -- and the
-  /// ways the travel times say it can be done. Null if there's no such
+  /// event being moved and the nearest event before (or after) it -- from
+  /// the last place one's at to the first the other's at -- and the ways
+  /// the travel times say it can be done, if any. Null if there's no such
   /// event, it or the event moved has no location, they're at the same
-  /// place, it's a commute already, or no way of getting there has a time.
+  /// place, or it's a commute already.
   ({String fromId, String toId, List<CommuteOption> options})? _commuteAt(
     bool top,
   ) {
@@ -2151,17 +2154,20 @@ class _EventsScreenState extends State<EventsScreen> {
     final (fromId, toId) = top
         ? (there.locationIds.last, here.first)
         : (here.last, there.locationIds.first);
+    if (fromId == toId) return null;
     final memory = _memory;
-    final options = commuteOptions(
+    return (
       fromId: fromId,
       toId: toId,
-      actions: memory.shownActions?.actions ?? const [],
-      travelTimes: memory.travelTimes ?? const [],
-      locations: memory.locations ?? const [],
-      groups: memory.locationGroups ?? const [],
+      options: commuteOptions(
+        fromId: fromId,
+        toId: toId,
+        actions: memory.shownActions?.actions ?? const [],
+        travelTimes: memory.travelTimes ?? const [],
+        locations: memory.locations ?? const [],
+        groups: memory.locationGroups ?? const [],
+      ),
     );
-    if (options.isEmpty) return null;
-    return (fromId: fromId, toId: toId, options: options);
   }
 
   /// The ends a commute can be queued at, now.
@@ -2171,55 +2177,141 @@ class _EventsScreenState extends State<EventsScreen> {
   };
 
   /// The commute button at the box's [top] or foot: takes away the one
-  /// queued there, or asks which way to go and queues it.
+  /// queued there, or asks which way to go -- from the ways the travel
+  /// times have, or one added there and then -- and queues it.
   Future<void> _commute(bool top) async {
     if (_commutes.containsKey(top)) {
       setState(() => _commutes.remove(top));
       return;
     }
-    final at = _commuteAt(top);
-    if (at == null) return;
-    String place(String id) =>
-        _memory.locations?.where((l) => l.id == id).firstOrNull?.name ?? id;
-    final picked = await showModalBottomSheet<CommuteOption>(
+    while (mounted) {
+      final at = _commuteAt(top);
+      if (at == null) return;
+      final picked = await _pickCommute(at.fromId, at.toId, at.options);
+      if (picked == null || !mounted) return;
+      if (picked case final CommuteOption option) {
+        setState(
+          () => _commutes[top] = (
+            actionId: option.action.id!,
+            name: option.action.name ?? 'Commute',
+            length: Duration(minutes: option.minutes),
+          ),
+        );
+        return;
+      }
+      // A travel time to add first: then asked again, with it.
+      if (!await _addTravelTime(at.fromId, at.toId)) return;
+    }
+  }
+
+  /// A location's name, by id.
+  String _placeName(String id) =>
+      _memory.locations?.where((l) => l.id == id).firstOrNull?.name ?? id;
+
+  /// Which way to go from [fromId] to [toId], of [options]: the one
+  /// picked, [_addingTravel] to add a travel time first, or null.
+  Future<Object?> _pickCommute(
+    String fromId,
+    String toId,
+    List<CommuteOption> options,
+  ) {
+    final canAdd = PeopleScope.of(context) != null;
+    return showModalBottomSheet<Object>(
       context: context,
       showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            ListTile(
-              title: Text(
-                'Commute from ${place(at.fromId)} to ${place(at.toId)}',
-              ),
-              subtitle: const Text(
-                'Made with the move, against its edge, and pushed with it.',
-              ),
-            ),
-            for (final option in at.options)
+      builder: (context) {
+        final theme = Theme.of(context);
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
               ListTile(
-                leading: const Icon(Icons.commute),
-                title: Text(option.action.name ?? option.action.id!),
-                subtitle: Text(
-                  option.time.maxMinutes == null
-                      ? formatMinutes(option.minutes)
-                      : '${formatMinutes(option.minutes)} '
-                            '(${option.time.describe})',
+                title: Text(
+                  'Commute from ${_placeName(fromId)} to ${_placeName(toId)}',
                 ),
-                onTap: () => Navigator.of(context).pop(option),
+                subtitle: Text(
+                  options.isEmpty
+                      ? "No travel times say how long it takes between these "
+                            "places yet, or the neighborhoods they're in."
+                      : 'Made with the move, against its edge, and pushed '
+                            'with it.',
+                ),
               ),
-          ],
-        ),
+              for (final option in options)
+                ListTile(
+                  leading: const Icon(Icons.commute),
+                  title: Text(option.action.name ?? option.action.id!),
+                  subtitle: Text(
+                    option.time.maxMinutes == null
+                        ? formatMinutes(option.minutes)
+                        : '${formatMinutes(option.minutes)} '
+                              '(${option.time.describe})',
+                  ),
+                  onTap: () => Navigator.of(context).pop(option),
+                ),
+              if (canAdd)
+                ListTile(
+                  leading: Icon(
+                    Icons.add_road,
+                    color: theme.colorScheme.primary,
+                  ),
+                  title: Text(
+                    options.isEmpty ? 'Add a travel time…' : 'Add a way…',
+                    style: TextStyle(color: theme.colorScheme.primary),
+                  ),
+                  subtitle: Text(
+                    'How long it takes from ${_placeName(fromId)} to '
+                    '${_placeName(toId)}, by each way of getting there',
+                  ),
+                  onTap: () => Navigator.of(context).pop(_addingTravel),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// What [_pickCommute] gives back to add a travel time first.
+  static const _addingTravel = #addTravel;
+
+  /// Adds a travel time from [fromId] to [toId] -- or adds ways to the
+  /// one between them, if there's one -- in its editor; whether it was
+  /// saved.
+  Future<bool> _addTravelTime(String fromId, String toId) async {
+    final people = PeopleScope.of(context);
+    if (people == null) return false;
+    final memory = _memory;
+    final existing = memory.travelTimes
+        ?.where(
+          (t) =>
+              (t.fromId == fromId && t.toId == toId) ||
+              (!t.oneWay && t.fromId == toId && t.toId == fromId),
+        )
+        .firstOrNull;
+    final saved = await showEditPage<bool>(
+      context,
+      TravelTimeEditor(
+        travel: existing,
+        fromId: fromId,
+        toId: toId,
+        places: travelPlaces(memory),
+        modes: travelModes(memory),
+        save: (fields) => existing == null
+            ? people.createTravelTime(
+                TravelTime.fromJson({'id': '', ...fields}),
+              )
+            : people.updateTravelTime(existing.id, fields),
       ),
     );
-    if (picked == null || !mounted) return;
-    setState(
-      () => _commutes[top] = (
-        actionId: picked.action.id!,
-        name: picked.action.name ?? 'Commute',
-        length: Duration(minutes: picked.minutes),
-      ),
-    );
+    if (saved != true) return false;
+    try {
+      await memory.loadTravelTimes(people, again: true);
+    } catch (_) {
+      // As they were, till they load.
+    }
+    if (mounted) setState(() {});
+    return mounted;
   }
 
   /// The commutes queued, as `create_event` takes them, against [span]'s

@@ -6,10 +6,13 @@ import 'package:time_tracker_client/models/note.dart' show localIsoTimestamp;
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/travel_time.dart';
+import 'package:time_tracker_client/outbox/event_outbox.dart';
+import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/widgets/pending_event_box.dart';
 
@@ -137,16 +140,25 @@ void main() {
       properties: {'summary': summary, if (facts.isNotEmpty) 'facts': facts},
     );
 
-    Future<_Recording> pump(WidgetTester tester, List<Event> events) async {
+    Future<_Recording> pump(
+      WidgetTester tester,
+      List<Event> events, {
+      EventOutbox Function(_Recording repo)? outbox,
+      PeopleRepository? people,
+    }) async {
       tester.view.physicalSize = const Size(800, 2400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final repo = _Recording(events);
+      final queue = outbox?.call(repo);
       final memory = PlanMemory()
         ..locations = _locations
         ..locationGroups = _groups
         ..travelTimes = _travel
         ..actions = const ActionList(actions: _actions);
+      Widget scoped(Widget child) => people == null
+          ? child
+          : PeopleScope(repository: people, child: child);
       await tester.pumpWidget(
         MaterialApp(
           home: AppSettingsScope(
@@ -154,12 +166,15 @@ void main() {
               persist: false,
               grid: const Duration(hours: 1),
             )..setSnap(const {}),
-            child: EventsScreen(
-              repository: repo,
-              serverLabel: 'test',
-              memory: memory,
-              actionsRepository: InMemoryActionsRepository(_actions),
-              clock: () => day.add(const Duration(hours: 8)),
+            child: scoped(
+              EventsScreen(
+                repository: repo,
+                serverLabel: 'test',
+                memory: memory,
+                actionsRepository: InMemoryActionsRepository(_actions),
+                eventOutbox: queue,
+                clock: () => day.add(const Duration(hours: 8)),
+              ),
             ),
           ),
         ),
@@ -239,6 +254,117 @@ void main() {
           'facts': {'commute': true},
         },
       ]);
+    });
+
+    testWidgets('queued in the outbox, the commute is made once, and only '
+        'once the move is', (tester) async {
+      late EventOutbox queue;
+      final repo = await pump(
+        tester,
+        [
+          event(
+            'tea',
+            'Tea',
+            at(12),
+            at(13),
+            facts: {
+              'location_ids': ['cafe'],
+            },
+          ),
+          event(
+            'work',
+            'Work',
+            at(14),
+            at(17),
+            facts: {
+              'location_ids': ['office'],
+            },
+          ),
+        ],
+        outbox: (repo) =>
+            queue = EventOutbox(store: InMemoryOutboxStore(), events: repo),
+      );
+      await tester.longPress(find.text('Tea'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Add a commute to the event after'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Drive'));
+      await tester.pumpAndSettle();
+      // Nothing made till the move is.
+      expect(repo.created, isEmpty);
+      expect(queue.items, isEmpty);
+      await tester.tap(find.byTooltip('Move it here'));
+      await tester.pumpAndSettle();
+      await queue.flush(ignoreBackoff: true);
+      await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
+      expect(repo.created.length, 1);
+      // One event: its title, and its action under it.
+      expect(find.text('Drive'), findsNWidgets(2));
+    });
+
+    testWidgets('between places no travel time covers, the button still '
+        'shows, and a travel time added from it is offered at once', (
+      tester,
+    ) async {
+      final people = InMemoryPeopleRepository(
+        locations: [
+          ..._locations,
+          const Location(id: 'gym', name: 'The gym'),
+        ],
+        locationGroups: _groups,
+        travelTimes: _travel,
+      );
+      final repo = await pump(tester, [
+        event(
+          'tea',
+          'Tea',
+          at(12),
+          at(13),
+          facts: {
+            'location_ids': ['cafe'],
+          },
+        ),
+        event(
+          'lift',
+          'Lift',
+          at(14),
+          at(15),
+          facts: {
+            'location_ids': ['gym'],
+          },
+        ),
+      ], people: people);
+      await tester.longPress(find.text('Tea'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Add a commute to the event after'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('No travel times say'), findsOneWidget);
+      await tester.tap(find.text('Add a travel time…'));
+      await tester.pumpAndSettle();
+
+      // From and to as the commute is; a way, and how long.
+      expect(find.text('The cafe'), findsOneWidget);
+      expect(find.text('The gym'), findsOneWidget);
+      await tester.tap(find.widgetWithText(InputDecorator, 'By'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Walk').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextField, 'Takes'), '15');
+      await tester.pump();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      final added = (await people.travelTimes()).last;
+      expect((added.fromId, added.toId), ('cafe', 'gym'));
+      // Asked again, with it.
+      expect(find.textContaining('No travel times say'), findsNothing);
+      await tester.tap(find.text('Walk'));
+      await tester.pumpAndSettle();
+      expect(view(tester).pushed.single.label, 'Walk (commute)');
+      await tester.tap(find.byTooltip('Move it here'));
+      await tester.pumpAndSettle();
+      expect(repo.created.single['summary'], 'Walk');
     });
 
     testWidgets('a queued commute rides with the box, and goes again when '

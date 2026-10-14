@@ -13,6 +13,21 @@ import '../widgets/picker_sheet.dart';
 import '../widgets/status_message.dart';
 import '../widgets/tree_picker.dart';
 
+/// Every location and group [memory] has, groups first: the places a
+/// travel time can be between.
+List<PickerNode> travelPlaces(PlanMemory memory) => [
+  ...locationGroupNodes(memory.locationGroups ?? const []),
+  for (final l in memory.locations ?? const <Location>[]) locationNode(l),
+];
+
+/// Every action and group in use that [memory] has: the ways of getting
+/// somewhere a travel time can have.
+List<PickerNode> travelModes(PlanMemory memory) => [
+  for (final a in memory.shownActions?.actions ?? const [])
+    if (a.id != null && a.status != 'deleted' && a.status != 'archived')
+      actionNode(a),
+];
+
 /// Roughly how long it takes to get between places -- each a location or a
 /// location group -- by each way of getting there: an action or action
 /// group, such as Drive or Transit. Tapping one edits or deletes it; "+"
@@ -58,18 +73,8 @@ class _TravelTimesScreenState extends State<TravelTimesScreen> {
   }
 
   /// Every location and group, groups first, each as its path.
-  List<PickerNode> get _places => [
-    ...locationGroupNodes(widget.memory.locationGroups ?? const []),
-    for (final l in widget.memory.locations ?? const <Location>[])
-      locationNode(l),
-  ];
-
-  /// Every action and group that's in use, by its path.
-  List<PickerNode> get _modes => [
-    for (final a in widget.memory.shownActions?.actions ?? const [])
-      if (a.id != null && a.status != 'deleted' && a.status != 'archived')
-        actionNode(a),
-  ];
+  List<PickerNode> get _places => travelPlaces(widget.memory);
+  List<PickerNode> get _modes => travelModes(widget.memory);
 
   String _name(String id, List<PickerNode> choices) =>
       switch (choices.where((c) => c.id == id).firstOrNull) {
@@ -211,9 +216,15 @@ class TravelTimeEditor extends StatefulWidget {
     required this.modes,
     required this.save,
     this.delete,
+    this.fromId,
+    this.toId,
   });
 
   final TravelTime? travel;
+
+  /// Where a new one starts out from, and to.
+  final String? fromId;
+  final String? toId;
   final List<PickerNode> places;
   final List<PickerNode> modes;
   final Future<void> Function(Map<String, Object?> fields) save;
@@ -224,8 +235,8 @@ class TravelTimeEditor extends StatefulWidget {
 }
 
 class _TravelTimeEditorState extends State<TravelTimeEditor> {
-  late String? _from = widget.travel?.fromId;
-  late String? _to = widget.travel?.toId;
+  late String? _from = widget.travel?.fromId ?? widget.fromId;
+  late String? _to = widget.travel?.toId ?? widget.toId;
   late bool _oneWay = widget.travel?.oneWay ?? false;
   late final _note = TextEditingController(text: widget.travel?.note);
   late final List<_Way> _ways = [
