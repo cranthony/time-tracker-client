@@ -138,6 +138,14 @@ fi
 # as it starts. Not force-stopped: Android hides a stopped app's widgets
 # until it's opened again.
 event=$(ui_nodes | grep -oE "text=\"$SAMPLE_EVENTS\"" | head -1 | sed 's/text="\(.*\)"/\1/')
+# Whether it's under the widget's "Today": the sample's events are every
+# day but today, but a "Get up and get ready" today, from another series,
+# shows first while it's on (7:00 to 7:45 AM) -- and opens today.
+today=$(ui_nodes | grep -oE 'text="[^"]*"' | sed 's/text="\(.*\)"/\1/' |
+  awk -v event="$event" '
+    $0 == "Today" { under = 1; next }
+    $0 == "Tomorrow" { under = 0; next }
+    $0 == event { print (under ? "yes" : "no"); exit }')
 # Not by am kill either: it won't end a process running a job, as Glance's
 # session (a WorkManager job) is for a minute after the widget updates. So
 # by kill -9, as root, as Android ends a process when it's short of memory.
@@ -152,12 +160,10 @@ if [ -z "$event" ]; then
 elif adb shell pidof "$PKG" >/dev/null; then
   fail event_cold "the app was still running after kill -9"
 # On the timeline, it's labelled with its times too: "Dinner, 7:00 PM to
-# 7:45 PM". Not on today: the sample's are every day but today, so on
-# another (and a "Get up and get ready" today, from another series, isn't
-# it).
+# 7:45 PM". On its own day: today only for one under "Today".
 elif tap_view "$event" && wait_for 'Previous day' 15 &&
   ui_nodes | grep -qE "(text|content-desc)=\"$event[,\"]" &&
-  ! on_screen Today; then
+  if [ "$today" = yes ]; then on_screen Today; else ! on_screen Today; fi; then
   adb exec-out screencap -p > "$OUT/calendar_event_cold.png"
   pass "event_cold ($event)"
 else
