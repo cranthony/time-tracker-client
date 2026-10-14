@@ -7,6 +7,12 @@ minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
 
+## 7.96.0
+
+- In an event's details, a location with a map button sits level with
+  its pin, its row no taller than the others. The button has the row's
+  full height to be tapped in.
+
 ## 7.95.0
 
 - The Events page's weather bar shows the temperature, in the units
