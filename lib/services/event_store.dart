@@ -69,6 +69,9 @@ class EventStore extends ChangeNotifier {
   /// [day]'s events, if they're here.
   List<Event>? day(DateTime day) => _days[dayKey(day)]?.events;
 
+  /// When [day]'s events here were asked for, if they're here.
+  DateTime? askedAt(DateTime day) => _days[dayKey(day)]?.at;
+
   /// Every event here that overlaps [from] to [to], each once, by start:
   /// as last asked for, where days disagree.
   List<Event> between(DateTime from, DateTime to) {
@@ -124,16 +127,16 @@ class EventStore extends ChangeNotifier {
     _changed(await _fetch(_midnight(from), last));
   }
 
-  /// Keeps [events] as [day]'s, as just asked for.
-  void putDay(DateTime day, List<Event> events) {
-    _changed(_put(_midnight(day), _plusDays(_midnight(day), 1), events));
+  /// Keeps [events] as [day]'s, as [asked] for -- or just now.
+  void putDay(DateTime day, List<Event> events, {DateTime? asked}) {
+    _changed(_put(_midnight(day), _plusDays(_midnight(day), 1), events, asked));
   }
 
-  /// Keeps [events] as every day's from [from] to [to] (midnights).
-  /// Keeps [events] as the days' from [from] to [to]; returns whether
-  /// any day's are new, or differ from what it had.
-  bool _put(DateTime from, DateTime to, List<Event> events) {
-    final at = clock();
+  /// Keeps [events] as the days' from [from] to [to] (midnights), as
+  /// [asked] for -- or just now; returns whether any day's are new, or
+  /// differ from what it had.
+  bool _put(DateTime from, DateTime to, List<Event> events, [DateTime? asked]) {
+    final at = asked ?? clock();
     var changed = false;
     for (var d = from; d.isBefore(to); d = _plusDays(d, 1)) {
       final next = _plusDays(d, 1);
@@ -233,8 +236,9 @@ class EventStore extends ChangeNotifier {
 
   /// Asks for [from] to [to]; returns whether anything in them changed.
   Future<bool> _fetch(DateTime from, DateTime to) async {
+    final asked = clock();
     final events = await repository.events(from, to);
-    return _put(from, to, events);
+    return _put(from, to, events, asked);
   }
 
   /// Keeps the days a little later, as they're fetched again; and, if
