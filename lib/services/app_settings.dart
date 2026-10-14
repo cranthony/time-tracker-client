@@ -116,6 +116,7 @@ class AppSettings extends ChangeNotifier {
   /// null is not to.
   static const weatherRefreshIntervals = <Duration?>[
     null,
+    Duration(minutes: 15),
     Duration(minutes: 30),
     Duration(hours: 1),
     Duration(hours: 2),
@@ -123,7 +124,7 @@ class AppSettings extends ChangeNotifier {
     Duration(hours: 6),
   ];
 
-  static const defaultWeatherRefresh = Duration(hours: 1);
+  static const defaultWeatherRefresh = Duration(minutes: 15);
   static const _weatherRefreshKey = 'settings_weather_refresh_minutes';
   Duration? _weatherRefresh = defaultWeatherRefresh;
 

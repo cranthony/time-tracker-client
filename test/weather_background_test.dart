@@ -224,41 +224,44 @@ void main() {
   });
 
   group('scheduling', () {
-    test("every hour while it's on, as set; not till it's known; none when "
-        "it's off", () async {
-      final scheduled = <Duration?>[];
-      final settings = AppSettings(persist: false);
-      final weather = Weather(
-        forecasts: _FakeForecasts(),
-        location: FixedLocationSource(),
-        persist: false,
-        enabled: true,
-        clock: () => now,
-      );
-      final refresh = BackgroundRefresh(
-        settings: settings,
-        weather: weather,
-        supported: true,
-        schedule: (_) async {},
-        scheduleWeather: (every) async => scheduled.add(every),
-        lastRecord: () async => null,
-        lastWeather: () async => null,
-      );
-      addTearDown(refresh.dispose);
-      expect(scheduled, isEmpty);
+    test(
+      "every 15 minutes while it's on, as set; not till it's known; none when "
+      "it's off",
+      () async {
+        final scheduled = <Duration?>[];
+        final settings = AppSettings(persist: false);
+        final weather = Weather(
+          forecasts: _FakeForecasts(),
+          location: FixedLocationSource(),
+          persist: false,
+          enabled: true,
+          clock: () => now,
+        );
+        final refresh = BackgroundRefresh(
+          settings: settings,
+          weather: weather,
+          supported: true,
+          schedule: (_) async {},
+          scheduleWeather: (every) async => scheduled.add(every),
+          lastRecord: () async => null,
+          lastWeather: () async => null,
+        );
+        addTearDown(refresh.dispose);
+        expect(scheduled, isEmpty);
 
-      await weather.load();
-      expect(scheduled, [const Duration(hours: 1)]);
+        await weather.load();
+        expect(scheduled, [const Duration(minutes: 15)]);
 
-      await settings.setWeatherRefresh(const Duration(hours: 3));
-      expect(scheduled.last, const Duration(hours: 3));
+        await settings.setWeatherRefresh(const Duration(hours: 3));
+        expect(scheduled.last, const Duration(hours: 3));
 
-      weather.disable();
-      expect(scheduled.last, isNull);
+        weather.disable();
+        expect(scheduled.last, isNull);
 
-      await settings.setWeatherRefresh(const Duration(minutes: 30));
-      expect(scheduled, hasLength(3));
-    });
+        await settings.setWeatherRefresh(const Duration(minutes: 30));
+        expect(scheduled, hasLength(3));
+      },
+    );
   });
 
   group('the Background updates page', () {
@@ -298,9 +301,15 @@ void main() {
     testWidgets('sets how often the weather is fetched', (tester) async {
       final (settings, _) = await pump(tester);
       expect(find.text('Weather'), findsOneWidget);
-      expect(find.text('Every hour'), findsOneWidget);
+      // The weather's, not the proposal's, which is every 15 minutes too.
+      final forecast = find.widgetWithText(ListTile, 'Forecast');
+      final shown = find.descendant(
+        of: forecast,
+        matching: find.text('Every 15 min'),
+      );
+      expect(shown, findsOneWidget);
 
-      await tester.tap(find.text('Every hour'));
+      await tester.tap(shown);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Every 3 hours').last);
       await tester.pumpAndSettle();

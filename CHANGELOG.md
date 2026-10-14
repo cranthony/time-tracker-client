@@ -6,6 +6,11 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.89.0
+
+- The weather's fetched in the background every 15 minutes, to start:
+  a new choice on the Background updates page, and Android's shortest.
+
 ## 7.88.0
 
 - The weather, from Open-Meteo, where the device is or for a latitude

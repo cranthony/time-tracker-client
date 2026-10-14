@@ -619,9 +619,10 @@ start).
   replaces the last whole, and is kept on the device, so the app shows
   it at once as it opens. One that can't be had leaves the last, its
   time shown.
-- **In the background** (Android), it's fetched every hour too, so it's
-  up to date when you open the app -- how often, or not at all, is set
-  on the Background updates page, which says what the last did. For
+- **In the background** (Android), it's fetched every 15 minutes too
+  (Android's shortest), so it's up to date when you open the app -- how
+  often, or not at all, is set on the Background updates page, which
+  says what the last did. For
   where the device is, that's where it was last found while the app was
   open: the background fetch never asks where the device is, so needs no
   background location permission.
