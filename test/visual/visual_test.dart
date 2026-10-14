@@ -579,23 +579,63 @@ void main() {
       );
     });
 
-    // A group in a group, edited from its menu: its priority, inherited,
-    // and its color.
-    testWidgets('action dialog ($mode)', (tester) async {
+    // A group in a group, edited from its menu, opened ready to edit; and
+    // further down, its color and note.
+    for (final (name, scrolled) in [
+      ('action_dialog', false),
+      ('action_dialog_scrolled', true),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          plan(),
+          then: () async {
+            await tester.scrollUntilVisible(
+              find.textContaining('Guitar', findRichText: true),
+              200,
+              scrollable: _list,
+            );
+            await tester.pumpAndSettle();
+            await tester.tap(find.byTooltip('More for Guitar'));
+            await tester.pumpAndSettle();
+            await tester.tap(find.text('Edit'));
+            await tester.pumpAndSettle();
+            if (scrolled) {
+              await tester.ensureVisible(
+                find.widgetWithText(TextField, 'Note (optional)'),
+              );
+              await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
+
+    // An action, tapped: with its status too.
+    testWidgets('action dialog action ($mode)', (tester) async {
       await render(
         tester,
-        'action_dialog',
+        'action_dialog_action',
         plan(),
         then: () async {
           await tester.scrollUntilVisible(
-            find.textContaining('Guitar', findRichText: true),
+            find.byTooltip('More for Practice guitar'),
             200,
             scrollable: _list,
           );
           await tester.pumpAndSettle();
-          await tester.tap(find.byTooltip('More for Guitar'));
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('Edit'));
+          await tester.tap(
+            find
+                .descendant(
+                  of: _list,
+                  matching: find.textContaining(
+                    'Practice guitar',
+                    findRichText: true,
+                  ),
+                )
+                .first,
+          );
           await tester.pumpAndSettle();
         },
       );
@@ -628,10 +668,6 @@ void main() {
           await tester.tap(find.byTooltip('More for Guitar'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('Edit'));
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('Details'));
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('Creative').last);
           await tester.pumpAndSettle();
           await tester.tap(find.byType(ActionField));
           await tester.pumpAndSettle();
