@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.84.0
+
+- Tapping an action or group in the Actions pane, or "Edit" in its menu,
+  opens it ready to edit, as a location does: its name, the group it's
+  in, its status (an action's), priority, color and note, each said
+  where it's inherited from. "Details", and tapping a value before
+  editing it, are gone. Adding an action or group uses the same dialog.
+
 ## 7.83.0
 
 - Editing a person or a habit, how their traits combine is above the

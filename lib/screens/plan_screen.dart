@@ -31,7 +31,6 @@ import '../widgets/color_picker.dart';
 import '../widgets/durations.dart';
 import '../widgets/priority_chip.dart';
 import '../widgets/priority_colors_dialog.dart';
-import '../widgets/action_details_dialog.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
 import '../widgets/time_summary.dart';
@@ -65,9 +64,9 @@ import '../services/work_timing.dart';
 /// by priority. Under it, each action and group: its color, name,
 /// status, priority (as a chip, like the Events page's) and the time on
 /// it in the window, with what's in a group indented under it. Tapping a
-/// group opens or closes it; tapping an action, or "Edit" in a group's
-/// menu, edits its priority and color ([showActionDialog]), from which
-/// "Details" opens the rest. Searching shows the actions and groups
+/// group or an action, or "Edit" in its menu, opens it ready to edit
+/// ([showActionDialog]): its name, group, status, priority, color and
+/// note. Searching shows the actions and groups
 /// whose name, path or note match, in their groups. Where the repository
 /// is [ActionsRepository.reorderable], pressing and holding one starts
 /// reordering: each can be dragged among its siblings, what's in it
@@ -538,10 +537,12 @@ class _PlanScreenState extends State<PlanScreen> {
         (s) => s.item.actionId == id && s.item.isNew && s.result == null,
       );
 
-  /// Shows [action]'s details to edit; one whose save failed opens with the
-  /// changes that weren't saved, to save again.
+  /// Edits [action]; one whose save failed opens with the changes that
+  /// weren't saved, to save again.
   Future<void> _open(PlanAction action) async {
     final id = action.id!;
+    final actions = await _allActions();
+    if (!mounted) return;
     switch (_failed(id)) {
       case PendingActionSave(isNew: true, :final changes):
         await showNewActionDialog(
@@ -552,7 +553,7 @@ class _PlanScreenState extends State<PlanScreen> {
           },
           parentId: changes['parent_id'] as String?,
           fields: changes,
-          actions: _allActions,
+          actions: actions,
         );
       case final failed:
         // As the server has it, with what wasn't saved as changes.
@@ -560,7 +561,7 @@ class _PlanScreenState extends State<PlanScreen> {
             ? action
             : _fromServer?.actions.where((g) => g.id == id).firstOrNull ??
                   action;
-        await showActionDetailsDialog(
+        await showActionDialog(
           context,
           saved,
           changes: failed?.changes ?? const {},
@@ -583,20 +584,10 @@ class _PlanScreenState extends State<PlanScreen> {
             ),
             _ => Future.value(true),
           },
-          actions: _allActions,
+          actions: actions,
         );
     }
   }
-
-  /// Edits [action]'s priority and color, from which "Details" opens the
-  /// rest.
-  Future<void> _edit(PlanAction action) => showActionDialog(
-    context,
-    action,
-    actions: _actions?.actions ?? const [],
-    save: _update,
-    onDetails: _open,
-  );
 
   Map<String?, String> get _actionNames => {
     for (final action in _actions?.actions ?? const <PlanAction>[])
@@ -617,12 +608,14 @@ class _PlanScreenState extends State<PlanScreen> {
   }, group: action.isGroup);
 
   Future<void> _add({String? parentId, bool group = false}) async {
+    final actions = await _allActions();
+    if (!mounted) return;
     await showNewActionDialog(
       context,
       create: _create,
       parentId: parentId,
       group: group,
-      actions: _allActions,
+      actions: actions,
     );
   }
 
@@ -1075,8 +1068,8 @@ class _PlanScreenState extends State<PlanScreen> {
       subActions: subActions,
       saving: saving,
       failed: failed,
-      onTap: save != null ? () => _open(action) : () => _edit(action),
-      onEdit: () => _edit(action),
+      onTap: () => _open(action),
+      onEdit: () => _open(action),
       onRetry: () => widget.outbox.retry(id!),
       onDiscard: () => _discard(id!),
       onLongPress: reorderable

@@ -7,7 +7,7 @@ import '../services/actions_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
-import 'action_details_dialog.dart';
+import 'action_dialog.dart';
 import 'person_dialog.dart';
 
 // Adding to, and editing, what the Events page's pickers pick from --
@@ -17,14 +17,19 @@ import 'person_dialog.dart';
 // made at once, rather than in the background, so it has its id to be
 // picked by.
 
-/// Every action, as shown: with the edits still going out.
+/// Every action, as shown: with the edits still going out. None if they
+/// can't be loaded: the dialog can still name one, or edit it.
 Future<List<PlanAction>> _allActions(
   ActionsRepository repository,
   PlanMemory? memory,
 ) async {
-  if (memory == null) return (await repository.actions()).actions;
-  if (memory.actions == null) await memory.loadActions(repository);
-  return memory.shownActions?.actions ?? const [];
+  try {
+    if (memory == null) return (await repository.actions()).actions;
+    if (memory.actions == null) await memory.loadActions(repository);
+    return memory.shownActions?.actions ?? const [];
+  } catch (_) {
+    return const [];
+  }
 }
 
 /// Whether actions can be added and edited here.
@@ -37,10 +42,12 @@ Future<String?> addAction(BuildContext context, String name) async {
   if (scope == null) return null;
   final memory = PlanMemoryScope.of(context);
   String? made;
+  final actions = await _allActions(scope.repository, memory);
+  if (!context.mounted) return null;
   final listed = await showNewActionDialog(
     context,
     fields: {if (name.isNotEmpty) 'name': name},
-    actions: () => _allActions(scope.repository, memory),
+    actions: actions,
     create: (fields) async {
       final id = await scope.repository.createAction(fields);
       final ActionList list;
@@ -69,10 +76,12 @@ Future<bool> editAction(BuildContext context, PlanAction action) async {
   final scope = ActionsScope.of(context);
   if (scope == null || action.id == null) return false;
   final memory = PlanMemoryScope.of(context);
-  final saved = await showActionDetailsDialog(
+  final actions = await _allActions(scope.repository, memory);
+  if (!context.mounted) return false;
+  final saved = await showActionDialog(
     context,
     action,
-    actions: () => _allActions(scope.repository, memory),
+    actions: actions,
     save: (action, changes) async {
       scope.outbox.update(action.id!, changes, group: action.isGroup);
       return memory?.shownActions ?? await scope.repository.actions();

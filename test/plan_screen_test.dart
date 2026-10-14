@@ -25,7 +25,6 @@ import 'package:time_tracker_client/widgets/plow_icon.dart';
 import 'package:time_tracker_client/widgets/actions_picker.dart';
 import 'package:time_tracker_client/widgets/color_picker.dart';
 import 'package:time_tracker_client/widgets/priority_chip.dart';
-import 'package:time_tracker_client/widgets/properties_dialog.dart';
 
 void main() {
   /// The Plan page over [repo], saving through [outbox], or an outbox of
@@ -107,13 +106,25 @@ void main() {
   Finder iconOf(String name) =>
       find.descendant(of: rowOf(name), matching: find.byType(ActionIcon));
 
-  /// Opens [name]'s details from its menu, through its Edit dialog.
-  Future<void> openDetails(WidgetTester tester, String name) async {
+  /// Opens [name] to edit, from its menu.
+  Future<void> openEditor(WidgetTester tester, String name) async {
     await tester.tap(find.byTooltip('More for $name'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Edit'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Details'));
+  }
+
+  /// The open dialog's name field.
+  final nameField = find.widgetWithText(TextField, 'Name');
+
+  /// The open dialog's Save button.
+  final saveButton = find.widgetWithText(FilledButton, 'Save');
+
+  /// Taps [finder] in the open dialog, scrolling it into view first.
+  Future<void> tapInDialog(WidgetTester tester, Finder finder) async {
+    await tester.ensureVisible(finder);
+    await tester.pumpAndSettle();
+    await tester.tap(finder);
     await tester.pumpAndSettle();
   }
 
@@ -243,31 +254,19 @@ void main() {
     expect(find.text('No actions with these statuses.'), findsOneWidget);
   });
 
-  /// Opens [name]'s details, and picks [status] for its status.
+  /// Opens [name] to edit, picks [status] for its status, and saves.
   Future<void> pickStatus(
     WidgetTester tester,
     String name,
     String status,
   ) async {
-    await openDetails(tester, name);
-    final dialog = find.byType(AlertDialog);
-    final label = find.descendant(of: dialog, matching: find.text('status'));
-    final row = find.ancestor(of: label, matching: find.byType(PropertyRow));
-    await tester.tap(
-      find.descendant(of: row, matching: find.byType(InkWell)).first,
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(DropdownButton<String?>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(status).last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Keep edit'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Save 1 change'));
+    await openEditor(tester, name);
+    await tapInDialog(tester, find.widgetWithText(ChoiceChip, status));
+    await tester.tap(saveButton);
     await tester.pumpAndSettle();
   }
 
-  testWidgets("an action's status is changed in its details, asking first "
+  testWidgets("an action's status is changed in its dialog, asking first "
       'to move an active one', (tester) async {
     final repo = tree();
     await tester.pumpWidget(app(repo));
@@ -277,14 +276,14 @@ void main() {
     expect(find.text('Move Hosting to archived?'), findsOneWidget);
     await tester.tap(find.text('Keep it'));
     await tester.pumpAndSettle();
-    // Still open, with the change kept, to save or revert.
-    expect(find.text('Save 1 change'), findsOneWidget);
+    // Still open, with the change kept, to save or call off.
+    expect(saveButton, findsOneWidget);
     expect(
       (await repo.actions()).actions.firstWhere((g) => g.id == 'host').status,
       'active',
     );
 
-    await tester.tap(find.text('Save 1 change'));
+    await tester.tap(saveButton);
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton, 'Archived'));
     await tester.pumpAndSettle();
@@ -365,10 +364,8 @@ void main() {
     );
   });
 
-  testWidgets("groups are always open; tapping an action edits its "
-      'priority and color, from which "Details" opens the rest', (
-    tester,
-  ) async {
+  testWidgets("tapping an action opens it ready to edit: its name, group, "
+      'status, priority, color and note', (tester) async {
     final repo = tree();
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
@@ -376,40 +373,52 @@ void main() {
     expect(shownNames(tester), contains('Tofu tikka'));
     expect(find.byType(AlertDialog), findsNothing);
 
-    await tester.tap(titled('Hosting'));
+    await tester.tap(titled('Tofu tikka'));
     await tester.pumpAndSettle();
     final dialog = find.byType(AlertDialog);
+    expect(find.text('Edit action'), findsOneWidget);
+    expect(tester.widget<TextField>(nameField).controller!.text, 'Tofu tikka');
+    for (final label in ['Group', 'Status', 'Priority', 'Color']) {
+      expect(find.descendant(of: dialog, matching: find.text(label)), findsOne);
+    }
+    // Its group; the priority it inherits from it.
     expect(
-      find.descendant(of: dialog, matching: find.byType(PriorityChip)),
-      findsOneWidget,
+      find.descendant(of: dialog, matching: find.text('Cooking')),
+      findsOne,
     );
-    expect(find.descendant(of: dialog, matching: find.text('Color')), findsOne);
-    await tester.tap(
-      find.descendant(of: dialog, matching: find.byType(PriorityChip)),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'P0'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Save'));
-    await tester.pumpAndSettle();
-    expect(
-      (await repo.actions()).actions.firstWhere((g) => g.id == 'host').priority,
-      0,
-    );
+    expect(find.text('Inherit (P1)'), findsOneWidget);
+    expect(find.text('Inherited: P1, from Cooking.'), findsOneWidget);
+    // Nothing changed, nothing to save.
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
 
-    // A group's menu edits it the same way; "Details" opens the rest.
-    await tester.tap(find.byTooltip('More for Cooking'));
+    await tapInDialog(tester, find.widgetWithText(ChoiceChip, 'P0'));
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Note (optional)'),
+      'From the cookbook',
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Edit'));
+    await tester.tap(saveButton);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Details'));
+    final tofu = (await repo.actions()).actions.firstWhere(
+      (g) => g.id == 'tofu',
+    );
+    expect(tofu.priority, 0);
+    expect(tofu.properties['note'], 'From the cookbook');
+
+    // A group's menu edits it the same way, with no status.
+    await openEditor(tester, 'Cooking');
+    expect(find.text('Edit group'), findsOneWidget);
+    expect(tester.widget<TextField>(nameField).controller!.text, 'Cooking');
+    expect(
+      find.descendant(of: dialog, matching: find.text('Status')),
+      findsNothing,
+    );
+    await tapInDialog(tester, find.widgetWithText(ChoiceChip, 'P3'));
+    await tester.tap(saveButton);
     await tester.pumpAndSettle();
     expect(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.text('parent_id'),
-      ),
-      findsOneWidget,
+      (await repo.actions()).actions.firstWhere((g) => g.id == 'cook').priority,
+      3,
     );
   });
 
@@ -449,7 +458,7 @@ void main() {
     await tester.longPress(titled('Tofu tikka'));
     await tester.pumpAndSettle();
     expect(find.text('Reorder actions'), findsNothing);
-    // It's a tap, then: its details open.
+    // It's a tap, then: it opens to edit.
     Navigator.of(tester.element(find.byType(AlertDialog))).pop();
     await tester.pumpAndSettle();
 
@@ -489,13 +498,9 @@ void main() {
       findsOneWidget,
     );
 
-    // Saving with no name is refused.
-    await tester.tap(find.text('(none)').first);
+    await tester.enterText(nameField, 'Make curry');
     await tester.pumpAndSettle();
-    await tester.enterText(dialogField, 'Make curry');
-    await tester.tap(find.byTooltip('Keep edit'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Save 1 change'));
+    await tester.tap(saveButton);
     await tester.pumpAndSettle();
 
     final added = (await repo.actions()).actions.firstWhere(
@@ -524,12 +529,9 @@ void main() {
     await tester.tap(find.text('New group'));
     await tester.pumpAndSettle();
     expect(find.text('New group'), findsOneWidget);
-    await tester.tap(find.text('(none)').first);
+    await tester.enterText(nameField, 'Music');
     await tester.pumpAndSettle();
-    await tester.enterText(dialogField, 'Music');
-    await tester.tap(find.byTooltip('Keep edit'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Save 1 change'));
+    await tester.tap(saveButton);
     await tester.pumpAndSettle();
 
     final added = (await repo.actions()).actions.firstWhere(
@@ -549,17 +551,7 @@ void main() {
 
   /// In the dialog open, sets the action's name to [name].
   Future<void> rename(WidgetTester tester, String name) async {
-    final label = find.descendant(
-      of: find.byType(AlertDialog),
-      matching: find.text('name'),
-    );
-    final row = find.ancestor(of: label, matching: find.byType(PropertyRow));
-    await tester.tap(
-      find.descendant(of: row, matching: find.byType(InkWell)).first,
-    );
-    await settle(tester);
-    await tester.enterText(dialogField, name);
-    await tester.tap(find.byTooltip('Keep edit'));
+    await tester.enterText(nameField, name);
     await settle(tester);
   }
 
@@ -570,12 +562,8 @@ void main() {
     await settle(tester);
     await tester.tap(find.text('New action'));
     await settle(tester);
-    await tester.tap(find.text('(none)').first);
-    await settle(tester);
-    await tester.enterText(dialogField, name);
-    await tester.tap(find.byTooltip('Keep edit'));
-    await settle(tester);
-    await tester.tap(find.text('Save 1 change'));
+    await rename(tester, name);
+    await tester.tap(saveButton);
     await settle(tester);
   }
 
@@ -601,10 +589,8 @@ void main() {
     await settle(tester);
     await tester.tap(find.text('Edit'));
     await settle(tester);
-    await tester.tap(find.text('Details'));
-    await settle(tester);
     await rename(tester, 'Parties');
-    await tester.tap(find.text('Save 1 change'));
+    await tester.tap(saveButton);
     await settle(tester);
     expect(find.byType(AlertDialog), findsNothing);
     expect(shownNames(tester), contains('Parties'));
@@ -653,9 +639,9 @@ void main() {
     // Tapping it opens what was entered, to change and save again.
     await tester.tap(find.text('Running'));
     await tester.pumpAndSettle();
-    expect(find.text('Save 1 change'), findsOneWidget);
+    expect(tester.widget<TextField>(nameField).controller!.text, 'Running');
     await rename(tester, 'Jogging');
-    await tester.tap(find.text('Save 1 change'));
+    await tester.tap(saveButton);
     await settle(tester);
     expect(find.byType(AlertDialog), findsNothing);
     expect(find.byTooltip('Saving…'), findsOneWidget);
@@ -764,10 +750,8 @@ void main() {
     await settle(tester);
     await tester.tap(find.text('Edit'));
     await settle(tester);
-    await tester.tap(find.text('Details'));
-    await settle(tester);
     await rename(tester, 'Parties');
-    await tester.tap(find.text('Save 1 change'));
+    await tester.tap(saveButton);
     await settle(tester);
     repo.fail(McpException('Try later.'));
     await tester.pumpAndSettle();
@@ -778,8 +762,8 @@ void main() {
     // Opens as the server has it, with the change to save again.
     await tester.tap(find.text('Parties'));
     await tester.pumpAndSettle();
-    expect(find.text('Save 1 change'), findsOneWidget);
-    await tester.tap(find.text('Save 1 change'));
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+    await tester.tap(saveButton);
     await settle(tester);
     expect(repo.sent, ['update host', 'update host']);
     repo.answer();
@@ -801,10 +785,8 @@ void main() {
     await settle(tester);
     await tester.tap(find.text('Edit'));
     await settle(tester);
-    await tester.tap(find.text('Details'));
-    await settle(tester);
     await rename(tester, 'Better idea');
-    await tester.tap(find.text('Save 1 change'));
+    await tester.tap(saveButton);
     await settle(tester);
     await tester.pumpAndSettle();
     debugPrint('SHOWN ${shownNames(tester)}');
@@ -824,15 +806,15 @@ void main() {
     await tester.tap(find.text('New action'));
     await tester.pumpAndSettle();
     expect(find.text('New action'), findsOneWidget);
-    // Change something other than the name, then try to save.
-    await tester.tap(find.text('(none)').at(2)); // priority
+    // Change something other than the name: it still can't be saved.
+    await tapInDialog(tester, find.widgetWithText(ChoiceChip, 'P2'));
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+    await tester.enterText(nameField, '   ');
     await tester.pumpAndSettle();
-    await tester.enterText(dialogField, '2');
-    await tester.tap(find.byTooltip('Keep edit'));
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+    await tester.enterText(nameField, 'Stretch');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save 1 change'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('It needs a name.'), findsOneWidget);
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
   });
 
   test('a time is said in hours and minutes, or as shares of each window', () {
@@ -1127,12 +1109,8 @@ void main() {
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
-    await openDetails(tester, 'Hosting');
-    final dialog = find.byType(AlertDialog);
-    final label = find.descendant(of: dialog, matching: find.text('parent_id'));
-    final row = find.ancestor(of: label, matching: find.byType(PropertyRow));
-    await tester.tap(find.descendant(of: row, matching: find.text('(none)')));
-    await tester.pumpAndSettle();
+    await openEditor(tester, 'Hosting');
+    expect(find.text('None (top-level)'), findsOneWidget);
     await tester.tap(find.byType(ActionField));
     await tester.pumpAndSettle();
     final picker = find.byType(ActionsPicker);
@@ -1155,9 +1133,7 @@ void main() {
     expect(picker, findsNothing);
     // Picked: its whole path.
     expect(find.text('Cooking › Indian'), findsOneWidget);
-    await tester.tap(find.byTooltip('Keep edit'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Save 1 change'));
+    await tester.tap(saveButton);
     await tester.pumpAndSettle();
     expect(
       (await repo.actions()).actions.firstWhere((g) => g.id == 'host').parentId,
@@ -1171,16 +1147,7 @@ void main() {
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
-    await openDetails(tester, 'Tofu tikka');
-    final dialog = find.byType(AlertDialog);
-    final row = find.ancestor(
-      of: find.descendant(of: dialog, matching: find.text('parent_id')),
-      matching: find.byType(PropertyRow),
-    );
-    await tester.tap(
-      find.descendant(of: row, matching: find.byType(InkWell)).first,
-    );
-    await tester.pumpAndSettle();
+    await openEditor(tester, 'Tofu tikka');
     await tester.tap(find.byType(ActionField));
     await tester.pumpAndSettle();
     // Only a group: Cooking, its own.
@@ -1211,31 +1178,14 @@ void main() {
     );
     await tester.tap(find.text('None (top-level)'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Keep edit'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Save 1 change'));
+    await tester.tap(saveButton);
     await tester.pumpAndSettle();
     expect(
       (await repo.actions()).actions.firstWhere((g) => g.id == 'tofu').parentId,
       isNull,
     );
 
-    await openDetails(tester, 'Cooking');
-    await tester.tap(
-      find
-          .descendant(
-            of: find.ancestor(
-              of: find.descendant(
-                of: find.byType(AlertDialog),
-                matching: find.text('parent_id'),
-              ),
-              matching: find.byType(PropertyRow),
-            ),
-            matching: find.byType(InkWell),
-          )
-          .first,
-    );
-    await tester.pumpAndSettle();
+    await openEditor(tester, 'Cooking');
     await tester.tap(find.byType(ActionField));
     await tester.pumpAndSettle();
     expect(

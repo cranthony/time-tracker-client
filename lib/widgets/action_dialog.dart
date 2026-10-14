@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../models/plan_action.dart';
 import '../services/mcp_client.dart';
-import 'error_sheet.dart';
+import 'action_icon.dart';
+import 'actions_picker.dart';
 import 'color_picker.dart';
-import 'priority_chip.dart';
+import 'error_sheet.dart';
 
-/// The priorities offered as buttons; "…" takes any other.
+/// The priorities offered as chips; "…" takes any other.
 const _priorities = [0, 1, 2, 3];
 
 /// Saves [changes] to [action], returning every action as they're to be
@@ -16,48 +17,89 @@ typedef SaveAction = Future<ActionList> Function(
   Map<String, Object?> changes,
 );
 
-/// Edits an action, or a group: its priority, as a chip like the Events
-/// page's, over its name and path, and its label's color. Each says
-/// whether it's set on the action itself or where it comes from: a
-/// group it's in, or for a color, the priority.
+/// Edits [action] -- an action or a group -- opening ready to edit, as
+/// the Locations pane's dialogs do: its name, the group it's in, its
+/// status (an action's), priority, color and note, each as
+/// `update_action` and `update_action_group` take them. What it inherits
+/// from a group, or for a color its priority, is said under each.
 ///
-/// Tapping the priority or the color opens it for editing, in place; one
-/// set on it can be cleared, so it's inherited again. "Save" sends every
-/// change with [save]. Without [save], or for one with no id, nothing can
-/// be edited. "Details" closes it, then calls [onDetails] with it, for
-/// everything else. [actions] are the actions and groups listed, to say
-/// which group each inherited value comes from.
-Future<void> showActionDialog(
+/// "Save" sends every change with [save], after [confirmSave], given the
+/// changes, says to go ahead. Returns what [save] returned (every action,
+/// as they're to be shown now), or null if nothing was saved. [actions]
+/// are every action and group, for the group it's in and what it
+/// inherits. [changes] opens it with those already made: ones that
+/// couldn't be saved before.
+Future<ActionList?> showActionDialog(
   BuildContext context,
   PlanAction action, {
-  List<PlanAction> actions = const [],
-  SaveAction? save,
-  ValueChanged<PlanAction>? onDetails,
-}) => showDialog<void>(
+  required List<PlanAction> actions,
+  required SaveAction save,
+  Future<bool> Function(Map<String, Object?> changes)? confirmSave,
+  Map<String, Object?> changes = const {},
+}) => showDialog<ActionList>(
   context: context,
   builder: (_) => _ActionDialog(
     action: action,
+    isNew: false,
     actions: actions,
-    save: save == null || action.id == null ? null : save,
-    onDetails: onDetails,
+    changes: changes,
+    confirmSave: confirmSave,
+    save: (changes) => save(action, changes),
   ),
 );
 
-/// The properties the dialog edits, as `update_action` names them.
-enum _Property { priority, color }
+/// The dialog [showActionDialog] edits in, for a new action -- or with
+/// [group], a group of them -- in group [parentId] if given, made with
+/// [create] on "Save". Returns what [create] returned (every action, as
+/// they're to be shown now), or null if nothing was made. [fields] opens
+/// it with those already filled in: one that couldn't be made before.
+Future<ActionList?> showNewActionDialog(
+  BuildContext context, {
+  required Future<ActionList> Function(Map<String, Object?> fields) create,
+  required List<PlanAction> actions,
+  String? parentId,
+  bool group = false,
+  Map<String, Object?> fields = const {},
+}) {
+  final isGroup = group || fields['kind'] == 'group';
+  return showDialog<ActionList>(
+    context: context,
+    builder: (_) => _ActionDialog(
+      action: PlanAction(
+        parentId: parentId,
+        properties: {if (isGroup) 'kind': 'group'},
+      ),
+      isNew: true,
+      actions: actions,
+      changes: {
+        for (final MapEntry(:key, :value) in fields.entries)
+          if (key != 'parent_id' && key != 'kind' && value != null) key: value,
+      },
+      save: (changes) => create({
+        'parent_id': parentId,
+        if (isGroup) 'kind': 'group',
+        for (final MapEntry(:key, :value) in changes.entries) key: ?value,
+      }),
+    ),
+  );
+}
 
 class _ActionDialog extends StatefulWidget {
   const _ActionDialog({
     required this.action,
+    required this.isNew,
     required this.actions,
+    required this.changes,
     required this.save,
-    required this.onDetails,
+    this.confirmSave,
   });
 
   final PlanAction action;
+  final bool isNew;
   final List<PlanAction> actions;
-  final SaveAction? save;
-  final ValueChanged<PlanAction>? onDetails;
+  final Map<String, Object?> changes;
+  final Future<ActionList> Function(Map<String, Object?> changes) save;
+  final Future<bool> Function(Map<String, Object?> changes)? confirmSave;
 
   @override
   State<_ActionDialog> createState() => _ActionDialogState();
@@ -65,88 +107,116 @@ class _ActionDialog extends StatefulWidget {
 
 class _ActionDialogState extends State<_ActionDialog> {
   /// What's been changed, keyed as `update_action` takes it; null clears.
-  final _changes = <String, Object?>{};
+  late final _changes = <String, Object?>{...widget.changes};
 
-  /// The property open for editing, if one is.
-  _Property? _editing;
+  late final _name = TextEditingController(text: _value('name') as String?);
+  late final _note = TextEditingController(text: _value('note') as String?);
 
   /// Whether "…" was picked, to type a priority not among [_priorities].
-  bool _otherPriority = false;
+  late bool _otherPriority = switch (_priority) {
+    final p? => !_priorities.contains(p),
+    null => false,
+  };
   late final _otherController = TextEditingController(
-    text: switch (widget.action.priority) {
-      final p? when !_priorities.contains(p) => '$p',
-      _ => '',
-    },
+    text: _otherPriority ? '$_priority' : '',
   );
 
   bool _saving = false;
 
   PlanAction get _action => widget.action;
-  bool get _editable => widget.save != null;
+
+  /// As it was, keyed as `update_action` takes it.
+  late final Map<String, Object?> _was = {
+    'name': _action.name,
+    'parent_id': _action.parentId,
+    'status': _action.status,
+    'priority': _action.priority,
+    'background_color': _action.backgroundColor,
+    'note': _action.properties['note'] as String?,
+  };
 
   @override
   void dispose() {
+    _name.dispose();
+    _note.dispose();
     _otherController.dispose();
     super.dispose();
   }
 
   /// [key]'s value as it'll be saved: changed, or as it was.
-  Object? _value(String key, Object? was) =>
-      _changes.containsKey(key) ? _changes[key] : was;
+  Object? _value(String key) =>
+      _changes.containsKey(key) ? _changes[key] : _was[key];
 
-  int? get _priority => _value('priority', _action.priority) as int?;
-  String? get _color =>
-      _value('background_color', _action.backgroundColor) as String?;
+  String? get _parentId => _value('parent_id') as String?;
+  String get _status => _value('status') as String? ?? 'active';
+  int? get _priority => _value('priority') as int?;
+  String? get _color => _value('background_color') as String?;
 
   /// Sets [key] to [value], dropping the change if that's how it was.
-  void _set(String key, Object? value, Object? was) => setState(() {
-    if (value == was) {
+  void _set(String key, Object? value) => setState(() {
+    if (value == _was[key]) {
       _changes.remove(key);
     } else {
       _changes[key] = value;
     }
   });
 
+  /// [text] trimmed, or null if that leaves nothing.
+  static String? _trimmed(String text) =>
+      text.trim().isEmpty ? null : text.trim();
+
   /// The listed action with [id], if it's listed.
   PlanAction? _byId(String? id) =>
       id == null ? null : widget.actions.where((g) => g.id == id).firstOrNull;
 
-  /// Its ancestors, nearest first, as far as they're listed.
-  late final List<PlanAction> _ancestors = () {
+  /// The groups it's in, nearest first, as far as they're listed: in the
+  /// group picked, if it's been moved.
+  List<PlanAction> get _ancestors {
     final chain = <PlanAction>[];
-    var parent = _byId(_action.parentId);
+    var parent = _byId(_parentId);
     while (parent != null && !chain.contains(parent)) {
       chain.add(parent);
       parent = _byId(parent.parentId);
     }
     return chain;
-  }();
+  }
 
-  /// The nearest ancestor for which [has] is true, if one is listed.
-  PlanAction? _nearest(bool Function(PlanAction) has) =>
-      _ancestors.where(has).firstOrNull;
-
-  /// What it inherits for priority: its parent's, if it's listed;
-  /// otherwise what the server said, if that was inherited.
-  int? get _inheritedPriority => switch (_byId(_action.parentId)) {
+  /// What it inherits for priority: its group's, if that's listed;
+  /// otherwise what the server said, if it hasn't moved.
+  int? get _inheritedPriority => switch (_byId(_parentId)) {
     final parent? => parent.effectivePriority,
-    null => _action.inheritsPriority ? _action.effectivePriority : null,
+    null when _parentId == _action.parentId && _action.inheritsPriority =>
+      _action.effectivePriority,
+    null => null,
   };
 
-  /// "Inherited from Cooking", naming the nearest ancestor for which
-  /// [has] is true, if it's listed.
-  String _inheritedFrom(bool Function(PlanAction) has) =>
-      switch (_nearest(has)) {
-        final from? => 'Inherited from ${actionName(from)}',
-        null => 'Inherited',
-      };
+  /// The nearest group it's in with a priority of its own.
+  PlanAction? get _priorityFrom =>
+      _ancestors.where((g) => g.priority != null).firstOrNull;
+
+  /// The nearest group it's in with a color of its own.
+  PlanAction? get _colorFrom => _ancestors
+      .where((g) => parseColor(g.backgroundColor) != null)
+      .firstOrNull;
+
+  /// The color its label is shown in, as it'll be saved.
+  Color get _shownColor =>
+      parseColor(_color) ??
+      parseColor(_colorFrom?.backgroundColor) ??
+      (_changes.isEmpty ? parseColor(_action.effectiveColor) : null) ??
+      priorityColor(_priority ?? _inheritedPriority);
 
   Future<void> _save() async {
     final navigator = Navigator.of(context);
+    final changes = Map.of(_changes);
+    if (widget.confirmSave case final confirm?
+        when !widget.isNew && !await confirm(changes)) {
+      return;
+    }
     setState(() => _saving = true);
     try {
-      await widget.save!(_action, Map.of(_changes));
-      navigator.pop();
+      final saved = await widget.save(changes);
+      navigator.pop(saved);
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -163,160 +233,161 @@ class _ActionDialogState extends State<_ActionDialog> {
     }
   }
 
-  void _toggle(_Property property) =>
-      setState(() => _editing = _editing == property ? null : property);
-
-  /// Closes it, then calls [then] with the action.
-  void _leaveFor(ValueChanged<PlanAction> then) {
-    Navigator.of(context).pop();
-    then(_action);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final text = theme.textTheme;
-    final colors = theme.colorScheme;
-    final changed = _changes.isNotEmpty;
+    final noun = _action.isGroup ? 'group' : 'action';
+    final named = _name.text.trim().isNotEmpty;
+    final changed = widget.isNew || _changes.isNotEmpty;
+    // As it'll look: its icon in the color it'll be.
+    final preview = PlanAction(
+      status: _status,
+      backgroundColor: _color,
+      effectiveColor: colorToHex(_shownColor),
+      properties: _action.properties,
+    );
     return AlertDialog(
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      title: Row(
         children: [
-          _priorityHeader(),
-          Text(actionName(_action)),
-          if (_action.path case final path? when path.contains(' › '))
-            Text(
-              path,
-              style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-            ),
+          ActionIcon(preview, size: 28),
+          const SizedBox(width: 12),
+          Expanded(child: Text('${widget.isNew ? 'New' : 'Edit'} $noun')),
         ],
       ),
-      contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       content: SizedBox(
-        width: 400,
+        width: 440,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (_editing == _Property.priority)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: colors.primary, width: 1.5),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: _priorityEditor(_priority, _inheritedPriority),
+              const SizedBox(height: 4),
+              TextField(
+                controller: _name,
+                autofocus: widget.isNew,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  labelText: 'Name',
+                  hintText: _action.isGroup ? 'e.g. Cooking' : 'e.g. Make tofu',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
                 ),
-              _colorRow(),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
-                child: Text(
-                  _action.isGroup
-                      ? 'The actions in it with nothing set take its '
-                            'priority and color.'
-                      : 'Its events take its priority and color.',
-                  style: text.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
+                onChanged: (typed) => _set('name', _trimmed(typed)),
+              ),
+              _Section(
+                label: 'Group',
+                child: ActionField(
+                  actions: widget.actions,
+                  value: _parentId,
+                  title: 'Pick its group',
+                  noneLabel: 'None (top-level)',
+                  exclude: {
+                    // Not under itself, nor under an action -- only groups
+                    // hold anything -- or one put away, unless it's there
+                    // already.
+                    if (_action.id case final id?)
+                      ...actionAndSubActions(widget.actions, id),
+                    for (final action in widget.actions)
+                      if ((!action.isGroup ||
+                              const {
+                                'archived',
+                                'deleted',
+                              }.contains(action.status)) &&
+                          action.id != _parentId)
+                        ?action.id,
+                  },
+                  marker: (action) => ActionIcon(action, size: 18),
+                  onChanged: (id) => _set('parent_id', id),
+                ),
+              ),
+              if (!_action.isGroup && !widget.isNew)
+                _Section(
+                  label: 'Status',
+                  hint: _status == 'active' || _status == 'proposed'
+                      ? "It holds one of the calendar's event labels."
+                      : "It doesn't hold an event label; its history is kept.",
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final MapEntry(key: status, value: label)
+                          in actionStatuses.entries)
+                        ChoiceChip(
+                          showCheckmark: false,
+                          label: Text(label),
+                          selected: _status == status,
+                          onSelected: (_) => _set('status', status),
+                        ),
+                    ],
                   ),
                 ),
+              _Section(
+                label: 'Priority',
+                hint: switch ((_priority, _inheritedPriority)) {
+                  (_?, _) =>
+                    '0 is the most important. Its events, and the actions in '
+                        'it with no priority of their own, take this one.',
+                  (null, final p?) =>
+                    'Inherited: P$p, from '
+                        '${_priorityFrom == null ? 'its group' : actionName(_priorityFrom!)}.',
+                  (null, null) => 'No priority here or in its groups.',
+                },
+                child: _priorityChips(),
+              ),
+              _Section(
+                label: 'Color',
+                hint: switch ((parseColor(_color), _colorFrom)) {
+                  (_?, _) => null,
+                  (null, final from?) =>
+                    "With no color, it takes ${actionName(from)}'s.",
+                  (null, null) =>
+                    "With no color, it takes its priority's "
+                        '(P${_priority ?? _inheritedPriority ?? defaultPriority}).',
+                },
+                child: ColorPicker(
+                  color: parseColor(_color),
+                  onChanged: (color) => _set(
+                    'background_color',
+                    color == null ? null : colorToHex(color),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _note,
+                minLines: 2,
+                maxLines: 6,
+                decoration: InputDecoration(
+                  labelText: 'Note (optional)',
+                  hintText: _action.isGroup
+                      ? 'What it covers'
+                      : 'What counts as it',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onChanged: (typed) => _set('note', _trimmed(typed)),
               ),
             ],
           ),
         ),
       ),
-      actions: changed
-          ? [
-              TextButton(
-                onPressed: _saving ? null : () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: _saving ? null : _save,
-                child: const Text('Save'),
-              ),
-            ]
-          : [
-              if (widget.onDetails case final onDetails?)
-                TextButton(
-                  onPressed: () => _leaveFor(onDetails),
-                  child: const Text('Details'),
-                ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
-              ),
-            ],
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _saving || !named || !changed ? null : _save,
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 
-  /// Its priority's chip, and where it comes from; tapped, it opens for
-  /// editing.
-  Widget _priorityHeader() {
-    final theme = Theme.of(context);
+  /// No priority of its own (so it inherits one), one of [_priorities], or
+  /// "…" for another, typed.
+  Widget _priorityChips() {
     final own = _priority;
     final inherited = _inheritedPriority;
-    final source = switch ((own, inherited)) {
-      (_?, _) => 'Set on this one',
-      (null, _?) => _inheritedFrom((g) => g.priority != null),
-      (null, null) => 'Not set here or above',
-    };
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Tooltip(
-            message: 'Priority',
-            child: InkWell(
-              onTap: _editable ? () => _toggle(_Property.priority) : null,
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: PriorityChip(
-                  priority: own ?? inherited,
-                  own: own != null,
-                  label: own == null && inherited == null
-                      ? 'No priority'
-                      : null,
-                  large: true,
-                ),
-              ),
-            ),
-          ),
-          if (_changes.containsKey('priority'))
-            Padding(
-              padding: const EdgeInsetsDirectional.only(start: 6),
-              child: Tooltip(
-                message: 'Changed',
-                child: Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.tertiary,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-            ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              source,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _priorityEditor(int? own, int? inherited) {
-    final text = Theme.of(context).textTheme;
-    final colors = Theme.of(context).colorScheme;
-    final other = _otherPriority || (own != null && !_priorities.contains(own));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -324,26 +395,38 @@ class _ActionDialogState extends State<_ActionDialog> {
           spacing: 8,
           runSpacing: 4,
           children: [
+            ChoiceChip(
+              showCheckmark: false,
+              label: Text(inherited == null ? 'None' : 'Inherit (P$inherited)'),
+              selected: own == null && !_otherPriority,
+              onSelected: (_) {
+                _otherPriority = false;
+                _otherController.clear();
+                _set('priority', null);
+              },
+            ),
             for (final p in _priorities)
               ChoiceChip(
                 showCheckmark: false,
+                avatar: CircleAvatar(backgroundColor: priorityColor(p)),
                 label: Text('P$p'),
-                selected: own == p && !other,
+                selected: own == p && !_otherPriority,
                 onSelected: (_) {
                   _otherPriority = false;
-                  _set('priority', p, _action.priority);
+                  _otherController.clear();
+                  _set('priority', p);
                 },
               ),
             ChoiceChip(
               showCheckmark: false,
               label: const Text('…'),
               tooltip: 'Another priority',
-              selected: other,
+              selected: _otherPriority,
               onSelected: (_) => setState(() => _otherPriority = true),
             ),
           ],
         ),
-        if (other)
+        if (_otherPriority)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: TextField(
@@ -352,209 +435,51 @@ class _ActionDialogState extends State<_ActionDialog> {
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
                 labelText: 'Priority',
+                border: OutlineInputBorder(),
                 isDense: true,
               ),
               onChanged: (typed) {
                 if (int.tryParse(typed.trim()) case final p?) {
-                  _set('priority', p, _action.priority);
+                  _set('priority', p);
                 }
               },
             ),
           ),
-        TextButton.icon(
-          onPressed: own == null
-              ? null
-              : () {
-                  _otherPriority = false;
-                  _otherController.clear();
-                  _set('priority', null, _action.priority);
-                },
-          icon: const Icon(Icons.undo, size: 18),
-          label: Text(switch (inherited) {
-            final p? =>
-              _nearest((g) => g.priority != null) == null
-                  ? 'Inherit ($p)'
-                  : 'Inherit from '
-                        '${actionName(_nearest((g) => g.priority != null)!)} ($p)',
-            null => 'No priority of its own',
-          }),
-        ),
-        Text(
-          '0 is the most important. Its events, and the actions in it with '
-          'no priority of their own, take this one.',
-          style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-        ),
       ],
-    );
-  }
-
-  Widget _colorRow() {
-    final own = parseColor(_color);
-    final ancestor = _nearest((g) => parseColor(g.backgroundColor) != null);
-    final unchanged =
-        !_changes.containsKey('background_color') &&
-        !_changes.containsKey('priority');
-    final shown =
-        own ??
-        parseColor(ancestor?.backgroundColor) ??
-        (unchanged ? parseColor(_action.effectiveColor) : null) ??
-        priorityColor(_priority ?? _inheritedPriority);
-    final follows = _priority ?? _inheritedPriority ?? defaultPriority;
-    return _PropertyCard(
-      icon: _Swatch(color: shown, inherited: own == null),
-      label: 'Color',
-      value: colorToHex(shown),
-      source: switch ((own, ancestor)) {
-        (_?, _) => 'Set on this one',
-        (null, final from?) => 'Inherited from ${actionName(from)}',
-        (null, null) =>
-          '${unchanged ? 'Follows' : 'Will follow'} priority $follows',
-      },
-      own: own != null,
-      editing: _editing == _Property.color,
-      onTap: _editable ? () => _toggle(_Property.color) : null,
-      onClear: _editable && own != null
-          ? () => _set('background_color', null, _action.backgroundColor)
-          : null,
-      editor: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ColorPicker(
-            color: own,
-            onChanged: (color) => _set(
-              'background_color',
-              color == null ? null : colorToHex(color),
-              _action.backgroundColor,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            ancestor == null
-                ? 'With no color, it takes its priority\'s.'
-                : 'With no color, it takes ${actionName(ancestor)}\'s.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
 
-/// One property: its icon, label, value and where the value comes from,
-/// with "Set" (to edit it) or "Clear" (to inherit it again); while
-/// [editing], [editor] under it.
-class _PropertyCard extends StatelessWidget {
-  const _PropertyCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.source,
-    required this.own,
-    required this.editing,
-    required this.onTap,
-    required this.onClear,
-    required this.editor,
-  });
+/// One of the dialog's fields: [label] over [child], and [hint], if
+/// there's one, under it.
+class _Section extends StatelessWidget {
+  const _Section({required this.label, required this.child, this.hint});
 
-  final Widget icon;
   final String label;
-  final String value;
-  final String source;
-
-  /// Whether it's set on the action itself, so it can be cleared.
-  final bool own;
-  final bool editing;
-  final VoidCallback? onTap;
-  final VoidCallback? onClear;
-  final Widget editor;
+  final Widget child;
+  final String? hint;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final text = theme.textTheme;
-    final colors = theme.colorScheme;
-    final muted = text.bodySmall?.copyWith(color: colors.onSurfaceVariant);
-    return Card.outlined(
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: editing ? colors.primary : colors.outlineVariant,
-          width: editing ? 1.5 : 1,
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-              child: Row(
-                children: [
-                  IconTheme.merge(
-                    data: IconThemeData(
-                      size: 22,
-                      color: editing ? colors.primary : colors.onSurfaceVariant,
-                    ),
-                    child: icon,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(label, style: muted),
-                        Text(value, style: text.titleMedium),
-                        Text(source, style: muted),
-                      ],
-                    ),
-                  ),
-                  if (!editing && onTap != null)
-                    own && onClear != null
-                        ? TextButton(
-                            onPressed: onClear,
-                            child: const Text('Clear'),
-                          )
-                        : TextButton(
-                            onPressed: onTap,
-                            child: const Text('Set'),
-                          ),
-                ],
-              ),
-            ),
-          ),
-          if (editing)
+          Text(label, style: theme.textTheme.labelLarge),
+          const SizedBox(height: 6),
+          child,
+          if (hint case final hint?)
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: editor,
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(hint, style: muted),
             ),
         ],
       ),
     );
   }
-}
-
-/// A round swatch of [color]: a ring of it if [inherited], so it reads as
-/// not its own, as an inherited priority's outlined chip does.
-class _Swatch extends StatelessWidget {
-  const _Swatch({required this.color, required this.inherited});
-
-  final Color color;
-  final bool inherited;
-
-  @override
-  Widget build(BuildContext context) => inherited
-      ? Container(
-          width: 22,
-          height: 22,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: color, width: 4),
-          ),
-        )
-      : ColorDot(color: color, size: 22);
 }
