@@ -9,9 +9,9 @@ on. Add the new version's section here at the same time; CI checks both.
 ## 7.93.0
 
 - The home screen calendar gives each day's weather in its header, while
-  the weather's on: the sky's icon, the chance of rain whenever there's
-  any, and the high and low -- today's chance, high and low being what's
-  left of it. It's redrawn with each forecast, the background's every 15
+  the weather's on: the chance of rain whenever there's any, the high
+  and low, and the sky's icon -- today's chance, high and low being
+  what's left of it. It's redrawn with each forecast, the background's every 15
   minutes among them. Too narrow for all of it, the days are named
   shorter, then the high and low are left out.
 

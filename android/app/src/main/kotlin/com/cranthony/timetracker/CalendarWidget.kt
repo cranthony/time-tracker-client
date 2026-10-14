@@ -54,8 +54,8 @@ import org.json.JSONObject
  * change, and as each event starts or ends; what's over is left out
  * as it's drawn, so it always starts at now.
  *
- * Each day's header also gives its weather, while it's on: its sky, its
- * chance of rain and its high and low -- today's, what's left of it --
+ * Each day's header also gives its weather, while it's on: its chance
+ * of rain, its high and low, and its sky -- today's, what's left of it --
  * as the app keeps them apart (calendar_weather), redrawing it with each
  * forecast. Too narrow for all of it, the high and low go first.
  *
@@ -293,7 +293,7 @@ private fun Header(context: Context) {
 
 /**
  * "Today", "Tomorrow", or the date; then its [weather], if there is any:
- * its sky, its chance of rain, and its high and low. Where they don't all
+ * its chance of rain, its high and low, and its sky. Where they don't all
  * fit, the day's named shorter ("Thu"), then the high and low compact,
  * then left out. Opens Events on that day.
  */
@@ -360,8 +360,6 @@ private fun DayHeader(context: Context, day: CalendarDay, weather: DayWeather?, 
             maxLines = 1,
         )
         if (weather != null) {
-            Spacer(modifier = GlanceModifier.width(HEADER_GAP.dp))
-            Text(text = weather.icon, style = TextStyle(fontSize = WEATHER_SP.sp), maxLines = 1)
             weather.rain?.let {
                 Spacer(modifier = GlanceModifier.width(HEADER_GAP.dp))
                 Text(
@@ -382,6 +380,8 @@ private fun DayHeader(context: Context, day: CalendarDay, weather: DayWeather?, 
                     maxLines = 1,
                 )
             }
+            Spacer(modifier = GlanceModifier.width(HEADER_GAP.dp))
+            Text(text = weather.icon, style = TextStyle(fontSize = WEATHER_SP.sp), maxLines = 1)
         }
     }
 }

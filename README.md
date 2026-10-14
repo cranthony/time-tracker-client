@@ -628,8 +628,8 @@ start).
   open: the background fetch never asks where the device is, so needs no
   background location permission.
 - **The home screen calendar** (Android) gives each day's weather in its
-  header: the sky's icon, the chance of rain (whenever there's any), and
-  the high and low -- today's, what's left of it. It's redrawn with each
+  header: the chance of rain (whenever there's any), the high and low --
+  today's, what's left of it -- and the sky's icon. It's redrawn with each
   forecast, in the app or in the background. On a narrow widget the
   days are named shorter ("Thu"), then the high and low go.
 
