@@ -31,7 +31,8 @@ import 'person_screen.dart';
 ///
 /// Each habit or person is a chip: a habit's in its action's color, a
 /// person's plain, with a person by its name. It has their name, their
-/// trend, how many days in a row they've been healthy (see
+/// trend (a person's too in a habit's red, yellow and green, as they're
+/// rated alongside habits here), how many days in a row they've been healthy (see
 /// [consistencyLabel]), and a star if they're starred. Starred ones come
 /// first in a layer, then the rest by name. Tapping one opens their
 /// page; holding it offers what it's built on, archiving a habit, or
@@ -593,7 +594,6 @@ class HabitsPaneState extends State<HabitsPane> {
         ? Colors.white
         : Colors.black87;
     final active = node.habit?.active ?? node.person!.active;
-    final scale = node.isPerson ? HealthScale.relationship : HealthScale.action;
     final trend = active
         ? _scores?.healthTrend(node.id) ?? const <int?>[]
         : const <int?>[];
@@ -651,7 +651,7 @@ class HabitsPaneState extends State<HabitsPane> {
                         horizontal: 1,
                         vertical: 2,
                       ),
-                      child: TrendSparkline(trend: trend, scale: scale),
+                      child: TrendSparkline(trend: trend),
                     ),
                   ),
                 ],
