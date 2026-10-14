@@ -108,13 +108,15 @@ const partKinds = <String, PartKind>{
         required: false,
         hint: '30',
       ),
+      (field: 'noun', label: "What's counted", required: false, hint: 'events'),
+      // Edited as how long it fades over, after the interval
+      // (see fadeDays).
       (
         field: 'zero_at_days',
-        label: 'Zero at, in days',
+        label: 'Fade, in days',
         required: false,
         hint: null,
       ),
-      (field: 'noun', label: "What's counted", required: false, hint: 'events'),
     ],
   ),
   'duration': (
@@ -135,9 +137,11 @@ const partKinds = <String, PartKind>{
         required: false,
         hint: '30',
       ),
+      // Edited as how long it fades over, after the interval
+      // (see fadeDays).
       (
         field: 'zero_at_days',
-        label: 'Zero at, in days',
+        label: 'Fade, in days',
         required: false,
         hint: null,
       ),
@@ -433,9 +437,20 @@ String? partProblem(Part part) {
   }
   final zeroAt = part['zero_at_days'];
   if (zeroAt is num && zeroAt <= ((part['interval_days'] as num?) ?? 30)) {
-    return '"zero at" must be more days than it looks back.';
+    return 'it must fade over more than 0 days.';
   }
   return null;
+}
+
+/// How many days a count or duration part with `zero_at_days` fades over
+/// once it's short of its target: from 100 when it was last met to 0
+/// that many days later -- its `zero_at_days` less its interval. Null
+/// without one: short of its target, it scores in proportion.
+num? fadeDays(Part part) {
+  final zeroAt = part['zero_at_days'];
+  if (zeroAt is! num) return null;
+  final interval = part['interval_days'];
+  return zeroAt - (interval is num ? interval : 30);
 }
 
 /// [part] in a line: "Judgment: Was this activity or place new? (0-3,
@@ -451,6 +466,13 @@ String describePart(Part part, [Map<String?, String> actionNames = const {}]) {
   final engagement = part['engagement_type'] == 'for'
       ? 'for them'
       : 'with them';
+  final fading = switch (fadeDays(part)) {
+    final fade? => () {
+      final n = fade == fade.roundToDouble() ? fade.round() : fade;
+      return '(no partial credit; fades over $n day${n == 1 ? '' : 's'})';
+    }(),
+    null => null,
+  };
   return switch (part['kind']) {
     'judgment' => () {
       final ratings = judgmentRatings(part);
@@ -462,14 +484,16 @@ String describePart(Part part, [Map<String?, String> actionNames = const {}]) {
     'count' => [
       '${target == 1 ? '' : '$target × '}${action ?? 'any event'}',
       'every ${days(part['interval_days'] ?? 30)}',
-      if (part['zero_at_days'] case final zero?) '(0 at $zero days)',
+      ?fading,
     ].join(' '),
-    'duration' =>
+    'duration' => [
       '${switch (part['target_min']) {
-            final num minutes => formatMinutes(minutes),
-            final other => '$other',
-          }} of ${action ?? 'events'} '
-          'every ${days(part['interval_days'] ?? 30)}',
+        final num minutes => formatMinutes(minutes),
+        final other => '$other',
+      }} of ${action ?? 'events'}',
+      'every ${days(part['interval_days'] ?? 30)}',
+      ?fading,
+    ].join(' '),
     'continuity' =>
       'Continuity${action == null ? '' : ' of $action'}: last within '
           '${days(part['last_within_days'] ?? 14)}, next within '

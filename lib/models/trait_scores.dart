@@ -236,6 +236,35 @@ List<TraitScore> scoreSubject(
       }(),
 ];
 
+/// Scores [parts] -- the trait [traitId]'s for [subject], as they're
+/// being edited, say -- for the day ending at [end], as [scoreSubject]
+/// would, from [events] (none cancelled); null for each one [subject]
+/// doesn't read.
+List<PartScore?> scoreParts(
+  Subject subject,
+  String traitId,
+  List<Part> parts,
+  DateTime end,
+  List<Event> events, {
+  String? Function(String id)? parentOf,
+}) {
+  final keys = partKeys(parts);
+  return [
+    for (final (i, part) in parts.indexed)
+      subject.reads(part)
+          ? _part(subject, traitId, part, keys[i], end, events, parentOf)
+          : null,
+  ];
+}
+
+/// Scores parts as [scoreParts] does, for the last day that's over, from
+/// the events the app has; null without them.
+typedef PartsScorer = List<PartScore?>? Function(
+  Subject subject,
+  String traitId,
+  List<Part> parts,
+);
+
 /// Which of [parts] [subject] reads, by index.
 List<int> _read(Subject subject, List<Part> parts) => [
   for (var i = 0; i < parts.length; i++)

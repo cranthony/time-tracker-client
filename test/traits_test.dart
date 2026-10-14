@@ -258,6 +258,15 @@ void main() {
         }),
         '1h of events every 7 days',
       );
+      expect(
+        describePart(const {
+          'kind': 'count',
+          'target': 3,
+          'interval_days': 1,
+          'zero_at_days': 2,
+        }),
+        '3 × any event every day (no partial credit; fades over 1 day)',
+      );
     });
 
     test("a judgment's ratings and facts are read in order", () {
@@ -503,6 +512,49 @@ void main() {
             'interval_days': 7,
           },
         ],
+      );
+    });
+
+    testWidgets("a cadence's editor previews its score for you, and says "
+        'whether it gives partial credit or fades', (tester) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final repository = await pump(tester);
+
+      await tester.tap(find.text('Reliable'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Edit Reliable'));
+      await tester.pumpAndSettle();
+      // No call in the last week: none of the one it asks for.
+      expect(
+        find.textContaining('Yesterday, for you: 0 · 0 of 1 events'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('half of it scores 50'), findsOneWidget);
+      expect(find.text('Fades to 0 over, in days'), findsNothing);
+
+      await tester.tap(find.text('Fade when missed'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('No partial credit'), findsOneWidget);
+      // As long as it looks back, to start with.
+      expect(find.widgetWithText(TextField, '7'), findsNWidgets(2));
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Fades to 0 over, in days'),
+        '10',
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('With partial credit: 0'), findsOneWidget);
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      final saved = (await repository.traits()).firstWhere(
+        (t) => t.id == 'reliable',
+      );
+      expect(saved.parts.single['zero_at_days'], 17);
+      expect(
+        describePart(saved.parts.single),
+        'call every 7 days (no partial credit; fades over 10 days)',
       );
     });
 
