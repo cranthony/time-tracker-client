@@ -4,7 +4,8 @@ import 'person.dart';
 /// properties, mirroring the Time Tracker MCP server's `Facts` (its
 /// facts.rs): where it was, who was there with the user, who it
 /// was done for while they weren't there, and a subjective note on each
-/// person who was there ("self" for the user). Every field is optional.
+/// person who was there ("self" for the user) -- and whether it's a
+/// [commute]. Every field is optional.
 /// What was done at it isn't here: that's its actions, which set its
 /// label. They're saved whole through `update_event`.
 class Facts {
@@ -13,6 +14,7 @@ class Facts {
     this.withIds = const [],
     this.forIds = const [],
     this.notes = const {},
+    this.commute = false,
   });
 
   /// Where it was: the ids of the locations it was at, usually one;
@@ -31,8 +33,17 @@ class Facts {
   /// [selfPersonId] for the user, or one of [withIds].
   final Map<String, String> notes;
 
+  /// Whether it's a commute: getting from one place to another, by its
+  /// action ("Drive"). Marked so, rather than known by its action, so a
+  /// walk for its own sake is never taken for one.
+  final bool commute;
+
   bool get isEmpty =>
-      locationIds.isEmpty && withIds.isEmpty && forIds.isEmpty && notes.isEmpty;
+      locationIds.isEmpty &&
+      withIds.isEmpty &&
+      forIds.isEmpty &&
+      notes.isEmpty &&
+      !commute;
 
   /// Everyone it involves, with them or for them, each once.
   List<String> get personIds => {...withIds, ...forIds}.toList();
@@ -54,6 +65,7 @@ class Facts {
             in (json['notes'] as Map? ?? const {}).entries)
           '$key': ?text(value),
       },
+      commute: json['commute'] == true,
     );
   }
 
@@ -63,6 +75,7 @@ class Facts {
     if (withIds.isNotEmpty) 'with_ids': withIds,
     if (forIds.isNotEmpty) 'for_ids': forIds,
     if (notes.isNotEmpty) 'notes': notes,
+    if (commute) 'commute': true,
   };
 
   /// What's wrong with them, as the server checks it, or null if they're
@@ -106,6 +119,7 @@ class Facts {
       _sameList(locationIds, other.locationIds) &&
       _sameList(withIds, other.withIds) &&
       _sameList(forIds, other.forIds) &&
+      commute == other.commute &&
       notes.length == other.notes.length &&
       notes.entries.every((e) => other.notes[e.key] == e.value);
 
@@ -115,6 +129,7 @@ class Facts {
     Object.hashAll(withIds),
     Object.hashAll(forIds),
     Object.hashAllUnordered(notes.entries.map((e) => (e.key, e.value))),
+    commute,
   );
 }
 
