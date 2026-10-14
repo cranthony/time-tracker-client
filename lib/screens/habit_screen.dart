@@ -9,6 +9,7 @@ import '../services/plan_memory.dart';
 import '../widgets/focus_buttons.dart';
 import '../widgets/habit_dialog.dart';
 import '../widgets/health.dart';
+import 'event_list_screen.dart';
 import 'person_screen.dart';
 
 /// One of Self's habits on a page: the action or group whose events it's
@@ -19,8 +20,11 @@ import 'person_screen.dart';
 /// also its health -- on track, needing attention or off track -- with
 /// its last 8 days, each trait's score of the last day that's over, with
 /// its trend (tapping one shows the parts, events and Claude's judgments
-/// behind it), and its events. Claude judges its events; past ones only
-/// when asked. [onEdit] edits it, returning it as saved.
+/// behind it), and its events. Its events and cancellations are in
+/// brief -- how many, their time, the most recent and the oldest -- with
+/// a button opening each lot on a page of its own. Claude judges its
+/// events; past ones only when asked. Pulling down loads the events
+/// again. [onEdit] edits it, returning it as saved.
 class HabitScreen extends StatefulWidget {
   const HabitScreen({
     super.key,
@@ -89,6 +93,12 @@ class _HabitScreenState extends State<HabitScreen> {
     for (final a in widget.actions) a.id: actionName(a),
   };
 
+  /// The week either side of today's events again, rescored as they
+  /// come.
+  Future<void> _load() async {
+    await widget.memory?.eventStore?.warm().catchError((Object _) {});
+  }
+
   Future<void> _edit() async {
     final saved = await widget.onEdit!(_habit);
     if (saved == null || !mounted) return;
@@ -115,110 +125,154 @@ class _HabitScreenState extends State<HabitScreen> {
             ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        children: [
-          if (_scored)
-            ListTile(
-              title: const Text('Health'),
-              subtitle: Text(switch (_scores?.health(_habit.subject)) {
-                final h? => healthBand(h),
-                null => 'Not rated yet',
-              }),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_scores?.healthTrend(_habit.subject) case final trend?
-                      when trend.nonNulls.isNotEmpty) ...[
-                    TrendSparkline(trend: trend),
-                    const SizedBox(width: 8),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          children: [
+            if (_scored)
+              ListTile(
+                title: const Text('Health'),
+                subtitle: Text(switch (_scores?.health(_habit.subject)) {
+                  final h? => healthBand(h),
+                  null => 'Not rated yet',
+                }),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_scores?.healthTrend(_habit.subject) case final trend?
+                        when trend.nonNulls.isNotEmpty) ...[
+                      TrendSparkline(trend: trend),
+                      const SizedBox(width: 8),
+                    ],
+                    HealthDot(
+                      rating: _scores?.health(_habit.subject),
+                      consistency: _scores?.consistency(_habit.subject) ?? 0,
+                    ),
                   ],
-                  HealthDot(
-                    rating: _scores?.health(_habit.subject),
-                    consistency: _scores?.consistency(_habit.subject) ?? 0,
-                  ),
-                ],
+                ),
+              ),
+            ListTile(
+              leading: actionDot(action, size: 16),
+              title: Text(
+                action?.path ??
+                    _habit.actionPath ??
+                    (action == null ? _habit.actionId : actionName(action)),
+              ),
+              subtitle: Text(
+                [
+                  if (action?.isGroup ?? false)
+                    'Your events with any action in it'
+                  else
+                    'Your events with it',
+                  if (!_habit.active)
+                    habitStatuses[_habit.status] ?? _habit.status,
+                ].join(' · '),
               ),
             ),
-          ListTile(
-            leading: actionDot(action, size: 16),
-            title: Text(
-              action?.path ??
-                  _habit.actionPath ??
-                  (action == null ? _habit.actionId : actionName(action)),
-            ),
-            subtitle: Text(
-              [
-                if (action?.isGroup ?? false)
-                  'Your events with any action in it'
-                else
-                  'Your events with it',
-                if (!_habit.active)
-                  habitStatuses[_habit.status] ?? _habit.status,
-              ].join(' · '),
-            ),
-          ),
-          _heading(theme, "What it's for"),
-          _padded(switch (_habit.note) {
-            final note? => Text(note),
-            null => Text(
-              'Nothing yet: a note helps Claude judge its events.',
-              style: TextStyle(color: theme.hintColor),
-            ),
-          }),
-          _heading(theme, 'Traits'),
-          ...traitsApplied(
-            theme,
-            _habit.traits,
-            traitList: widget.traits,
-            actionNames: _actionNames,
-            own: 'its own',
-          ),
-          if (_scored)
-            ...traitScoreTiles(
-              context,
-              _scores,
-              _habit.subject,
-              whom: 'it',
-              why:
-                  "off, archived, not its, or only about what's done for "
-                  'someone',
-              trends: true,
-              scale: HealthScale.action,
-              personNames: widget.personNames,
-              locationNames: widget.locationNames,
-            ),
-          _padded(
-            Text(
-              'Claude judges its events as they happen. To judge past ones, '
-              'ask Claude to judge past events for this habit.',
-              style: theme.textTheme.bodySmall,
-            ),
-          ),
-          if (_scored) ...[
-            _heading(theme, 'Events'),
-            ...eventTiles(
-              context,
-              _scores?.digest(_habit.subject),
-              noteOf: selfPersonId,
+            _heading(theme, "What it's for"),
+            _padded(switch (_habit.note) {
+              final note? => Text(note),
+              null => Text(
+                'Nothing yet: a note helps Claude judge its events.',
+                style: TextStyle(color: theme.hintColor),
+              ),
+            }),
+            _heading(theme, 'Traits'),
+            ...traitsApplied(
+              theme,
+              _habit.traits,
+              traitList: widget.traits,
               actionNames: _actionNames,
-              personNames: widget.personNames,
-              locationNames: widget.locationNames,
+              defaults: PlanMemoryScope.of(context)?.scoringDefaults.traits,
+              own: 'its own',
             ),
+            if (_scored)
+              ...traitScoreTiles(
+                context,
+                _scores,
+                _habit.subject,
+                whom: 'it',
+                why:
+                    "off, archived, not its, or only about what's done for "
+                    'someone',
+                trends: true,
+                scale: HealthScale.action,
+                personNames: widget.personNames,
+                locationNames: widget.locationNames,
+              ),
+            _padded(
+              Text(
+                'Claude judges its events as they happen. To judge past ones, '
+                'ask Claude to judge past events for this habit.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+            if (_scored) ...[_heading(theme, 'Events'), ..._events()],
+            _heading(theme, 'Cancelled'),
+            ..._cancelled(),
           ],
-          _heading(theme, 'Cancelled'),
-          ...cancelledTiles(
-            context,
-            _habit.cancelledEvents,
-            whose: 'its',
-            whom: 'it',
-            traitList: widget.traits,
-            actionNames: _actionNames,
-          ),
-        ],
+        ),
       ),
     );
   }
+
+  /// Its events in brief, as a person's are, with "All events" opening
+  /// the lot on a page of its own.
+  List<Widget> _events() => eventsSummary(
+    context,
+    _scores?.digest(_habit.subject),
+    noteOf: selfPersonId,
+    actionNames: _actionNames,
+    personNames: widget.personNames,
+    locationNames: widget.locationNames,
+    onAll: () => _openList(
+      'Events',
+      (context) => eventTiles(
+        context,
+        _scores?.digest(_habit.subject),
+        noteOf: selfPersonId,
+        actionNames: _actionNames,
+        personNames: widget.personNames,
+        locationNames: widget.locationNames,
+      ),
+    ),
+  );
+
+  /// The events cancelled that count against its follow-through, in
+  /// brief, with "All cancelled events" opening the lot.
+  List<Widget> _cancelled() => cancelledSummary(
+    context,
+    _habit.cancelledEvents,
+    whose: 'its',
+    whom: 'it',
+    traitList: widget.traits,
+    actionNames: _actionNames,
+    onAll: () => _openList(
+      'Cancelled',
+      (context) => cancelledTiles(
+        context,
+        _habit.cancelledEvents,
+        whose: 'its',
+        whom: 'it',
+        traitList: widget.traits,
+        actionNames: _actionNames,
+      ),
+    ),
+  );
+
+  /// A page of [title] listing what [tiles] builds, built again as
+  /// they're scored again.
+  void _openList(String title, List<Widget> Function(BuildContext) tiles) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => EventListScreen(
+            title: '$title · ${habitName(_habit)}',
+            listenable: widget.memory,
+            tiles: tiles,
+          ),
+        ),
+      );
 
   Widget _heading(ThemeData theme, String text) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),

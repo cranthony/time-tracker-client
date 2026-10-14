@@ -8,13 +8,14 @@ import '../services/plan_memory.dart';
 import 'parts_editor.dart';
 import 'scoring_editor.dart';
 
-/// Which of [traits] apply -- every active one, or those picked -- each
-/// with its own parts in place of the trait's, if it has any, and how
-/// they combine; and how the traits combine into their score: a
-/// person's, or a habit's. Starts from [value], and calls [onChanged] with them
-/// after every change. A trait's tune button edits its own parts on a
-/// page of its own titled [partsTitle], with [partsExplanation] above them and
-/// [warnings] below; [actions] names the actions and groups a part can
+/// How the traits combine into their score -- a person's, or a habit's
+/// -- and, below it, which of [traits] apply: every active one, or those
+/// picked, each with its own parts in place of the trait's, if it has
+/// any, and how they combine. Starts from [value], and calls [onChanged]
+/// with them after every change. A trait's tune button edits its own
+/// parts on a page of its own titled [partsTitle], with
+/// [partsExplanation] above them and [warnings] below; [actions] names
+/// the actions and groups a part can
 /// count. [own] is whose they are: "Their own", "Its own". With
 /// [preview], a trait's own parts are scored as they're edited (see
 /// [PartsEditor.preview]). Shows nothing without [traits].
@@ -161,6 +162,24 @@ class _TraitsFieldState extends State<TraitsField> {
           padding: const EdgeInsets.only(top: 16),
           child: Text('Traits', style: theme.textTheme.titleSmall),
         ),
+        AggregationTile(
+          title: 'How the traits combine',
+          label: 'How the traits combine',
+          explanation: 'Into the score of their day.',
+          value: _scoring,
+          items: {for (final t in shown) t.id!: t.name},
+          noun: 'traits',
+          fallback: switch (PlanMemoryScope.of(context)
+              ?.scoringDefaults
+              .traits) {
+            final scoring? => "The defaults': ${scoring.describe()}",
+            null => 'Mean',
+          },
+          fallbackValue:
+              PlanMemoryScope.of(context)?.scoringDefaults.traits ??
+              Aggregation.mean,
+          onChanged: (scoring) => _changed(() => _scoring = scoring),
+        ),
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
@@ -227,24 +246,6 @@ class _TraitsFieldState extends State<TraitsField> {
               ),
               title: Text(trait.name, style: TextStyle(color: theme.hintColor)),
             ),
-        AggregationTile(
-          title: 'How the traits combine',
-          label: 'How the traits combine',
-          explanation: 'Into the score of their day.',
-          value: _scoring,
-          items: {for (final t in shown) t.id!: t.name},
-          noun: 'traits',
-          fallback: switch (PlanMemoryScope.of(context)
-              ?.scoringDefaults
-              .traits) {
-            final scoring? => "The defaults': ${scoring.describe()}",
-            null => 'Mean',
-          },
-          fallbackValue:
-              PlanMemoryScope.of(context)?.scoringDefaults.traits ??
-              Aggregation.mean,
-          onChanged: (scoring) => _changed(() => _scoring = scoring),
-        ),
       ],
     );
   }

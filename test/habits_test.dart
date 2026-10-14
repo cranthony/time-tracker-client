@@ -804,6 +804,48 @@ void main() {
     expect(memory.focus.habits, ['h2', 'h3']);
   });
 
+  testWidgets('its cancelled events are in brief, the lot a tap away', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    Map<String, Object?> cancelled(String id, int day) => {
+      'event_id': id,
+      'summary': 'Practice $id',
+      'start': '2026-10-0${day}T19:00:00Z',
+      'end': '2026-10-0${day}T20:00:00Z',
+      'action_ids': ['practice'],
+      'parts': ['present/follow_through'],
+    };
+    final habit = Habit.fromJson({
+      'id': 'h1',
+      'name': 'Practice mindfully',
+      'action_id': 'guitar',
+      'status': 'active',
+      'traits': {
+        'scoring': {'statistic': 'percentile', 'percentile': 25},
+      },
+      'cancelled_events': [
+        cancelled('a', 1),
+        cancelled('b', 2),
+        cancelled('c', 3),
+      ],
+    });
+    await tester.pumpWidget(MaterialApp(home: HabitScreen(habit: habit)));
+
+    expect(find.text('Combined: 25th percentile'), findsOneWidget);
+    expect(find.text('3 cancelled · 3h planned'), findsOneWidget);
+    expect(find.text('Practice c'), findsOneWidget);
+    expect(find.text('Practice a'), findsOneWidget);
+    expect(find.text('Practice b'), findsNothing);
+
+    await tester.tap(find.text('All cancelled events'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cancelled · Practice mindfully'), findsOneWidget);
+    expect(find.text('Practice b'), findsOneWidget);
+  });
+
   group('A habit, scored', () {
     /// Yesterday's practice, judged fully present for the habit.
     Event practice() {
@@ -866,6 +908,22 @@ void main() {
       expect(find.text('Health'), findsOneWidget);
       expect(find.text('on track'), findsOneWidget);
       expect(find.text('How present was I? 100'), findsOneWidget);
+      expect(find.text('Practice guitar'), findsOneWidget);
+      expect(find.text("Combined: mean, the defaults'"), findsOneWidget);
+
+      // In brief, the lot on a page of its own.
+      expect(find.text('The only one'), findsOneWidget);
+      await tester.tap(find.text('All events'));
+      await tester.pumpAndSettle();
+      expect(find.text('Events · Practice mindfully'), findsOneWidget);
+      expect(find.text('Practice guitar'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      // Pulling down loads the events again.
+      await tester.fling(find.text('Health'), const Offset(0, 300), 1000);
+      await tester.pumpAndSettle();
+      expect(find.byType(RefreshIndicator), findsOneWidget);
       expect(find.text('Practice guitar'), findsOneWidget);
 
       await tester.tap(find.text('How present was I? 100'));

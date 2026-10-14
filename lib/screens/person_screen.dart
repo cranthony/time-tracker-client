@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/facts.dart';
 import '../models/person.dart';
+import '../models/scoring.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/plan_memory.dart';
@@ -216,6 +217,7 @@ class _PersonScreenState extends State<PersonScreen> {
     _person.traits,
     traitList: _traitList,
     actionNames: widget.actionNames,
+    defaults: PlanMemoryScope.of(context)?.scoringDefaults.traits,
   );
 
   List<Widget> _traits(BuildContext context) => traitScoreTiles(
@@ -331,18 +333,29 @@ class _PersonScreenState extends State<PersonScreen> {
   );
 }
 
-/// Which traits apply -- [traits.select], every active one by default --
-/// named from [traitList], and [own] parts for any: a person's, or a
-/// habit's. [actionNames] names the actions a part counts.
+/// How the traits combine -- [traits.scoring], or else [defaults] --
+/// then which apply: [traits.select], every active one by default, named
+/// from [traitList], and [own] parts for any: a person's, or a habit's.
+/// [actionNames] names the actions a part counts.
 List<Widget> traitsApplied(
   ThemeData theme,
   PersonTraits traits, {
   required Map<String, Trait> traitList,
   required Map<String?, String> actionNames,
+  Aggregation? defaults,
   String own = 'their own',
 }) {
   String name(String id) => traitList[id]?.name ?? id;
   return [
+    Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Text(switch (traits.scoring) {
+        final scoring? => 'Combined: ${scoring.describe()}',
+        null =>
+          "Combined: ${(defaults ?? Aggregation.mean).describe()}, the "
+              "defaults'",
+      }, style: theme.textTheme.bodySmall),
+    ),
     Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Text(switch (traits.select) {
