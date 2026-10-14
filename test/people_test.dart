@@ -804,6 +804,32 @@ void main() {
       final locations = await repository.locations();
       expect(locations.map((l) => (l.name, l.hint)), [('The hall', null)]);
     });
+
+    testWidgets('gives one a map location, and takes it away', (tester) async {
+      final repository = await pump(tester);
+
+      await tester.tap(find.text('The hall'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Map location (optional)'),
+        ' 5 Hall Rd ',
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect((await repository.locations()).single.mapLocation, '5 Hall Rd');
+
+      await tester.tap(find.text('The hall'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Map location (optional)'),
+        '',
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      final hall = (await repository.locations()).single;
+      expect(hall.mapLocation, isNull);
+      expect(hall.hint, 'salsa on Thursdays');
+    });
   });
 }
 

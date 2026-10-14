@@ -46,7 +46,8 @@ abstract class PeopleRepository {
   /// Creates a location from [location]'s fields; returns it with its id.
   Future<Location> createLocation(Location location);
 
-  /// Saves [changes] to location [id]; a null clears its hint.
+  /// Saves [changes] to location [id]; a null clears its hint or map
+  /// location.
   Future<Location> updateLocation(String id, Map<String, Object?> changes);
 
   /// Deletes location [id].
@@ -401,6 +402,7 @@ class InMemoryPeopleRepository implements PeopleRepository {
       id: _id(location.name, _locations.map((l) => l.id)),
       name: location.name,
       hint: location.hint,
+      mapLocation: location.mapLocation,
     );
     _checkLocation(created);
     _locations.add(created);
