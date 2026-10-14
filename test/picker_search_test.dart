@@ -5,6 +5,7 @@ import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/widgets/actions_picker.dart';
 import 'package:time_tracker_client/widgets/picker_search.dart';
 import 'package:time_tracker_client/widgets/picker_sheet.dart';
+import 'package:time_tracker_client/widgets/tree_picker.dart';
 
 const _actions = [
   PlanAction(
@@ -45,7 +46,7 @@ void main() {
     });
   });
 
-  testWidgets('a ListPicker matches any word, edits on a long press, and '
+  testWidgets('a TreePicker matches any word, edits on a long press, and '
       'adds what was typed', (tester) async {
     final search = PickerSearch();
     addTearDown(search.dispose);
@@ -53,16 +54,18 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: ListPicker<String>(
-            items: const ['Sam Lee', 'Priya Shah', 'Alex Ortiz'],
-            id: (name) => name,
-            label: (name) => name,
+          body: TreePicker(
+            nodes: const [
+              PickerNode(id: 'Sam Lee', label: 'Sam Lee'),
+              PickerNode(id: 'Priya Shah', label: 'Priya Shah'),
+              PickerNode(id: 'Alex Ortiz', label: 'Alex Ortiz'),
+            ],
             picked: const [],
-            hint: 'Who was there',
+            caption: 'Who was there',
             empty: 'No one yet',
             search: search,
             onChanged: (_) {},
-            onEdit: (name) => edited = name,
+            onEdit: (node) => edited = node.id,
             add: (
               noun: 'person',
               icon: Icons.person_add_alt,

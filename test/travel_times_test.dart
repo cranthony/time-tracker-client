@@ -65,10 +65,25 @@ void main() {
                 .isNotEmpty,
       );
 
+  /// Picks [choice], a path ("Park Slope › Home"), for [field]: searched
+  /// for in its sheet, and tapped by its name.
   Future<void> pick(WidgetTester tester, String field, String choice) async {
     await tester.tap(find.widgetWithText(InputDecorator, field).last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text(choice).last);
+    await tester.enterText(
+      find.byType(TextField).last,
+      choice.replaceAll(' › ', ' '),
+    );
+    await tester.pumpAndSettle();
+    // Its own row in the sheet, before any it's the group of.
+    await tester.tap(
+      find
+          .descendant(
+            of: find.byType(BottomSheet),
+            matching: find.widgetWithText(ListTile, choice.split(' › ').last),
+          )
+          .first,
+    );
     await tester.pumpAndSettle();
   }
 
