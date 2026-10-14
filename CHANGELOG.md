@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.80.0
+
+- The Plan page's Actions pane is laid out as the Locations pane is:
+  each action and group indented under its group, after a plow or a
+  folder in its color -- filled where the color is set on it, outlined
+  where it's inherited -- in place of the colored bands. Groups are
+  always open, and tapping one edits it, as tapping an action does.
+- Its summary's first page is "By action", not "Visible actions".
+
 ## 7.79.0
 
 - One picker everywhere: a location or group's "Inside", and a travel

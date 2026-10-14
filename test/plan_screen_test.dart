@@ -20,6 +20,8 @@ import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
+import 'package:time_tracker_client/widgets/action_icon.dart';
+import 'package:time_tracker_client/widgets/plow_icon.dart';
 import 'package:time_tracker_client/widgets/actions_picker.dart';
 import 'package:time_tracker_client/widgets/color_picker.dart';
 import 'package:time_tracker_client/widgets/priority_chip.dart';
@@ -97,32 +99,13 @@ void main() {
   Finder titled(String name) =>
       find.byWidgetPredicate((w) => w is Text && nameIn(w) == name);
 
-  /// Taps [name]'s group, showing or hiding what's in it.
-  Future<void> toggle(WidgetTester tester, String name) async {
-    await tester.tap(
-      find.descendant(of: find.byType(ListTile), matching: titled(name)).first,
-    );
-    await tester.pumpAndSettle();
-  }
+  /// [name]'s row.
+  Finder rowOf(String name) =>
+      find.ancestor(of: titled(name), matching: find.byType(ListTile)).first;
 
-  /// The bands down the left of [name]'s action.
-  ActionBands bandsOf(WidgetTester tester, String name) =>
-      tester.widget<ActionBands>(
-        find.descendant(
-          of: find
-              .ancestor(
-                of: find
-                    .descendant(
-                      of: find.byType(ListTile),
-                      matching: titled(name),
-                    )
-                    .first,
-                matching: find.byType(Stack),
-              )
-              .first,
-          matching: find.byType(ActionBands),
-        ),
-      );
+  /// [name]'s icon: a folder or a plow.
+  Finder iconOf(String name) =>
+      find.descendant(of: rowOf(name), matching: find.byType(ActionIcon));
 
   /// Opens [name]'s details from its menu, through its Edit dialog.
   Future<void> openDetails(WidgetTester tester, String name) async {
@@ -186,20 +169,7 @@ void main() {
       await tester.pumpWidget(app(tree()));
       await tester.pumpAndSettle();
 
-      // Sub-actions start collapsed, their parent's band an arrow; how many
-      // isn't said.
-      expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
-      expect(bandsOf(tester, 'Cooking').shape, ActionBandShape.collapsed);
-      expect(find.textContaining('sub-action'), findsNothing);
-      // Its priority, after its name.
-      expect(find.text('P1'), findsOneWidget);
-      expect(find.text('Proposed by Claude: review it'), findsWidgets);
-      // Groups hold none.
-      expect(find.text('2 of 200 labels in use'), findsOneWidget);
-      // Only an action with sub-actions can be expanded.
-      expect(bandsOf(tester, 'Hosting').shape, ActionBandShape.plain);
-
-      await toggle(tester, 'Cooking');
+      // Every group open, what's in it under it.
       expect(shownNames(tester), [
         'Cooking',
         'Tofu tikka',
@@ -207,15 +177,25 @@ void main() {
         'Idea',
         'Old habit',
       ]);
-      expect(bandsOf(tester, 'Cooking').shape, ActionBandShape.expanded);
-      // The sub-action is indented under its parent, beside its band.
-      expect(bandsOf(tester, 'Cooking').bands, hasLength(1));
-      expect(bandsOf(tester, 'Tofu tikka').bands, hasLength(2));
-      // Its inherited priority, too.
+      expect(find.textContaining('sub-action'), findsNothing);
+      // Its priority, after its name -- and inherited, after its sub-action's.
       expect(find.text('P1'), findsNWidgets(2));
-
-      await toggle(tester, 'Cooking');
-      expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
+      expect(find.text('Proposed by Claude: review it'), findsWidgets);
+      // Groups hold none.
+      expect(find.text('2 of 200 labels in use'), findsOneWidget);
+      // A group is a folder, an action a plow; one in a group is indented.
+      expect(
+        find.descendant(of: iconOf('Cooking'), matching: find.byType(Icon)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: iconOf('Hosting'), matching: find.byType(PlowIcon)),
+        findsOneWidget,
+      );
+      expect(
+        tester.getTopLeft(iconOf('Tofu tikka')).dx,
+        greaterThan(tester.getTopLeft(iconOf('Cooking')).dx),
+      );
     },
   );
 
@@ -385,19 +365,16 @@ void main() {
     );
   });
 
-  testWidgets("tapping a group opens or closes it; tapping an action edits "
-      'its priority and color, from which "Details" opens the rest', (
+  testWidgets("groups are always open; tapping an action edits its "
+      'priority and color, from which "Details" opens the rest', (
     tester,
   ) async {
     final repo = tree();
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
-    await toggle(tester, 'Cooking');
     expect(shownNames(tester), contains('Tofu tikka'));
     expect(find.byType(AlertDialog), findsNothing);
-    await toggle(tester, 'Cooking');
-    expect(shownNames(tester), isNot(contains('Tofu tikka')));
 
     await tester.tap(titled('Hosting'));
     await tester.pumpAndSettle();
@@ -450,7 +427,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.widgetWithText(Tab, 'Actions'), findsOneWidget);
 
-    await toggle(tester, 'Cooking');
     expect(shownNames(tester), contains('Tofu tikka'));
 
     await tester.fling(titled('Cooking').first, const Offset(-300, 0), 1000);
@@ -483,7 +459,13 @@ void main() {
 
     await tester.tap(find.byTooltip('Clear the search'));
     await tester.pumpAndSettle();
-    expect(shownNames(tester), ['Cooking', 'Hosting', 'Idea', 'Old habit']);
+    expect(shownNames(tester), [
+      'Cooking',
+      'Tofu tikka',
+      'Hosting',
+      'Idea',
+      'Old habit',
+    ]);
   });
 
   testWidgets('adds an action to the group whose menu it came from', (
@@ -926,9 +908,9 @@ void main() {
 
       expect(find.text('Last compaction'), findsOneWidget);
       expect(find.textContaining('As of'), findsOneWidget);
-      // Cooking, collapsed, has its tofu's time.
-      expect(find.text('Cooking'), findsWidgets);
-      expect(find.text('1h in 24h · 3h in 7d'), findsOneWidget);
+      // The tofu's time: its own, and Cooking's, with what's in it.
+      expect(find.text('Tofu tikka'), findsWidgets);
+      expect(find.text('1h in 24h · 3h in 7d'), findsNWidgets(2));
       // Hosting's is tomorrow: not in the window.
       expect(
         find.descendant(
@@ -937,8 +919,6 @@ void main() {
         ),
         findsNothing,
       );
-      await toggle(tester, 'Cooking');
-      expect(find.text('1h in 24h · 3h in 7d'), findsNWidgets(2));
     });
 
     testWidgets('move a day at a time, look on rather than back, and come '
@@ -979,14 +959,16 @@ void main() {
 
       await tester.tap(find.byTooltip('Show percentages'));
       await tester.pumpAndSettle();
-      expect(find.text('4.2% of 24h · 1.8% of 7d'), findsOneWidget);
+      // The tofu's, and Cooking's, with it.
+      expect(find.text('4.2% of 24h · 1.8% of 7d'), findsNWidgets(2));
 
       await tester.pumpWidget(const SizedBox());
       await tester.pumpWidget(
         app(tree(), events: events(), lastCompaction: compacted),
       );
       await tester.pumpAndSettle();
-      expect(find.text('4.2% of 24h · 1.8% of 7d'), findsOneWidget);
+      // The tofu's, and Cooking's, with it.
+      expect(find.text('4.2% of 24h · 1.8% of 7d'), findsNWidgets(2));
     });
   });
 
@@ -1080,8 +1062,6 @@ void main() {
         'outlined if inherited', (tester) async {
       await tester.pumpWidget(app(withColors()));
       await tester.pumpAndSettle();
-      await toggle(tester, 'Cooking');
-
       expect(chipOf(tester, 'Cooking').priority, 1);
       expect(chipOf(tester, 'Cooking').own, isTrue);
       expect(chipOf(tester, 'Curry').priority, 3);
@@ -1161,12 +1141,16 @@ void main() {
       find.descendant(of: picker, matching: find.text('Hosting')),
       findsNothing,
     );
-    expect(find.text('Tofu tikka'), findsNothing);
+    expect(
+      find.descendant(of: picker, matching: find.text('Tofu tikka')),
+      findsNothing,
+    );
     // A group in a group, once its group's opened.
-    expect(find.text('Indian'), findsNothing);
+    final indian = find.descendant(of: picker, matching: find.text('Indian'));
+    expect(indian, findsNothing);
     await tester.tap(find.byTooltip('Show 1 inside'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Indian'));
+    await tester.tap(indian);
     await tester.pumpAndSettle();
     expect(picker, findsNothing);
     // Picked: its whole path.
@@ -1187,7 +1171,6 @@ void main() {
     await tester.pumpWidget(app(repo));
     await tester.pumpAndSettle();
 
-    await toggle(tester, 'Cooking');
     await openDetails(tester, 'Tofu tikka');
     final dialog = find.byType(AlertDialog);
     final row = find.ancestor(
@@ -1265,8 +1248,8 @@ void main() {
   });
 
   testWidgets(
-    "an action's band is its own color, or the one it inherits, dashed, beside "
-    "its ancestors'",
+    "an action's icon is in its own color, filled, or the one it inherits, "
+    'outlined',
     (tester) async {
       await tester.pumpWidget(
         app(
@@ -1293,18 +1276,15 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await toggle(tester, 'Own');
-
-      const own = ActionBand(color: Color(0xFF123456), dashed: false);
-      expect(bandsOf(tester, 'Own').bands, [own]);
-      expect(bandsOf(tester, 'Kid').bands, [
-        own,
-        const ActionBand(color: Color(0xFF123456), dashed: true),
-      ]);
-      // A proposed action's is grey, and dashed.
-      final idle = bandsOf(tester, 'Idle').bands.single;
-      expect(idle.dashed, isTrue);
-      expect(idle.color, isNot(const Color(0xFFABCDEF)));
+      PlowIcon plowOf(String name) => tester.widget<PlowIcon>(
+        find.descendant(of: iconOf(name), matching: find.byType(PlowIcon)),
+      );
+      expect(plowOf('Own').color, const Color(0xFF123456));
+      expect(plowOf('Own').filled, isTrue);
+      expect(plowOf('Kid').color, const Color(0xFF123456));
+      expect(plowOf('Kid').filled, isFalse);
+      // A proposed action's is grey: it holds no label.
+      expect(plowOf('Idle').color, isNot(const Color(0xFFABCDEF)));
     },
   );
 

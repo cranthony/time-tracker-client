@@ -8,6 +8,7 @@ import '../services/plan_memory.dart';
 import '../widgets/person_dialog.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
+import '../widgets/tree_tile.dart';
 import 'travel_times_screen.dart';
 
 /// The Plan page's Locations pane -- where: each place events happen,
@@ -113,11 +114,8 @@ class LocationsPaneState extends State<LocationsPane> {
   /// groups it's in ([path]).
   Widget _locationTile(Location location, {int depth = 0, bool path = false}) {
     final detail = path ? locationDetail(location, _groups) : location.hint;
-    return ListTile(
-      contentPadding: EdgeInsetsDirectional.only(
-        start: 16 + 24.0 * depth,
-        end: 16,
-      ),
+    return TreeTile(
+      depth: depth,
       leading: const Icon(Icons.place_outlined),
       title: Text(location.name),
       subtitle: detail == null ? null : Text(detail),
@@ -131,11 +129,8 @@ class LocationsPaneState extends State<LocationsPane> {
       if (path) ?groupsPath(group.groupId, _groups),
       ?group.note,
     ].join(' · ');
-    return ListTile(
-      contentPadding: EdgeInsetsDirectional.only(
-        start: 16 + 24.0 * depth,
-        end: 16,
-      ),
+    return TreeTile(
+      depth: depth,
       leading: const Icon(Icons.folder_outlined),
       title: Text(group.name),
       subtitle: detail.isEmpty ? null : Text(detail),
