@@ -252,6 +252,61 @@ void main() {
     expect(find.textContaining('No travel times yet'), findsOneWidget);
   });
 
+  testWidgets('searches them by place, way and note, the search focused as '
+      'the page opens', (tester) async {
+    await pump(
+      tester,
+      travelTimes: const [
+        TravelTime(
+          id: 't1',
+          fromId: 'work',
+          toId: 'slope',
+          times: [TravelMode(modeId: 'subway', minutes: 30)],
+        ),
+        TravelTime(
+          id: 't2',
+          fromId: 'home',
+          toId: 'work',
+          times: [TravelMode(modeId: 'walk', minutes: 90)],
+          note: 'over the bridge',
+        ),
+      ],
+    );
+    final search = find.widgetWithText(TextField, 'Search travel times');
+    expect(
+      tester
+          .widget<EditableText>(
+            find.descendant(of: search, matching: find.byType(EditableText)),
+          )
+          .focusNode
+          .hasFocus,
+      isTrue,
+    );
+    final work = route('Work', Icons.sync_alt, 'Park Slope');
+    final home = route('Park Slope › Home', Icons.sync_alt, 'Work');
+
+    await tester.enterText(search, 'subway');
+    await tester.pump();
+    expect(work, findsOneWidget);
+    expect(home, findsNothing);
+
+    await tester.enterText(search, 'BRIDGE home');
+    await tester.pump();
+    expect(work, findsNothing);
+    expect(home, findsOneWidget);
+
+    await tester.enterText(search, 'gym');
+    await tester.pump();
+    expect(work, findsNothing);
+    expect(home, findsNothing);
+    expect(find.text('Nothing matches “gym”.'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Clear the search'));
+    await tester.pump();
+    expect(work, findsOneWidget);
+    expect(home, findsOneWidget);
+  });
+
   group("a location's travel times", () {
     /// Home's travel times, as its edit dialog shows them.
     Future<InMemoryPeopleRepository> pumpHome(
