@@ -9,6 +9,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.101.2
+
+- In the actions list, an action that's a way to commute has a walking
+  person for its icon instead of the plow.
+
 ## 7.101.1
 
 - In the travel time editor, the action a way is by is marked with the

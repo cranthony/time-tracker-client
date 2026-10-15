@@ -1263,6 +1263,45 @@ void main() {
     },
   );
 
+  testWidgets('an action that is a way to commute is a walking person', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      app(
+        InMemoryActionsRepository([
+          PlanAction.fromJson({
+            'id': 'bike',
+            'name': 'Bike',
+            'background_color': '#039be5',
+            'commute': true,
+          }),
+          PlanAction.fromJson({
+            'id': 'ride',
+            'name': 'Ride',
+            'effective_color': '#039be5',
+            'commute': true,
+          }),
+          PlanAction.fromJson({'id': 'cook', 'name': 'Cook'}),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Icon iconIn(String name) => tester.widget<Icon>(
+      find.descendant(of: iconOf(name), matching: find.byType(Icon)),
+    );
+    expect(iconIn('Bike').icon, Icons.directions_walk);
+    expect(iconIn('Bike').color, const Color(0xFF039BE5));
+    expect(iconIn('Ride').icon, Icons.directions_walk_outlined);
+    expect(
+      find.descendant(of: iconOf('Bike'), matching: find.byType(PlowIcon)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: iconOf('Cook'), matching: find.byType(PlowIcon)),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('says when there are no actions yet', (tester) async {
     await tester.pumpWidget(app(InMemoryActionsRepository()));
     await tester.pumpAndSettle();
