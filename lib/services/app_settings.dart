@@ -31,7 +31,7 @@ class AppSettings extends ChangeNotifier {
     Duration(minutes: 60),
   ];
 
-  static const defaultGrid = Duration(minutes: 15);
+  static const defaultGrid = Duration(minutes: 5);
   static const _gridKey = 'settings_grid_minutes';
   static const _snapKey = 'settings_snap';
   static const _keepRulesKey = 'settings_keep_rules';

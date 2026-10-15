@@ -9,6 +9,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.101.0
+
+- The timeline snaps to 5 minutes by default, instead of 15. A grid
+  already picked in Settings is kept.
+
 ## 7.100.3
 
 - The weather strip's line for a day gives its chance of rain whenever

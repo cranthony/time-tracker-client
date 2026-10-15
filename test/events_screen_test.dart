@@ -1945,13 +1945,13 @@ void main() {
       }
 
       addTearDown(() => settings = null);
-      // By default, a quarter hour, and the call's end on the way.
-      expect(await stepUpTwice(AppSettings(persist: false)), (
+      // A quarter hour's grid, and the call's end on the way.
+      expect(await stepUpTwice(_quarterHourGrid()), (
         at(30, 11, 40),
         at(30, 12),
       ));
       // Not snapping to edges: the grid alone.
-      final gridOnly = AppSettings(persist: false)
+      final gridOnly = _quarterHourGrid()
         ..setSnap(const {})
         ..setSnap(const {});
       expect(await stepUpTwice(gridOnly), (at(30, 11, 30), at(30, 12)));
@@ -2117,9 +2117,9 @@ void main() {
         'and "−" step it, and "+" is greyed out against the next event', (
       tester,
     ) async {
-      // As the app starts: a quarter hour's grid, and events' edges and
+      // A quarter hour's grid, and, as the app starts, events' edges and
       // notes too.
-      settings = AppSettings(persist: false);
+      settings = _quarterHourGrid();
       // In UTC, as the server sends them.
       final repo = _RecordingRepository([
         Event(
@@ -3220,6 +3220,10 @@ AppSettings _hourly() {
 }
 
 /// A grid of a quarter hour, and no stops at events' edges or notes.
+/// As the app starts, but with a quarter hour's grid.
+AppSettings _quarterHourGrid() =>
+    AppSettings(persist: false)..setGrid(const Duration(minutes: 15));
+
 AppSettings _quarterly() {
   final settings = _hourly();
   settings.setGrid(const Duration(minutes: 15));
