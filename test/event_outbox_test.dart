@@ -86,6 +86,47 @@ class _Server extends InMemoryEventsRepository {
   }
 }
 
+/// A calendar where making Lunch repeat makes it daily: its later events
+/// are worked out by the server, as asked for, not returned by the save.
+class _DailyLunch extends _Server {
+  _DailyLunch(super.events);
+
+  var daily = false;
+
+  @override
+  Future<List<Event>> updateEvent(
+    Event event,
+    Map<String, Object?> changes, {
+    bool allowCompactedChanges = false,
+  }) {
+    if (changes.containsKey('repeat')) daily = true;
+    return super.updateEvent(
+      event,
+      changes,
+      allowCompactedChanges: allowCompactedChanges,
+    );
+  }
+
+  @override
+  Future<List<Event>> events(DateTime from, DateTime to) async => [
+    ...await super.events(from, to),
+    if (daily)
+      for (
+        var d = DateTime(from.year, from.month, from.day);
+        d.isBefore(to);
+        d = DateTime(d.year, d.month, d.day + 1)
+      )
+        if (d.isAfter(_day))
+          Event.fromJson({
+            'id': 'lunch-${d.day}',
+            'summary': 'Lunch',
+            'start': localIsoTimestamp(d.add(const Duration(hours: 12))),
+            'end': localIsoTimestamp(d.add(const Duration(hours: 13))),
+            'recurring_event_id': 'lunch',
+          }),
+  ];
+}
+
 EventOutbox _outbox(_Server server, {ProposalRepository? proposals}) =>
     EventOutbox(
       store: InMemoryOutboxStore(),
@@ -185,6 +226,33 @@ void main() {
         outbox.update(lunch, {'summary': 'Long lunch'}),
         throwsA(isA<WaitingForWrite>()),
       );
+    });
+
+    test('one setting a repeat says so, and from when', () async {
+      final server = _Server([
+        _event('call', 'Call', 9, 10),
+        _event('lunch', 'Lunch', 12, 13),
+      ]);
+      final outbox = _outbox(server)..setPaused(true);
+      final [call, lunch] = await server.events(_day, _at(24));
+
+      await outbox.update(call, {'summary': 'Long call'});
+      await outbox.update(lunch, {'repeat': null});
+      await outbox.create({
+        'summary': 'Tea',
+        'start': localIsoTimestamp(_at(17)),
+        'end': localIsoTimestamp(_at(18)),
+        'repeat': {'every': 'day', 'interval': 1},
+      });
+
+      expect(
+        [for (final w in outbox.pending) w.setsRepeat],
+        [false, true, true],
+      );
+      // Moved earlier as it's made a series: from the earlier start.
+      final moved = _event('lunch', 'Lunch', 10, 11);
+      expect(outbox.pending[1].repeatFrom([moved])?.toLocal(), _at(10));
+      expect(outbox.pending[1].repeatFrom([])?.toLocal(), _at(12));
     });
 
     test('a cancelled event waits whole, and so does a new one', () async {
@@ -616,6 +684,39 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Long lunch'), findsOneWidget);
       expect(find.textContaining('Waiting to save'), findsNothing);
+    });
+
+    testWidgets("made a series, the days after are loaded again: the "
+        "server's later events are shown", (tester) async {
+      final server = _DailyLunch([_event('lunch', 'Lunch', 12, 13)]);
+      final lunch = (await server.events(_day, _at(24))).single;
+      final outbox = _outbox(server)..setPaused(true);
+      addTearDown(outbox.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: EventsScreen(
+              repository: server,
+              serverLabel: 'test',
+              eventOutbox: outbox,
+              clock: () => _at(9),
+            ),
+          ),
+        ),
+      );
+      // Tomorrow is loaded too, ready to slide in: empty.
+      await tester.pumpAndSettle();
+
+      await outbox.update(lunch, {
+        'repeat': {'every': 'day', 'interval': 1},
+      });
+      outbox.setPaused(false);
+      unawaited(outbox.flush());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Next day'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Lunch'), findsWidgets);
     });
 
     testWidgets('one refused stops the queue, and the bar says what to fix', (

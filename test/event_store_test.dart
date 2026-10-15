@@ -89,6 +89,26 @@ void main() {
     expect(await cache.read('event_days'), isNull);
   });
 
+  test('refreshing from a day asks for it through the last day kept, '
+      'and takes in what changed', () async {
+    final repository = _CountingEvents([_event('today', 0)]);
+    final store = EventStore(repository: repository, clock: () => _now);
+    await store.warm(ahead: 10);
+    expect(store.day(_day(5)), isEmpty);
+
+    // A series made today: its later events are the server's.
+    await repository.createEvent(_event('again', 5).toJson());
+    repository.asked.clear();
+    await store.refreshFrom(_day(0).add(const Duration(hours: 12)));
+    expect(repository.asked, [(0, 10)]);
+    expect(store.day(_day(5))?.single.summary, 'again');
+
+    // From after the last day kept: nothing to ask for.
+    repository.asked.clear();
+    await store.refreshFrom(_day(11));
+    expect(repository.asked, isEmpty);
+  });
+
   test(
     'an event across midnight is in both days, and once between them',
     () async {
