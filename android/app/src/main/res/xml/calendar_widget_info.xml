@@ -3,7 +3,7 @@
      events for it, and as each event starts or ends, so never by period.
      Its settings (CalendarWidgetConfigureActivity) are opened from the
      widget once it's placed (reconfigurable), not as it's added
-     (configuration_optional) -- before Android 12, as it's added. -->
+     (configuration_optional); before Android 12, as it's added. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/calendar_widget_description"
     android:initialLayout="@layout/glance_default_loading_layout"
