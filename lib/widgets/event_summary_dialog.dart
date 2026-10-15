@@ -1404,7 +1404,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   );
 
   /// One property after its [icon] -- or a [glyph] drawn in its place --
-  /// tapped to edit or toggle it.
+  /// tapped to edit or toggle it. A [trailing] button, at its end, has
+  /// the first line's height and the row's padding to be tapped in, so
+  /// the row's no taller for it.
   Widget _row(
     BuildContext context, {
     IconData? icon,
@@ -1414,6 +1416,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     bool editing = false,
     String? changedKey,
     bool? changed,
+    Widget? trailing,
   }) {
     final theme = Theme.of(context);
     final waits = changedKey != null && _waits(changedKey);
@@ -1423,29 +1426,40 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         InkWell(
           onTap: _editable && !_saving && !waits ? onTap : null,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                IconTheme(
-                  data: IconThemeData(
-                    size: 22,
-                    color: editing
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurfaceVariant,
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        IconTheme(
+                          data: IconThemeData(
+                            size: 22,
+                            color: editing
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                          child: glyph ?? Icon(icon),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: child),
+                        if (waits) const WaitingMark(),
+                        if (changedKey != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child:
+                                _changedDot(changedKey, changed: changed) ??
+                                const SizedBox(),
+                          ),
+                      ],
+                    ),
                   ),
-                  child: glyph ?? Icon(icon),
                 ),
-                const SizedBox(width: 12),
-                Expanded(child: child),
-                if (waits) const WaitingMark(),
-                if (changedKey != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child:
-                        _changedDot(changedKey, changed: changed) ??
-                        const SizedBox(),
-                  ),
+                ?trailing,
               ],
             ),
           ),
@@ -1656,28 +1670,26 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           _set('location', typed.isEmpty ? null : typed);
         }
       },
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              line.isEmpty ? (where ? 'Add location' : 'Add who') : line,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: line.isEmpty ? theme.hintColor : null,
-              ),
-            ),
-          ),
-          if (where && map.isNotEmpty) ...[
-            IconButton(
+      trailing: where && map.isNotEmpty
+          // The row's padding to tap in, so it's no taller for it.
+          ? IconButton(
               icon: Icon(placeButton(map).icon),
               tooltip: placeButton(map).tooltip,
-              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 48, height: 44),
+              style: IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
               color: theme.colorScheme.primary,
               onPressed: () => openInMaps(map),
-            ),
-          ],
-        ],
+            )
+          : null,
+      child: Text(
+        line.isEmpty ? (where ? 'Add location' : 'Add who') : line,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodyLarge?.copyWith(
+          color: line.isEmpty ? theme.hintColor : null,
+        ),
       ),
     );
   }
