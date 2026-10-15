@@ -219,14 +219,15 @@ class WeatherStrip extends StatelessWidget {
       const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.weekday - 1];
 
   /// [span]'s day said in a line: its sky, high and low, and its chance
-  /// of rain and how much, if any's likely -- today's, from now.
+  /// of rain, if there's any, and how much, if any's likely -- today's,
+  /// from now.
   static String _describe(WeatherSpan span, AppSettings settings) {
     final temperature = settings.temperatureUnit;
     return [
       span.sky.label,
       if (span case WeatherSpan(:final high?, :final low?))
         '${temperature.format(high)} / ${temperature.format(low)}',
-      if (span.rainChance case final chance? when chance >= 10) '$chance% rain',
+      if (span.rainChance case final chance? when chance > 0) '$chance% rain',
       if (span.precipitation case final mm?
           when mm >= 0.25 && (span.rainChance ?? 100) >= 30)
         settings.precipitationUnit.format(mm),

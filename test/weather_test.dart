@@ -584,10 +584,11 @@ void main() {
       required DateTime day,
       ValueChanged<DateTime>? onDay,
       LocationAccess access = LocationAccess.granted,
+      _FakeForecasts? forecasts,
     }) async {
       final settings = AppSettings(persist: false);
       final weather = Weather(
-        forecasts: _FakeForecasts(),
+        forecasts: forecasts ?? _FakeForecasts(),
         location: _CountingLocation(access),
         persist: false,
         usesDevice: true,
@@ -648,6 +649,42 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+
+    testWidgets('any chance of rain, however small; none, not', (tester) async {
+      final forecasts = _FakeForecasts()
+        ..make = (now) {
+          final sample = sampleForecast(now);
+          return Forecast(
+            fetchedAt: sample.fetchedAt,
+            quarterHours: sample.quarterHours,
+            hours: sample.hours,
+            dayParts: sample.dayParts,
+            days: [
+              for (final (i, d) in sample.days.indexed)
+                WeatherSpan(
+                  start: d.start,
+                  end: d.end,
+                  sky: d.sky,
+                  rainChance: i == 1 ? 3 : d.rainChance,
+                  precipitation: d.precipitation,
+                  high: d.high,
+                  low: d.low,
+                ),
+            ],
+            sun: sample.sun,
+            source: sample.source,
+          );
+        };
+      await pump(
+        tester,
+        day: today.add(const Duration(days: 1)),
+        forecasts: forecasts,
+      );
+      expect(find.text('Partly cloudy · 63° / 48° · 3% rain'), findsOneWidget);
+
+      await pump(tester, day: today.add(const Duration(days: 5)));
+      expect(find.text('Clear · 64° / 43°'), findsOneWidget);
     });
 
     testWidgets('a day of the week goes to it', (tester) async {
