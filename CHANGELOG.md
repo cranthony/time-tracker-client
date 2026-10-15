@@ -8,6 +8,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.98.0
+
+- An event's map location can be given to a location, from the Map
+  location page of its location sheet: "Assign to a location" opens a
+  picker over the sheet. Tapping a location with no map location gives it
+  this one at once; one with another opens its dialog, the new one in its
+  map location, the old under it, to save or not. Or a new location is
+  made, named as it's typed, with this map location. Either way the event
+  is at that location after, with no map location of its own.
+
 ## 7.97.1
 
 - A note added from the New note sheet can't be dropped any more. The

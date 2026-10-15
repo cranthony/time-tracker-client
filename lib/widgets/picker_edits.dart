@@ -133,11 +133,13 @@ Future<Person?> editPerson(
 }
 
 /// Adds a location (with no [location]), named [name] to start with, or
-/// edits [location]. Returns it as saved; null if it was called off.
+/// edits [location]; with [mapLocation], its map location starts as that.
+/// Returns it as saved; null if it was called off.
 Future<Location?> editLocation(
   BuildContext context, {
   Location? location,
   String? name,
+  String? mapLocation,
 }) async {
   final repository = PeopleScope.of(context);
   if (repository == null) return null;
@@ -146,6 +148,7 @@ Future<Location?> editLocation(
     context,
     location: location,
     name: name,
+    mapLocation: mapLocation,
     groups: memory?.locationGroups ?? const [],
     save: (fields) => location == null
         ? repository.createLocation(Location.fromJson({'id': '', ...fields}))
@@ -155,6 +158,35 @@ Future<Location?> editLocation(
     await _reload(() => memory?.loadLocations(repository, again: true));
   }
   return saved;
+}
+
+/// Gives [location] [map] as its map location: at once, if it has none
+/// (or has it already); otherwise in its dialog, [map] in place of the
+/// one it has, shown under it, to save or not. Returns it as saved; null
+/// if it was called off.
+Future<Location?> assignMapLocation(
+  BuildContext context,
+  Location location,
+  String map,
+) async {
+  final repository = PeopleScope.of(context);
+  if (repository == null) return null;
+  final memory = PlanMemoryScope.of(context);
+  final had = location.mapLocation?.trim() ?? '';
+  if (had == map) return location;
+  if (had.isEmpty) {
+    try {
+      final saved = await repository.updateLocation(location.id, {
+        'map_location': map,
+      });
+      await _reload(() => memory?.loadLocations(repository, again: true));
+      return saved;
+    } catch (_) {
+      // Its dialog, then, saying why, to try again from.
+    }
+  }
+  if (!context.mounted) return null;
+  return editLocation(context, location: location, mapLocation: map);
 }
 
 /// Loads again what was just saved; best effort, since it was saved.
