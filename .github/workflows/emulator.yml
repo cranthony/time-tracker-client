@@ -9,7 +9,9 @@
 # check any frame; tests here take minutes and can only poke the app from
 # outside with adb. Each test is a script in tool/emulator/, run by a job
 # of its own below, side by side, each on its own emulator; the two that
-# test the release app share the one APK the apk job builds. The
+# test the release app share the one APK the apk job builds.
+# tool/emulator/sdk_retry.sh, which isn't a test, tries the SDK's
+# downloads again when they come back broken. The
 # android-emulator job, which the main branch's rules require, passes
 # once they all have.
 #
@@ -66,7 +68,10 @@ jobs:
         with:
           channel: stable
           cache: true
+      # Gradle installs the NDK the first time, a download that sometimes
+      # comes back broken: sdk_retry.sh tries again then.
       - run: >-
+          tool/emulator/sdk_retry.sh
           flutter build apk --release --target-platform android-x64
           --dart-define=SAMPLE_DATA=true --dart-define=CALENDAR_PIN=true
       - uses: actions/upload-artifact@v4
@@ -92,6 +97,14 @@ jobs:
             sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      # The emulator runner installs these too, but fails at the first
+      # broken download; here they're tried again (see sdk_retry.sh).
+      - name: Install the emulator
+        run: |
+          sdkmanager=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          tool/emulator/sdk_retry.sh "$sdkmanager" --install emulator \
+            'system-images;android-36;google_apis;x86_64'
       - name: Home screen "+" brings up the keyboard
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -123,6 +136,14 @@ jobs:
             sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      # The emulator runner installs these too, but fails at the first
+      # broken download; here they're tried again (see sdk_retry.sh).
+      - name: Install the emulator
+        run: |
+          sdkmanager=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          tool/emulator/sdk_retry.sh "$sdkmanager" --install emulator \
+            'system-images;android-36;google_apis;x86_64'
       - name: Home screen calendar shows the events, and its taps open the app
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -154,12 +175,28 @@ jobs:
         with:
           channel: stable
           cache: true
+      # Built before the emulator starts, so that flutter test, there,
+      # has little left to build; and the NDK's download, on the first
+      # build, can be tried again (see sdk_retry.sh).
+      - name: Build the test app
+        run: >-
+          tool/emulator/sdk_retry.sh
+          flutter build apk --debug --target-platform android-x64
+          -t integration_test/outbox_handoff_test.dart
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
             sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      # The emulator runner installs these too, but fails at the first
+      # broken download; here they're tried again (see sdk_retry.sh).
+      - name: Install the emulator
+        run: |
+          sdkmanager=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          tool/emulator/sdk_retry.sh "$sdkmanager" --install emulator \
+            'system-images;android-36;google_apis;x86_64'
       - name: Changes are handed off between the app and its background task
         uses: reactivecircus/android-emulator-runner@v2
         with:
