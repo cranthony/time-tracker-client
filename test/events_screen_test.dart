@@ -2801,8 +2801,11 @@ void main() {
     expect(find.text('Today'), findsOneWidget);
     final position = tester
         .state<ScrollableState>(
-          find.byWidgetPredicate(
-            (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+          find.descendant(
+            of: find.byType(ListView),
+            matching: find.byWidgetPredicate(
+              (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+            ),
           ),
         )
         .position;

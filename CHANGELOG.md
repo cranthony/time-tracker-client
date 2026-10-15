@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.103.1
+
+- On a small phone, the panels over the day's timeline -- its summary,
+  weather, all-day events and Claude's proposal -- take at most half the
+  page, scrolling within it past that, so the timeline always has room,
+  and an event shown from the home-screen widget is in view.
+
 ## 7.103.0
 
 - An event's description opens to read first, laid out as Google

@@ -967,8 +967,11 @@ void main() {
     /// at the top of the view.
     Future<void> toBand(WidgetTester tester) async {
       final scrollable = find
-          .byWidgetPredicate(
-            (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byWidgetPredicate(
+              (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+            ),
           )
           .first;
       final position = tester.state<ScrollableState>(scrollable).position;

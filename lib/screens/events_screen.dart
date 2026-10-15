@@ -4522,209 +4522,217 @@ class _EventsScreenState extends State<EventsScreen> {
   );
 
   /// The days side by side over the [TimelineAxis], all scrolled up and
-  /// down at once.
+  /// down at once; above them, the day's panels -- its summary, weather,
+  /// all-day events and proposal -- in at most half the page, scrolled
+  /// within it past that, so on a small phone the timeline, and an event
+  /// shown on it, isn't squeezed out of view.
   Widget _buildTimeline() {
     final events = _shown;
     _scrollToStart();
     final noDrag = _pinch == null ? null : const NeverScrollableScrollPhysics();
-    return Column(
-      children: [
-        if (events != null)
-          DaySummary(
-            events: events,
-            day: _day,
-            actions: _actionsById,
-            collapsed: _summaryCollapsed,
-            onCollapsed: _setSummaryCollapsed,
-            durations: _summaryDurations,
-            onDurations: _setSummaryDurations,
-          ),
-        if (Weather.of(context) case final weather? when weather.enabled)
-          WeatherStrip(
-            weather: weather,
-            day: _day,
-            now: widget.clock(),
-            collapsed: _weatherCollapsed,
-            onCollapsed: _setWeatherCollapsed,
-            onDay: _goToDay,
-          ),
-        if (GoogleCalendars.of(context) case final calendars?)
-          GoogleAllDayStrip(
-            events: [
-              for (final e in calendars.on(_day))
-                if (e.allDay) e,
-            ],
-            collapsed: _allDayCollapsed,
-            onCollapsed: _setAllDayCollapsed,
-            onTap: _openGoogleEvent,
-          ),
-        if (_notices.isNotEmpty)
-          ProposalNoticesBanner(
-            notices: _notices,
-            onDismiss: (notice) => widget.eventOutbox?.notices?.dismiss(notice),
-          ),
-        if (_proposal case final proposal?)
-          ProposalBar(
-            proposal: proposal,
-            busy: _proposalBusy,
-            closing: widget.eventOutbox?.closing(proposal.id)?.label,
-            changes: _changedSince.length,
-            joined: _hasDetails(proposal),
-            onConfirm: _confirmProposal,
-            onNote: _noteForClaude,
-            onNotes: _showProposalNotes,
-            onRetry: _finishProposal,
-            onGoTo: _goToProposal,
-            onAbandon: _abandonProposal,
-            hidden: _hidden,
-            onHide: _toggleHidden,
-          ),
-        if (_shownProposal case final proposal?) _buildDetails(proposal),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, view) => RefreshIndicator(
-              onRefresh: () {
-                unawaited(_loadNotes());
-                unawaited(_loadProposal());
-                GoogleCalendars.of(context)?.refresh();
-                return _refresh();
-              },
-              child: NotificationListener<ScrollEndNotification>(
-                // The days' sliding, not the timeline's scrolling.
-                onNotification: (notification) {
-                  if (notification.metrics.axis == Axis.horizontal) {
-                    _slidingTo = null;
-                  }
-                  return false;
-                },
-                // Raw pointers, so pinching doesn't contend with scrolling.
-                child: Listener(
-                  onPointerDown: _pointerDown,
-                  onPointerMove: _pointerMove,
-                  onPointerUp: _pointerUp,
-                  onPointerCancel: _pointerUp,
-                  child: ListView(
-                    controller: _scroll,
-                    physics: noDrag ?? const AlwaysScrollableScrollPhysics(),
-                    children: [
-                      SizedBox(
-                        height: _height,
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: TimelineAxis(
-                                day: _from,
-                                dayEnd: _to,
-                                scale: _scale,
-                              ),
-                            ),
-                            Positioned.fill(
-                              child: PageView.builder(
-                                controller: _pages,
-                                physics: _box != null
-                                    ? const NeverScrollableScrollPhysics()
-                                    : noDrag,
-                                onPageChanged: (page) => _show(_dayAt(page)),
-                                itemBuilder: (context, page) => _buildDay(
-                                  context,
-                                  _dayAt(page),
-                                  view.maxHeight,
-                                ),
-                              ),
-                            ),
-                            if ((_extendTo, _proposal) case (
-                              final to?,
-                              final proposal?,
-                            ))
-                              Positioned.fill(
-                                child: WindowCursorView(
-                                  day: _from,
-                                  dayEnd: _to,
-                                  scale: _scale,
-                                  anchor:
-                                      proposal.claudeThrough ??
-                                      proposal.through,
-                                  end: to,
-                                  onMove: _moveExtension,
-                                  onStep: ({required later}) {
-                                    final to = _extensionStep(later: later);
-                                    if (to != null) {
-                                      setState(() => _extendTo = to);
-                                    }
-                                  },
-                                  canStep: ({required later}) =>
-                                      _extensionStep(later: later) != null,
-                                  onOpen: _openExtension,
-                                  onDone: to.isAfter(proposal.through)
-                                      ? _extend
-                                      : null,
-                                  onCancel: () =>
-                                      setState(() => _extendTo = null),
-                                ),
-                              ),
-                            if (_box case final box?)
-                              Positioned.fill(
-                                child: PendingEventBoxView(
-                                  day: _from,
-                                  dayEnd: _to,
-                                  scale: _scale,
-                                  box: box,
-                                  selected: _selected,
-                                  onSelect: (role) =>
-                                      setState(() => _selected = role),
-                                  overwrites: _overwrites,
-                                  covers: _covers,
-                                  pushed: _pushed,
-                                  label: switch (_moving) {
-                                    final event? =>
-                                      'Moving ${switch (event.summary) {
-                                        final s? when s.isNotEmpty => '“$s”',
-                                        _ => 'this event',
-                                      }}',
-                                    null => null,
-                                  },
-                                  onMoveCursor: (to) => _changeBox(
-                                    (box) => box.withCursor(
-                                      _snap(to, CursorRole.anchor),
-                                    ),
-                                    fromOther: true,
-                                  ),
-                                  onMoveOther: (to) => _changeBox(
-                                    (box) => box.withOther(
-                                      _snap(to, CursorRole.end),
-                                    ),
-                                  ),
-                                  onMoveBox: (to) => _changeBox(
-                                    (box) => box.movedTo(
-                                      _snap(to, CursorRole.anchor),
-                                    ),
-                                    moved: true,
-                                  ),
-                                  onStep: _stepCursor,
-                                  canStep: _canStep,
-                                  commuteEnds: _commuteEnds,
-                                  queued: _commutes.keys.toSet(),
-                                  onCommute: _commute,
-                                  onEditTime: _editTime,
-                                  // Picking, taps go to the events.
-                                  interactive: _selecting == null,
-                                  marks: _marksAt,
-                                  cuts: _cutsAt,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+    return LayoutBuilder(
+      builder: (context, page) => Column(
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: page.maxHeight / 2),
+            child: SingleChildScrollView(
+              key: const Key('day-panels'),
+              primary: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: _buildPanels(events),
               ),
             ),
           ),
-        ),
-      ],
+          Expanded(child: _buildDays(noDrag)),
+        ],
+      ),
     );
   }
+
+  /// The panels above the timeline: the day's summary, its weather and
+  /// all-day events, and the open proposal's bar and details.
+  List<Widget> _buildPanels(List<Event>? events) => [
+    if (events != null)
+      DaySummary(
+        events: events,
+        day: _day,
+        actions: _actionsById,
+        collapsed: _summaryCollapsed,
+        onCollapsed: _setSummaryCollapsed,
+        durations: _summaryDurations,
+        onDurations: _setSummaryDurations,
+      ),
+    if (Weather.of(context) case final weather? when weather.enabled)
+      WeatherStrip(
+        weather: weather,
+        day: _day,
+        now: widget.clock(),
+        collapsed: _weatherCollapsed,
+        onCollapsed: _setWeatherCollapsed,
+        onDay: _goToDay,
+      ),
+    if (GoogleCalendars.of(context) case final calendars?)
+      GoogleAllDayStrip(
+        events: [
+          for (final e in calendars.on(_day))
+            if (e.allDay) e,
+        ],
+        collapsed: _allDayCollapsed,
+        onCollapsed: _setAllDayCollapsed,
+        onTap: _openGoogleEvent,
+      ),
+    if (_notices.isNotEmpty)
+      ProposalNoticesBanner(
+        notices: _notices,
+        onDismiss: (notice) => widget.eventOutbox?.notices?.dismiss(notice),
+      ),
+    if (_proposal case final proposal?)
+      ProposalBar(
+        proposal: proposal,
+        busy: _proposalBusy,
+        closing: widget.eventOutbox?.closing(proposal.id)?.label,
+        changes: _changedSince.length,
+        joined: _hasDetails(proposal),
+        onConfirm: _confirmProposal,
+        onNote: _noteForClaude,
+        onNotes: _showProposalNotes,
+        onRetry: _finishProposal,
+        onGoTo: _goToProposal,
+        onAbandon: _abandonProposal,
+        hidden: _hidden,
+        onHide: _toggleHidden,
+      ),
+    if (_shownProposal case final proposal?) _buildDetails(proposal),
+  ];
+
+  /// The days themselves, scrolled up and down by [_scroll].
+  Widget _buildDays(ScrollPhysics? noDrag) => LayoutBuilder(
+    builder: (context, view) => RefreshIndicator(
+      onRefresh: () {
+        unawaited(_loadNotes());
+        unawaited(_loadProposal());
+        GoogleCalendars.of(context)?.refresh();
+        return _refresh();
+      },
+      child: NotificationListener<ScrollEndNotification>(
+        // The days' sliding, not the timeline's scrolling.
+        onNotification: (notification) {
+          if (notification.metrics.axis == Axis.horizontal) {
+            _slidingTo = null;
+          }
+          return false;
+        },
+        // Raw pointers, so pinching doesn't contend with scrolling.
+        child: Listener(
+          onPointerDown: _pointerDown,
+          onPointerMove: _pointerMove,
+          onPointerUp: _pointerUp,
+          onPointerCancel: _pointerUp,
+          child: ListView(
+            controller: _scroll,
+            physics: noDrag ?? const AlwaysScrollableScrollPhysics(),
+            children: [
+              SizedBox(
+                height: _height,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: TimelineAxis(
+                        day: _from,
+                        dayEnd: _to,
+                        scale: _scale,
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: PageView.builder(
+                        controller: _pages,
+                        physics: _box != null
+                            ? const NeverScrollableScrollPhysics()
+                            : noDrag,
+                        onPageChanged: (page) => _show(_dayAt(page)),
+                        itemBuilder: (context, page) =>
+                            _buildDay(context, _dayAt(page), view.maxHeight),
+                      ),
+                    ),
+                    if ((_extendTo, _proposal) case (
+                      final to?,
+                      final proposal?,
+                    ))
+                      Positioned.fill(
+                        child: WindowCursorView(
+                          day: _from,
+                          dayEnd: _to,
+                          scale: _scale,
+                          anchor: proposal.claudeThrough ?? proposal.through,
+                          end: to,
+                          onMove: _moveExtension,
+                          onStep: ({required later}) {
+                            final to = _extensionStep(later: later);
+                            if (to != null) {
+                              setState(() => _extendTo = to);
+                            }
+                          },
+                          canStep: ({required later}) =>
+                              _extensionStep(later: later) != null,
+                          onOpen: _openExtension,
+                          onDone: to.isAfter(proposal.through) ? _extend : null,
+                          onCancel: () => setState(() => _extendTo = null),
+                        ),
+                      ),
+                    if (_box case final box?)
+                      Positioned.fill(
+                        child: PendingEventBoxView(
+                          day: _from,
+                          dayEnd: _to,
+                          scale: _scale,
+                          box: box,
+                          selected: _selected,
+                          onSelect: (role) => setState(() => _selected = role),
+                          overwrites: _overwrites,
+                          covers: _covers,
+                          pushed: _pushed,
+                          label: switch (_moving) {
+                            final event? =>
+                              'Moving ${switch (event.summary) {
+                                final s? when s.isNotEmpty => '“$s”',
+                                _ => 'this event',
+                              }}',
+                            null => null,
+                          },
+                          onMoveCursor: (to) => _changeBox(
+                            (box) =>
+                                box.withCursor(_snap(to, CursorRole.anchor)),
+                            fromOther: true,
+                          ),
+                          onMoveOther: (to) => _changeBox(
+                            (box) => box.withOther(_snap(to, CursorRole.end)),
+                          ),
+                          onMoveBox: (to) => _changeBox(
+                            (box) => box.movedTo(_snap(to, CursorRole.anchor)),
+                            moved: true,
+                          ),
+                          onStep: _stepCursor,
+                          canStep: _canStep,
+                          commuteEnds: _commuteEnds,
+                          queued: _commutes.keys.toSet(),
+                          onCommute: _commute,
+                          onEditTime: _editTime,
+                          // Picking, taps go to the events.
+                          interactive: _selecting == null,
+                          marks: _marksAt,
+                          cuts: _cutsAt,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 
   /// [day]'s page: its events, over the [TimelineAxis], with the day
   /// before's stacked above, and the day after's below, shaded; or why
