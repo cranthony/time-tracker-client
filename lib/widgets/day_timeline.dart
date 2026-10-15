@@ -167,6 +167,79 @@ double timelineHeight(DateTime day, double scale) {
   return timelineOffset(dayEnd, day: day, dayEnd: dayEnd, scale: scale) + _pad;
 }
 
+/// How tall a [DayTimeline] of [events] on [day] at [scale], with
+/// [marks], is drawn in [context]: as [timelineHeight], or taller, to the
+/// foot of an event drawn on past midnight, pushed down by those above.
+double timelineDrawnHeight(
+  BuildContext context, {
+  required List<Event> events,
+  required DateTime day,
+  required double scale,
+  Map<String, EventMark> marks = const {},
+}) => _layOut(
+  context,
+  events: events,
+  day: day,
+  scale: scale,
+  marks: marks,
+).height;
+
+/// How a [DayTimeline] lays out [events] on [day] in [context]: its cards'
+/// text, where each is drawn, and how tall it all is.
+({_CardStyles styles, List<TimelinePlacement> placements, double height})
+_layOut(
+  BuildContext context, {
+  required List<Event> events,
+  required DateTime day,
+  required double scale,
+  required Map<String, EventMark> marks,
+}) {
+  final text = Theme.of(context).textTheme;
+  final scaler = MediaQuery.textScalerOf(context);
+  double lineHeight(TextStyle? style) {
+    final painter = TextPainter(
+      text: TextSpan(text: 'Ag', style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout();
+    final height = painter.height;
+    painter.dispose();
+    return height;
+  }
+
+  final styles = _CardStyles(
+    summary: text.titleSmall,
+    action: text.bodySmall,
+    chip: text.labelSmall,
+    mark: text.labelSmall?.copyWith(fontWeight: FontWeight.w500),
+  );
+  final summaryLine = lineHeight(styles.summary);
+  final markLine = lineHeight(styles.mark);
+  // Its actions' names aren't made room for: they're listed as far as
+  // its time leaves room, its diamonds by its chips standing for them.
+  double minHeight(Event event) =>
+      _cardPadding.vertical +
+      summaryLine +
+      (marks[event.id]?.label == null ? 0 : markLine) +
+      // Slack for rounding, so the text never overflows.
+      2;
+
+  final dayEnd = DateTime(day.year, day.month, day.day + 1);
+  final placements = placeEvents(
+    events,
+    day: day,
+    dayEnd: dayEnd,
+    scale: scale,
+    minHeight: minHeight,
+  );
+  final height = math.max(
+    timelineHeight(day, scale),
+    placements.map((p) => p.bottom).fold(0.0, math.max) + _pad,
+  );
+  return (styles: styles, placements: placements, height: height);
+}
+
 /// The time [offset] down a [DayTimeline] is: the inverse of
 /// [timelineOffset], clamped to the day.
 DateTime timelineTime(
@@ -595,51 +668,18 @@ class DayTimeline extends StatelessWidget {
     final theme = Theme.of(context);
     final text = theme.textTheme;
     final scaler = MediaQuery.textScalerOf(context);
-    double lineHeight(TextStyle? style) {
-      final painter = TextPainter(
-        text: TextSpan(text: 'Ag', style: style),
-        textDirection: TextDirection.ltr,
-        textScaler: scaler,
-        maxLines: 1,
-      )..layout();
-      final height = painter.height;
-      painter.dispose();
-      return height;
-    }
-
-    final styles = _CardStyles(
-      summary: text.titleSmall,
-      action: text.bodySmall,
-      chip: text.labelSmall,
-      mark: text.labelSmall?.copyWith(fontWeight: FontWeight.w500),
-    );
-    final summaryLine = lineHeight(styles.summary);
-    final markLine = lineHeight(styles.mark);
-    // Its actions' names aren't made room for: they're listed as far as
-    // its time leaves room, its diamonds by its chips standing for them.
-    double minHeight(Event event) =>
-        _cardPadding.vertical +
-        summaryLine +
-        (marks[event.id]?.label == null ? 0 : markLine) +
-        // Slack for rounding, so the text never overflows.
-        2;
-
-    final placements = placeEvents(
-      events,
+    final (:styles, :placements, :height) = _layOut(
+      context,
+      events: events,
       day: day,
-      dayEnd: dayEnd,
       scale: scale,
-      minHeight: minHeight,
+      marks: marks,
     );
     final runs = weather == null
         ? priorityRuns(events, day: day, dayEnd: dayEnd)
         : const <PriorityRun>[];
     double y(DateTime t) =>
         timelineOffset(t, day: day, dayEnd: dayEnd, scale: scale);
-    final height = math.max(
-      y(dayEnd) + _pad,
-      (placements.map((p) => p.bottom).fold(0.0, math.max)) + _pad,
-    );
     double? yIfToday(DateTime? t) => switch (t) {
       final t? when !t.isBefore(day) && t.isBefore(dayEnd) => y(t),
       _ => null,
