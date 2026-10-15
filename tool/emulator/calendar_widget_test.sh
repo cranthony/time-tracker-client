@@ -174,7 +174,10 @@ elif adb shell pidof "$PKG" >/dev/null; then
 # 7:45 PM". On its own day: today only for one under "Today".
 elif tap_view "$event" && wait_for 'Previous day' 15 &&
   ui_nodes | grep -qE "(text|content-desc)=\"$event[,\"]" &&
-  if [ "$today" = yes ]; then on_screen Today; else ! on_screen Today; fi; then
+  # Under "Today", it opens today -- or, one still on from last night
+  # (Sleep, after midnight), the day it started.
+  if [ "$today" = yes ]; then on_screen Today || on_screen Yesterday
+  else ! on_screen Today; fi; then
   adb exec-out screencap -p > "$OUT/calendar_event_cold.png"
   pass "event_cold ($event)"
 else
