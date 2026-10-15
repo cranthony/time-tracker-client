@@ -108,6 +108,32 @@ void main() {
       );
     });
 
+    test('every way to commute is a choice: those with a time quickest '
+        'first, then the rest; none has a time to or from an unknown '
+        'place', () {
+      List<(String?, int?)> choices(String? from, String? to) => [
+        for (final c in commuteChoices(
+          fromId: from,
+          toId: to,
+          actions: _actions,
+          travelTimes: _travel,
+          locations: _locations,
+          groups: _groups,
+        ))
+          (c.action.id, c.option?.minutes),
+      ];
+      expect(choices('cafe', 'office'), [
+        ('drive', 25),
+        ('subway', 35),
+        ('walk', null),
+      ]);
+      expect(choices(null, 'office'), [
+        ('drive', null),
+        ('subway', null),
+        ('walk', null),
+      ]);
+    });
+
     test('a one-way travel time is only that way, and beats a two-way one', () {
       const travel = [
         ..._travel,
@@ -143,12 +169,17 @@ void main() {
       DateTime start,
       DateTime end, {
       Map<String, Object?> facts = const {},
+      List<String> actionIds = const [],
     }) => Event(
       id: id,
       start: start,
       end: end,
       summary: summary,
-      properties: {'summary': summary, if (facts.isNotEmpty) 'facts': facts},
+      properties: {
+        'summary': summary,
+        if (facts.isNotEmpty) 'facts': facts,
+        if (actionIds.isNotEmpty) 'action_ids': actionIds,
+      },
     );
 
     Future<_Recording> pump(
@@ -205,49 +236,99 @@ void main() {
     PendingEventBoxView view(WidgetTester tester) =>
         tester.widget(find.byType(PendingEventBoxView));
 
-    testWidgets('a commute to the next event is picked from the ways the '
-        'travel times have, and made with the move, against its foot', (
-      tester,
-    ) async {
+    /// Picks [way] for the commute at the box's [top] or foot, and saves
+    /// its dialog, [minutes] typed in first, if given.
+    Future<void> pick(
+      WidgetTester tester,
+      String way, {
+      bool top = false,
+      String? minutes,
+    }) async {
+      await tester.tap(
+        find.byTooltip(
+          top
+              ? 'Edit the commute from the event before'
+              : 'Edit the commute to the event after',
+        ),
+      );
+      await settle(tester);
+      await tester.tap(find.widgetWithText(ListTile, way));
+      await settle(tester);
+      if (minutes != null) {
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Takes'),
+          minutes,
+        );
+        await tester.pump();
+      }
+      await tester.tap(find.text('Save'));
+      await settle(tester);
+    }
+
+    final cafe = {
+      'location_ids': ['cafe'],
+    };
+    final office = {
+      'location_ids': ['office'],
+    };
+
+    testWidgets('every way to commute is listed, with the time the travel '
+        'times give it and which travel time that is; picked, it makes a '
+        'commute against the move\'s foot', (tester) async {
       final repo = await pump(tester, [
-        event(
-          'tea',
-          'Tea',
-          at(12),
-          at(13),
-          facts: {
-            'location_ids': ['cafe'],
-          },
-        ),
-        event(
-          'work',
-          'Work',
-          at(14),
-          at(17),
-          facts: {
-            'location_ids': ['office'],
-          },
-        ),
+        event('tea', 'Tea', at(12), at(13), facts: cafe),
+        event('work', 'Work', at(14), at(17), facts: office),
       ]);
       await tester.longPress(find.text('Tea'));
-      await tester.pumpAndSettle();
-      // Nothing before it: only the foot has one.
-      expect(view(tester).commuteEnds, {false});
-      expect(
-        find.byTooltip('Add a commute from the event before'),
-        findsNothing,
-      );
+      await settle(tester);
+      // Nothing before it: an unknown place, so the top has one too.
+      expect(view(tester).commuteEnds, {true, false});
 
-      await tester.tap(find.byTooltip('Add a commute to the event after'));
-      await tester.pumpAndSettle();
-      expect(find.text('Commute from The cafe to The office'), findsOneWidget);
-      expect(find.text('25m (20m–30m)'), findsOneWidget);
-      expect(find.text('Subway'), findsOneWidget);
-      // Walking has no time: it isn't offered.
-      expect(find.text('Walk'), findsNothing);
-      await tester.tap(find.text('Drive'));
-      await tester.pumpAndSettle();
-      expect(view(tester).queued, {false});
+      await tester.tap(find.byTooltip('Edit the commute to the event after'));
+      await settle(tester);
+      expect(
+        find.text('Edit commute from The cafe to The office'),
+        findsOneWidget,
+      );
+      final drive = find.widgetWithText(ListTile, 'Drive');
+      expect(
+        find.descendant(of: drive, matching: find.text('25m')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: drive,
+          matching: find.text('The cafe ↔ Downtown · 20m–30m'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.widgetWithText(ListTile, 'Subway'),
+          matching: find.text('The cafe ↔ Downtown · 35m by Transit'),
+        ),
+        findsOneWidget,
+      );
+      // Walking has no time, but is listed.
+      expect(
+        find.descendant(
+          of: find.widgetWithText(ListTile, 'Walk'),
+          matching: find.text('No travel time'),
+        ),
+        findsOneWidget,
+      );
+      // Nothing to take away.
+      expect(find.text('No commute'), findsNothing);
+
+      await tester.tap(drive);
+      await settle(tester);
+      expect(
+        find.text('The cafe to The office: 25m (20m–30m)'),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(TextField, 'Drive'), findsOneWidget);
+      await tester.tap(find.text('Save'));
+      await settle(tester);
       expect(view(tester).pushed.single, (
         start: at(13),
         end: at(13, 25),
@@ -255,7 +336,7 @@ void main() {
       ));
 
       await tester.tap(find.byTooltip('Move it here'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(repo.created, [
         {
           'summary': 'Drive',
@@ -273,139 +354,74 @@ void main() {
       final repo = await pump(
         tester,
         [
-          event(
-            'tea',
-            'Tea',
-            at(12),
-            at(13),
-            facts: {
-              'location_ids': ['cafe'],
-            },
-          ),
-          event(
-            'work',
-            'Work',
-            at(14),
-            at(17),
-            facts: {
-              'location_ids': ['office'],
-            },
-          ),
+          event('tea', 'Tea', at(12), at(13), facts: cafe),
+          event('work', 'Work', at(14), at(17), facts: office),
         ],
         outbox: (repo) =>
             queue = EventOutbox(store: InMemoryOutboxStore(), events: repo),
       );
       await tester.longPress(find.text('Tea'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Add a commute to the event after'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Drive'));
-      await tester.pumpAndSettle();
+      await settle(tester);
+      await pick(tester, 'Drive');
       // Nothing made till the move is.
       expect(repo.created, isEmpty);
       expect(queue.items, isEmpty);
       await tester.tap(find.byTooltip('Move it here'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       await queue.flush(ignoreBackoff: true);
-      await tester.pumpAndSettle();
-      await tester.pumpAndSettle();
+      await settle(tester);
+      await settle(tester);
       expect(repo.created.length, 1);
       // One event: its title, and its action under it.
       expect(find.text('Drive'), findsNWidgets(2));
     });
 
-    testWidgets('between places no travel time covers, the button still '
-        'shows, and a travel time added from it is offered at once', (
-      tester,
-    ) async {
-      final people = InMemoryPeopleRepository(
-        locations: [
-          ..._locations,
-          const Location(id: 'gym', name: 'The gym'),
-        ],
-        locationGroups: _groups,
-        travelTimes: _travel,
-      );
+    testWidgets('with no travel time, a new commute takes no time to start '
+        "with, and can't be saved till it's given some; an unknown place is "
+        'left out of what it says', (tester) async {
       final repo = await pump(tester, [
-        event(
-          'tea',
-          'Tea',
-          at(12),
-          at(13),
-          facts: {
-            'location_ids': ['cafe'],
-          },
-        ),
-        event(
-          'lift',
-          'Lift',
-          at(14),
-          at(15),
-          facts: {
-            'location_ids': ['gym'],
-          },
-        ),
-      ], people: people);
-      await tester.longPress(find.text('Tea'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Add a commute to the event after'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('No travel times say'), findsOneWidget);
-      await tester.tap(find.text('Add a travel time…'));
-      await tester.pumpAndSettle();
-
-      // From and to as the commute is; a way, and how long.
-      expect(find.text('The cafe'), findsOneWidget);
-      expect(find.text('The gym'), findsOneWidget);
-      await tester.tap(find.widgetWithText(InputDecorator, 'By'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Walk').last);
-      await tester.pumpAndSettle();
-      await tester.enterText(find.widgetWithText(TextField, 'Takes'), '15');
-      await tester.pump();
-      await tester.tap(find.text('Save'));
-      await tester.pumpAndSettle();
-
-      final added = (await people.travelTimes()).last;
-      expect((added.fromId, added.toId), ('cafe', 'gym'));
-      // Asked again, with it.
-      expect(find.textContaining('No travel times say'), findsNothing);
-      await tester.tap(find.text('Walk'));
-      await tester.pumpAndSettle();
-      expect(view(tester).pushed.single.label, 'Walk (commute)');
-      await tester.tap(find.byTooltip('Move it here'));
-      await tester.pumpAndSettle();
-      expect(repo.created.single['summary'], 'Walk');
-    });
-
-    testWidgets('a queued commute rides with the box, and goes again when '
-        'its button is tapped', (tester) async {
-      await pump(tester, [
-        event(
-          'tea',
-          'Tea',
-          at(12),
-          at(13),
-          facts: {
-            'location_ids': ['cafe'],
-          },
-        ),
-        event(
-          'work',
-          'Work',
-          at(14),
-          at(17),
-          facts: {
-            'location_ids': ['office'],
-          },
-        ),
+        event('tea', 'Tea', at(12), at(13), facts: cafe),
       ]);
       await tester.longPress(find.text('Tea'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Add a commute to the event after'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Subway'));
-      await tester.pumpAndSettle();
+      await settle(tester);
+      await tester.tap(
+        find.byTooltip('Edit the commute from the event before'),
+      );
+      await settle(tester);
+      expect(find.text('Edit commute to The cafe'), findsOneWidget);
+      expect(find.text('No travel time'), findsNWidgets(3));
+      await tester.tap(find.widgetWithText(ListTile, 'Walk'));
+      await settle(tester);
+      expect(find.text('To The cafe'), findsOneWidget);
+      FilledButton save() =>
+          tester.widget(find.widgetWithText(FilledButton, 'Save'));
+      expect(save().onPressed, isNull);
+      await tester.enterText(find.widgetWithText(TextField, 'Takes'), '15');
+      await tester.pump();
+      expect(save().onPressed, isNotNull);
+      await tester.tap(find.text('Save'));
+      await settle(tester);
+
+      await tester.tap(find.byTooltip('Move it here'));
+      await settle(tester);
+      expect(repo.created.single, {
+        'summary': 'Walk',
+        'start': localIsoTimestamp(at(11, 45)),
+        'end': localIsoTimestamp(at(12)),
+        'action_ids': ['walk'],
+        'facts': {'commute': true},
+      });
+    });
+
+    testWidgets('a queued commute rides with the box, and "No commute" '
+        'takes it away', (tester) async {
+      await pump(tester, [
+        event('tea', 'Tea', at(12), at(13), facts: cafe),
+        event('work', 'Work', at(14), at(17), facts: office),
+      ]);
+      await tester.longPress(find.text('Tea'));
+      await settle(tester);
+      await pick(tester, 'Subway');
       // An hour later: the commute's against its foot still, and Work is
       // trimmed where the commute runs into it.
       await tester.tap(find.byTooltip('Stretch it later').last);
@@ -416,64 +432,116 @@ void main() {
         label: 'Subway (commute)',
       ));
 
-      await tester.tap(find.byTooltip('Take the commute away'));
+      await tester.tap(find.byTooltip('Edit the commute to the event after'));
       await settle(tester);
-      expect(view(tester).queued, isEmpty);
+      await tester.tap(find.text('No commute'));
+      await settle(tester);
       expect(view(tester).pushed, isEmpty);
     });
 
-    testWidgets("no commute where there's one already, or the places are the "
-        "same, and a commute that's there goes where the event goes", (
-      tester,
-    ) async {
+    testWidgets('no button where the event next to it is at the same place; '
+        "past a commute, it's the commute there that's edited -- its way, "
+        'its summary named for it and its length from the travel time -- '
+        'and pushed with the move', (tester) async {
       final repo = await pump(tester, [
+        event('home', 'Breakfast', at(9), at(10), facts: cafe),
+        event('tea', 'Tea', at(11), at(12), facts: cafe),
         event(
-          'home',
-          'Breakfast',
-          at(9),
-          at(10),
-          facts: {
-            'location_ids': ['cafe'],
-          },
-        ),
-        event(
-          'tea',
-          'Tea',
-          at(11),
+          'ride',
+          'Drive',
           at(12),
-          facts: {
-            'location_ids': ['cafe'],
-          },
+          at(12, 30),
+          facts: {'commute': true},
+          actionIds: ['drive'],
         ),
-        event('ride', 'Drive', at(12), at(12, 30), facts: {'commute': true}),
-        event(
-          'work',
-          'Work',
-          at(13),
-          at(17),
-          facts: {
-            'location_ids': ['office'],
-          },
-        ),
+        event('work', 'Work', at(13), at(17), facts: office),
       ]);
       await tester.longPress(find.text('Tea'));
       await settle(tester);
-      // Before it, the same place; after it, a commute already.
-      expect(view(tester).commuteEnds, isEmpty);
-      // The commute after it starts out pushed down, with it.
+      // Before it, the same place; after it, a commute.
+      expect(view(tester).commuteEnds, {false});
+      await tester.tap(find.byTooltip('Edit the commute to the event after'));
+      await settle(tester);
+      // To where the commute goes.
+      expect(
+        find.text('Edit commute from The cafe to The office'),
+        findsOneWidget,
+      );
+      expect(find.text('No commute'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ListTile, 'Subway'));
+      await settle(tester);
+      expect(find.widgetWithText(TextField, 'Subway'), findsOneWidget);
+      await tester.tap(find.text('Save'));
+      await settle(tester);
+      // Nothing new: the one there is pushed, as edited.
       await tester.tap(find.byTooltip('Stretch it later').last);
       await settle(tester);
       expect(view(tester).pushed.single, (
         start: at(13),
-        end: at(13, 30),
-        label: 'Drive',
+        end: at(13, 35),
+        label: 'Subway',
       ));
       await tester.tap(find.byTooltip('Move it here'));
-      await tester.pumpAndSettle();
+      await settle(tester);
+      expect(repo.created, isEmpty);
       expect(repo.saved['ride'], {
         'start': localIsoTimestamp(at(13)),
-        'end': localIsoTimestamp(at(13, 30)),
+        'end': localIsoTimestamp(at(13, 35)),
+        'summary': 'Subway',
+        'action_ids': ['subway'],
       });
+    });
+
+    testWidgets("a commute's own summary, its other actions and -- with no "
+        'travel time -- its length are kept, and it stays where it is till '
+        "it's pushed", (tester) async {
+      final repo = await pump(tester, [
+        event('tea', 'Tea', at(11), at(12), facts: cafe),
+        event(
+          'ride',
+          'Ride in',
+          at(12, 30),
+          at(13),
+          facts: {'commute': true},
+          actionIds: ['errand', 'drive'],
+        ),
+        event('work', 'Work', at(14), at(17), facts: office),
+      ]);
+      await tester.longPress(find.text('Tea'));
+      await settle(tester);
+      await pick(tester, 'Walk');
+      expect(view(tester).pushed, isEmpty);
+      await tester.tap(find.byTooltip('Move it here'));
+      await settle(tester);
+      expect(repo.saved['ride'], {
+        'action_ids': ['errand', 'walk'],
+      });
+    });
+
+    testWidgets('"No commute" cancels the commute there with the move', (
+      tester,
+    ) async {
+      final repo = await pump(tester, [
+        event('tea', 'Tea', at(11), at(12), facts: cafe),
+        event(
+          'ride',
+          'Drive',
+          at(12),
+          at(12, 30),
+          facts: {'commute': true},
+          actionIds: ['drive'],
+        ),
+        event('work', 'Work', at(13), at(17), facts: office),
+      ]);
+      await tester.longPress(find.text('Tea'));
+      await settle(tester);
+      await tester.tap(find.byTooltip('Edit the commute to the event after'));
+      await settle(tester);
+      await tester.tap(find.text('No commute'));
+      await settle(tester);
+      await tester.tap(find.byTooltip('Move it here'));
+      await settle(tester);
+      expect(repo.deleted, [('ride', false)]);
     });
   });
 }
