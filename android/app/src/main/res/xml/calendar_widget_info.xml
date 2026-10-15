@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Drawn by Glance (CalendarWidget.kt): again whenever the app has new
-     events for it, and as each event starts or ends, so never by period. -->
+     events for it, and as each event starts or ends, so never by period.
+     Its settings (CalendarWidgetConfigureActivity) are opened from the
+     widget once it's placed (reconfigurable), not as it's added
+     (configuration_optional); before Android 12, as it's added. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/calendar_widget_description"
     android:initialLayout="@layout/glance_default_loading_layout"
@@ -12,4 +15,6 @@
     android:targetCellWidth="3"
     android:targetCellHeight="2"
     android:updatePeriodMillis="0"
-    android:widgetCategory="home_screen" />
+    android:widgetCategory="home_screen"
+    android:configure="com.cranthony.timetracker.CalendarWidgetConfigureActivity"
+    android:widgetFeatures="reconfigurable|configuration_optional" />

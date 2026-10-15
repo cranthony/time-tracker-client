@@ -67,6 +67,20 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/add_note_widget_info" />
         </receiver>
+        <!-- A home screen calendar's settings, which the launcher opens; see
+             CalendarWidgetConfigureActivity. Its own task, so it doesn't
+             bring the app up behind it. -->
+        <activity
+            android:name=".CalendarWidgetConfigureActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:label="@string/calendar_widget_settings_title"
+            android:theme="@style/WidgetSettingsTheme">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
         <!-- The home screen calendar; see CalendarWidget. -->
         <receiver
             android:name=".CalendarWidgetReceiver"

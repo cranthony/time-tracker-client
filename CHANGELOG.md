@@ -7,6 +7,13 @@ minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
 
+## 7.97.0
+
+- The home screen calendar's title ("Calendar", and its "+") can be at
+  its bottom instead of its top: long-press the widget and open its
+  settings (on Android 12 and later; before, as it's added). Each widget
+  keeps its own.
+
 ## 7.96.0
 
 - In an event's details, a location with a map button sits level with

@@ -415,6 +415,14 @@ the moment you tapped, even if it takes a few seconds to type the
 description. After you tap **Add**, it's saved like any other note,
 including when you're offline.
 
+### Calendar on the home screen
+
+The **Calendar** widget shows your events from now to the next few days.
+Its title ("Calendar", with its **+**) is at the top, or, set so, the
+bottom: long-press the widget and tap its settings (Android 12 and later;
+before that, you choose as you add it), then pick **Title at the top** or
+**Title at the bottom**. Each calendar on the home screen keeps its own.
+
 ## Signing in (WorkOS AuthKit)
 
 The MCP server is an OAuth *resource server*, and WorkOS AuthKit issues its

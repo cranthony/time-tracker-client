@@ -5,4 +5,8 @@
     <string name="add_note_widget_description">Opens Time Tracker ready to add a new note</string>
     <string name="calendar_widget_label">Calendar</string>
     <string name="calendar_widget_description">Your events from now to the next few days</string>
+    <string name="calendar_widget_settings_title">Calendar widget</string>
+    <string name="calendar_widget_title_top">Title at the top</string>
+    <string name="calendar_widget_title_bottom">Title at the bottom</string>
+    <string name="calendar_widget_settings_done">Done</string>
 </resources>
