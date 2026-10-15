@@ -139,3 +139,45 @@ List<CommuteOption> commuteOptions({
   options.sort((a, b) => a.minutes - b.minutes);
   return options;
 }
+
+/// A way of commuting -- [action] -- and how long it takes, as the travel
+/// times say: [option], or null if they don't.
+typedef CommuteChoice = ({PlanAction action, CommuteOption? option});
+
+/// Every action that's a way to commute -- not a group, and in use --
+/// from [fromId] to [toId]: those the travel times have a time for,
+/// quickest first, then the rest, in order. Times are only looked for
+/// between two places, each known.
+List<CommuteChoice> commuteChoices({
+  required String? fromId,
+  required String? toId,
+  required List<PlanAction> actions,
+  required List<TravelTime> travelTimes,
+  required List<Location> locations,
+  required List<LocationGroup> groups,
+}) {
+  final ways = [
+    for (final a in actions)
+      if (a.id != null && !a.isGroup && a.active && a.commute) a,
+  ];
+  final options = fromId == null || toId == null
+      ? const <CommuteOption>[]
+      : commuteOptions(
+          fromId: fromId,
+          toId: toId,
+          actions: actions,
+          travelTimes: travelTimes,
+          locations: locations,
+          groups: groups,
+        );
+  final timed = {
+    for (final o in options)
+      if (o.action.commute) o.action.id,
+  };
+  return [
+    for (final o in options)
+      if (o.action.commute) (action: o.action, option: o),
+    for (final a in ways)
+      if (!timed.contains(a.id)) (action: a, option: null),
+  ];
+}

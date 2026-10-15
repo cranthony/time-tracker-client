@@ -109,7 +109,6 @@ typedef SnapMark = ({String what, String name});
 /// Where a commute can be had between the box and the event next to it
 /// ([commuteEnds]: the top, true, or the foot, false), a commute button
 /// sits outside that end's "−" and "+", centered; tapped, [onCommute].
-/// Once one's [queued], it's filled, and tapped takes it away.
 ///
 /// The box -- the event between the cursors -- is shaded
 /// ([PendingEventShadow]), unless [shaded] is false: tinged red and
@@ -143,16 +142,12 @@ class PendingEventBoxView extends StatefulWidget {
     this.label,
     this.interactive = true,
     this.commuteEnds = const {},
-    this.queued = const {},
     this.onCommute,
   });
 
   /// The ends -- the top, true, or the foot, false -- a commute can be
-  /// added at.
+  /// edited at.
   final Set<bool> commuteEnds;
-
-  /// The ends a commute is queued at, to be made with it.
-  final Set<bool> queued;
 
   /// A commute button tapped, at the top (true) or the foot.
   final ValueChanged<bool>? onCommute;
@@ -291,8 +286,7 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
             groups.add(
               _group(colors, role, _y(time), above: top, middle: middle),
             );
-            if (widget.commuteEnds.contains(top) ||
-                widget.queued.contains(top)) {
+            if (widget.commuteEnds.contains(top)) {
               groups.add(
                 _commute(colors, role, _y(time), top: top, middle: middle),
               );
@@ -477,7 +471,6 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
     required bool top,
     required double middle,
   }) {
-    final queued = widget.queued.contains(top);
     final out = _buttonGap + _buttonSize + _buttonSpacing;
     return (
       role,
@@ -492,12 +485,9 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
         child: _button(
           colors,
           icon: Icons.directions_walk,
-          primary: queued,
-          tooltip: queued
-              ? 'Take the commute away'
-              : top
-              ? 'Add a commute from the event before'
-              : 'Add a commute to the event after',
+          tooltip: top
+              ? 'Edit the commute from the event before'
+              : 'Edit the commute to the event after',
           onTap: () {
             _select(role);
             widget.onCommute?.call(top);

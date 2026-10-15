@@ -374,8 +374,8 @@ class _ActionDialogState extends State<_ActionDialog> {
                   secondary: const Icon(Icons.directions_walk),
                   title: const Text('A way to commute'),
                   subtitle: const Text(
-                    'Getting from one place to another, such as Drive: '
-                    'travel times can be by it.',
+                    'Events with a commute are pushed with the events they '
+                    'lead to or from.',
                   ),
                   value: _commute,
                   onChanged: (on) => _set('commute', on),

@@ -9,6 +9,21 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.104.0
+
+- Moving an event, the commute button shows at each end unless the event
+  next to it is at the same place; an event with no place counts as an
+  unknown one. It opens "Edit commute from … to …", listing every way to
+  commute, each with the time the travel times give it and which travel
+  time that is.
+- Picking a way opens its summary and how long it takes, with where it
+  goes and the expected time above. It edits the commute already there,
+  past events at the same place, keeping its other actions and its own
+  summary, and pushes it with the move; or it makes a new one against
+  the event. "No commute" takes the commute there away.
+- "A way to commute" in an action's dialog now says events with a
+  commute are pushed with the events they lead to or from.
+
 ## 7.103.1
 
 - On a small phone, the panels over the day's timeline -- its summary,
