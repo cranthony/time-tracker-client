@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/services/maps.dart';
 import 'package:time_tracker_client/widgets/event_description.dart';
+import 'package:time_tracker_client/widgets/picker_sheet.dart';
 
 void main() {
   final recognizers = <TapGestureRecognizer>[];
@@ -81,6 +82,71 @@ void main() {
     await tester.tap(find.text('More'));
     await tester.pump();
     expect(find.text('Less'), findsOneWidget);
+
+    // As a preview, it's only cut off: tapped, it opens elsewhere.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: EventDescription(
+            [for (var i = 0; i < 20; i++) 'Line $i'].join('<br>'),
+            maxLines: 6,
+            expandable: false,
+          ),
+        ),
+      ),
+    );
+    expect(find.text('More'), findsNothing);
+    expect(find.textContaining('<br>', findRichText: true), findsNothing);
+  });
+
+  testWidgets('the description sheet opens to read it, laid out, and the '
+      'pencil edits it; blank, it opens to edit', (tester) async {
+    Future<String?>? result;
+    Future<void> open(String? text) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => result = showTextSheet(
+                  context,
+                  title: 'Description',
+                  text: text,
+                  hint: 'Add description',
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+    }
+
+    await open('<b>Agenda</b><br>See <a href="https://example.com">it</a>');
+    expect(find.byType(TextField), findsNothing);
+    expect(find.byType(EventDescription), findsOneWidget);
+    expect(find.textContaining('<b>', findRichText: true), findsNothing);
+    expect(find.textContaining('See it', findRichText: true), findsOneWidget);
+    // Read and closed, it's unchanged.
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(await result, isNull);
+
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Edit'));
+    await tester.pumpAndSettle();
+    expect(find.byType(EventDescription), findsNothing);
+    await tester.enterText(find.byType(TextField), ' Just text ');
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(await result, 'Just text');
+
+    await open(null);
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.byTooltip('Edit'), findsNothing);
   });
 
   test('maps links: any maps app on Android, Google Maps elsewhere', () {

@@ -846,8 +846,12 @@ void main() {
       await tester.enterText(inDialog(find.byType(TextField)), 'Admin');
       await tester.pumpAndSettle();
 
-      // The description, in a sheet up from the foot.
+      // The description, in a sheet up from the foot: read first, the
+      // pencil to edit it.
       await tester.tap(inDialog(find.text('Deep work')));
+      await tester.pumpAndSettle();
+      expect(inSheet(find.byType(TextField)), findsNothing);
+      await tester.tap(inSheet(find.byTooltip('Edit')));
       await tester.pumpAndSettle();
       await tester.enterText(inSheet(find.byType(TextField)), 'At the desk');
       await tester.tap(inSheet(find.text('Done')));
@@ -1100,6 +1104,8 @@ void main() {
       expect(inDialog(find.text('From actions')), findsOneWidget);
 
       await tester.tap(inDialog(find.text('Deep work')));
+      await tester.pumpAndSettle();
+      await tester.tap(inSheet(find.byTooltip('Edit')));
       await tester.pumpAndSettle();
       await tester.enterText(inSheet(find.byType(TextField)), '');
       await tester.tap(inSheet(find.text('Done')));

@@ -256,13 +256,21 @@ String descriptionText(String description) {
   ].join('\n');
 }
 
-/// [description], up to about [maxLines] of it until "More" is tapped:
-/// its paragraphs, and its lists' items, their bullets hung to the left.
+/// [description], up to about [maxLines] of it until "More" is tapped --
+/// or, with none, in full: its paragraphs, and its lists' items, their
+/// bullets hung to the left. Not [expandable], it's only cut off, with
+/// no "More": tapping it opens it elsewhere.
 class EventDescription extends StatefulWidget {
-  const EventDescription(this.description, {super.key, this.maxLines = 8});
+  const EventDescription(
+    this.description, {
+    super.key,
+    this.maxLines = 8,
+    this.expandable = true,
+  });
 
   final String description;
-  final int maxLines;
+  final int? maxLines;
+  final bool expandable;
 
   @override
   State<EventDescription> createState() => _EventDescriptionState();
@@ -343,7 +351,10 @@ class _EventDescriptionState extends State<EventDescription> {
           height += _gapBefore(blocks, i) + measure(b.span, width(b));
         }
         final lineHeight = measure(const TextSpan(text: 'Hg'), 1000);
-        final limit = widget.maxLines * lineHeight;
+        final maxLines = widget.maxLines;
+        final limit = maxLines == null
+            ? double.infinity
+            : maxLines * lineHeight;
         // Not cut off for just a line more: "More" would take as much room.
         final long = height > limit + lineHeight + 1;
         final column = Column(
@@ -397,7 +408,7 @@ class _EventDescriptionState extends State<EventDescription> {
               )
             else
               column,
-            if (long)
+            if (long && widget.expandable)
               TextButton(
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 8),
