@@ -127,6 +127,16 @@ class EventStore extends ChangeNotifier {
     _changed(await _fetch(_midnight(from), last));
   }
 
+  /// Asks again for every day here from [from]'s to the last: what a save
+  /// may have changed beyond the events it returned, as a series' later
+  /// events when its repeat is set.
+  Future<void> refreshFrom(DateTime from) async {
+    await _restored;
+    final last = span?.$2;
+    if (last == null || last.isBefore(_midnight(from))) return;
+    await refresh(from, _plusDays(last, 1));
+  }
+
   /// Keeps [events] as [day]'s, as [asked] for -- or just now.
   void putDay(DateTime day, List<Event> events, {DateTime? asked}) {
     _changed(_put(_midnight(day), _plusDays(_midnight(day), 1), events, asked));

@@ -1161,6 +1161,12 @@ class _EventsScreenState extends State<EventsScreen> {
     switch (result) {
       case final List<Event> events:
         _putEvents(events);
+        // A series' later events, which the server worked out: the days
+        // here are loaded again, each as it's shown.
+        if (write.setsRepeat) {
+          _fresh.clear();
+          unawaited(_refresh());
+        }
       case final Proposal amended:
         final loaded = _loadedProposal;
         if (loaded == null || loaded.id != amended.id) return;

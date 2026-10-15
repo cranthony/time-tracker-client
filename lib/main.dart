@@ -564,8 +564,14 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     final outbox = widget.eventOutbox;
     if (outbox == null) return;
     _savedWrites ??= outbox.saved.listen((saved) {
-      if (saved.$2 case final List<Event> events) {
-        _planMemory.eventStore?.putEvents(events);
+      final (write, result) = saved;
+      if (result case final List<Event> events) {
+        final store = _planMemory.eventStore;
+        store?.putEvents(events);
+        // The series' later events, which the server worked out.
+        if (write.repeatFrom(events) case final from? when write.setsRepeat) {
+          unawaited(store?.refreshFrom(from).catchError((_) {}));
+        }
       }
     });
     await outbox.loadPause();

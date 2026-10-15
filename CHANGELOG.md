@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.100.2
+
+- Making an event repeat, changing how it repeats, or stopping it now
+  shows the series' later events on the days after at once. Before,
+  days already loaded kept showing what they had until they were
+  reloaded by hand.
+
 ## 7.100.1
 
 - Commutes are shown with a walking person instead of the bus and car,

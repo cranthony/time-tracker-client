@@ -150,6 +150,24 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
   static bool isPendingId(String? eventId) =>
       eventId?.startsWith('pending:') ?? false;
 
+  /// Whether it makes, changes or ends a series, by setting its event's
+  /// repeat: the series' other events are the server's to work out, so
+  /// the days after are asked for again once it's saved.
+  bool get setsRepeat => switch (kind) {
+    EventWriteKind.update => changes.containsKey('repeat'),
+    EventWriteKind.create ||
+    EventWriteKind.createOver => fields['repeat'] != null,
+    _ => false,
+  };
+
+  /// For one that [setsRepeat], saved as [saved]: when the first event
+  /// the server may have changed starts -- its event's start, before or
+  /// after, whichever is earlier.
+  DateTime? repeatFrom(Iterable<Event> saved) => [
+    ?event?.start,
+    for (final e in saved) e.start,
+  ].fold<DateTime?>(null, (a, b) => a == null || b.isBefore(a) ? b : a);
+
   /// Whether it says the server refused it as changing history, which the
   /// user can approve.
   bool get refusedAsHistory =>
