@@ -2850,13 +2850,14 @@ void main() {
 
   group('HomeScreen', () {
     late NoteOutbox outbox;
+    late InMemoryNotesRepository notes;
 
     Widget home({
       Stream<DateTime>? addNoteRequests,
       Stream<CalendarTap>? calendarTaps,
       List<Event> events = const [],
     }) {
-      final notes = InMemoryNotesRepository();
+      notes = InMemoryNotesRepository();
       outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: notes)
         ..start();
       return MaterialApp(
@@ -2968,6 +2969,32 @@ void main() {
           find.byKey(ValueKey(('shown', dayAhead(3)))).first,
         );
         expect(timeline.highlighted, 'later');
+        await tester.pumpAndSettle();
+        outbox.stop();
+        await taps.close();
+      });
+
+      testWidgets('a note being added as it switches to Events is still '
+          'kept', (tester) async {
+        final taps = await openOnNotes(tester);
+        await tester.tap(find.byTooltip('Add note'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField).last, 'Walking home');
+        // A tap on the home screen calendar, the New note sheet still up.
+        taps.add((at: later.start, eventId: 'later'));
+        for (var i = 0; i < 5; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(find.byType(EventsScreen), findsOneWidget);
+        await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+        await tester.pump();
+        await tester.pump();
+
+        final kept = [
+          ...outbox.pending.map((p) => p.note.description),
+          for (final n in await notes.uncompactedNotes()) n.description,
+        ];
+        expect(kept, contains('Walking home'));
         await tester.pumpAndSettle();
         outbox.stop();
         await taps.close();

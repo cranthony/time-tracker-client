@@ -6,17 +6,22 @@ import 'package:flutter/material.dart';
 import '../models/note.dart';
 
 /// Asks for a new note's description and time (defaulting to [time], or
-/// now), in a sheet over the bottom of the screen. Returns the note, or
-/// null if dismissed. Calls [onFieldFocused] once its field has focus and
-/// has asked for the keyboard.
+/// now), in a sheet over the bottom of the screen, and hands it to [keep]
+/// -- the outbox's add, which keeps it on the device until it's saved --
+/// itself: so it's kept whatever happened to the page that opened it
+/// meanwhile. The sheet closes once [keep] has it; if [keep] fails, it
+/// stays open, saying so, to try again. Returns the note kept, or null if
+/// dismissed. Calls [onFieldFocused] once its field has focus and has
+/// asked for the keyboard.
 Future<Note?> showAddNoteDialog(
   BuildContext context, {
+  required Future<void> Function(Note note) keep,
   DateTime? time,
   VoidCallback? onFieldFocused,
 }) async {
   final result = await _showSheet(
     context,
-    _NoteDialog(time: time, onFieldFocused: onFieldFocused),
+    _NoteDialog(time: time, keep: keep, onFieldFocused: onFieldFocused),
   );
   return result is SaveNote ? result.note : null;
 }
@@ -47,11 +52,14 @@ final class SaveNote extends NoteDialogResult {
 final class DeleteNote extends NoteDialogResult {}
 
 class _NoteDialog extends StatefulWidget {
-  const _NoteDialog({this.note, this.time, this.onFieldFocused});
+  const _NoteDialog({this.note, this.time, this.keep, this.onFieldFocused});
 
   /// The note being edited; null for a new one.
   final Note? note;
   final DateTime? time;
+
+  /// Keeps a new note, before the sheet closes.
+  final Future<void> Function(Note note)? keep;
   final VoidCallback? onFieldFocused;
 
   @override
@@ -66,6 +74,12 @@ class _NoteDialogState extends State<_NoteDialog> {
       widget.note?.timestamp.toLocal() ?? widget.time ?? DateTime.now();
 
   final _focus = FocusNode();
+
+  /// Whether [_NoteDialog.keep] has the note, and hasn't answered yet.
+  bool _keeping = false;
+
+  /// Why [_NoteDialog.keep] couldn't keep it, the last time.
+  String? _keepError;
 
   bool get _editing => widget.note != null;
 
@@ -110,17 +124,34 @@ class _NoteDialogState extends State<_NoteDialog> {
 
   void _nudge(Duration by) => setState(() => _time = _time.add(by));
 
-  void _submit() {
+  Future<void> _submit() async {
+    if (_keeping) return;
     final text = _description.text.trim();
-    Navigator.of(context).pop(
-      SaveNote(
-        Note(
-          timestamp: _time,
-          description: text.isEmpty ? null : text,
-          id: widget.note?.id,
-        ),
-      ),
+    final note = Note(
+      timestamp: _time,
+      description: text.isEmpty ? null : text,
+      id: widget.note?.id,
     );
+    if (widget.keep case final keep?) {
+      setState(() {
+        _keeping = true;
+        _keepError = null;
+      });
+      try {
+        await keep(note);
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _keeping = false;
+            _keepError = "Couldn't keep the note on this device: $e";
+          });
+        }
+        return;
+      }
+      // Kept, even if the sheet was dismissed meanwhile.
+      if (!mounted) return;
+    }
+    Navigator.of(context).pop(SaveNote(note));
   }
 
   @override
@@ -177,6 +208,16 @@ class _NoteDialogState extends State<_NoteDialog> {
             ),
             onSubmitted: (_) => _submit(),
           ),
+          if (_keepError case final error?)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                error,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -211,8 +252,14 @@ class _NoteDialogState extends State<_NoteDialog> {
                 ),
               ),
               FilledButton(
-                onPressed: _submit,
-                child: Text(_editing ? 'Save' : 'Add'),
+                onPressed: _keeping ? null : _submit,
+                child: Text(
+                  _editing
+                      ? 'Save'
+                      : _keepError == null
+                      ? 'Add'
+                      : 'Try again',
+                ),
               ),
             ],
           ),

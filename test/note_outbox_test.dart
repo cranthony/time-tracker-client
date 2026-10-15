@@ -76,6 +76,18 @@ void main() {
     expect(saved.timestamp, DateTime.utc(2026, 9, 29, 9, 30, 12));
   });
 
+  test("a note that couldn't be kept isn't listed as waiting", () async {
+    final failing = _UnwritableStore();
+    final box = NoteOutbox(
+      store: failing,
+      repository: server,
+      clock: () => now,
+    );
+    await expectLater(box.add(note), throwsStateError);
+    expect(box.pending, isEmpty);
+    expect(failing.items, isEmpty);
+  });
+
   test('keeps unsaved notes for the next run of the app', () async {
     server.offline = true;
     await outbox().add(note);
@@ -276,4 +288,11 @@ class _FailingStore extends InMemoryOutboxStore<PendingNote> {
     if (failSaves) throw StateError('disk full');
     return super.save(notes);
   }
+}
+
+/// Can't write what's kept: a full or locked store.
+class _UnwritableStore extends InMemoryOutboxStore<PendingNote> {
+  @override
+  Future<void> save(List<PendingNote> items) async =>
+      throw StateError('disk full');
 }

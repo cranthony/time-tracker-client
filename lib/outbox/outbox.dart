@@ -528,7 +528,13 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
       _items = _stored = after;
       _notify();
     });
-    _lock = result.catchError((_) {});
+    _lock = result.catchError((_) {
+      // Not kept: listed as it is kept, so nothing shows as waiting to be
+      // saved that isn't. Changes after it list themselves again as
+      // they're kept.
+      _items = _stored;
+      _notify();
+    });
     return result;
   }
 }

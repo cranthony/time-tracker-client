@@ -191,22 +191,20 @@ class _NotesScreenState extends State<NotesScreen> {
   Future<void> _addNote({DateTime? at, VoidCallback? onFieldFocused}) async {
     if (_dialogOpen) return;
     _dialogOpen = true;
-    final Note? note;
+    // The sheet queues the note itself, so it's kept even if this page
+    // is gone by the time Add is tapped -- switched to Events by a tap on
+    // the home screen calendar, say.
+    final outbox = widget.outbox;
     try {
-      note = await showAddNoteDialog(
+      await showAddNoteDialog(
         context,
+        keep: outbox.add,
         time: at,
         onFieldFocused: onFieldFocused,
       );
     } finally {
       _dialogOpen = false;
     }
-    if (note == null || !mounted) return;
-    await runOrShowError(
-      context,
-      title: "Couldn't keep the note",
-      action: () => widget.outbox.add(note!),
-    );
   }
 
   Future<void> _editNote(Note note) async {
