@@ -2876,6 +2876,26 @@ void main() {
       );
     }
 
+    testWidgets('a draft note outlasts going to Events and back', (
+      tester,
+    ) async {
+      await tester.pumpWidget(home());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Add note'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'Half a thought');
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Events'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Notes'));
+      await tester.pumpAndSettle();
+      expect(find.text('Half a thought'), findsOneWidget);
+      expect(find.text('Draft · not saved'), findsOneWidget);
+      outbox.stop();
+    });
+
     testWidgets('opens on Notes, and switches to Events and Plan', (
       tester,
     ) async {

@@ -8,6 +8,22 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+
+## 7.99.0
+
+- Notes being written are kept as drafts. What's typed in the note sheet
+  is kept on the device as it's typed, so swiping the sheet away,
+  switching pages or closing the app loses nothing. Drafts show on the
+  Notes page at their time, dashed and in italics, and aren't sent until
+  they're added; tap one to carry on with it, or use the sheet's trash
+  can to throw it away. An edit you haven't saved is kept as a draft
+  change, in its note's place.
+- Edits and deletions of notes are queued on the device before the sheet
+  closes, as new notes are, and retried until the server has them. They
+  show on their notes until they're saved (a deletion struck through),
+  and one the server refuses, for a note already compacted, waits to be
+  cancelled. Undo on a deletion takes it back while it waits.
+
 ## 7.98.0
 
 - An event's map location can be given to a location, from the Map

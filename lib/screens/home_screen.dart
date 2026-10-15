@@ -6,6 +6,7 @@ import '../models/event.dart';
 import '../outbox/action_outbox.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/note_outbox.dart';
+import '../services/note_drafts.dart';
 import '../platform/calendar_widget.dart';
 import '../services/actions_repository.dart';
 import '../services/event_store.dart';
@@ -42,6 +43,7 @@ class HomeScreen extends StatefulWidget {
     this.onSignIn,
     this.onSignOut,
     this.addNoteRequests,
+    this.noteDrafts,
     this.onAddNoteFieldFocused,
     this.calendarTaps,
     this.version,
@@ -54,6 +56,10 @@ class HomeScreen extends StatefulWidget {
   final ProposalRepository? proposalsRepository;
   final ActionsRepository actionsRepository;
   final NoteOutbox outbox;
+
+  /// Notes being written, kept as they're typed: the app's, on the
+  /// device, or else the screen's own, while it lasts.
+  final NoteDrafts? noteDrafts;
   final ActionOutbox actionOutbox;
 
   /// Changes to events, and the proposal, waiting to be saved: a line at
@@ -82,6 +88,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   var _tab = _Tab.notes;
+
+  /// Kept across pages, so a draft outlasts the Notes page.
+  late final NoteDrafts _noteDrafts =
+      widget.noteDrafts ?? NoteDrafts.inMemory();
   StreamSubscription<DateTime>? _addNoteRequests;
   StreamSubscription<CalendarTap>? _calendarTaps;
 
@@ -106,6 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(_noteDrafts.load());
     // Once the scopes can be read: the events around today, and what the
     // traits are scored by, for every page.
     WidgetsBinding.instance.addPostFrameCallback((_) => _warmScores());
@@ -156,6 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _addNoteRequests?.cancel();
     _calendarTaps?.cancel();
     _toNotes.close();
+    if (widget.noteDrafts == null) _noteDrafts.dispose();
     _toEvents.close();
     _toEventsTime.close();
     _notesLoads.dispose();
@@ -210,6 +222,7 @@ class _HomeScreenState extends State<HomeScreen> {
           version: widget.version,
           memory: _planMemory,
           loads: _notesLoads,
+          drafts: _noteDrafts,
         ),
         _Tab.events => EventsScreen(
           repository: widget.eventsRepository,

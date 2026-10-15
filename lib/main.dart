@@ -31,6 +31,7 @@ import 'services/events_repository.dart';
 import 'services/focus_store.dart';
 import 'services/habits_repository.dart';
 import 'services/mcp_client.dart';
+import 'services/note_drafts.dart';
 import 'services/notes_repository.dart';
 import 'services/people_repository.dart';
 import 'services/plan_memory.dart';
@@ -477,6 +478,9 @@ class TimeTrackerApp extends StatefulWidget {
 }
 
 class _TimeTrackerAppState extends State<TimeTrackerApp> {
+  /// Notes being written, kept on the device as they're typed.
+  final _noteDrafts = NoteDrafts.device();
+
   late final AppLifecycleListener _lifecycle;
   final _addNoteShortcut = AddNoteShortcut();
   String? _version;
@@ -681,6 +685,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         onSignIn: widget.auth?.signIn,
         onSignOut: widget.auth == null ? null : _signOut,
         addNoteRequests: _addNoteShortcut.taps,
+        noteDrafts: _noteDrafts,
         calendarTaps: widget.calendarWidget?.taps,
         onAddNoteFieldFocused: _addNoteShortcut.fieldReady,
         version: _version,
