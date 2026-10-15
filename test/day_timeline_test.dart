@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
@@ -324,6 +325,78 @@ void main() {
 
       await tester.pumpWidget(timeline([dinner], width: 320));
       expect(find.text('Home'), findsNothing);
+      expect(find.text('Sam'), findsNothing);
+    });
+
+    testWidgets('puts its locations on its summary\'s line where they '
+        "aren't listed, before its diamonds and chips", (tester) async {
+      Event dinner(DateTime end) => event(
+        'Dinner',
+        at(1),
+        end,
+        actions: ['cook'],
+        priority: 1,
+        facts: {
+          'location_ids': ['home', 'school'],
+          'with_ids': ['sam'],
+        },
+      );
+      await tester.pumpWidget(timeline([dinner(at(1, 15))]));
+      final located = find.text('Home, The school');
+      expect(located, findsOneWidget);
+      expect(find.text('Home'), findsNothing);
+      expect(
+        tester.getCenter(located).dy,
+        closeTo(tester.getCenter(find.text('Dinner')).dy, 1),
+      );
+      expect(
+        tester.getTopLeft(located).dx,
+        greaterThan(tester.getTopRight(find.text('Dinner')).dx),
+      );
+      expect(
+        tester.getTopRight(located).dx,
+        lessThan(tester.getTopLeft(find.text('P1')).dx),
+      );
+      expect(
+        tester.renderObject<RenderParagraph>(located).didExceedMaxLines,
+        isFalse,
+      );
+
+      // Where it's too narrow to list them, too.
+      await tester.pumpWidget(timeline([dinner(at(2))], width: 320));
+      expect(find.text('Home, The school'), findsOneWidget);
+    });
+
+    testWidgets('cuts them short after half the line, and drops its priority '
+        "to make room, where they don't fit", (tester) async {
+      await tester.pumpWidget(
+        timeline([
+          event(
+            'Dinner with the whole family',
+            at(1),
+            at(1, 15),
+            priority: 1,
+            facts: {
+              'location_ids': ['the-restaurant-at-the-end-of-the-universe'],
+            },
+          ),
+        ], width: 320),
+      );
+      final located = find.text('the-restaurant-at-the-end-of-the-universe');
+      expect(located, findsOneWidget);
+      expect(
+        tester.renderObject<RenderParagraph>(located).didExceedMaxLines,
+        isTrue,
+      );
+      expect(find.text('P1'), findsNothing);
+      // The summary has half the line, at least.
+      final summary = find.text('Dinner with the whole family');
+      expect(
+        tester.getSize(summary).width,
+        greaterThanOrEqualTo(
+          tester.getTopRight(located).dx - tester.getTopRight(summary).dx,
+        ),
+      );
     });
 
     testWidgets("shows each event's summary, then its actions, primary first", (
