@@ -312,12 +312,15 @@ Future<bool> showCircleDialog(
 /// for recognizing it, its map location, and -- if there are [groups] --
 /// the group it's in. Saves with [save], returning what it returned, or
 /// null if it was called off. "Delete", asked first, calls [delete]: then
-/// [location] is returned. One added starts with [name], if given; [extra]
-/// shows under the rest -- its travel times, from the Locations pane.
+/// [location] is returned. One added starts with [name], if given; with
+/// [mapLocation], its map location starts as that, and one it had shows
+/// under it. [extra] shows under the rest -- its travel times, from the
+/// Locations pane.
 Future<Location?> showLocationDialog(
   BuildContext context, {
   Location? location,
   String? name,
+  String? mapLocation,
   List<LocationGroup> groups = const [],
   required Future<Location> Function(Map<String, Object?> fields) save,
   Future<void> Function()? delete,
@@ -337,7 +340,7 @@ Future<Location?> showLocationDialog(
       nameHint: 'e.g. Home',
       deleteExplanation:
           "Events there keep its id, but won't say where they were.",
-      map: (value: location?.mapLocation),
+      map: (value: location?.mapLocation, typed: mapLocation),
       group: groups.isEmpty
           ? null
           : (value: location?.groupId, choices: groups, label: 'Group'),
@@ -437,8 +440,9 @@ class _NamedDialog extends StatefulWidget {
   })?
   scoring;
 
-  /// Where it is on a map, for a location: as it is.
-  final ({String? value})? map;
+  /// Where it is on a map, for a location: as it is, and what it starts
+  /// as, if not that.
+  final ({String? value, String? typed})? map;
 
   /// The location group it's in, for a location or a group: as it is, and
   /// the groups it can be in, by [label].
@@ -454,7 +458,9 @@ class _NamedDialog extends StatefulWidget {
 class _NamedDialogState extends State<_NamedDialog> {
   late final _name = TextEditingController(text: widget.name ?? widget.typed);
   late final _detail = TextEditingController(text: widget.detail);
-  late final _map = TextEditingController(text: widget.map?.value);
+  late final _map = TextEditingController(
+    text: widget.map?.typed ?? widget.map?.value,
+  );
   late String? _group = widget.group?.value;
   late Aggregation? _scoring = widget.scoring?.value;
   bool _scoringChanged = false;
@@ -509,6 +515,13 @@ class _NamedDialogState extends State<_NamedDialog> {
   @override
   Widget build(BuildContext context) {
     final named = _name.text.trim().isNotEmpty;
+    // The map location it had, if it starts with another.
+    final had = switch (widget.map) {
+      (value: final value?, typed: final typed?)
+          when value.trim().isNotEmpty && value.trim() != typed.trim() =>
+        value.trim(),
+      _ => null,
+    };
     return AlertDialog(
       scrollable: widget.extra != null,
       title: Text(
@@ -550,11 +563,13 @@ class _NamedDialogState extends State<_NamedDialog> {
                 controller: _map,
                 minLines: 1,
                 maxLines: 3,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Map location (optional)',
                   hintText:
                       'An address or a link, for events there without one',
-                  border: OutlineInputBorder(),
+                  helperText: had == null ? null : 'Was: $had',
+                  helperMaxLines: 3,
+                  border: const OutlineInputBorder(),
                   isDense: true,
                 ),
               ),

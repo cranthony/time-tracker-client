@@ -416,6 +416,28 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
                   search: searches[1],
                   fallback: _firstMap(snapshot.data, where_),
                   onChanged: (typed) => map = typed,
+                  onAssign: repository == null
+                      ? null
+                      : (typed) async {
+                          final assigned = await _pickMapLocationHolder(
+                            context,
+                            map: typed,
+                            locations: locations,
+                            loaded: memory?.locations,
+                            groups: memory?.locationGroups ?? const [],
+                          );
+                          if (assigned == null) return;
+                          // The location has it now: it's at that, with
+                          // none of its own.
+                          searches[1].controller.clear();
+                          setState(() {
+                            map = '';
+                            if (!where_.contains(assigned.id)) {
+                              where_.add(assigned.id);
+                            }
+                            locations = _locations(repository, memory);
+                          });
+                        },
                 ),
               ),
             ],
@@ -438,6 +460,64 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
           ),
   );
 }
+
+/// Picks the location to give [map] -- an event's map location -- in a
+/// [showPickerSheet] of its own, over the event's: one of [locations]
+/// (what [loaded] has, till they are), in their [groups], tapped; or a
+/// new one, named as it's typed, [map] its map location to start with.
+/// See [assignMapLocation] for one that has its own. Returns the
+/// location, as saved; null if it's dismissed, or called off.
+Future<Location?> _pickMapLocationHolder(
+  BuildContext context, {
+  required String map,
+  required Future<List<Location>>? locations,
+  List<Location>? loaded,
+  List<LocationGroup> groups = const [],
+}) => showPickerSheet<Location?>(
+  context,
+  title: 'Assign to a location',
+  result: () => null,
+  body: (context, _) => _OwnSearch(
+    text: '',
+    matchAny: false,
+    builder: (context, search) => FutureBuilder(
+      future: locations,
+      initialData: loaded,
+      builder: (context, snapshot) {
+        final byId = {for (final l in snapshot.data ?? const []) l.id: l};
+        void done(Location? assigned) {
+          if (assigned != null && context.mounted) {
+            Navigator.of(context).pop(assigned);
+          }
+        }
+
+        return TreePicker(
+          nodes: [
+            ...locationGroupNodes(groups),
+            for (final l in byId.values) locationNode(l),
+          ],
+          picked: const [],
+          single: true,
+          autofocus: true,
+          caption: 'The location to give "$map" to, as its map location',
+          empty: 'No locations yet.',
+          search: search,
+          onChanged: (ids) async {
+            final l = byId[ids.firstOrNull];
+            if (l == null) return;
+            done(await assignMapLocation(context, l, map));
+          },
+          add: (
+            noun: 'location',
+            icon: Icons.add_location_alt,
+            onAdd: (name) async =>
+                done(await editLocation(context, name: name, mapLocation: map)),
+          ),
+        );
+      },
+    ),
+  ),
+);
 
 /// The map location of the first of [ids] in [locations] to have one.
 String? _firstMap(List<Location>? locations, List<String> ids) => [
@@ -557,12 +637,14 @@ class _TabbedSearchesState extends State<_TabbedSearches>
 /// The place an event was, as a maps app would find it -- an address,
 /// or a place's name -- to type in full, and open in Maps; or a link, to
 /// open. Typed in [search]'s box, so it's kept as the page is swiped
-/// away and back, and selected as it's swiped to.
+/// away and back, and selected as it's swiped to. With [onAssign], what's
+/// typed can be given to a location.
 class _MapLocationPage extends StatelessWidget {
   const _MapLocationPage({
     required this.search,
     required this.onChanged,
     this.fallback,
+    this.onAssign,
   });
 
   final PickerSearch search;
@@ -570,6 +652,9 @@ class _MapLocationPage extends StatelessWidget {
   /// Its location's map location, used while it has none of its own.
   final String? fallback;
   final ValueChanged<String> onChanged;
+
+  /// Gives a location what's typed, as its map location.
+  final ValueChanged<String>? onAssign;
 
   @override
   Widget build(BuildContext context) {
@@ -619,15 +704,24 @@ class _MapLocationPage extends StatelessWidget {
               onChanged: onChanged,
             ),
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: opened.trim().isEmpty
-                    ? null
-                    : () => openInMaps(opened),
-                icon: Icon(placeButton(opened).icon),
-                label: Text(placeButton(opened).tooltip),
-              ),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              children: [
+                if (onAssign case final onAssign?)
+                  TextButton.icon(
+                    onPressed: typed.isEmpty ? null : () => onAssign(typed),
+                    icon: const Icon(Icons.add_location_alt_outlined),
+                    label: const Text('Assign to a location'),
+                  ),
+                TextButton.icon(
+                  onPressed: opened.trim().isEmpty
+                      ? null
+                      : () => openInMaps(opened),
+                  icon: Icon(placeButton(opened).icon),
+                  label: Text(placeButton(opened).tooltip),
+                ),
+              ],
             ),
           ],
         );
