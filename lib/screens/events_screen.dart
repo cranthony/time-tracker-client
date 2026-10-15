@@ -361,11 +361,35 @@ class _EventsScreenState extends State<EventsScreen> {
   /// first event, or now: once its events are shown.
   bool _scrollPending = true;
 
-  /// How tall the timeline is, with the days on it: clear of the
-  /// buttons at the foot, with room for an event drawn past midnight.
-  double get _height => timelineSpanHeight(_from, _to, _scale) + _pastFoot;
+  /// How tall the timeline is, with the days on it: past the last, clear
+  /// of the buttons at the foot.
+  double get _height =>
+      timelineSpanHeight(_from, _to, _scale) + _pastLast + _pastFoot;
 
-  /// What's below the last day on the timeline.
+  /// How far below its midnight the last day on the timeline is drawn:
+  /// to the foot of an event drawn on past it, pushed down by those
+  /// above.
+  double get _pastLast {
+    final last = DateTime(_to.year, _to.month, _to.day - 1);
+    return _drawnPast(last);
+  }
+
+  /// How far below its midnight [day] is drawn.
+  double _drawnPast(DateTime day) => switch (_eventsOn(day)) {
+    null => 0,
+    final events =>
+      timelineDrawnHeight(
+            context,
+            events: events,
+            day: day,
+            scale: _scale,
+            marks: _marks,
+          ) -
+          timelineHeight(day, _scale),
+  };
+
+  /// What's below the last day on the timeline, clear of the buttons at
+  /// the foot.
   static const _pastFoot = 170.0;
 
   /// The open compaction proposal as the server last gave it, once it's
@@ -4998,7 +5022,8 @@ class _EventsScreenState extends State<EventsScreen> {
             // At the foot of them all, past it -- so an event drawn past
             // midnight is there to tap, as far as it's drawn.
             height:
-                timelineHeight(d, _scale) + (d == days.last ? _pastFoot : 0),
+                timelineHeight(d, _scale) +
+                (d == days.last ? _drawnPast(d) + _pastFoot : 0),
             child: _stackedDay(
               d,
               // Drawn from its midnight to the next, but at the top of

@@ -2297,7 +2297,7 @@ void main() {
     });
 
     testWidgets('an event drawn past midnight, below the timeline, still '
-        'opens', (tester) async {
+        'opens, scrolled clear of the buttons at the foot', (tester) async {
       // Each too short for its text, so they're drawn on down, the last
       // past midnight.
       final repo = _RecordingRepository([
@@ -2321,6 +2321,12 @@ void main() {
           tester.getTopLeft(find.byType(DayTimeline)).dy +
               timelineHeight(at(30, 0), defaultTimelineScale),
         ),
+      );
+      // Scrolled to the end, with as much room below it as below midnight
+      // without it.
+      expect(
+        tester.getBottomLeft(last).dy,
+        lessThan(tester.getBottomLeft(find.byType(ListView)).dy - 170),
       );
 
       await tester.tapAt(tester.getCenter(last));

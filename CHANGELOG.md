@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.104.2
+
+- Scrolled to the foot of the timeline, an event drawn on past midnight
+  is clear of the buttons there: the room below the timeline grows by
+  as far as it's drawn past.
+
 ## 7.104.1
 
 - An event drawn past midnight at the foot of the timeline, pushed down
