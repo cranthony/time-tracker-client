@@ -9,6 +9,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.100.3
+
+- The weather strip's line for a day gives its chance of rain whenever
+  there's any, not only from 10%.
+
 ## 7.100.2
 
 - Making an event repeat, changing how it repeats, or stopping it now
