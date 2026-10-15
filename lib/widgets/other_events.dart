@@ -47,6 +47,30 @@ class OtherEvents {
     return null;
   }
 
+  /// Where a new event from [start] most likely is, as location ids: the
+  /// last event to end by [start]'s locations, unless it's a commute or
+  /// has none; then those of the event after it (the first to start once
+  /// it's ended), unless that's a commute too. None if neither has any.
+  List<String> likelyLocationIds(DateTime start) {
+    Event? prior;
+    for (final other in events) {
+      if (!other.end.isAfter(start) &&
+          (prior == null || other.end.isAfter(prior.end))) {
+        prior = other;
+      }
+    }
+    if (prior != null && !prior.isCommute) {
+      final ids = prior.facts?.locationIds ?? const [];
+      if (ids.isNotEmpty) return ids;
+    }
+    final from = prior?.end ?? start;
+    final next = events
+        .where((e) => e != prior && !e.start.isBefore(from))
+        .firstOrNull;
+    if (next == null || next.isCommute) return const [];
+    return next.facts?.locationIds ?? const [];
+  }
+
   /// The event it would start inside of, at [start].
   Event? _around(DateTime start) {
     for (final other in events) {

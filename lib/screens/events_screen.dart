@@ -3164,11 +3164,20 @@ class _EventsScreenState extends State<EventsScreen> {
     }
 
     final logging = _logging;
+    final logged = logging == null ? const {} : _loggedFields(logging);
+    // Where it most likely is: where the user was before it, or is going
+    // -- unless it's logged from somewhere that says.
+    final where = logged.containsKey('location')
+        ? const <String>[]
+        : others.likelyLocationIds(start);
     final created = await showNewEventDialog(
       context,
       start: start,
       end: end,
-      initial: logging == null ? const {} : _loggedFields(logging),
+      initial: {
+        ...logged,
+        if (where.isNotEmpty) 'facts': Facts(locationIds: where).toJson(),
+      },
       // Overwriting, its times needn't keep clear of anything.
       otherEvents: overwrite ? const OtherEvents.none() : others,
       create: review

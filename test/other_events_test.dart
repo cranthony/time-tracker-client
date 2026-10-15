@@ -267,4 +267,58 @@ void main() {
       expect(day.pushFit(at(12), at(9), from: at(8), to: at(16)), at(10));
     });
   });
+  group('where a new event most likely is', () {
+    Event placed(
+      String id,
+      int from,
+      int to, {
+      List<String> at = const [],
+      bool commute = false,
+    }) => Event(
+      id: id,
+      start: DateTime(2026, 9, 30, from),
+      end: DateTime(2026, 9, 30, to),
+      properties: {
+        'facts': {'location_ids': at, if (commute) 'commute': true},
+      },
+    );
+
+    test('where the event before it was', () {
+      final day = OtherEvents([
+        placed('home', 7, 8, at: ['home']),
+        placed('work', 9, 12, at: ['work']),
+        placed('gym', 14, 15, at: ['gym']),
+      ]);
+      expect(day.likelyLocationIds(at(13)), ['work']);
+      expect(day.likelyLocationIds(at(12)), ['work']);
+    });
+
+    test('after a commute, where the event after it is', () {
+      final day = OtherEvents([
+        placed('work', 9, 12, at: ['work']),
+        placed('drive', 12, 13, at: ['work', 'gym'], commute: true),
+        placed('gym', 14, 15, at: ['gym']),
+      ]);
+      expect(day.likelyLocationIds(at(13)), ['gym']);
+    });
+
+    test('nowhere, after a commute followed by another', () {
+      final day = OtherEvents([
+        placed('drive', 12, 13, at: ['work', 'gym'], commute: true),
+        placed('walk', 14, 15, at: ['gym', 'park'], commute: true),
+      ]);
+      expect(day.likelyLocationIds(at(13)), isEmpty);
+    });
+
+    test('with none before it, or none there, where the next event is', () {
+      final day = OtherEvents([
+        placed('nap', 9, 10),
+        placed('gym', 14, 15, at: ['gym']),
+      ]);
+      expect(day.likelyLocationIds(at(11)), ['gym']);
+      // The next event, first of the day, is nowhere.
+      expect(day.likelyLocationIds(at(8)), isEmpty);
+      expect(const OtherEvents.none().likelyLocationIds(at(8)), isEmpty);
+    });
+  });
 }
