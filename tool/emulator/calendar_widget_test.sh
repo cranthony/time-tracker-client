@@ -13,7 +13,9 @@
 #
 #   shown      added from the app's menu, it shows the header, today, and
 #              events from the sample data, and today's weather in its
-#              header: the sample forecast's chance of rain
+#              header, in order: the sample forecast's chance of rain
+#              (70%), its high and low (61/50°, or 61° / 50°) and its
+#              sky (cloudy) -- all of it at the widget's 3 cells
 #   event_cold an event tapped, the app's process gone: Events, showing it
 #   day_warm   a day's header tapped, the app in the background: Events
 #   add_note   its "+" tapped: the New note dialog
@@ -77,6 +79,22 @@ wait_for() {
   done
   return 1
 }
+# The three texts after the widget's "Today", in the views dumped to $1,
+# joined by " | " -- its header's weather -- with the raindrop the dump
+# writes as an entity written as itself.
+today_header() {
+  grep -oE 'text="[^"]*"' "$1" | sed 's/text="\(.*\)"/\1/' |
+    sed 's/&#128167;/💧/g' | grep -v '^$' |
+    awk '$0 == "Today" { n = 3; next } n > 0 { out = out (out ? " | " : "") $0; n-- } END { print out }'
+}
+# Whether today's header's weather, $1, is the sample forecast's, in
+# order: the chance of rain, the high and low (compact or not), the sky.
+weather_reads() {
+  case "$1" in
+    "💧70% | 61/50° | ☁"* | "💧70% | 61° / 50° | ☁"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 # The sample data's events (lib/demo/sample_data.dart) that come every
 # day but today, so some are always in the widget's next few days.
@@ -107,11 +125,13 @@ else
   sleep 2
   home
   sleep 3
-  # Today's header, before the list's scrolled past it: its weather's
-  # chance of rain, from the sample forecast.
+  # Today's header, before the list's scrolled past it: its weather, from
+  # the sample forecast (lib/demo/weather_sample.dart), in °F -- the
+  # header's next three texts after "Today".
   ui_nodes > "$OUT/calendar_weather.txt"
   adb exec-out screencap -p > "$OUT/calendar_weather.png"
-  grep -qE 'text="[^"]*[0-9]+%"' "$OUT/calendar_weather.txt" && weather=yes || weather=no
+  today_weather=$(today_header "$OUT/calendar_weather.txt")
+  if weather_reads "$today_weather"; then weather=yes; else weather=no; fi
   # The list may start with today's events, or with nothing planned:
   # scroll it until an event shows, a dozen times at most -- after 7:45
   # AM, today's other events (Breakfast to Get ready for bed) fill more
@@ -134,7 +154,8 @@ else
   on_screen Calendar || missing+=(Calendar)
   on_screen 'Add note' || missing+=('"+"')
   ui_nodes | grep -qE "text=\"$SAMPLE_EVENTS\"" || missing+=(events)
-  [ "$weather" = yes ] || missing+=(weather)
+  [ "$weather" = yes ] ||
+    missing+=("today's weather (\"💧70% 61/50° ☁️\"; got \"$today_weather\")")
   if [ ${#missing[@]} -eq 0 ]; then
     pass shown
   else
