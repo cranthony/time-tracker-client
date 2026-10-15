@@ -254,7 +254,8 @@ event_opened() {
   # to 7:45 PM". On its own day: today only for one under "Today" -- or,
   # one still on from last night (Sleep, after midnight), the day it
   # started.
-  shows 'Previous day' && shows "$event[,\"]" &&
+  shows 'Previous day' &&
+    grep -qE "(text|content-desc)=\"$event[,\"]" <<<"$nodes" &&
     if [ "$today" = yes ]; then shows Today || shows Yesterday
     else ! shows Today; fi
 }
