@@ -403,7 +403,12 @@ class HabitsPaneState extends State<HabitsPane> {
       final key = _layerKeys[opening] ??= GlobalKey();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final context = key.currentContext;
-        if (context != null) Scrollable.ensureVisible(context);
+        final layer = context?.findRenderObject();
+        // Only its own list: Scrollable.ensureVisible would also swipe
+        // the Plan screen's panes back to this one.
+        if (context != null && layer != null) {
+          Scrollable.of(context).position.ensureVisible(layer);
+        }
       });
     }
     final hidden = visible.length - unlocked.length;
