@@ -7,6 +7,7 @@ import '../models/note.dart';
 import '../outbox/note_outbox.dart';
 import '../outbox/pending_note.dart';
 import '../services/mcp_client.dart';
+import '../services/note_drafts.dart';
 import '../services/notes_repository.dart';
 import '../services/plan_memory.dart';
 import '../widgets/error_sheet.dart';
@@ -19,8 +20,10 @@ import '../widgets/status_message.dart';
 
 /// All the uncompacted notes, plus any not saved yet, by day, with a "+"
 /// to add another, under the latest note compacted and a dashed line for
-/// when notes were last compacted into the calendar. Tapping a saved note edits or deletes
-/// it.
+/// when notes were last compacted into the calendar. Tapping a saved note
+/// edits or deletes it. Edits and deletions wait in the [outbox] too, shown
+/// on their notes until they're saved; notes being written, [drafts], are
+/// shown at their times, dashed, to finish.
 class NotesScreen extends StatefulWidget {
   const NotesScreen({
     super.key,
@@ -33,13 +36,18 @@ class NotesScreen extends StatefulWidget {
     this.version,
     this.memory,
     this.loads,
+    this.drafts,
     DateTime Function()? clock,
   }) : clock = clock ?? DateTime.now;
 
   final NotesRepository repository;
 
-  /// Where new notes go until they're saved.
+  /// Where new notes, and edits and deletions, go until they're saved.
   final NoteOutbox outbox;
+
+  /// Notes being written, kept as they're typed: the app's, or else the
+  /// page's own.
+  final NoteDrafts? drafts;
 
   /// Runs the interactive sign-in; null when the backend needs none.
   final Future<void> Function()? onSignIn;
@@ -98,8 +106,8 @@ class _NotesScreenState extends State<NotesScreen> {
   /// One dialog at a time, e.g. if the home screen "+" is tapped twice.
   bool _dialogOpen = false;
 
-  /// Notes being edited or deleted on the server, by id.
-  final _changing = <String>{};
+  late final NoteDrafts _drafts = widget.drafts ?? NoteDrafts.inMemory();
+
   StreamSubscription<DateTime>? _addNoteRequests;
 
   @override
@@ -134,6 +142,7 @@ class _NotesScreenState extends State<NotesScreen> {
     _addNoteRequests?.cancel();
     _loads.unbind();
     if (widget.loads == null) _loads.dispose();
+    if (widget.drafts == null) _drafts.dispose();
     super.dispose();
   }
 
@@ -188,7 +197,11 @@ class _NotesScreenState extends State<NotesScreen> {
     await _load();
   }
 
-  Future<void> _addNote({DateTime? at, VoidCallback? onFieldFocused}) async {
+  Future<void> _addNote({
+    DateTime? at,
+    VoidCallback? onFieldFocused,
+    NoteDraft? draft,
+  }) async {
     if (_dialogOpen) return;
     _dialogOpen = true;
     // The sheet queues the note itself, so it's kept even if this page
@@ -199,6 +212,8 @@ class _NotesScreenState extends State<NotesScreen> {
       await showAddNoteDialog(
         context,
         keep: outbox.add,
+        drafts: _drafts,
+        draft: draft,
         time: at,
         onFieldFocused: onFieldFocused,
       );
@@ -207,79 +222,57 @@ class _NotesScreenState extends State<NotesScreen> {
     }
   }
 
-  Future<void> _editNote(Note note) async {
-    final id = note.id;
-    if (id == null || _dialogOpen || _changing.contains(id)) return;
+  /// Edits [shown] -- [base], the note on the server, as it's shown: with
+  /// an edit of it waiting, say, or [draft], a draft edit of it. The sheet
+  /// queues the edit, or the deletion, itself, as it does a new note.
+  Future<void> _editNote(Note shown, Note base, {NoteDraft? draft}) async {
+    if (base.id == null || _dialogOpen) return;
     _dialogOpen = true;
+    final outbox = widget.outbox;
+    final messenger = ScaffoldMessenger.of(context);
+    PendingNote? deletion;
     final NoteDialogResult? result;
     try {
-      result = await showEditNoteDialog(context, note);
+      result = await showEditNoteDialog(
+        context,
+        shown,
+        drafts: _drafts,
+        draft: draft,
+        keepEdit: (edited) => outbox.edit(base, edited),
+        keepDelete: () async => deletion = await outbox.delete(base),
+      );
     } finally {
       _dialogOpen = false;
     }
-    if (result == null || !mounted) return;
-    final edited = result is SaveNote ? result.note : null;
-    final retimed =
-        edited != null && !edited.timestamp.isAtSameMomentAs(note.timestamp);
-    final described = edited != null && edited.description != note.description;
-    if (edited != null && !retimed && !described) return;
-    await _changeNote(note, result);
+    if (result is! DeleteNote) return;
+    final deleted = deletion;
+    if (deleted == null) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text('Note deleted'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () => _undoDelete(outbox, deleted),
+        ),
+      ),
+    );
   }
 
-  /// Saves the user's [result] for [note]: its change, or its deletion.
-  Future<void> _changeNote(Note note, NoteDialogResult result) async {
-    final id = note.id!;
-    final edited = result is SaveNote ? result.note : null;
-    final retimed =
-        edited != null && !edited.timestamp.isAtSameMomentAs(note.timestamp);
-    final described = edited != null && edited.description != note.description;
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() => _changing.add(id));
-    Object? error;
-    try {
-      switch (result) {
-        case SaveNote():
-          await widget.repository.editNote(
-            id,
-            timestamp: retimed ? edited.timestamp : null,
-            // An empty description clears it.
-            description: described ? edited.description ?? '' : null,
-          );
-        case DeleteNote():
-          await widget.repository.deleteNote(id);
-          messenger.showSnackBar(
-            SnackBar(
-              content: const Text('Note deleted'),
-              action: SnackBarAction(
-                label: 'Undo',
-                // Saved again as a new note, through the outbox, so it
-                // isn't lost if this fails too.
-                onPressed: () => widget.outbox.add(
-                  Note(
-                    timestamp: note.timestamp,
-                    description: note.description,
-                  ),
-                ),
-              ),
-            ),
-          );
-      }
-    } catch (e) {
-      error = e;
-    } finally {
-      if (mounted) setState(() => _changing.remove(id));
-      await _load();
+  /// Takes back [deletion]: dropped while it waits; once it's done, the
+  /// note's saved again as a new one, through the outbox, so it isn't
+  /// lost if that fails too.
+  static Future<void> _undoDelete(
+    NoteOutbox outbox,
+    PendingNote deletion,
+  ) async {
+    if (outbox.pending.any((p) => p.id == deletion.id) &&
+        await outbox.cancel(deletion)) {
+      return;
     }
-    if (error != null && mounted) {
-      await showErrorSheet(
-        context,
-        title: result is DeleteNote
-            ? "Couldn't delete the note"
-            : "Couldn't change the note",
-        error: error,
-        onRetry: () => _changeNote(note, result),
-      );
-    }
+    final note = deletion.note;
+    await outbox.add(
+      Note(timestamp: note.timestamp, description: note.description),
+    );
   }
 
   Future<void> _cancel(PendingNote note) async {
@@ -292,7 +285,11 @@ class _NotesScreenState extends State<NotesScreen> {
     }
     messenger.showSnackBar(
       SnackBar(
-        content: const Text('Note cancelled'),
+        content: Text(switch (note.change) {
+          NoteChange.add => 'Note cancelled',
+          NoteChange.edit => 'Change cancelled',
+          NoteChange.delete => 'Deletion cancelled',
+        }),
         action: SnackBarAction(
           label: 'Undo',
           onPressed: () => widget.outbox.restore(note),
@@ -331,7 +328,7 @@ class _NotesScreenState extends State<NotesScreen> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: widget.outbox,
+      listenable: Listenable.merge([widget.outbox, _drafts]),
       builder: (context, _) {
         final needsSignIn = _needsSignIn || widget.outbox.needsSignIn;
         return Scaffold(
@@ -369,37 +366,107 @@ class _NotesScreenState extends State<NotesScreen> {
   Widget _buildBody(BuildContext context, bool needsSignIn) {
     final notes = _notes;
     final pending = widget.outbox.pending;
+    final adds = [
+      for (final p in pending)
+        if (p.change == NoteChange.add) p,
+    ];
+    // Each note's edit or deletion waiting, by its id: a deletion over an
+    // edit still being sent.
+    final changes = <String, PendingNote>{
+      for (final p in pending)
+        if (p.change == NoteChange.edit) p.noteId!: p,
+      for (final p in pending)
+        if (p.change == NoteChange.delete) p.noteId!: p,
+    };
+    final drafts = _drafts.drafts;
+    final editDrafts = {
+      for (final d in drafts)
+        if (d.isEdit) d.original!.id: d,
+    };
+    final saved = [
+      for (final (:item, result: _) in widget.outbox.justSaved) item,
+    ];
+    // Saved since the notes were fetched: shown as they'll be until
+    // they're fetched with them.
+    final savedEdits = {
+      for (final p in saved)
+        if (p.change == NoteChange.edit) p.noteId!: p.note,
+    };
+    final savedDeletions = {
+      for (final p in saved)
+        if (p.change == NoteChange.delete) p.noteId!,
+    };
+
+    Widget pendingTile(PendingNote p, {VoidCallback? onTap}) =>
+        _PendingNoteTile(
+          pending: p,
+          sending: widget.outbox.isSending(p),
+          sendingBy: widget.outbox.sendingBy(p),
+          needsSignIn: needsSignIn,
+          onCancel: () => _cancel(p),
+          onRetry: widget.outbox.retryNow,
+          onTap: onTap,
+        );
+    Widget draftTile(NoteDraft d, VoidCallback onTap) =>
+        _DraftTile(draft: d, onTap: onTap);
+
     final rows = <({DateTime at, Widget tile})>[
       for (final note in notes ?? const <Note>[])
-        (
-          at: note.timestamp,
-          tile: _NoteTile(
-            note: note,
-            changing: _changing.contains(note.id),
-            // Without an id (from an older server) it can't be changed.
-            onTap: note.id == null ? null : () => _editNote(note),
-          ),
-        ),
-      // Saved since the notes were fetched: shown as the notes they are
-      // until they're fetched with them.
-      for (final (:item, result: _) in widget.outbox.justSaved)
-        if (!NoteOutbox.savedIn(item.note, notes ?? const []))
+        if (note.id case final id?
+            when changes[id]?.change == NoteChange.delete)
+          (at: note.timestamp, tile: pendingTile(changes[id]!))
+        else if (note.id case final id? when editDrafts[id] != null)
           (
-            at: item.note.timestamp,
-            tile: _NoteTile(note: item.note, changing: false),
+            at: editDrafts[id]!.timestamp,
+            tile: draftTile(
+              editDrafts[id]!,
+              () => _editNote(
+                editDrafts[id]!.original!,
+                note,
+                draft: editDrafts[id],
+              ),
+            ),
+          )
+        else if (note.id case final id? when changes[id] != null)
+          (
+            at: changes[id]!.note.timestamp,
+            tile: pendingTile(
+              changes[id]!,
+              onTap: () => _editNote(changes[id]!.note, note),
+            ),
+          )
+        else if (!savedDeletions.contains(note.id))
+          () {
+            final shown = savedEdits[note.id] ?? note;
+            return (
+              at: shown.timestamp,
+              tile: _NoteTile(
+                note: shown,
+                // Without an id (from an older server) it can't be changed.
+                onTap: note.id == null ? null : () => _editNote(shown, note),
+              ),
+            );
+          }(),
+      for (final p in saved)
+        if (p.change == NoteChange.add &&
+            !NoteOutbox.savedIn(p.note, notes ?? const []))
+          (at: p.note.timestamp, tile: _NoteTile(note: p.note)),
+      for (final p in adds) (at: p.note.timestamp, tile: pendingTile(p)),
+      // Of notes not listed: compacted since, say.
+      for (final p in changes.values)
+        if (!(notes ?? const <Note>[]).any((n) => n.id == p.noteId))
+          (at: p.note.timestamp, tile: pendingTile(p)),
+      for (final d in drafts)
+        if (!d.isEdit)
+          (at: d.timestamp, tile: draftTile(d, () => _addNote(draft: d)))
+        else if (!(notes ?? const <Note>[]).any((n) => n.id == d.original!.id))
+          (
+            at: d.timestamp,
+            tile: draftTile(
+              d,
+              () => _editNote(d.original!, d.original!, draft: d),
+            ),
           ),
-      for (final note in pending)
-        (
-          at: note.note.timestamp,
-          tile: _PendingNoteTile(
-            pending: note,
-            sending: widget.outbox.isSending(note),
-            sendingBy: widget.outbox.sendingBy(note),
-            needsSignIn: needsSignIn,
-            onCancel: () => _cancel(note),
-            onRetry: widget.outbox.retryNow,
-          ),
-        ),
     ]..sort((a, b) => a.at.compareTo(b.at));
 
     final Widget? banner;
@@ -593,12 +660,9 @@ class _DashPainter extends CustomPainter {
 }
 
 class _NoteTile extends StatelessWidget {
-  const _NoteTile({required this.note, required this.changing, this.onTap});
+  const _NoteTile({required this.note, this.onTap});
 
   final Note note;
-
-  /// Being edited or deleted on the server.
-  final bool changing;
   final VoidCallback? onTap;
 
   @override
@@ -609,19 +673,92 @@ class _NoteTile extends StatelessWidget {
       title: note.description == null
           ? Text('(no description)', style: TextStyle(color: theme.hintColor))
           : Text(note.description!),
-      trailing: changing
-          ? const SizedBox.square(
-              dimension: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : null,
-      onTap: changing ? null : onTap,
+      onTap: onTap,
     );
   }
 }
 
-/// A note that isn't on the server yet: tinted, in italics, with its
-/// status underneath and a button to cancel it.
+/// A note being written, never sent: dashed round, in italics, saying
+/// it's a draft. Tapping it carries on with it -- the sheet has the trash
+/// can to throw it away.
+class _DraftTile extends StatelessWidget {
+  const _DraftTile({required this.draft, required this.onTap});
+
+  final NoteDraft draft;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final muted = TextStyle(
+      color: scheme.onSurfaceVariant,
+      fontStyle: FontStyle.italic,
+    );
+    final note = draft.note;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: CustomPaint(
+        foregroundPainter: _DashedRectPainter(scheme.outline),
+        child: ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          leading: Text(
+            _time(context, note),
+            style: theme.textTheme.titleMedium?.merge(muted),
+          ),
+          title: Text(note.description ?? '(no description)', style: muted),
+          subtitle: Row(
+            children: [
+              Icon(Icons.edit_outlined, size: 14, color: scheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                draft.isEdit ? 'Draft change · not saved' : 'Draft · not saved',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.primary,
+                ),
+              ),
+            ],
+          ),
+          onTap: onTap,
+        ),
+      ),
+    );
+  }
+}
+
+/// A rounded rectangle of 4px dashes, round what it paints over.
+class _DashedRectPainter extends CustomPainter {
+  const _DashedRectPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    final path = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          (Offset.zero & size).deflate(0.6),
+          const Radius.circular(8),
+        ),
+      );
+    for (final metric in path.computeMetrics()) {
+      for (var d = 0.0; d < metric.length; d += 8) {
+        canvas.drawPath(metric.extractPath(d, d + 4), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedRectPainter old) => old.color != color;
+}
+
+/// A change to the notes that isn't on the server yet -- a new note, an
+/// edit (the note as it'll be), or a deletion (struck through): tinted, in
+/// italics, with its status underneath and a button to cancel it.
 class _PendingNoteTile extends StatelessWidget {
   const _PendingNoteTile({
     required this.pending,
@@ -630,6 +767,7 @@ class _PendingNoteTile extends StatelessWidget {
     required this.needsSignIn,
     required this.onCancel,
     required this.onRetry,
+    this.onTap,
   });
 
   final PendingNote pending;
@@ -641,15 +779,23 @@ class _PendingNoteTile extends StatelessWidget {
   final VoidCallback onCancel;
   final VoidCallback onRetry;
 
+  /// Tapped, unless it's failed and can be retried: an edit, to edit it
+  /// again.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final deleting = pending.change == NoteChange.delete;
     final muted = TextStyle(
       color: scheme.onSurfaceVariant,
       fontStyle: FontStyle.italic,
+      decoration: deleting ? TextDecoration.lineThrough : null,
     );
-    final failed = pending.attempts > 0 && !sending;
+    final refused = pending.refused && !sending;
+    final failed = (pending.attempts > 0 || pending.refused) && !sending;
+    final notDone = deleting ? 'Not deleted' : 'Not saved';
 
     final Widget icon;
     final String status;
@@ -658,16 +804,28 @@ class _PendingNoteTile extends StatelessWidget {
         dimension: 12,
         child: CircularProgressIndicator(strokeWidth: 2),
       );
-      status = sendingBy == null ? 'Saving…' : 'Saving, by $sendingBy…';
+      final doing = switch (pending.change) {
+        NoteChange.add => 'Saving',
+        NoteChange.edit => 'Saving the change',
+        NoteChange.delete => 'Deleting',
+      };
+      status = sendingBy == null ? '$doing…' : '$doing, by $sendingBy…';
     } else if (needsSignIn) {
       icon = Icon(Icons.lock_outline, size: 14, color: scheme.error);
-      status = 'Not saved · sign in to save';
+      status = '$notDone · sign in to save';
+    } else if (refused) {
+      icon = Icon(Icons.block, size: 14, color: scheme.error);
+      status = '$notDone · ${pending.lastError ?? 'refused'}';
     } else if (failed) {
       icon = Icon(Icons.cloud_off, size: 14, color: scheme.error);
-      status = 'Not saved · ${pending.lastError ?? 'failed'} · retrying';
+      status = '$notDone · ${pending.lastError ?? 'failed'} · retrying';
     } else {
       icon = Icon(Icons.schedule, size: 14, color: scheme.onSurfaceVariant);
-      status = 'Waiting to save';
+      status = switch (pending.change) {
+        NoteChange.add => 'Waiting to save',
+        NoteChange.edit => 'Change waiting to save',
+        NoteChange.delete => 'Waiting to delete',
+      };
     }
 
     return ListTile(
@@ -695,11 +853,15 @@ class _PendingNoteTile extends StatelessWidget {
       ),
       trailing: IconButton(
         icon: const Icon(Icons.close),
-        tooltip: 'Cancel note',
+        tooltip: switch (pending.change) {
+          NoteChange.add => 'Cancel note',
+          NoteChange.edit => 'Cancel change',
+          NoteChange.delete => 'Cancel deletion',
+        },
         onPressed: sending ? null : onCancel,
       ),
       // Skip the wait for the next retry.
-      onTap: failed && !needsSignIn ? onRetry : null,
+      onTap: failed && !needsSignIn ? onRetry : onTap,
     );
   }
 }

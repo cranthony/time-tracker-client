@@ -209,10 +209,17 @@ class NoteOutboxStatus extends OutboxStatus<PendingNote> {
   String things(int n) => n == 1 ? '1 note' : '$n notes';
 
   @override
-  String label(PendingNote item) => switch (item.note.description?.trim()) {
-    final d? when d.isNotEmpty => '“$d”',
-    _ => 'a note',
-  };
+  String label(PendingNote item) {
+    final note = switch (item.note.description?.trim()) {
+      final d? when d.isNotEmpty => '“$d”',
+      _ => 'a note',
+    };
+    return switch (item.change) {
+      NoteChange.add => note,
+      NoteChange.edit => 'a change to $note',
+      NoteChange.delete => 'deleting $note',
+    };
+  }
 
   @override
   Future<bool> drop(PendingNote item) => (outbox as NoteOutbox).cancel(item);

@@ -88,6 +88,118 @@ void main() {
     expect(failing.items, isEmpty);
   });
 
+  group('edits and deletions', () {
+    late Note standup;
+
+    setUp(() async {
+      standup = await server.addNote(note);
+      standup = (await server.uncompactedNotes()).single;
+    });
+
+    test('an edit waits, then sends only what changed', () async {
+      final box = outbox();
+      await box.edit(
+        standup,
+        Note(timestamp: standup.timestamp, description: 'Planning'),
+      );
+      expect(box.pending.single.change, NoteChange.edit);
+      expect(box.pending.single.note.description, 'Planning');
+
+      await box.flush();
+
+      expect(box.pending, isEmpty);
+      final saved = (await server.uncompactedNotes()).single;
+      expect(saved.description, 'Planning');
+      expect(saved.timestamp, standup.timestamp);
+    });
+
+    test("a second edit takes the first one's place; one back to how the "
+        'note was drops it', () async {
+      final box = outbox();
+      await box.edit(
+        standup,
+        Note(timestamp: standup.timestamp, description: 'A'),
+      );
+      await box.edit(
+        standup,
+        Note(timestamp: standup.timestamp, description: 'B'),
+      );
+      expect(box.pending.map((p) => p.note.description), ['B']);
+
+      await box.edit(standup, standup);
+      expect(box.pending, isEmpty);
+    });
+
+    test(
+      'a deletion takes the place of an edit waiting, and is sent',
+      () async {
+        final box = outbox();
+        await box.edit(
+          standup,
+          Note(timestamp: standup.timestamp, description: 'A'),
+        );
+        await box.delete(standup);
+        expect(box.pending.single.change, NoteChange.delete);
+        expect(box.pending.single.note.description, 'Standup');
+
+        await box.flush();
+
+        expect(box.pending, isEmpty);
+        expect(await server.uncompactedNotes(), isEmpty);
+      },
+    );
+
+    test("a deletion already done, unheard, isn't tried again", () async {
+      final box = outbox();
+      final deletion = await box.delete(standup);
+      // An earlier attempt deleted it, but its answer was lost.
+      await server.deleteNote(standup.id!);
+      await store.save([deletion.copyWith(attempts: 1)]);
+      await box.refresh();
+
+      await box.flush();
+
+      expect(box.pending, isEmpty);
+    });
+
+    test(
+      'an edit the server refuses waits, refused, to be cancelled',
+      () async {
+        final box = outbox();
+        final edit = await box.edit(
+          standup,
+          Note(timestamp: standup.timestamp, description: 'Changed'),
+        );
+        await server.deleteNote(standup.id!); // compacted, say
+
+        await box.flush();
+
+        expect(box.pending.single.refused, isTrue);
+        expect(box.hasUnsent, isFalse);
+        expect(await box.cancel(edit!), isTrue);
+        expect(box.pending, isEmpty);
+      },
+    );
+  });
+
+  test("a change waiting is kept, with its note's id; one from before "
+      'edits reads as a new note', () {
+    final edit = PendingNote(
+      id: 'p1',
+      note: Note(timestamp: note.timestamp, description: 'B', id: 'n1'),
+      change: NoteChange.edit,
+      original: Note(timestamp: note.timestamp, description: 'A', id: 'n1'),
+    );
+    final back = PendingNote.fromJson(edit.toJson());
+    expect(back.change, NoteChange.edit);
+    expect(back.noteId, 'n1');
+    expect(back.original!.description, 'A');
+
+    final old = PendingNote.fromJson({'id': 'p2', 'note': note.toJson()});
+    expect(old.change, NoteChange.add);
+    expect(old.original, isNull);
+  });
+
   test('keeps unsaved notes for the next run of the app', () async {
     server.offline = true;
     await outbox().add(note);

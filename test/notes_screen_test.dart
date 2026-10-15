@@ -74,10 +74,13 @@ void main() {
     await tester.enterText(find.byType(TextField).last, 'Walking home');
     await tester.tap(find.widgetWithText(FilledButton, 'Add'));
     await tester.pumpAndSettle();
-    // Still there, as typed, saying why.
+    // Still there, as typed, saying why; and kept as a draft, not as a
+    // note waiting to be saved.
     expect(find.text('New note'), findsOneWidget);
-    expect(find.text('Walking home'), findsOneWidget);
+    expect(find.text('Walking home'), findsNWidgets(2));
     expect(find.textContaining("Couldn't keep the note"), findsOneWidget);
+    expect(find.text('Draft · not saved'), findsOneWidget);
+    expect(find.text('Waiting to save'), findsNothing);
 
     store.failing = false;
     await tester.tap(find.widgetWithText(FilledButton, 'Try again'));
@@ -403,9 +406,149 @@ void main() {
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
-    expect(find.text("Couldn't change the note"), findsOneWidget);
-    expect(find.text('That note was compacted'), findsOneWidget);
+    // Kept, then refused: shown as it'd be, saying why, to cancel.
+    expect(find.text('Changed'), findsOneWidget);
+    expect(find.textContaining('That note was compacted'), findsOneWidget);
+    await tester.tap(find.byTooltip('Cancel change'));
+    await tester.pumpAndSettle();
     expect(find.text('Standup'), findsOneWidget);
+    expect(find.text('Changed'), findsNothing);
+  });
+
+  /// Closes the sheet open without its button: a tap above it.
+  Future<void> dismiss(WidgetTester tester) async {
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+  }
+
+  screenTest("what's typed is kept as a draft, to finish later", (
+    tester,
+  ) async {
+    final repo = InMemoryNotesRepository();
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Add note'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Walking ho');
+    await dismiss(tester);
+    expect(find.text('Walking ho'), findsOneWidget);
+    expect(find.text('Draft · not saved'), findsOneWidget);
+    expect(await repo.uncompactedNotes(), isEmpty);
+
+    // Carried on with, then added.
+    await tester.tap(find.text('Walking ho'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextField, 'Walking ho'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'Walking home');
+    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Draft · not saved'), findsNothing);
+    expect(find.text('Walking home'), findsOneWidget);
+    expect((await repo.uncompactedNotes()).map((n) => n.description), [
+      'Walking home',
+    ]);
+  });
+
+  screenTest("a draft is thrown away by its sheet's trash can", (tester) async {
+    await tester.pumpWidget(app(InMemoryNotesRepository()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Add note'));
+    await tester.pumpAndSettle();
+    // Nothing typed, nothing to throw away.
+    expect(find.byTooltip('Discard draft'), findsNothing);
+    await tester.enterText(find.byType(TextField), 'Never mind');
+    await tester.pump();
+    expect(find.byTooltip('Discard draft'), findsOneWidget);
+    await dismiss(tester);
+    // No trash can in the list: the sheet has it.
+    expect(find.byIcon(Icons.delete_outline), findsNothing);
+
+    await tester.tap(find.text('Never mind'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Discard draft'));
+    await tester.pumpAndSettle();
+    expect(find.text('Never mind'), findsNothing);
+    expect(find.text('Draft · not saved'), findsNothing);
+  });
+
+  screenTest("clearing what's typed throws the draft away", (tester) async {
+    await tester.pumpWidget(app(InMemoryNotesRepository()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Add note'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Oops');
+    await tester.enterText(find.byType(TextField), '');
+    await dismiss(tester);
+    expect(find.text('Draft · not saved'), findsNothing);
+  });
+
+  screenTest('an edit not saved is kept as a draft change; saved, it waits '
+      'to be sent', (tester) async {
+    final repo = _OfflineChangesRepository([
+      Note(timestamp: today(9, 30), description: 'Standup'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Standup'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Standup, late');
+    await dismiss(tester);
+    // In the note's place.
+    expect(find.text('Standup, late'), findsOneWidget);
+    expect(find.text('Standup'), findsNothing);
+    expect(find.text('Draft change · not saved'), findsOneWidget);
+
+    await tester.tap(find.text('Standup, late'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit note'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    // Kept, and waiting to be sent, offline.
+    expect(find.text('Draft change · not saved'), findsNothing);
+    expect(find.text('Standup, late'), findsOneWidget);
+    expect(find.textContaining('Not saved'), findsOneWidget);
+    expect(find.byTooltip('Cancel change'), findsOneWidget);
+
+    repo.offline = false;
+    await wait(tester, const Duration(seconds: 5));
+    expect(find.textContaining('Not saved'), findsNothing);
+    expect((await repo.uncompactedNotes()).map((n) => n.description), [
+      'Standup, late',
+    ]);
+  });
+
+  screenTest('a deletion waits to be sent, struck through, and can be undone', (
+    tester,
+  ) async {
+    final repo = _OfflineChangesRepository([
+      Note(timestamp: today(9, 30), description: 'Standup'),
+    ]);
+    await tester.pumpWidget(app(repo));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Standup'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Delete note'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Note deleted'), findsOneWidget);
+    expect(find.textContaining('Not deleted'), findsOneWidget);
+    final title = tester.widget<Text>(find.text('Standup'));
+    expect(title.style?.decoration, TextDecoration.lineThrough);
+
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Not deleted'), findsNothing);
+    expect(find.text('Standup'), findsOneWidget);
+    repo.offline = false;
+    await wait(tester, const Duration(seconds: 5));
+    expect(await repo.uncompactedNotes(), hasLength(1));
   });
 
   screenTest('About shows the app\'s version and server', (tester) async {
@@ -632,5 +775,29 @@ class _FailingStore extends InMemoryOutboxStore<PendingNote> {
   Future<void> save(List<PendingNote> items) async {
     if (failing) throw StateError('disk full');
     return super.save(items);
+  }
+}
+
+/// Can't edit or delete notes while [offline]: they time out, and are tried
+/// again.
+class _OfflineChangesRepository extends InMemoryNotesRepository {
+  _OfflineChangesRepository(super.notes);
+
+  var offline = true;
+
+  @override
+  Future<Note> editNote(
+    String id, {
+    DateTime? timestamp,
+    String? description,
+  }) async {
+    if (offline) throw TimeoutException('offline');
+    return super.editNote(id, timestamp: timestamp, description: description);
+  }
+
+  @override
+  Future<void> deleteNote(String id) async {
+    if (offline) throw TimeoutException('offline');
+    return super.deleteNote(id);
   }
 }
