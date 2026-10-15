@@ -594,6 +594,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Built on…'));
       await tester.pumpAndSettle();
+      // In a sheet up from the foot, its search focused.
+      final search = find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(EditableText),
+      );
+      expect(tester.widget<EditableText>(search).focusNode.hasFocus, isTrue);
       // Not itself.
       expect(find.widgetWithText(CheckboxListTile, 'Walk daily'), findsNothing);
       await tester.tap(
@@ -676,7 +682,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(
         find.descendant(
-          of: find.byType(AlertDialog).last,
+          of: find.byType(BottomSheet),
           matching: find.byType(TextField),
         ),
         'guitar',

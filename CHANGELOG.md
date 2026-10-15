@@ -9,6 +9,19 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.100.0
+
+- Every picker of actions, people, habits and locations is now the same
+  sheet, up from the foot of the screen, with the keyboard up to search
+  at once -- what's typed already, if anything, selected to type over.
+  Picking one action (an action's group, a habit's action, a keep rule's
+  action) and picking what a habit or person is built on were dialogs;
+  they're sheets now, as an event's actions are.
+- Each picker starts with every group open, so what's in them is to
+  hand: the action groups when picking how a travel time goes ("By"),
+  say. Each group's arrow still closes it.
+- Editing an event's actions in its Details opens the sheet at once.
+
 ## 7.99.0
 
 - Notes being written are kept as drafts. What's typed in the note sheet

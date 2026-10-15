@@ -71,12 +71,6 @@ void main() {
     const PlanAction(id: 'oops', name: 'Oops', status: 'deleted'),
   ]);
 
-  /// The text field in the dialog open: not the Actions pane's search.
-  final dialogField = find.descendant(
-    of: find.byType(AlertDialog),
-    matching: find.byType(TextField),
-  );
-
   /// The status filter's check box for [status], in its drop-down.
   Finder option(String status) =>
       find.widgetWithText(CheckboxMenuButton, status);
@@ -1150,11 +1144,12 @@ void main() {
       find.descendant(of: picker, matching: find.text('Tofu tikka')),
       findsNothing,
     );
-    // A group in a group, once its group's opened.
+    // A group in a group, every group open, in a sheet.
+    expect(
+      find.ancestor(of: picker, matching: find.byType(BottomSheet)),
+      findsOneWidget,
+    );
     final indian = find.descendant(of: picker, matching: find.text('Indian'));
-    expect(indian, findsNothing);
-    await tester.tap(find.byTooltip('Show 1 inside'));
-    await tester.pumpAndSettle();
     await tester.tap(indian);
     await tester.pumpAndSettle();
     expect(picker, findsNothing);
@@ -1192,7 +1187,10 @@ void main() {
     );
     // Searched by path; not itself.
     await tester.enterText(
-      find.descendant(of: find.byType(ActionsPicker), matching: dialogField),
+      find.descendant(
+        of: find.byType(ActionsPicker),
+        matching: find.byType(TextField),
+      ),
       'cook',
     );
     await tester.pumpAndSettle();

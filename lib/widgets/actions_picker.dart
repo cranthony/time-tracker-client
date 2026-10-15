@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/plan_action.dart';
 import 'picker_search.dart';
+import 'picker_sheet.dart';
 import 'tree_picker.dart';
 
 /// Picks several actions from a long list, as a [TreePicker] does: the
@@ -19,7 +20,8 @@ import 'tree_picker.dart';
 /// Enter, for the top match) calls [onChanged] with just that one. With
 /// [leavesOnly], groups are shown, to find what's in them, but can't be
 /// picked: only actions can be given to an event -- tapping one opens or
-/// closes it.
+/// closes it. With [none], a row by that name, over the list, picks no
+/// action, calling [onChanged] with none.
 ///
 /// Its [search] can be given, to start it with words typed, or keep
 /// them past it. Long-pressing an action or group calls [onEdit] with it;
@@ -37,6 +39,7 @@ class ActionsPicker extends StatelessWidget {
     this.leavesOnly = false,
     this.autofocus = false,
     this.maxListHeight = 320,
+    this.none,
     this.search,
     this.onEdit,
     this.onAdd,
@@ -49,6 +52,7 @@ class ActionsPicker extends StatelessWidget {
   final bool inactive;
   final Set<String> exclude;
   final bool leavesOnly;
+  final String? none;
 
   /// Whether the search takes the keyboard at once, what's typed in it
   /// selected.
@@ -61,8 +65,9 @@ class ActionsPicker extends StatelessWidget {
   /// Drawn before each action's name, e.g. a dot in its color.
   final Widget Function(PlanAction action) marker;
 
-  /// How tall the list of actions grows before it scrolls.
-  final double maxListHeight;
+  /// How tall the list of actions grows before it scrolls; null, to fill
+  /// what room there is.
+  final double? maxListHeight;
 
   List<PlanAction> get _shown => [
     for (final action in actions)
@@ -83,6 +88,7 @@ class ActionsPicker extends StatelessWidget {
       onChanged: onChanged,
       single: single,
       groupsPickable: !leavesOnly,
+      none: none,
       search: search,
       autofocus: autofocus,
       searchHint: 'Search actions',
@@ -136,10 +142,10 @@ Set<String> actionAndSubActions(List<PlanAction> actions, String id) {
   return under;
 }
 
-/// One action, shown by its whole path, picked by tapping it: a dialog
-/// searches [actions] or browses their tree (see [ActionsPicker]). With
-/// [noneLabel], the dialog can pick no action too, which [value] null shows
-/// as; without, null shows [hint].
+/// One action, shown by its whole path, picked by tapping it: a sheet up
+/// from the foot searches [actions] or browses their tree (see
+/// [showActionPicker]). With [noneLabel], the sheet can pick no action
+/// too, which [value] null shows as; without, null shows [hint].
 class ActionField extends StatelessWidget {
   const ActionField({
     super.key,
@@ -206,9 +212,12 @@ class ActionField extends StatelessWidget {
   }
 }
 
-/// Asks for one of [actions], [value] picked to start with; see
-/// [ActionField]. Null if called off; otherwise the action picked, its id
-/// null for none.
+/// Asks for one of [actions], [value] picked to start with, in a
+/// [showPickerSheet] under [title]: an [ActionsPicker] of them, every
+/// group open and the keyboard up to search. Tapping an action picks it
+/// and closes the sheet; with [noneLabel], a row over the list picks
+/// none. Null if called off; otherwise the action picked, its id null
+/// for none.
 Future<({String? id})?> showActionPicker(
   BuildContext context, {
   required List<PlanAction> actions,
@@ -217,39 +226,20 @@ Future<({String? id})?> showActionPicker(
   String title = 'Pick an action',
   String? noneLabel,
   Set<String> exclude = const {},
-}) => showDialog<({String? id})>(
-  context: context,
-  builder: (context) => AlertDialog(
-    title: Text(title),
-    content: SizedBox(
-      width: 420,
-      child: ActionsPicker(
-        actions: actions,
-        picked: [?value],
-        single: true,
-        inactive: true,
-        exclude: exclude,
-        autofocus: true,
-        // Room left on the screen for the list, past the dialog's title,
-        // search and buttons.
-        maxListHeight: (MediaQuery.sizeOf(context).height - 320).clamp(
-          160,
-          400,
-        ),
-        marker: marker,
-        onChanged: (ids) => Navigator.pop(context, (id: ids.single)),
-      ),
-    ),
-    actions: [
-      if (noneLabel != null)
-        TextButton(
-          onPressed: () => Navigator.pop(context, (id: null)),
-          child: Text(noneLabel),
-        ),
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Cancel'),
-      ),
-    ],
+}) => showPickerSheet<({String? id})>(
+  context,
+  title: title,
+  result: () => (id: value),
+  body: (context, _) => ActionsPicker(
+    actions: actions,
+    picked: [?value],
+    single: true,
+    inactive: true,
+    exclude: exclude,
+    none: noneLabel,
+    autofocus: true,
+    maxListHeight: null,
+    marker: marker,
+    onChanged: (ids) => Navigator.of(context).pop((id: ids.firstOrNull)),
   ),
 );

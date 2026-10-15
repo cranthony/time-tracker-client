@@ -66,12 +66,13 @@ Future<T?> showPickerSheet<T>(
 );
 
 /// Picks an event's actions in a [showPickerSheet]: an [ActionsPicker]
-/// over the [actions], with the room to search them and show what's
-/// found. Returns the ids picked, in order; null if dismissed.
+/// over the [actions], every group open, with the room to search them
+/// and show what's found -- only actions, not groups, unless not
+/// [leavesOnly]. Returns the ids picked, in order; null if dismissed.
 ///
-/// With a [query] -- the event's summary, say -- the search starts with
-/// it, matching any of its words, selected, with the keyboard up to type
-/// over it. Where the app can (see [canEditActions]), an action can be
+/// The keyboard comes up to search at once. With a [query] -- the
+/// event's summary, say -- the search starts with it, matching any of
+/// its words, selected, to type over it. Where the app can (see [canEditActions]), an action can be
 /// added from the sheet, and picked at once, and one long-pressed is
 /// edited; then [reload] gives the actions as they are after.
 Future<List<String>?> showActionsSheet(
@@ -81,6 +82,7 @@ Future<List<String>?> showActionsSheet(
   required List<String> picked,
   required Widget Function(PlanAction action) marker,
   String? query,
+  bool leavesOnly = true,
   Future<List<PlanAction>> Function()? reload,
 }) {
   var ids = [...picked];
@@ -116,10 +118,10 @@ Future<List<String>?> showActionsSheet(
             builder: (context, constraints) => ActionsPicker(
               actions: list,
               picked: ids,
-              leavesOnly: true,
+              leavesOnly: leavesOnly,
               marker: marker,
               search: search,
-              autofocus: typed.isNotEmpty,
+              autofocus: true,
               onChanged: (changed) => setState(() => ids = changed),
               onEdit: !editable
                   ? null
@@ -228,7 +230,7 @@ class _TextSheetFieldState extends State<_TextSheetField> {
 /// With a [query] -- the event's summary, say -- each search starts with
 /// it, matching any of its words. Each tab keeps its own search as it's
 /// swiped away and back, and takes the keyboard as it's swiped to, what's
-/// typed selected; with a [query], the first takes it at once.
+/// typed selected; the first takes it at once.
 ///
 /// Where, there's a second page, swiped to: its [mapLocation], the place
 /// as a maps app would find it, to see and edit in full -- or, without
@@ -406,7 +408,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
             tabs: const ['Location', 'Map location'],
             texts: [typed, map ?? ''],
             matchAny: typed.isNotEmpty,
-            focusFirst: typed.isNotEmpty,
+            focusFirst: true,
             pages: (searches) => [
               place(setState, searches[0]),
               FutureBuilder(
@@ -446,7 +448,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
             tabs: const ['With', 'For'],
             texts: [typed, typed],
             matchAny: typed.isNotEmpty,
-            focusFirst: typed.isNotEmpty,
+            focusFirst: true,
             pages: (searches) => [
               pick(setState, searches[0], with_, for_, 'Who was there'),
               pick(
@@ -765,7 +767,8 @@ Future<T> _kept<T>(Future<void> loading, T? Function() kept) async {
 
 /// One of [nodes], or with [none], none: [label] over it, and in it, the
 /// one picked, by its path. Tapped, it opens a sheet up from the foot to
-/// search and browse them, as an event's actions are picked: tapping one
+/// search and browse them ([pickNode]), as an event's actions are picked:
+/// tapping one
 /// picks it and closes the sheet. With [groupsPickable], a group is picked
 /// as anything else is, its arrow opening it; otherwise tapping a group
 /// opens it. [marker] goes before a name.
@@ -843,7 +846,9 @@ class PickerField extends StatelessWidget {
 
 /// Picks one of [nodes] in a [showPickerSheet] under [title], searched as
 /// [searchHint] says, [value] picked to start with: the one picked (null
-/// for [none]), or null if it's dismissed.
+/// for [none]), or null if it's dismissed. Every group starts open, and
+/// the keyboard comes up to search; with a [query], the search starts
+/// with it, selected, to type over.
 Future<({String? id})?> pickNode(
   BuildContext context, {
   required String title,
@@ -853,13 +858,14 @@ Future<({String? id})?> pickNode(
   bool groupsPickable = false,
   Widget Function(PickerNode node)? marker,
   String searchHint = 'Search',
+  String? query,
 }) => showPickerSheet<({String? id})>(
   context,
   title: title,
   result: () => (id: value),
   body: (context, _) => _OwnSearch(
-    text: '',
-    matchAny: false,
+    text: query?.trim() ?? '',
+    matchAny: query?.trim().isNotEmpty ?? false,
     builder: (context, search) => TreePicker(
       nodes: nodes,
       picked: [?value],
@@ -868,11 +874,52 @@ Future<({String? id})?> pickNode(
       none: none,
       search: search,
       searchHint: searchHint,
+      autofocus: true,
       marker: marker,
       onChanged: (ids) => Navigator.of(context).pop((id: ids.firstOrNull)),
     ),
   ),
 );
+
+/// Picks any of [nodes] in a [showPickerSheet] under [title], as
+/// [pickNode] picks one: [picked] to start with, every group open, the
+/// keyboard up to search -- starting with a [query], if any, selected.
+/// The picked show as chips on top. Done returns the ids picked, in the
+/// order they were; null if it's dismissed.
+Future<List<String>?> pickNodes(
+  BuildContext context, {
+  required String title,
+  required List<PickerNode> nodes,
+  required List<String> picked,
+  bool groupsPickable = false,
+  Widget Function(PickerNode node)? marker,
+  String searchHint = 'Search',
+  String empty = 'Nothing yet.',
+  String? query,
+}) {
+  var ids = [...picked];
+  final typed = query?.trim() ?? '';
+  return showPickerSheet<List<String>>(
+    context,
+    title: title,
+    result: () => ids,
+    body: (context, setState) => _OwnSearch(
+      text: typed,
+      matchAny: typed.isNotEmpty,
+      builder: (context, search) => TreePicker(
+        nodes: nodes,
+        picked: ids,
+        groupsPickable: groupsPickable,
+        search: search,
+        searchHint: searchHint,
+        empty: empty,
+        autofocus: true,
+        marker: marker,
+        onChanged: (changed) => setState(() => ids = changed),
+      ),
+    ),
+  );
+}
 
 /// [location] as a [TreePicker] shows it: by its name, in its group.
 PickerNode locationNode(Location location) => PickerNode(

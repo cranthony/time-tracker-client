@@ -42,23 +42,23 @@ Future<List<String>> _pump(WidgetTester tester, List<String> picked) async {
 }
 
 void main() {
-  testWidgets('opens only the branches holding a picked action', (
+  testWidgets('starts with every group open, each closed by its arrow', (
     tester,
   ) async {
     await _pump(tester, ['10k']);
     // Not one put away, not picked.
     expect(find.text('Old'), findsNothing);
     expect(find.text('Cooking'), findsOneWidget);
-    expect(find.text('Tofu'), findsNothing);
-    // Picked: a chip, and its row, opened down to it.
+    expect(find.text('Tofu'), findsOneWidget);
+    // Picked: a chip, and its row.
     expect(find.text('10k'), findsNWidgets(2));
 
-    await tester.tap(find.byTooltip('Show 2 inside'));
-    await tester.pumpAndSettle();
-    expect(find.text('Tofu'), findsOneWidget);
     await tester.tap(find.byTooltip("Hide what's inside").first);
     await tester.pumpAndSettle();
     expect(find.text('Tofu'), findsNothing);
+    await tester.tap(find.byTooltip('Show 2 inside'));
+    await tester.pumpAndSettle();
+    expect(find.text('Tofu'), findsOneWidget);
   });
 
   testWidgets('searches every action by its whole path', (tester) async {
@@ -111,7 +111,7 @@ void main() {
     expect(actionAndSubActions(_actions, 'tofu'), {'tofu'});
   });
 
-  testWidgets('a ActionField picks one action in a dialog, or none', (
+  testWidgets('a ActionField picks one action in a sheet, or none', (
     tester,
   ) async {
     String? value = 'tofu';
@@ -136,9 +136,13 @@ void main() {
 
     await tester.tap(find.byType(ActionField));
     await tester.pumpAndSettle();
-    // Opened down to the action picked; not those excluded; inactive ones
-    // too.
+    // Every group open, the search focused; not those excluded; inactive
+    // ones too.
     expect(find.text('Dal'), findsOneWidget);
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
+      isTrue,
+    );
     expect(find.text('Running'), findsNothing);
     expect(find.text('10k'), findsNothing);
     expect(find.text('Old'), findsOneWidget);
@@ -157,10 +161,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(value, 'old');
 
-    // Cancel keeps it; None clears it.
+    // Done keeps it; None clears it.
     await tester.tap(find.byType(ActionField));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Cancel'));
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     expect(value, 'old');
     await tester.tap(find.byType(ActionField));
