@@ -251,8 +251,10 @@ if [ -z "$widget_id" ]; then
 elif ! adb shell am start -W -n "$PKG/.CalendarWidgetConfigureActivity" \
   --ei appWidgetId "$widget_id" >/dev/null || ! wait_for 'Title at the bottom' 10; then
   fail title_bottom "its settings didn't open"
-elif tap_view 'Title at the bottom' && sleep 1 && tap_view Done && sleep 3 &&
-  home && sleep 3 && after_title=$(top_of Calendar) &&
+# Done closes it onto the home screen as it was: not Home again, which,
+# pressed on the home screen, goes to its first page.
+elif tap_view 'Title at the bottom' && sleep 1 && tap_view Done && sleep 4 &&
+  after_title=$(top_of Calendar) &&
   after_day=$(top_of '(Today|Tomorrow)') &&
   [ -n "$before_title" ] && [ -n "$before_day" ] &&
   [ "$before_title" -lt "$before_day" ] &&
