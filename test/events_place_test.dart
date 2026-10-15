@@ -71,8 +71,11 @@ void main() {
 
     ScrollPosition timeline(WidgetTester tester) => tester
         .state<ScrollableState>(
-          find.byWidgetPredicate(
-            (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+          find.descendant(
+            of: find.byType(ListView),
+            matching: find.byWidgetPredicate(
+              (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+            ),
           ),
         )
         .position;

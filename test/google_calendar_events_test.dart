@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
@@ -51,8 +53,9 @@ void main() {
     Widget home, {
     _Source? source,
     bool enabled = true,
+    Size size = const Size(800, 2400),
   }) async {
-    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final calendars = GoogleCalendars(
@@ -78,11 +81,13 @@ void main() {
     return calendars;
   }
 
-  EventsScreen events(EventsRepository repository) => EventsScreen(
-    repository: repository,
-    serverLabel: 'test',
-    clock: () => _now,
-  );
+  EventsScreen events(EventsRepository repository, {Stream<Event>? show}) =>
+      EventsScreen(
+        repository: repository,
+        serverLabel: 'test',
+        clock: () => _now,
+        showEventRequests: show,
+      );
 
   /// Scrolls the timeline so [hour] is near its top.
   Future<void> scrollTo(WidgetTester tester, double hour) async {
@@ -298,5 +303,83 @@ void main() {
     await tester.pumpAndSettle();
     expect(created!['summary'], 'Dinner');
     expect(created!['location'], isNull);
+  });
+
+  group('on a small phone', () {
+    // As little room as the CI emulator's 320 x 640 leaves once its bars,
+    // the weather and Claude's panel are counted: the day's summary and
+    // all-day events above the timeline would, unchecked, leave it none.
+    const phone = Size(320, 300);
+    final dentist = Event(
+      id: 'dentist',
+      start: DateTime(2026, 10, 2, 16),
+      end: DateTime(2026, 10, 2, 17),
+      summary: 'Dentist',
+    );
+
+    /// The timeline's scrollable.
+    Finder timeline() => find
+        .ancestor(
+          of: find.byType(DayTimeline).first,
+          matching: find.byWidgetPredicate(
+            (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+          ),
+        )
+        .first;
+
+    testWidgets('the panels over the timeline take at most half the page, '
+        'scrolling within it', (tester) async {
+      await pump(
+        tester,
+        events(InMemoryEventsRepository([dentist])),
+        size: phone,
+      );
+      final page = tester.getRect(find.byType(EventsScreen));
+      final body = page.height - kToolbarHeight;
+      final panels = tester.getRect(find.byKey(const Key('day-panels')));
+      expect(panels.height, lessThanOrEqualTo(body / 2 + 0.5));
+      expect(tester.getRect(timeline()).height, greaterThanOrEqualTo(body / 2));
+
+      // What's past the half is scrolled to, not lost.
+      final panelScroll = tester.state<ScrollableState>(
+        find
+            .descendant(
+              of: find.byKey(const Key('day-panels')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      expect(panelScroll.position.maxScrollExtent, greaterThan(0));
+      await tester.drag(
+        find.byKey(const Key('day-panels')),
+        const Offset(0, -400),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(find.text("Sam's birthday")).bottom,
+        lessThanOrEqualTo(panels.bottom),
+      );
+    });
+
+    testWidgets('an event shown on today, as from the home-screen widget, '
+        'is in view', (tester) async {
+      final show = StreamController<Event>();
+      addTearDown(show.close);
+      await pump(
+        tester,
+        events(InMemoryEventsRepository([dentist]), show: show.stream),
+        size: phone,
+      );
+
+      show.add(dentist);
+      await tester.pumpAndSettle();
+      final view = tester.getRect(timeline());
+      final shown = tester.getRect(find.text('Dentist'));
+      expect(view.height, greaterThan(shown.height));
+      expect(view.contains(shown.topLeft), isTrue);
+      expect(view.contains(shown.bottomRight), isTrue);
+      // And it can be tapped there, nothing over it.
+      expect(find.text('Dentist').hitTestable(), findsOneWidget);
+    });
   });
 }
