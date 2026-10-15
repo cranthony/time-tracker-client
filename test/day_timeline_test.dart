@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
+import 'package:time_tracker_client/models/weather.dart';
 import 'package:time_tracker_client/widgets/color_picker.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 
@@ -443,6 +444,98 @@ void main() {
       );
       await tester.tap(find.text('Work'));
       expect(tapped, same(work));
+    });
+  });
+
+  group('the temperature on the band', () {
+    final weather = [
+      for (var h = 0; h < 24; h++)
+        WeatherSpan(
+          start: day.add(Duration(hours: h)),
+          end: day.add(Duration(hours: h + 1)),
+          sky: Sky.clear,
+          temperature: 10.0 + h,
+        ),
+    ];
+
+    Widget timeline(DateTime from, {bool animations = true}) => MaterialApp(
+      home: MediaQuery(
+        data: MediaQueryData(disableAnimations: !animations),
+        child: Scaffold(
+          body: SingleChildScrollView(
+            child: DayTimeline(
+              events: const [],
+              day: day,
+              weather: weather,
+              temperatureLabel: (c) => '${c.round()}°',
+              temperaturesFrom: from,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    TemperatureLabelsPainter painter(WidgetTester tester) => tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((p) => p.painter)
+        .whereType<TemperatureLabelsPainter>()
+        .single;
+
+    final first = day.add(const Duration(hours: 9, minutes: 15));
+    final next = day.add(const Duration(hours: 9, minutes: 30));
+
+    testWidgets('fade out as the forecast is fetched again, then back in '
+        'counted from then', (tester) async {
+      await tester.pumpWidget(timeline(first));
+      expect(painter(tester).from, first);
+      expect(painter(tester).opacity, 1);
+
+      await tester.pumpWidget(timeline(next));
+      await tester.pump(const Duration(milliseconds: 200));
+      // Fading out, still where they were.
+      expect(painter(tester).from, first);
+      expect(painter(tester).opacity, inExclusiveRange(0, 1));
+
+      await tester.pump(const Duration(milliseconds: 300));
+      // Fading in where they now are.
+      expect(painter(tester).from, next);
+      expect(painter(tester).opacity, inExclusiveRange(0, 1));
+
+      await tester.pumpAndSettle();
+      expect(painter(tester).from, next);
+      expect(painter(tester).opacity, 1);
+    });
+
+    testWidgets("are of the forecast as it was fetched, before now too, and "
+        "else the band's", (tester) async {
+      await tester.pumpWidget(timeline(first));
+      expect(painter(tester).temperatures, weather);
+
+      final fetched = weather.sublist(9);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: DayTimeline(
+                events: const [],
+                day: day,
+                weather: weather.sublist(12),
+                temperatures: fetched,
+                temperatureLabel: (c) => '${c.round()}°',
+                temperaturesFrom: first,
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(painter(tester).temperatures, fetched);
+    });
+
+    testWidgets('move at once with animations off', (tester) async {
+      await tester.pumpWidget(timeline(first, animations: false));
+      await tester.pumpWidget(timeline(next, animations: false));
+      expect(painter(tester).from, next);
+      expect(painter(tester).opacity, 1);
     });
   });
 }

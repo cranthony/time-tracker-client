@@ -7,6 +7,17 @@ minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
 
+## 7.95.0
+
+- The Events page's weather bar shows the temperature, in the units
+  chosen. Where the forecast is by the hour, a label goes every third
+  hour from a quarter hour after the forecast was fetched, so the first
+  is soon after now. They hold still till it's fetched again, staying as
+  now passes them, as today's sunrise does; then they fade out, and back
+  in where they now go. Further out, there's one label in each part of
+  the day. Where the chance of rain is labeled at the same time, the
+  temperature is just below it.
+
 ## 7.94.0
 
 - The weather's place given by latitude and longitude is easier to set

@@ -1423,6 +1423,17 @@ class _EventsScreenState extends State<EventsScreen> {
     };
   }
 
+  /// The forecast to label the band's temperatures from: from when it
+  /// was fetched, so those before now stay.
+  List<WeatherSpan>? _temperatures() {
+    final weather = Weather.of(context);
+    if (weather == null || !weather.enabled) return null;
+    return switch (weather.forecast) {
+      final forecast? => weatherTimeline(forecast, from: forecast.fetchedAt),
+      null => null,
+    };
+  }
+
   /// Whether Google Calendar's events were over the user's last time.
   /// Best effort: without it, they're behind.
   Future<void> _loadGoogleOnTop() async {
@@ -4842,6 +4853,14 @@ class _EventsScreenState extends State<EventsScreen> {
                 googleOnTop: _googleOnTop,
                 weather: _weatherBand(),
                 sun: _sunOn(day),
+                temperatureLabel: AppSettings.of(context)
+                    .temperatureUnit
+                    .format,
+                // A quarter hour after it's fetched, held till it's
+                // fetched again.
+                temperaturesFrom: Weather.of(context)?.forecast?.fetchedAt
+                    .add(const Duration(minutes: 15)),
+                temperatures: _temperatures(),
                 onTapGoogle: _box == null && _selecting == null
                     ? _openGoogleEvent
                     : null,
