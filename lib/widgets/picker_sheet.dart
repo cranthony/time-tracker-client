@@ -9,6 +9,7 @@ import '../services/people_repository.dart';
 import '../services/server_errors.dart';
 import '../services/plan_memory.dart';
 import 'actions_picker.dart';
+import 'event_description.dart';
 import 'picker_edits.dart';
 import 'picker_search.dart';
 import 'tree_picker.dart';
@@ -152,20 +153,23 @@ Future<List<String>?> showActionsSheet(
   );
 }
 
-/// Edits an event's description in a [showPickerSheet]; returns it, or
-/// null if dismissed. Blank is no description.
+/// Shows an event's description in a [showPickerSheet], as its HTML lays
+/// it out, links tappable ([EventDescription]); the pencil at its foot
+/// edits it, as typed. Blank, it's edited at once. Returns it as edited,
+/// or null if it wasn't, or the sheet was dismissed. Blank is no
+/// description.
 Future<String?> showTextSheet(
   BuildContext context, {
   required String title,
   required String? text,
   required String hint,
 }) {
-  var typed = text ?? '';
-  return showPickerSheet<String>(
+  String? typed;
+  return showPickerSheet<String?>(
     context,
     title: title,
-    result: () => typed.trim(),
-    body: (context, setState) => _TextSheetField(
+    result: () => typed?.trim(),
+    body: (context, setState) => _TextSheetBody(
       text: text,
       hint: hint,
       onChanged: (changed) => typed = changed,
@@ -173,7 +177,63 @@ Future<String?> showTextSheet(
   );
 }
 
-/// [showTextSheet]'s field, filling the sheet: with a controller of its
+/// [showTextSheet]'s body: [text] to read, with a pencil at the foot that
+/// turns it into a field to edit it in -- or, blank, the field at once.
+class _TextSheetBody extends StatefulWidget {
+  const _TextSheetBody({
+    required this.text,
+    required this.hint,
+    required this.onChanged,
+  });
+
+  final String? text;
+  final String hint;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_TextSheetBody> createState() => _TextSheetBodyState();
+}
+
+class _TextSheetBodyState extends State<_TextSheetBody> {
+  late var _editing = widget.text?.trim().isEmpty ?? true;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_editing) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: _TextSheetField(
+          text: widget.text,
+          hint: widget.hint,
+          onChanged: widget.onChanged,
+        ),
+      );
+    }
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: SingleChildScrollView(
+            // Room at the foot for the pencil, over the last of it.
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 88),
+            child: EventDescription(widget.text!, maxLines: null),
+          ),
+        ),
+        PositionedDirectional(
+          end: 0,
+          bottom: 16,
+          child: FloatingActionButton(
+            heroTag: null,
+            tooltip: 'Edit',
+            onPressed: () => setState(() => _editing = true),
+            child: const Icon(Icons.edit),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// [_TextSheetBody]'s field, filling the sheet: with a controller of its
 /// own, kept as long as the sheet is, closing and all.
 class _TextSheetField extends StatefulWidget {
   const _TextSheetField({

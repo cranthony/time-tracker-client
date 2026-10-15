@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.103.0
+
+- An event's description opens to read first, laid out as Google
+  Calendar writes it, its links tappable; the pencil at the foot of the
+  sheet edits it. A blank one is edited at once.
+- The event dialog's description row shows it the same way, in smaller
+  text, cut off with a fade when it's long.
+
 ## 7.102.1
 
 - Swiping quickly across the Plan screen's panes no longer drops you

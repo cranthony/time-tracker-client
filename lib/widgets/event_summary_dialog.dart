@@ -20,6 +20,7 @@ import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import 'error_sheet.dart';
 import 'color_picker.dart';
+import 'event_description.dart';
 import 'event_dialog.dart' show followThroughOption;
 import '../outbox/event_outbox.dart' show allWaiting;
 import 'follow_through_dialog.dart' show CalledOff;
@@ -1694,8 +1695,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     );
   }
 
-  /// Its description, in full, or a hint; written in a sheet up from the
-  /// foot ([showTextSheet]).
+  /// Its description, as its HTML lays it out, cut off if it's long
+  /// ([EventDescription]), or a hint; read in full, and written, in a
+  /// sheet up from the foot ([showTextSheet]).
   Widget _descriptionRow(BuildContext context) {
     final theme = Theme.of(context);
     final value = _value('description') as String?;
@@ -1715,14 +1717,17 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         if (text == null || !mounted) return;
         _set('description', text.isEmpty ? null : text);
       },
-      child: Text(
-        blank ? 'Add description' : value,
-        maxLines: 6,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodyLarge?.copyWith(
-          color: blank ? theme.hintColor : null,
-        ),
-      ),
+      child: blank
+          ? Text(
+              'Add description',
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: theme.hintColor,
+              ),
+            )
+          : Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: EventDescription(value, maxLines: 6, expandable: false),
+            ),
     );
   }
 
