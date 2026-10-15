@@ -371,7 +371,7 @@ class _ActionDialogState extends State<_ActionDialog> {
               if (!_action.isGroup)
                 SwitchListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  secondary: const Icon(Icons.commute),
+                  secondary: const Icon(Icons.directions_walk),
                   title: const Text('A way to commute'),
                   subtitle: const Text(
                     'Getting from one place to another, such as Drive: '

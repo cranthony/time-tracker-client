@@ -1932,7 +1932,11 @@ class _EventCard extends StatelessWidget {
                             Row(
                               children: [
                                 if (event.isCommute) ...[
-                                  Icon(Icons.commute, size: 14, color: muted),
+                                  Icon(
+                                    Icons.directions_walk,
+                                    size: 14,
+                                    color: muted,
+                                  ),
                                   const SizedBox(width: 4),
                                 ],
                                 Expanded(

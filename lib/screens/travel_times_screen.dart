@@ -196,7 +196,7 @@ class TravelTimeTile extends StatelessWidget {
     return ListTile(
       dense: dense,
       contentPadding: contentPadding,
-      leading: const Icon(Icons.commute),
+      leading: const Icon(Icons.directions_walk),
       title: Text.rich(
         TextSpan(
           children: [

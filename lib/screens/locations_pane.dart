@@ -205,7 +205,7 @@ class LocationsPaneState extends State<LocationsPane> {
       actions: [
         IconButton(
           tooltip: 'Travel times',
-          icon: const Icon(Icons.commute),
+          icon: const Icon(Icons.directions_walk),
           onPressed: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => TravelTimesScreen(
