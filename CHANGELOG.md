@@ -9,6 +9,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.100.1
+
+- Commutes are shown with a walking person instead of the bus and car,
+  wherever their icon appears.
+
 ## 7.100.0
 
 - Every picker of actions, people, habits and locations is now the same

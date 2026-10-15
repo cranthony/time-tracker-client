@@ -2324,7 +2324,7 @@ class _EventsScreenState extends State<EventsScreen> {
               ),
               for (final option in options)
                 ListTile(
-                  leading: const Icon(Icons.commute),
+                  leading: const Icon(Icons.directions_walk),
                   title: Text(option.action.name ?? option.action.id!),
                   subtitle: Text(
                     option.time.maxMinutes == null

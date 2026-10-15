@@ -233,9 +233,9 @@ void main() {
           event('Walk', at(3), at(4), facts: {'commute': null}),
         ]),
       );
-      expect(find.byIcon(Icons.commute), findsOneWidget);
+      expect(find.byIcon(Icons.directions_walk), findsOneWidget);
       expect(
-        tester.getTopLeft(find.byIcon(Icons.commute)).dy,
+        tester.getTopLeft(find.byIcon(Icons.directions_walk)).dy,
         lessThan(tester.getTopLeft(find.text('Walk')).dy),
       );
     });

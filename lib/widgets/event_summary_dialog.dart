@@ -899,7 +899,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.commute, size: 16, color: color),
+                Icon(Icons.directions_walk, size: 16, color: color),
                 const SizedBox(width: 4),
                 Text(
                   'Commute',

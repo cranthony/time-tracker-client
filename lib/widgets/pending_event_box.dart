@@ -491,7 +491,7 @@ class _PendingEventBoxViewState extends State<PendingEventBoxView> {
         key: ValueKey((#commute, top)),
         child: _button(
           colors,
-          icon: Icons.commute,
+          icon: Icons.directions_walk,
           primary: queued,
           tooltip: queued
               ? 'Take the commute away'
