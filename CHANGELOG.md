@@ -9,6 +9,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.101.1
+
+- In the travel time editor, the action a way is by is marked with the
+  commute icon, the walking person, instead of the directions sign.
+
 ## 7.101.0
 
 - The timeline snaps to 5 minutes by default, instead of 15. A grid

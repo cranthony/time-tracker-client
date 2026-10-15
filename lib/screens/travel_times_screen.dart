@@ -605,7 +605,7 @@ class _TravelTimeEditorState extends State<TravelTimeEditor> {
                   label: 'By',
                   value: way.mode,
                   choices: _modes,
-                  place: Icons.directions,
+                  place: Icons.directions_walk,
                   searchHint: 'Search actions',
                   onChanged: (picked) => setState(() => way.mode = picked),
                 ),
