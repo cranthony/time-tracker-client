@@ -62,6 +62,33 @@ void main() {
     );
   }
 
+  screenTest("a note that can't be kept keeps the sheet open, to try "
+      'again', (tester) async {
+    final store = _FailingStore();
+    final repo = InMemoryNotesRepository();
+    await tester.pumpWidget(app(repo, store: store));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Add note'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'Walking home');
+    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    await tester.pumpAndSettle();
+    // Still there, as typed, saying why.
+    expect(find.text('New note'), findsOneWidget);
+    expect(find.text('Walking home'), findsOneWidget);
+    expect(find.textContaining("Couldn't keep the note"), findsOneWidget);
+
+    store.failing = false;
+    await tester.tap(find.widgetWithText(FilledButton, 'Try again'));
+    await tester.pumpAndSettle();
+    expect(find.text('New note'), findsNothing);
+    expect([
+      ...store.items.map((p) => p.note.description),
+      for (final n in await repo.uncompactedNotes()) n.description,
+    ], contains('Walking home'));
+  });
+
   screenTest('shows when notes were last compacted, and the latest note '
       'compacted', (tester) async {
     await tester.pumpWidget(
@@ -595,4 +622,15 @@ class _FailingEditsRepository extends InMemoryNotesRepository {
     String? description,
   }) async =>
       throw McpException('Tool edit_note failed: That note was compacted');
+}
+
+/// Can't write what's kept while [failing]: a full or locked store.
+class _FailingStore extends InMemoryOutboxStore<PendingNote> {
+  var failing = true;
+
+  @override
+  Future<void> save(List<PendingNote> items) async {
+    if (failing) throw StateError('disk full');
+    return super.save(items);
+  }
 }

@@ -7,6 +7,16 @@ minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
 
+
+## 7.97.1
+
+- A note added from the New note sheet can't be dropped any more. The
+  sheet keeps the note on the device itself before it closes, rather
+  than leaving that to the Notes page, which lost it if it was gone by
+  then: switched to Events by a tap on the home screen calendar, say.
+  If the note can't be kept, the sheet stays open with it, saying so, to
+  try again; and a note that wasn't kept no longer shows as waiting.
+
 ## 7.97.0
 
 - The home screen calendar's title ("Calendar", and its "+") can be at
