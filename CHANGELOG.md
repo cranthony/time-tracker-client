@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.102.0
+
+- The Travel times page has a search, which has the keyboard as soon as
+  the page opens: it narrows the list by the places a travel time is
+  between, its ways of getting there, and its note.
+
 ## 7.101.2
 
 - In the actions list, an action that's a way to commute has a walking

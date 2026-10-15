@@ -10,6 +10,7 @@ import '../widgets/edit_page.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/actions_picker.dart';
 import '../widgets/picker_sheet.dart';
+import '../widgets/plan_pane.dart';
 import '../widgets/status_message.dart';
 import '../widgets/tree_picker.dart';
 
@@ -38,8 +39,10 @@ Set<String> travelCommutes(PlanMemory memory) => {
 /// Roughly how long it takes to get between places -- each a location or a
 /// location group -- by each way of getting there: an action or action
 /// group, such as Drive or Transit. Tapping one edits or deletes it; "+"
-/// adds one. Each counts both ways unless it's one way. Shows what
-/// [memory] has while it loads afresh, with the actions from [actions].
+/// adds one. Each counts both ways unless it's one way. A search, which
+/// has the keyboard as the page opens, narrows them by their places, ways
+/// and note. Shows what [memory] has while it loads afresh, with the
+/// actions from [actions].
 class TravelTimesScreen extends StatefulWidget {
   const TravelTimesScreen({
     super.key,
@@ -58,6 +61,9 @@ class TravelTimesScreen extends StatefulWidget {
 
 class _TravelTimesScreenState extends State<TravelTimesScreen> {
   Object? _error;
+
+  /// What the search has in it.
+  String _query = '';
 
   @override
   void initState() {
@@ -121,44 +127,66 @@ class _TravelTimesScreenState extends State<TravelTimesScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () => _load(again: true),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 24),
-          children: switch ((travel, _error)) {
-            (null, final error?) => [
-              LoadError(
-                what: 'the travel times',
-                error: error,
-                onRetry: () => _load(again: true),
-              ),
-            ],
-            (null, _) => const [LinearProgressIndicator()],
-            (final travel?, _) => [
-              for (final t in travel)
-                TravelTimeTile(
-                  travel: t,
-                  places: places,
-                  modes: modes,
-                  onTap: () => _edit(t),
+      body: PlanPane(
+        searchHint: 'Search travel times',
+        onSearch: (query) => setState(() => _query = query),
+        autofocus: true,
+        child: RefreshIndicator(
+          onRefresh: () => _load(again: true),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 24),
+            children: switch ((travel, _error)) {
+              (null, final error?) => [
+                LoadError(
+                  what: 'the travel times',
+                  error: error,
+                  onRetry: () => _load(again: true),
                 ),
-              if (travel.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    'No travel times yet. Tap + to say roughly how long it '
-                    'takes between two places -- or neighborhoods, or cities '
-                    '-- by each way of getting there.',
-                    style: theme.textTheme.bodySmall,
+              ],
+              (null, _) => const [LinearProgressIndicator()],
+              (final travel?, _) => [
+                for (final t in travel)
+                  if (_matches(t, places, modes))
+                    TravelTimeTile(
+                      travel: t,
+                      places: places,
+                      modes: modes,
+                      onTap: () => _edit(t),
+                    ),
+                if (travel.isNotEmpty &&
+                    !travel.any((t) => _matches(t, places, modes)))
+                  NoMatches(query: _query),
+                if (travel.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      'No travel times yet. Tap + to say roughly how long it '
+                      'takes between two places -- or neighborhoods, or cities '
+                      '-- by each way of getting there.',
+                      style: theme.textTheme.bodySmall,
+                    ),
                   ),
-                ),
-            ],
-          },
+              ],
+            },
+          ),
         ),
       ),
     );
   }
+
+  /// Whether [travel] has every word of the search in its places, ways
+  /// of getting there, or note, named from [places] and [modes].
+  bool _matches(
+    TravelTime travel,
+    List<PickerNode> places,
+    List<PickerNode> modes,
+  ) => matchesSearch(_query, [
+    _name(travel.fromId, places),
+    _name(travel.toId, places),
+    for (final m in travel.times) _name(m.modeId, modes),
+    travel.note,
+  ]);
 }
 
 /// [id]'s name among [choices] -- its path, if it's in a group -- or the

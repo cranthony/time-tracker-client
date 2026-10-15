@@ -12,6 +12,7 @@ class PlanPane extends StatefulWidget {
     super.key,
     this.searchHint = 'Search',
     this.onSearch,
+    this.autofocus = false,
     this.actions = const [],
     this.summary,
     required this.child,
@@ -26,6 +27,9 @@ class PlanPane extends StatefulWidget {
   /// Called with the search as it's typed; "" once it's cleared. Null
   /// for no search: a pane with too little in it to need one.
   final ValueChanged<String>? onSearch;
+
+  /// Whether the search takes the keyboard as soon as the pane shows.
+  final bool autofocus;
 
   /// Buttons for the pane, after the search.
   final List<Widget> actions;
@@ -69,6 +73,7 @@ class _PlanPaneState extends State<PlanPane>
                     Expanded(
                       child: TextField(
                         controller: _search,
+                        autofocus: widget.autofocus,
                         textInputAction: TextInputAction.search,
                         decoration: InputDecoration(
                           hintText: widget.searchHint,
