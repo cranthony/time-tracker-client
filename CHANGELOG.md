@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.106.0
+
+- An event too short or too narrow to list its locations down its right
+  shows them on its summary's line instead, before its diamonds. Its
+  summary keeps at least half the line; a location cut short ends in an
+  ellipsis, and the event's priority chip makes way for it.
+
 ## 7.105.0
 
 - A new event starts at the place of the event before it. If that was a

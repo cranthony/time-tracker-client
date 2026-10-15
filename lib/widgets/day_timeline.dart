@@ -77,6 +77,15 @@ const _detailIconSize = 12.0;
 const _detailIconGap = 2.0;
 const _detailGap = 8.0;
 
+/// The space before each of the things after an event's summary, and
+/// inside a chip either side of its text.
+const _chipGap = 6.0;
+const _chipPadding = 4.0;
+
+/// The size of a commute's icon before its summary, and the space after.
+const _commuteIconSize = 14.0;
+const _commuteIconGap = 4.0;
+
 /// The time labels' and priority labels' text, and how tall they are.
 const _labelFontSize = 11.0;
 const _bandFontSize = 10.0;
@@ -1956,15 +1965,65 @@ class _EventCard extends StatelessWidget {
                         );
                         final detailWidth =
                             constraints.maxWidth * _detailsWidthFraction;
-                        final detailLines =
+                        final packed =
                             constraints.maxWidth < _detailsMinCardWidth
                             ? const <List<(_Detail, String)>>[]
                             : _packDetails(context, detailWidth, detailStyle);
+                        // Its locations are listed only if all their lines
+                        // fit; if not, they're on its summary's line.
+                        final locationLines = packed
+                            .where((line) => line.first.$1 == _Detail.location)
+                            .length;
+                        final locationsListed =
+                            locationLines > 0 &&
+                            _actionsThatFit(
+                                  context,
+                                  constraints.maxHeight,
+                                  labelled: mark?.label != null,
+                                  count: packed.length,
+                                ) >=
+                                locationLines;
+                        final detailLines = locationsListed
+                            ? packed
+                            : [
+                                for (final line in packed)
+                                  if (line.first.$1 != _Detail.location) line,
+                              ];
                         final detailed = _actionsThatFit(
                           context,
                           constraints.maxHeight,
                           labelled: mark?.label != null,
                           count: detailLines.length,
+                        );
+                        final summaryStyle = styles.summary?.copyWith(
+                          color: cancelled ? muted : null,
+                          decoration: strike,
+                        );
+                        final priorityStyle = styles.chip?.copyWith(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w600,
+                        );
+                        final located = locationsListed
+                            ? null
+                            : switch ([
+                                for (final (kind, names) in details)
+                                  if (kind == _Detail.location) ...names,
+                              ]) {
+                                final names when names.isNotEmpty => names.join(
+                                  ', ',
+                                ),
+                                _ => null,
+                              };
+                        final (:locationWidth, :prioritized) = _summaryLine(
+                          context,
+                          constraints.maxWidth,
+                          summary: summary,
+                          summaryStyle: summaryStyle,
+                          location: located,
+                          locationStyle: detailStyle,
+                          priority: 'P$priority',
+                          priorityStyle: priorityStyle,
+                          duration: duration,
                         );
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1974,22 +2033,39 @@ class _EventCard extends StatelessWidget {
                                 if (event.isCommute) ...[
                                   Icon(
                                     Icons.directions_walk,
-                                    size: 14,
+                                    size: _commuteIconSize,
                                     color: muted,
                                   ),
-                                  const SizedBox(width: 4),
+                                  const SizedBox(width: _commuteIconGap),
                                 ],
                                 Expanded(
                                   child: Text(
                                     summary,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: styles.summary?.copyWith(
-                                      color: cancelled ? muted : null,
-                                      decoration: strike,
-                                    ),
+                                    style: summaryStyle,
                                   ),
                                 ),
+                                if (located != null)
+                                  SizedBox(
+                                    width: locationWidth,
+                                    child: ClipRect(
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(
+                                          left: _chipGap,
+                                        ),
+                                        child: Align(
+                                          alignment: Alignment.centerRight,
+                                          child: _DetailLine(
+                                            items: [
+                                              (_Detail.location, located),
+                                            ],
+                                            style: detailStyle,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 if (ids.isNotEmpty)
                                   _DiamondStack(
                                     colors: [
@@ -2012,15 +2088,13 @@ class _EventCard extends StatelessWidget {
                                         ? _ChipShape.openTop
                                         : _ChipShape.rounded,
                                   ),
-                                _Chip(
-                                  text: 'P$priority',
-                                  style: styles.chip?.copyWith(
-                                    color: Colors.black87,
-                                    fontWeight: FontWeight.w600,
+                                if (prioritized)
+                                  _Chip(
+                                    text: 'P$priority',
+                                    style: priorityStyle,
+                                    fill: priorityColor(priority),
+                                    border: priorityColor(priority),
                                   ),
-                                  fill: priorityColor(priority),
-                                  border: priorityColor(priority),
-                                ),
                               ],
                             ),
                             if (mark case EventMark(
@@ -2169,19 +2243,7 @@ extension on _EventCard {
     double width,
     TextStyle? style,
   ) {
-    final base = DefaultTextStyle.of(context).style.merge(style);
-    final scaler = MediaQuery.textScalerOf(context);
-    double widthOf(String text) {
-      final painter = TextPainter(
-        text: TextSpan(text: text, style: base),
-        textDirection: TextDirection.ltr,
-        textScaler: scaler,
-        maxLines: 1,
-      )..layout();
-      final width = painter.width;
-      painter.dispose();
-      return width;
-    }
+    double widthOf(String text) => _widthOf(context, text, style);
 
     final lines = <List<(_Detail, String)>>[];
     for (final (kind, names) in details) {
@@ -2200,6 +2262,61 @@ extension on _EventCard {
       lines.add(line);
     }
     return lines;
+  }
+
+  /// How wide [text] is on one line, in [style].
+  double _widthOf(BuildContext context, String text, TextStyle? style) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: DefaultTextStyle.of(context).style.merge(style),
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final width = painter.width.ceilToDouble();
+    painter.dispose();
+    return width;
+  }
+
+  /// How its summary's line, [width] wide, fits its [location] (if
+  /// it's there) between its summary and its diamonds: as much of it as
+  /// fits once its summary has whatever it needs of half the line. If
+  /// that's not all of it, the line goes without its [priority] chip, to
+  /// make more room.
+  ({double locationWidth, bool prioritized}) _summaryLine(
+    BuildContext context,
+    double width, {
+    required String summary,
+    required TextStyle? summaryStyle,
+    required String? location,
+    required TextStyle? locationStyle,
+    required String priority,
+    required TextStyle? priorityStyle,
+    required String? duration,
+  }) {
+    if (location == null) return (locationWidth: 0, prioritized: true);
+    double chip(String text, TextStyle? style) =>
+        _chipGap + 2 * _chipPadding + _widthOf(context, text, style);
+    final ids = placement.event.actionIds;
+    final room =
+        width -
+        (placement.event.isCommute ? _commuteIconSize + _commuteIconGap : 0) -
+        (ids.isEmpty ? 0 : _DiamondStack.widthOf(ids.length)) -
+        (duration == null ? 0 : chip(duration, styles.chip));
+    final wanted =
+        _chipGap +
+        _detailIconSize +
+        _detailIconGap +
+        _widthOf(context, location, locationStyle);
+    final summaryWidth = _widthOf(context, summary, summaryStyle);
+    double fit(double room) =>
+        math.max(0, math.min(wanted, room - math.min(summaryWidth, room / 2)));
+    final withPriority = fit(room - chip(priority, priorityStyle));
+    return withPriority >= wanted
+        ? (locationWidth: withPriority, prioritized: true)
+        : (locationWidth: fit(room), prioritized: false);
   }
 
   /// How many of its [count] actions' lines fit whole in [height], under
@@ -2437,7 +2554,7 @@ class _Chip extends StatelessWidget {
     final radius = shape == _ChipShape.square ? 0.0 : 4.0;
     final open = shape == _ChipShape.openTop;
     return Padding(
-      padding: const EdgeInsets.only(left: 6),
+      padding: const EdgeInsets.only(left: _chipGap),
       child: CustomPaint(
         foregroundPainter: open ? _OpenTopPainter(border, radius) : null,
         child: DecoratedBox(
@@ -2447,7 +2564,7 @@ class _Chip extends StatelessWidget {
             borderRadius: BorderRadius.circular(radius),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.symmetric(horizontal: _chipPadding),
             child: Text(text, style: style),
           ),
         ),
@@ -2518,9 +2635,12 @@ class _DiamondStack extends StatelessWidget {
   /// A diamond's width, corner to corner.
   static const _size = 10.0;
 
+  /// How wide [count] diamonds are, with the space before them.
+  static double widthOf(int count) => _chipGap + _size + _step * (count - 1);
+
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(left: 6),
+    padding: const EdgeInsets.only(left: _chipGap),
     child: SizedBox(
       width: _size + _step * (colors.length - 1),
       height: _size,
