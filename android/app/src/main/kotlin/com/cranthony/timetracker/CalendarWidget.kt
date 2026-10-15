@@ -19,6 +19,7 @@ import androidx.glance.LocalSize
 import androidx.glance.action.Action
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.appWidgetBackground
@@ -62,6 +63,9 @@ import org.json.JSONObject
  * Tapping an event, a day, or the header opens the app on Events there
  * (see MainActivity); the "+" opens the New note dialog, as AddNoteWidget
  * does.
+ *
+ * Each widget's header -- "Calendar", and the "+" -- is at its top, or,
+ * set so in its settings (CalendarWidgetConfigureActivity), its bottom.
  */
 class CalendarWidget : GlanceAppWidget() {
     override val stateDefinition = HomeWidgetGlanceStateDefinition()
@@ -69,13 +73,15 @@ class CalendarWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val widgetId = GlanceAppWidgetManager(context).getAppWidgetId(id)
         provideContent {
-            // A new state each time it's asked to draw again, so now is
-            // read afresh each time.
+            // A new state each time it's asked to draw again, so now -- and
+            // its settings -- are read afresh each time.
             val state = currentState<HomeWidgetGlanceState>()
             val days = CalendarDay.parse(state.preferences.getString(SNAPSHOT_KEY, null))
             val weather = DayWeather.parse(state.preferences.getString(WEATHER_KEY, null))
-            GlanceTheme { Content(context, days, weather, System.currentTimeMillis()) }
+            val atBottom = titleAtBottom(context, widgetId)
+            GlanceTheme { Content(context, days, weather, System.currentTimeMillis(), atBottom) }
         }
     }
 
@@ -88,6 +94,29 @@ class CalendarWidget : GlanceAppWidget() {
 
         const val ACTION_SHOW_EVENTS = "com.cranthony.timetracker.SHOW_EVENTS"
         const val CHANNEL = "time_tracker/calendar_widget"
+
+        /** Where each widget's settings are kept, by its id. */
+        private const val SETTINGS = "calendar_widget_settings"
+
+        private fun titleAtBottomKey(widgetId: Int) = "title_at_bottom_$widgetId"
+
+        /** Whether widget [widgetId]'s header is at its bottom. */
+        fun titleAtBottom(context: Context, widgetId: Int): Boolean =
+            context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE)
+                .getBoolean(titleAtBottomKey(widgetId), false)
+
+        fun setTitleAtBottom(context: Context, widgetId: Int, atBottom: Boolean) {
+            context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE).edit()
+                .putBoolean(titleAtBottomKey(widgetId), atBottom)
+                .apply()
+        }
+
+        /** Forgets the settings of the widgets [widgetIds], removed. */
+        fun forget(context: Context, widgetIds: IntArray) {
+            val edit = context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE).edit()
+            for (widgetId in widgetIds) edit.remove(titleAtBottomKey(widgetId))
+            edit.apply()
+        }
 
         /**
          * Opens Events at [at] (milliseconds since the epoch), on [event] if
@@ -118,6 +147,11 @@ class CalendarWidget : GlanceAppWidget() {
 /** Draws [CalendarWidget] when the app or its scheduled updates ask. */
 class CalendarWidgetReceiver : HomeWidgetGlanceWidgetReceiver<CalendarWidget>() {
     override val glanceAppWidget = CalendarWidget()
+
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        super.onDeleted(context, appWidgetIds)
+        CalendarWidget.forget(context, appWidgetIds)
+    }
 }
 
 /** One day of the snapshot: from [start] to [end], and its events. */
@@ -201,6 +235,7 @@ private fun Content(
     days: List<CalendarDay>,
     weather: Map<Long, DayWeather>,
     now: Long,
+    titleAtBottom: Boolean,
 ) {
     // What's over is left out: the days that have ended, and their events.
     val shown = days.filter { it.end > now }.map { day ->
@@ -214,7 +249,7 @@ private fun Content(
             .cornerRadius(16.dp)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
-        Header(context)
+        if (!titleAtBottom) Header(context, atBottom = false)
         if (shown.isEmpty()) {
             Text(
                 text = if (days.isEmpty()) {
@@ -224,13 +259,12 @@ private fun Content(
                 },
                 modifier = GlanceModifier
                     .fillMaxWidth()
+                    .defaultWeight()
                     .padding(vertical = 12.dp)
                     .clickable(open(context)),
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 14.sp),
             )
-            return@Column
-        }
-        LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
+        } else LazyColumn(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
             for (day in shown) {
                 item(itemId = day.start) { DayHeader(context, day, weather[day.start], now) }
                 if (day.events.isEmpty()) {
@@ -253,14 +287,20 @@ private fun Content(
                 }
             }
         }
+        if (titleAtBottom) Header(context, atBottom = true)
     }
 }
 
-/** "Calendar", which opens Events at now, and the "+" for a new note. */
+/**
+ * "Calendar", which opens Events at now, and the "+" for a new note:
+ * above the days, or, [atBottom], below them.
+ */
 @Composable
-private fun Header(context: Context) {
+private fun Header(context: Context, atBottom: Boolean) {
     Row(
-        modifier = GlanceModifier.fillMaxWidth().padding(bottom = 4.dp),
+        modifier = GlanceModifier
+            .fillMaxWidth()
+            .padding(top = if (atBottom) 4.dp else 0.dp, bottom = if (atBottom) 0.dp else 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

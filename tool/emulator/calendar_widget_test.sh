@@ -19,6 +19,8 @@
 #   event_cold an event tapped, the app's process gone: Events, showing it
 #   day_warm   a day's header tapped, the app in the background: Events
 #   add_note   its "+" tapped: the New note dialog
+#   title_bottom its settings opened, as the launcher does, and "Title at
+#              the bottom" picked: its "Calendar" header below its days
 #
 # Writes the device log, the widget's views and a screenshot per case to
 # $OUT (build/emulator). Used by .github/workflows/emulator.yml.
@@ -228,6 +230,38 @@ if tap_view 'Add note' && wait_for 'New note' 10; then
   pass add_note
 else
   fail add_note "the \"+\" didn't open the New note dialog"
+fi
+
+# Its settings, opened as the launcher opens them, for its id: the title
+# moved to the bottom, under the days. The top of a view $1 (exactly).
+top_of() {
+  ui_nodes | grep -E "text=\"$1\"" | head -1 |
+    sed -n 's/.*bounds="\[[0-9]*,\([0-9]*\)\].*/\1/p'
+}
+# Its id, from the first widget the dump says is its receiver's.
+widget_id=$(adb shell dumpsys appwidget | tr -d '\r' |
+  awk '/id=[0-9]+/ { match($0, /id=[0-9]+/); id = substr($0, RSTART + 3, RLENGTH - 3) }
+       /CalendarWidgetReceiver/ && id != "" { print id; exit }')
+home
+sleep 2
+before_title=$(top_of Calendar)
+before_day=$(top_of '(Today|Tomorrow)')
+if [ -z "$widget_id" ]; then
+  fail title_bottom "couldn't find the widget's id"
+elif ! adb shell am start -W -n "$PKG/.CalendarWidgetConfigureActivity" \
+  --ei appWidgetId "$widget_id" >/dev/null || ! wait_for 'Title at the bottom' 10; then
+  fail title_bottom "its settings didn't open"
+elif tap_view 'Title at the bottom' && sleep 1 && tap_view Done && sleep 3 &&
+  home && sleep 3 && after_title=$(top_of Calendar) &&
+  after_day=$(top_of '(Today|Tomorrow)') &&
+  [ -n "$before_title" ] && [ -n "$before_day" ] &&
+  [ "$before_title" -lt "$before_day" ] &&
+  [ -n "$after_title" ] && [ -n "$after_day" ] &&
+  [ "$after_title" -gt "$after_day" ]; then
+  adb exec-out screencap -p > "$OUT/calendar_title_bottom.png"
+  pass title_bottom
+else
+  fail title_bottom "\"Calendar\" wasn't moved below the days (before $before_title/$before_day, after ${after_title:-?}/${after_day:-?})"
 fi
 
 kill $logcat

@@ -15,4 +15,7 @@
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+    <!-- A home screen calendar's settings (CalendarWidgetConfigureActivity):
+         a small dialog over the home screen. -->
+    <style name="WidgetSettingsTheme" parent="@android:style/Theme.DeviceDefault.Dialog.Alert" />
 </resources>
