@@ -12,9 +12,10 @@ import '../services/weather.dart';
 /// (the user says which, with each's "Expect proposal"), and
 /// otherwise every [refreshFallback], said plainly; when the next is
 /// due, and why; and what the last did. How long after, and how often
-/// again, are set here. So is how often the weather's fetched, while
-/// it's on, and what its last fetch did. Background fetches are
-/// Android's: elsewhere it says the app fetches only while it's open.
+/// again, are set here, under a "Time Tracker" heading. Above it all,
+/// under "Weather", is how often the weather's fetched, while it's on,
+/// and what its last fetch did. Background fetches are Android's:
+/// elsewhere it says the app fetches only while it's open.
 class BackgroundUpdatesScreen extends StatefulWidget {
   const BackgroundUpdatesScreen({super.key, required this.refresh});
 
@@ -75,6 +76,16 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(0, 8, 0, 32),
               children: [
+                if (!refresh.supported)
+                  _Banner(
+                    icon: Icons.info_outline,
+                    text:
+                        'Background updates run on Android. Here, the app '
+                        "fetches only while it's open.",
+                  ),
+                if (refresh.supported && refresh.weather != null)
+                  ..._weather(theme, refresh, refresh.weather!, day, at),
+                _section(theme, 'Time Tracker'),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: Text(
@@ -89,13 +100,6 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
                     style: theme.textTheme.bodyMedium,
                   ),
                 ),
-                if (!refresh.supported)
-                  _Banner(
-                    icon: Icons.info_outline,
-                    text:
-                        'Background updates run on Android. Here, the app '
-                        "fetches only while it's open.",
-                  ),
                 if (refresh.supported) ...[
                   ListTile(
                     leading: const Icon(Icons.update),
@@ -189,8 +193,6 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
                     "while the phone's idle or the app's little used -- "
                     'by hours, sometimes.',
                   ),
-                  if (refresh.weather case final weather?)
-                    ..._weather(theme, refresh, weather, day, at),
                 ],
                 _heading(theme, "When Claude's routines run"),
                 if (refresh.unavailable && hints == null)
@@ -276,7 +278,7 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
       final m => 'Every $m min',
     };
     return [
-      _heading(theme, 'Weather'),
+      _section(theme, 'Weather'),
       ListTile(
         leading: const Icon(Icons.cloud_outlined),
         title: const Text('Forecast'),
@@ -324,6 +326,19 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
     ];
   }
 
+  /// A heading over all that's fetched for one thing: the weather, or
+  /// Time Tracker's own.
+  Widget _section(ThemeData theme, String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+    child: Text(
+      text,
+      style: theme.textTheme.titleLarge?.copyWith(
+        color: theme.colorScheme.primary,
+      ),
+    ),
+  );
+
+  /// A heading over part of a [_section].
   Widget _heading(ThemeData theme, String text) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
     child: Text(text, style: theme.textTheme.titleMedium),

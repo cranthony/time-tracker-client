@@ -301,6 +301,15 @@ void main() {
       return (settings, refresh);
     }
 
+    testWidgets("puts the weather first, then Time Tracker's own under its "
+        'heading', (tester) async {
+      await pump(tester);
+      double top(String text) => tester.getTopLeft(find.text(text)).dy;
+      expect(top('Weather'), lessThan(top('Forecast')));
+      expect(top('Forecast'), lessThan(top('Time Tracker')));
+      expect(top('Time Tracker'), lessThan(top('Timing')));
+    });
+
     testWidgets('sets how often the weather is fetched', (tester) async {
       final (settings, _) = await pump(tester);
       expect(find.text('Weather'), findsOneWidget);

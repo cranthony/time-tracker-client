@@ -6,6 +6,11 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.93.1
+
+- The Background updates page has the weather first, then everything
+  else under a "Time Tracker" heading.
+
 ## 7.93.0
 
 - The home screen calendar gives each day's weather in its header, while
