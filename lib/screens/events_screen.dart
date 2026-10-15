@@ -4995,14 +4995,16 @@ class _EventsScreenState extends State<EventsScreen> {
             left: 0,
             right: 0,
             top: offset(d) - pad,
-            height: timelineHeight(d, _scale),
+            // At the foot of them all, past it -- so an event drawn past
+            // midnight is there to tap, as far as it's drawn.
+            height:
+                timelineHeight(d, _scale) + (d == days.last ? _pastFoot : 0),
             child: _stackedDay(
               d,
               // Drawn from its midnight to the next, but at the top of
-              // them all, and past the foot -- an event drawn past
-              // midnight.
+              // them all, and past the foot.
               clipTop: d == days.first ? 0 : pad,
-              clipBottom: d == days.last ? -_pastFoot : pad,
+              clipBottom: d == days.last ? 0 : pad,
               shaded: d != day,
             ),
           ),
@@ -5129,8 +5131,12 @@ class _EventsScreenState extends State<EventsScreen> {
           if (shaded)
             // The days either side, under a shadow: there to see, and to
             // make or move events across midnight into, but not the day
-            // shown.
-            Positioned.fill(
+            // shown. Not past its foot.
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: timelineHeight(day, _scale),
               child: IgnorePointer(
                 child: ColoredBox(
                   color: Theme.of(context).colorScheme.surface

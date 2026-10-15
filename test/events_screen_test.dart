@@ -2296,6 +2296,38 @@ void main() {
       expect(find.text('Create'), findsNothing);
     });
 
+    testWidgets('an event drawn past midnight, below the timeline, still '
+        'opens', (tester) async {
+      // Each too short for its text, so they're drawn on down, the last
+      // past midnight.
+      final repo = _RecordingRepository([
+        for (final (i, minute) in [50, 53, 56, 58, 59].indexed)
+          Event(
+            id: 'e$i',
+            start: at(30, 23, minute),
+            end: at(30, 23, minute + 1),
+            summary: 'Late $i',
+          ),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView), const Offset(0, -3000));
+      await tester.pumpAndSettle();
+      final last = find.text('Late 4');
+      // Below the foot of the timeline.
+      expect(
+        tester.getTopLeft(last).dy,
+        greaterThan(
+          tester.getTopLeft(find.byType(DayTimeline)).dy +
+              timelineHeight(at(30, 0), defaultTimelineScale),
+        ),
+      );
+
+      await tester.tapAt(tester.getCenter(last));
+      await tester.pumpAndSettle();
+      expect(inDialog(find.text('Late 4')), findsOneWidget);
+    });
+
     testWidgets("shows the server's error and keeps what was typed", (
       tester,
     ) async {

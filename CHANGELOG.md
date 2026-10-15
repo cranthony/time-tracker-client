@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.104.1
+
+- An event drawn past midnight at the foot of the timeline, pushed down
+  by those above it, can be tapped to open it, as far as it's drawn.
+  Without one, taps below midnight do what they did.
+
 ## 7.104.0
 
 - Moving an event, the commute button shows at each end unless the event
