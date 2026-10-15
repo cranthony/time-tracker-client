@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.105.0
+
+- A new event starts at the place of the event before it. If that was a
+  commute, or had no place, it starts at the place of the event after
+  that one instead, unless that's a commute too. Logged from Google
+  Calendar with a location of its own, it keeps that instead.
+
 ## 7.104.2
 
 - Scrolled to the foot of the timeline, an event drawn on past midnight
