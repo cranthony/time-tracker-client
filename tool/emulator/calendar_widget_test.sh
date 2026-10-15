@@ -138,6 +138,29 @@ weather_reads() {
 # The sample data's events (lib/demo/sample_data.dart) that come every
 # day but today, so some are always in the widget's next few days.
 SAMPLE_EVENTS='(Get up and get ready|Work|Dinner|TV|Sleep)'
+# The event for the cold case to tap: the first of them on the last
+# screen in calendar_scrolled.txt, as "yes <event>" if it's under the
+# widget's "Today", or "no <event>"; nothing if none's there. The next
+# day's header is "Tomorrow", or, made room for the weather, its weekday
+# ("Thu"); the one over an event may be on an earlier screen, so the
+# screens are read in order -- the widget's views only, not the
+# launcher's date ("Thu, Oct 15"). Under "Today", only "Sleep": still on
+# from last night, it opens the day it started. A "Get up and get ready"
+# today, from another series (the sample's events are every day but
+# today), opens today -- whose weather, all-day events and Claude's recap
+# leave the timeline no room to show it, on the emulator's small screen.
+pick_event() {
+  grep -E "^--\$|$WIDGET" "$OUT/calendar_scrolled.txt" 2>/dev/null |
+    sed -n -e 's/^--$/--/p' -e 's/.*[[:space:]]text="\([^"]*\)".*/\1/p' |
+    awk -v events="^$SAMPLE_EVENTS\$" '
+      $0 == "--" { pick = ""; next }
+      $0 == "Today" { under = 1; next }
+      $0 ~ /^(Tomorrow|Mon|Tue|Wed|Thu|Fri|Sat|Sun)/ { under = 0; next }
+      pick == "" && $0 ~ events && (!under || $0 == "Sleep") {
+        pick = $0; today = under
+      }
+      END { if (pick != "") print (today ? "yes" : "no"), pick }'
+}
 
 failed=()
 pass() { echo "PASS $1"; }
@@ -181,17 +204,20 @@ else
   if poll 20 weather_shown; then weather=yes; else weather=no; fi
   adb exec-out screencap -p > "$OUT/calendar_weather.png"
   # The list may start with today's events, or with nothing planned:
-  # scroll it until an event shows, a dozen times at most -- after 7:45
-  # AM, today's other events (Breakfast to Get ready for bed) fill more
-  # than four swipes of the widget's two rows. Within the widget's list:
-  # a swipe up that starts below the widget, on the home screen, opens
-  # the launcher's app drawer instead. Each screen's views, in order, go
-  # to calendar_scrolled.txt, for the day headers scrolled past.
-  : > "$OUT/calendar_scrolled.txt"
+  # scroll it until an event to tap (pick_event, below) shows, a dozen
+  # times at most -- after 7:45 AM, today's other events (Breakfast to Get
+  # ready for bed) fill more than four swipes of the widget's two rows.
+  # Within the widget's list: a swipe up that starts below the widget, on
+  # the home screen, opens the launcher's app drawer instead. Each
+  # screen's views, in order, go to calendar_scrolled.txt after a "--",
+  # for the day headers scrolled past -- the weather case's first, with
+  # "Today": the list can move on its own as the widget's drawn again,
+  # and start already past it.
+  { echo --; cat "$OUT/calendar_weather.txt"; } > "$OUT/calendar_scrolled.txt"
   for i in $(seq 0 12); do
     ui_nodes > "$OUT/calendar_shown.txt"
-    cat "$OUT/calendar_shown.txt" >> "$OUT/calendar_scrolled.txt"
-    grep -qE "text=\"$SAMPLE_EVENTS\"" "$OUT/calendar_shown.txt" && break
+    { echo --; cat "$OUT/calendar_shown.txt"; } >> "$OUT/calendar_scrolled.txt"
+    [ -n "$(pick_event)" ] && break
     [ "$i" -lt 12 ] || break
     b=$(list_bounds)
     [ -n "$b" ] || break
@@ -220,29 +246,38 @@ fi
 # background: the tap that launched it is the one the Dart side collects
 # as it starts. Not force-stopped: Android hides a stopped app's widgets
 # until it's opened again.
-event=$(grep -oE "text=\"$SAMPLE_EVENTS\"" "$OUT/calendar_shown.txt" 2>/dev/null |
-  head -1 | sed 's/text="\(.*\)"/\1/')
-# Whether it's under the widget's "Today": the sample's events are every
-# day but today, but a "Get up and get ready" today, from another series,
-# shows first while it's on (7:00 to 7:45 AM) -- and opens today. The
-# next day's header is "Tomorrow", or, made room for the weather, its
-# weekday ("Thu"). Its header may have been scrolled past, so this reads
-# every screen the shown case scrolled through, in order -- the widget's
-# views only, not the launcher's date ("Thu, Oct 15"). The first event in
-# them is this one: the scrolling stopped at the first to show.
-today=$(grep "$WIDGET" "$OUT/calendar_scrolled.txt" 2>/dev/null |
-  grep -oE 'text="[^"]*"' | sed 's/text="\(.*\)"/\1/' |
-  awk -v event="$event" '
-    $0 == "Today" { under = 1; next }
-    $0 ~ /^(Tomorrow|Mon|Tue|Wed|Thu|Fri|Sat|Sun)/ { under = 0; next }
-    $0 == event { print (under ? "yes" : "no"); exit }')
+picked=$(pick_event)
+event=${picked#* }
+today=${picked%% *}
+# Whether the widget's drawn, showing the event: not Glance's loading view
+# (a ProgressBar, the app's), which it's left on if the app's ended while
+# drawing it.
+widget_drawn() {
+  local nodes
+  nodes=$(ui_nodes) || return 1
+  grep "$WIDGET" <<<"$nodes" | grep -qE "text=\"$event\"" &&
+    ! grep "package=\"$PKG\"" <<<"$nodes" | grep -q 'class="android.widget.ProgressBar"'
+}
+# Drawn, and still so 3 seconds on.
+widget_settled() { widget_drawn && sleep 3 && widget_drawn; }
 # Not by am kill either: it won't end a process running a job, as Glance's
 # session (a WorkManager job) is for a minute after the widget updates. So
 # by kill -9, as root, as Android ends a process when it's short of memory.
-for _ in $(seq 1 5); do
+# Android may start it again at once, for a broadcast to the widget (an
+# update, as packages change after the emulator's boot), or to restart
+# WorkManager's job service: then it's let draw the widget before it's
+# killed again -- killed while drawing, it leaves the widget on its
+# loading view, with nothing to tap until the app draws it again. Done
+# once there's been no process for 3 seconds running.
+for _ in $(seq 1 6); do
   pid=$(adb shell pidof "$PKG" | tr -d '\r')
-  [ -z "$pid" ] && break
-  adb shell kill -9 $pid
+  if [ -z "$pid" ]; then
+    sleep 3
+    [ -z "$(adb shell pidof "$PKG" | tr -d '\r')" ] && break
+    continue
+  fi
+  poll 30 widget_settled || echo "The widget wasn't drawn again before the kill"
+  adb shell kill -9 $(adb shell pidof "$PKG" | tr -d '\r')
   sleep 1
 done
 # Events showing it, once the app's started and gone to its day.
@@ -251,9 +286,8 @@ event_opened() {
   nodes=$(ui_nodes) || return 1
   shows() { grep -qE "(text|content-desc)=\"$1\"" <<<"$nodes"; }
   # On the timeline, it's labelled with its times too: "Dinner, 7:00 PM
-  # to 7:45 PM". On its own day: today only for one under "Today" -- or,
-  # one still on from last night (Sleep, after midnight), the day it
-  # started.
+  # to 7:45 PM". On its own day: for one under "Today", still on from last
+  # night (Sleep, after midnight), the day it started.
   shows 'Previous day' &&
     grep -qE "(text|content-desc)=\"$event[,\"]" <<<"$nodes" &&
     if [ "$today" = yes ]; then shows Today || shows Yesterday
@@ -263,8 +297,9 @@ if [ -z "$event" ]; then
   fail event_cold "no event in the widget to tap"
 elif adb shell pidof "$PKG" >/dev/null; then
   fail event_cold "the app was still running after kill -9"
-elif wait_for "$event" 20 "$WIDGET" && tap_view "$event" "$WIDGET" &&
-  poll 20 event_opened; then
+elif ! poll 20 widget_drawn; then
+  fail event_cold "the widget didn't show \"$event\" to tap (on its loading view?)"
+elif tap_view "$event" "$WIDGET" && poll 20 event_opened; then
   adb exec-out screencap -p > "$OUT/calendar_event_cold.png"
   pass "event_cold ($event)"
 else
