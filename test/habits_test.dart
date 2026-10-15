@@ -385,6 +385,7 @@ void main() {
       HabitsRepository? habits,
       PeopleRepository? people,
       List<String> focus = const [],
+      Widget Function(Widget pane)? around,
     }) async {
       tester.view.physicalSize = const Size(800, 2400);
       tester.view.devicePixelRatio = 1;
@@ -400,14 +401,13 @@ void main() {
                 : await people.people()
             ..actions = ActionList(actions: _actions);
       await memory.eventStore!.warm();
+      final habitsPane = HabitsPane(
+        repository: habits ?? InMemoryHabitsRepository(),
+        memory: memory,
+        actions: _actions,
+      );
       final pane = MaterialApp(
-        home: Scaffold(
-          body: HabitsPane(
-            repository: habits ?? InMemoryHabitsRepository(),
-            memory: memory,
-            actions: _actions,
-          ),
-        ),
+        home: Scaffold(body: around?.call(habitsPane) ?? habitsPane),
       );
       await tester.pumpWidget(
         people == null ? pane : PeopleScope(repository: people, child: pane),
@@ -444,6 +444,31 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Walk daily'), findsOneWidget);
       expect(find.text('Gone'), findsNothing);
+    });
+
+    testWidgets("scrolls only its own list as it opens, not what it's in", (
+      tester,
+    ) async {
+      // As the Plan screen's panes are, swiped partway past it.
+      final panes = ScrollController(initialScrollOffset: 400);
+      addTearDown(panes.dispose);
+      await pump(
+        tester,
+        habits: InMemoryHabitsRepository([_mindfully]),
+        around: (pane) => SingleChildScrollView(
+          controller: panes,
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              SizedBox(width: 800, child: pane),
+              const SizedBox(width: 800),
+            ],
+          ),
+        ),
+      );
+
+      expect(find.text('Layer 0'), findsOneWidget);
+      expect(panes.offset, 400);
     });
 
     testWidgets('puts those starred first, in the order they were', (

@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.102.1
+
+- Swiping quickly across the Plan screen's panes no longer drops you
+  back on Habits. Its list scrolling to where it opens was swiping the
+  panes back to it too.
+
 ## 7.102.0
 
 - The Travel times page has a search, which has the keyboard as soon as
