@@ -64,8 +64,10 @@ void main() {
     expect(picked, ['Priya Shah']);
   });
 
-  testWidgets('a PickerField picks a group with a tap, opens it with its '
-      'arrow, and picks none', (tester) async {
+  testWidgets('a PickerField picks a group with a tap, starts with it open '
+      'and its search focused, closes it with its arrow, and picks none', (
+    tester,
+  ) async {
     String? value;
     await tester.pumpWidget(
       MaterialApp(
@@ -95,7 +97,16 @@ void main() {
     expect(find.byType(BottomSheet), findsNothing);
 
     await open();
-    // Its arrow opens it, without picking it.
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
+      isTrue,
+    );
+    // Open to start with; its arrow closes it, and opens it, without
+    // picking it.
+    expect(find.widgetWithText(ListTile, 'Home'), findsOneWidget);
+    await tester.tap(find.byTooltip("Hide what's inside"));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ListTile, 'Home'), findsNothing);
     await tester.tap(find.byTooltip('Show 1 inside'));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsOneWidget);
@@ -110,9 +121,8 @@ void main() {
     expect(value, isNull);
   });
 
-  testWidgets("a group that can't be picked is a folder, opened by a tap", (
-    tester,
-  ) async {
+  testWidgets("a group that can't be picked is a folder, open to start "
+      'with, closed and opened by a tap', (tester) async {
     var picked = <String>[];
     await tester.pumpWidget(
       MaterialApp(
@@ -128,14 +138,14 @@ void main() {
       ),
     );
     expect(find.widgetWithText(CheckboxListTile, 'Brooklyn'), findsNothing);
-    expect(find.text('Home'), findsNothing);
-    await tester.tap(find.text('Brooklyn'));
-    await tester.pump();
     await tester.tap(find.widgetWithText(CheckboxListTile, 'Home'));
     await tester.pump();
     expect(picked, ['home']);
     await tester.tap(find.text('Brooklyn'));
     await tester.pump();
     expect(find.widgetWithText(CheckboxListTile, 'Home'), findsNothing);
+    await tester.tap(find.text('Brooklyn'));
+    await tester.pump();
+    expect(find.widgetWithText(CheckboxListTile, 'Home'), findsOneWidget);
   });
 }

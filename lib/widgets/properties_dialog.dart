@@ -11,6 +11,7 @@ import 'error_sheet.dart';
 import 'color_picker.dart';
 import 'durations.dart';
 import 'actions_picker.dart';
+import 'picker_sheet.dart';
 
 /// How a property is shown and edited.
 enum PropertyKind {
@@ -310,6 +311,37 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         _ => value == null ? '' : '$value',
       };
     });
+    if (kind == PropertyKind.actions && _actions != null) _pickActions();
+  }
+
+  /// The open actions property, picked in a sheet up from the foot: kept
+  /// on Done, as the check keeps an edit, and left as it was if the sheet
+  /// is dismissed. Waits for the actions; if they can't be loaded, the
+  /// editor says so.
+  Future<void> _pickActions() async {
+    final key = _editing;
+    final List<PlanAction> actions;
+    try {
+      actions = _actionsLoaded ?? await _actions!;
+    } catch (_) {
+      return;
+    }
+    if (!mounted || _editing != key) return;
+    final ids = await showActionsSheet(
+      context,
+      actions: Future.value(actions),
+      loaded: actions,
+      picked: _draft as List<String>,
+      leavesOnly: false,
+      marker: _actionDot,
+    );
+    if (!mounted || _editing != key) return;
+    if (ids == null) {
+      _cancelEdit();
+      return;
+    }
+    _draft = ids;
+    _confirmEdit();
   }
 
   /// Whether [_changes] differ from those it opened with: closing then
@@ -1008,7 +1040,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         null => const SizedBox(width: 12),
       };
 
-  /// Its actions, searched for or picked from the tree; see [ActionsPicker].
+  /// Its actions, by their paths: tapped, a sheet up from the foot picks
+  /// them again ([_pickActions]), as it did when the property opened.
   Widget _actionsPicker(BuildContext context) {
     final picked = _draft as List<String>;
     if (_actions == null) {
@@ -1027,15 +1060,31 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         ],
       );
     }
-    return _withActions(
-      context,
-      (actions) => ActionsPicker(
-        actions: actions,
-        picked: picked,
-        onChanged: (ids) => setState(() => _draft = ids),
-        marker: _actionDot,
-      ),
-    );
+    return _withActions(context, (actions) {
+      final byId = {for (final a in actions) a.id: a};
+      return InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: _pickActions,
+        child: InputDecorator(
+          isEmpty: picked.isEmpty,
+          decoration: const InputDecoration(
+            isDense: true,
+            border: OutlineInputBorder(),
+            hintText: 'Pick actions',
+            suffixIcon: Icon(Icons.arrow_drop_down),
+          ),
+          child: Text(
+            [
+              for (final id in picked)
+                switch (byId[id]) {
+                  final a? => a.path ?? actionName(a),
+                  null => id,
+                },
+            ].join(', '),
+          ),
+        ),
+      );
+    });
   }
 
   Future<void> _pickDay() async {

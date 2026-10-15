@@ -46,8 +46,8 @@ typedef PickerAdd = ({String noun, IconData icon, ValueChanged<String> onAdd});
 
 /// Picks from [nodes]: things, and the groups (folders) they're in. Those
 /// [picked] show as chips on top, then a search over them all, then, while
-/// the search is empty, the tree, its groups opened down to what's picked
-/// -- or, searching, what matches, best first with [PickerSearch.matchAny],
+/// the search is empty, the tree, every group open, each closed by its
+/// arrow -- or, searching, what matches, best first with [PickerSearch.matchAny],
 /// each with its path. Calls [onChanged] with the ids, in the order they
 /// were picked.
 ///
@@ -118,8 +118,9 @@ class _TreePickerState extends State<TreePicker> {
   PickerSearch? _own;
   PickerSearch get _search => widget.search ?? (_own ??= PickerSearch());
 
-  /// The groups opened, while the search is empty.
-  late final Set<String> _open = _ancestorsOf(widget.picked);
+  /// The groups closed, while the search is empty: none, to start with,
+  /// so everything is to hand -- even what's added while it's open.
+  final Set<String> _closed = {};
 
   @override
   void initState() {
@@ -172,7 +173,7 @@ class _TreePickerState extends State<TreePicker> {
 
   /// Picks or unpicks [node]; one picked opens the tree down to it.
   void _toggle(PickerNode node, bool on) {
-    if (on) _open.addAll(_ancestorsOf([node.id]));
+    if (on) _closed.removeAll(_ancestorsOf([node.id]));
     if (widget.single) {
       widget.onChanged([node.id]);
       return;
@@ -300,7 +301,7 @@ class _TreePickerState extends State<TreePicker> {
     final rows = <Widget>[];
     void visit(PickerNode node, int depth) {
       final inside = children[node.id] ?? const <PickerNode>[];
-      final open = _open.contains(node.id);
+      final open = !_closed.contains(node.id);
       rows.add(
         _row(
           node,
@@ -333,7 +334,7 @@ class _TreePickerState extends State<TreePicker> {
     bool open = false,
   }) {
     void toggleOpen() =>
-        setState(() => open ? _open.remove(node.id) : _open.add(node.id));
+        setState(() => open ? _closed.add(node.id) : _closed.remove(node.id));
     final row = _tile(
       node,
       depth: depth,

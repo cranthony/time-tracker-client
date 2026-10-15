@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/habit_graph.dart';
 import '../models/person.dart';
-import 'plan_pane.dart';
+import 'picker_sheet.dart';
+import 'tree_picker.dart';
 
 /// What a habit, or a person, can be built on: every habit and person in
 /// [graph], and everyone else of [people] not deleted -- but not [id]
@@ -33,110 +34,42 @@ List<GraphNode> foundationChoices(
 }
 
 /// Picks what something is built on, from [choices], starting with
-/// [selected]; returns the ids picked, in [choices]' order, or null if
-/// it was called off.
+/// [selected], in a [pickNodes] sheet: habits and people, searched by
+/// name and context. Returns the ids picked, in [choices]' order, or null
+/// if it was called off.
 Future<List<String>?> showFoundationsPicker(
   BuildContext context, {
   required String title,
   required List<GraphNode> choices,
   required List<String> selected,
-}) => showDialog<List<String>>(
-  context: context,
-  builder: (_) =>
-      _FoundationsPicker(title: title, choices: choices, selected: selected),
-);
-
-class _FoundationsPicker extends StatefulWidget {
-  const _FoundationsPicker({
-    required this.title,
-    required this.choices,
-    required this.selected,
-  });
-
-  final String title;
-  final List<GraphNode> choices;
-  final List<String> selected;
-
-  @override
-  State<_FoundationsPicker> createState() => _FoundationsPickerState();
-}
-
-class _FoundationsPickerState extends State<_FoundationsPicker> {
-  late final _picked = {...widget.selected};
-  String _query = '';
-
-  @override
-  Widget build(BuildContext context) {
-    final shown = [
-      for (final c in widget.choices)
-        if (matchesSearch(_query, [c.name, c.person?.context])) c,
-    ];
-    return AlertDialog(
-      title: Text(widget.title),
-      contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
-      content: SizedBox(
-        width: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: TextField(
-                decoration: const InputDecoration(
-                  hintText: 'Search habits and people',
-                  prefixIcon: Icon(Icons.search),
-                  isDense: true,
-                ),
-                onChanged: (query) => setState(() => _query = query),
-              ),
-            ),
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final c in shown)
-                    CheckboxListTile(
-                      dense: true,
-                      secondary: Icon(
-                        c.isPerson ? Icons.person_outline : Icons.repeat,
-                      ),
-                      title: Text(c.name),
-                      subtitle: switch (c.person?.context) {
-                        final context? => Text(context),
-                        null => null,
-                      },
-                      value: _picked.contains(c.id),
-                      onChanged: (on) => setState(
-                        () => on ?? false
-                            ? _picked.add(c.id)
-                            : _picked.remove(c.id),
-                      ),
-                    ),
-                  if (shown.isEmpty) NoMatches(query: _query),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop([
-            for (final c in widget.choices)
-              if (_picked.contains(c.id)) c.id,
-            // Kept, though they can't be picked here: unknown ones.
-            for (final id in widget.selected)
-              if (!widget.choices.any((c) => c.id == id)) id,
-          ]),
-          child: const Text('Done'),
-        ),
-      ],
-    );
-  }
+}) async {
+  final byId = {for (final c in choices) c.id: c};
+  final picked = await pickNodes(
+    context,
+    title: title,
+    nodes: [
+      for (final c in choices)
+        PickerNode(id: c.id, label: c.name, detail: c.person?.context),
+    ],
+    // Unknown ones can't be picked here; they're kept below.
+    picked: [
+      for (final id in selected)
+        if (byId.containsKey(id)) id,
+    ],
+    searchHint: 'Search habits and people',
+    empty: 'No habits or people.',
+    marker: (node) => Icon(
+      byId[node.id]?.isPerson ?? false ? Icons.person_outline : Icons.repeat,
+      size: 20,
+    ),
+  );
+  if (picked == null) return null;
+  return [
+    for (final c in choices)
+      if (picked.contains(c.id)) c.id,
+    for (final id in selected)
+      if (!byId.containsKey(id)) id,
+  ];
 }
 
 /// What something is built on, as chips by name, with a button to pick

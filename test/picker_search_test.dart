@@ -123,13 +123,14 @@ void main() {
 
     search.controller.clear();
     await tester.pump();
-    expect(find.text('Tofu'), findsNothing);
-    await tester.tap(find.text('Cooking'));
-    await tester.pump();
+    // Every group open, to start with.
     expect(find.text('Tofu'), findsOneWidget);
     await tester.tap(find.text('Cooking'));
     await tester.pump();
     expect(find.text('Tofu'), findsNothing);
+    await tester.tap(find.text('Cooking'));
+    await tester.pump();
+    expect(find.text('Tofu'), findsOneWidget);
 
     await tester.longPress(find.text('Cooking'));
     expect(edited?.id, 'cook');

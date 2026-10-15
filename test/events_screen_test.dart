@@ -478,6 +478,8 @@ void main() {
 
     Finder inDialog(Finder f) =>
         find.descendant(of: find.byType(AlertDialog), matching: f);
+    Finder inSheet(Finder f) =>
+        find.descendant(of: find.byType(BottomSheet), matching: f);
 
     /// Taps [value], scrolling the dialog to it first.
     Future<void> edit(WidgetTester tester, Finder value) async {
@@ -593,8 +595,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(inDialog(find.text('Deep focus')));
       // Drawn straight away: no bar while they load.
-      await tester.pump();
-      expect(inDialog(find.text('Exercise')), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(inSheet(find.text('Exercise')), findsOneWidget);
       expect(find.byType(LinearProgressIndicator), findsNothing);
       expect(actions.fetches, 1);
     });
@@ -604,18 +606,23 @@ void main() {
     ) async {
       final repo = _RecordingRepository([work()]);
       await openWork(tester, repo);
-      // Shown by name straight away.
+      // Shown by name straight away; picked in a sheet, its search
+      // focused.
       await edit(tester, inDialog(find.text('Deep focus')));
+      expect(
+        tester
+            .widget<EditableText>(inSheet(find.byType(EditableText)))
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
       // Active actions only; the first picked is the primary action.
-      expect(inDialog(find.text('Old')), findsNothing);
-      expect(inDialog(find.byTooltip('Primary action')), findsOneWidget);
-      await tester.ensureVisible(inDialog(find.text('Exercise')));
+      expect(inSheet(find.text('Old')), findsNothing);
+      expect(inSheet(find.byTooltip('Primary action')), findsOneWidget);
+      await tester.tap(inSheet(find.text('Exercise')));
       await tester.pumpAndSettle();
-      await tester.tap(inDialog(find.text('Exercise')));
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byTooltip('Keep edit'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Keep edit'));
+      // Done keeps it.
+      await tester.tap(inSheet(find.text('Done')));
       await tester.pumpAndSettle();
       // Names, now that they're loaded.
       expect(inDialog(find.text('Deep focus, Exercise')), findsOneWidget);
@@ -641,11 +648,9 @@ void main() {
         inDialog(find.text('Deep focus (from its label)', findRichText: true)),
         findsOneWidget,
       );
-      // Kept as it is: confirmed, which is a change to save.
+      // Kept as it is, with Done: confirmed, which is a change to save.
       await edit(tester, inDialog(find.textContaining('Deep focus')));
-      await tester.ensureVisible(find.byTooltip('Keep edit'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.tap(inSheet(find.text('Done')));
       await tester.pumpAndSettle();
       expect(
         inDialog(find.text('Deep focus (from its label)', findRichText: true)),
