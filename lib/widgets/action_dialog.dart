@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/plan_action.dart';
 import '../services/mcp_client.dart';
+import 'hotkeys.dart';
 import 'action_icon.dart';
 import 'actions_picker.dart';
 import 'color_picker.dart';
@@ -247,153 +248,165 @@ class _ActionDialogState extends State<_ActionDialog> {
       effectiveColor: colorToHex(_shownColor),
       properties: _action.properties,
     );
-    return AlertDialog(
-      title: Row(
-        children: [
-          ActionIcon(preview, size: 28),
-          const SizedBox(width: 12),
-          Expanded(child: Text('${widget.isNew ? 'New' : 'Edit'} $noun')),
-        ],
-      ),
-      content: SizedBox(
-        width: 440,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 4),
-              TextField(
-                controller: _name,
-                autofocus: widget.isNew,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: InputDecoration(
-                  labelText: 'Name',
-                  hintText: _action.isGroup ? 'e.g. Cooking' : 'e.g. Make tofu',
-                  border: const OutlineInputBorder(),
-                  isDense: true,
+    return SaveOrDiscard(
+      changed: () => _changes.isNotEmpty || (widget.isNew && named),
+      onSave: _saving || !named || !changed ? null : _save,
+      onDiscard: () {
+        if (!_saving) Navigator.of(context).pop();
+      },
+      child: AlertDialog(
+        title: Row(
+          children: [
+            ActionIcon(preview, size: 28),
+            const SizedBox(width: 12),
+            Expanded(child: Text('${widget.isNew ? 'New' : 'Edit'} $noun')),
+          ],
+        ),
+        content: SizedBox(
+          width: 440,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 4),
+                TextField(
+                  controller: _name,
+                  autofocus: widget.isNew,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    labelText: 'Name',
+                    hintText: _action.isGroup
+                        ? 'e.g. Cooking'
+                        : 'e.g. Make tofu',
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (typed) => _set('name', _trimmed(typed)),
                 ),
-                onChanged: (typed) => _set('name', _trimmed(typed)),
-              ),
-              _Section(
-                label: 'Group',
-                child: ActionField(
-                  actions: widget.actions,
-                  value: _parentId,
-                  title: 'Pick its group',
-                  noneLabel: 'None (top-level)',
-                  exclude: {
-                    // Not under itself, nor under an action -- only groups
-                    // hold anything -- or one put away, unless it's there
-                    // already.
-                    if (_action.id case final id?)
-                      ...actionAndSubActions(widget.actions, id),
-                    for (final action in widget.actions)
-                      if ((!action.isGroup ||
-                              const {
-                                'archived',
-                                'deleted',
-                              }.contains(action.status)) &&
-                          action.id != _parentId)
-                        ?action.id,
-                  },
-                  marker: (action) => ActionIcon(action, size: 18),
-                  onChanged: (id) => _set('parent_id', id),
-                ),
-              ),
-              if (!_action.isGroup && !widget.isNew)
                 _Section(
-                  label: 'Status',
-                  hint: _status == 'active' || _status == 'proposed'
-                      ? "It holds one of the calendar's event labels."
-                      : "It doesn't hold an event label; its history is kept.",
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      for (final MapEntry(key: status, value: label)
-                          in actionStatuses.entries)
-                        ChoiceChip(
-                          showCheckmark: false,
-                          label: Text(label),
-                          selected: _status == status,
-                          onSelected: (_) => _set('status', status),
-                        ),
-                    ],
+                  label: 'Group',
+                  child: ActionField(
+                    actions: widget.actions,
+                    value: _parentId,
+                    title: 'Pick its group',
+                    noneLabel: 'None (top-level)',
+                    exclude: {
+                      // Not under itself, nor under an action -- only groups
+                      // hold anything -- or one put away, unless it's there
+                      // already.
+                      if (_action.id case final id?)
+                        ...actionAndSubActions(widget.actions, id),
+                      for (final action in widget.actions)
+                        if ((!action.isGroup ||
+                                const {
+                                  'archived',
+                                  'deleted',
+                                }.contains(action.status)) &&
+                            action.id != _parentId)
+                          ?action.id,
+                    },
+                    marker: (action) => ActionIcon(action, size: 18),
+                    onChanged: (id) => _set('parent_id', id),
                   ),
                 ),
-              _Section(
-                label: 'Priority',
-                hint: switch ((_priority, _inheritedPriority)) {
-                  (_?, _) =>
-                    '0 is the most important. Its events, and the actions in '
-                        'it with no priority of their own, take this one.',
-                  (null, final p?) =>
-                    'Inherited: P$p, from '
-                        '${_priorityFrom == null ? 'its group' : actionName(_priorityFrom!)}.',
-                  (null, null) => 'No priority here or in its groups.',
-                },
-                child: _priorityChips(),
-              ),
-              _Section(
-                label: 'Color',
-                hint: switch ((parseColor(_color), _colorFrom)) {
-                  (_?, _) => null,
-                  (null, final from?) =>
-                    "With no color, it takes ${actionName(from)}'s.",
-                  (null, null) =>
-                    "With no color, it takes its priority's "
-                        '(P${_priority ?? _inheritedPriority ?? defaultPriority}).',
-                },
-                child: ColorPicker(
-                  color: parseColor(_color),
-                  onChanged: (color) => _set(
-                    'background_color',
-                    color == null ? null : colorToHex(color),
+                if (!_action.isGroup && !widget.isNew)
+                  _Section(
+                    label: 'Status',
+                    hint: _status == 'active' || _status == 'proposed'
+                        ? "It holds one of the calendar's event labels."
+                        : "It doesn't hold an event label; its history is kept.",
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        for (final MapEntry(key: status, value: label)
+                            in actionStatuses.entries)
+                          ChoiceChip(
+                            showCheckmark: false,
+                            label: Text(label),
+                            selected: _status == status,
+                            onSelected: (_) => _set('status', status),
+                          ),
+                      ],
+                    ),
+                  ),
+                _Section(
+                  label: 'Priority',
+                  hint: switch ((_priority, _inheritedPriority)) {
+                    (_?, _) =>
+                      '0 is the most important. Its events, and the actions in '
+                          'it with no priority of their own, take this one.',
+                    (null, final p?) =>
+                      'Inherited: P$p, from '
+                          '${_priorityFrom == null ? 'its group' : actionName(_priorityFrom!)}.',
+                    (null, null) => 'No priority here or in its groups.',
+                  },
+                  child: _priorityChips(),
+                ),
+                _Section(
+                  label: 'Color',
+                  hint: switch ((parseColor(_color), _colorFrom)) {
+                    (_?, _) => null,
+                    (null, final from?) =>
+                      "With no color, it takes ${actionName(from)}'s.",
+                    (null, null) =>
+                      "With no color, it takes its priority's "
+                          '(P${_priority ?? _inheritedPriority ?? defaultPriority}).',
+                  },
+                  child: ColorPicker(
+                    color: parseColor(_color),
+                    onChanged: (color) => _set(
+                      'background_color',
+                      color == null ? null : colorToHex(color),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _note,
-                minLines: 2,
-                maxLines: 6,
-                decoration: InputDecoration(
-                  labelText: 'Note (optional)',
-                  hintText: _action.isGroup
-                      ? 'What it covers'
-                      : 'What counts as it',
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (typed) => _set('note', _trimmed(typed)),
-              ),
-              if (!_action.isGroup)
-                SwitchListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  secondary: const Icon(Icons.directions_walk),
-                  title: const Text('A way to commute'),
-                  subtitle: const Text(
-                    'Events with a commute are pushed with the events they '
-                    'lead to or from.',
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _note,
+                  minLines: 2,
+                  maxLines: 6,
+                  decoration: InputDecoration(
+                    labelText: 'Note (optional)',
+                    hintText: _action.isGroup
+                        ? 'What it covers'
+                        : 'What counts as it',
+                    border: const OutlineInputBorder(),
+                    isDense: true,
                   ),
-                  value: _commute,
-                  onChanged: (on) => _set('commute', on),
+                  onChanged: (typed) => _set('note', _trimmed(typed)),
                 ),
-            ],
+                if (!_action.isGroup)
+                  SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    secondary: const Icon(Icons.directions_walk),
+                    title: const Text('A way to commute'),
+                    subtitle: const Text(
+                      'Events with a commute are pushed with the events they '
+                      'lead to or from.',
+                    ),
+                    value: _commute,
+                    onChanged: (on) => _set('commute', on),
+                  ),
+              ],
+            ),
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          HotkeyHint(
+            Hotkey.save,
+            child: FilledButton(
+              onPressed: _saving || !named || !changed ? null : _save,
+              child: const Text('Save'),
+            ),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _saving || !named || !changed ? null : _save,
-          child: const Text('Save'),
-        ),
-      ],
     );
   }
 

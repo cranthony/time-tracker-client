@@ -9,6 +9,26 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.114.0
+
+- Ctrl+Enter and Esc work the same in everything with text to save or
+  throw away: an event, its description, a note for Claude, the notes on
+  what happened, an action, a person or a location, an event's
+  properties, and a habit's or trait's page. Ctrl+Enter saves and closes;
+  Esc closes at once if nothing changed, but with changes made the first
+  Esc shakes the screen and says "Press Esc again to discard your
+  changes", and only a second, soon after, discards them. In a text field,
+  Esc counts at once -- except in an event, where the first leaves the
+  summary's field, for its letter keys.
+- A description being read: E edits it.
+- In an event, Delete does what its trash can does.
+- Ctrl+B, then S, opens the ⋮ menu.
+- The up and down arrow keys scroll whatever's on top -- a page, a dialog
+  (the list of hotkeys, say) or a sheet -- not only the Events timeline.
+- On the Plan page, J and K go down and up the pane shown, highlighting
+  what can be opened, and Enter opens it; H and L go to the pane on the
+  left or right.
+
 ## 7.113.0
 
 - Hotkeys in an event. J and K go between its parts, and Enter opens the

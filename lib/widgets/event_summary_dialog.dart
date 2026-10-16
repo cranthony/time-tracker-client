@@ -489,10 +489,6 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   bool _saving = false;
   String? _error;
 
-  /// Whether Esc was pressed with changes made: pressed again, it
-  /// discards them.
-  bool _discardArmed = false;
-
   bool get _editable => widget.save != null && !widget.waiting.contains('*');
 
   /// Whether [key] waits for a change to be saved.
@@ -519,7 +515,6 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
 
   /// Sets [key] to [value], dropping the change if that's how it was.
   void _set(String key, Object? value) => setState(() {
-    _discardArmed = false;
     if (_same(value, widget.values[key])) {
       _changes.remove(key);
     } else {
@@ -672,20 +667,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     }
   }
 
-  /// Esc: closes it; with changes made, shakes the first time, saying
-  /// so, and discards them the second.
-  void _escape() {
-    if (_saving) return;
-    if (_changes.isEmpty || _discardArmed) {
-      Navigator.of(context).pop();
-      return;
-    }
-    setState(() => _discardArmed = true);
-    HotkeyScope.maybeOf(context)?.shake();
-  }
-
   /// Its hotkeys: J and K between its parts, Enter opening the one
-  /// highlighted; a letter for each part.
+  /// highlighted; a letter for each part, and Delete for the trash can.
+  /// Ctrl+Enter and Esc save and discard ([SaveOrDiscard]).
   List<HotkeyBinding> get _hotkeys => [
     HotkeyBinding(
       const HotkeyTrigger.key(LogicalKeyboardKey.keyJ),
@@ -709,16 +693,25 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       const HotkeyTrigger.key(LogicalKeyboardKey.keyS),
       _selectSummary,
     ),
-    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.escape), _escape),
-    HotkeyBinding(
-      const HotkeyTrigger.ctrl(LogicalKeyboardKey.enter),
-      _saveByKey,
-    ),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.delete), () {
+      if (widget.remove case final remove? when _editable && !_saving) {
+        _confirmRemove(remove);
+      }
+    }),
   ];
 
   @override
-  Widget build(BuildContext context) =>
-      HotkeyBindings(bindings: _hotkeys, child: _dialog(context));
+  Widget build(BuildContext context) => SaveOrDiscard(
+    changed: () => _changes.isNotEmpty,
+    onSave: _saveByKey,
+    onDiscard: () {
+      if (!_saving) Navigator.of(context).pop();
+    },
+    // Out of the summary's field first, for its letters.
+    escLeavesFields: true,
+    more: _hotkeys,
+    child: _dialog(context),
+  );
 
   Widget _dialog(BuildContext context) {
     final theme = Theme.of(context);
@@ -743,16 +736,6 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                   child: SelectableText(
                     "Couldn't save. $error",
                     style: TextStyle(color: theme.colorScheme.onErrorContainer),
-                  ),
-                ),
-              if (_discardArmed)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    'Press Esc again to discard your changes.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.error,
-                    ),
                   ),
                 ),
               if (widget.waiting.isNotEmpty)
@@ -789,7 +772,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       actions: widget.creating
           ? [
               HotkeyHint(
-                Hotkey.closeEvent,
+                Hotkey.discard,
                 child: TextButton(
                   onPressed: _saving ? null : () => Navigator.of(context).pop(),
                   child: const Text('Cancel'),
@@ -816,7 +799,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           : changed
           ? [
               HotkeyHint(
-                Hotkey.closeEvent,
+                Hotkey.discard,
                 child: TextButton(
                   onPressed: _saving ? null : () => Navigator.of(context).pop(),
                   child: const Text('Cancel'),
@@ -843,7 +826,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 child: const Text('Details'),
               ),
               HotkeyHint(
-                Hotkey.closeEvent,
+                Hotkey.discard,
                 child: TextButton(
                   onPressed: _saving ? null : () => Navigator.of(context).pop(),
                   child: const Text('Close'),
@@ -962,10 +945,13 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           ),
         ),
         if (widget.remove case final remove? when _editable)
-          IconButton(
-            tooltip: remove.tooltip,
-            icon: const Icon(Icons.delete_outline),
-            onPressed: _saving ? null : () => _confirmRemove(remove),
+          HotkeyHint(
+            Hotkey.deleteEvent,
+            child: IconButton(
+              tooltip: remove.tooltip,
+              icon: const Icon(Icons.delete_outline),
+              onPressed: _saving ? null : () => _confirmRemove(remove),
+            ),
           ),
       ],
     );

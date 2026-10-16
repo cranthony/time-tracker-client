@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/facts.dart';
 import '../models/person.dart';
@@ -10,6 +11,7 @@ import '../services/server_errors.dart';
 import '../services/plan_memory.dart';
 import 'actions_picker.dart';
 import 'event_description.dart';
+import 'hotkeys.dart';
 import 'picker_edits.dart';
 import 'picker_search.dart';
 import 'tree_picker.dart';
@@ -155,10 +157,12 @@ Future<List<String>?> showActionsSheet(
 
 /// Shows an event's description in a [showPickerSheet], as its HTML lays
 /// it out, links tappable and its text selectable by touching and holding
-/// it ([EventDescription]); the pencil at its foot
-/// edits it, as typed. Blank, it's edited at once. Returns it as edited,
-/// or null if it wasn't, or the sheet was dismissed. Blank is no
-/// description.
+/// it ([EventDescription]); the pencil at its foot -- or E -- edits it,
+/// as typed. Blank, it's edited at once. Returns it as edited, or null if
+/// it wasn't, or the sheet was dismissed. Blank is no description.
+/// Ctrl+Enter saves it and closes; Esc closes, but once it's been changed,
+/// the first Esc only warns, and the second discards it
+/// ([SaveOrDiscard]).
 Future<String?> showTextSheet(
   BuildContext context, {
   required String title,
@@ -198,15 +202,37 @@ class _TextSheetBody extends StatefulWidget {
 class _TextSheetBodyState extends State<_TextSheetBody> {
   late var _editing = widget.text?.trim().isEmpty ?? true;
 
+  /// What's typed, once anything is.
+  String? _typed;
+
+  bool get _changed =>
+      _typed != null && _typed!.trim() != (widget.text ?? '').trim();
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => SaveOrDiscard(
+    changed: () => _changed,
+    onSave: () => Navigator.of(context).pop(_changed ? _typed!.trim() : null),
+    more: [
+      if (!_editing)
+        HotkeyBinding(
+          const HotkeyTrigger.key(LogicalKeyboardKey.keyE),
+          () => setState(() => _editing = true),
+        ),
+    ],
+    child: _body(context),
+  );
+
+  Widget _body(BuildContext context) {
     if (_editing) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: _TextSheetField(
           text: widget.text,
           hint: widget.hint,
-          onChanged: widget.onChanged,
+          onChanged: (typed) {
+            widget.onChanged(typed);
+            setState(() => _typed = typed);
+          },
         ),
       );
     }
@@ -226,11 +252,14 @@ class _TextSheetBodyState extends State<_TextSheetBody> {
         PositionedDirectional(
           end: 0,
           bottom: 16,
-          child: FloatingActionButton(
-            heroTag: null,
-            tooltip: 'Edit',
-            onPressed: () => setState(() => _editing = true),
-            child: const Icon(Icons.edit),
+          child: HotkeyHint(
+            Hotkey.editText,
+            child: FloatingActionButton(
+              heroTag: null,
+              tooltip: 'Edit',
+              onPressed: () => setState(() => _editing = true),
+              child: const Icon(Icons.edit),
+            ),
           ),
         ),
       ],

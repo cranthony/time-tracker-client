@@ -6,6 +6,7 @@ import '../models/person.dart';
 import '../models/proposal.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
+import 'hotkeys.dart';
 import 'person_dialog.dart';
 
 /// Edits what happened at an event, its [facts] -- who was there with you,
@@ -152,134 +153,153 @@ class _FactsDialogState extends State<_FactsDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final problem = _facts.problem;
-    return AlertDialog(
-      title: Text(widget.pickers ? 'What happened' : 'Notes'),
-      content: SizedBox(
-        width: 440,
-        child: SingleChildScrollView(
-          child: FutureBuilder(
-            future: _people,
-            initialData: _memory?.people,
-            builder: (context, snapshot) {
-              final added = [
-                for (final a in widget.additions)
-                  if (a.kind == AdditionKind.person)
-                    Person(
-                      id: a.ref,
-                      name: '${a.name} (new)',
-                      context: a.detail,
-                    ),
-              ];
-              final everyone = [
-                ...snapshot.data?.withSelf ??
-                    // Without the list, at least who's already there.
-                    [
-                      defaultSelf,
-                      for (final id in {..._with, ..._for})
-                        if (!added.any((p) => p.id == id))
-                          Person(id: id, name: id),
+    return SaveOrDiscard(
+      changed: () => _facts != widget.facts,
+      onSave: problem == null ? () => Navigator.of(context).pop(_facts) : null,
+      child: AlertDialog(
+        title: Text(widget.pickers ? 'What happened' : 'Notes'),
+        content: SizedBox(
+          width: 440,
+          child: SingleChildScrollView(
+            child: FutureBuilder(
+              future: _people,
+              initialData: _memory?.people,
+              builder: (context, snapshot) {
+                final added = [
+                  for (final a in widget.additions)
+                    if (a.kind == AdditionKind.person)
+                      Person(
+                        id: a.ref,
+                        name: '${a.name} (new)',
+                        context: a.detail,
+                      ),
+                ];
+                final everyone = [
+                  ...snapshot.data?.withSelf ??
+                      // Without the list, at least who's already there.
+                      [
+                        defaultSelf,
+                        for (final id in {..._with, ..._for})
+                          if (!added.any((p) => p.id == id))
+                            Person(id: id, name: id),
+                      ],
+                  ...added,
+                ];
+                final others = [
+                  for (final p in everyone)
+                    if (!p.isSelf &&
+                        (p.active ||
+                            _with.contains(p.id) ||
+                            _for.contains(p.id)))
+                      p,
+                ];
+                final there = [
+                  everyone.firstWhere(
+                    (p) => p.isSelf,
+                    orElse: () => defaultSelf,
+                  ),
+                  for (final p in others)
+                    if (_with.contains(p.id)) p,
+                ];
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Only while there's no one to show: what's known shows at once.
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        !snapshot.hasData)
+                      const LinearProgressIndicator(),
+                    if (widget.pickers) ...[
+                      _chips(
+                        theme,
+                        'With',
+                        'Who was there',
+                        others,
+                        _with,
+                        _for,
+                      ),
+                      _chips(
+                        theme,
+                        'For',
+                        "Who it was for, who wasn't there",
+                        others,
+                        _for,
+                        _with,
+                      ),
+                      _locationPicker(),
                     ],
-                ...added,
-              ];
-              final others = [
-                for (final p in everyone)
-                  if (!p.isSelf &&
-                      (p.active || _with.contains(p.id) || _for.contains(p.id)))
-                    p,
-              ];
-              final there = [
-                everyone.firstWhere((p) => p.isSelf, orElse: () => defaultSelf),
-                for (final p in others)
-                  if (_with.contains(p.id)) p,
-              ];
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Only while there's no one to show: what's known shows at once.
-                  if (snapshot.connectionState == ConnectionState.waiting &&
-                      !snapshot.hasData)
-                    const LinearProgressIndicator(),
-                  if (widget.pickers) ...[
-                    _chips(theme, 'With', 'Who was there', others, _with, _for),
-                    _chips(
-                      theme,
-                      'For',
-                      "Who it was for, who wasn't there",
-                      others,
-                      _for,
-                      _with,
-                    ),
-                    _locationPicker(),
-                  ],
-                  for (final person in there)
-                    _note(
-                      person,
-                      person.isSelf
-                          ? 'How it was for you'
-                          : 'How it was for them, what they shared',
-                    ),
-                  if (widget.judgments.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16),
-                      child: Text(
-                        "Claude's judgments",
-                        style: theme.textTheme.labelLarge,
+                    for (final person in there)
+                      _note(
+                        person,
+                        person.isSelf
+                            ? 'How it was for you'
+                            : 'How it was for them, what they shared',
                       ),
-                    ),
-                    for (final j in widget.judgments)
-                      Text(
-                        '${_name(everyone, j.personId, _habits)} · '
-                        '${widget.traitNames[j.traitId] ?? j.traitId}: '
-                        '${j.rating}${j.scale == null ? '' : ' of ${j.scale}'}'
-                        '${j.reasoning == null ? '' : ' — ${j.reasoning}'}',
-                        style: theme.textTheme.bodySmall,
+                    if (widget.judgments.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: Text(
+                          "Claude's judgments",
+                          style: theme.textTheme.labelLarge,
+                        ),
+                      ),
+                      for (final j in widget.judgments)
+                        Text(
+                          '${_name(everyone, j.personId, _habits)} · '
+                          '${widget.traitNames[j.traitId] ?? j.traitId}: '
+                          '${j.rating}${j.scale == null ? '' : ' of ${j.scale}'}'
+                          '${j.reasoning == null ? '' : ' — ${j.reasoning}'}',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                    ],
+                    if (problem != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          problem,
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
                       ),
                   ],
-                  if (problem != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        problem,
-                        style: TextStyle(color: theme.colorScheme.error),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-        ),
-      ),
-      actions: [
-        if (widget.pickers && !widget.facts.isEmpty)
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(const Facts()),
-            child: const Text('Remove all'),
-          )
-        // Just the notes: who and where are kept.
-        else if (!widget.pickers && widget.facts.notes.isNotEmpty)
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(
-              Facts(
-                locationIds: widget.facts.locationIds,
-                withIds: widget.facts.withIds,
-                forIds: widget.facts.forIds,
-                commute: widget.facts.commute,
-              ),
+                );
+              },
             ),
-            child: const Text('Clear notes'),
           ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: problem == null
-              ? () => Navigator.of(context).pop(_facts)
-              : null,
-          child: const Text('Done'),
-        ),
-      ],
+        actions: [
+          if (widget.pickers && !widget.facts.isEmpty)
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(const Facts()),
+              child: const Text('Remove all'),
+            )
+          // Just the notes: who and where are kept.
+          else if (!widget.pickers && widget.facts.notes.isNotEmpty)
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(
+                Facts(
+                  locationIds: widget.facts.locationIds,
+                  withIds: widget.facts.withIds,
+                  forIds: widget.facts.forIds,
+                  commute: widget.facts.commute,
+                ),
+              ),
+              child: const Text('Clear notes'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          HotkeyHint(
+            Hotkey.save,
+            child: FilledButton(
+              onPressed: problem == null
+                  ? () => Navigator.of(context).pop(_facts)
+                  : null,
+              child: const Text('Done'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

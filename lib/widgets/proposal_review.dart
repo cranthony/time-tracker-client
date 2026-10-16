@@ -4,6 +4,7 @@ import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/proposal.dart';
 import '../outbox/proposal_notices.dart';
+import 'hotkeys.dart';
 import 'error_sheet.dart';
 import 'day_timeline.dart';
 import 'recap_markdown.dart';
@@ -667,66 +668,76 @@ class _NoteDialogState extends State<_NoteDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return AlertDialog(
-      title: const Text('Note for Claude'),
-      content: SizedBox(
-        width: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Claude revises what happened from it, on its next run -- or '
-              "ask it in a conversation. Until it's answered, this can't be "
-              'confirmed.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+    return SaveOrDiscard(
+      changed: () => _text.text.trim().isNotEmpty,
+      onSave: _leave,
+      child: AlertDialog(
+        title: const Text('Note for Claude'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Claude revises what happened from it, on its next run -- or '
+                "ask it in a conversation. Until it's answered, this can't be "
+                'confirmed.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            if (widget.subject case final subject?)
-              Text(subject, style: theme.textTheme.titleSmall)
-            else if (widget.events.isNotEmpty)
-              DropdownButtonFormField<String?>(
-                initialValue: _about,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'About'),
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('All of it')),
-                  for (final MapEntry(:key, :value) in widget.events.entries)
-                    DropdownMenuItem(
-                      value: key,
-                      child: Text(value, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 12),
+              if (widget.subject case final subject?)
+                Text(subject, style: theme.textTheme.titleSmall)
+              else if (widget.events.isNotEmpty)
+                DropdownButtonFormField<String?>(
+                  initialValue: _about,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'About'),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('All of it'),
                     ),
-                ],
-                onChanged: (value) => setState(() => _about = value),
+                    for (final MapEntry(:key, :value) in widget.events.entries)
+                      DropdownMenuItem(
+                        value: key,
+                        child: Text(value, overflow: TextOverflow.ellipsis),
+                      ),
+                  ],
+                  onChanged: (value) => setState(() => _about = value),
+                ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _text,
+                autofocus: true,
+                minLines: 2,
+                maxLines: 6,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  hintText: 'What should Claude change?',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
               ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _text,
-              autofocus: true,
-              minLines: 2,
-              maxLines: 6,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                hintText: 'What should Claude change?',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (_) => setState(() {}),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          HotkeyHint(
+            Hotkey.save,
+            child: FilledButton(
+              onPressed: _text.text.trim().isEmpty ? null : _leave,
+              child: const Text('Leave note'),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _text.text.trim().isEmpty ? null : _leave,
-          child: const Text('Leave note'),
-        ),
-      ],
     );
   }
 }

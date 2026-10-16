@@ -5,6 +5,7 @@ import '../models/scoring.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/focus_store.dart';
+import 'hotkeys.dart';
 import 'edit_page.dart';
 import 'error_sheet.dart';
 import 'focus_buttons.dart';
@@ -522,124 +523,134 @@ class _NamedDialogState extends State<_NamedDialog> {
         value.trim(),
       _ => null,
     };
-    return AlertDialog(
-      scrollable: widget.extra != null,
-      title: Text(
-        widget.name == null ? 'New ${widget.noun}' : 'Edit ${widget.noun}',
-      ),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _name,
-              autofocus: widget.name == null,
-              maxLength: 50,
-              textCapitalization: TextCapitalization.words,
-              decoration: InputDecoration(
-                labelText: 'Name',
-                hintText: widget.nameHint,
-                border: const OutlineInputBorder(),
-                isDense: true,
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-            TextField(
-              controller: _detail,
-              minLines: 1,
-              maxLines: 3,
-              decoration: InputDecoration(
-                labelText: widget.detailLabel,
-                hintText: widget.detailHint,
-                border: const OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-            if (widget.map != null) ...[
-              const SizedBox(height: 16),
+    final VoidCallback? save = named
+        ? () => _run(
+            () => widget.save({
+              'name': _name.text.trim(),
+              widget.detailField: _detail.text.trim().isEmpty
+                  ? null
+                  : _detail.text.trim(),
+              // Only if it's changed, so a server without map
+              // locations can still save the rest.
+              if (widget.map case final map?
+                  when _map.text.trim() != (map.value ?? ''))
+                'map_location': _map.text.trim().isEmpty
+                    ? null
+                    : _map.text.trim(),
+              if (widget.group case final group? when _group != group.value)
+                'group_id': _group,
+              if (_scoringChanged) 'scoring': _scoring?.toJson(),
+            }),
+          )
+        : null;
+    return SaveOrDiscard(
+      changed: () =>
+          _name.text.trim() != (widget.name ?? widget.typed ?? '').trim() ||
+          _detail.text.trim() != (widget.detail ?? '').trim() ||
+          _map.text.trim() !=
+              (widget.map?.typed ?? widget.map?.value ?? '').trim() ||
+          _group != widget.group?.value ||
+          _scoringChanged,
+      onSave: save,
+      child: AlertDialog(
+        scrollable: widget.extra != null,
+        title: Text(
+          widget.name == null ? 'New ${widget.noun}' : 'Edit ${widget.noun}',
+        ),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
               TextField(
-                controller: _map,
+                controller: _name,
+                autofocus: widget.name == null,
+                maxLength: 50,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(
+                  labelText: 'Name',
+                  hintText: widget.nameHint,
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              TextField(
+                controller: _detail,
                 minLines: 1,
                 maxLines: 3,
                 decoration: InputDecoration(
-                  labelText: 'Map location (optional)',
-                  hintText:
-                      'An address or a link, for events there without one',
-                  helperText: had == null ? null : 'Was: $had',
-                  helperMaxLines: 3,
+                  labelText: widget.detailLabel,
+                  hintText: widget.detailHint,
                   border: const OutlineInputBorder(),
                   isDense: true,
                 ),
               ),
-            ],
-            if (widget.group case final group?) ...[
-              const SizedBox(height: 16),
-              PickerField(
-                label: '${group.label} (optional)',
-                nodes: locationGroupNodes(group.choices),
-                value: _group,
-                none: 'None',
-                groupsPickable: true,
-                searchHint: 'Search groups',
-                onChanged: (picked) => setState(() => _group = picked),
-              ),
-            ],
-            if (widget.scoring case final scoring?)
-              AggregationTile(
-                title: 'How its people combine',
-                label: 'How its people combine',
-                explanation: "Their health, into the circle's.",
-                value: _scoring,
-                items: scoring.items,
-                noun: 'people',
-                fallback: scoring.fallback,
-                fallbackValue: scoring.fallbackValue,
-                onChanged: (picked) => setState(() {
-                  _scoring = picked;
-                  _scoringChanged = true;
-                }),
-              ),
-            if (widget.extra case final extra?) ...[
-              const SizedBox(height: 16),
-              extra,
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        if (widget.name != null && widget.delete != null)
-          TextButton(onPressed: _delete, child: const Text('Delete')),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: named
-              ? () => _run(
-                  () => widget.save({
-                    'name': _name.text.trim(),
-                    widget.detailField: _detail.text.trim().isEmpty
-                        ? null
-                        : _detail.text.trim(),
-                    // Only if it's changed, so a server without map
-                    // locations can still save the rest.
-                    if (widget.map case final map?
-                        when _map.text.trim() != (map.value ?? ''))
-                      'map_location': _map.text.trim().isEmpty
-                          ? null
-                          : _map.text.trim(),
-                    if (widget.group case final group?
-                        when _group != group.value)
-                      'group_id': _group,
-                    if (_scoringChanged) 'scoring': _scoring?.toJson(),
+              if (widget.map != null) ...[
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _map,
+                  minLines: 1,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    labelText: 'Map location (optional)',
+                    hintText:
+                        'An address or a link, for events there without one',
+                    helperText: had == null ? null : 'Was: $had',
+                    helperMaxLines: 3,
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ],
+              if (widget.group case final group?) ...[
+                const SizedBox(height: 16),
+                PickerField(
+                  label: '${group.label} (optional)',
+                  nodes: locationGroupNodes(group.choices),
+                  value: _group,
+                  none: 'None',
+                  groupsPickable: true,
+                  searchHint: 'Search groups',
+                  onChanged: (picked) => setState(() => _group = picked),
+                ),
+              ],
+              if (widget.scoring case final scoring?)
+                AggregationTile(
+                  title: 'How its people combine',
+                  label: 'How its people combine',
+                  explanation: "Their health, into the circle's.",
+                  value: _scoring,
+                  items: scoring.items,
+                  noun: 'people',
+                  fallback: scoring.fallback,
+                  fallbackValue: scoring.fallbackValue,
+                  onChanged: (picked) => setState(() {
+                    _scoring = picked;
+                    _scoringChanged = true;
                   }),
-                )
-              : null,
-          child: const Text('Save'),
+                ),
+              if (widget.extra case final extra?) ...[
+                const SizedBox(height: 16),
+                extra,
+              ],
+            ],
+          ),
         ),
-      ],
+        actions: [
+          if (widget.name != null && widget.delete != null)
+            TextButton(onPressed: _delete, child: const Text('Delete')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          HotkeyHint(
+            Hotkey.save,
+            child: FilledButton(onPressed: save, child: const Text('Save')),
+          ),
+        ],
+      ),
     );
   }
 }

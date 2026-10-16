@@ -6,6 +6,7 @@ import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../services/mcp_client.dart';
 import '../services/server_errors.dart';
+import 'hotkeys.dart';
 import 'waiting_note.dart';
 import 'error_sheet.dart';
 import 'color_picker.dart';
@@ -568,89 +569,101 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     final theme = Theme.of(context);
     final count = _changes.length;
     final oneWay = widget.oneWayAction;
-    return PopScope(
-      canPop: !_changedHere && !_saving,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && !_saving) _confirmDiscard();
+    return SaveOrDiscard(
+      changed: () => _changedHere,
+      onSave: _saving || !(count > 0 || _editing != null) ? null : _save,
+      onDiscard: () {
+        if (!_saving) Navigator.of(context).pop();
       },
-      child: AlertDialog(
-        title: Text(widget.title(_values)),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.waiting.isNotEmpty)
-                WaitingNote(waiting: widget.waiting),
-              if (_error case final error?)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.errorContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        color: theme.colorScheme.onErrorContainer,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: SelectableText(
-                          "Couldn't save. $error",
-                          style: TextStyle(
-                            color: theme.colorScheme.onErrorContainer,
+      child: PopScope(
+        canPop: !_changedHere && !_saving,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && !_saving) _confirmDiscard();
+        },
+        child: AlertDialog(
+          title: Text(widget.title(_values)),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.waiting.isNotEmpty)
+                  WaitingNote(waiting: widget.waiting),
+                if (_error case final error?)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.errorContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: SelectableText(
+                            "Couldn't save. $error",
+                            style: TextStyle(
+                              color: theme.colorScheme.onErrorContainer,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              for (final key in _original.keys) _row(context, key),
-            ],
-          ),
-        ),
-        actions: [
-          if (_editable && count == 0 && oneWay != null)
-            TextButton(
-              onPressed: _saving ? null : () => _oneWay(oneWay),
-              style: TextButton.styleFrom(
-                foregroundColor: theme.colorScheme.error,
-              ),
-              child: Text(oneWay.label),
+                for (final key in _original.keys) _row(context, key),
+              ],
             ),
-          if (count > 0)
+          ),
+          actions: [
+            if (_editable && count == 0 && oneWay != null)
+              TextButton(
+                onPressed: _saving ? null : () => _oneWay(oneWay),
+                style: TextButton.styleFrom(
+                  foregroundColor: theme.colorScheme.error,
+                ),
+                child: Text(oneWay.label),
+              ),
+            if (count > 0)
+              TextButton(
+                onPressed: _saving
+                    ? null
+                    : () => setState(() {
+                        _changes.clear();
+                        _error = null;
+                      }),
+                child: const Text('Revert'),
+              ),
             TextButton(
               onPressed: _saving
                   ? null
-                  : () => setState(() {
-                      _changes.clear();
-                      _error = null;
-                    }),
-              child: const Text('Revert'),
+                  : () => Navigator.of(context).maybePop(),
+              child: const Text('Close'),
             ),
-          TextButton(
-            onPressed: _saving ? null : () => Navigator.of(context).maybePop(),
-            child: const Text('Close'),
-          ),
-          if (count > 0 || _editing != null)
-            FilledButton(
-              onPressed: _saving ? null : _save,
-              child: _saving
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(
-                      count == 0
-                          ? 'Save'
-                          : 'Save $count change${count == 1 ? '' : 's'}',
-                    ),
-            ),
-        ],
+            if (count > 0 || _editing != null)
+              HotkeyHint(
+                Hotkey.save,
+                child: FilledButton(
+                  onPressed: _saving ? null : _save,
+                  child: _saving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(
+                          count == 0
+                              ? 'Save'
+                              : 'Save $count change${count == 1 ? '' : 's'}',
+                        ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

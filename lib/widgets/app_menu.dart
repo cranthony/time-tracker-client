@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../auth/sign_in_mode.dart';
 import '../platform/calendar_widget.dart';
@@ -15,10 +16,11 @@ import 'status_bar.dart';
 /// save and Diagnostics, when the app has them (a [BackgroundRefreshScope],
 /// a [StatusScope] or a [DiagnosticsScope] above), Hotkeys, on the web
 /// or once a keyboard's been used ([hotkeysOffered]), About, and Sign
-/// out when [onSignOut] is set. Ctrl held, it shows "?", for the list of
-/// hotkeys. Builds for the emulator test offer to add
+/// out when [onSignOut] is set. Ctrl+B, then S, opens it; while a dialog
+/// is open, the screen shakes instead. Builds for the emulator test offer
+/// to add
 /// the home screen calendar too ([CalendarWidget.pinOffered]).
-class AppMenu extends StatelessWidget {
+class AppMenu extends StatefulWidget {
   const AppMenu({
     super.key,
     required this.serverLabel,
@@ -34,14 +36,46 @@ class AppMenu extends StatelessWidget {
   final VoidCallback? onSignOut;
 
   @override
+  State<AppMenu> createState() => _AppMenuState();
+}
+
+class _AppMenuState extends State<AppMenu> {
+  final _button = GlobalKey<PopupMenuButtonState<_MenuItem>>();
+
+  String get serverLabel => widget.serverLabel;
+  String? get version => widget.version;
+  VoidCallback? get onSignOut => widget.onSignOut;
+
+  /// Ctrl+B, then S: opens it, if its page is on top; while a dialog is
+  /// open, shakes the screen instead.
+  void _open() {
+    if (HotkeyScope.maybeOf(context) case final hotkeys?
+        when hotkeys.dialogOpen) {
+      return hotkeys.shake();
+    }
+    if (ModalRoute.of(context)?.isCurrent ?? true) {
+      _button.currentState?.showButtonMenu();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final refresh = BackgroundRefresh.of(context);
     final status = StatusScope.of(context);
     final diagnostics = DiagnosticsScope.of(context);
     final settings = AppSettings.of(context);
-    return HotkeyHint(
-      Hotkey.help,
-      child: _menu(context, refresh, status, diagnostics, settings),
+    return HotkeyBindings(
+      bindings: [
+        HotkeyBinding(
+          const HotkeyTrigger.afterCtrlB(LogicalKeyboardKey.keyS),
+          _open,
+          whenCovered: WhenCovered.run,
+        ),
+      ],
+      child: HotkeyHint(
+        Hotkey.menu,
+        child: _menu(context, refresh, status, diagnostics, settings),
+      ),
     );
   }
 
@@ -53,6 +87,7 @@ class AppMenu extends StatelessWidget {
     AppSettings settings,
   ) {
     return PopupMenuButton<_MenuItem>(
+      key: _button,
       onSelected: (item) => switch (item) {
         _MenuItem.settings => Navigator.of(context).push(
           MaterialPageRoute<void>(

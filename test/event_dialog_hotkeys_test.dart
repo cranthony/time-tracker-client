@@ -129,7 +129,7 @@ void main() {
     await press(tester, LogicalKeyboardKey.escape);
     expect(dialogShown(), isTrue);
     expect(hotkeys.shakes.value, 1);
-    expect(find.text('Press Esc again to discard your changes.'), findsOne);
+    expect(find.text(SaveOrDiscard.warning), findsOne);
 
     await press(tester, LogicalKeyboardKey.escape);
     expect(dialogShown(), isFalse);
