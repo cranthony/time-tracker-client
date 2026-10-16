@@ -561,6 +561,71 @@ void main() {
       expect(find.textContaining('new:'), findsNothing);
     });
 
+    /// Opens Tea, and its dialog's facts: the location shown by [name],
+    /// not by its id, nor as new.
+    Future<void> expectTeaAt(WidgetTester tester, String name) async {
+      final id = (await people.locations())
+          .singleWhere((l) => l.name == name)
+          .id;
+      await tester.ensureVisible(find.text('Tea').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Tea').first);
+      await tester.pumpAndSettle();
+      expect(find.textContaining(name), findsWidgets);
+      expect(find.textContaining('$name (new)'), findsNothing);
+      expect(find.textContaining(id), findsNothing);
+    }
+
+    testWidgets("a location made elsewhere -- Claude settling what it adds "
+        "-- is named once a revision naming it is shown", (tester) async {
+      await open(tester);
+      await proposals.amend(
+        proposals.proposal!,
+        const ProposalEdits(
+          additions: [
+            (
+              ref: 'new:teahouse',
+              use: AdditionUse.create,
+              id: null,
+              name: null,
+              detail: null,
+              kind: AdditionKind.location,
+            ),
+          ],
+        ),
+      );
+      // Any change here shows the revision that names it by its id.
+      await page(tester, 'Follow-through (1 of 2)');
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      await expectTeaAt(tester, 'The teahouse');
+    });
+
+    testWidgets('a location made as the proposal is applied is named on its '
+        'event, not by its id', (tester) async {
+      await open(tester);
+      proposals.onConfirm = (proposal) async {
+        // Made as it's applied, and the event moved onto it.
+        final made = await people.createLocation(
+          const Location(id: '', name: 'The teahouse'),
+        );
+        await events.updateEvent(Event(id: 'tea', start: at(9), end: at(10)), {
+          'summary': 'Tea',
+          'facts': {
+            'location_ids': [made.id],
+          },
+        });
+        return ProposalOutcome(
+          status: ProposalOutcomeStatus.applied,
+          proposal: proposal.copyWith(state: ProposalState.applied),
+        );
+      };
+      await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+      await tester.pumpAndSettle();
+      expect(proposals.calls, contains('confirm_proposal'));
+      await expectTeaAt(tester, 'The teahouse');
+    });
+
     group("Claude's recap", () {
       Future<void> openRecap(
         WidgetTester tester, {
