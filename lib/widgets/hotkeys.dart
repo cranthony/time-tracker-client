@@ -11,7 +11,8 @@ enum HotkeyPlace {
   events('On the Events page'),
   creating('Making or moving an event'),
   event('In an event'),
-  pickers('Picking from a list');
+  pickers('Picking from a list'),
+  plan('On the Plan page');
 
   const HotkeyPlace(this.title);
   final String title;
@@ -66,12 +67,36 @@ class Hotkey {
     hint: 'Ctrl+B P',
     afterCtrlB: 'P',
   );
+  static const menu = Hotkey(
+    'Ctrl+B, then S',
+    'Open the ⋮ menu',
+    HotkeyPlace.anywhere,
+    hint: 'Ctrl+B S',
+    afterCtrlB: 'S',
+  );
   static const save = Hotkey(
     'Ctrl+Enter',
-    'Save the note or event being edited',
+    "Save what's being edited -- a note, an event, a description -- and "
+        'close it',
+    HotkeyPlace.anywhere,
+  );
+  static const discard = Hotkey(
+    'Esc',
+    'Close what was being edited; with changes made, the first Esc shakes '
+        'it, saying so, and the second discards them',
+    HotkeyPlace.anywhere,
+  );
+  static const editText = Hotkey(
+    'E',
+    'Edit the description being read',
     HotkeyPlace.anywhere,
   );
   static const help = Hotkey('?', 'Show this list', HotkeyPlace.anywhere);
+  static const scrollAny = Hotkey(
+    '↑ / ↓',
+    "Scroll what's on top: a page, a dialog -- this list -- or a sheet",
+    HotkeyPlace.anywhere,
+  );
   static const leaveField = Hotkey(
     'Esc',
     'Leave the text field, so letters are hotkeys again',
@@ -139,12 +164,23 @@ class Hotkey {
     'Its summary, selected, to type over',
     HotkeyPlace.event,
   );
-  static const closeEvent = Hotkey(
-    'Esc',
-    'Close it; with changes made, press it twice to discard them',
+  static const deleteEvent = Hotkey(
+    'Delete',
+    'Cancel or delete it, as its trash can does',
     HotkeyPlace.event,
   );
   static const search = Hotkey('/', 'Search', HotkeyPlace.pickers);
+
+  static const planItems = Hotkey(
+    'J / K',
+    "Go down (J) or up (K) the pane shown; Enter opens what's highlighted",
+    HotkeyPlace.plan,
+  );
+  static const planPanes = Hotkey(
+    'H / L',
+    'Go to the pane on the left (H) or right (L)',
+    HotkeyPlace.plan,
+  );
 
   /// Every one, in the order the list shows them.
   static const all = [
@@ -152,8 +188,12 @@ class Hotkey {
     notes,
     events,
     plan,
+    menu,
     save,
+    discard,
+    editText,
     help,
+    scrollAny,
     leaveField,
     stepEvents,
     openEvent,
@@ -170,14 +210,17 @@ class Hotkey {
     description,
     actions,
     summary,
-    closeEvent,
+    deleteEvent,
     search,
+    planItems,
+    planPanes,
   ];
 }
 
 /// What sets off a [HotkeyBinding]: Ctrl and a key, which works even in
 /// a text field; a letter after Ctrl+B, Ctrl let go first, which does
-/// too; or a key alone, which works only while no text field has focus.
+/// too; or a key alone, which works only while no text field has focus
+/// -- unless it's [HotkeyTrigger.anyTime].
 @immutable
 class HotkeyTrigger {
   /// Ctrl and [key].
@@ -189,11 +232,15 @@ class HotkeyTrigger {
   /// [key] alone; held, it repeats.
   const HotkeyTrigger.key(this.key) : _kind = _Kind.key;
 
+  /// [key] alone, even in a text field: Esc, say, where the field is all
+  /// there is to leave.
+  const HotkeyTrigger.anyTime(this.key) : _kind = _Kind.anyTime;
+
   final LogicalKeyboardKey key;
   final _Kind _kind;
 }
 
-enum _Kind { ctrl, afterCtrlB, key }
+enum _Kind { ctrl, afterCtrlB, key, anyTime }
 
 /// What a [HotkeyBinding] does while something -- a dialog, another
 /// page -- is over the page it's on.
@@ -392,6 +439,11 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
     }
     if (ctrl || others) return KeyEventResult.ignored;
     if (_typing) {
+      if (_find(_Kind.anyTime, key) case final binding?
+          when !keyboard.isShiftPressed) {
+        binding.onPressed();
+        return KeyEventResult.handled;
+      }
       if (down && key == LogicalKeyboardKey.escape) {
         FocusManager.instance.primaryFocus?.unfocus();
         return KeyEventResult.handled;
@@ -403,10 +455,86 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
       return KeyEventResult.handled;
     }
     if (keyboard.isShiftPressed) return KeyEventResult.ignored;
-    final binding = _find(_Kind.key, key);
-    if (binding == null) return KeyEventResult.ignored;
-    binding.onPressed();
-    return KeyEventResult.handled;
+    final binding = _find(_Kind.key, key) ?? _find(_Kind.anyTime, key);
+    if (binding != null) {
+      binding.onPressed();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.arrowUp) {
+      return scrollTop(later: key == LogicalKeyboardKey.arrowDown)
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// Scrolls what's on top -- a page, a dialog or a sheet, not a menu,
+  /// whose arrows go between its items -- down ([later]) or up, by a fifth
+  /// of what shows: its biggest list that scrolls up and down. Whether
+  /// there was one to.
+  bool scrollTop({required bool later}) {
+    final route = _routes.lastOrNull;
+    if (route is! ModalRoute ||
+        (route is PopupRoute &&
+            route is! RawDialogRoute &&
+            route is! ModalBottomSheetRoute)) {
+      return false;
+    }
+    final context = route.subtreeContext;
+    if (context == null) return false;
+    ScrollPosition? biggest;
+    void visit(Element element) {
+      if (element case StatefulElement(:final ScrollableState state)) {
+        final position = state.position;
+        if (position.axis == Axis.vertical &&
+            position.hasContentDimensions &&
+            position.maxScrollExtent > position.minScrollExtent &&
+            position.viewportDimension > (biggest?.viewportDimension ?? 0)) {
+          biggest = position;
+        }
+      }
+      element.visitChildElements(visit);
+    }
+
+    context.visitChildElements(visit);
+    final position = biggest;
+    if (position == null) return false;
+    final by = position.viewportDimension / 5;
+    position.animateTo(
+      (position.pixels + (later ? by : -by)).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      ),
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+    );
+    return true;
+  }
+
+  /// What's being said at the foot of the screen, a moment ([say]).
+  String? get said => _said;
+  String? _said;
+  Timer? _sayTimer;
+
+  /// Says [message] at the foot of the screen, over everything, for
+  /// [forAbout].
+  void say(String message, {Duration forAbout = const Duration(seconds: 3)}) {
+    _sayTimer?.cancel();
+    _said = message;
+    notifyListeners();
+    _sayTimer = Timer(forAbout, () {
+      _said = null;
+      notifyListeners();
+    });
+  }
+
+  /// Stops saying [message], if it's what's said.
+  void unsay(String message) {
+    if (_said != message) return;
+    _sayTimer?.cancel();
+    _said = null;
+    notifyListeners();
   }
 
   Future<void> _showHelp() async {
@@ -423,6 +551,7 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
   @override
   void dispose() {
     _hintTimer?.cancel();
+    _sayTimer?.cancel();
     shakes.dispose();
     super.dispose();
   }
@@ -515,9 +644,11 @@ class _HotkeyScopeState extends State<HotkeyScope>
           ),
           ListenableBuilder(
             listenable: widget.hotkeys,
-            builder: (context, _) => widget.hotkeys.afterCtrlB
-                ? const _AfterCtrlBChip()
-                : const SizedBox.shrink(),
+            builder: (context, _) => switch (widget.hotkeys) {
+              Hotkeys(afterCtrlB: true) => _Chip(_afterCtrlB),
+              Hotkeys(:final said?) => _Chip(said),
+              _ => const SizedBox.shrink(),
+            },
           ),
         ],
       ),
@@ -529,17 +660,24 @@ class _HotkeysInherited extends InheritedNotifier<Hotkeys> {
   const _HotkeysInherited({required super.notifier, required super.child});
 }
 
-/// What Ctrl+B waits for, at the foot of the screen.
-class _AfterCtrlBChip extends StatelessWidget {
-  const _AfterCtrlBChip();
+/// What Ctrl+B waits for.
+String get _afterCtrlB {
+  final waiting = [
+    for (final h in Hotkey.all)
+      if (h.afterCtrlB case final letter?) '$letter ${h.does}',
+  ];
+  return 'Ctrl+B: let go of Ctrl, then  ${waiting.join('  ·  ')}';
+}
+
+/// [text] at the foot of the screen, over everything.
+class _Chip extends StatelessWidget {
+  const _Chip(this.text);
+
+  final String text;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final waiting = [
-      for (final h in Hotkey.all)
-        if (h.afterCtrlB case final letter?) '$letter ${h.does}',
-    ];
     return Positioned(
       left: 16,
       right: 16,
@@ -551,15 +689,89 @@ class _AfterCtrlBChip extends StatelessWidget {
           elevation: 4,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Text(
-              'Ctrl+B: let go of Ctrl, then  ${waiting.join('  ·  ')}',
-              style: TextStyle(color: scheme.onInverseSurface),
-            ),
+            child: Text(text, style: TextStyle(color: scheme.onInverseSurface)),
           ),
         ),
       ),
     );
   }
+}
+
+/// The keys of something being edited, to save or discard: Ctrl+Enter
+/// saves ([onSave], once it can be: null while it can't), and Esc closes
+/// it ([onDiscard], or by default, pops its route) -- but with changes
+/// made (as [changed] says, asked as Esc is pressed), the first Esc only shakes the screen, saying so, and
+/// a second soon after discards them. Esc works in its text fields too,
+/// unless [escLeavesFields], when the first Esc in one leaves it, as it
+/// does anywhere else.
+class SaveOrDiscard extends StatefulWidget {
+  const SaveOrDiscard({
+    super.key,
+    required this.changed,
+    required this.onSave,
+    this.onDiscard,
+    this.escLeavesFields = false,
+    this.more = const [],
+    required this.child,
+  });
+
+  final ValueGetter<bool> changed;
+  final VoidCallback? onSave;
+  final VoidCallback? onDiscard;
+  final bool escLeavesFields;
+
+  /// Its other hotkeys.
+  final List<HotkeyBinding> more;
+  final Widget child;
+
+  /// What the first Esc says.
+  static const warning = 'Press Esc again to discard your changes';
+
+  @override
+  State<SaveOrDiscard> createState() => _SaveOrDiscardState();
+}
+
+class _SaveOrDiscardState extends State<SaveOrDiscard> {
+  /// While a second Esc discards: a moment after the first.
+  Timer? _armed;
+
+  static const _window = Duration(seconds: 3);
+
+  void _escape() {
+    final hotkeys = HotkeyScope.maybeOf(context);
+    if (widget.changed() && !(_armed?.isActive ?? false)) {
+      _armed = Timer(_window, () {});
+      hotkeys?.shake();
+      hotkeys?.say(SaveOrDiscard.warning, forAbout: _window);
+      return;
+    }
+    _armed?.cancel();
+    hotkeys?.unsay(SaveOrDiscard.warning);
+    (widget.onDiscard ?? () => Navigator.of(context).pop())();
+  }
+
+  @override
+  void dispose() {
+    _armed?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => HotkeyBindings(
+    bindings: [
+      ...widget.more,
+      HotkeyBinding(
+        widget.escLeavesFields
+            ? const HotkeyTrigger.key(LogicalKeyboardKey.escape)
+            : const HotkeyTrigger.anyTime(LogicalKeyboardKey.escape),
+        _escape,
+      ),
+      HotkeyBinding(const HotkeyTrigger.ctrl(LogicalKeyboardKey.enter), () {
+        widget.onSave?.call();
+      }),
+    ],
+    child: widget.child,
+  );
 }
 
 /// Puts [bindings] to work while this is in the tree: while the page or

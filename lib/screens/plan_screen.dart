@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/plan_action.dart';
@@ -31,6 +32,7 @@ import '../widgets/color_picker.dart';
 import '../widgets/durations.dart';
 import '../widgets/priority_chip.dart';
 import '../widgets/priority_colors_dialog.dart';
+import '../widgets/hotkeys.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
 import '../widgets/time_summary.dart';
@@ -391,6 +393,9 @@ class _PlanScreenState extends State<PlanScreen> {
 
   @override
   void dispose() {
+    for (final node in _paneFocus.values) {
+      node.dispose();
+    }
     PlanVisitTimer.open--;
     // Left before everything loaded: as far as it got.
     _visit.finish();
@@ -695,6 +700,79 @@ class _PlanScreenState extends State<PlanScreen> {
   Widget build(BuildContext context) =>
       timed(WorkKind.planRebuild, () => _build(context));
 
+  /// Each pane's, by its title: what J and K go down and up.
+  final _paneFocus = <String, FocusNode>{};
+
+  FocusNode _paneNode(String title) => _paneFocus.putIfAbsent(
+    title,
+    () => FocusNode(
+      debugLabel: '$title pane',
+      canRequestFocus: false,
+      skipTraversal: true,
+    ),
+  );
+
+  /// J or K: the next of what can be tapped in the pane shown, [later]
+  /// down it or up, highlighted -- and Enter taps it -- scrolled into
+  /// view. Not its search: letters would go into it.
+  void _stepInPane(FocusNode pane, {required bool later}) {
+    final stops =
+        [
+          for (final node in pane.traversalDescendants)
+            if (node.canRequestFocus &&
+                !node.skipTraversal &&
+                node.context != null &&
+                node.context!.findAncestorWidgetOfExactType<EditableText>() ==
+                    null &&
+                node.context!.widget is! EditableText)
+              node,
+        ]..sort((a, b) {
+          final ra = a.rect, rb = b.rect;
+          final dy = ra.top.compareTo(rb.top);
+          return dy != 0 ? dy : ra.left.compareTo(rb.left);
+        });
+    if (stops.isEmpty) return;
+    final at = stops.indexOf(FocusManager.instance.primaryFocus!);
+    final next = at < 0
+        ? (later ? stops.first : stops.last)
+        : stops[(at + (later ? 1 : -1)).clamp(0, stops.length - 1)];
+    next.requestFocus();
+    Scrollable.ensureVisible(
+      next.context!,
+      alignmentPolicy: later
+          ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
+          : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+      duration: const Duration(milliseconds: 120),
+    );
+  }
+
+  /// The Plan page's hotkeys, with the [panes] shown in [tabs]: J and K
+  /// down and up the one shown, H and L to the one beside it.
+  List<HotkeyBinding> _paneKeys(TabController tabs, List<String> panes) {
+    void step(bool later) =>
+        _stepInPane(_paneNode(panes[tabs.index]), later: later);
+    void go(int by) =>
+        tabs.animateTo((tabs.index + by).clamp(0, tabs.length - 1));
+    return [
+      HotkeyBinding(
+        const HotkeyTrigger.key(LogicalKeyboardKey.keyJ),
+        () => step(true),
+      ),
+      HotkeyBinding(
+        const HotkeyTrigger.key(LogicalKeyboardKey.keyK),
+        () => step(false),
+      ),
+      HotkeyBinding(
+        const HotkeyTrigger.key(LogicalKeyboardKey.keyH),
+        () => go(-1),
+      ),
+      HotkeyBinding(
+        const HotkeyTrigger.key(LogicalKeyboardKey.keyL),
+        () => go(1),
+      ),
+    ];
+  }
+
   Widget _build(BuildContext context) {
     final actions = _actions;
     final ready = actions != null && !_needsSignIn;
@@ -810,8 +888,24 @@ class _PlanScreenState extends State<PlanScreen> {
             child: switch ((_needsSignIn, reordering)) {
               (true, _) => _signInPrompt(),
               (_, true) => _reorderable(actions!),
-              _ when panes.length == 1 => panes.single.$3,
-              _ => TabBarView(children: [for (final pane in panes) pane.$3]),
+              _ => Builder(
+                builder: (context) => HotkeyBindings(
+                  bindings: _paneKeys(DefaultTabController.of(context), [
+                    for (final (title, _, _) in panes) title,
+                  ]),
+                  child: panes.length == 1
+                      ? Focus(
+                          focusNode: _paneNode(panes.single.$1),
+                          child: panes.single.$3,
+                        )
+                      : TabBarView(
+                          children: [
+                            for (final (title, _, pane) in panes)
+                              Focus(focusNode: _paneNode(title), child: pane),
+                          ],
+                        ),
+                ),
+              ),
             },
           ),
         ),
