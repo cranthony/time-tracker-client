@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/maps.dart';
 import '../models/event.dart';
@@ -24,6 +25,7 @@ import 'event_description.dart';
 import 'event_dialog.dart' show followThroughOption;
 import '../outbox/event_outbox.dart' show allWaiting;
 import 'follow_through_dialog.dart' show CalledOff;
+import 'hotkeys.dart';
 import 'other_events.dart';
 import 'waiting_note.dart';
 import 'facts_dialog.dart';
@@ -487,6 +489,10 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   bool _saving = false;
   String? _error;
 
+  /// Whether Esc was pressed with changes made: pressed again, it
+  /// discards them.
+  bool _discardArmed = false;
+
   bool get _editable => widget.save != null && !widget.waiting.contains('*');
 
   /// Whether [key] waits for a change to be saved.
@@ -513,6 +519,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
 
   /// Sets [key] to [value], dropping the change if that's how it was.
   void _set(String key, Object? value) => setState(() {
+    _discardArmed = false;
     if (_same(value, widget.values[key])) {
       _changes.remove(key);
     } else {
@@ -630,8 +637,90 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     if (confirmed == true && mounted) await _run(() => removal.run(on));
   }
 
+  /// Whether [key] can be changed now, tapped or by its hotkey.
+  bool _canEdit(String key) => _editable && !_saving && !_waits(key);
+
+  /// S: opens the summary, its text selected, to type over.
+  void _selectSummary() {
+    if (!_canEdit('summary')) return;
+    if (_editing != _Field.summary) _open(_Field.summary);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _text.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _text.text.length,
+      );
+    });
+  }
+
+  /// L: where it is -- picked, from its facts, or typed.
+  void _openWhere() {
+    if (widget.whoWhere) {
+      if (_canEdit('facts')) _pickWho(where: true);
+    } else if (_canEdit('location') && _editing != _Field.location) {
+      _open(_Field.location);
+    }
+  }
+
+  /// Ctrl+Enter: saves, or creates, as its button does, once it can.
+  void _saveByKey() {
+    if (_saving) return;
+    if (widget.creating) {
+      if ((_value('summary') as String? ?? '').trim().isNotEmpty) _save();
+    } else if (_changes.isNotEmpty) {
+      _save();
+    }
+  }
+
+  /// Esc: closes it; with changes made, shakes the first time, saying
+  /// so, and discards them the second.
+  void _escape() {
+    if (_saving) return;
+    if (_changes.isEmpty || _discardArmed) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _discardArmed = true);
+    HotkeyScope.maybeOf(context)?.shake();
+  }
+
+  /// Its hotkeys: J and K between its parts, Enter opening the one
+  /// highlighted; a letter for each part.
+  List<HotkeyBinding> get _hotkeys => [
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyJ),
+      () => FocusScope.of(context).nextFocus(),
+    ),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyK),
+      () => FocusScope.of(context).previousFocus(),
+    ),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyW), () {
+      if (widget.whoWhere && _canEdit('facts')) _pickWho();
+    }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyL), _openWhere),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyD), () {
+      if (_canEdit('description')) _editDescription();
+    }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyA), () {
+      if (_canEdit('action_ids')) _pickActions?.call();
+    }),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyS),
+      _selectSummary,
+    ),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.escape), _escape),
+    HotkeyBinding(
+      const HotkeyTrigger.ctrl(LogicalKeyboardKey.enter),
+      _saveByKey,
+    ),
+  ];
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      HotkeyBindings(bindings: _hotkeys, child: _dialog(context));
+
+  Widget _dialog(BuildContext context) {
     final theme = Theme.of(context);
     final changed = _changes.isNotEmpty;
     return AlertDialog(
@@ -656,6 +745,16 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                     style: TextStyle(color: theme.colorScheme.onErrorContainer),
                   ),
                 ),
+              if (_discardArmed)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Press Esc again to discard your changes.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                ),
               if (widget.waiting.isNotEmpty)
                 WaitingNote(waiting: widget.waiting),
               _topRow(context),
@@ -678,6 +777,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                   key: 'location',
                   icon: Icons.place_outlined,
                   hint: 'Add location',
+                  hotkey: Hotkey.location,
                 ),
               _descriptionRow(context),
               _actionsRow(context),
@@ -688,39 +788,51 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       ),
       actions: widget.creating
           ? [
-              TextButton(
-                onPressed: _saving ? null : () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
+              HotkeyHint(
+                Hotkey.closeEvent,
+                child: TextButton(
+                  onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
               ),
-              FilledButton(
-                // Every event has a summary.
-                onPressed:
-                    _saving ||
-                        (_value('summary') as String? ?? '').trim().isEmpty
-                    ? null
-                    : _save,
-                child: _saving
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Create'),
+              HotkeyHint(
+                Hotkey.save,
+                child: FilledButton(
+                  // Every event has a summary.
+                  onPressed:
+                      _saving ||
+                          (_value('summary') as String? ?? '').trim().isEmpty
+                      ? null
+                      : _save,
+                  child: _saving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Create'),
+                ),
               ),
             ]
           : changed
           ? [
-              TextButton(
-                onPressed: _saving ? null : () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
+              HotkeyHint(
+                Hotkey.closeEvent,
+                child: TextButton(
+                  onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
               ),
-              FilledButton(
-                onPressed: _saving ? null : _save,
-                child: _saving
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Save'),
+              HotkeyHint(
+                Hotkey.save,
+                child: FilledButton(
+                  onPressed: _saving ? null : _save,
+                  child: _saving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Save'),
+                ),
               ),
             ]
           : [
@@ -730,9 +842,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                     : () => Navigator.of(context).pop(SummaryDetails<T>()),
                 child: const Text('Details'),
               ),
-              TextButton(
-                onPressed: _saving ? null : () => Navigator.of(context).pop(),
-                child: const Text('Close'),
+              HotkeyHint(
+                Hotkey.closeEvent,
+                child: TextButton(
+                  onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
               ),
             ],
     );
@@ -1020,6 +1135,10 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       );
     }
     final summary = _value('summary') as String?;
+    return HotkeyHint(Hotkey.summary, child: _summaryLine(theme, summary));
+  }
+
+  Widget _summaryLine(ThemeData theme, String? summary) {
     return InkWell(
       onTap: _editable && !_saving && !_waits('summary')
           ? () => _open(_Field.summary)
@@ -1418,9 +1537,11 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     String? changedKey,
     bool? changed,
     Widget? trailing,
+    Hotkey? hotkey,
   }) {
     final theme = Theme.of(context);
     final waits = changedKey != null && _waits(changedKey);
+    final leading = glyph ?? Icon(icon);
     return Column(
       children: [
         Divider(height: 1, color: theme.colorScheme.outlineVariant),
@@ -1444,7 +1565,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                                 ? theme.colorScheme.primary
                                 : theme.colorScheme.onSurfaceVariant,
                           ),
-                          child: glyph ?? Icon(icon),
+                          child: hotkey == null
+                              ? leading
+                              : HotkeyHint(hotkey, child: leading),
                         ),
                         const SizedBox(width: 12),
                         Expanded(child: child),
@@ -1477,6 +1600,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     required IconData icon,
     required String hint,
     bool multiline = false,
+    Hotkey? hotkey,
   }) {
     final theme = Theme.of(context);
     final editing = _editing == field;
@@ -1487,6 +1611,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       icon: icon,
       editing: editing,
       changedKey: key,
+      hotkey: hotkey,
       onTap: editing ? null : () => _open(field),
       child: editing
           ? TextField(
@@ -1538,29 +1663,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       context,
       glyph: const PlowIcon(),
       changedKey: 'action_ids',
-      onTap: switch (_actionList) {
-        final actions? => () async {
-          setState(() => _editing = null);
-          final picked = await showActionsSheet(
-            context,
-            actions: actions,
-            loaded: _actionsLoaded,
-            picked: _actionIds,
-            query: _value('summary') as String?,
-            reload: widget.loadActions,
-            marker: (action) => ActionDiamond(
-              color: parseColor(
-                action.effectiveColor ?? action.backgroundColor,
-              ),
-            ),
-          );
-          if (!mounted) return;
-          // One may have been added, or edited, from the sheet.
-          _actionList = _loadActions();
-          if (picked != null) _set('action_ids', picked);
-        },
-        null => null,
-      },
+      hotkey: Hotkey.actions,
+      onTap: _pickActions,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1598,6 +1702,30 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       ),
     );
   }
+
+  /// Picks its actions in a sheet up from the foot; null until there are
+  /// actions to pick from.
+  VoidCallback? get _pickActions => switch (_actionList) {
+    final actions? => () async {
+      setState(() => _editing = null);
+      final picked = await showActionsSheet(
+        context,
+        actions: actions,
+        loaded: _actionsLoaded,
+        picked: _actionIds,
+        query: _value('summary') as String?,
+        reload: widget.loadActions,
+        marker: (action) => ActionDiamond(
+          color: parseColor(action.effectiveColor ?? action.backgroundColor),
+        ),
+      );
+      if (!mounted) return;
+      // One may have been added, or edited, from the sheet.
+      _actionList = _loadActions();
+      if (picked != null) _set('action_ids', picked);
+    },
+    null => null,
+  };
 
   /// [facts] as its facts, a change if they're not as they were.
   void _setFacts(Facts facts) {
@@ -1645,32 +1773,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       icon: where ? Icons.place_outlined : Icons.person_outline,
       changedKey: 'facts',
       changed: _factsChanged,
-      onTap: () async {
-        setState(() => _editing = null);
-        final edited = await showWhoWhereSheet(
-          context,
-          facts,
-          where: where,
-          mapLocation: _value('location') as String?,
-          query: _value('summary') as String?,
-          additions: widget.additions,
-        );
-        if (!mounted) return;
-        // Someone, or a location, may have been added, or renamed, from
-        // the sheet.
-        if (PlanMemoryScope.of(this.context) case final memory?) {
-          setState(
-            () => _named(memory.people, memory.locations, memory.traits),
-          );
-        }
-        if (edited == null) return;
-        _setFacts(edited.facts);
-        if (where) {
-          final typed = edited.mapLocation?.trim() ?? '';
-          // Null clears it: see clearableFields.
-          _set('location', typed.isEmpty ? null : typed);
-        }
-      },
+      hotkey: where ? Hotkey.location : Hotkey.who,
+      onTap: () => _pickWho(where: where),
       trailing: where && map.isNotEmpty
           // The row's padding to tap in, so it's no taller for it.
           ? IconButton(
@@ -1695,6 +1799,33 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     );
   }
 
+  /// Picks who it was with and for -- or, [where], where it was -- in a
+  /// sheet up from the foot ([showWhoWhereSheet]).
+  Future<void> _pickWho({bool where = false}) async {
+    setState(() => _editing = null);
+    final edited = await showWhoWhereSheet(
+      context,
+      Facts.fromJson(_value('facts')) ?? const Facts(),
+      where: where,
+      mapLocation: _value('location') as String?,
+      query: _value('summary') as String?,
+      additions: widget.additions,
+    );
+    if (!mounted) return;
+    // Someone, or a location, may have been added, or renamed, from the
+    // sheet.
+    if (PlanMemoryScope.of(context) case final memory?) {
+      setState(() => _named(memory.people, memory.locations, memory.traits));
+    }
+    if (edited == null) return;
+    _setFacts(edited.facts);
+    if (where) {
+      final typed = edited.mapLocation?.trim() ?? '';
+      // Null clears it: see clearableFields.
+      _set('location', typed.isEmpty ? null : typed);
+    }
+  }
+
   /// Its description, as its HTML lays it out, cut off if it's long
   /// ([EventDescription]), or a hint; read in full, and written, in a
   /// sheet up from the foot ([showTextSheet]).
@@ -1706,17 +1837,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       context,
       icon: Icons.notes,
       changedKey: 'description',
-      onTap: () async {
-        setState(() => _editing = null);
-        final text = await showTextSheet(
-          context,
-          title: 'Description',
-          text: value,
-          hint: 'Add description',
-        );
-        if (text == null || !mounted) return;
-        _set('description', text.isEmpty ? null : text);
-      },
+      hotkey: Hotkey.description,
+      onTap: _editDescription,
       child: blank
           ? Text(
               'Add description',
@@ -1729,6 +1851,20 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               child: EventDescription(value, maxLines: 6, expandable: false),
             ),
     );
+  }
+
+  /// Reads and writes its description in a sheet up from the foot
+  /// ([showTextSheet]).
+  Future<void> _editDescription() async {
+    setState(() => _editing = null);
+    final text = await showTextSheet(
+      context,
+      title: 'Description',
+      text: _value('description') as String?,
+      hint: 'Add description',
+    );
+    if (text == null || !mounted) return;
+    _set('description', text.isEmpty ? null : text);
   }
 
   /// The notes on you and on each person there, and how many judgments

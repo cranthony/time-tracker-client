@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'hotkeys.dart';
 
 /// What's typed in a picker's search, as words to match in any order:
 /// every one of them, or with [any], at least one.
@@ -85,7 +88,7 @@ class PickerSearch extends ChangeNotifier {
 }
 
 /// [search]'s box, with a clear button, and beside it a toggle to match
-/// any word typed rather than every one.
+/// any word typed rather than every one. "/" puts the cursor in it.
 class PickerSearchField extends StatelessWidget {
   const PickerSearchField({
     super.key,
@@ -101,11 +104,21 @@ class PickerSearchField extends StatelessWidget {
   final ValueChanged<String>? onSubmitted;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: search,
-    builder: (context, _) => Row(
-      children: [
-        Expanded(
+  Widget build(BuildContext context) => HotkeyBindings(
+    bindings: [
+      HotkeyBinding(
+        const HotkeyTrigger.key(LogicalKeyboardKey.slash),
+        search.focus.requestFocus,
+      ),
+    ],
+    child: ListenableBuilder(listenable: search, builder: _field),
+  );
+
+  Widget _field(BuildContext context, Widget? _) => Row(
+    children: [
+      Expanded(
+        child: HotkeyHint(
+          Hotkey.search,
           child: TextField(
             controller: search.controller,
             focusNode: search.focus,
@@ -127,19 +140,19 @@ class PickerSearchField extends StatelessWidget {
             onSubmitted: onSubmitted,
           ),
         ),
-        const SizedBox(width: 8),
-        Tooltip(
-          message: search.matchAny
-              ? 'Showing what matches any word'
-              : 'Showing what matches every word',
-          child: FilterChip(
-            label: const Text('Any'),
-            selected: search.matchAny,
-            onSelected: (any) => search.matchAny = any,
-          ),
+      ),
+      const SizedBox(width: 8),
+      Tooltip(
+        message: search.matchAny
+            ? 'Showing what matches any word'
+            : 'Showing what matches every word',
+        child: FilterChip(
+          label: const Text('Any'),
+          selected: search.matchAny,
+          onSelected: (any) => search.matchAny = any,
         ),
-      ],
-    ),
+      ),
+    ],
   );
 }
 
