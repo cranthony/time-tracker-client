@@ -1028,6 +1028,10 @@ void main() {
           (n.kind, n.selected),
       ];
       expect(find.textContaining('Tea at last'), findsOneWidget);
+      // All of the note, however long: never cut short.
+      final text = tester.widget<Text>(find.textContaining('Tea at last'));
+      expect(text.maxLines, isNull);
+      expect(text.overflow, isNull);
       expect(find.text('Sets the start of Tea'), findsOneWidget);
       expect(find.text('2/4'), findsOneWidget);
       expect(drawn(), [
