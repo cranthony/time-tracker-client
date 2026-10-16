@@ -9,6 +9,17 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.112.0
+
+- An event to push that the new or moved event covers part of is split at
+  the box's edge: the part outside the box, on the side it isn't pushed
+  to, stays where it is, and the rest is pushed whole. Pushing down an
+  event the cursor was dropped in the middle of now saves it split, as it
+  showed, instead of pushing all of it.
+- The part split off is the same event as the one it came from, but for
+  its id and times: its judgments, and whether its actions come from its
+  label, are copied too.
+
 ## 7.111.0
 
 - Hotkeys on the Events page. J and K highlight the next event and the

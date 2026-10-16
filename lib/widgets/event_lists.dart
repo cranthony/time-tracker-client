@@ -98,31 +98,37 @@ enum EventList {
 /// never moves it. Those to [EventList.cancel] are cancelled; those to
 /// [EventList.keep] left be ([blocked] says whether they're in the way).
 ///
-/// An event the box's [anchor] -- the cursor it was made from -- is
-/// inside of is split there first: the part before it, the event itself;
-/// the part after, a new one, in the same list.
+/// One to push that the box covers part of is split at the box's edge
+/// first: the part outside the box, on the side it's not pushed to, stays
+/// where it is, the event itself; the rest is pushed whole, as a new one.
 class BoxEffect {
   BoxEffect(
     OtherEvents others, {
     required DateTime start,
     required DateTime end,
-    DateTime? anchor,
     Map<EventList, Set<String>> lists = const {},
   }) {
     final listOf = <String, EventList>{
       for (final MapEntry(:key, :value) in lists.entries)
         for (final id in value) id: key,
     };
-    // The pieces worked with: each event, or the two halves of the one
-    // the anchor's inside of.
+    // The pieces worked with: each event, or the two parts of one to push
+    // that sticks out of the box on the side it isn't pushed to.
     final pieces = <_Piece>[];
-    final split = anchor == null ? null : others.inside(anchor);
     for (final e in others.events) {
       final list = listOf[e.id];
-      if (e == split && anchor != null) {
+      if (list == EventList.pushDown &&
+          e.start.isBefore(start) &&
+          e.end.isAfter(start)) {
         pieces
-          ..add(_Piece(e, e.start, anchor, list))
-          ..add(_Piece(e, anchor, e.end, list, rest: true));
+          ..add(_Piece(e, e.start, start, null))
+          ..add(_Piece(e, start, e.end, list, rest: true));
+      } else if (list == EventList.pushUp &&
+          e.start.isBefore(end) &&
+          e.end.isAfter(end)) {
+        pieces
+          ..add(_Piece(e, end, e.end, null))
+          ..add(_Piece(e, e.start, end, list, rest: true));
       } else {
         pieces.add(_Piece(e, e.start, e.end, list));
       }
@@ -236,9 +242,9 @@ class BoxEffect {
   late final List<(Event, DateTime, DateTime, bool)> pushed;
 }
 
-/// A piece of an event the box works with: the whole of it, or a half of
-/// one split at the box's anchor ([rest], the later half); what's [left]
-/// of it, once the box is done.
+/// A piece of an event the box works with: the whole of it, or a part of
+/// one split at the box's edge ([rest], the part pushed); what's [left] of
+/// it, once the box is done.
 class _Piece {
   _Piece(this.event, this.start, this.end, this.list, {this.rest = false})
     : left = [(start, end)];

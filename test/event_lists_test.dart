@@ -22,15 +22,8 @@ void main() {
     List<Event> events,
     DateTime start,
     DateTime end, {
-    DateTime? anchor,
     Map<EventList, Set<String>> lists = const {},
-  }) => BoxEffect(
-    OtherEvents(events),
-    start: start,
-    end: end,
-    anchor: anchor,
-    lists: lists,
-  );
+  }) => BoxEffect(OtherEvents(events), start: start, end: end, lists: lists);
 
   group('with no lists, it trims, as overwriting did', () {
     final events = [
@@ -155,35 +148,41 @@ void main() {
     );
   });
 
-  group("the event the box's anchor is inside of, split there", () {
-    final work = event('w', at(9), at(12));
+  group("one to push that sticks out of the box, split at the box's edge", () {
+    // A, 11-3; the box, 12-1.
+    final a = Event(
+      id: 'a',
+      start: at(11),
+      end: at(15),
+      summary: 'A',
+      properties: const {
+        'summary': 'A',
+        'description': 'Lunch and a walk',
+        'action_ids': ['eat'],
+        'actions_from_label': true,
+        'priority': 2,
+        'facts': {
+          'notes': {'self': 'Sunny'},
+        },
+        'judgments': {
+          'self': {
+            'calm': {
+              'mood': {'rating': 4, 'scale': 5},
+            },
+          },
+        },
+        'recurring_event_id': 'series',
+      },
+    );
 
-    test('trimmed: the part before kept, the rest after the box', () {
-      final e = effect([work], at(10), at(11), anchor: at(10));
-      expect(
-        shown(e.overwrite),
-        shown(
-          Overwrite(
-            updates: [
-              (work, {'end': t(at(10))}),
-            ],
-            creates: [
-              {'start': t(at(11)), 'end': t(at(12))},
-            ],
-          ),
-        ),
-      );
-    });
-
-    test('pushed down: the rest whole, after the box -- the two still '
-        'adding up to it', () {
+    test('pushed down: the part above the box kept, the rest pushed whole, '
+        'just below it', () {
       final e = effect(
-        [work],
-        at(10),
-        at(11),
-        anchor: at(10),
+        [a],
+        at(12),
+        at(13),
         lists: {
-          EventList.pushDown: {'w'},
+          EventList.pushDown: {'a'},
         },
       );
       expect(
@@ -191,13 +190,100 @@ void main() {
         shown(
           Overwrite(
             updates: [
-              (work, {'end': t(at(10))}),
+              (a, {'end': t(at(12))}),
             ],
             creates: [
-              {'start': t(at(11)), 'end': t(at(13))},
+              {'start': t(at(13)), 'end': t(at(16))},
             ],
           ),
         ),
+      );
+      expect(e.pushed, [(a, at(13), at(16), true)]);
+      expect(e.span, (at(12), at(16)));
+    });
+
+    test('pushed up: the part below the box kept, the rest pushed whole, '
+        'just above it', () {
+      final e = effect(
+        [a],
+        at(12),
+        at(13),
+        lists: {
+          EventList.pushUp: {'a'},
+        },
+      );
+      expect(
+        shown(e.overwrite),
+        shown(
+          Overwrite(
+            updates: [
+              (a, {'start': t(at(13))}),
+            ],
+            creates: [
+              {'start': t(at(10)), 'end': t(at(12))},
+            ],
+          ),
+        ),
+      );
+      expect(e.pushed, [(a, at(10), at(12), true)]);
+    });
+
+    test('nothing of it on the kept side: pushed whole, itself', () {
+      final e = effect(
+        [a],
+        at(11),
+        at(12),
+        lists: {
+          EventList.pushDown: {'a'},
+        },
+      );
+      expect(
+        shown(e.overwrite),
+        shown(
+          Overwrite(
+            updates: [
+              (a, {'start': t(at(12)), 'end': t(at(16))}),
+            ],
+          ),
+        ),
+      );
+    });
+
+    test('the part pushed, as the event: everything of it that can be '
+        'written but its id and times', () {
+      final rest = effect(
+        [a],
+        at(12),
+        at(13),
+        lists: {
+          EventList.pushDown: {'a'},
+        },
+      ).overwrite.creates.single;
+      expect(rest, {
+        'summary': 'A',
+        'description': 'Lunch and a walk',
+        'action_ids': ['eat'],
+        'actions_from_label': true,
+        'priority': 2,
+        'facts': {
+          'notes': {'self': 'Sunny'},
+        },
+        'judgments': {
+          'self': {
+            'calm': {
+              'mood': {'rating': 4, 'scale': 5},
+            },
+          },
+        },
+        'start': t(at(13)),
+        'end': t(at(16)),
+      });
+    });
+
+    test('with no list, trimmed around the box as before', () {
+      expect(
+        shown(effect([a], at(12), at(13)).overwrite),
+        shown(OtherEvents([a]).overwrite(at(12), at(13))),
       );
     });
   });

@@ -2060,6 +2060,49 @@ void main() {
       ]);
     });
 
+    testWidgets('an event to push down that starts above the box: split at '
+        "the box's top as it shows, and just the rest of it pushed, when "
+        'created', (tester) async {
+      settings = _quarterly();
+      addTearDown(() => settings = null);
+      final repo = _RecordingRepository([
+        Event(id: 'a', start: at(30, 11), end: at(30, 13), summary: 'A'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await plus(tester);
+      await pickInto(tester, 'Push down', ['A']);
+      for (var i = 0; i < 4; i++) {
+        await tapPulsing(tester, startHere);
+      }
+      expect(box(tester).span, (at(30, 12), at(30, 13)));
+      expect(pushed(tester), [
+        (start: at(30, 13), end: at(30, 14), label: 'A (the rest)'),
+      ]);
+
+      await continueToDialog(tester);
+      await tester.enterText(inDialog(find.byType(TextField)), 'Lunch');
+      await settle(tester);
+      await tester.tap(find.text('Create'));
+      await tester.pumpAndSettle();
+      // A cut at the box's top, not moved whole; its rest after the new
+      // one.
+      expect(repo.saved, [
+        {'end': localIsoTimestamp(at(30, 12))},
+      ]);
+      expect(
+        [for (final c in repo.created) (c['summary'], c['start'], c['end'])],
+        unorderedEquals([
+          (
+            'Lunch',
+            localIsoTimestamp(at(30, 12)),
+            localIsoTimestamp(at(30, 13)),
+          ),
+          ('A', localIsoTimestamp(at(30, 13)), localIsoTimestamp(at(30, 14))),
+        ]),
+      );
+    });
+
     testWidgets('pressing and holding an event moves it: the box around it, '
         'pushing to start with, and saying which; saved with what it '
         'pushes, in one go', (tester) async {
