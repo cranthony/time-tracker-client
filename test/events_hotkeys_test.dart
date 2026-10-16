@@ -124,6 +124,16 @@ void main() {
     );
   });
 
+  testWidgets('T goes back to now', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    await press(tester, LogicalKeyboardKey.keyH);
+    await press(tester, LogicalKeyboardKey.keyH);
+    expect(find.byKey(ValueKey(('shown', at(30, 0)))), findsNothing);
+    await press(tester, LogicalKeyboardKey.keyT);
+    expect(find.byKey(ValueKey(('shown', at(30, 0)))), findsWidgets);
+  });
+
   testWidgets('the arrow keys scroll by the step in Settings', (tester) async {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();

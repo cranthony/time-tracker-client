@@ -178,6 +178,33 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
   });
 
+  testWidgets('J and K go down and up the menu; Enter picks', (tester) async {
+    await tester.pumpWidget(app(homeScreen()));
+    await tester.pumpAndSettle();
+    await afterCtrlB(tester, LogicalKeyboardKey.keyS);
+
+    /// Whether [label]'s item is the one highlighted.
+    bool on(String label) => find
+        .descendant(
+          of: find.byElementPredicate(
+            (e) => e == FocusManager.instance.primaryFocus?.context,
+          ),
+          matching: find.text(label),
+        )
+        .evaluate()
+        .isNotEmpty;
+
+    await press(tester, LogicalKeyboardKey.keyJ);
+    expect(on('Settings'), isTrue);
+    await press(tester, LogicalKeyboardKey.keyJ);
+    expect(on('Settings'), isFalse);
+    await press(tester, LogicalKeyboardKey.keyK);
+    expect(on('Settings'), isTrue);
+
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(find.text('Snap to grid'), findsOneWidget);
+  });
+
   testWidgets('the arrow keys scroll the list of hotkeys', (tester) async {
     tester.view.physicalSize = const Size(800, 500);
     tester.view.devicePixelRatio = 1;
