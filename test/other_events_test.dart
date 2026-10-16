@@ -81,9 +81,12 @@ void main() {
     final split = others.overwrite(at(12), at(13));
     expect(split.cancels, isEmpty);
     expect(split.updates.single.$2, {'end': localIsoTimestamp(at(12))});
+    // The part after, the same event as the part before but for its id
+    // and times.
     expect(split.creates.single, {
       'summary': 'Work',
       'action_ids': ['work'],
+      'judgments': {'self': {}},
       'start': localIsoTimestamp(at(13)),
       'end': localIsoTimestamp(at(16)),
     });

@@ -3039,9 +3039,6 @@ class _EventsScreenState extends State<EventsScreen> {
       _movingOthers(_moving),
       start: _withCommutes(span).$1,
       end: _withCommutes(span).$2,
-      // A new event's first cursor splits what it's inside of; a moved
-      // one's box is the event itself.
-      anchor: _moving == null ? box!.cursor : null,
       lists: _listIds,
     ),
     null => null,
@@ -3158,25 +3155,13 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// What an event from [start] to [end] does to the [others] in its
-  /// way, as the lists say ([BoxEffect]): a new event's split at its
-  /// first cursor, if that's still in it.
+  /// way, as the lists say ([BoxEffect]).
   Overwrite _overwrite(
     OtherEvents others,
     DateTime start,
     DateTime end, {
     bool? later,
-  }) {
-    final anchor = _moving == null ? _box?.cursor : null;
-    return BoxEffect(
-      others,
-      start: start,
-      end: end,
-      anchor: anchor != null && anchor.isAfter(start) && anchor.isBefore(end)
-          ? anchor
-          : null,
-      lists: _listIds,
-    ).overwrite;
-  }
+  }) => BoxEffect(others, start: start, end: end, lists: _listIds).overwrite;
 
   /// How near, on screen, a dragged cursor has to come to an edge or a
   /// note to stop there.

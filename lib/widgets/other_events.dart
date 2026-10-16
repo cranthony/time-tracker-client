@@ -503,8 +503,8 @@ class OtherEvents {
     return end;
   }
 
-  /// What's left of [event] from [start] to [end], as a new event: what
-  /// was done there and who it was with, not what was said of it.
+  /// What's left of [event] from [start] to [end], as a new event: as much
+  /// [event] as it is, all of it that can be written but its id and times.
   static Map<String, Object?> restOf(
     Event event,
     DateTime start,
@@ -515,8 +515,10 @@ class OtherEvents {
       'description',
       'location',
       'action_ids',
+      'actions_from_label',
       'priority',
       'facts',
+      'judgments',
     };
     return {
       // Its title, if its properties don't have it.
