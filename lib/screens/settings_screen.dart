@@ -12,6 +12,7 @@ import '../widgets/google_calendar_settings.dart';
 import '../widgets/weather_settings.dart';
 import '../widgets/actions_picker.dart';
 import '../widgets/habit_dialog.dart';
+import '../widgets/hotkeys.dart';
 import '../widgets/cursor_snap.dart';
 import 'scoring_defaults_screen.dart';
 
@@ -70,6 +71,45 @@ class SettingsScreen extends StatelessWidget {
       ),
     ];
   }
+
+  /// What the keyboard does, while there's one to use.
+  List<Widget> _keyboard(ThemeData theme) => [
+    Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Text('Keyboard', style: theme.textTheme.titleMedium),
+    ),
+    Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Text(
+        'On the Events page, the up and down arrow keys scroll the timeline '
+        'by this much.',
+        style: theme.textTheme.bodySmall,
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: DropdownMenu<Duration>(
+        initialSelection: settings.keyScroll,
+        expandedInsets: EdgeInsets.zero,
+        requestFocusOnTap: false,
+        label: const Text('Arrow keys scroll by'),
+        onSelected: (by) {
+          if (by != null) settings.setKeyScroll(by);
+        },
+        dropdownMenuEntries: [
+          for (final by in AppSettings.keyScrolls)
+            DropdownMenuEntry(
+              value: by,
+              label: by.inMinutes < 60
+                  ? '${by.inMinutes} minutes'
+                  : by.inHours == 1
+                  ? '1 hour'
+                  : '${by.inHours} hours',
+            ),
+        ],
+      ),
+    ),
+  ];
 
   /// The rules for a new or moved event's Keep list, each removable, and
   /// a way to add another.
@@ -254,6 +294,7 @@ class SettingsScreen extends StatelessWidget {
                     if (s == snap ? on ?? false : settings.snap.contains(s)) s,
                 }),
               ),
+            if (hotkeysOffered(context)) ..._keyboard(theme),
             ..._keepRules(context, theme),
             ..._scoring(context, theme),
             WeatherSettings(settings: settings),

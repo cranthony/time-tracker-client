@@ -489,9 +489,9 @@ List<T> placeLabels<T>(
 ///
 /// Tapping an event calls [onTap] with it, and pressing and holding it,
 /// [onLongPress]; tapping anywhere else calls [onTapTime] with the time
-/// there. The [highlighted] event is ringed, pulsing. While a cursor
-/// stops at notes ([pulseNotes]) or events' edges ([pulseEdges]), they're
-/// marked, pulsing.
+/// there. The [highlighted] event is ringed, pulsing, and the [keyed]
+/// one, steadily. While a cursor stops at notes ([pulseNotes]) or
+/// events' edges ([pulseEdges]), they're marked, pulsing.
 class DayTimeline extends StatelessWidget {
   const DayTimeline({
     super.key,
@@ -509,6 +509,7 @@ class DayTimeline extends StatelessWidget {
     this.onTapTime,
     this.faded,
     this.highlighted,
+    this.keyed,
     this.listed = const {},
     this.pulseNotes = false,
     this.pulseEdges = false,
@@ -591,6 +592,9 @@ class DayTimeline extends StatelessWidget {
 
   /// The id of an event to pick out: ringed, pulsing.
   final String? highlighted;
+
+  /// The id of the event the keyboard's on: ringed, steadily.
+  final String? keyed;
 
   /// The events in a list, by id, with its icon: each ringed, slightly
   /// pulsing, the icon on it.
@@ -893,6 +897,14 @@ class DayTimeline extends StatelessWidget {
                             width: cardWidth + 6,
                             height: placement.bottom - placement.top + 6,
                             child: const IgnorePointer(child: _Highlight()),
+                          )
+                        else if (keyed != null && placement.event.id == keyed)
+                          Positioned(
+                            left: _cardsLeft - 3,
+                            top: placement.top - 3,
+                            width: cardWidth + 6,
+                            height: placement.bottom - placement.top + 6,
+                            child: const IgnorePointer(child: _Keyed()),
                           ),
                       if (pulseNotes || pulseEdges)
                         Positioned.fill(
@@ -1560,6 +1572,25 @@ class _HighlightState extends State<_Highlight>
       ),
     );
   }
+}
+
+/// A ring round the event the keyboard's on, in the primary color.
+class _Keyed extends StatelessWidget {
+  const _Keyed();
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Highlighted',
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(_cardRadius + 3),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.primary,
+          width: 3,
+        ),
+      ),
+    ),
+  );
 }
 
 /// Where events overlap, from [top] to [bottom]: a red tint over them,

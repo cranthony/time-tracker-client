@@ -139,6 +139,27 @@ class AppSettings extends ChangeNotifier {
     () => _weatherRefresh = every,
   );
 
+  /// What the up and down arrow keys scroll the Events page by, to pick
+  /// from.
+  static const keyScrolls = <Duration>[
+    Duration(minutes: 15),
+    Duration(minutes: 30),
+    Duration(hours: 1),
+    Duration(hours: 2),
+    Duration(hours: 3),
+  ];
+
+  static const defaultKeyScroll = Duration(hours: 1);
+  static const _keyScrollKey = 'settings_key_scroll_minutes';
+  Duration _keyScroll = defaultKeyScroll;
+
+  /// What the up and down arrow keys scroll the Events page by.
+  Duration get keyScroll => _keyScroll;
+
+  /// Sets the [keyScroll], and keeps it.
+  Future<void> setKeyScroll(Duration by) =>
+      _setInt(_keyScrollKey, by.inMinutes, () => _keyScroll = by);
+
   static const defaultRefreshDelay = Duration(minutes: 10);
   static const defaultRetryInterval = Duration(minutes: 15);
   static const _refreshDelayKey = 'settings_refresh_delay_minutes';
@@ -201,6 +222,9 @@ class AppSettings extends ChangeNotifier {
       }
       if (await prefs.getInt(_retryIntervalKey) case final m?) {
         _retryInterval = m <= 0 ? null : Duration(minutes: m);
+      }
+      if (await prefs.getInt(_keyScrollKey) case final m? when m > 0) {
+        _keyScroll = Duration(minutes: m);
       }
       if (await prefs.getInt(_weatherRefreshKey) case final m?) {
         _weatherRefresh = m <= 0 ? null : Duration(minutes: m);

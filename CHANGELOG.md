@@ -9,6 +9,18 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.111.0
+
+- Hotkeys on the Events page. J and K highlight the next event and the
+  one before, starting from the one happening now and going on to the
+  next day or the one before past the day's last or first; Enter opens
+  the one highlighted, and Esc lets it go. H and L go a day back and on.
+  The up and down arrow keys scroll the timeline, by an hour, or as much
+  as Settings' new Keyboard section says. C makes an event, its cursor at
+  the end of the event highlighted, or at now: J and K move the cursor,
+  Enter sets the start, J and K then move the end, and Enter goes on, as
+  ✓ does. Esc leaves it, as ✕ does.
+
 ## 7.110.0
 
 - Hotkeys, on the web or with a keyboard plugged in. Ctrl+M writes a
