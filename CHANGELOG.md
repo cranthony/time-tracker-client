@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.113.0
+
+- Hotkeys in an event. J and K go between its parts, and Enter opens the
+  one highlighted. W opens who it was with, L where it was, D its
+  description and A its actions; S opens its summary with the text
+  selected, to type over. Ctrl+Enter saves. Esc closes it, but with
+  changes made the first Esc shakes it, saying so, and only the second
+  discards them. In a list to pick from, / goes to its search.
+
 ## 7.112.0
 
 - An event to push that the new or moved event covers part of is split at

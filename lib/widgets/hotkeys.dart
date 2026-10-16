@@ -9,7 +9,9 @@ import 'package:flutter/services.dart';
 enum HotkeyPlace {
   anywhere('Anywhere'),
   events('On the Events page'),
-  creating('Making or moving an event');
+  creating('Making or moving an event'),
+  event('In an event'),
+  pickers('Picking from a list');
 
   const HotkeyPlace(this.title);
   final String title;
@@ -66,7 +68,7 @@ class Hotkey {
   );
   static const save = Hotkey(
     'Ctrl+Enter',
-    'Save the note being written',
+    'Save the note or event being edited',
     HotkeyPlace.anywhere,
   );
   static const help = Hotkey('?', 'Show this list', HotkeyPlace.anywhere);
@@ -123,6 +125,27 @@ class Hotkey {
     HotkeyPlace.creating,
   );
 
+  static const parts = Hotkey(
+    'J / K',
+    'Highlight its next part (J) or the one before (K); Enter opens it',
+    HotkeyPlace.event,
+  );
+  static const who = Hotkey('W', 'Who it was with and for', HotkeyPlace.event);
+  static const location = Hotkey('L', 'Where it was', HotkeyPlace.event);
+  static const description = Hotkey('D', 'Its description', HotkeyPlace.event);
+  static const actions = Hotkey('A', 'Its actions', HotkeyPlace.event);
+  static const summary = Hotkey(
+    'S',
+    'Its summary, selected, to type over',
+    HotkeyPlace.event,
+  );
+  static const closeEvent = Hotkey(
+    'Esc',
+    'Close it; with changes made, press it twice to discard them',
+    HotkeyPlace.event,
+  );
+  static const search = Hotkey('/', 'Search', HotkeyPlace.pickers);
+
   /// Every one, in the order the list shows them.
   static const all = [
     newNote,
@@ -141,6 +164,14 @@ class Hotkey {
     setStart,
     setEnd,
     leaveMode,
+    parts,
+    who,
+    location,
+    description,
+    actions,
+    summary,
+    closeEvent,
+    search,
   ];
 }
 
