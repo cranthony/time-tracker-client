@@ -259,18 +259,21 @@ String descriptionText(String description) {
 /// [description], up to about [maxLines] of it until "More" is tapped --
 /// or, with none, in full: its paragraphs, and its lists' items, their
 /// bullets hung to the left. Not [expandable], it's only cut off, with
-/// no "More": tapping it opens it elsewhere.
+/// no "More": tapping it opens it elsewhere. [selectable], its text is
+/// selected by touching and holding it, to copy.
 class EventDescription extends StatefulWidget {
   const EventDescription(
     this.description, {
     super.key,
     this.maxLines = 8,
     this.expandable = true,
+    this.selectable = false,
   });
 
   final String description;
   final int? maxLines;
   final bool expandable;
+  final bool selectable;
 
   @override
   State<EventDescription> createState() => _EventDescriptionState();
@@ -357,7 +360,7 @@ class _EventDescriptionState extends State<EventDescription> {
             : maxLines * lineHeight;
         // Not cut off for just a line more: "More" would take as much room.
         final long = height > limit + lineHeight + 1;
-        final column = Column(
+        Widget column = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             for (final (i, b) in blocks.indexed)
@@ -381,6 +384,7 @@ class _EventDescriptionState extends State<EventDescription> {
               ),
           ],
         );
+        if (widget.selectable) column = SelectionArea(child: column);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

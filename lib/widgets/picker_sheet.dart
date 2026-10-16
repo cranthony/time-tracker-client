@@ -154,7 +154,8 @@ Future<List<String>?> showActionsSheet(
 }
 
 /// Shows an event's description in a [showPickerSheet], as its HTML lays
-/// it out, links tappable ([EventDescription]); the pencil at its foot
+/// it out, links tappable and its text selectable by touching and holding
+/// it ([EventDescription]); the pencil at its foot
 /// edits it, as typed. Blank, it's edited at once. Returns it as edited,
 /// or null if it wasn't, or the sheet was dismissed. Blank is no
 /// description.
@@ -215,7 +216,11 @@ class _TextSheetBodyState extends State<_TextSheetBody> {
           child: SingleChildScrollView(
             // Room at the foot for the pencil, over the last of it.
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 88),
-            child: EventDescription(widget.text!, maxLines: null),
+            child: EventDescription(
+              widget.text!,
+              maxLines: null,
+              selectable: true,
+            ),
           ),
         ),
         PositionedDirectional(

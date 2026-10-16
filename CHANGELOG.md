@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.107.0
+
+- A description, where it's read in full -- its sheet, and a Google
+  Calendar event's -- can have its text selected by touching and holding
+  it, to copy.
+
 ## 7.106.0
 
 - An event too short or too narrow to list its locations down its right

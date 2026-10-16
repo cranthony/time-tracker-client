@@ -97,6 +97,8 @@ void main() {
     );
     expect(find.text('More'), findsNothing);
     expect(find.textContaining('<br>', findRichText: true), findsNothing);
+    // Only where it's read in full is it selectable.
+    expect(find.byType(SelectionArea), findsNothing);
   });
 
   testWidgets('the description sheet opens to read it, laid out, and the '
@@ -129,6 +131,8 @@ void main() {
     expect(find.byType(EventDescription), findsOneWidget);
     expect(find.textContaining('<b>', findRichText: true), findsNothing);
     expect(find.textContaining('See it', findRichText: true), findsOneWidget);
+    // Touched and held, its text is selected, to copy.
+    expect(find.byType(SelectionArea), findsOneWidget);
     // Read and closed, it's unchanged.
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();

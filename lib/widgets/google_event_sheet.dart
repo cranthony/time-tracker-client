@@ -104,7 +104,9 @@ Future<GoogleEventChoice?> showGoogleEventSheet(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                       const SizedBox(width: 16),
-                      Expanded(child: EventDescription(about)),
+                      Expanded(
+                        child: EventDescription(about, selectable: true),
+                      ),
                     ],
                   ),
                 ),
