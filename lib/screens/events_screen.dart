@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/commute.dart';
@@ -38,6 +39,7 @@ import '../widgets/google_event_sheet.dart';
 import '../widgets/event_lists.dart';
 import '../widgets/mode_stack.dart';
 import '../widgets/window_cursor.dart';
+import '../widgets/hotkeys.dart';
 import '../widgets/cursor_sheet.dart';
 import '../widgets/cursor_snap.dart';
 import '../widgets/app_menu.dart';
@@ -208,6 +210,13 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// The event highlighted, having been asked to show it, a moment.
   String? _highlighted;
+
+  /// The event J and K have stepped to: highlighted, for Enter to open.
+  String? _keyed;
+
+  /// Stepping to another day's events, whether to its first (later) or
+  /// its last, once they're loaded.
+  bool? _keyedOnto;
   Timer? _unhighlight;
   StreamSubscription<Event>? _showEvents;
   StreamSubscription<DateTime?>? _showTimes;
@@ -2175,11 +2184,13 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Starts making a new event: a cursor across the day shown, at now if
   /// that's today, or else the middle of what's in view.
-  void _startCreating() {
+  void _startCreating([DateTime? from]) {
     if (_saidReadOnly()) return;
     final now = widget.clock();
     DateTime at;
-    if (!now.isBefore(_day) && now.isBefore(_dayEnd)) {
+    if (from != null) {
+      at = from;
+    } else if (!now.isBefore(_day) && now.isBefore(_dayEnd)) {
       at = now;
     } else if (_scroll.hasClients) {
       final middle = _scroll.offset + _scroll.position.viewportDimension / 2;
@@ -2195,6 +2206,179 @@ class _EventsScreenState extends State<EventsScreen> {
       _setBox(PendingEventBox(cursor));
     });
   }
+
+  /// The day shown's events, in order, for J and K to step through.
+  List<Event> _steppable() => [
+    for (final e in _eventsOn(_day) ?? const <Event>[])
+      if (e.end.isAfter(_day) && e.start.isBefore(_dayEnd)) e,
+  ]..sort((a, b) => a.start.compareTo(b.start));
+
+  /// The event J and K have stepped to, if it's on the day shown.
+  Event? get _keyedEvent =>
+      _steppable().where((e) => e.id == _keyed).firstOrNull;
+
+  /// Steps the highlight to the next event, [later], or the one before:
+  /// from the one happening now, on today, at first. Past the day's
+  /// first or last, onto the day before or after.
+  void _stepEvent({required bool later}) {
+    final events = _steppable();
+    final at = events.indexWhere((e) => e.id == _keyed);
+    Event? next;
+    if (at >= 0) {
+      final i = at + (later ? 1 : -1);
+      if (i >= 0 && i < events.length) next = events[i];
+    } else if (events.isNotEmpty) {
+      final now = widget.clock();
+      next = !now.isBefore(_day) && now.isBefore(_dayEnd)
+          ? events.lastWhere(
+              (e) => !e.start.isAfter(now) && e.end.isAfter(now),
+              orElse: () => events.firstWhere(
+                (e) => e.start.isAfter(now),
+                orElse: () => events.last,
+              ),
+            )
+          : later
+          ? events.first
+          : events.last;
+    }
+    if (next != null) return _keyTo(next);
+    _keyedOnto = later;
+    _goToDay(later ? _dayEnd : DateTime(_day.year, _day.month, _day.day - 1));
+    _keyOnto();
+  }
+
+  /// Once the day stepped onto has its events, highlights its first or
+  /// last -- not the one stepped from, running across midnight.
+  void _keyOnto() {
+    final later = _keyedOnto;
+    if (later == null || _eventsOn(_day) == null) return;
+    _keyedOnto = null;
+    final events = [
+      for (final e in _steppable())
+        if (e.id != _keyed) e,
+    ];
+    if (events.isEmpty) {
+      setState(() => _keyed = null);
+      return;
+    }
+    _keyTo(later ? events.first : events.last);
+  }
+
+  /// Highlights [event], scrolled into view if it isn't.
+  void _keyTo(Event event) {
+    setState(() => _keyed = event.id);
+    if (!_scroll.hasClients) return;
+    final position = _scroll.position;
+    final start = event.start.isBefore(_day) ? _day : event.start;
+    final y = _offset(start);
+    final view = position.viewportDimension;
+    if (y >= position.pixels + 24 && y <= position.pixels + view - 96) return;
+    _scroll.animateTo(
+      (y - view / 3).clamp(0, position.maxScrollExtent),
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  /// Scrolls the timeline by the arrow keys' step
+  /// ([AppSettings.keyScroll]), [later] or earlier.
+  void _scrollByKey({required bool later}) {
+    if (!_scroll.hasClients) return;
+    final position = _scroll.position;
+    final by = AppSettings.of(context).keyScroll.inMinutes * _scale;
+    _scroll.animateTo(
+      (position.pixels + (later ? by : -by)).clamp(0, position.maxScrollExtent),
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOut,
+    );
+  }
+
+  /// J or K: with the box up, its cursor -- the one picked, once there
+  /// are two -- to its next stop; or else the highlight, to the next
+  /// event.
+  void _keyStep({required bool later}) {
+    final box = _box;
+    if (box == null) return _stepEvent(later: later);
+    final role = box.other == null ? CursorRole.anchor : _selected;
+    if (_canStep(role, later: later)) _stepCursor(role, later: later);
+  }
+
+  /// Enter: with just the one cursor, sets the start, making the box to
+  /// the next stop after it, for J and K to move its end; with the box,
+  /// goes on, as ✓ does. Picking events, picks the one highlighted; or
+  /// else opens it.
+  void _keyEnter() {
+    final box = _box;
+    if (box != null) {
+      if (box.other == null) {
+        if (_canStep(CursorRole.end, later: true)) {
+          _stepCursor(CursorRole.end, later: true);
+        }
+        return;
+      }
+      _continueAction?.call();
+      return;
+    }
+    final event = _keyedEvent;
+    if (event == null) return;
+    if (_selecting != null) return _pick(event);
+    _openEvent(event);
+  }
+
+  /// Esc: leaves the top mode, as ✕ does, or else lets go of the
+  /// highlight.
+  void _keyEscape() {
+    if (_modes.isNotEmpty) return _leaveMode();
+    setState(() => _keyed = null);
+  }
+
+  /// What ✓ does: with just the one cursor and events on the cancel
+  /// list, cancels them; or else makes -- or moves -- the event between
+  /// the cursors; null while there's none, or it runs into an event to
+  /// keep.
+  VoidCallback? get _continueAction {
+    if (_cursorCancels.isNotEmpty) return _cancelAtCursor;
+    final blocked = _effectOf(_box)?.blocked ?? false;
+    if (_box?.span == null || blocked) return null;
+    return _moving != null ? _finishMoving : _continueCreating;
+  }
+
+  /// The Events page's hotkeys.
+  List<HotkeyBinding> get _hotkeys => [
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyJ),
+      () => _keyStep(later: true),
+    ),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyK),
+      () => _keyStep(later: false),
+    ),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.enter), _keyEnter),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.escape),
+      _keyEscape,
+    ),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyH),
+      () => _goToDay(DateTime(_day.year, _day.month, _day.day - 1)),
+    ),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyL),
+      () => _goToDay(_dayEnd),
+    ),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.arrowUp),
+      () => _scrollByKey(later: false),
+    ),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.arrowDown),
+      () => _scrollByKey(later: true),
+    ),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyC), () {
+      if (_box != null || _selecting != null) return;
+      _startCreating(_keyedEvent?.end);
+    }),
+  ];
 
   /// What a new event logged from [event] starts with: its title,
   /// description, and where, as its map location.
@@ -4314,6 +4498,19 @@ class _EventsScreenState extends State<EventsScreen> {
     final today = widget.clock();
     // Back leaves the top mode, as ✕ does, before it leaves the page.
     final modes = _modes;
+    // Stepped onto another day, once it's loaded.
+    if (_keyedOnto != null && _eventsOn(_day) != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _keyOnto();
+      });
+    }
+    return HotkeyBindings(
+      bindings: _hotkeys,
+      child: _page(context, today, modes),
+    );
+  }
+
+  Widget _page(BuildContext context, DateTime today, List<EventsMode> modes) {
     return PopScope(
       canPop: modes.isEmpty,
       onPopInvokedWithResult: (didPop, _) {
@@ -4429,11 +4626,14 @@ class _EventsScreenState extends State<EventsScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      FloatingActionButton(
-                        heroTag: 'cancel-new',
-                        tooltip: 'Cancel',
-                        onPressed: _leaveMode,
-                        child: const Icon(Icons.close),
+                      HotkeyHint(
+                        Hotkey.leaveMode,
+                        child: FloatingActionButton(
+                          heroTag: 'cancel-new',
+                          tooltip: 'Cancel',
+                          onPressed: _leaveMode,
+                          child: const Icon(Icons.close),
+                        ),
                       ),
                       const SizedBox(width: 12),
                       // Only with an event to make, or -- with just the
@@ -4450,29 +4650,26 @@ class _EventsScreenState extends State<EventsScreen> {
                           final ready =
                               (_box?.span != null && !blocked) ||
                               atCursor != null;
-                          return FloatingActionButton(
-                            heroTag: 'continue-new',
-                            tooltip:
-                                atCursor ??
-                                (!ready
-                                    ? 'Continue: first, make an event between '
-                                          'the cursors'
-                                    : _moving != null
-                                    ? 'Move it here'
-                                    : 'Continue'),
-                            onPressed: atCursor != null
-                                ? _cancelAtCursor
-                                : !ready
-                                ? null
-                                : _moving != null
-                                ? _finishMoving
-                                : _continueCreating,
-                            backgroundColor: ready
-                                ? null
-                                : colors.surfaceContainerHighest,
-                            foregroundColor: ready ? null : colors.outline,
-                            elevation: ready ? null : 0,
-                            child: const Icon(Icons.check),
+                          return HotkeyHint(
+                            Hotkey.setEnd,
+                            child: FloatingActionButton(
+                              heroTag: 'continue-new',
+                              tooltip:
+                                  atCursor ??
+                                  (!ready
+                                      ? 'Continue: first, make an event '
+                                            'between the cursors'
+                                      : _moving != null
+                                      ? 'Move it here'
+                                      : 'Continue'),
+                              onPressed: _continueAction,
+                              backgroundColor: ready
+                                  ? null
+                                  : colors.surfaceContainerHighest,
+                              foregroundColor: ready ? null : colors.outline,
+                              elevation: ready ? null : 0,
+                              child: const Icon(Icons.check),
+                            ),
                           );
                         },
                       ),
@@ -4501,11 +4698,14 @@ class _EventsScreenState extends State<EventsScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  FloatingActionButton(
-                    heroTag: 'new',
-                    tooltip: 'New event',
-                    onPressed: _startCreating,
-                    child: const Icon(Icons.add),
+                  HotkeyHint(
+                    Hotkey.create,
+                    child: FloatingActionButton(
+                      heroTag: 'new',
+                      tooltip: 'New event',
+                      onPressed: _startCreating,
+                      child: const Icon(Icons.add),
+                    ),
                   ),
                 ],
               ),
@@ -5170,6 +5370,7 @@ class _EventsScreenState extends State<EventsScreen> {
                     : null,
                 faded: _moving?.id,
                 highlighted: _highlighted,
+                keyed: _keyed,
                 // While the box is up, what its cursors stop at.
                 pulseNotes: _snapsTo(SnapTo.notes),
                 pulseEdges: _snapsTo(SnapTo.events),

@@ -7,7 +7,9 @@ import 'package:flutter/services.dart';
 
 /// Where a [Hotkey] works, as the list of them groups it.
 enum HotkeyPlace {
-  anywhere('Anywhere');
+  anywhere('Anywhere'),
+  events('On the Events page'),
+  creating('Making or moving an event');
 
   const HotkeyPlace(this.title);
   final String title;
@@ -74,8 +76,72 @@ class Hotkey {
     HotkeyPlace.anywhere,
   );
 
+  static const stepEvents = Hotkey(
+    'J / K',
+    'Highlight the next event (J) or the one before (K), from the one '
+        'happening now; past the last of the day, onto the next',
+    HotkeyPlace.events,
+  );
+  static const openEvent = Hotkey(
+    'Enter',
+    'Open the event highlighted',
+    HotkeyPlace.events,
+  );
+  static const days = Hotkey(
+    'H / L',
+    'Go to the day before (H) or after (L)',
+    HotkeyPlace.events,
+  );
+  static const scroll = Hotkey(
+    '↑ / ↓',
+    'Scroll the timeline, by as much as Settings says',
+    HotkeyPlace.events,
+  );
+  static const create = Hotkey(
+    'C',
+    'Make an event: a cursor, at the end of the event highlighted, or now',
+    HotkeyPlace.events,
+  );
+  static const moveCursor = Hotkey(
+    'J / K',
+    'Move the cursor to its next stop, later (J) or earlier (K)',
+    HotkeyPlace.creating,
+  );
+  static const setStart = Hotkey(
+    'Enter',
+    'Set the start, at the cursor; J and K then move the end',
+    HotkeyPlace.creating,
+  );
+  static const setEnd = Hotkey(
+    'Enter',
+    'Once there are two cursors, go on, as ✓ does',
+    HotkeyPlace.creating,
+  );
+  static const leaveMode = Hotkey(
+    'Esc',
+    'Leave it, as ✕ does',
+    HotkeyPlace.creating,
+  );
+
   /// Every one, in the order the list shows them.
-  static const all = [newNote, notes, events, plan, save, help, leaveField];
+  static const all = [
+    newNote,
+    notes,
+    events,
+    plan,
+    save,
+    help,
+    leaveField,
+    stepEvents,
+    openEvent,
+    days,
+    scroll,
+    create,
+    moveCursor,
+    setStart,
+    setEnd,
+    leaveMode,
+  ];
 }
 
 /// What sets off a [HotkeyBinding]: Ctrl and a key, which works even in
