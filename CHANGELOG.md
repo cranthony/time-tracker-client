@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.109.0
+
+- A note under a proposal's bar shows all of its text, not just its first
+  two lines. The panels above the timeline scroll once they fill half the
+  page, so a long note can't push the timeline out of view.
+
 ## 7.108.0
 
 - A habit's page shows what it's built on -- the habits and people under

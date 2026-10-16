@@ -851,6 +851,7 @@ class _DetailRow extends StatelessWidget {
     this.onPrevious,
     this.onNext,
     this.onTap,
+    this.titleLines = 2,
   });
 
   final IconData badge;
@@ -865,6 +866,10 @@ class _DetailRow extends StatelessWidget {
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
   final VoidCallback? onTap;
+
+  /// How many lines [title] may take before it's cut short; null for
+  /// all of it.
+  final int? titleLines;
 
   @override
   Widget build(BuildContext context) {
@@ -896,8 +901,8 @@ class _DetailRow extends StatelessWidget {
                 children: [
                   Text.rich(
                     title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                    maxLines: titleLines,
+                    overflow: titleLines == null ? null : TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium,
                   ),
                   if (says case final says? when says.isNotEmpty)
@@ -995,6 +1000,9 @@ class ProposalNoteStrip extends StatelessWidget {
           TextSpan(text: note.text ?? '(no text)'),
         ],
       ),
+      // All of it: the panels above the timeline scroll once they fill
+      // half the page, so a long note can't push the timeline away.
+      titleLines: null,
       says: noteFate(note, events: events, extended: extended),
       saysColor:
           kind == ReviewNoteKind.ignored || kind == ReviewNoteKind.compacted
