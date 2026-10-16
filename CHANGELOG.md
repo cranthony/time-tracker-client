@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.115.0
+
+- On the Events page, T goes to now, as the button with the crosshair
+  does.
+- Wherever J and K don't already do something, they highlight the next
+  and the previous thing to tap in what's on top -- the items of the ⋮
+  menu, say, or a dialog's buttons -- and Enter taps it.
+
 ## 7.114.0
 
 - Ctrl+Enter and Esc work the same in everything with text to save or

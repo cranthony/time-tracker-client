@@ -2374,6 +2374,7 @@ class _EventsScreenState extends State<EventsScreen> {
       const HotkeyTrigger.key(LogicalKeyboardKey.arrowDown),
       () => _scrollByKey(later: true),
     ),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyT), _goToNow),
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyC), () {
       if (_box != null || _selecting != null) return;
       _startCreating(_keyedEvent?.end);
@@ -4674,11 +4675,14 @@ class _EventsScreenState extends State<EventsScreen> {
                         _googleToggle(),
                         const SizedBox(width: 12),
                       ],
-                      FloatingActionButton.small(
-                        heroTag: 'now',
-                        tooltip: 'Go to now',
-                        onPressed: _goToNow,
-                        child: const Icon(Icons.my_location),
+                      HotkeyHint(
+                        Hotkey.now,
+                        child: FloatingActionButton.small(
+                          heroTag: 'now',
+                          tooltip: 'Go to now',
+                          onPressed: _goToNow,
+                          child: const Icon(Icons.my_location),
+                        ),
                       ),
                     ],
                   ),

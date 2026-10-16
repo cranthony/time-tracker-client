@@ -92,6 +92,12 @@ class Hotkey {
     HotkeyPlace.anywhere,
   );
   static const help = Hotkey('?', 'Show this list', HotkeyPlace.anywhere);
+  static const stepAny = Hotkey(
+    'J / K',
+    'Elsewhere -- in a menu, say -- highlight the next (J) or previous (K) '
+        'thing to tap; Enter taps it',
+    HotkeyPlace.anywhere,
+  );
   static const scrollAny = Hotkey(
     '↑ / ↓',
     "Scroll what's on top: a page, a dialog -- this list -- or a sheet",
@@ -124,6 +130,7 @@ class Hotkey {
     'Scroll the timeline, by as much as Settings says',
     HotkeyPlace.events,
   );
+  static const now = Hotkey('T', 'Go to now', HotkeyPlace.events);
   static const create = Hotkey(
     'C',
     'Make an event: a cursor, at the end of the event highlighted, or now',
@@ -193,12 +200,14 @@ class Hotkey {
     discard,
     editText,
     help,
+    stepAny,
     scrollAny,
     leaveField,
     stepEvents,
     openEvent,
     days,
     scroll,
+    now,
     create,
     moveCursor,
     setStart,
@@ -460,6 +469,11 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
       binding.onPressed();
       return KeyEventResult.handled;
     }
+    if (key == LogicalKeyboardKey.keyJ || key == LogicalKeyboardKey.keyK) {
+      return stepFocus(later: key == LogicalKeyboardKey.keyJ)
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
+    }
     if (key == LogicalKeyboardKey.arrowDown ||
         key == LogicalKeyboardKey.arrowUp) {
       return scrollTop(later: key == LogicalKeyboardKey.arrowDown)
@@ -467,6 +481,35 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
           : KeyEventResult.ignored;
     }
     return KeyEventResult.ignored;
+  }
+
+  /// J or K where nothing else takes them: highlights the next of what
+  /// can be tapped in what's on top -- a menu's items, say -- [later], or
+  /// the one before, scrolled into view; Enter taps it. Whether there was
+  /// what's on top to.
+  bool stepFocus({required bool later}) {
+    final route = _routes.lastOrNull;
+    if (route is! ModalRoute) return false;
+    final scope = route.subtreeContext == null
+        ? null
+        : FocusScope.of(route.subtreeContext!);
+    final focus = FocusManager.instance.primaryFocus;
+    if (scope == null || focus == null) return false;
+    // Not yet in what's on top: from its start, or its end.
+    final inTop = focus == scope || focus.ancestors.contains(scope);
+    final from = inTop ? focus : scope;
+    if (later ? !from.nextFocus() : !from.previousFocus()) return false;
+    final moved = FocusManager.instance.primaryFocus?.context;
+    if (moved != null && moved.mounted) {
+      Scrollable.ensureVisible(
+        moved,
+        alignmentPolicy: later
+            ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
+            : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+        duration: const Duration(milliseconds: 120),
+      );
+    }
+    return true;
   }
 
   /// Scrolls what's on top -- a page, a dialog or a sheet, not a menu,
