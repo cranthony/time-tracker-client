@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.108.0
+
+- A habit's page shows what it's built on -- the habits and people under
+  it on the habit graph -- below what it's for, as its editor does. Until
+  now that was only seen while editing it.
+
 ## 7.107.0
 
 - A description, where it's read in full -- its sheet, and a Google

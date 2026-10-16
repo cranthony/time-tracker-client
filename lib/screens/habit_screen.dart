@@ -11,7 +11,8 @@ import '../widgets/health.dart';
 import 'subject_sections.dart';
 
 /// One of Self's habits on a page: the action or group whose events it's
-/// about, in its color, its status, what it's for, which traits apply to
+/// about, in its color, its status, what it's for, what it's built on
+/// ([Habit.foundations], named by [foundationNames]), which traits apply to
 /// it and its own parts for any, and the events the user cancelled that
 /// count against its follow-through ([Habit.cancelledEvents]). Once
 /// [memory] has scored it from the events (see [PlanMemory.scores]),
@@ -32,6 +33,7 @@ class HabitScreen extends StatefulWidget {
     this.memory,
     this.personNames = const {},
     this.locationNames = const {},
+    this.foundationNames = const {},
     this.onEdit,
   });
 
@@ -50,6 +52,9 @@ class HabitScreen extends StatefulWidget {
   /// where.
   final Map<String?, String> personNames;
   final Map<String?, String> locationNames;
+
+  /// Names habits and people by id, for what it's built on.
+  final Map<String, String> foundationNames;
   final Future<Habit?> Function(Habit habit)? onEdit;
 
   @override
@@ -153,6 +158,21 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
               null => Text(
                 'Nothing yet: a note helps Claude judge its events.',
                 style: TextStyle(color: theme.hintColor),
+              ),
+            }),
+            sectionHeading(theme, 'Built on'),
+            sectionPadded(switch (_habit.foundations) {
+              [] => Text(
+                'Nothing: it sits at the bottom of the habit graph.',
+                style: TextStyle(color: theme.hintColor),
+              ),
+              final foundations => Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final id in foundations)
+                    Chip(label: Text(widget.foundationNames[id] ?? id)),
+                ],
               ),
             }),
             ...sections.traitSection(),

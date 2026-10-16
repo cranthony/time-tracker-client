@@ -168,6 +168,7 @@ class HabitsPaneState extends State<HabitsPane> {
         memory: widget.memory,
         personNames: widget.personNames,
         locationNames: widget.locationNames,
+        foundationNames: _names,
         onEdit: _edit,
       ),
       (_, final person?) => PersonScreen(

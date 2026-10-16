@@ -835,6 +835,39 @@ void main() {
     expect(memory.focus.habits, ['h2', 'h3']);
   });
 
+  testWidgets("a habit's page shows what it's built on", (tester) async {
+    final builtOn = Habit.fromJson({
+      'id': 'h1',
+      'name': 'Practice mindfully',
+      'action_id': 'guitar',
+      'status': 'active',
+      'foundations': ['self/sleep', 'p1', 'gone'],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HabitScreen(
+          habit: builtOn,
+          foundationNames: const {'self/sleep': 'Sleep well', 'p1': 'Ana'},
+        ),
+      ),
+    );
+    expect(find.text('Built on'), findsOneWidget);
+    expect(find.widgetWithText(Chip, 'Sleep well'), findsOneWidget);
+    expect(find.widgetWithText(Chip, 'Ana'), findsOneWidget);
+    expect(find.widgetWithText(Chip, 'gone'), findsOneWidget);
+
+    // A new page, not this one with another habit.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HabitScreen(key: const ValueKey('h1'), habit: _mindfully),
+      ),
+    );
+    expect(
+      find.text('Nothing: it sits at the bottom of the habit graph.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('its cancelled events are in brief, the lot a tap away', (
     tester,
   ) async {
