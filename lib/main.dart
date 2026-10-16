@@ -49,6 +49,7 @@ import 'platform/device_location.dart';
 import 'demo/weather_sample.dart';
 import 'services/work_timing.dart';
 import 'theme.dart';
+import 'widgets/hotkeys.dart';
 import 'widgets/sign_in_off_banner.dart';
 
 /// The Time Tracker MCP server's endpoint, passed at build time, e.g.
@@ -483,6 +484,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
 
   late final AppLifecycleListener _lifecycle;
   final _addNoteShortcut = AddNoteShortcut();
+
+  /// The keys the app answers, wherever it is.
+  final _hotkeys = Hotkeys();
   String? _version;
 
   /// What's been loaded of the plan, and the events, for every page to
@@ -626,6 +630,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
   void dispose() {
     _lifecycle.dispose();
     _addNoteShortcut.dispose();
+    _hotkeys.dispose();
     _calendarTimer?.cancel();
     _planMemory.removeListener(_calendarChanged);
     _calendarWeather?.dispose();
@@ -643,6 +648,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       title: 'Time Tracker',
       theme: appTheme(Brightness.light),
       darkTheme: appTheme(Brightness.dark),
+      navigatorObservers: [_hotkeys],
       // Above the navigator, so every route and dialog finds it.
       builder: (context, child) {
         Widget scoped = PlanMemoryScope(memory: _planMemory, child: child!);
@@ -678,7 +684,8 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
           scoped = TraitsScope(repository: traits, child: scoped);
         }
         // Over every screen and dialog, while the server skips sign-in.
-        return SignInOffBanner(child: scoped);
+        scoped = SignInOffBanner(child: scoped);
+        return HotkeyScope(hotkeys: _hotkeys, child: scoped);
       },
       home: HomeScreen(
         notesRepository: widget.repository,

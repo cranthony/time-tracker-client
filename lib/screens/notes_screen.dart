@@ -8,6 +8,7 @@ import '../outbox/note_outbox.dart';
 import '../outbox/pending_note.dart';
 import '../services/mcp_client.dart';
 import '../services/note_drafts.dart';
+import '../widgets/hotkeys.dart';
 import '../services/notes_repository.dart';
 import '../services/plan_memory.dart';
 import '../widgets/error_sheet.dart';
@@ -353,10 +354,13 @@ class _NotesScreenState extends State<NotesScreen> {
           ),
           // Always available: notes wait in the outbox until they can be
           // saved, even while signed out or offline.
-          floatingActionButton: FloatingActionButton(
-            onPressed: () => _addNote(),
-            tooltip: 'Add note',
-            child: const Icon(Icons.add),
+          floatingActionButton: HotkeyHint(
+            Hotkey.newNote,
+            child: FloatingActionButton(
+              onPressed: () => _addNote(),
+              tooltip: 'Add note',
+              child: const Icon(Icons.add),
+            ),
           ),
         );
       },

@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/note.dart';
 import '../services/note_drafts.dart';
+import 'hotkeys.dart';
 
 /// Asks for a new note's description and time (defaulting to [time], or
 /// now), in a sheet over the bottom of the screen, and hands it to [keep]
@@ -26,18 +28,28 @@ Future<Note?> showAddNoteDialog(
   DateTime? time,
   VoidCallback? onFieldFocused,
 }) async {
-  final result = await _showSheet(
-    context,
-    _NoteDialog(
-      time: time,
-      keep: keep,
-      drafts: drafts,
-      draft: draft,
-      onFieldFocused: onFieldFocused,
-    ),
-  );
-  return result is SaveNote ? result.note : null;
+  _newNoteSheets++;
+  try {
+    final result = await _showSheet(
+      context,
+      _NoteDialog(
+        time: time,
+        keep: keep,
+        drafts: drafts,
+        draft: draft,
+        onFieldFocused: onFieldFocused,
+      ),
+    );
+    return result is SaveNote ? result.note : null;
+  } finally {
+    _newNoteSheets--;
+  }
 }
+
+var _newNoteSheets = 0;
+
+/// Whether a New note sheet is open, so a hotkey doesn't open another.
+bool get newNoteSheetOpen => _newNoteSheets > 0;
 
 /// Lets the user change [note]'s description and time, or delete it, in
 /// the same sheet, handing the change to [keepEdit], or the deletion to
@@ -286,6 +298,22 @@ class _NoteDialogState extends State<_NoteDialog> {
     final time = MaterialLocalizations.of(context)
         .formatTimeOfDay(TimeOfDay.fromDateTime(_time));
     final media = MediaQuery.of(context);
+    return HotkeyBindings(
+      bindings: [
+        HotkeyBinding(const HotkeyTrigger.ctrl(LogicalKeyboardKey.enter), () {
+          if (!_keeping) _submit();
+        }),
+      ],
+      child: _sheet(context, theme, time, media),
+    );
+  }
+
+  Widget _sheet(
+    BuildContext context,
+    ThemeData theme,
+    String time,
+    MediaQueryData media,
+  ) {
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -384,14 +412,17 @@ class _NoteDialogState extends State<_NoteDialog> {
                   ],
                 ),
               ),
-              FilledButton(
-                onPressed: _keeping ? null : _submit,
-                child: Text(
-                  _editing
-                      ? 'Save'
-                      : _keepError == null
-                      ? 'Add'
-                      : 'Try again',
+              HotkeyHint(
+                Hotkey.save,
+                child: FilledButton(
+                  onPressed: _keeping ? null : _submit,
+                  child: Text(
+                    _editing
+                        ? 'Save'
+                        : _keepError == null
+                        ? 'Add'
+                        : 'Try again',
+                  ),
                 ),
               ),
             ],

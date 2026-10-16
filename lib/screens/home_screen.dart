@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/event.dart';
 import '../outbox/action_outbox.dart';
@@ -19,7 +20,9 @@ import '../services/plan_memory.dart';
 import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
 import '../widgets/event_outbox_status.dart';
+import '../widgets/hotkeys.dart';
 import '../widgets/load_status.dart';
+import '../widgets/note_dialog.dart';
 import '../widgets/outbox_status.dart';
 import '../widgets/proposal_problem_status.dart';
 import '../widgets/status_bar.dart';
@@ -204,8 +207,55 @@ class _HomeScreenState extends State<HomeScreen> {
       _planMemory.actions?.actions.where((a) => a.id == id).firstOrNull?.name;
 
   @override
-  Widget build(BuildContext context) =>
-      StatusScope(sources: _status, child: _scaffold());
+  Widget build(BuildContext context) => StatusScope(
+    sources: _status,
+    child: HotkeyBindings(
+      bindings: [
+        HotkeyBinding(
+          const HotkeyTrigger.ctrl(LogicalKeyboardKey.keyM),
+          _writeNote,
+          whenCovered: WhenCovered.run,
+        ),
+        for (final (key, tab) in [
+          (LogicalKeyboardKey.keyN, _Tab.notes),
+          (LogicalKeyboardKey.keyE, _Tab.events),
+          (LogicalKeyboardKey.keyP, _Tab.plan),
+        ])
+          HotkeyBinding(
+            HotkeyTrigger.afterCtrlB(key),
+            () => _goTo(tab),
+            whenCovered: WhenCovered.run,
+          ),
+      ],
+      child: _scaffold(),
+    ),
+  );
+
+  /// Opens the New note sheet over whatever's open -- this page, another,
+  /// a dialog -- to go back to once it's closed.
+  void _writeNote() {
+    if (newNoteSheetOpen) return;
+    unawaited(
+      showAddNoteDialog(context, keep: widget.outbox.add, drafts: _noteDrafts),
+    );
+  }
+
+  /// Goes to [tab], from a hotkey: Events at now. Not while a dialog is
+  /// open, waiting to be saved or discarded: the screen shakes, saying
+  /// so. Pages open over this one are left.
+  void _goTo(_Tab tab) {
+    final hotkeys = HotkeyScope.maybeOf(context);
+    if (hotkeys != null) {
+      if (hotkeys.dialogOpen) return hotkeys.shake();
+      hotkeys.closePages();
+    }
+    setState(() => _tab = tab);
+    if (tab != _Tab.events) return;
+    // Once the events screen is built and listening.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _toEventsTime.add(null),
+    );
+  }
 
   Event? _lookup(String id) => _planMemory.eventStore?.event(id);
 
@@ -270,18 +320,18 @@ class _HomeScreenState extends State<HomeScreen> {
     onDestinationSelected: (i) => setState(() => _tab = _Tab.values[i]),
     destinations: const [
       NavigationDestination(
-        icon: Icon(Icons.edit_note_outlined),
-        selectedIcon: Icon(Icons.edit_note),
+        icon: HotkeyHint(Hotkey.notes, child: Icon(Icons.edit_note_outlined)),
+        selectedIcon: HotkeyHint(Hotkey.notes, child: Icon(Icons.edit_note)),
         label: 'Notes',
       ),
       NavigationDestination(
-        icon: Icon(Icons.event_outlined),
-        selectedIcon: Icon(Icons.event),
+        icon: HotkeyHint(Hotkey.events, child: Icon(Icons.event_outlined)),
+        selectedIcon: HotkeyHint(Hotkey.events, child: Icon(Icons.event)),
         label: 'Events',
       ),
       NavigationDestination(
-        icon: Icon(Icons.explore_outlined),
-        selectedIcon: Icon(Icons.explore),
+        icon: HotkeyHint(Hotkey.plan, child: Icon(Icons.explore_outlined)),
+        selectedIcon: HotkeyHint(Hotkey.plan, child: Icon(Icons.explore)),
         label: 'Plan',
       ),
     ],
