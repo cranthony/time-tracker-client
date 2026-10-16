@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.110.0
+
+- Hotkeys, on the web or with a keyboard plugged in. Ctrl+M writes a
+  note over whatever's open, and closing it goes back there. Ctrl+B, then
+  N, E or P -- Ctrl let go first -- goes to Notes, to Events at now, or to
+  Plan; while a dialog is open the screen shakes instead, so it's saved or
+  discarded first. Ctrl+Enter saves the note being written. Esc leaves a
+  text field. Hold Ctrl to see the hotkeys on the buttons they stand for,
+  and press ? -- or pick Hotkeys from the menu -- for the list of them.
+
 ## 7.109.1
 
 - A location a compaction makes -- as it's applied, or as you or Claude
