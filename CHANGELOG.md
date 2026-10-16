@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.109.1
+
+- A location a compaction makes -- as it's applied, or as you or Claude
+  settle what it adds -- is named on its events at once, not shown by its
+  id until the Events page is opened again. People and actions it makes
+  are named at once too.
+
 ## 7.109.0
 
 - A note under a proposal's bar shows all of its text, not just its first

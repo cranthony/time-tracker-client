@@ -412,6 +412,7 @@ class _EventsScreenState extends State<EventsScreen> {
   set _proposal(Proposal? proposal) {
     final earlier = _loadedProposal;
     final next = _loadedProposal = proposal?.keepingPlanOf(earlier);
+    _learnNames(earlier, next);
     if (_hidden &&
         next != null &&
         next.plans &&
@@ -427,6 +428,43 @@ class _EventsScreenState extends State<EventsScreen> {
         );
       });
     }
+  }
+
+  /// The ids the proposal's settled additions are named by that names
+  /// were loaded again for: each loaded for once.
+  final _namesLoadedFor = <String>{};
+
+  /// Whether names are to be loaded again once this frame's done.
+  bool _namesDue = false;
+
+  /// Loads everyone, every location and every action again -- once this
+  /// frame's done -- when what the proposal adds is made where it isn't
+  /// loaded: [earlier] closed, applied (its additions made) or not, or
+  /// [next] naming, by an addition settled, one not loaded yet.
+  void _learnNames(Proposal? earlier, Proposal? next) {
+    final known = {
+      for (final p in _memory.people?.withSelf ?? const <Person>[]) p.id,
+      for (final l in _memory.locations ?? const <Location>[]) l.id,
+      ..._actionsById.keys,
+    };
+    final unknown = {
+      for (final s in next?.settledAdditions ?? const <AdditionSettled>[])
+        if (s.id case final id? when !known.contains(id)) id,
+    }.difference(_namesLoadedFor);
+    final closed =
+        earlier != null &&
+        earlier.additions.isNotEmpty &&
+        next?.id != earlier.id;
+    if (unknown.isEmpty && !closed) return;
+    _namesLoadedFor.addAll(unknown);
+    if (_namesDue) return;
+    _namesDue = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _namesDue = false;
+      if (!mounted) return;
+      unawaited(_prefetchNames());
+      unawaited(_loadActions());
+    });
   }
 
   /// The proposal hidden, by id, to show the calendar under it.
@@ -4702,13 +4740,9 @@ class _EventsScreenState extends State<EventsScreen> {
       action: () async {
         final amended = await _amend(edits);
         if (!mounted) return;
+        // Made now: named from where it's kept, once it's saved (see
+        // _learnNames).
         _amended(amended, said!);
-        // Made now: named from where it's kept.
-        if (choice is CreateAddition) {
-          _memory.newVisit();
-          unawaited(_prefetchNames());
-          unawaited(_loadActions());
-        }
       },
     );
   }
