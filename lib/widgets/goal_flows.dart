@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'durations.dart';
 import '../models/event.dart';
 import '../models/goal.dart';
 import '../models/goal_changes.dart';
@@ -154,18 +155,38 @@ class GoalActions {
   }
 
   /// Activates [picked], and the inactive parents they're under, asking
-  /// for each one's deadline that has none.
-  Future<void> activate(List<Goal> picked) async {
+  /// for each one's deadline that has none -- from [at], if it's given (an
+  /// event's start, say): then each is backdated to it, or to its last
+  /// change, if that's later.
+  Future<void> activate(List<Goal> picked, {DateTime? at}) async {
     final tree = this.tree;
     final all = [...inactiveParents(tree, picked), ...picked];
     final deadlines = await _askDeadlines(all, tree);
     if (deadlines == null || !context.mounted) return;
+    final changes = activating(tree, picked, deadlines: deadlines);
     await save(
       picked.length == 1
           ? "Couldn't activate ${goalTitle(picked.single)}"
           : "Couldn't activate the goals",
-      activating(tree, picked, deadlines: deadlines),
+      at == null ? changes : [for (final c in changes) _backdated(c, at)],
     );
+  }
+
+  /// [change], a goal's activation, dated [at] -- or its last change, if
+  /// that's later -- rather than now.
+  GoalChange _backdated(GoalChange change, DateTime at) {
+    if (change is! GoalUpdate) return change;
+    final goal = tree[change.id];
+    if (goal == null) return change;
+    final last = goal.history.lastOrNull?.at;
+    final when = last != null && last.isAfter(at) ? last : at;
+    return GoalUpdate(change.id, {
+      ...change.changes,
+      'history': [
+        for (final c in goal.history) c.toJson(),
+        StatusChange('active', when).toJson(),
+      ],
+    });
   }
 
   /// Deactivates [goal] -- its active sub-goals too, if the user agrees.

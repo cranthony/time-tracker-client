@@ -1275,6 +1275,10 @@ class SampleData {
       _at(12, 0),
       actions: ['work'],
       priority: 1,
+      goals: const [
+        GoalShare('goal-icon', minutes: 90),
+        GoalShare('goals-pane', percent: 50),
+      ],
     ),
     _event(
       'lunch',
@@ -1438,6 +1442,7 @@ class SampleData {
     int? priority,
     Facts? facts,
     Map<String, Object?>? judgments,
+    List<GoalShare> goals = const [],
   }) => Event.fromJson({
     'id': id,
     'summary': summary,
@@ -1452,6 +1457,7 @@ class SampleData {
     'effective_priority': ?priority,
     'facts': ?facts?.toJson(),
     if (judgments != null && judgments.isNotEmpty) 'judgments': judgments,
+    if (goals.isNotEmpty) 'goals': [for (final g in goals) g.toJson()],
   });
 
   /// The series "Get up and get ready" is part of: every weekday since a

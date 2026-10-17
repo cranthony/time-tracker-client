@@ -61,6 +61,9 @@ typedef PickerAdd = ({String noun, IconData icon, ValueChanged<String> onAdd});
 /// [autofocus] takes the keyboard at once, what's typed selected.
 /// Long-pressing a row calls [onEdit]; with [add], a row under the search
 /// adds one. [marker] goes before each name -- an action's diamond, say.
+/// With [onChipTap], each chip can be tapped as well as removed -- to set
+/// how much of an event a goal takes, say -- and [chipDetail] says, after
+/// its label, what's set.
 /// The list fills what room there is, or with [maxListHeight], grows to
 /// that and scrolls (in a dialog, which measures what's in it).
 class TreePicker extends StatefulWidget {
@@ -83,6 +86,8 @@ class TreePicker extends StatefulWidget {
     this.onEdit,
     this.add,
     this.maxListHeight,
+    this.onChipTap,
+    this.chipDetail,
   });
 
   final List<PickerNode> nodes;
@@ -108,6 +113,13 @@ class TreePicker extends StatefulWidget {
   final ValueChanged<PickerNode>? onEdit;
   final PickerAdd? add;
   final double? maxListHeight;
+
+  /// Called with a chip's id as it's tapped; null, a chip only removes.
+  final ValueChanged<String>? onChipTap;
+
+  /// What follows a chip's label, by its id: "45m"; null or "" for
+  /// nothing.
+  final String? Function(String id)? chipDetail;
 
   @override
   State<TreePicker> createState() => _TreePickerState();
@@ -277,7 +289,16 @@ class _TreePickerState extends State<TreePicker> {
           for (final (i, id) in widget.picked.indexed)
             InputChip(
               avatar: widget.chipAvatar?.call(i, byId[id]),
-              label: Text(byId[id]?.label ?? id),
+              label: Text(switch (widget.chipDetail?.call(id)) {
+                final detail? when detail.isNotEmpty =>
+                  '${byId[id]?.label ?? id} · $detail',
+                _ => byId[id]?.label ?? id,
+              }),
+              tooltip: widget.onChipTap == null ? null : 'Set its share',
+              onPressed: switch (widget.onChipTap) {
+                final tap? => () => tap(id),
+                null => null,
+              },
               deleteButtonTooltipMessage: 'Remove',
               onDeleted: () => widget.onChanged([
                 for (final other in widget.picked)

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'durations.dart';
 import '../models/goal.dart';
 import '../services/plan_memory.dart';
 import 'goal_editor.dart';

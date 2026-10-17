@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/widgets/goal_icon.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/weather.dart';
@@ -22,6 +23,7 @@ void main() {
     List<String>? names,
     bool cancelled = false,
     Map<String, Object?>? facts,
+    List<String> goals = const [],
   }) => Event(
     start: start,
     end: end,
@@ -32,6 +34,10 @@ void main() {
       'action_ids': actions,
       'action_names': ?names,
       'facts': ?facts,
+      if (goals.isNotEmpty)
+        'goals': [
+          for (final g in goals) {'goal_id': g},
+        ],
     },
   );
 
@@ -219,6 +225,7 @@ void main() {
               actions: actions,
               personNames: const {'self': 'Me', 'sam': 'Sam'},
               locationNames: const {'home': 'Home', 'school': 'The school'},
+              goalNames: const {'ship': 'Ship the app', 'learn': 'Learn Rust'},
             ),
           ),
         ),
@@ -335,7 +342,7 @@ void main() {
         at(1),
         end,
         actions: ['cook'],
-        priority: 1,
+        goals: ['ship'],
         facts: {
           'location_ids': ['home', 'school'],
           'with_ids': ['sam'],
@@ -355,7 +362,7 @@ void main() {
       );
       expect(
         tester.getTopRight(located).dx,
-        lessThan(tester.getTopLeft(find.text('P1')).dx),
+        lessThan(tester.getTopLeft(find.byType(GoalStack)).dx),
       );
       expect(
         tester.renderObject<RenderParagraph>(located).didExceedMaxLines,
@@ -367,7 +374,7 @@ void main() {
       expect(find.text('Home, The school'), findsOneWidget);
     });
 
-    testWidgets('cuts them short after half the line, and drops its priority '
+    testWidgets('cuts them short after half the line, and drops its goals '
         "to make room, where they don't fit", (tester) async {
       await tester.pumpWidget(
         timeline([
@@ -375,7 +382,7 @@ void main() {
             'Dinner with the whole family',
             at(1),
             at(1, 15),
-            priority: 1,
+            goals: ['ship'],
             facts: {
               'location_ids': ['the-restaurant-at-the-end-of-the-universe'],
             },
@@ -388,7 +395,7 @@ void main() {
         tester.renderObject<RenderParagraph>(located).didExceedMaxLines,
         isTrue,
       );
-      expect(find.text('P1'), findsNothing);
+      expect(find.byType(GoalStack), findsNothing);
       // The summary has half the line, at least.
       final summary = find.text('Dinner with the whole family');
       expect(
@@ -426,9 +433,33 @@ void main() {
       // A listed action by its name now; another by the event's.
       expect(top('Dinner'), lessThan(top('Host friends weekly')));
       expect(top('Host friends weekly'), lessThan(top('Tofu tikka')));
-      // How long it is, and its priority: none, so the default.
+      // How long it is; no goals, so no goal icons -- nor a priority.
       expect(find.text('1h 50m'), findsOneWidget);
-      expect(find.text('P2'), findsOneWidget);
+      expect(find.byType(GoalIcon), findsNothing);
+      expect(find.text('P2'), findsNothing);
+    });
+
+    testWidgets("lists an event's goals under its actions, and stacks their "
+        'icons by its chips', (tester) async {
+      await tester.pumpWidget(
+        timeline([
+          event(
+            'Work on it',
+            at(0, 10),
+            at(2),
+            actions: ['code'],
+            names: ['Code'],
+            goals: ['ship', 'learn', 'gone'],
+          ),
+        ]),
+      );
+      double top(String text) => tester.getTopLeft(find.text(text)).dy;
+      expect(top('Code'), lessThan(top('Ship the app')));
+      expect(top('Ship the app'), lessThan(top('Learn Rust')));
+      // Each counted, even one deleted since: two targets, for more than
+      // one, and no number.
+      expect(tester.widget<GoalStack>(find.byType(GoalStack)).count, 3);
+      expect(find.text('3'), findsNothing);
     });
 
     testWidgets('says how long an event too short for its text is', (
@@ -441,13 +472,13 @@ void main() {
             at(0, 10),
             at(0, 15),
             actions: ['a', 'b'],
-            priority: 0,
+            goals: ['ship'],
           ),
         ]),
       );
       expect(find.text('Call Mom'), findsOneWidget);
       expect(find.text('5m'), findsOneWidget);
-      expect(find.text('P0'), findsOneWidget);
+      expect(find.byType(GoalStack), findsOneWidget);
     });
 
     testWidgets('labels where events overlap, and nowhere else', (

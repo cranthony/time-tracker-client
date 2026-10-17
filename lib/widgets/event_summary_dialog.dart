@@ -1,12 +1,13 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/maps.dart';
 import '../models/event.dart';
 import '../models/facts.dart';
+import '../models/goal.dart';
 import '../models/plan_action.dart';
 import '../models/proposal.dart';
 import '../models/note.dart';
@@ -14,6 +15,7 @@ import '../models/person.dart';
 import '../models/recurrence.dart';
 import '../models/repeat.dart';
 import '../models/trait.dart';
+import '../services/goals_repository.dart';
 import '../services/habits_repository.dart';
 import '../services/mcp_client.dart';
 import '../services/people_repository.dart';
@@ -29,6 +31,9 @@ import 'hotkeys.dart';
 import 'other_events.dart';
 import 'waiting_note.dart';
 import 'facts_dialog.dart';
+import 'goal_flows.dart';
+import 'goal_icon.dart';
+import 'goal_picker.dart';
 import 'picker_sheet.dart';
 import 'plow_icon.dart';
 import 'properties_dialog.dart' show ConfirmOption, confirmationContent;
@@ -526,7 +531,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     (final String a, final String b)
         when DateTime.tryParse(a) != null && DateTime.tryParse(b) != null =>
       DateTime.parse(a).isAtSameMomentAs(DateTime.parse(b)),
-    (final List a, final List b) => listEquals(a, b),
+    (final List a, final List b) => jsonEncode(a) == jsonEncode(b),
     (null, '') || ('', null) => true,
     _ => a == b,
   };
@@ -563,6 +568,14 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     if (widget.otherEvents.overlapping(start, end) case final other?
         when moved) {
       setState(() => _error = 'It would overlap ${_describe(other)}.');
+      return;
+    }
+    // A change shortening it is refused while its goals' minutes don't
+    // fit: the server would cut them down when it's read.
+    final minutes = end.difference(start).inMinutes;
+    final problems = moved ? shareProblems(_goalShares, minutes) : const [];
+    if (problems.isNotEmpty) {
+      setState(() => _error = problems.join(' '));
       return;
     }
     final save = await widget.save!(Map.of(_changes));
@@ -782,6 +795,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 ),
               _descriptionRow(context),
               _actionsRow(context),
+              if (GoalsScope.of(context) != null) _goalsRow(context),
               if (widget.facets) _factsRow(context),
             ],
           ),
@@ -1702,6 +1716,123 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         ],
       ),
     );
+  }
+
+  /// Its goals, and how much of it each takes.
+  List<GoalShare> get _goalShares => [
+    for (final g in _value('goals') as List? ?? const [])
+      ?GoalShare.fromJson(g),
+  ];
+
+  List<Goal> get _goals => PlanMemoryScope.of(context)?.goals ?? const [];
+
+  /// Its goals, each after a goal icon with what it takes ("45m", "30%",
+  /// or nothing for all of it); picked in a sheet up from the foot
+  /// ([showGoalsSheet]).
+  Widget _goalsRow(BuildContext context) {
+    final theme = Theme.of(context);
+    final shares = _goalShares;
+    final tree = GoalTree(_goals);
+    return _row(
+      context,
+      glyph: const GoalIcon(),
+      changedKey: 'goals',
+      onTap: _pickGoals,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (shares.isEmpty)
+            Text(
+              'Add goals',
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: theme.hintColor,
+              ),
+            ),
+          for (final share in shares)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(switch (tree[share.goalId]) {
+                      final goal? => goalTitle(goal),
+                      null => share.goalId,
+                    }, style: theme.textTheme.bodyLarge),
+                  ),
+                  if (share.label.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Chip(
+                        visualDensity: VisualDensity.compact,
+                        label: Text(share.label),
+                      ),
+                    )
+                  else
+                    Text('All of it', style: theme.textTheme.bodySmall),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Picks its goals in a sheet up from the foot -- offering to activate
+  /// any picked that's inactive, from its start.
+  Future<void> _pickGoals() async {
+    setState(() => _editing = null);
+    final start = _time('start');
+    final minutes = _time('end').difference(start).inMinutes;
+    final was = {for (final s in _goalShares) s.goalId};
+    final picked = await showGoalsSheet(
+      context,
+      goals: _goals,
+      picked: _goalShares,
+      eventMinutes: minutes,
+    );
+    if (picked == null || !mounted) return;
+    final tree = GoalTree(_goals);
+    final waking = [
+      for (final s in picked)
+        if (!was.contains(s.goalId))
+          if (tree[s.goalId] case final goal? when goal.inactive) goal,
+    ];
+    if (waking.isNotEmpty) {
+      final memory = PlanMemoryScope.of(context);
+      final repository = GoalsScope.of(context);
+      final names = waking.map((g) => '“${goalTitle(g)}”').join(', ');
+      final wake = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(waking.length == 1 ? 'Activate it?' : 'Activate them?'),
+          content: Text(
+            '$names ${waking.length == 1 ? 'is' : 'are'} inactive. Activate '
+            '${waking.length == 1 ? 'it' : 'them'} from when this event '
+            'starts?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Leave inactive'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Activate'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return;
+      if ((wake ?? false) && memory != null && repository != null) {
+        await GoalActions(
+          context: context,
+          repository: repository,
+          memory: memory,
+        ).activate(waking, at: start);
+        if (!mounted) return;
+      }
+    }
+    _set('goals', [for (final s in picked) s.toJson()]);
   }
 
   /// Picks its actions in a sheet up from the foot; null until there are
