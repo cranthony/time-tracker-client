@@ -21,7 +21,7 @@ import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/proposal.dart';
 import 'package:time_tracker_client/outbox/event_outbox.dart';
-import 'package:time_tracker_client/outbox/note_outbox.dart';
+import 'package:time_tracker_client/outbox/note_writes.dart';
 import 'package:time_tracker_client/outbox/outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/outbox/store_lock.dart';
@@ -59,7 +59,11 @@ class _NotesServer extends InMemoryNotesRepository {
     mostAtOnce = max(mostAtOnce, ++_inFlight);
     try {
       await _jitter();
-      saved.add(note.description!);
+      final again = (await super.uncompactedNotes()).any(
+        (n) => note.id != null && n.id == note.id,
+      );
+      // Made once, by its id, however often it's sent.
+      if (!again) saved.add(note.description!);
       final added = await super.addNote(note);
       if (hang case final h?) await h.future;
       await _jitter();
@@ -135,13 +139,10 @@ void main() {
   group('The app and its background task, sending at once,', () {
     test('send every note once: none lost, none twice', () async {
       final server = _NotesServer();
-      final app = NoteOutbox(
-        store: PrefsOutboxStore.notes(),
-        repository: server,
-      );
-      final background = NoteOutbox(
-        store: PrefsOutboxStore.notes(),
-        repository: server,
+      final app = NoteWrites.local(server, store: PrefsOutboxStore.writes());
+      final background = NoteWrites.local(
+        server,
+        store: PrefsOutboxStore.writes(),
         sender: Outbox.backgroundSender,
       );
       const count = 60;
@@ -163,7 +164,9 @@ void main() {
         await _jitter();
       }
       app.start();
-      await _until(() async => (await PrefsOutboxStore.notes().load()).isEmpty);
+      await _until(
+        () async => (await PrefsOutboxStore.writes().load()).isEmpty,
+      );
       done = true;
       await task;
       app.dispose();
@@ -246,17 +249,17 @@ void main() {
     test('a note, is saved once', () async {
       final clock = _Clock();
       final server = _NotesServer();
-      NoteOutbox outbox() => NoteOutbox(
-        store: PrefsOutboxStore.notes(),
-        repository: server,
+      NoteWrites outbox() => NoteWrites.local(
+        server,
+        store: PrefsOutboxStore.writes(),
         clock: clock.call,
       );
       final app = outbox(), task = outbox();
       await app.add(Note(timestamp: _at(0), description: 'Lunch'));
 
       await handOff(
-        app,
-        task,
+        app.queue,
+        task.queue,
         clock,
         (h) => server.hang = h,
         saved: () => server.saved.isNotEmpty,
@@ -416,11 +419,8 @@ void main() {
   test('a change being sent by the background task can\'t be dropped by '
       'the app, though the app has yet to hear it\'s being sent', () async {
     final server = _NotesServer();
-    final app = NoteOutbox(store: PrefsOutboxStore.notes(), repository: server);
-    final task = NoteOutbox(
-      store: PrefsOutboxStore.notes(),
-      repository: server,
-    );
+    final app = NoteWrites.local(server, store: PrefsOutboxStore.writes());
+    final task = NoteWrites.local(server, store: PrefsOutboxStore.writes());
     await app.add(Note(timestamp: _at(0), description: 'Lunch'));
     final note = app.items.single;
     server.hang = Completer<void>();
@@ -432,17 +432,17 @@ void main() {
     expect(app.isSending(note), isFalse);
     expect(await app.cancel(note), isFalse);
     server.hang!.complete();
-    await _until(() async => (await PrefsOutboxStore.notes().load()).isEmpty);
+    await _until(() async => (await PrefsOutboxStore.writes().load()).isEmpty);
     expect(server.saved, ['Lunch']);
   });
 
   test('while the background task sends one note, the app takes none of '
       "the rest, and says who's sending", () async {
     final server = _NotesServer();
-    final app = NoteOutbox(store: PrefsOutboxStore.notes(), repository: server);
-    final task = NoteOutbox(
-      store: PrefsOutboxStore.notes(),
-      repository: server,
+    final app = NoteWrites.local(server, store: PrefsOutboxStore.writes());
+    final task = NoteWrites.local(
+      server,
+      store: PrefsOutboxStore.writes(),
       sender: Outbox.backgroundSender,
     );
     await app.add(Note(timestamp: _at(0), description: 'Lunch'));
@@ -455,7 +455,7 @@ void main() {
 
     expect(server.saved, ['Lunch']);
     final lunch = app.items.firstWhere((n) => n.note.description == 'Lunch');
-    expect(lunch.sentBy, Outbox.backgroundSender);
+    expect(lunch.write.sentBy, Outbox.backgroundSender);
     expect(app.sendingBy(lunch), 'the background task');
     expect(
       app.sendingBy(
@@ -469,7 +469,7 @@ void main() {
     await _until(() async => server.saved.length == 2 || app.items.length < 2);
     await _until(() async {
       await app.flush(ignoreBackoff: true);
-      return (await PrefsOutboxStore.notes().load()).isEmpty;
+      return (await PrefsOutboxStore.writes().load()).isEmpty;
     });
     expect(server.saved, ['Lunch', 'Coffee']);
     expect(server.mostAtOnce, 1);

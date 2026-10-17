@@ -14,7 +14,7 @@ import '../models/note.dart';
 import '../models/proposal.dart';
 import '../models/recurrence.dart';
 import '../outbox/event_outbox.dart';
-import '../outbox/note_outbox.dart';
+import '../outbox/note_writes.dart';
 import '../services/keep_rules.dart';
 import '../services/app_settings.dart';
 import '../services/actions_repository.dart';
@@ -153,7 +153,7 @@ class EventsScreen extends StatefulWidget {
   final NotesRepository? notesRepository;
 
   /// The notes not saved yet, to mark them too.
-  final NoteOutbox? outbox;
+  final NoteWrites? outbox;
 
   /// Where changes to events and the proposal wait to be saved; without
   /// it, each is saved before its dialog closes.

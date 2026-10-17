@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/outbox/action_writes.dart';
-import 'package:time_tracker_client/outbox/note_outbox.dart';
-import 'package:time_tracker_client/outbox/outbox_store.dart';
+import 'package:time_tracker_client/outbox/note_writes.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/home_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
@@ -16,12 +15,12 @@ import 'package:time_tracker_client/widgets/hotkeys.dart';
 void main() {
   late Hotkeys hotkeys;
   late InMemoryNotesRepository notes;
-  late NoteOutbox outbox;
+  late NoteWrites outbox;
 
   Widget app() {
     hotkeys = Hotkeys();
     notes = InMemoryNotesRepository();
-    outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: notes);
+    outbox = NoteWrites.local(notes);
     return MaterialApp(
       navigatorObservers: [hotkeys],
       builder: (context, child) => HotkeyScope(hotkeys: hotkeys, child: child!),
@@ -30,8 +29,7 @@ void main() {
         eventsRepository: InMemoryEventsRepository(const []),
         actionsRepository: InMemoryActionsRepository(),
         outbox: outbox,
-        actionWrites: ActionWrites.local(InMemoryActionsRepository(),
-        ),
+        actionWrites: ActionWrites.local(InMemoryActionsRepository()),
       ),
     );
   }

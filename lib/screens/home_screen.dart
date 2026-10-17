@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import '../models/event.dart';
 import '../outbox/action_writes.dart';
 import '../outbox/event_outbox.dart';
-import '../outbox/note_outbox.dart';
+import '../outbox/note_writes.dart';
 import '../outbox/write_queue.dart';
 import '../services/note_drafts.dart';
 import '../platform/calendar_widget.dart';
@@ -60,7 +60,7 @@ class HomeScreen extends StatefulWidget {
   /// Where the open compaction proposal comes from; null for none.
   final ProposalRepository? proposalsRepository;
   final ActionsRepository actionsRepository;
-  final NoteOutbox outbox;
+  final NoteWrites outbox;
 
   /// Notes being written, kept as they're typed: the app's, on the
   /// device, or else the screen's own, while it lasts.
@@ -206,7 +206,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (widget.eventOutbox case final outbox?)
       EventOutboxStatus(outbox, lookup: _lookup, onShow: _showEvent),
     if (widget.writeQueue case final writes?) WriteQueueStatus(writes),
-    NoteOutboxStatus(widget.outbox),
   ];
 
   @override

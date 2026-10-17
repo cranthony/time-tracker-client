@@ -3,8 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/outbox/action_writes.dart';
-import 'package:time_tracker_client/outbox/note_outbox.dart';
-import 'package:time_tracker_client/outbox/outbox_store.dart';
+import 'package:time_tracker_client/outbox/note_writes.dart';
 import 'package:time_tracker_client/screens/home_screen.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
@@ -35,12 +34,8 @@ void main() {
     notesRepository: InMemoryNotesRepository(),
     eventsRepository: InMemoryEventsRepository(const []),
     actionsRepository: InMemoryActionsRepository(),
-    outbox: NoteOutbox(
-      store: InMemoryOutboxStore(),
-      repository: InMemoryNotesRepository(),
-    ),
-    actionWrites: ActionWrites.local(InMemoryActionsRepository(),
-    ),
+    outbox: NoteWrites.local(InMemoryNotesRepository()),
+    actionWrites: ActionWrites.local(InMemoryActionsRepository()),
   );
 
   Future<void> press(WidgetTester tester, LogicalKeyboardKey key) async {

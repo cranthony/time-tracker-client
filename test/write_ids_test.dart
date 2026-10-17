@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/outbox/action_writes.dart';
-import 'package:time_tracker_client/outbox/note_outbox.dart';
+import 'package:time_tracker_client/outbox/note_writes.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/outbox/write_queue.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
@@ -83,10 +83,7 @@ void main() {
   test("a note's write is sent with its write_id, the same when it's tried "
       'again; a read with none', () async {
     final server = _Server()..failing = 1;
-    final outbox = NoteOutbox(
-      store: InMemoryOutboxStore(),
-      repository: McpNotesRepository(server.client),
-    );
+    final outbox = NoteWrites.local(McpNotesRepository(server.client));
     final pending = await outbox.add(
       Note(timestamp: DateTime.utc(2026, 10, 16, 12), description: 'Tea'),
     );

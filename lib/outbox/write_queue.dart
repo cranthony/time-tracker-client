@@ -30,7 +30,24 @@ class WriteKind {
     this.single = false,
     this.itemIn,
     this.updateCalls,
+    this.updateArguments,
+    this.nameOf,
   });
+
+  /// For a kind whose update takes its fields beside its id rather than
+  /// under [argument] (a note's): the update's arguments, from the item's
+  /// [id], its [changes] (a null clearing a field) and the [version] last
+  /// seen.
+  final Map<String, Object?> Function(
+    String id,
+    Map<String, Object?> changes,
+    int? version,
+  )?
+  updateArguments;
+
+  /// What the user knows [item] by, when it isn't its name (a note's
+  /// description).
+  final String? Function(Map<String, Object?> item)? nameOf;
 
   /// The item, the [WriteKind] [id], in what a create or update gave --
   /// for a tool that gives more than the item itself (an action's, with
@@ -73,7 +90,11 @@ class WriteKind {
   final String? deleteArgument;
 
   /// [item], as the user knows it: its name.
-  String label(Map<String, Object?>? item) => switch (item?['name']) {
+  String label(Map<String, Object?>? item) => switch (item == null
+      ? null
+      : nameOf != null
+      ? nameOf!(item)
+      : item['name']) {
     final String name when name.trim().isNotEmpty && !single =>
       '$noun “${name.trim()}”',
     _ => noun,
@@ -290,6 +311,42 @@ class WriteKind {
     single: true,
   );
 
+  /// A time note: a timestamp and what it marks. Edited by `edit_note`,
+  /// whose description is cleared by an empty one.
+  static const note = WriteKind(
+    name: 'note',
+    noun: 'note',
+    argument: 'noted_time',
+    createTool: 'note',
+    updateTool: 'edit_note',
+    deleteTool: 'delete_note',
+    deleteArgument: 'note_id',
+    writable: _note,
+    updateArguments: _noteEdit,
+    nameOf: _noteName,
+  );
+
+  static Map<String, Object?> _note(Map<String, Object?> item) => {
+    for (final key in ['timestamp', 'description'])
+      if (item[key] != null) key: item[key],
+  };
+
+  static Map<String, Object?> _noteEdit(
+    String id,
+    Map<String, Object?> changes,
+    int? version,
+  ) => {
+    'note_id': id,
+    if (changes['timestamp'] case final String timestamp)
+      'timestamp': timestamp,
+    if (changes.containsKey('description'))
+      'description': changes['description'] ?? '',
+    'version': ?version,
+  };
+
+  static String? _noteName(Map<String, Object?> item) =>
+      item['description'] as String?;
+
   /// Every kind, by name.
   static final all = {
     for (final k in [
@@ -304,6 +361,7 @@ class WriteKind {
       action,
       actionGroup,
       priorityColors,
+      note,
     ])
       k.name: k,
   };
@@ -429,8 +487,9 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
   Map<String, Object?> update(
     WriteKind kind,
     String id,
-    Map<String, Object?> changes,
-  ) {
+    Map<String, Object?> changes, {
+    Map<String, Object?>? base,
+  }) {
     _queue((writes) {
       // Not one tried: it may have been made, unheard, and sent again it's
       // answered as it was then -- what's joined to it lost. A write after
@@ -452,7 +511,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
             op: WriteOp.update,
             itemId: id,
             changes: changes,
-            base: _known[kind.name]?[id],
+            base: _known[kind.name]?[id] ?? base,
           ),
         ];
       }
@@ -474,7 +533,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
   /// Queues deleting the [kind] [id]. If the server doesn't have it yet,
   /// its writes are just dropped -- unless one's being sent, when it's
   /// deleted once that's saved.
-  void delete(WriteKind kind, String id) {
+  void delete(WriteKind kind, String id, {Map<String, Object?>? base}) {
     _queue((writes) {
       // Its writes not tried yet: one tried may have been made, so a
       // deletion goes after it.
@@ -499,16 +558,36 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
           kind: kind.name,
           op: WriteOp.delete,
           itemId: id,
-          base: _known[kind.name]?[id],
+          base: _known[kind.name]?[id] ?? base,
         ),
       ];
     });
   }
 
   void _queue(List<PendingWrite> Function(List<PendingWrite>) edit) {
-    unawaited(
-      change(edit).then((_) => schedule(immediately: true), onError: (_) {}),
-    );
+    final kept = change(edit)
+        .then((_) => schedule(immediately: true), onError: (_) {});
+    queued = kept;
+    unawaited(kept);
+  }
+
+  /// Done once what was last queued -- by [create], [update] or [delete]
+  /// -- is kept, or failed to be.
+  Future<void> queued = Future.value();
+
+  /// Keeps [items], [kind]s as the server gave them, as what changes are
+  /// made to -- for a kind whose page shows its writes waiting itself,
+  /// rather than made to what [shown] gives.
+  void know(WriteKind kind, List<Map<String, Object?>> items) =>
+      _known[kind.name] = {
+        for (final item in items)
+          if (item['id'] case final String id) id: item,
+      };
+
+  /// Puts back [write], one [drop]ped: the user took that back.
+  Future<void> putBack(PendingWrite write) async {
+    await change((writes) => [...writes, write]);
+    schedule(immediately: true);
   }
 
   /// Drops [write] without sending it -- and, for a new item, the writes
@@ -518,7 +597,11 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
     if (isSending(write)) return false;
     var dropped = false;
     await change((writes) {
-      if (writes.any((w) => w.id == write.id && isSending(w))) return writes;
+      // Made to what's shown, then to what's kept: as what's kept says.
+      if (writes.any((w) => w.id == write.id && isSending(w))) {
+        dropped = false;
+        return writes;
+      }
       dropped = true;
       final making = write.op == WriteOp.create;
       return [
@@ -805,6 +888,10 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
               case final cleared when cleared.isNotEmpty)
             'clear_fields': [for (final c in cleared) c.key],
         },
+      ),
+      WriteOp.update when kind.updateArguments != null => (
+        kind.updateTool,
+        kind.updateArguments!(write.itemId, write.changes, version),
       ),
       WriteOp.update => (
         kind.updateTool,

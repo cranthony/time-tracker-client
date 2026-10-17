@@ -2,16 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:time_tracker_client/models/note.dart';
-import 'package:time_tracker_client/outbox/note_outbox.dart';
+import 'package:time_tracker_client/outbox/note_writes.dart';
+import 'package:time_tracker_client/outbox/pending_write.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
-import 'package:time_tracker_client/outbox/pending_note.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 
 void main() {
-  late NoteOutbox outbox;
+  late NoteWrites outbox;
 
   /// Stops the outbox before flutter_test checks for pending timers.
   void screenTest(String name, Future<void> Function(WidgetTester) body) =>
@@ -40,12 +41,12 @@ void main() {
     Stream<DateTime>? addNoteRequests,
     VoidCallback? onAddNoteFieldFocused,
     String? version,
-    OutboxStore<PendingNote>? store,
+    OutboxStore<PendingWrite>? store,
   }) {
     outboxNow = now;
-    outbox = NoteOutbox(
+    outbox = NoteWrites.local(
+      repo,
       store: store ?? InMemoryOutboxStore(),
-      repository: repo,
       clock: () => outboxNow,
     )..start();
     return MaterialApp(
@@ -87,7 +88,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('New note'), findsNothing);
     expect([
-      ...store.items.map((p) => p.note.description),
+      ...store.items.map((p) => p.changes['description']),
       for (final n in await repo.uncompactedNotes()) n.description,
     ], contains('Walking home'));
   });
@@ -682,7 +683,7 @@ void main() {
 
   screenTest('a note saved by the background task is shown, and the notes '
       'are fetched with it', (tester) async {
-    final store = InMemoryOutboxStore<PendingNote>();
+    final store = InMemoryOutboxStore<PendingWrite>();
     final repo = _GatedFetchRepository();
     await tester.pumpWidget(app(repo, store: store));
     await tester.pumpAndSettle();
@@ -692,7 +693,7 @@ void main() {
     await tester.pump();
     expect(outbox.pending, hasLength(1));
 
-    await NoteOutbox(store: store, repository: repo).flush(ignoreBackoff: true);
+    await NoteWrites.local(repo, store: store).flush(ignoreBackoff: true);
     repo.fetchGate = Completer();
     final fetched = repo.fetches;
 
@@ -750,7 +751,7 @@ class _FlakyRepository extends InMemoryNotesRepository {
 
   @override
   Future<Note> addNote(Note note) async {
-    if (offline) throw McpException('offline');
+    if (offline) throw http.ClientException('offline');
     return super.addNote(note);
   }
 }
@@ -768,11 +769,11 @@ class _FailingEditsRepository extends InMemoryNotesRepository {
 }
 
 /// Can't write what's kept while [failing]: a full or locked store.
-class _FailingStore extends InMemoryOutboxStore<PendingNote> {
+class _FailingStore extends InMemoryOutboxStore<PendingWrite> {
   var failing = true;
 
   @override
-  Future<void> save(List<PendingNote> items) async {
+  Future<void> save(List<PendingWrite> items) async {
     if (failing) throw StateError('disk full');
     return super.save(items);
   }

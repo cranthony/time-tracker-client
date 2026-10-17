@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../outbox/note_outbox.dart';
 import '../outbox/outbox.dart';
-import '../outbox/pending_note.dart';
 import '../outbox/write_queue.dart';
 import 'write_conflict_dialog.dart';
 import 'status_bar.dart';
@@ -206,32 +204,4 @@ class WriteQueueStatus extends OutboxStatus<PendingWrite> {
 
   @override
   Future<bool> drop(PendingWrite item) => _writes.drop(item);
-}
-
-/// The [NoteOutbox]'s part of the [StatusBar]: each note by its time and
-/// what it says.
-class NoteOutboxStatus extends OutboxStatus<PendingNote> {
-  NoteOutboxStatus(NoteOutbox super.outbox);
-
-  @override
-  String get title => 'Notes waiting to save';
-
-  @override
-  String things(int n) => n == 1 ? '1 note' : '$n notes';
-
-  @override
-  String label(PendingNote item) {
-    final note = switch (item.note.description?.trim()) {
-      final d? when d.isNotEmpty => '“$d”',
-      _ => 'a note',
-    };
-    return switch (item.change) {
-      NoteChange.add => note,
-      NoteChange.edit => 'a change to $note',
-      NoteChange.delete => 'deleting $note',
-    };
-  }
-
-  @override
-  Future<bool> drop(PendingNote item) => (outbox as NoteOutbox).cancel(item);
 }

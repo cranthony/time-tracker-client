@@ -4,8 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../models/note.dart';
-import '../outbox/note_outbox.dart';
-import '../outbox/pending_note.dart';
+import '../outbox/note_writes.dart';
 import '../services/mcp_client.dart';
 import '../services/note_drafts.dart';
 import '../widgets/hotkeys.dart';
@@ -44,7 +43,7 @@ class NotesScreen extends StatefulWidget {
   final NotesRepository repository;
 
   /// Where new notes, and edits and deletions, go until they're saved.
-  final NoteOutbox outbox;
+  final NoteWrites outbox;
 
   /// Notes being written, kept as they're typed: the app's, or else the
   /// page's own.
@@ -263,7 +262,7 @@ class _NotesScreenState extends State<NotesScreen> {
   /// note's saved again as a new one, through the outbox, so it isn't
   /// lost if that fails too.
   static Future<void> _undoDelete(
-    NoteOutbox outbox,
+    NoteWrites outbox,
     PendingNote deletion,
   ) async {
     if (outbox.pending.any((p) => p.id == deletion.id) &&
@@ -454,7 +453,7 @@ class _NotesScreenState extends State<NotesScreen> {
           }(),
       for (final p in saved)
         if (p.change == NoteChange.add &&
-            !NoteOutbox.savedIn(p.note, notes ?? const []))
+            !NoteWrites.savedIn(p.note, notes ?? const []))
           (at: p.note.timestamp, tile: _NoteTile(note: p.note)),
       for (final p in adds) (at: p.note.timestamp, tile: pendingTile(p)),
       // Of notes not listed: compacted since, say.

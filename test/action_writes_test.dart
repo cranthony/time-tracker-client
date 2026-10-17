@@ -135,10 +135,7 @@ void main() {
       );
     await queue.flush();
 
-    expect(calls.map((c) => (c.arguments['action'] as Map)['version']), [
-      3,
-      4,
-    ]);
+    expect(calls.map((c) => (c.arguments['action'] as Map)['version']), [3, 4]);
     expect(queue.items, isEmpty);
     expect(
       (await repository.actions()).actions.map((a) => a.name),
@@ -146,23 +143,25 @@ void main() {
     );
   });
 
-  test('a group is changed by its own tool, and a clearing is sent as one',
-      () async {
-    await repository.actions();
-    await repository.updateAction(
-      const PlanAction(id: 'sport', properties: {'kind': 'group'}),
-      {'note': null, 'priority': 1},
-    );
-    await pumpEventQueue();
-    answers.add((_, arguments) => {'changed': []});
-    await queue.flush();
+  test(
+    'a group is changed by its own tool, and a clearing is sent as one',
+    () async {
+      await repository.actions();
+      await repository.updateAction(
+        const PlanAction(id: 'sport', properties: {'kind': 'group'}),
+        {'note': null, 'priority': 1},
+      );
+      await pumpEventQueue();
+      answers.add((_, arguments) => {'changed': []});
+      await queue.flush();
 
-    expect(calls.single.tool, 'update_action_group');
-    expect(calls.single.arguments, {
-      'group': {'id': 'sport', 'priority': 1, 'version': 1},
-      'clear_fields': ['note'],
-    });
-  });
+      expect(calls.single.tool, 'update_action_group');
+      expect(calls.single.arguments, {
+        'group': {'id': 'sport', 'priority': 1, 'version': 1},
+        'clear_fields': ['note'],
+      });
+    },
+  );
 
   test('a priority color changed shows at once, and is set by a call of its '
       'own, made once', () async {

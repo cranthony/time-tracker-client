@@ -9,8 +9,7 @@ import 'package:time_tracker_client/outbox/action_writes.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/note.dart';
-import 'package:time_tracker_client/outbox/note_outbox.dart';
-import 'package:time_tracker_client/outbox/outbox_store.dart';
+import 'package:time_tracker_client/outbox/note_writes.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/plan_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
@@ -167,7 +166,7 @@ void main() {
         cached: [Note(timestamp: now, description: 'Old')],
         fresh: [Note(timestamp: now, description: 'New')],
       );
-      final outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: repo);
+      final outbox = NoteWrites.local(repo);
       await tester.pumpWidget(
         MaterialApp(
           home: NotesScreen(repository: repo, outbox: outbox),
@@ -312,10 +311,7 @@ void main() {
         [],
         CompactionStatus(lastCompaction: compacted),
       );
-      final outbox = NoteOutbox(
-        store: InMemoryOutboxStore(),
-        repository: notes,
-      );
+      final outbox = NoteWrites.local(notes);
       await tester.pumpWidget(
         MaterialApp(
           home: NotesScreen(repository: notes, outbox: outbox, memory: memory),
@@ -398,7 +394,7 @@ void main() {
           ),
         ),
       );
-      final outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: repo);
+      final outbox = NoteWrites.local(repo);
       await tester.pumpWidget(
         MaterialApp(
           home: NotesScreen(repository: repo, outbox: outbox),
@@ -492,5 +488,5 @@ class _GatedActionsRepository extends InMemoryActionsRepository {
 }
 
 /// For a Actions page that saves nothing.
-ActionWrites _idleActionWrites() => ActionWrites.local(InMemoryActionsRepository(),
-);
+ActionWrites _idleActionWrites() =>
+    ActionWrites.local(InMemoryActionsRepository());

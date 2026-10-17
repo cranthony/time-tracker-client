@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'legacy_writes.dart';
 import 'pending_event_write.dart';
-import 'pending_note.dart';
 import 'pending_write.dart';
 import 'store_lock.dart';
 
@@ -49,15 +48,6 @@ class PrefsOutboxStore<T> extends OutboxStore<T> {
     required this._toJson,
     SharedPreferencesAsync? prefs,
   }) : _prefs = prefs ?? SharedPreferencesAsync();
-
-  /// Where notes waiting to be saved are kept.
-  static PrefsOutboxStore<PendingNote> notes({SharedPreferencesAsync? prefs}) =>
-      PrefsOutboxStore(
-        key: 'note_outbox',
-        fromJson: PendingNote.fromJson,
-        toJson: (note) => note.toJson(),
-        prefs: prefs,
-      );
 
   /// Where the [WriteQueue]'s writes waiting to be saved are kept.
   /// With what older versions left waiting in the outboxes they had
