@@ -20,10 +20,12 @@ class McpException implements Exception {
   final Map<String, Object?>? meta;
 
   /// The item as it is now, when a write was refused as changed since
-  /// the version it was made from: null if it's been deleted.
-  ({Map<String, Object?>? current})? get conflict =>
+  /// the version it was made from: null if it's been deleted -- and its
+  /// id, which says which, of a write of several (a batch of events).
+  ({String? id, Map<String, Object?>? current})? get conflict =>
       switch (meta?['conflict']) {
         final Map conflict => (
+          id: conflict['id'] as String?,
           current: switch (conflict['current']) {
             final Map current => current.cast<String, Object?>(),
             _ => null,

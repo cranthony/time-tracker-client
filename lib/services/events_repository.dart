@@ -213,7 +213,12 @@ class McpEventsRepository implements EventsRepository {
         'updates': [
           for (final (event, changes) in over.updates)
             {
-              'event': {'id': event.id, ...changes},
+              'event': {
+                'id': event.id,
+                ...changes,
+                // The version shown: refused if it's changed since.
+                'etag': ?(event.properties['etag'] as String?),
+              },
             },
         ],
       if (over.cancels.isNotEmpty)
@@ -222,6 +227,7 @@ class McpEventsRepository implements EventsRepository {
             {
               'event_id': event.id,
               'counts_against_follow_through': over.counts(event),
+              'etag': ?(event.properties['etag'] as String?),
             },
         ],
       if (allowCompactedChanges) 'allow_compacted_changes': true,

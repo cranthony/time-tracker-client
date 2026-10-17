@@ -638,15 +638,23 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
   /// Conflicts found sending, by write, till they're kept (see [failed]).
   final _conflicts = <String, Map<String, Object?>?>{};
 
+  /// Of each conflict found sending, which event it's of.
+  final _conflictIds = <String, String?>{};
+
   @override
   void failed(PendingEventWrite item) {
     if (!_conflicts.containsKey(item.id)) return;
     final current = _conflicts.remove(item.id);
+    final id = _conflictIds.remove(item.id);
     unawaited(
       replaceUnlessSending(
         item.id,
         (w) => w
-            .copyWith(conflicted: true, current: () => current)
+            .copyWith(
+              conflicted: true,
+              current: () => current,
+              conflictId: () => id,
+            )
             .copyWith(
               lastError: () => current == null
                   ? 'Deleted elsewhere since'
@@ -672,9 +680,12 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
         final conflict = e.conflict;
         if (conflict == null) rethrow;
         final current = conflict.current;
-        if (merged < 2 && _merges(sent, current)) {
-          sent = sent.copyWith(event: () => Event.fromJson(current!.cast()));
-          final rebased = sent;
+        final id = conflict.id ?? sent.event?.id;
+        final rebased = merged < 2 && id != null
+            ? _rebased(sent, id, current)
+            : null;
+        if (rebased != null) {
+          sent = rebased;
           await change(
             (items) => [
               for (final w in items) w.id == rebased.id ? rebased : w,
@@ -683,38 +694,71 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
           continue;
         }
         _conflicts[sent.id] = current;
+        _conflictIds[sent.id] = id;
         rethrow;
       }
     }
   }
 
-  /// Whether [item] can be made to the event as it is now, [current]:
-  /// it's still there, and nothing [item] changes was changed elsewhere
-  /// since -- or was changed the same. A cancel of one changed is asked
-  /// about first.
-  static bool _merges(PendingEventWrite item, Map<String, Object?>? current) {
-    if (current == null || item.kind != EventWriteKind.update) return false;
-    final base = item.event?.toJson() ?? const {};
-    return item.changes.entries.every(
-      (c) =>
-          WriteQueue.same(current[c.key], base[c.key]) ||
-          WriteQueue.same(current[c.key], c.value),
-    );
+  /// [item] made to the event [id] as it is now, [current] -- if it can
+  /// be: it's still there, it's updated (a cancel of one changed is asked
+  /// about first), and nothing the update changes was changed elsewhere
+  /// since, or was changed the same. Null if it can't.
+  static PendingEventWrite? _rebased(
+    PendingEventWrite item,
+    String id,
+    Map<String, Object?>? current,
+  ) {
+    if (current == null) return null;
+    final now = Event.fromJson(current.cast());
+    bool merges(Event base, Map<String, Object?> changes) {
+      final was = base.toJson();
+      return changes.entries.every(
+        (c) =>
+            WriteQueue.same(current[c.key], was[c.key]) ||
+            WriteQueue.same(current[c.key], c.value),
+      );
+    }
+
+    if (item.kind == EventWriteKind.update) {
+      final base = item.event;
+      if (base == null || !merges(base, item.changes)) return null;
+      return item.copyWith(event: () => now);
+    }
+    final (base, changes) = item.over.updateOf(id) ?? (null, null);
+    if (base == null || changes == null || !merges(base, changes)) return null;
+    return item.copyWith(over: item.over.withEvent(id, now));
   }
 
-  /// [write], conflicted, as the write-conflict dialog shows it.
-  static PendingWrite conflictOf(PendingEventWrite write) => PendingWrite(
-    id: write.id,
-    kind: 'event',
-    op: write.kind == EventWriteKind.cancel ? WriteOp.delete : WriteOp.update,
-    itemId: write.event?.id ?? '',
-    changes: write.changes,
-    base: write.event?.toJson(),
-    conflicted: write.conflicted,
-    current: write.current,
-    refused: write.refused,
-    lastError: write.lastError,
-  );
+  /// [write], conflicted, as the write-conflict dialog shows it: the
+  /// change to the one event changed elsewhere -- of a batch, its part.
+  static PendingWrite conflictOf(PendingEventWrite write) {
+    final id = write.conflictId ?? write.event?.id ?? '';
+    final (
+      Event? base,
+      Map<String, Object?> changes,
+      bool cancel,
+    ) = switch (write.kind) {
+      EventWriteKind.update => (write.event, write.changes, false),
+      EventWriteKind.cancel => (write.event, const {}, true),
+      _ => switch (write.over.updateOf(id)) {
+        (final e, final c) => (e, c, false),
+        null => (write.over.cancelOf(id), const {}, true),
+      },
+    };
+    return PendingWrite(
+      id: write.id,
+      kind: 'event',
+      op: cancel ? WriteOp.delete : WriteOp.update,
+      itemId: id,
+      changes: changes,
+      base: base?.toJson(),
+      conflicted: write.conflicted,
+      current: write.current,
+      refused: write.refused,
+      lastError: write.lastError,
+    );
+  }
 
   /// Whether the server answered, saying no: an overlap, history, a stale
   /// revision, something not there. Those aren't tried again by
@@ -758,11 +802,14 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
             await timed(_events.createEvent(item.fields)),
       EventWriteKind.createOver =>
         (maybeSaved ? await _alreadyMade(item.fields) : null) ??
-            await timed(
-              _events.createOver(
-                item.fields,
-                item.over,
-                allowCompactedChanges: allow,
+            await _versioned(
+              item,
+              (item) => timed(
+                _events.createOver(
+                  item.fields,
+                  item.over,
+                  allowCompactedChanges: allow,
+                ),
               ),
             ),
       EventWriteKind.makeRoom =>
@@ -771,8 +818,11 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
                 : null) ??
             await _unlessDone(
               maybeSaved,
-              () => timed(
-                _events.makeRoom(item.over, allowCompactedChanges: allow),
+              () => _versioned(
+                item,
+                (item) => timed(
+                  _events.makeRoom(item.over, allowCompactedChanges: allow),
+                ),
               ),
             ),
       EventWriteKind.amend => await _amend(item, maybeSaved: maybeSaved),
@@ -1124,8 +1174,8 @@ class EventConflicts implements ConflictResolver {
       outbox.items.where((w) => w.id == write.id).firstOrNull;
 
   @override
-  String label(PendingWrite write) => switch (_of(write)?.event?.summary) {
-    final s? when s.trim().isNotEmpty => 'event “${s.trim()}”',
+  String label(PendingWrite write) => switch (write.base?['summary']) {
+    final String s when s.trim().isNotEmpty => 'event “${s.trim()}”',
     _ => 'the event',
   };
 
@@ -1150,11 +1200,29 @@ class EventConflicts implements ConflictResolver {
   @override
   Future<void> restore(PendingWrite write) async {}
 
+  /// Drops the change to the event changed elsewhere: of one event's
+  /// change, the write; of a batch, just its part -- the rest is sent.
   @override
-  Future<bool> drop(PendingWrite write) async => switch (_of(write)) {
-    final w? => outbox.drop(w),
-    null => true,
-  };
+  Future<bool> drop(PendingWrite write) async {
+    final w = _of(write);
+    if (w == null) return true;
+    if (!_batch(w)) return outbox.drop(w);
+    final over = w.over.withEvent(write.itemId, null);
+    if (over.isEmpty && w.kind == EventWriteKind.makeRoom) {
+      return outbox.drop(w);
+    }
+    return outbox.edit(w, _settled(w).copyWith(over: over));
+  }
+
+  static bool _batch(PendingEventWrite w) =>
+      w.kind == EventWriteKind.makeRoom || w.kind == EventWriteKind.createOver;
+
+  /// [w] with its conflict let go.
+  static PendingEventWrite _settled(PendingEventWrite w) => w.copyWith(
+    conflicted: false,
+    current: () => null,
+    conflictId: () => null,
+  );
 
   Future<void> _resend(
     PendingWrite write,
@@ -1163,14 +1231,14 @@ class EventConflicts implements ConflictResolver {
     final w = _of(write);
     final current = w?.current;
     if (w == null || current == null) return;
+    final now = Event.fromJson(current.cast());
     await outbox.edit(
       w,
-      w.copyWith(
-        event: () => Event.fromJson(current.cast()),
-        changes: changes,
-        conflicted: false,
-        current: () => null,
-      ),
+      _batch(w)
+          ? _settled(w).copyWith(
+              over: w.over.withEvent(write.itemId, now, changes: changes),
+            )
+          : _settled(w).copyWith(event: () => now, changes: changes),
     );
   }
 }

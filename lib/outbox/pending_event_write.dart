@@ -83,6 +83,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     this.refused = false,
     this.conflicted = false,
     this.current,
+    this.conflictId,
   });
 
   @override
@@ -152,6 +153,10 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
   /// When [conflicted], the event as the server has it now; null if it's
   /// been deleted, or cancelled.
   final Map<String, Object?>? current;
+
+  /// When [conflicted], the event that was changed elsewhere: of a batch
+  /// ([over]), which of its events; of one event's change, it.
+  final String? conflictId;
 
   /// The id an event it creates goes by until the server gives it one:
   /// [n] counts those it creates.
@@ -380,6 +385,8 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     Event? Function()? event,
     bool? conflicted,
     Map<String, Object?>? Function()? current,
+    String? Function()? conflictId,
+    Overwrite? over,
   }) => PendingEventWrite(
     id: id,
     kind: kind,
@@ -388,9 +395,10 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     event: event != null ? event() : this.event,
     conflicted: conflicted ?? this.conflicted,
     current: current != null ? current() : this.current,
+    conflictId: conflictId != null ? conflictId() : this.conflictId,
     changes: changes ?? this.changes,
     fields: fields ?? this.fields,
-    over: over,
+    over: over ?? this.over,
     countsAgainstFollowThrough:
         countsAgainstFollowThrough ?? this.countsAgainstFollowThrough,
     allowHistory: allowHistory ?? this.allowHistory,
@@ -431,6 +439,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     if (refused) 'refused': true,
     if (conflicted) 'conflicted': true,
     'current': ?current,
+    'conflict_id': ?conflictId,
   };
 
   factory PendingEventWrite.fromJson(Map<String, dynamic> json) {
@@ -467,6 +476,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
       sentBy: json['sent_by'] as String?,
       refused: json['refused'] == true,
       conflicted: json['conflicted'] == true,
+      conflictId: json['conflict_id'] as String?,
       current: switch (json['current']) {
         final Map current => current.cast<String, Object?>(),
         _ => null,

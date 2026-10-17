@@ -14,7 +14,10 @@ on. Add the new version's section here at the same time; CI checks both.
 - A change to an event is made to the event as you saw it. One changed
   elsewhere since -- on the calendar, say -- is made to it as it is now
   when the two touch different fields; when they touch the same, it
-  waits for you to pick, field by field, from the changes waiting.
+  waits for you to pick, field by field, from the changes waiting. So
+  is each event a change moves or cancels to make room for another: one
+  changed elsewhere is resolved on its own, or dropped from the change
+  while the rest is saved.
 - A new event has its own id from the moment it's made, so it's made
   once however often it's sent.
 - Every write is made once by what it names and the version it was made

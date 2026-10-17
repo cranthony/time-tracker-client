@@ -4,8 +4,10 @@ import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/outbox/event_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
+import 'package:time_tracker_client/outbox/pending_write.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
+import 'package:time_tracker_client/widgets/other_events.dart';
 import 'package:time_tracker_client/widgets/write_conflict_dialog.dart';
 
 DateTime _at(int hour) => DateTime(2026, 9, 30, hour);
@@ -59,7 +61,33 @@ class _Server extends InMemoryEventsRepository {
     created.add(fields);
     return super.createEvent(fields);
   }
+
+  /// Each batch sent, as the events in it are versioned: each update's
+  /// and cancel's etag, by event.
+  final batches = <Map<String, Object?>>[];
+
+  @override
+  Future<List<Event>> makeRoom(
+    Overwrite over, {
+    bool allowCompactedChanges = false,
+  }) async {
+    batches.add({
+      for (final (e, changes) in over.updates)
+        e.id!: (e.properties['etag'], changes),
+      for (final e in over.cancels) e.id!: (e.properties['etag'], null),
+    });
+    if (answers.isNotEmpty) throw answers.removeAt(0);
+    return const [];
+  }
 }
+
+Map<String, Object?> _gym({String summary = 'Gym', String etag = 'g1'}) => {
+  'id': 'gym',
+  'summary': summary,
+  'start': localIsoTimestamp(_at(13)),
+  'end': localIsoTimestamp(_at(14)),
+  'etag': etag,
+};
 
 McpException _conflict(Map<String, Object?>? current) => McpException(
   'Tool update_event failed: event changed after it was read',
@@ -172,5 +200,77 @@ void main() {
 
     expect(outbox.items.single.conflicted, isTrue);
     expect(outbox.items.single.lastError, 'Changed elsewhere since');
+  });
+
+  group('a batch', () {
+    Overwrite batch() => Overwrite(
+      updates: [
+        (
+          Event.fromJson(_lunch()),
+          {'end': localIsoTimestamp(_at(12).add(const Duration(minutes: 30)))},
+        ),
+      ],
+      cancels: [Event.fromJson(_gym())],
+    );
+
+    test('sends each of its events with the etag it was made to', () async {
+      await outbox.makeRoom(batch());
+      await outbox.flush();
+
+      final sent = server.batches.single;
+      expect((sent['lunch']! as (Object?, Object?)).$1, 'e1');
+      expect((sent['gym']! as (Object?, Object?)).$1, 'g1');
+    });
+
+    test('one of its events changed elsewhere in other fields: made to it '
+        'as it is now', () async {
+      await outbox.makeRoom(batch());
+      server.answers.add(
+        McpException(
+          'Tool update_event failed: event changed after it was read',
+          meta: {
+            'conflict': {
+              'id': 'lunch',
+              'current': _lunch(description: 'with Sam', etag: 'e2'),
+            },
+          },
+        ),
+      );
+      await outbox.flush();
+
+      expect(outbox.items, isEmpty);
+      expect((server.batches.last['lunch']! as (Object?, Object?)).$1, 'e2');
+      expect((server.batches.last['gym']! as (Object?, Object?)).$1, 'g1');
+    });
+
+    test('one changed in the same way waits, conflicted, naming it; dropped, '
+        'just its part is, and the rest is sent', () async {
+      await outbox.makeRoom(batch());
+      server.answers.add(
+        McpException(
+          'Tool update_event failed: event changed after it was read',
+          meta: {
+            'conflict': {
+              'id': 'gym',
+              'current': _gym(summary: 'Climbing', etag: 'g2'),
+            },
+          },
+        ),
+      );
+      await outbox.flush();
+      await outbox.refresh();
+
+      final waiting = outbox.items.single;
+      expect((waiting.conflicted, waiting.conflictId), (true, 'gym'));
+      final shown = EventOutbox.conflictOf(waiting);
+      expect((shown.op, shown.itemId), (WriteOp.delete, 'gym'));
+      expect(EventConflicts(outbox).label(shown), 'event “Gym”');
+
+      expect(await EventConflicts(outbox).drop(shown), isTrue);
+      final rest = outbox.items.single;
+      expect(rest.conflicted, isFalse);
+      expect(rest.over.cancels, isEmpty);
+      expect(rest.over.updates.single.$1.id, 'lunch');
+    });
   });
 }
