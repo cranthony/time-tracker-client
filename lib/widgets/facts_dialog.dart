@@ -154,6 +154,7 @@ class _FactsDialogState extends State<_FactsDialog> {
     final theme = Theme.of(context);
     final problem = _facts.problem;
     return SaveOrDiscard(
+      escLeavesFields: true,
       changed: () => _facts != widget.facts,
       onSave: problem == null ? () => Navigator.of(context).pop(_facts) : null,
       child: AlertDialog(
@@ -212,6 +213,7 @@ class _FactsDialogState extends State<_FactsDialog> {
                     if (widget.pickers) ...[
                       _chips(
                         theme,
+                        'W',
                         'With',
                         'Who was there',
                         others,
@@ -220,6 +222,7 @@ class _FactsDialogState extends State<_FactsDialog> {
                       ),
                       _chips(
                         theme,
+                        'F',
                         'For',
                         "Who it was for, who wasn't there",
                         others,
@@ -228,8 +231,9 @@ class _FactsDialogState extends State<_FactsDialog> {
                       ),
                       _locationPicker(),
                     ],
-                    for (final person in there)
+                    for (final (i, person) in there.indexed)
                       _note(
+                        i < 9 ? '${i + 1}' : null,
                         person,
                         person.isSelf
                             ? 'How it was for you'
@@ -326,6 +330,7 @@ class _FactsDialogState extends State<_FactsDialog> {
   /// one takes them out of [other], since no one is both there and not.
   Widget _chips(
     ThemeData theme,
+    String letter,
     String label,
     String hint,
     List<Person> people,
@@ -333,37 +338,41 @@ class _FactsDialogState extends State<_FactsDialog> {
     Set<String> other,
   ) => Padding(
     padding: const EdgeInsets.only(top: 12),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: theme.textTheme.labelLarge),
-        Text(hint, style: theme.textTheme.bodySmall),
-        const SizedBox(height: 4),
-        if (people.isEmpty)
-          Text(
-            'No one yet: add people on the Plan page.',
-            style: TextStyle(color: theme.hintColor),
+    child: FieldHotkey(
+      letter,
+      focusOnly: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: theme.textTheme.labelLarge),
+          Text(hint, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 4),
+          if (people.isEmpty)
+            Text(
+              'No one yet: add people on the Plan page.',
+              style: TextStyle(color: theme.hintColor),
+            ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final person in people)
+                FilterChip(
+                  label: Text(personName(person, context: true)),
+                  selected: picked.contains(person.id),
+                  onSelected: (on) => setState(() {
+                    if (on) {
+                      picked.add(person.id);
+                      other.remove(person.id);
+                    } else {
+                      picked.remove(person.id);
+                    }
+                  }),
+                ),
+            ],
           ),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            for (final person in people)
-              FilterChip(
-                label: Text(personName(person, context: true)),
-                selected: picked.contains(person.id),
-                onSelected: (on) => setState(() {
-                  if (on) {
-                    picked.add(person.id);
-                    other.remove(person.id);
-                  } else {
-                    picked.remove(person.id);
-                  }
-                }),
-              ),
-          ],
-        ),
-      ],
+        ],
+      ),
     ),
   );
 
@@ -381,63 +390,71 @@ class _FactsDialogState extends State<_FactsDialog> {
             if (a.kind == AdditionKind.location)
               Location(id: a.ref, name: '${a.name} (new)', hint: a.detail),
         ];
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Where', style: theme.textTheme.labelLarge),
-            Text(
-              'Where it was: one place, or each it moved between',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final l in [
-                  ...locations,
-                  for (final id in _where)
-                    if (!locations.any((l) => l.id == id))
-                      Location(id: id, name: id),
-                ])
-                  FilterChip(
-                    label: Text(l.name),
-                    selected: _where.contains(l.id),
-                    onSelected: (on) => setState(
-                      () => on ? _where.add(l.id) : _where.remove(l.id),
+        return FieldHotkey(
+          'L',
+          focusOnly: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Where', style: theme.textTheme.labelLarge),
+              Text(
+                'Where it was: one place, or each it moved between',
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final l in [
+                    ...locations,
+                    for (final id in _where)
+                      if (!locations.any((l) => l.id == id))
+                        Location(id: id, name: id),
+                  ])
+                    FilterChip(
+                      label: Text(l.name),
+                      selected: _where.contains(l.id),
+                      onSelected: (on) => setState(
+                        () => on ? _where.add(l.id) : _where.remove(l.id),
+                      ),
                     ),
-                  ),
-                if (_repository != null)
-                  ActionChip(
-                    avatar: const Icon(Icons.add_location_alt, size: 18),
-                    label: const Text('New location…'),
-                    onPressed: _newLocation,
-                  ),
-              ],
-            ),
-          ],
+                  if (_repository != null)
+                    ActionChip(
+                      avatar: const Icon(Icons.add_location_alt, size: 18),
+                      label: const Text('New location…'),
+                      onPressed: _newLocation,
+                    ),
+                ],
+              ),
+            ],
+          ),
         );
       },
     ),
   );
 
-  Widget _note(Person person, String hint) => Padding(
+  /// [person]'s note, which [letter] goes to.
+  Widget _note(String? letter, Person person, String hint) => Padding(
     padding: const EdgeInsets.only(top: 12),
-    child: TextField(
-      controller: _notes.putIfAbsent(person.id, TextEditingController.new),
-      minLines: 1,
-      maxLines: 3,
-      maxLength: 1000,
-      textCapitalization: TextCapitalization.sentences,
-      decoration: InputDecoration(
-        labelText: person.isSelf
-            ? 'Notes on you'
-            : 'Notes on ${personName(person)}',
-        hintText: hint,
-        isDense: true,
-        border: const OutlineInputBorder(),
-        floatingLabelBehavior: FloatingLabelBehavior.always,
-        counterText: '',
+    child: FieldHotkey(
+      letter,
+      child: TextField(
+        controller: _notes.putIfAbsent(person.id, TextEditingController.new),
+        minLines: 1,
+        maxLines: 3,
+        maxLength: 1000,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: InputDecoration(
+          labelText: person.isSelf
+              ? 'Notes on you'
+              : 'Notes on ${personName(person)}',
+          hintText: hint,
+          isDense: true,
+          border: const OutlineInputBorder(),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+          counterText: '',
+        ),
       ),
     ),
   );

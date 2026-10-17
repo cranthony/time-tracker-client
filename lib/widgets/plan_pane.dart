@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'hotkeys.dart';
+
 /// One of the Plan page's panes -- Actions, Traits, People, Locations --
 /// that it swipes between: its [summary], if it has one, then a search,
 /// with the pane's [actions] beside it -- or, without [onSearch], the
@@ -42,6 +44,7 @@ class PlanPane extends StatefulWidget {
 class _PlanPaneState extends State<PlanPane>
     with AutomaticKeepAliveClientMixin {
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
 
   @override
   bool get wantKeepAlive => true;
@@ -49,6 +52,7 @@ class _PlanPaneState extends State<PlanPane>
   @override
   void dispose() {
     _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -71,36 +75,41 @@ class _PlanPaneState extends State<PlanPane>
                     const Spacer()
                   else
                     Expanded(
-                      child: TextField(
-                        controller: _search,
-                        autofocus: widget.autofocus,
-                        textInputAction: TextInputAction.search,
-                        decoration: InputDecoration(
-                          hintText: widget.searchHint,
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _search.text.isEmpty
-                              ? null
-                              : IconButton(
-                                  tooltip: 'Clear the search',
-                                  icon: const Icon(Icons.close),
-                                  onPressed: () {
-                                    _search.clear();
-                                    setState(() {});
-                                    widget.onSearch?.call('');
-                                  },
-                                ),
-                          isDense: true,
-                          filled: true,
-                          fillColor: theme.colorScheme.surfaceContainerHighest,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
-                            borderSide: BorderSide.none,
+                      child: SearchHotkey(
+                        focus: _searchFocus,
+                        child: TextField(
+                          controller: _search,
+                          focusNode: _searchFocus,
+                          autofocus: widget.autofocus,
+                          textInputAction: TextInputAction.search,
+                          decoration: InputDecoration(
+                            hintText: widget.searchHint,
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _search.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: 'Clear the search',
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () {
+                                      _search.clear();
+                                      setState(() {});
+                                      widget.onSearch?.call('');
+                                    },
+                                  ),
+                            isDense: true,
+                            filled: true,
+                            fillColor:
+                                theme.colorScheme.surfaceContainerHighest,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              borderSide: BorderSide.none,
+                            ),
                           ),
+                          onChanged: (text) {
+                            setState(() {});
+                            widget.onSearch?.call(text);
+                          },
                         ),
-                        onChanged: (text) {
-                          setState(() {});
-                          widget.onSearch?.call(text);
-                        },
                       ),
                     ),
                   ...widget.actions,

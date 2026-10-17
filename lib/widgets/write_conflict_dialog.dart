@@ -47,11 +47,18 @@ class _ConflictDialogState extends State<_ConflictDialog> {
   late final _clashes = WriteQueue.clashes(_write);
   late final _picks = {for (final f in _clashes) f: _Pick.mine};
   late final _typed = {for (final f in _clashes) f: TextEditingController()};
+  late final _typedFocus = {for (final f in _clashes) f: FocusNode()};
+
+  /// A letter for each field, to pick its next choice.
+  late final _letters = fieldLetters(_clashes);
 
   @override
   void dispose() {
     for (final c in _typed.values) {
       c.dispose();
+    }
+    for (final f in _typedFocus.values) {
+      f.dispose();
     }
     super.dispose();
   }
@@ -150,6 +157,7 @@ class _ConflictDialogState extends State<_ConflictDialog> {
       ),
     };
     return SaveOrDiscard(
+      escLeavesFields: true,
       // Called off, it waits as it was: nothing's lost.
       changed: () => false,
       onSave: _write.op == WriteOp.update && _write.current != null
@@ -192,45 +200,64 @@ class _ConflictDialogState extends State<_ConflictDialog> {
         for (final field in _clashes) ...[
           const SizedBox(height: 16),
           Text(_label(field), style: theme.textTheme.titleSmall),
-          RadioGroup<_Pick>(
-            groupValue: _picks[field],
-            onChanged: (pick) => setState(() => _picks[field] = pick!),
-            child: Column(
-              children: [
-                RadioListTile<_Pick>(
-                  value: _Pick.theirs,
-                  title: Text(_text(_current[field])),
-                  subtitle: const Text('As it was changed elsewhere'),
-                  dense: true,
-                ),
-                RadioListTile<_Pick>(
-                  value: _Pick.mine,
-                  title: Text(_text(_write.changes[field])),
-                  subtitle: const Text('Yours'),
-                  dense: true,
-                ),
-                if (_write.changes[field] is String? &&
-                    _current[field] is String?)
+          FieldHotkey(
+            _letters[field],
+            onPressed: () => _pickNext(field),
+            child: RadioGroup<_Pick>(
+              groupValue: _picks[field],
+              onChanged: (pick) => setState(() => _picks[field] = pick!),
+              child: Column(
+                children: [
                   RadioListTile<_Pick>(
-                    value: _Pick.typed,
-                    title: TextField(
-                      controller: _typed[field],
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        hintText: 'Something else',
-                      ),
-                      onTap: () => setState(() => _picks[field] = _Pick.typed),
-                      onChanged: (_) =>
-                          setState(() => _picks[field] = _Pick.typed),
-                    ),
+                    value: _Pick.theirs,
+                    title: Text(_text(_current[field])),
+                    subtitle: const Text('As it was changed elsewhere'),
                     dense: true,
                   ),
-              ],
+                  RadioListTile<_Pick>(
+                    value: _Pick.mine,
+                    title: Text(_text(_write.changes[field])),
+                    subtitle: const Text('Yours'),
+                    dense: true,
+                  ),
+                  if (_write.changes[field] is String? &&
+                      _current[field] is String?)
+                    RadioListTile<_Pick>(
+                      value: _Pick.typed,
+                      title: TextField(
+                        controller: _typed[field],
+                        focusNode: _typedFocus[field],
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          hintText: 'Something else',
+                        ),
+                        onTap: () =>
+                            setState(() => _picks[field] = _Pick.typed),
+                        onChanged: (_) =>
+                            setState(() => _picks[field] = _Pick.typed),
+                      ),
+                      dense: true,
+                    ),
+                ],
+              ),
             ),
           ),
         ],
       ],
     );
+  }
+
+  /// [field]'s next choice: theirs, yours, then something else, typed.
+  void _pickNext(String field) {
+    final typable =
+        _write.changes[field] is String? && _current[field] is String?;
+    final pick = nextOf([
+      _Pick.theirs,
+      _Pick.mine,
+      if (typable) _Pick.typed,
+    ], _picks[field]!);
+    setState(() => _picks[field] = pick);
+    if (pick == _Pick.typed) focusField(_typedFocus[field]!);
   }
 
   /// What was changed elsewhere, since the deletion was asked for.

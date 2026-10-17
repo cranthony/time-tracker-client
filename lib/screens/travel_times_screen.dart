@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/hotkeys.dart';
 import '../models/person.dart';
 import '../models/travel_time.dart';
 import '../services/actions_repository.dart';
@@ -696,40 +697,52 @@ class _TravelTimeEditorState extends State<TravelTimeEditor> {
           ),
       ],
       children: [
-        _picker(
-          label: 'From',
-          value: _from,
-          choices: places,
-          onChanged: (picked) => setState(() => _from = picked),
+        FieldHotkey(
+          'F',
+          child: _picker(
+            label: 'From',
+            value: _from,
+            choices: places,
+            onChanged: (picked) => setState(() => _from = picked),
+          ),
         ),
         Align(
-          child: IconButton(
-            tooltip: 'Switch from and to',
-            icon: const Icon(Icons.swap_vert),
-            onPressed: () => setState(() {
-              final from = _from;
-              _from = _to;
-              _to = from;
-            }),
+          child: FieldHotkey(
+            'S',
+            child: IconButton(
+              tooltip: 'Switch from and to',
+              icon: const Icon(Icons.swap_vert),
+              onPressed: () => setState(() {
+                final from = _from;
+                _from = _to;
+                _to = from;
+              }),
+            ),
           ),
         ),
-        _picker(
-          label: 'To',
-          value: _to,
-          choices: places,
-          onChanged: (picked) => setState(() => _to = picked),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('One way only'),
-          subtitle: Text(
-            _oneWay
-                ? 'Only from ${name(_from)} to ${name(_to)}: give the way '
-                      'back its own travel time.'
-                : 'It takes as long both ways.',
+        FieldHotkey(
+          'T',
+          child: _picker(
+            label: 'To',
+            value: _to,
+            choices: places,
+            onChanged: (picked) => setState(() => _to = picked),
           ),
-          value: _oneWay,
-          onChanged: (on) => setState(() => _oneWay = on),
+        ),
+        FieldHotkey(
+          'O',
+          child: SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('One way only'),
+            subtitle: Text(
+              _oneWay
+                  ? 'Only from ${name(_from)} to ${name(_to)}: give the way '
+                        'back its own travel time.'
+                  : 'It takes as long both ways.',
+            ),
+            value: _oneWay,
+            onChanged: (on) => setState(() => _oneWay = on),
+          ),
         ),
         Text('Ways of getting there', style: theme.textTheme.titleSmall),
         if (widget.commutes.isEmpty)
@@ -746,22 +759,28 @@ class _TravelTimeEditorState extends State<TravelTimeEditor> {
         for (final way in _ways) _way(theme, way),
         Align(
           alignment: AlignmentDirectional.centerStart,
-          child: TextButton.icon(
-            icon: const Icon(Icons.add),
-            label: const Text('Add a way'),
-            onPressed: () => setState(() => _ways.add(_Way())),
+          child: FieldHotkey(
+            'A',
+            child: TextButton.icon(
+              icon: const Icon(Icons.add),
+              label: const Text('Add a way'),
+              onPressed: () => setState(() => _ways.add(_Way())),
+            ),
           ),
         ),
         const SizedBox(height: 8),
-        TextField(
-          controller: _note,
-          minLines: 1,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            labelText: 'Note (optional)',
-            hintText: 'e.g. "worse at rush hour"',
-            border: OutlineInputBorder(),
-            isDense: true,
+        FieldHotkey(
+          'N',
+          child: TextField(
+            controller: _note,
+            minLines: 1,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Note (optional)',
+              hintText: 'e.g. "worse at rush hour"',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
           ),
         ),
       ],

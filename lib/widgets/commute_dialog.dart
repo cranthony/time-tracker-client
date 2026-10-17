@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'hotkeys.dart';
 import 'duration_field.dart';
 
 /// A commute as [showCommuteDialog] leaves it: its [summary], and how
@@ -76,14 +77,17 @@ class _CommuteDialogState extends State<_CommuteDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(
-            controller: _summary,
-            decoration: const InputDecoration(
-              labelText: 'Summary',
-              border: OutlineInputBorder(),
-              isDense: true,
+          FieldHotkey(
+            'S',
+            child: TextField(
+              controller: _summary,
+              decoration: const InputDecoration(
+                labelText: 'Summary',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (_) => setState(() {}),
             ),
-            onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 16),
           if (widget.help case final help?)
@@ -96,11 +100,14 @@ class _CommuteDialogState extends State<_CommuteDialog> {
                 ),
               ),
             ),
-          DurationField(
-            controller: _minutes,
-            label: 'Takes',
-            step: 5,
-            onChanged: () => setState(() {}),
+          FieldHotkey(
+            'T',
+            child: DurationField(
+              controller: _minutes,
+              label: 'Takes',
+              step: 5,
+              onChanged: () => setState(() {}),
+            ),
           ),
         ],
       ),

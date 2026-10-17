@@ -693,6 +693,23 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       const HotkeyTrigger.key(LogicalKeyboardKey.keyS),
       _selectSummary,
     ),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyP), () {
+      if (_canEdit('priority')) _open(_Field.priority);
+    }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyC), () {
+      if (widget.facets && _canEdit('facts')) _open(_Field.commute);
+    }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyT), () {
+      if (_canEdit('start')) _open(_Field.time);
+    }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyR), () {
+      if ((widget.series || widget.repeatable) && _canEdit('repeat')) {
+        _openRepeat();
+      }
+    }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyN), () {
+      if (widget.facets && _canEdit('facts')) _editNotes();
+    }),
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.delete), () {
       if (widget.remove case final remove? when _editable && !_saving) {
         _confirmRemove(remove);
@@ -744,8 +761,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               if (_editing == _Field.priority) _priorityEditor(context),
               if (_editing == _Field.commute) _commuteEditor(),
               _summary(context),
-              _timeLine(context),
-              if (widget.series || widget.repeatable) _repeatLine(context),
+              HotkeyHint(Hotkey.time, child: _timeLine(context)),
+              if (widget.series || widget.repeatable)
+                HotkeyHint(Hotkey.repeat, child: _repeatLine(context)),
               if (widget.openSeries case final open?) _seriesChip(open),
               const SizedBox(height: 8),
               // Its who, and its location; a new event's, where, as it's
@@ -911,7 +929,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                       borderRadius: BorderRadius.circular(6),
                       child: Padding(
                         padding: const EdgeInsets.all(4),
-                        child: chip,
+                        child: HotkeyHint(Hotkey.priority, child: chip),
                       ),
                     ),
                   ),
@@ -923,7 +941,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _commuteChip(context),
+                    HotkeyHint(Hotkey.commute, child: _commuteChip(context)),
                     ?_changedDot(
                       'facts',
                       changed: _commute != _factsWere.commute,
@@ -1414,16 +1432,13 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         ? theme.colorScheme.primary
         : theme.colorScheme.onSurfaceVariant;
     final line = InkWell(
-      onTap: !_editable || _saving || _waits('repeat')
+      onTap:
+          !_editable ||
+              _saving ||
+              _waits('repeat') ||
+              (!adding && repeat == null)
           ? null
-          : adding && repeat == null
-          ? () {
-              _set('repeat', const Repeat(every: 'week'));
-              _open(_Field.repeat);
-            }
-          : repeat != null
-          ? () => _open(_Field.repeat)
-          : null,
+          : _openRepeat,
       borderRadius: BorderRadius.circular(6),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -1856,6 +1871,31 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   /// The notes on you and on each person there, and how many judgments
   /// the assistant made of it; tapped to edit the notes in
   /// [showFactsDialog].
+  /// R: its recurrence, to change -- or, for a new event with none, one
+  /// every week, to start from.
+  void _openRepeat() {
+    if (_value('repeat') == null) {
+      if (!widget.repeatable) return;
+      _set('repeat', const Repeat(every: 'week'));
+    }
+    _open(_Field.repeat);
+  }
+
+  /// N: what happened -- its notes -- in a dialog of its own.
+  Future<void> _editNotes() async {
+    setState(() => _editing = null);
+    final edited = await showFactsDialog(
+      context,
+      Facts.fromJson(_value('facts')),
+      judgments: judgmentsFromJson(widget.values['judgments']),
+      traitNames: _traitNames,
+      additions: widget.additions,
+      // Who and where, in their own row.
+      pickers: false,
+    );
+    if (edited != null && mounted) _setFacts(edited);
+  }
+
   Widget _factsRow(BuildContext context) {
     final theme = Theme.of(context);
     final facts = Facts.fromJson(_value('facts'));
@@ -1866,19 +1906,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       icon: Icons.note_alt_outlined,
       changedKey: 'facts',
       changed: _factsChanged,
-      onTap: () async {
-        setState(() => _editing = null);
-        final edited = await showFactsDialog(
-          context,
-          facts,
-          judgments: judgments,
-          traitNames: _traitNames,
-          additions: widget.additions,
-          // Who and where, in their own row.
-          pickers: false,
-        );
-        if (edited != null && mounted) _setFacts(edited);
-      },
+      hotkey: Hotkey.eventNotes,
+      onTap: _editNotes,
       child: empty
           ? Text(
               'Add what happened',

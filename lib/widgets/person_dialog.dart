@@ -151,30 +151,36 @@ class _PersonEditorState extends State<_PersonEditor> {
       saving: _saving,
       onSave: _save,
       children: [
-        TextField(
-          controller: _name,
-          autofocus: widget.person == null,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Name',
-            border: OutlineInputBorder(),
-            isDense: true,
+        FieldHotkey(
+          'N',
+          child: TextField(
+            controller: _name,
+            autofocus: widget.person == null,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Name',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (_) => setState(() {}),
           ),
-          onChanged: (_) => setState(() {}),
         ),
         if (!_isSelf)
           Padding(
             padding: const EdgeInsets.only(top: 12),
-            child: TextField(
-              controller: _context,
-              decoration: const InputDecoration(
-                labelText: 'Context (optional)',
-                hintText: 'e.g. met at salsa',
-                helperText:
-                    'What tells them apart from others of the same '
-                    'name.',
-                border: OutlineInputBorder(),
-                isDense: true,
+            child: FieldHotkey(
+              'C',
+              child: TextField(
+                controller: _context,
+                decoration: const InputDecoration(
+                  labelText: 'Context (optional)',
+                  hintText: 'e.g. met at salsa',
+                  helperText:
+                      'What tells them apart from others of the same '
+                      'name.',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
               ),
             ),
           ),
@@ -189,73 +195,91 @@ class _PersonEditorState extends State<_PersonEditor> {
               style: theme.textTheme.bodySmall,
             )
           else
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final circle in widget.circles)
-                  FilterChip(
-                    label: Text(circle.name),
-                    selected: _circleIds.contains(circle.id),
-                    onSelected: (on) => setState(
-                      () => on
-                          ? _circleIds.add(circle.id)
-                          : _circleIds.remove(circle.id),
+            FieldHotkey(
+              'I',
+              focusOnly: true,
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final circle in widget.circles)
+                    FilterChip(
+                      label: Text(circle.name),
+                      selected: _circleIds.contains(circle.id),
+                      onSelected: (on) => setState(
+                        () => on
+                            ? _circleIds.add(circle.id)
+                            : _circleIds.remove(circle.id),
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
         ],
         Padding(
           padding: const EdgeInsets.only(top: 16),
-          child: TextField(
-            controller: _whatMatters,
-            minLines: 6,
-            maxLines: null,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: InputDecoration(
-              labelText: _isSelf
-                  ? 'What matters to you'
-                  : 'What matters to them',
-              hintText: '- 2026-10-05: starts a new job in November',
-              helperText:
-                  'One dated line each: facts, moments coming up, '
-                  'preferences.',
-              helperMaxLines: 2,
-              border: const OutlineInputBorder(),
-              floatingLabelBehavior: FloatingLabelBehavior.always,
+          child: FieldHotkey(
+            'W',
+            child: TextField(
+              controller: _whatMatters,
+              minLines: 6,
+              maxLines: null,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                labelText: _isSelf
+                    ? 'What matters to you'
+                    : 'What matters to them',
+                hintText: '- 2026-10-05: starts a new job in November',
+                helperText:
+                    'One dated line each: facts, moments coming up, '
+                    'preferences.',
+                helperMaxLines: 2,
+                border: const OutlineInputBorder(),
+                floatingLabelBehavior: FloatingLabelBehavior.always,
+              ),
             ),
           ),
         ),
-        TraitsField(
-          traits: widget.traits,
-          value: _traits,
-          actions: widget.actions,
-          partsTitle: (trait) => '${trait.name} for ${_text(_name) ?? 'them'}',
-          partsExplanation: (trait) =>
-              "Their own parts for ${trait.name}, in place of the "
-              "trait's: their own cadence, say.",
-          preview: switch ((widget.scoreParts, widget.person)) {
-            (final score?, final person?) => (trait, parts) => score(
-              Subject.person(person),
-              trait.id!,
-              parts,
-            ),
-            _ => null,
-          },
-          onChanged: (traits) => _traits = traits,
+        FieldHotkey(
+          'T',
+          focusOnly: true,
+          child: TraitsField(
+            traits: widget.traits,
+            value: _traits,
+            actions: widget.actions,
+            partsTitle: (trait) =>
+                '${trait.name} for ${_text(_name) ?? 'them'}',
+            partsExplanation: (trait) =>
+                "Their own parts for ${trait.name}, in place of the "
+                "trait's: their own cadence, say.",
+            preview: switch ((widget.scoreParts, widget.person)) {
+              (final score?, final person?) => (trait, parts) => score(
+                Subject.person(person),
+                trait.id!,
+                parts,
+              ),
+              _ => null,
+            },
+            onChanged: (traits) => _traits = traits,
+          ),
         ),
         if (!_isSelf && widget.person != null) ...[
           const SizedBox(height: 16),
-          SegmentedButton<String>(
-            showSelectedIcon: false,
-            segments: [
-              for (final MapEntry(:key, :value) in personStatuses.entries)
-                ButtonSegment(value: key, label: Text(value)),
-            ],
-            selected: {_status},
-            onSelectionChanged: (picked) =>
-                setState(() => _status = picked.single),
+          FieldHotkey(
+            'S',
+            onPressed: () => setState(
+              () => _status = nextOf(personStatuses.keys.toList(), _status),
+            ),
+            child: SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: [
+                for (final MapEntry(:key, :value) in personStatuses.entries)
+                  ButtonSegment(value: key, label: Text(value)),
+              ],
+              selected: {_status},
+              onSelectionChanged: (picked) =>
+                  setState(() => _status = picked.single),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -543,7 +567,16 @@ class _NamedDialogState extends State<_NamedDialog> {
             }),
           )
         : null;
+    final letters = fieldLetters([
+      'name',
+      widget.detailLabel,
+      if (widget.map != null) 'map',
+      ?widget.group?.label,
+      if (widget.scoring != null) 'combine',
+      if (widget.extra != null) 'travel',
+    ]);
     return SaveOrDiscard(
+      escLeavesFields: true,
       changed: () =>
           _name.text.trim() != (widget.name ?? widget.typed ?? '').trim() ||
           _detail.text.trim() != (widget.detail ?? '').trim() ||
@@ -563,77 +596,92 @@ class _NamedDialogState extends State<_NamedDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                controller: _name,
-                autofocus: widget.name == null,
-                maxLength: 50,
-                textCapitalization: TextCapitalization.words,
-                decoration: InputDecoration(
-                  labelText: 'Name',
-                  hintText: widget.nameHint,
-                  border: const OutlineInputBorder(),
-                  isDense: true,
+              FieldHotkey(
+                letters['name'],
+                child: TextField(
+                  controller: _name,
+                  autofocus: widget.name == null,
+                  maxLength: 50,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    labelText: 'Name',
+                    hintText: widget.nameHint,
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
                 ),
-                onChanged: (_) => setState(() {}),
               ),
-              TextField(
-                controller: _detail,
-                minLines: 1,
-                maxLines: 3,
-                decoration: InputDecoration(
-                  labelText: widget.detailLabel,
-                  hintText: widget.detailHint,
-                  border: const OutlineInputBorder(),
-                  isDense: true,
+              FieldHotkey(
+                letters[widget.detailLabel],
+                child: TextField(
+                  controller: _detail,
+                  minLines: 1,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    labelText: widget.detailLabel,
+                    hintText: widget.detailHint,
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
                 ),
               ),
               if (widget.map != null) ...[
                 const SizedBox(height: 16),
-                TextField(
-                  controller: _map,
-                  minLines: 1,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    labelText: 'Map location (optional)',
-                    hintText:
-                        'An address or a link, for events there without one',
-                    helperText: had == null ? null : 'Was: $had',
-                    helperMaxLines: 3,
-                    border: const OutlineInputBorder(),
-                    isDense: true,
+                FieldHotkey(
+                  letters['map'],
+                  child: TextField(
+                    controller: _map,
+                    minLines: 1,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      labelText: 'Map location (optional)',
+                      hintText:
+                          'An address or a link, for events there without one',
+                      helperText: had == null ? null : 'Was: $had',
+                      helperMaxLines: 3,
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
                   ),
                 ),
               ],
               if (widget.group case final group?) ...[
                 const SizedBox(height: 16),
-                PickerField(
-                  label: '${group.label} (optional)',
-                  nodes: locationGroupNodes(group.choices),
-                  value: _group,
-                  none: 'None',
-                  groupsPickable: true,
-                  searchHint: 'Search groups',
-                  onChanged: (picked) => setState(() => _group = picked),
+                FieldHotkey(
+                  letters[group.label],
+                  child: PickerField(
+                    label: '${group.label} (optional)',
+                    nodes: locationGroupNodes(group.choices),
+                    value: _group,
+                    none: 'None',
+                    groupsPickable: true,
+                    searchHint: 'Search groups',
+                    onChanged: (picked) => setState(() => _group = picked),
+                  ),
                 ),
               ],
               if (widget.scoring case final scoring?)
-                AggregationTile(
-                  title: 'How its people combine',
-                  label: 'How its people combine',
-                  explanation: "Their health, into the circle's.",
-                  value: _scoring,
-                  items: scoring.items,
-                  noun: 'people',
-                  fallback: scoring.fallback,
-                  fallbackValue: scoring.fallbackValue,
-                  onChanged: (picked) => setState(() {
-                    _scoring = picked;
-                    _scoringChanged = true;
-                  }),
+                FieldHotkey(
+                  letters['combine'],
+                  child: AggregationTile(
+                    title: 'How its people combine',
+                    label: 'How its people combine',
+                    explanation: "Their health, into the circle's.",
+                    value: _scoring,
+                    items: scoring.items,
+                    noun: 'people',
+                    fallback: scoring.fallback,
+                    fallbackValue: scoring.fallbackValue,
+                    onChanged: (picked) => setState(() {
+                      _scoring = picked;
+                      _scoringChanged = true;
+                    }),
+                  ),
                 ),
               if (widget.extra case final extra?) ...[
                 const SizedBox(height: 16),
-                extra,
+                FieldHotkey(letters['travel'], focusOnly: true, child: extra),
               ],
             ],
           ),

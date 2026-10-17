@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'hotkeys.dart';
 
@@ -104,21 +103,14 @@ class PickerSearchField extends StatelessWidget {
   final ValueChanged<String>? onSubmitted;
 
   @override
-  Widget build(BuildContext context) => HotkeyBindings(
-    bindings: [
-      HotkeyBinding(
-        const HotkeyTrigger.key(LogicalKeyboardKey.slash),
-        search.focus.requestFocus,
-      ),
-    ],
-    child: ListenableBuilder(listenable: search, builder: _field),
-  );
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: search, builder: _field);
 
   Widget _field(BuildContext context, Widget? _) => Row(
     children: [
       Expanded(
-        child: HotkeyHint(
-          Hotkey.search,
+        child: SearchHotkey(
+          focus: search.focus,
           child: TextField(
             controller: search.controller,
             focusNode: search.focus,

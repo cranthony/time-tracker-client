@@ -11,7 +11,6 @@ enum HotkeyPlace {
   events('On the Events page'),
   creating('Making or moving an event'),
   event('In an event'),
-  pickers('Picking from a list'),
   plan('On the Plan page');
 
   const HotkeyPlace(this.title);
@@ -108,6 +107,18 @@ class Hotkey {
     'Leave the text field, so letters are hotkeys again',
     HotkeyPlace.anywhere,
   );
+  static const search = Hotkey(
+    '/',
+    "Go to the search box shown, with what's in it selected",
+    HotkeyPlace.anywhere,
+  );
+  static const fieldLetters = Hotkey(
+    'A–Z',
+    'In a dialog, sheet or editor, go to a field by its letter -- hold Ctrl '
+        "to see them: a text field to type in, what's there selected; a "
+        'switch or checkbox flipped; a picker opened',
+    HotkeyPlace.anywhere,
+  );
 
   static const stepEvents = Hotkey(
     'J / K',
@@ -171,12 +182,24 @@ class Hotkey {
     'Its summary, selected, to type over',
     HotkeyPlace.event,
   );
+  static const priority = Hotkey('P', 'Its priority', HotkeyPlace.event);
+  static const commute = Hotkey(
+    'C',
+    'Whether it is part of a commute',
+    HotkeyPlace.event,
+  );
+  static const time = Hotkey('T', 'When it is', HotkeyPlace.event);
+  static const repeat = Hotkey('R', 'How it repeats', HotkeyPlace.event);
+  static const eventNotes = Hotkey(
+    'N',
+    'What happened: its notes',
+    HotkeyPlace.event,
+  );
   static const deleteEvent = Hotkey(
     'Delete',
     'Cancel or delete it, as its trash can does',
     HotkeyPlace.event,
   );
-  static const search = Hotkey('/', 'Search', HotkeyPlace.pickers);
 
   static const planItems = Hotkey(
     'J / K',
@@ -203,6 +226,8 @@ class Hotkey {
     stepAny,
     scrollAny,
     leaveField,
+    search,
+    fieldLetters,
     stepEvents,
     openEvent,
     days,
@@ -219,8 +244,12 @@ class Hotkey {
     description,
     actions,
     summary,
+    priority,
+    commute,
+    time,
+    repeat,
+    eventNotes,
     deleteEvent,
-    search,
     planItems,
     planPanes,
   ];
@@ -261,18 +290,21 @@ enum WhenCovered {
   run,
 }
 
-/// A key ([trigger]) and what it does ([onPressed]).
+/// A key ([trigger]) and what it does ([onPressed]) -- while [when]
+/// says it does, if it's given: while what it's for is shown, say.
 @immutable
 class HotkeyBinding {
   const HotkeyBinding(
     this.trigger,
     this.onPressed, {
     this.whenCovered = WhenCovered.ignore,
+    this.when,
   });
 
   final HotkeyTrigger trigger;
   final VoidCallback onPressed;
   final WhenCovered whenCovered;
+  final ValueGetter<bool>? when;
 }
 
 /// The app's hotkeys, kept by a [HotkeyScope] over the navigator, and
@@ -387,7 +419,10 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
     for (final state in _registered.reversed) {
       final current = state.isCurrent;
       for (final b in state.widget.bindings) {
-        if (current || b.whenCovered == WhenCovered.run) yield b;
+        if ((current || b.whenCovered == WhenCovered.run) &&
+            (b.when?.call() ?? true)) {
+          yield b;
+        }
       }
     }
   }
@@ -530,6 +565,9 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
     void visit(Element element) {
       if (element case StatefulElement(:final ScrollableState state)) {
         final position = state.position;
+        // Not a pane swiped away -- another of the Plan page's, say -- that
+        // its page view keeps.
+        if (!isPainted(element)) return;
         if (position.axis == Axis.vertical &&
             position.hasContentDimensions &&
             position.maxScrollExtent > position.minScrollExtent &&
@@ -599,6 +637,179 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
     super.dispose();
   }
 }
+
+/// Whether [context] is painted: not in a page of a [PageView] or
+/// [TabBarView] swiped away but kept, nor [Offstage].
+bool isPainted(BuildContext context) {
+  if (!context.mounted) return false;
+  RenderObject? child = context.findRenderObject();
+  if (child == null || !child.attached) return false;
+  for (var parent = child.parent; parent != null; parent = parent.parent) {
+    if (!parent.paintsChild(child!)) return false;
+    child = parent;
+  }
+  return true;
+}
+
+/// [child], a search box focused by [focus]: "/" puts the cursor in it,
+/// what's in it selected, while it's shown, and holding Ctrl shows "/"
+/// on it.
+class SearchHotkey extends StatelessWidget {
+  const SearchHotkey({super.key, required this.focus, required this.child});
+
+  final FocusNode focus;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => HotkeyBindings(
+    bindings: [
+      HotkeyBinding(
+        const HotkeyTrigger.key(LogicalKeyboardKey.slash),
+        () => focusField(focus),
+        when: () => isPainted(context),
+      ),
+    ],
+    child: HotkeyHint(Hotkey.search, child: child),
+  );
+}
+
+/// Puts the cursor in the text field [focus] focuses, what's in it
+/// selected, to type over, and scrolls it into view.
+void focusField(FocusNode focus) {
+  focus.requestFocus();
+  final context = focus.context;
+  if (context == null) return;
+  Scrollable.ensureVisible(
+    context,
+    alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+    duration: const Duration(milliseconds: 120),
+  );
+  // Once it has focus, which puts the cursor at the end.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!context.mounted) return;
+    final controller = context
+        .findAncestorStateOfType<EditableTextState>()
+        ?.widget
+        .controller;
+    if (controller == null) return;
+    controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: controller.text.length,
+    );
+  });
+}
+
+/// A field of a dialog, sheet or editor, [child], with [letter] to go to
+/// it while no text field has focus: a text field, focused, what's in it
+/// selected; anything else that can be tapped -- a switch, a picker --
+/// tapped, as Enter would -- or, with [focusOnly], for a field of many
+/// parts, only focused, for J, K and Enter to go on from; or, with
+/// [onPressed], that. Holding Ctrl shows the letter on it. Only while
+/// it's shown, and not while [enabled] is false.
+class FieldHotkey extends StatefulWidget {
+  const FieldHotkey(
+    this.letter, {
+    super.key,
+    this.onPressed,
+    this.enabled = true,
+    this.focusOnly = false,
+    required this.child,
+  }) : assert(letter == null || letter.length == 1);
+
+  /// One letter, A to Z -- or a digit, for one of a list numbered; null
+  /// for none, where they've run out.
+  final String? letter;
+  final VoidCallback? onPressed;
+  final bool enabled;
+  final bool focusOnly;
+  final Widget child;
+
+  @override
+  State<FieldHotkey> createState() => _FieldHotkeyState();
+}
+
+class _FieldHotkeyState extends State<FieldHotkey> {
+  /// Around [FieldHotkey.child], to find what in it takes focus.
+  final _node = FocusNode(canRequestFocus: false, skipTraversal: true);
+
+  @override
+  void dispose() {
+    _node.dispose();
+    super.dispose();
+  }
+
+  void _go() {
+    if (widget.onPressed case final onPressed?) return onPressed();
+    final target = _node.traversalDescendants
+        .where((n) => n.canRequestFocus && !n.skipTraversal)
+        .firstOrNull;
+    final context = target?.context;
+    if (target == null || context == null) return;
+    final editable =
+        context.widget is EditableText ||
+        context.findAncestorWidgetOfExactType<EditableText>() != null;
+    if (editable) return focusField(target);
+    target.requestFocus();
+    if (widget.focusOnly) {
+      Scrollable.ensureVisible(
+        context,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        duration: const Duration(milliseconds: 120),
+      );
+      return;
+    }
+    Actions.maybeInvoke(context, const ActivateIntent());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final letter = widget.letter?.toUpperCase();
+    final field = Focus(focusNode: _node, child: widget.child);
+    return HotkeyBindings(
+      bindings: [
+        if (letter != null)
+          HotkeyBinding(
+            HotkeyTrigger.key(
+              LogicalKeyboardKey(letter.toLowerCase().codeUnitAt(0)),
+            ),
+            _go,
+            when: () => widget.enabled && isPainted(this.context),
+          ),
+      ],
+      child: letter == null
+          ? field
+          : HotkeyHint(Hotkey(letter, '', HotkeyPlace.anywhere), child: field),
+    );
+  }
+}
+
+/// A letter for each of [names] -- fields named by what they hold, in
+/// the order they're shown -- for [FieldHotkey]s: the first of its own
+/// not taken already, nor [taken], nor J or K, which go from one thing
+/// to the next; none if every one is.
+Map<String, String> fieldLetters(
+  Iterable<String> names, {
+  Set<String> taken = const {},
+}) {
+  final used = {'J', 'K', ...taken};
+  final letters = <String, String>{};
+  for (final name in names) {
+    for (final c in name.toUpperCase().split('')) {
+      if (c.compareTo('A') < 0 || c.compareTo('Z') > 0 || used.contains(c)) {
+        continue;
+      }
+      letters[name] = c;
+      used.add(c);
+      break;
+    }
+  }
+  return letters;
+}
+
+/// The one after [current] in [options], or after the last, the first:
+/// what a choice's letter picks next.
+T nextOf<T>(List<T> options, T current) =>
+    options[(options.indexOf(current) + 1) % options.length];
 
 /// Answers [hotkeys] for everything under it: put over the navigator, so
 /// it hears keys pressed in every page and dialog. It shakes the screen
@@ -883,12 +1094,15 @@ class HotkeyHint extends StatelessWidget {
             ? hotkey.hint
             : null;
         final current = ModalRoute.of(context)?.isCurrent ?? true;
-        if (label == null || !current) return child!;
+        // A stack all the same, so what's in it -- a text field being typed
+        // in -- is kept as the hint comes and goes.
         return Stack(
           clipBehavior: Clip.none,
+          fit: StackFit.passthrough,
           children: [
             child!,
-            Positioned(top: -6, right: -6, child: HotkeyBadge(label)),
+            if (label != null && current)
+              Positioned(top: -6, right: -6, child: HotkeyBadge(label)),
           ],
         );
       },

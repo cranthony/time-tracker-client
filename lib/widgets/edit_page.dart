@@ -9,7 +9,9 @@ import 'hotkeys.dart';
 /// and Save ([saveLabel]) is off while there's one, or while [saving].
 /// Its close button calls it off. Ctrl+Enter saves, and Esc calls it off
 /// -- but with changes made, as [changed] says (by default, always: the
-/// page can't tell), the first Esc only warns ([SaveOrDiscard]).
+/// page can't tell), the first Esc only warns ([SaveOrDiscard]); in a
+/// text field, the first Esc leaves it, for its fields' letters
+/// ([FieldHotkey]).
 class EditPage extends StatelessWidget {
   const EditPage({
     super.key,
@@ -39,6 +41,7 @@ class EditPage extends StatelessWidget {
     return SaveOrDiscard(
       changed: changed ?? () => true,
       onSave: saving || problem != null ? null : onSave,
+      escLeavesFields: true,
       child: Scaffold(
         appBar: AppBar(
           title: Text(title),

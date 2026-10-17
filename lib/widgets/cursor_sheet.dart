@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'hotkeys.dart';
 import 'cursor_modes.dart';
 import 'cursor_snap.dart';
 
@@ -56,35 +57,51 @@ Future<void> showCursorSheet(
                 ),
                 if (anchor case final picked?) ...[
                   heading('The event it is inside of'),
-                  RadioGroup<AnchorMode>(
-                    groupValue: picked,
-                    onChanged: (m) {
-                      if (m == null) return;
+                  FieldHotkey(
+                    'I',
+                    onPressed: () {
+                      final m = nextOf(AnchorMode.values, picked);
                       setState(() => anchor = m);
                       onAnchorMode?.call(m);
                     },
-                    child: Column(
-                      children: [
-                        for (final m in AnchorMode.values)
-                          mode(m, picked, m.label, m.description, m.icon),
-                      ],
+                    child: RadioGroup<AnchorMode>(
+                      groupValue: picked,
+                      onChanged: (m) {
+                        if (m == null) return;
+                        setState(() => anchor = m);
+                        onAnchorMode?.call(m);
+                      },
+                      child: Column(
+                        children: [
+                          for (final m in AnchorMode.values)
+                            mode(m, picked, m.label, m.description, m.icon),
+                        ],
+                      ),
                     ),
                   ),
                 ],
                 if (end case final picked?) ...[
                   heading('What it does with the events in its way'),
-                  RadioGroup<EndMode>(
-                    groupValue: picked,
-                    onChanged: (m) {
-                      if (m == null) return;
+                  FieldHotkey(
+                    'W',
+                    onPressed: () {
+                      final m = nextOf(EndMode.values, picked);
                       setState(() => end = m);
                       onEndMode?.call(m);
                     },
-                    child: Column(
-                      children: [
-                        for (final m in EndMode.values)
-                          mode(m, picked, m.label, m.description, m.icon),
-                      ],
+                    child: RadioGroup<EndMode>(
+                      groupValue: picked,
+                      onChanged: (m) {
+                        if (m == null) return;
+                        setState(() => end = m);
+                        onEndMode?.call(m);
+                      },
+                      child: Column(
+                        children: [
+                          for (final m in EndMode.values)
+                            mode(m, picked, m.label, m.description, m.icon),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -97,33 +114,39 @@ Future<void> showCursorSheet(
                       style: theme.textTheme.bodySmall,
                     ),
                   ),
-                for (final s in SnapTo.values)
+                for (final (i, s) in SnapTo.values.indexed)
                   if (snap != null)
-                    CheckboxListTile(
-                      value: stops.contains(s),
-                      title: Text(s.label),
-                      onChanged: (on) {
-                        setState(
-                          () => stops = {
-                            for (final t in SnapTo.values)
-                              if (t == s ? on ?? false : stops.contains(t)) t,
-                          },
-                        );
-                        onSnap?.call(stops);
-                      },
+                    FieldHotkey(
+                      i < 9 ? '${i + 1}' : null,
+                      child: CheckboxListTile(
+                        value: stops.contains(s),
+                        title: Text(s.label),
+                        onChanged: (on) {
+                          setState(
+                            () => stops = {
+                              for (final t in SnapTo.values)
+                                if (t == s ? on ?? false : stops.contains(t)) t,
+                            },
+                          );
+                          onSnap?.call(stops);
+                        },
+                      ),
                     ),
                 if (onEditTime != null)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
                     child: Align(
                       alignment: AlignmentDirectional.centerStart,
-                      child: TextButton.icon(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          onEditTime();
-                        },
-                        icon: const Icon(Icons.schedule),
-                        label: const Text('Edit its time'),
+                      child: FieldHotkey(
+                        'T',
+                        child: TextButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            onEditTime();
+                          },
+                          icon: const Icon(Icons.schedule),
+                          label: const Text('Edit its time'),
+                        ),
                       ),
                     ),
                   ),

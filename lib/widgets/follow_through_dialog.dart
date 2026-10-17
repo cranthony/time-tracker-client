@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'hotkeys.dart';
 import '../models/event.dart';
 
 /// A change called off by the user: nothing is saved, and the dialog it
@@ -54,24 +55,28 @@ Future<Set<String>?> askFollowThrough(
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 8),
-                for (final e in cancels)
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(switch (e.summary) {
-                      final s? when s.isNotEmpty => s,
-                      _ => '(no title)',
-                    }),
-                    subtitle: Text(
-                      '${when(e)}\n'
-                      '${counts.contains(e.id) ? 'Counts against follow-through' : 'A change of plan'}',
+                for (final (i, e) in cancels.indexed)
+                  FieldHotkey(
+                    i < 9 ? '${i + 1}' : null,
+                    child: SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(switch (e.summary) {
+                        final s? when s.isNotEmpty => s,
+                        _ => '(no title)',
+                      }),
+                      subtitle: Text(
+                        '${when(e)}\n'
+                        '${counts.contains(e.id) ? 'Counts against follow-through' : 'A change of plan'}',
+                      ),
+                      isThreeLine: true,
+                      value: counts.contains(e.id),
+                      onChanged: e.id == null
+                          ? null
+                          : (on) => setState(
+                              () =>
+                                  on ? counts.add(e.id!) : counts.remove(e.id),
+                            ),
                     ),
-                    isThreeLine: true,
-                    value: counts.contains(e.id),
-                    onChanged: e.id == null
-                        ? null
-                        : (on) => setState(
-                            () => on ? counts.add(e.id!) : counts.remove(e.id),
-                          ),
                   ),
               ],
             ),
