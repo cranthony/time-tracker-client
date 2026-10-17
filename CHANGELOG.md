@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.123.0
+
+- Actions, action groups and the priority colors save the way people
+  and places do: each change is kept on the device and sent once, in
+  order, and shows at once on every page. One changed elsewhere since is
+  merged when it's to other fields, or waits for you to resolve, field by
+  field, from the bar at the foot of the page.
+- Action saves waiting from before the update carry over, so nothing
+  waiting is lost.
+
 ## 7.122.0
 
 - A refresh button beside the menu, on the Day, Plan and Notes pages,

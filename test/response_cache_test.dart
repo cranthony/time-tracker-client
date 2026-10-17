@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
-import 'package:time_tracker_client/outbox/action_outbox.dart';
+import 'package:time_tracker_client/outbox/action_writes.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/note.dart';
@@ -358,7 +358,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: PlanScreen(
-            outbox: _idleActionOutbox(),
+            outbox: _idleActionWrites(),
             repository: repo,
             serverLabel: 'test',
           ),
@@ -492,7 +492,5 @@ class _GatedActionsRepository extends InMemoryActionsRepository {
 }
 
 /// For a Actions page that saves nothing.
-ActionOutbox _idleActionOutbox() => ActionOutbox(
-  store: InMemoryOutboxStore(),
-  repository: InMemoryActionsRepository(),
+ActionWrites _idleActionWrites() => ActionWrites.local(InMemoryActionsRepository(),
 );

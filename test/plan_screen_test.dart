@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
-import 'package:time_tracker_client/outbox/pending_action_save.dart';
+import 'package:time_tracker_client/outbox/pending_write.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
-import 'package:time_tracker_client/outbox/action_outbox.dart';
+import 'package:time_tracker_client/outbox/action_writes.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/habit.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
@@ -32,7 +32,7 @@ void main() {
   /// with [events], a summary of them, measured from [lastCompaction].
   Widget app(
     ActionsRepository repo, {
-    ActionOutbox? outbox,
+    ActionWrites? outbox,
     Future<void> Function()? onSignIn,
     EventsRepository? events,
     DateTime? lastCompaction,
@@ -42,7 +42,7 @@ void main() {
       repository: repo,
       outbox:
           outbox ??
-          (ActionOutbox(store: InMemoryOutboxStore(), repository: repo)
+          (ActionWrites.local(repo)
             ..start()),
       serverLabel: 'offline demo',
       onSignIn: onSignIn,
@@ -707,10 +707,10 @@ void main() {
 
   testWidgets('an action that failed to save is still there when the app opens '
       'again', (tester) async {
-    final store = InMemoryOutboxStore<PendingActionSave>();
+    final store = InMemoryOutboxStore<PendingWrite>();
     final repo = _GatedActionsRepository(tree());
-    ActionOutbox outbox() =>
-        ActionOutbox(store: store, repository: repo)..start();
+    ActionWrites outbox() =>
+        ActionWrites.local(repo, store: store)..start();
     await tester.pumpWidget(app(repo, outbox: outbox()));
     await tester.pumpAndSettle();
     await addAction(tester, 'Running');
@@ -727,11 +727,11 @@ void main() {
 
   testWidgets('a new action saved by the background task stays shown until '
       'the actions are fetched with it', (tester) async {
-    final store = InMemoryOutboxStore<PendingActionSave>();
+    final store = InMemoryOutboxStore<PendingWrite>();
     final server = tree();
     final repo = _GatedActionsRepository(server);
     // Not started: as when the app is in the background.
-    final outbox = ActionOutbox(store: store, repository: repo);
+    final outbox = ActionWrites.local(repo, store: store);
     await tester.pumpWidget(app(repo, outbox: outbox));
     await tester.pumpAndSettle();
     await addAction(tester, 'Running');
@@ -739,10 +739,7 @@ void main() {
     expect(find.byTooltip('Saving…'), findsOneWidget);
 
     // The background task saves it, with its own outbox.
-    await ActionOutbox(
-      store: store,
-      repository: server,
-    ).flush(ignoreBackoff: true);
+    await ActionWrites.local(server, store: store).flush(ignoreBackoff: true);
     repo.fetchGate = Completer();
     final fetched = repo.fetches;
 

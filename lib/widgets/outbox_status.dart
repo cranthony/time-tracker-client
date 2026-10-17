@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../outbox/action_outbox.dart';
 import '../outbox/note_outbox.dart';
 import '../outbox/outbox.dart';
-import '../outbox/pending_action_save.dart';
 import '../outbox/pending_note.dart';
 import '../outbox/write_queue.dart';
 import 'write_conflict_dialog.dart';
@@ -208,40 +206,6 @@ class WriteQueueStatus extends OutboxStatus<PendingWrite> {
 
   @override
   Future<bool> drop(PendingWrite item) => _writes.drop(item);
-}
-
-/// The [ActionOutbox]'s part of the [StatusBar]: each save by the
-/// action's name, from [nameOf] for one it changes.
-class ActionOutboxStatus extends OutboxStatus<PendingActionSave> {
-  ActionOutboxStatus(ActionOutbox super.outbox, {this.nameOf});
-
-  /// The name of the action with an id, if it's known.
-  final String? Function(String actionId)? nameOf;
-
-  ActionOutbox get _actions => outbox as ActionOutbox;
-
-  @override
-  String get title => 'Actions waiting to save';
-
-  @override
-  String things(int n) => n == 1 ? '1 action' : '$n actions';
-
-  @override
-  String label(PendingActionSave item) =>
-      switch (item.isNew ? item.action.name : nameOf?.call(item.actionId)) {
-        final name? when name.trim().isNotEmpty => '“${name.trim()}”',
-        _ => item.isNew ? 'a new action' : 'an action',
-      };
-
-  @override
-  void retry(PendingActionSave item) => _actions.retry(item.actionId);
-
-  @override
-  Future<bool> drop(PendingActionSave item) async {
-    if (outbox.isSending(item)) return false;
-    _actions.discard(item.actionId);
-    return true;
-  }
 }
 
 /// The [NoteOutbox]'s part of the [StatusBar]: each note by its time and

@@ -163,8 +163,7 @@ class NoteOutbox extends Outbox<PendingNote, void> {
 
   @override
   bool retries(Object error) =>
-      !_sendingChange ||
-      describeServerError(error).kind != FailureKind.refused;
+      !_sendingChange || describeServerError(error).kind != FailureKind.refused;
 
   Future<List<Note>> _fetchOnServer() async => _onServer ??= await _repository
       .uncompactedNotes()

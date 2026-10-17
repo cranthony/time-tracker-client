@@ -28,7 +28,22 @@ class WriteKind {
     this.deleteArgument,
     required this.writable,
     this.single = false,
+    this.itemIn,
+    this.updateCalls,
   });
+
+  /// The item, the [WriteKind] [id], in what a create or update gave --
+  /// for a tool that gives more than the item itself (an action's, with
+  /// those it moved); null if it's not there. Without it, the item is
+  /// what the tool gave, or that under [argument].
+  final Map<String, Object?>? Function(Map<String, Object?> result, String id)?
+  itemIn;
+
+  /// For a [single] kind whose tool sets one part at a time (a priority's
+  /// color): the arguments of each call an update's changes make, in
+  /// order, in place of [argument] wrapping them all.
+  final List<Map<String, Object?>> Function(Map<String, Object?> changes)?
+  updateCalls;
 
   /// Whether there's just the one of it -- settings, say -- set whole,
   /// with neither id nor version: its writes are all updates to [one].
@@ -95,6 +110,113 @@ class WriteKind {
       Trait.fromJson({'id': '', ...item}).toJson();
 
   static Map<String, Object?> _same(Map<String, Object?> item) => item;
+
+  static Map<String, Object?> _action(Map<String, Object?> item) => {
+    for (final key in actionFields)
+      if (item.containsKey(key)) key: item[key],
+  };
+
+  static Map<String, Object?> _actionGroup(Map<String, Object?> item) => {
+    for (final key in actionGroupFields)
+      if (item.containsKey(key)) key: item[key],
+  };
+
+  /// What an action's create and update take.
+  static const actionFields = [
+    'id',
+    'group_id',
+    'name',
+    'status',
+    'background_color',
+    'priority',
+    'note',
+    'commute',
+  ];
+
+  /// What an action group's create and update take.
+  static const actionGroupFields = [
+    'id',
+    'group_id',
+    'name',
+    'background_color',
+    'priority',
+    'note',
+  ];
+
+  /// The one listed in [result]'s "changed" -- what an action's or
+  /// group's write changed, it first -- with [id].
+  static Map<String, Object?>? _changed(
+    Map<String, Object?> result,
+    String id,
+  ) => switch (result['changed']) {
+    final List changed =>
+      changed
+          .whereType<Map>()
+          .where((i) => i['id'] == id)
+          .firstOrNull
+          ?.cast<String, Object?>(),
+    _ => null,
+  };
+
+  static const action = WriteKind(
+    name: 'action',
+    noun: 'action',
+    argument: 'action',
+    createTool: 'create_action',
+    updateTool: 'update_action',
+    writable: _action,
+    itemIn: _changed,
+  );
+
+  static const actionGroup = WriteKind(
+    name: 'action_group',
+    noun: 'action group',
+    argument: 'group',
+    createTool: 'create_action_group',
+    updateTool: 'update_action_group',
+    deleteTool: 'delete_action_group',
+    deleteArgument: 'group_id',
+    writable: _actionGroup,
+    itemIn: _changed,
+  );
+
+  /// Each priority's color, as one item: {"0": "#rrggbb", ...}, a key a
+  /// priority. Each color changed is set by a call of its own.
+  static const priorityColors = WriteKind(
+    name: 'priority_colors',
+    noun: 'priority colors',
+    argument: 'colors',
+    createTool: 'update_priority_color',
+    updateTool: 'update_priority_color',
+    writable: _same,
+    single: true,
+    itemIn: _colorsIn,
+    updateCalls: _colorCalls,
+  );
+
+  /// The priority colors in [result], `update_priority_color`'s, as the
+  /// one item they make.
+  static Map<String, Object?>? _colorsIn(
+    Map<String, Object?> result,
+    String id,
+  ) => switch (result['colors']) {
+    final List colors => priorityColorsItem(colors),
+    _ => null,
+  };
+
+  /// `get_priority_colors`'s [colors] as the one item they make.
+  static Map<String, Object?> priorityColorsItem(List colors) => {
+    for (final c in colors.whereType<Map>())
+      if (c['priority'] case final int p) '$p': c['color'],
+    'id': one,
+  };
+
+  static List<Map<String, Object?>> _colorCalls(Map<String, Object?> changes) =>
+      [
+        for (final MapEntry(:key, :value) in changes.entries)
+          if (int.tryParse(key) case final priority? when value is String)
+            {'priority': priority, 'color': value},
+      ];
 
   static const location = WriteKind(
     name: 'location',
@@ -179,6 +301,9 @@ class WriteKind {
       habit,
       trait,
       scoringDefaults,
+      action,
+      actionGroup,
+      priorityColors,
     ])
       k.name: k,
   };
@@ -422,6 +547,35 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
     schedule(immediately: true);
   }
 
+  /// Sends [write] again, now -- its error, and any refusal, let go --
+  /// with [changes] in place of its own, if they're given: then, if it was
+  /// tried, as a write of its own, since one tried may have been made,
+  /// unheard, and sent again by its id it would be answered as it was.
+  /// False if it's being sent.
+  Future<bool> resend(
+    PendingWrite write, {
+    Map<String, Object?>? changes,
+  }) async {
+    final resent = await replaceUnlessSending(write.id, (w) {
+      final changed = changes == null
+          ? w
+          : w.attempts == 0
+          ? w.rewritten(changes: changes)
+          : PendingWrite.fromJson({
+              ...w.rewritten(changes: changes).toJson(),
+              'id': _newId(),
+              'attempts': 0,
+            });
+      return changed.copyWith(
+        refused: false,
+        lastError: () => null,
+        nextAttemptAt: () => null,
+      );
+    });
+    schedule(immediately: true);
+    return resent;
+  }
+
   // -- Resolving ---------------------------------------------------------
 
   /// The fields [write], [PendingWrite.conflicted], changes that were
@@ -620,6 +774,19 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
   Future<Map<String, Object?>?> _send(PendingWrite write) async {
     final kind = kindOf(write);
     final version = write.baseVersion;
+    if (kind.updateCalls case final calls?) {
+      // One call for each part changed, each made once by a write_id of
+      // its own.
+      Object? result;
+      for (final (i, arguments) in calls(write.changes).indexed) {
+        result = await _call(
+          kind.updateTool,
+          arguments,
+          i == 0 ? write.id : '${write.id}/${i + 1}',
+        );
+      }
+      return _item(kind, write, result);
+    }
     final (tool, arguments) = switch (write.op) {
       WriteOp.create => (
         kind.createTool,
@@ -661,7 +828,18 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
         },
       ),
     };
-    final result = await _call(tool, arguments, write.id);
+    return _item(kind, write, await _call(tool, arguments, write.id));
+  }
+
+  /// The item [write] made or changed, in what its tool gave: [result].
+  static Map<String, Object?>? _item(
+    WriteKind kind,
+    PendingWrite write,
+    Object? result,
+  ) {
+    if (kind.itemIn case final itemIn?) {
+      return result is Map ? itemIn(result.cast(), write.itemId) : null;
+    }
     // A create mostly gives the item under its kind's name, beside its
     // id; some, the item itself.
     return switch (result) {

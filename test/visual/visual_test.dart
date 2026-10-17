@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:time_tracker_client/widgets/sign_in_off_banner.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
-import 'package:time_tracker_client/outbox/action_outbox.dart';
+import 'package:time_tracker_client/outbox/action_writes.dart';
 import 'package:time_tracker_client/demo/sample_data.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/note.dart';
@@ -123,7 +123,7 @@ void main() {
     // The sample's habits focused on and people prioritized.
     Widget plan() => PlanScreen(
       memory: PlanMemory(focus: sample.focusStore()),
-      outbox: _idleActionOutbox(),
+      outbox: _idleActionWrites(),
       repository: sample.actionsRepository(),
       eventsRepository: sample.eventsRepository(),
       notesRepository: sample.notesRepository(),
@@ -1529,9 +1529,7 @@ void main() {
 Finder _tile(String name) => find.textContaining(name, findRichText: true).last;
 
 /// For a Plan page that saves nothing.
-ActionOutbox _idleActionOutbox() => ActionOutbox(
-  store: InMemoryOutboxStore(),
-  repository: InMemoryActionsRepository(),
+ActionWrites _idleActionWrites() => ActionWrites.local(InMemoryActionsRepository(),
 );
 
 /// The list a pane scrolls: not its search field, which scrolls too.

@@ -1,7 +1,9 @@
 import 'package:flutter/widgets.dart';
 
 import '../models/plan_action.dart';
-import '../outbox/action_outbox.dart';
+import '../outbox/action_writes.dart';
+import '../outbox/legacy_writes.dart';
+import '../outbox/write_queue.dart';
 import '../widgets/color_picker.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
@@ -45,12 +47,44 @@ abstract class ActionsRepository {
 /// together as one tree, and `create_`/`update_action` or
 /// `create_`/`update_action_group` for a group. They aren't kept in an
 /// order of their own there yet. The priority colors come with them
-/// (`get_priority_colors`), and set [priorityPalette].
+/// (`get_priority_colors`), and set [priorityPalette]. With [writes],
+/// actions, groups and the priority colors are written through it --
+/// queued, kept on the device and sent once, so a write never waits on
+/// the server -- and what's read is shown with them made.
 class McpActionsRepository implements ActionsRepository {
-  McpActionsRepository(this._client, {this._cache});
+  McpActionsRepository(this._client, {this._cache, this._writes});
 
   final McpClient _client;
   final ResponseCache? _cache;
+  final WriteQueue? _writes;
+
+  /// [result], as `actions` keeps it, with the writes waiting made to
+  /// its actions, groups and colors -- and kept as what changes are made
+  /// to.
+  Map<String, Object?> _withWrites(Object? result) {
+    final json = (result as Map).cast<String, Object?>();
+    final writes = _writes;
+    if (writes == null) return json;
+    List<Map<String, Object?>> items(Object? list) => [
+      for (final i in list as List? ?? const []) (i as Map).cast(),
+    ];
+    final list = (json['actions'] as Map).cast<String, Object?>();
+    final colors = writes.shown(WriteKind.priorityColors, [
+      WriteKind.priorityColorsItem(json['priority_colors'] as List? ?? []),
+    ]).first;
+    return {
+      ...json,
+      'actions': {
+        ...list,
+        'actions': writes.shown(WriteKind.action, items(list['actions'])),
+      },
+      'groups': writes.shown(WriteKind.actionGroup, items(json['groups'])),
+      'priority_colors': [
+        for (final MapEntry(:key, :value) in colors.entries)
+          if (int.tryParse(key) case final p?) {'priority': p, 'color': value},
+      ],
+    };
+  }
 
   static const _cacheKey = 'actions';
 
@@ -70,8 +104,9 @@ class McpActionsRepository implements ActionsRepository {
       'priority_colors': colors,
     };
     await _cache?.write(_cacheKey, result);
-    applyPriorityColors(colors);
-    return actionTree(result);
+    final shown = _withWrites(result);
+    applyPriorityColors(shown['priority_colors']);
+    return actionTree(shown);
   }
 
   @override
@@ -79,8 +114,9 @@ class McpActionsRepository implements ActionsRepository {
     try {
       final result = await _cache?.read(_cacheKey);
       if (result == null) return null;
-      final tree = actionTree(result);
-      applyPriorityColors((result as Map)['priority_colors']);
+      final shown = _withWrites(result);
+      final tree = actionTree(shown);
+      applyPriorityColors(shown['priority_colors']);
       return tree;
     } catch (_) {
       return null; // From an older version of the app, perhaps.
@@ -89,6 +125,16 @@ class McpActionsRepository implements ActionsRepository {
 
   @override
   Future<void> updatePriorityColor(int priority, String color) async {
+    if (_writes case final writes?) {
+      final colors = writes.update(WriteKind.priorityColors, WriteKind.one, {
+        '$priority': color,
+      });
+      applyPriorityColors([
+        for (final MapEntry(:key, :value) in colors.entries)
+          if (int.tryParse(key) case final p?) {'priority': p, 'color': value},
+      ]);
+      return;
+    }
     final result = await _client.callTool('update_priority_color', {
       'priority': priority,
       'color': color,
@@ -96,36 +142,15 @@ class McpActionsRepository implements ActionsRepository {
     applyPriorityColors((result as Map)['colors']);
   }
 
-  /// [fields], keyed as the Plan page edits them, as the server's tools
-  /// take them: a parent is a group_id, and only what an action (or a
-  /// group, with [group]) has is sent.
   static Map<String, Object?> _fields(
     Map<String, Object?> fields, {
     required bool group,
-  }) => {
-    for (final MapEntry(:key, :value) in fields.entries)
-      if (key == 'parent_id')
-        'group_id': value
-      else if (_actionFields.contains(key) &&
-          !(group && _actionOnlyFields.contains(key)))
-        key: value,
-  };
-
-  static const _actionFields = {
-    'name',
-    'status',
-    'background_color',
-    'priority',
-    'note',
-    'commute',
-  };
-
-  /// What an action has and a group doesn't.
-  static const _actionOnlyFields = {'status', 'commute'};
+  }) => actionWriteFields(fields, group: group);
 
   @override
   Future<String?> createAction(Map<String, Object?> fields) async {
     final group = fields['kind'] == 'group';
+    if (_writes case final writes?) return ActionWrites(writes).create(fields);
     final result = await _client.callTool(
       group ? 'create_action_group' : 'create_action',
       {
@@ -148,6 +173,10 @@ class McpActionsRepository implements ActionsRepository {
     PlanAction action,
     Map<String, Object?> changes,
   ) async {
+    if (_writes case final writes?) {
+      ActionWrites(writes).update(action.id!, changes, group: action.isGroup);
+      return;
+    }
     // The server keeps whatever is left out or null, and clears what
     // clear_fields names.
     final fields = _fields(changes, group: action.isGroup);
@@ -271,7 +300,7 @@ class InMemoryActionsRepository implements ActionsRepository {
 
   @override
   Future<String> createAction(Map<String, Object?> fields) async {
-    final id = 'g${_nextId++}';
+    final id = fields['id'] as String? ?? 'g${_nextId++}';
     _actions.add(
       PlanAction.fromJson({'status': 'active', ...fields, 'id': id}),
     );
@@ -295,7 +324,7 @@ class InMemoryActionsRepository implements ActionsRepository {
   }
 }
 
-/// Provides the [ActionsRepository], and the [ActionOutbox] its edits go
+/// Provides the [ActionsRepository], and the [ActionWrites] its edits go
 /// out through, to the dialogs below it, so they needn't be passed through
 /// each: an event's actions can be added to, and edited, as they're
 /// picked. Without one, they're only picked.
@@ -308,7 +337,7 @@ class ActionsScope extends InheritedWidget {
   });
 
   final ActionsRepository repository;
-  final ActionOutbox outbox;
+  final ActionWrites outbox;
 
   /// The nearest [ActionsScope], or null if there's none.
   static ActionsScope? of(BuildContext context) =>

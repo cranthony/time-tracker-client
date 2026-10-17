@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/widgets/mode_stack.dart';
-import 'package:time_tracker_client/outbox/action_outbox.dart';
+import 'package:time_tracker_client/outbox/action_writes.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/note.dart';
@@ -2961,9 +2961,7 @@ void main() {
           eventsRepository: InMemoryEventsRepository(events),
           actionsRepository: InMemoryActionsRepository(),
           outbox: outbox,
-          actionOutbox: ActionOutbox(
-            store: InMemoryOutboxStore(),
-            repository: InMemoryActionsRepository(),
+          actionWrites: ActionWrites.local(InMemoryActionsRepository(),
           ),
           addNoteRequests: addNoteRequests,
           calendarTaps: calendarTaps,

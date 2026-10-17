@@ -8,9 +8,8 @@ import '../models/plan_action.dart';
 import '../models/person.dart';
 import '../models/event.dart';
 import '../models/time_split.dart';
-import '../outbox/action_outbox.dart';
+import '../outbox/action_writes.dart';
 import '../outbox/actions_shown.dart';
-import '../outbox/pending_action_save.dart';
 import '../services/event_store.dart';
 import '../services/events_repository.dart';
 import '../services/habits_repository.dart';
@@ -106,7 +105,7 @@ class PlanScreen extends StatefulWidget {
 
   /// Where saves go, to be sent in the background: the dialogs close at
   /// once, as notes' do.
-  final ActionOutbox outbox;
+  final ActionWrites outbox;
 
   /// Which server this build talks to, for the About dialog.
   final String serverLabel;
@@ -423,7 +422,6 @@ class _PlanScreenState extends State<PlanScreen> {
     try {
       final actions = await widget.repository.actions();
       if (!mounted) return;
-      widget.outbox.reconcile(actions);
       _loads.loaded();
       setState(() {
         // Saves made while these were fetched are still made to them.
@@ -535,17 +533,13 @@ class _PlanScreenState extends State<PlanScreen> {
   void _discard(String id) => widget.outbox.discard(id);
 
   /// The save that failed for the action shown as [id], if one did.
-  PendingActionSave? _failed(String? id) =>
+  ActionSave? _failed(String? id) =>
       widget.outbox.saves.where((s) => s.actionId == id && s.failed).lastOrNull;
 
   /// Whether the action shown as [id] is new, and the server hasn't made it
   /// yet: it can't be opened until then.
   bool _unmade(String? id) =>
-      widget.outbox.saves.any((s) => s.actionId == id && s.isNew) ||
-      // Made by the background task, which didn't say its id.
-      widget.outbox.justSaved.any(
-        (s) => s.item.actionId == id && s.item.isNew && s.result == null,
-      );
+      widget.outbox.saves.any((s) => s.actionId == id && s.isNew);
 
   /// Edits [action]; one whose save failed opens with the changes that
   /// weren't saved, to save again.
@@ -554,7 +548,7 @@ class _PlanScreenState extends State<PlanScreen> {
     final actions = await _allActions();
     if (!mounted) return;
     switch (_failed(id)) {
-      case PendingActionSave(isNew: true, :final changes):
+      case ActionSave(isNew: true, :final changes):
         await showNewActionDialog(
           context,
           create: (fields) async {

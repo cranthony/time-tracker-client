@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:time_tracker_client/models/note.dart';
-import 'package:time_tracker_client/outbox/action_outbox.dart';
+import 'package:time_tracker_client/outbox/action_writes.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/outbox/write_queue.dart';
@@ -136,19 +136,17 @@ void main() {
 
   test("a change to an action save that was tried is a new write", () async {
     final repository = _FailingActions();
-    final outbox = ActionOutbox(
-      store: InMemoryOutboxStore(),
-      repository: repository,
-    );
+    final outbox = ActionWrites.local(repository);
     outbox.update('a1', {'name': 'Run'}, group: false);
     await pumpEventQueue();
-    final first = outbox.saves.single.id;
+    final first = outbox.saves.single.write.id;
     await outbox.flush();
     outbox.update('a1', {'note': 'fast'}, group: false);
     await pumpEventQueue();
 
-    expect(outbox.saves.single.id, isNot(first));
-    expect(outbox.saves.single.changes, {'name': 'Run', 'note': 'fast'});
+    // After the one tried, which may have been made, unheard.
+    expect(outbox.saves.map((s) => s.write.id), [first, isNot(first)]);
+    expect(outbox.saves.last.changes, {'note': 'fast'});
     outbox.dispose();
   });
 }

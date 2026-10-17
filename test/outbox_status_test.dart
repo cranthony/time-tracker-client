@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:time_tracker_client/models/plan_action.dart';
-import 'package:time_tracker_client/outbox/action_outbox.dart';
+import 'package:time_tracker_client/outbox/action_writes.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
-import 'package:time_tracker_client/outbox/pending_action_save.dart';
+import 'package:time_tracker_client/outbox/write_queue.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/widgets/outbox_status.dart';
@@ -39,28 +39,29 @@ class _Actions extends InMemoryActionsRepository {
 
 void main() {
   late _Actions server;
-  late ActionOutbox outbox;
+  late ActionWrites outbox;
 
   /// The outbox, made in the test's zone, so its futures run in it, and
   /// the bar for it.
   Future<void> pump(WidgetTester tester) {
     server = _Actions();
-    outbox = ActionOutbox(
-      store: InMemoryOutboxStore<PendingActionSave>(),
-      repository: server,
-      clock: () => DateTime(2026, 10, 11, 9),
+    outbox = ActionWrites(
+      WriteQueue(
+        store: InMemoryOutboxStore<PendingWrite>(),
+        call: localActionCalls(server),
+        clock: () => DateTime(2026, 10, 11, 9),
+      ),
     );
+    // As the server listed it: named.
+    outbox.queue.shown(WriteKind.action, [
+      {'id': 'cook', 'name': 'Cooking'},
+    ]);
     addTearDown(outbox.dispose);
     return tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           bottomNavigationBar: StatusBar(
-            sources: [
-              ActionOutboxStatus(
-                outbox,
-                nameOf: (id) => id == 'cook' ? 'Cooking' : null,
-              ),
-            ],
+            sources: [WriteQueueStatus(outbox.queue)],
           ),
         ),
       ),
@@ -92,16 +93,19 @@ void main() {
       () => outbox.create({'name': 'Running', 'parent_id': null}),
     );
 
-    expect(find.text("Couldn't save “Running”: tap to fix it"), findsOneWidget);
+    expect(
+      find.text("Couldn't save New action “Running”: tap to fix it"),
+      findsOneWidget,
+    );
     await tester.tap(find.byType(StatusBar));
     await tester.pumpAndSettle();
-    expect(find.text('Actions waiting to save'), findsOneWidget);
+    expect(find.text('Changes waiting to save'), findsOneWidget);
     expect(find.text("Couldn't save: No room for it."), findsOneWidget);
 
     server.failWith = null;
     await send(tester, () => tester.tap(find.text('Try again')));
     expect(server.calls, ['create Running', 'create Running']);
-    expect(find.text('Actions waiting to save'), findsNothing);
+    expect(find.text('Changes waiting to save'), findsNothing);
     expect(find.text('Nothing waiting: everything is saved.'), findsOneWidget);
   });
 
@@ -115,17 +119,17 @@ void main() {
     );
 
     expect(
-      find.text('1 action waiting: trying again at 9:00 AM'),
+      find.text('1 change waiting: trying again at 9:00 AM'),
       findsOneWidget,
     );
     await tester.tap(find.byType(StatusBar));
     await tester.pumpAndSettle();
-    expect(find.text('“Cooking”'), findsOneWidget);
+    expect(find.text('Changes to action “Cooking”'), findsOneWidget);
     expect(find.textContaining('trying again at 9:00 AM.'), findsOneWidget);
 
     await tester.tap(find.text('Drop'));
     await tester.pumpAndSettle();
     expect(outbox.saves, isEmpty);
-    expect(find.textContaining('action waiting'), findsNothing);
+    expect(find.textContaining('change waiting'), findsNothing);
   });
 }
