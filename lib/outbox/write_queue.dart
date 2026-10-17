@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import '../models/habit.dart';
 import '../models/person.dart';
+import '../models/trait.dart';
+import '../models/travel_time.dart';
 import '../services/mcp_client.dart';
 import '../services/server_errors.dart';
 import 'outbox.dart';
@@ -24,7 +27,15 @@ class WriteKind {
     this.deleteTool,
     this.deleteArgument,
     required this.writable,
+    this.single = false,
   });
+
+  /// Whether there's just the one of it -- settings, say -- set whole,
+  /// with neither id nor version: its writes are all updates to [one].
+  final bool single;
+
+  /// The id the one of a [single] kind has in the queue.
+  static const one = 'one';
 
   /// What of [item], as the server lists one, a create takes: without
   /// what the server works out (a location's path, say).
@@ -48,7 +59,8 @@ class WriteKind {
 
   /// [item], as the user knows it: its name.
   String label(Map<String, Object?>? item) => switch (item?['name']) {
-    final String name when name.trim().isNotEmpty => '$noun “${name.trim()}”',
+    final String name when name.trim().isNotEmpty && !single =>
+      '$noun “${name.trim()}”',
     _ => noun,
   };
 
@@ -67,6 +79,23 @@ class WriteKind {
   static Map<String, Object?> _location(Map<String, Object?> item) =>
       Location.fromJson({'id': '', ...item}).toJson();
 
+  static Map<String, Object?> _circle(Map<String, Object?> item) =>
+      Circle.fromJson({'id': '', ...item}).toJson();
+
+  static Map<String, Object?> _locationGroup(Map<String, Object?> item) =>
+      LocationGroup.fromJson({'id': '', ...item}).toJson();
+
+  static Map<String, Object?> _travelTime(Map<String, Object?> item) =>
+      TravelTime.fromJson({'id': '', ...item}).toJson();
+
+  static Map<String, Object?> _habit(Map<String, Object?> item) =>
+      Habit.fromJson({'id': '', ...item}).toJson();
+
+  static Map<String, Object?> _trait(Map<String, Object?> item) =>
+      Trait.fromJson({'id': '', ...item}).toJson();
+
+  static Map<String, Object?> _same(Map<String, Object?> item) => item;
+
   static const location = WriteKind(
     name: 'location',
     noun: 'location',
@@ -78,9 +107,80 @@ class WriteKind {
     writable: _location,
   );
 
+  static const circle = WriteKind(
+    name: 'circle',
+    noun: 'circle',
+    argument: 'circle',
+    createTool: 'create_circle',
+    updateTool: 'update_circle',
+    deleteTool: 'delete_circle',
+    deleteArgument: 'circle_id',
+    writable: _circle,
+  );
+
+  static const locationGroup = WriteKind(
+    name: 'location_group',
+    noun: 'location group',
+    argument: 'group',
+    createTool: 'create_location_group',
+    updateTool: 'update_location_group',
+    deleteTool: 'delete_location_group',
+    deleteArgument: 'group_id',
+    writable: _locationGroup,
+  );
+
+  static const travelTime = WriteKind(
+    name: 'travel_time',
+    noun: 'travel time',
+    argument: 'travel_time',
+    createTool: 'create_travel_time',
+    updateTool: 'update_travel_time',
+    deleteTool: 'delete_travel_time',
+    deleteArgument: 'travel_time_id',
+    writable: _travelTime,
+  );
+
+  static const habit = WriteKind(
+    name: 'habit',
+    noun: 'habit',
+    argument: 'habit',
+    createTool: 'create_habit',
+    updateTool: 'update_habit',
+    writable: _habit,
+  );
+
+  static const trait = WriteKind(
+    name: 'trait',
+    noun: 'trait',
+    argument: 'trait',
+    createTool: 'create_trait',
+    updateTool: 'update_trait',
+    writable: _trait,
+  );
+
+  static const scoringDefaults = WriteKind(
+    name: 'scoring_defaults',
+    noun: 'scoring defaults',
+    argument: 'defaults',
+    createTool: 'set_scoring_defaults',
+    updateTool: 'set_scoring_defaults',
+    writable: _same,
+    single: true,
+  );
+
   /// Every kind, by name.
   static final all = {
-    for (final k in [person, location]) k.name: k,
+    for (final k in [
+      person,
+      location,
+      circle,
+      locationGroup,
+      travelTime,
+      habit,
+      trait,
+      scoringDefaults,
+    ])
+      k.name: k,
   };
 }
 
@@ -185,6 +285,17 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
       ],
     );
     return id;
+  }
+
+  /// [create], giving the new item as it's shown: [fields], with its id.
+  Map<String, Object?> created(WriteKind kind, Map<String, Object?> fields) {
+    final id = create(kind, fields);
+    return item(kind, id) ??
+        {
+          for (final MapEntry(:key, :value) in fields.entries)
+            if (key != 'version' && value != null) key: value,
+          'id': id,
+        };
   }
 
   /// Queues [changes] -- a null clears a field -- to the [kind] [id]: into
@@ -507,6 +618,18 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
           kind.argument: {...write.changes, 'id': write.itemId},
         },
       ),
+      WriteOp.update when kind.single => (
+        kind.updateTool,
+        <String, Object?>{
+          kind.argument: {
+            for (final MapEntry(:key, :value) in write.changes.entries)
+              key: ?value,
+          },
+          if (write.changes.entries.where((c) => c.value == null)
+              case final cleared when cleared.isNotEmpty)
+            'clear_fields': [for (final c in cleared) c.key],
+        },
+      ),
       WriteOp.update => (
         kind.updateTool,
         <String, Object?>{
@@ -530,10 +653,13 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
       ),
     };
     final result = await _call(tool, arguments, write.id);
-    // A create gives the item under its kind's name, beside its id.
+    // A create mostly gives the item under its kind's name, beside its
+    // id; some, the item itself.
     return switch (result) {
-      final Map map when write.op == WriteOp.create =>
-        (map[kind.argument] as Map?)?.cast<String, Object?>(),
+      final Map map when kind.single => {...map.cast(), 'id': WriteKind.one},
+      final Map map
+          when write.op == WriteOp.create && map[kind.argument] is Map =>
+        (map[kind.argument] as Map).cast<String, Object?>(),
       final Map map => map.cast<String, Object?>(),
       _ => null,
     };

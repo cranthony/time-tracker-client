@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.118.0
+
+- Circles, location groups, travel times, habits, traits and the scoring
+  defaults are saved through the same queue as people and locations:
+  each change is kept on the device and sent once, so their dialogs
+  close at once, offline too, and what you made shows straight away.
+  Changed elsewhere meanwhile, they're merged or resolved the same way.
+
 ## 7.117.0
 
 - A change waiting as "Changed elsewhere" is resolved from the list of

@@ -209,13 +209,21 @@ Future<void> main() async {
       clientHealth: health,
       auth: auth,
       cache: cache,
-      traitsRepository: McpTraitsRepository(client, cache: cache),
+      traitsRepository: McpTraitsRepository(
+        client,
+        cache: cache,
+        writes: writeQueue,
+      ),
       peopleRepository: McpPeopleRepository(
         client,
         cache: cache,
         writes: writeQueue,
       ),
-      habitsRepository: McpHabitsRepository(client, cache: cache),
+      habitsRepository: McpHabitsRepository(
+        client,
+        cache: cache,
+        writes: writeQueue,
+      ),
       diagnosticsRepository: McpDiagnosticsRepository(client, cache: cache),
       calendarWidget: CalendarWidget(),
       // Read on the phone, from Android's calendar provider: nowhere else
