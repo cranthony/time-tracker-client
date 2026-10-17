@@ -7,6 +7,7 @@ import '../models/event.dart';
 import '../outbox/action_outbox.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/note_outbox.dart';
+import '../outbox/write_queue.dart';
 import '../services/note_drafts.dart';
 import '../platform/calendar_widget.dart';
 import '../services/actions_repository.dart';
@@ -42,6 +43,7 @@ class HomeScreen extends StatefulWidget {
     required this.outbox,
     required this.actionOutbox,
     this.eventOutbox,
+    this.writeQueue,
     this.proposalsRepository,
     this.onSignIn,
     this.onSignOut,
@@ -69,6 +71,10 @@ class HomeScreen extends StatefulWidget {
   /// the foot of every page says so while there are any. Without it,
   /// each is saved as it's made.
   final EventOutbox? eventOutbox;
+
+  /// The other writes waiting to be saved -- people, locations -- said at
+  /// the foot of every page too.
+  final WriteQueue? writeQueue;
   final Future<void> Function()? onSignIn;
   final Future<void> Function()? onSignOut;
 
@@ -200,6 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (widget.eventOutbox case final outbox?)
       EventOutboxStatus(outbox, lookup: _lookup, onShow: _showEvent),
     ActionOutboxStatus(widget.actionOutbox, nameOf: _actionName),
+    if (widget.writeQueue case final writes?) WriteQueueStatus(writes),
     NoteOutboxStatus(widget.outbox),
   ];
 

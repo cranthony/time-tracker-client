@@ -4,6 +4,7 @@ import '../models/person.dart';
 import '../models/scoring.dart';
 import '../models/travel_time.dart';
 import '../models/trait_scores.dart' show traitsWithPartIds;
+import '../outbox/write_queue.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
@@ -87,12 +88,51 @@ abstract class PeopleRepository {
 }
 
 /// Reaches people, circles and locations via the Time Tracker MCP
-/// server's tools.
+/// server's tools. With [writes], people and locations are written
+/// through it: queued, kept on the device and sent once, so a write never
+/// waits on the server -- and what's read is shown with them made.
 class McpPeopleRepository implements PeopleRepository {
-  McpPeopleRepository(this._client, {this._cache});
+  McpPeopleRepository(this._client, {this._cache, this._writes});
 
   final McpClient _client;
   final ResponseCache? _cache;
+  final WriteQueue? _writes;
+
+  /// [items], the [kind]s the server gave, with the writes waiting made
+  /// to them.
+  List<Map<String, Object?>> _shown(WriteKind kind, Object? items) {
+    final list = [
+      for (final i in items as List) (i as Map).cast<String, Object?>(),
+    ];
+    return _writes?.shown(kind, list) ?? list;
+  }
+
+  /// [fetch]ed -- or, if that fails while [kind]'s writes wait (offline,
+  /// say), what's [kept], with them made: so what was just written shows,
+  /// though the server can't be asked.
+  Future<T> _orKept<T>(
+    WriteKind kind,
+    Future<T> Function() fetch,
+    Future<T?> Function() kept,
+  ) async {
+    try {
+      return await fetch();
+    } on SignInRequiredException {
+      rethrow;
+    } catch (_) {
+      final waiting = _writes?.items.any((w) => w.kind == kind.name) ?? false;
+      if (!waiting) rethrow;
+      return await kept() ?? (throw StateError('nothing kept'));
+    }
+  }
+
+  /// [result], `get_people`'s and `get_circles`', with the people's
+  /// writes waiting made to it.
+  Object? _withPeopleWrites(Object? result) {
+    if (_writes == null) return result;
+    final json = (result as Map).cast<String, Object?>();
+    return {...json, 'people': _shown(WriteKind.person, json['people'])};
+  }
 
   static const _peopleKey = 'people';
   static const _locationsKey = 'locations';
@@ -128,11 +168,14 @@ class McpPeopleRepository implements PeopleRepository {
   }
 
   @override
-  Future<PeopleList?> cachedPeople() => _cached(_peopleKey, _decodePeople);
+  Future<PeopleList?> cachedPeople() =>
+      _cached(_peopleKey, (r) => _decodePeople(_withPeopleWrites(r)));
 
   @override
-  Future<List<Location>?> cachedLocations() =>
-      _cached(_locationsKey, _decodeLocations);
+  Future<List<Location>?> cachedLocations() => _cached(
+    _locationsKey,
+    (r) => _decodeLocations(_shown(WriteKind.location, r)),
+  );
 
   static Map<String, dynamic> _map(Object? result) =>
       (result as Map).cast<String, dynamic>();
@@ -157,18 +200,30 @@ class McpPeopleRepository implements PeopleRepository {
   }
 
   @override
-  Future<PeopleList> people() async {
+  Future<PeopleList> people() =>
+      _orKept(WriteKind.person, _fetchPeople, cachedPeople);
+
+  Future<PeopleList> _fetchPeople() async {
     final people = await _client.callTool('get_people', {
       'statuses': personStatuses.keys.toList(),
     });
     final circles = await _client.callTool('get_circles', {});
     final result = {'people': people, 'circles': circles};
     await _cache?.write(_peopleKey, result);
-    return _decodePeople(result);
+    return _decodePeople(_withPeopleWrites(result));
   }
 
   @override
-  Future<Person> createPerson(Person person) async => Person.fromJson(
+  Future<Person> createPerson(Person person) async {
+    if (_writes case final writes?) {
+      final fields = person.toJson()..remove('id');
+      final id = writes.create(WriteKind.person, fields);
+      return Person.fromJson({...fields, 'id': id});
+    }
+    return _createPerson(person);
+  }
+
+  Future<Person> _createPerson(Person person) async => Person.fromJson(
     _map(
       _map(
         await _client.callTool('create_person', {
@@ -179,7 +234,16 @@ class McpPeopleRepository implements PeopleRepository {
   );
 
   @override
-  Future<Person> updatePerson(String id, Map<String, Object?> changes) async =>
+  Future<Person> updatePerson(String id, Map<String, Object?> changes) async {
+    if (_writes case final writes?) {
+      return Person.fromJson(
+        writes.update(WriteKind.person, id, changes).cast<String, dynamic>(),
+      );
+    }
+    return _updatePerson(id, changes);
+  }
+
+  Future<Person> _updatePerson(String id, Map<String, Object?> changes) async =>
       Person.fromJson(
         _map(
           await _client.callTool(
@@ -216,25 +280,50 @@ class McpPeopleRepository implements PeopleRepository {
       _client.callTool('delete_circle', {'circle_id': id});
 
   @override
-  Future<List<Location>> locations() async {
+  Future<List<Location>> locations() =>
+      _orKept(WriteKind.location, _fetchLocations, cachedLocations);
+
+  Future<List<Location>> _fetchLocations() async {
     final result = await _client.callTool('get_locations', {});
     await _cache?.write(_locationsKey, result);
-    return _decodeLocations(result);
+    return _decodeLocations(_shown(WriteKind.location, result));
   }
 
   @override
-  Future<Location> createLocation(Location location) async => Location.fromJson(
-    _map(
-      _map(
-        await _client.callTool('create_location', {
-          'location': location.toJson()..remove('id'),
-        }),
-      )['location'],
-    ),
-  );
+  Future<Location> createLocation(Location location) async {
+    if (_writes case final writes?) {
+      final fields = location.toJson()..remove('id');
+      final id = writes.create(WriteKind.location, fields);
+      return Location.fromJson({...fields, 'id': id});
+    }
+    return _createLocation(location);
+  }
+
+  Future<Location> _createLocation(Location location) async =>
+      Location.fromJson(
+        _map(
+          _map(
+            await _client.callTool('create_location', {
+              'location': location.toJson()..remove('id'),
+            }),
+          )['location'],
+        ),
+      );
 
   @override
   Future<Location> updateLocation(
+    String id,
+    Map<String, Object?> changes,
+  ) async {
+    if (_writes case final writes?) {
+      return Location.fromJson(
+        writes.update(WriteKind.location, id, changes).cast<String, dynamic>(),
+      );
+    }
+    return _updateLocation(id, changes);
+  }
+
+  Future<Location> _updateLocation(
     String id,
     Map<String, Object?> changes,
   ) async => Location.fromJson(
@@ -247,8 +336,12 @@ class McpPeopleRepository implements PeopleRepository {
   );
 
   @override
-  Future<void> deleteLocation(String id) =>
-      _client.callTool('delete_location', {'location_id': id});
+  Future<void> deleteLocation(String id) async {
+    if (_writes case final writes?) {
+      return writes.delete(WriteKind.location, id);
+    }
+    await _client.callTool('delete_location', {'location_id': id});
+  }
 
   @override
   Future<List<LocationGroup>> locationGroups() async => [

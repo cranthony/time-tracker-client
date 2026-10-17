@@ -3274,6 +3274,7 @@ class _RecurrenceClient extends McpClient {
   Future<Object?> callTool(
     String name, [
     Map<String, Object?> arguments = const {},
+    String? writeId,
   ]) async {
     this.name = name;
     this.arguments = arguments;

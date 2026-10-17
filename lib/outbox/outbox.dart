@@ -222,6 +222,12 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   @protected
   bool retries(Object error) => true;
 
+  /// Whether [item] waits for others before it's sent -- one it depends
+  /// on, not saved yet. It's left where it is, and sent once it doesn't.
+  /// Nothing waits, by default.
+  @protected
+  bool waits(T item) => false;
+
   /// [items] in the order they're sent and listed: as added, by default.
   @protected
   List<T> order(List<T> items) => items;
@@ -442,7 +448,7 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   );
 
   bool _isDue(T item, DateTime now, bool ignoreBackoff) {
-    if (item.refused) return false;
+    if (item.refused || waits(item)) return false;
     if (item.id == _sendingId || _inFlightElsewhere(item, now)) return false;
     final at = item.nextAttemptAt;
     return ignoreBackoff || at == null || !at.isAfter(now);
@@ -474,7 +480,7 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
     }
     DateTime? next = immediately && hasUnsent ? now : null;
     for (final item in inOrder ? _items.take(1) : _items) {
-      if (item.refused) continue;
+      if (item.refused || waits(item)) continue;
       final at = _inFlightElsewhere(item, now)
           // Look again soon: the background task may finish it any moment.
           ? now.add(const Duration(seconds: 5))

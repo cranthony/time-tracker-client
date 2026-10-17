@@ -580,6 +580,7 @@ class _Client extends McpClient {
   Future<Object?> callTool(
     String name, [
     Map<String, Object?> arguments = const {},
+    String? writeId,
   ]) async {
     called.add(name);
     return result;
@@ -607,6 +608,7 @@ class _ProposalClient extends McpClient {
   Future<Object?> callTool(
     String name, [
     Map<String, Object?> arguments = const {},
+    String? writeId,
   ]) async => switch (name) {
     'get_compaction_status' => {
       'proposal': open ? {'id': 'abc123def456', 'revision': 2} : null,

@@ -18,6 +18,7 @@ import 'outbox/event_outbox.dart';
 import 'outbox/note_outbox.dart';
 import 'outbox/outbox.dart';
 import 'outbox/outbox_store.dart';
+import 'outbox/write_queue.dart';
 import 'platform/add_note_shortcut.dart';
 import 'platform/calendar_widget.dart';
 import 'screens/home_screen.dart';
@@ -165,6 +166,12 @@ Future<void> main() async {
   final events = McpEventsRepository(client);
   final proposals = McpProposalRepository(client, cache: cache);
   final settings = AppSettings();
+  // Every write of people and locations, kept on the device and sent
+  // once, so none waits on the server.
+  final writeQueue = WriteQueue(
+    store: PrefsOutboxStore.writes(),
+    call: WriteQueue.callOn(client),
+  );
   final noteOutbox = NoteOutbox(
     store: PrefsOutboxStore.notes(),
     repository: repository,
@@ -179,6 +186,7 @@ Future<void> main() async {
     proposals: proposals,
     notices: ProposalNotices(),
     persistPause: true,
+    making: () => writeQueue.making,
   );
   _watchQueues(health, noteOutbox, actionOutbox, eventOutbox);
   // From Open-Meteo, for a place the user gives, or where the device is
@@ -197,11 +205,16 @@ Future<void> main() async {
       outbox: noteOutbox,
       actionOutbox: actionOutbox,
       eventOutbox: eventOutbox,
+      writeQueue: writeQueue,
       clientHealth: health,
       auth: auth,
       cache: cache,
       traitsRepository: McpTraitsRepository(client, cache: cache),
-      peopleRepository: McpPeopleRepository(client, cache: cache),
+      peopleRepository: McpPeopleRepository(
+        client,
+        cache: cache,
+        writes: writeQueue,
+      ),
       habitsRepository: McpHabitsRepository(client, cache: cache),
       diagnosticsRepository: McpDiagnosticsRepository(client, cache: cache),
       calendarWidget: CalendarWidget(),
@@ -249,9 +262,15 @@ void backgroundDispatcher() {
         repository: McpActionsRepository(client),
         sender: Outbox.backgroundSender,
       );
+      final writes = WriteQueue(
+        store: PrefsOutboxStore.writes(),
+        call: WriteQueue.callOn(client),
+        sender: Outbox.backgroundSender,
+      );
       final events = EventOutbox(
         store: PrefsOutboxStore.events(),
         sender: Outbox.backgroundSender,
+        making: () => writes.making,
         events: McpEventsRepository(client),
         proposals: McpProposalRepository(client),
         // What came of a change to the proposal, for the app to say.
@@ -259,7 +278,8 @@ void backgroundDispatcher() {
         persistPause: true,
       );
       _watchQueues(_backgroundHealth, notes, actions, events);
-      return [notes, actions, events];
+      // The writes first: an event may name what one makes.
+      return [writes, notes, actions, events];
     },
   );
 }
@@ -394,6 +414,7 @@ class TimeTrackerApp extends StatefulWidget {
     required this.outbox,
     required this.actionOutbox,
     this.eventOutbox,
+    this.writeQueue,
     this.auth,
     this.cache,
     this.traitsRepository,
@@ -468,6 +489,10 @@ class TimeTrackerApp extends StatefulWidget {
   /// Changes to events, and the open proposal, waiting to be sent, or
   /// that failed; without it, each is saved as it's made.
   final EventOutbox? eventOutbox;
+
+  /// Every write of the kinds it has ([WriteKind.all]), waiting to be
+  /// saved; null where they're written as they're made.
+  final WriteQueue? writeQueue;
   final AuthSession? auth;
 
   /// The server's last answers, which the repositories keep; emptied on
@@ -510,6 +535,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     BackgroundSync.cancel();
     widget.outbox.start();
     widget.actionOutbox.start();
+    widget.writeQueue?.start();
     _startEventOutbox();
     // Their times, and the next fetch scheduled from them. Best effort.
     widget.backgroundRefresh?.load().catchError((Object _) {});
@@ -602,19 +628,23 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     widget.outbox.start();
     widget.actionOutbox.start();
     widget.eventOutbox?.start();
+    widget.writeQueue?.start();
   }
 
   Future<void> _onBackground() async {
     widget.actionOutbox.stop();
     widget.outbox.stop();
     widget.eventOutbox?.stop();
+    widget.writeQueue?.stop();
     await widget.outbox.refresh();
     await widget.actionOutbox.refresh();
     await widget.eventOutbox?.refresh();
+    await widget.writeQueue?.refresh();
     await widget.clientHealth?.flush();
     if (widget.outbox.hasUnsent ||
         widget.actionOutbox.hasUnsent ||
-        (widget.eventOutbox?.hasUnsent ?? false)) {
+        (widget.eventOutbox?.hasUnsent ?? false) ||
+        (widget.writeQueue?.hasUnsent ?? false)) {
       await BackgroundSync.schedule();
     }
   }
@@ -639,6 +669,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     widget.actionOutbox.dispose();
     _savedWrites?.cancel();
     widget.eventOutbox?.dispose();
+    widget.writeQueue?.dispose();
     super.dispose();
   }
 
@@ -695,6 +726,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         outbox: widget.outbox,
         actionOutbox: widget.actionOutbox,
         eventOutbox: widget.eventOutbox,
+        writeQueue: widget.writeQueue,
         onSignIn: widget.auth?.signIn,
         onSignOut: widget.auth == null ? null : _signOut,
         addNoteRequests: _addNoteShortcut.taps,

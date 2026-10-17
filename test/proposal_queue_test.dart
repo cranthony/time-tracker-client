@@ -637,6 +637,7 @@ class _Client extends McpClient {
   Future<Object?> callTool(
     String name, [
     Map<String, Object?> arguments = const {},
+    String? writeId,
   ]) async {
     this.arguments = arguments;
     return {

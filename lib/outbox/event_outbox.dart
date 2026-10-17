@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -145,10 +146,24 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
     this._proposals,
     this.notices,
     this.persistPause = false,
+    this.making,
     super.clock,
     super.sender,
     Random? random,
   }) : _random = random ?? Random();
+
+  /// The ids of what's being made, not saved yet (a [WriteQueue]'s
+  /// [WriteQueue.making]): a write naming one -- a location made offline,
+  /// say -- waits for it.
+  final Set<String> Function()? making;
+
+  @override
+  bool waits(PendingEventWrite item) {
+    final ids = making?.call();
+    if (ids == null || ids.isEmpty) return false;
+    final said = jsonEncode(item.toJson());
+    return ids.any((id) => said.contains('"$id"'));
+  }
 
   final EventsRepository _events;
   final ProposalRepository? _proposals;
