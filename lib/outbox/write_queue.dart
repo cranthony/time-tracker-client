@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import '../models/goal.dart';
 import '../models/habit.dart';
 import '../models/person.dart';
 import '../models/trait.dart';
@@ -292,6 +293,27 @@ class WriteKind {
     writable: _habit,
   );
 
+  /// A goal: made, changed and deleted one at a time, in order -- a
+  /// change to several (closing a goal and its sub-goals, say) is queued
+  /// as each goal's write in the order the server takes them.
+  static const goal = WriteKind(
+    name: 'goal',
+    noun: 'goal',
+    argument: 'goal',
+    createTool: 'create_goal',
+    updateTool: 'update_goal',
+    deleteTool: 'delete_goal',
+    deleteArgument: 'goal_id',
+    writable: _goal,
+    nameOf: _goalTitle,
+  );
+
+  static Map<String, Object?> _goal(Map<String, Object?> item) =>
+      Goal.fromJson({'id': '', ...item}).toJson()..remove('version');
+
+  static String? _goalTitle(Map<String, Object?> item) =>
+      item['title'] as String?;
+
   static const trait = WriteKind(
     name: 'trait',
     noun: 'trait',
@@ -356,6 +378,7 @@ class WriteKind {
       locationGroup,
       travelTime,
       habit,
+      goal,
       trait,
       scoringDefaults,
       action,
@@ -516,26 +539,31 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
   }
 
   /// Queues [changes] -- a null clears a field -- to the [kind] [id]: into
-  /// a write to it still waiting, if there is one. Gives it as it's shown
-  /// now, with them.
+  /// a write to it still waiting, if there is one, unless [join] is false:
+  /// then as a write of its own, after every one queued -- for a change
+  /// that has to be made after others to other items (a goal closed after
+  /// its sub-goals). Gives it as it's shown now, with them.
   Map<String, Object?> update(
     WriteKind kind,
     String id,
     Map<String, Object?> changes, {
     Map<String, Object?>? base,
+    bool join = true,
   }) {
     _queue((writes) {
       // Not one tried: it may have been made, unheard, and sent again it's
       // answered as it was then -- what's joined to it lost. A write after
       // it, waiting for it, then.
-      final i = writes.lastIndexWhere(
-        (w) =>
-            w.kind == kind.name &&
-            w.itemId == id &&
-            w.op != WriteOp.delete &&
-            w.attempts == 0 &&
-            !isSending(w),
-      );
+      final i = !join
+          ? -1
+          : writes.lastIndexWhere(
+              (w) =>
+                  w.kind == kind.name &&
+                  w.itemId == id &&
+                  w.op != WriteOp.delete &&
+                  w.attempts == 0 &&
+                  !isSending(w),
+            );
       if (i < 0) {
         return [
           ...writes,

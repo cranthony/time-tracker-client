@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../models/event.dart';
+import '../models/goal.dart';
 import '../models/habit.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
@@ -19,6 +20,7 @@ import '../outbox/action_writes.dart';
 import 'event_store.dart';
 import 'focus_store.dart';
 import 'actions_repository.dart';
+import 'goals_repository.dart';
 import 'habits_repository.dart';
 import 'notes_repository.dart';
 import 'people_repository.dart';
@@ -102,6 +104,10 @@ class PlanMemory extends ChangeNotifier {
   /// Self's habits, whatever their status; null until they're loaded, or
   /// if the server has none to give (see [loadHabits]).
   List<Habit>? habits;
+
+  /// The user's goals, whatever their status; null until they're loaded,
+  /// or if the server has none to give (see [loadGoals]).
+  List<Goal>? goals;
 
   /// The calendar's events, kept day by day, that the traits are scored
   /// from; null until there's somewhere to load them from.
@@ -421,6 +427,24 @@ class PlanMemory extends ChangeNotifier {
         }
       }, again: again);
 
+  /// Shows [changed] as the goals at once -- what a change just queued
+  /// leaves them as -- till they're loaded again.
+  void showGoals(List<Goal> changed) {
+    goals = changed;
+    notifyListeners();
+  }
+
+  /// Loads the user's goals, this visit; [again] asks again. Best effort,
+  /// as habits are: goals are never what stops a page.
+  Future<void> loadGoals(GoalsRepository repository, {bool again = false}) =>
+      load('goals', () async {
+        try {
+          goals = await repository.goals();
+        } catch (_) {
+          // None, or what's kept.
+        }
+      }, again: again);
+
   /// Loads every location, and the groups they're in, this visit;
   /// [again] asks again. The groups are best effort: a server without
   /// them leaves none.
@@ -581,6 +605,7 @@ class PlanMemory extends ChangeNotifier {
     ActionsRepository? actions,
     NotesRepository? notes,
     HabitsRepository? habits,
+    GoalsRepository? goals,
   }) async {
     // Each awaited first, then kept only if nothing's there yet: a load
     // finishing meanwhile, or another call, may have filled it.
@@ -603,6 +628,7 @@ class PlanMemory extends ChangeNotifier {
       keep(people?.cachedPeople(), (v) => this.people ??= v),
       keep(people?.cachedLocations(), (v) => locations ??= v),
       keep(habits?.cachedHabits(), (v) => this.habits ??= v),
+      keep(goals?.cachedGoals(), (v) => this.goals ??= v),
       keep(actions?.cachedActions(), (v) => this.actions ??= v),
       keep(notes?.cachedUncompactedNotes(), (v) => this.notes ??= v),
       keep(notes?.cachedCompactionStatus(), (v) => compaction ??= v),

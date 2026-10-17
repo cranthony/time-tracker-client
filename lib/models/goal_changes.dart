@@ -1,0 +1,262 @@
+import 'goal.dart';
+
+/// One goal's part of a change to several: made, changed or deleted.
+/// A change to several goals is a list of these, in the order they're
+/// saved -- each leaving the goals as the server's rules want them, so
+/// none is refused (see [planned]).
+sealed class GoalChange {
+  const GoalChange();
+}
+
+/// A goal made: [goal], with an id of its own, its history to come.
+class GoalCreate extends GoalChange {
+  const GoalCreate(this.goal);
+  final Goal goal;
+}
+
+/// Goal [id]'s [changes], keyed as `update_goal` takes them: a null
+/// clears a field.
+class GoalUpdate extends GoalChange {
+  const GoalUpdate(this.id, this.changes);
+  final String id;
+  final Map<String, Object?> changes;
+}
+
+/// Goal [id] deleted.
+class GoalDelete extends GoalChange {
+  const GoalDelete(this.id);
+  final String id;
+}
+
+/// [goals] once [changes] are made, in order, a status changed at [now]
+/// added to the goal's history as the server adds it.
+List<Goal> applied(
+  List<Goal> goals,
+  List<GoalChange> changes, {
+  required DateTime now,
+}) {
+  final out = [...goals];
+  for (final change in changes) {
+    switch (change) {
+      case GoalCreate(:final goal):
+        out.add(
+          goal.history.isEmpty
+              ? Goal.fromJson({
+                  ...goal.toJson(),
+                  'history': [StatusChange(goal.status, now).toJson()],
+                })
+              : goal,
+        );
+      case GoalUpdate(:final id, :final changes):
+        final i = out.indexWhere((g) => g.id == id);
+        if (i < 0) continue;
+        final before = out[i];
+        final json = {...before.toJson(), ...changes}
+          ..removeWhere((_, v) => v == null);
+        if (!changes.containsKey('history') &&
+            json['status'] != before.status) {
+          json['history'] = [
+            for (final c in before.history) c.toJson(),
+            StatusChange(json['status'] as String, now).toJson(),
+          ];
+        }
+        out[i] = Goal.fromJson(json);
+      case GoalDelete(:final id):
+        out.removeWhere((g) => g.id == id);
+    }
+  }
+  return out;
+}
+
+/// What's wrong with [goals] after [changes] -- after each one, in turn,
+/// since each is saved on its own -- that wasn't wrong before; empty if
+/// they can be saved.
+List<String> planned(
+  List<Goal> goals,
+  List<GoalChange> changes, {
+  required DateTime now,
+}) {
+  final before = goalProblems(goals).toSet();
+  var at = goals;
+  final problems = <String>{};
+  for (final change in changes) {
+    at = applied(at, [change], now: now);
+    problems.addAll(goalProblems(at).where((p) => !before.contains(p)));
+  }
+  return problems.toList();
+}
+
+// -- The changes the Goals pages make -------------------------------------
+
+/// What a sub-goal left open, as its parent's closed, comes to: done,
+/// obsolete, or moved under another goal (or the top level, with no
+/// [to]).
+sealed class Leftover {
+  const Leftover();
+}
+
+class CloseLeftover extends Leftover {
+  const CloseLeftover(this.status);
+
+  /// "done" or "obsolete".
+  final String status;
+}
+
+class MoveLeftover extends Leftover {
+  const MoveLeftover({this.to, this.fit = const {}});
+
+  /// The goal it goes under; null for the top level.
+  final String? to;
+
+  /// What else of it changes, to fit under [to] (see [fitUnder]).
+  final Map<String, Object?> fit;
+}
+
+/// What of [goal] has to change for it to fit under [parent]: an earlier
+/// deadline, a shorter expected time, or -- under an inactive parent --
+/// inactive itself. Empty if it fits as it is.
+Map<String, Object?> fitUnder(Goal goal, Goal? parent) {
+  if (parent == null || goal.closed) return const {};
+  return {
+    if ((goal.due, parent.due) case (final due?, final parentDue?)
+        when due.isAfter(parentDue))
+      'deadline': parent.deadline,
+    if ((goal.expectedMinutes, parent.expectedMinutes)
+        case (final m?, final pm?) when m > pm)
+      'expected_minutes': pm,
+    if (goal.active && parent.inactive) 'status': 'inactive',
+  };
+}
+
+/// [goal] and its open sub-goals, at any depth, set to [status], deepest
+/// first: closing a goal closes what's left open under it.
+List<GoalChange> closingAll(GoalTree tree, Goal goal, String status) => [
+  for (final g in tree.descendantsOf(goal.id).reversed)
+    if (g.open) GoalUpdate(g.id, {'status': status}),
+  if (goal.status != status) GoalUpdate(goal.id, {'status': status}),
+];
+
+/// Closes [goal] as [status] ("done" or "obsolete"), with each of its
+/// open sub-goals ending as [leftovers] says, by id -- and [made], a goal
+/// made for some of them to move under, made first. In the order the
+/// server takes them: what's made, then what's moved, then what's
+/// closed, deepest first, [goal] last.
+List<GoalChange> closing(
+  GoalTree tree,
+  Goal goal,
+  String status, {
+  Map<String, Leftover> leftovers = const {},
+  Goal? made,
+}) {
+  final moves = <GoalChange>[];
+  final closes = <GoalChange>[];
+  for (final child in tree.childrenOf(goal.id)) {
+    if (child.closed) continue;
+    switch (leftovers[child.id] ?? CloseLeftover(status)) {
+      case MoveLeftover(:final to, :final fit):
+        moves.add(GoalUpdate(child.id, {'parent_id': to, ...fit}));
+      case CloseLeftover(status: final s):
+        closes.addAll(closingAll(tree, child, s));
+    }
+  }
+  return [
+    if (made != null) GoalCreate(made),
+    ...moves,
+    ...closes,
+    GoalUpdate(goal.id, {'status': status}),
+  ];
+}
+
+/// The open sub-goals [goal] needs done before it can be: its required
+/// ones.
+List<Goal> requiredOpen(GoalTree tree, Goal goal) => [
+  for (final c in tree.childrenOf(goal.id))
+    if (c.required && c.open) c,
+];
+
+/// Activates [goals], each with the deadline [deadlines] gives by id
+/// (kept, if it gives none), and any inactive parents they're under,
+/// outermost first -- so each is active under an active parent.
+List<GoalChange> activating(
+  GoalTree tree,
+  Iterable<Goal> goals, {
+  Map<String, String> deadlines = const {},
+}) {
+  final order = <String>[];
+  for (final goal in goals) {
+    for (final g in [...tree.ancestorsOf(goal.id), goal]) {
+      if (!g.active && !order.contains(g.id)) order.add(g.id);
+    }
+  }
+  // Outermost first.
+  order.sort((a, b) => tree.depthOf(a).compareTo(tree.depthOf(b)));
+  return [
+    for (final id in order)
+      GoalUpdate(id, {
+        'status': 'active',
+        'deadline': ?deadlines[id],
+      }),
+  ];
+}
+
+/// The inactive parents [goals] are under, which activating them
+/// activates too: outermost first.
+List<Goal> inactiveParents(GoalTree tree, Iterable<Goal> goals) {
+  final out = <String, Goal>{};
+  for (final goal in goals) {
+    for (final g in tree.ancestorsOf(goal.id)) {
+      if (!g.active && !g.closed) out[g.id] = g;
+    }
+  }
+  return out.values.toList()
+    ..sort((a, b) => tree.depthOf(a.id).compareTo(tree.depthOf(b.id)));
+}
+
+/// Deactivates [goal] and its active sub-goals, deepest first.
+List<GoalChange> deactivating(GoalTree tree, Goal goal) => [
+  for (final g in tree.descendantsOf(goal.id).reversed)
+    if (g.active) GoalUpdate(g.id, {'status': 'inactive'}),
+  GoalUpdate(goal.id, {'status': 'inactive'}),
+];
+
+/// Moves [goal] under [to] (the top level, if null), changing what has to
+/// change for it to fit ([fitUnder]) -- and, under an inactive parent, its
+/// active sub-goals deactivated first.
+List<GoalChange> moving(GoalTree tree, Goal goal, String? to, {Goal? made}) {
+  final parent = made ?? tree[to];
+  final fit = fitUnder(goal, parent);
+  return [
+    if (made != null) GoalCreate(made),
+    if (fit['status'] == 'inactive')
+      for (final g in tree.descendantsOf(goal.id).reversed)
+        if (g.active) GoalUpdate(g.id, {'status': 'inactive'}),
+    GoalUpdate(goal.id, {'parent_id': to, ...fit}),
+  ];
+}
+
+/// Deletes [goal]: with its sub-goals, deepest first -- or, with
+/// [moveTo] given (null for the top level), its sub-goals moved there
+/// first. [keep] says whether the sub-goals are kept (moved) at all.
+List<GoalChange> deleting(
+  GoalTree tree,
+  Goal goal, {
+  bool keep = false,
+  String? moveTo,
+}) {
+  final children = tree.childrenOf(goal.id);
+  return [
+    if (keep)
+      for (final c in children) ...moving(tree, c, moveTo)
+    else
+      for (final g in tree.descendantsOf(goal.id).reversed) GoalDelete(g.id),
+    GoalDelete(goal.id),
+  ];
+}
+
+/// The end of [now]'s day, as a deadline: "End of today".
+String endOfToday(DateTime now) => deadlineOf(now);
+
+/// The end of [now]'s week -- its Sunday -- as a deadline: "End of this
+/// week".
+String endOfWeek(DateTime now) =>
+    deadlineOf(DateTime(now.year, now.month, now.day + (7 - now.weekday)));

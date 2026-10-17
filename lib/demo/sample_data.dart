@@ -19,6 +19,8 @@ import '../services/actions_repository.dart';
 import '../services/client_health.dart';
 import '../services/diagnostics_repository.dart';
 import '../services/focus_store.dart';
+import '../models/goal.dart';
+import '../services/goals_repository.dart';
 import '../services/habits_repository.dart';
 import '../services/notes_repository.dart';
 import '../services/people_repository.dart';
@@ -75,6 +77,64 @@ class SampleData {
   );
 
   HabitsRepository habitsRepository() => InMemoryHabitsRepository(habits);
+
+  GoalsRepository goalsRepository() => InMemoryGoalsRepository(goals);
+
+  /// A few goals, a project's nested pieces among them, around [now].
+  List<Goal> get goals {
+    String day(int days) => deadlineOf(now.add(Duration(days: days)));
+    List<Map<String, Object?>> since(String status, int days) => [
+      StatusChange(status, now.subtract(Duration(days: days))).toJson(),
+    ];
+    Goal goal(
+      String id,
+      String title, {
+      String? parent,
+      String status = 'active',
+      int? due,
+      int? minutes,
+      bool required = false,
+      String? description,
+    }) => Goal.fromJson({
+      'id': id,
+      'title': title,
+      'parent_id': parent,
+      'status': status,
+      'deadline': due == null ? null : day(due),
+      'expected_minutes': minutes,
+      'required': required,
+      'description': description,
+      'history': since(status, 10),
+    });
+    return [
+      goal(
+        'ship-app',
+        'Ship the time tracker app',
+        due: 45,
+        minutes: 60 * 40,
+        description:
+            '<p>A release the family can use every day: <b>notes</b>, '
+            '<b>events</b> and the <b>plan</b>.</p>',
+      ),
+      goal(
+        'goals-pane',
+        'Add a Goals pane',
+        parent: 'ship-app',
+        due: 14,
+        minutes: 60 * 12,
+        required: true,
+      ),
+      goal('goal-icon', 'Draw the goal icon', parent: 'goals-pane', due: 3),
+      goal(
+        'polish',
+        'Polish the settings',
+        parent: 'ship-app',
+        status: 'inactive',
+      ),
+      goal('marathon', 'Run a half marathon', due: 90, minutes: 60 * 30),
+      goal('reading', 'Finish the reading list', status: 'inactive'),
+    ];
+  }
 
   /// The server's health, up to [now]: a few days of tool calls -- the
   /// Events page's reads every few minutes, notes and proposal work now
