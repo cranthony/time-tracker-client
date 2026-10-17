@@ -311,6 +311,58 @@ dart run tool/web_csp.dart build/web https://your-service.onrender.com/mcp
 python -m http.server 8765 --directory build/web
 ```
 
+### Linux release packages
+
+Every push to `main` that changes the version also packages the web app
+for a self-hosted server
+([.github/workflows/linux-release.yml](.github/workflows/linux-release.yml)):
+`time-tracker-web-<version>-for-AUTH_DISABLED-server.tar.gz`, with its
+SHA-256. It's for a server built with **`AUTH_DISABLED`** (no sign-in),
+which serves it itself: unpack it and point the server's `STATIC_SITE_DIR`
+at the unpacked folder. It's built with `MCP_URL=/mcp`, the page's own
+server, and its Content-Security-Policy allows no sign-in service, so it
+can't sign in to a server that wants it. The server's repository
+publishes the matching server package.
+
+Each is published twice:
+
+- **As a GitHub Release**, tagged `web-<version>`, never marked latest
+  (that's the Android release, which the APK's install link needs).
+- **In a Google Drive folder**, holding only the latest package: each run
+  copies the new one in and removes the older web packages, leaving the
+  server's alone. Without the `DRIVE_RCLONE_CONF` secret this step is
+  skipped, with a warning.
+
+A pull request that changes the workflow, `tool/ci/publish_to_drive.sh` or
+`tool/web_csp.dart` builds and packages it too, but publishes nothing.
+
+To set up Google Drive (once; the server's repository uses the same
+secret):
+
+1. Install [rclone](https://rclone.org/) (`winget install Rclone.Rclone`)
+   and make a remote called `gdrive`, signing in to Google in the browser
+   it opens:
+
+   ```bash
+   rclone config create gdrive drive scope=drive.file
+   ```
+
+   `drive.file` lets it see only the files rclone itself makes, never the
+   rest of your Drive.
+2. Store its config (it holds the sign-in token) as the `DRIVE_RCLONE_CONF`
+   secret in both repositories; `rclone config file` says where it is:
+
+   ```bash
+   gh secret set DRIVE_RCLONE_CONF -R cranthony/time-tracker-client < "<rclone.conf's path>"
+   ```
+
+   ```bash
+   gh secret set DRIVE_RCLONE_CONF -R cranthony/time-tracking-google-calendar-mcp < "<rclone.conf's path>"
+   ```
+3. The packages go to `TimeTracker` at the top of your Drive. For another
+   folder, set the repository variable **`DRIVE_FOLDER`** (an rclone path,
+   e.g. `gdrive:Releases/TimeTracker`) in both repositories.
+
 ## Run on Android
 
 ### Install from Google Play (internal testing)

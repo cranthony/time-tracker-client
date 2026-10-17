@@ -1,0 +1,102 @@
+# Packages the web app for a self-hosted server built with AUTH_DISABLED,
+# which serves it beside /mcp (its STATIC_SITE_DIR), on every push to main
+# that changes the version: as a GitHub Release (web-<version>) and, with
+# the DRIVE_RCLONE_CONF secret set, in a Google Drive folder. See "Linux
+# release packages" in README.md.
+name: Linux release
+
+on:
+  push:
+    branches: [main]
+  # Builds and packages (to check it still does) but doesn't publish.
+  pull_request:
+    paths:
+      - .github/workflows/linux-release.yml
+      - tool/ci/publish_to_drive.sh
+      - tool/web_csp.dart
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Each run publishes the version it built; one at a time, in order.
+concurrency:
+  group: linux-release-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: false
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Version
+        id: version
+        # A push that doesn't change the app keeps its version, whose
+        # package is already published.
+        run: |
+          version=$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' pubspec.yaml)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=web-$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" != pull_request ] &&
+            gh release view "web-$version" >/dev/null 2>&1; then
+            echo "web-$version is already published."
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: subosito/flutter-action@v2
+        if: steps.version.outputs.published != 'true'
+        with:
+          channel: stable
+          cache: true
+      - name: Build
+        if: steps.version.outputs.published != 'true'
+        # The server serves the app at its root, and /mcp on the same
+        # origin: the policy needs no other server, and no AuthKit, since
+        # an AUTH_DISABLED server has no sign-in.
+        run: |
+          flutter pub get
+          flutter build web --release --csp --no-web-resources-cdn \
+            --base-href / --dart-define=MCP_URL=/mcp
+          dart run tool/web_csp.dart build/web /mcp
+      - name: Package
+        if: steps.version.outputs.published != 'true'
+        id: package
+        run: |
+          name="time-tracker-web-${{ steps.version.outputs.version }}-for-AUTH_DISABLED-server"
+          mkdir dist
+          tar -czf "dist/$name.tar.gz" --transform "s,^web,$name," -C build web
+          (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
+          ls -l dist
+      - name: Publish release
+        if: github.event_name != 'pull_request' && steps.version.outputs.published != 'true'
+        # Never the latest release: that's the Android one, which the
+        # APK's install link (releases/latest) points to.
+        run: |
+          version=${{ steps.version.outputs.version }}
+          changes=$(awk -v h="## $version" '$0 == h {f=1; next} /^## / {if (f) exit} f' CHANGELOG.md)
+          notes="> [!WARNING]
+          > **For a server built with AUTH_DISABLED (no sign-in) only.** This
+          > build of the web app talks to /mcp on its own origin and allows no
+          > sign-in service, so it can't sign in. Serve it from the server
+          > itself: unpack it and point the server's STATIC_SITE_DIR at the
+          > unpacked folder.
+
+          ## Changes in $version
+          $changes"
+          gh release create "${{ steps.version.outputs.tag }}" dist/* \
+            --target "$GITHUB_SHA" --latest=false \
+            --title "Web app $version for the AUTH_DISABLED server" \
+            --notes "$notes"
+      - name: Copy to Google Drive
+        if: github.event_name != 'pull_request' && steps.version.outputs.published != 'true'
+        env:
+          DRIVE_RCLONE_CONF: ${{ secrets.DRIVE_RCLONE_CONF }}
+          DRIVE_FOLDER: ${{ vars.DRIVE_FOLDER || 'gdrive:TimeTracker' }}
+        run: |
+          if [ -z "$DRIVE_RCLONE_CONF" ]; then
+            echo "::warning::No DRIVE_RCLONE_CONF secret, so nothing was copied to Google Drive (see Linux release packages in README.md)."
+            exit 0
+          fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq rclone
+          tool/ci/publish_to_drive.sh time-tracker-web- dist/*
