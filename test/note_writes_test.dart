@@ -228,5 +228,55 @@ void main() {
       await prefs.setString('note_outbox', kept);
       expect((await store.load()).length, 3);
     });
+
+    test('one added meanwhile -- by an older window, still open on the '
+        "web -- isn't taken out with what was read in", () async {
+      Map<String, Object?> note(String id, String text) => {
+        'id': id,
+        'note': {'timestamp': '2026-10-16T09:00:00+00:00', 'description': text},
+      };
+      await prefs.setString('note_outbox', jsonEncode([note('a1', 'Up')]));
+      final store = WriteQueueStore(prefs: prefs);
+      final writes = await store.load();
+      await prefs.setString(
+        'note_outbox',
+        jsonEncode([note('a1', 'Up'), note('a2', 'Tea')]),
+      );
+
+      await store.save(writes);
+
+      final left = jsonDecode((await prefs.getString('note_outbox'))!) as List;
+      expect(left.map((e) => (e as Map)['id']), ['a2']);
+      expect(
+        (await store.load()).map((w) => NoteWrites.view(w)!.note.description),
+        ['Tea', 'Up'],
+      );
+    });
+
+    test("what can't be read stays where it is, rather than be lost", () async {
+      await prefs.setString(
+        'note_outbox',
+        jsonEncode([
+          {
+            'id': 'a1',
+            'note': {'timestamp': '2026-10-16T09:00:00+00:00'},
+          },
+          {'id': 'odd', 'note': 'from a version this one does not know'},
+        ]),
+      );
+      final store = WriteQueueStore(prefs: prefs);
+
+      final writes = await store.load();
+      expect(writes, hasLength(1));
+      await store.save(writes);
+
+      final left = jsonDecode((await prefs.getString('note_outbox'))!) as List;
+      expect(left.map((e) => (e as Map)['id']), ['odd']);
+      // Nor a store that isn't JSON at all: the queue reads on without it.
+      await prefs.setString('goal_outbox', 'not json');
+      expect(await store.load(), hasLength(1));
+      await store.save(await store.load());
+      expect(await prefs.getString('goal_outbox'), 'not json');
+    });
   });
 }

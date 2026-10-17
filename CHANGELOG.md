@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.125.1
+
+- Carrying over what an older version left waiting is safer still: with
+  an older version's window still open on the web, a note it adds while
+  the new one carries the rest over is kept, to be carried over next;
+  and anything left waiting that can't be read stays where it was rather
+  than being lost.
+
 ## 7.125.0
 
 - A change to an event is made to the event as you saw it. One changed
