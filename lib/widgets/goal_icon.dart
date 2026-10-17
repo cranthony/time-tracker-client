@@ -159,18 +159,14 @@ class GoalPainter extends CustomPainter {
       oldDelegate.color != color || oldDelegate.copies != copies;
 }
 
-/// How many goals an event is tagged with, as a stack of [GoalIcon]s, one
-/// per goal up to three, overlapping from the left -- with the count
-/// beside them, for more than one. Nothing for none.
+/// Whether an event is tagged with goals, on its tile: one [GoalIcon] for
+/// one goal, two overlapping from the left for more. Nothing for none.
 class GoalStack extends StatelessWidget {
   const GoalStack({super.key, required this.count, this.size = 16, this.color});
 
   final int count;
   final double size;
   final Color? color;
-
-  /// The most icons it draws.
-  static const _most = 3;
 
   @override
   Widget build(BuildContext context) {
@@ -179,29 +175,12 @@ class GoalStack extends StatelessWidget {
         this.color ??
         IconTheme.of(context).color ??
         Theme.of(context).colorScheme.onSurface;
-    final copies = min(count, _most);
+    final copies = min(count, 2);
     return Semantics(
       label: count == 1 ? '1 goal' : '$count goals',
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CustomPaint(
-            size: Size(size * GoalPainter.widthOf(copies) / 24, size),
-            painter: GoalPainter(color, copies: copies),
-          ),
-          if (count > 1)
-            Padding(
-              padding: const EdgeInsets.only(left: 1),
-              child: Text(
-                '$count',
-                style: TextStyle(
-                  fontSize: max(9, size * 0.62),
-                  fontWeight: FontWeight.w600,
-                  color: color,
-                ),
-              ),
-            ),
-        ],
+      child: CustomPaint(
+        size: Size(size * GoalPainter.widthOf(copies) / 24, size),
+        painter: GoalPainter(color, copies: copies),
       ),
     );
   }
