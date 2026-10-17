@@ -11,8 +11,8 @@ on. Add the new version's section here at the same time; CI checks both.
 
 ## 7.126.0
 
-- Goals: a fifth pane on the Plan page, "Goals" (aim), for outcomes you
-  mean to reach and can mark done. It lists your top-level goals,
+- Goals: a new pane on the Plan page, "Goals" (aim), first of the five,
+  for outcomes you mean to reach and can mark done. It lists your top-level goals,
   soonest due first, each with its deadline and the time spent toward it
   against what you expect it to take; the summary splits the window's
   time by top-level goal. The tabs are narrower, so all five fit on a

@@ -46,8 +46,10 @@ import '../services/work_timing.dart';
 /// The Plan page: panes to swipe between, or pick from the tabs at the
 /// top, each with a search of its own --
 ///
-/// * **Actions**, what to do, leftmost: the actions, kept as actions, and
-///   the groups they're in, as a tree;
+/// * **Goals**, what to aim for, leftmost ([GoalsPane]), from the
+///   [GoalsScope];
+/// * **Actions**, what to do: the actions, kept as actions, and the
+///   groups they're in, as a tree;
 /// * **Habits**, what to practice ([HabitsPane]), from the [HabitsScope];
 /// * **People**, who to be with, Self always among them, with the traits
 ///   -- how to be -- under them ([PeoplePane]), from the [PeopleScope]
@@ -794,9 +796,19 @@ class _PlanScreenState extends State<PlanScreen> {
       for (final person in _people?.withSelf ?? const [defaultSelf])
         person.id: personName(person),
     };
-    // Actions leftmost, so swiping a group right, to open or close it,
-    // has nothing else to do.
+    // Goals first: what the rest is for.
     final panes = <(String, String, Widget)>[
+      if (goals != null)
+        (
+          'Goals',
+          'aim',
+          GoalsPane(
+            key: _goalsPane,
+            repository: goals,
+            memory: _memory,
+            summary: _summaryView,
+          ),
+        ),
       // Built only while it's shown: what it works out is costly.
       ('Actions', 'do', Builder(builder: _actionsPane)),
       if (habits != null)
@@ -842,17 +854,6 @@ class _PlanScreenState extends State<PlanScreen> {
           ),
         ),
       ],
-      if (goals != null)
-        (
-          'Goals',
-          'aim',
-          GoalsPane(
-            key: _goalsPane,
-            repository: goals,
-            memory: _memory,
-            summary: _summaryView,
-          ),
-        ),
     ];
     final theme = Theme.of(context);
     return PopScope(
