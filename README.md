@@ -358,6 +358,17 @@ secret):
    ```bash
    gh secret set DRIVE_RCLONE_CONF -R cranthony/time-tracking-google-calendar-mcp < "<rclone.conf's path>"
    ```
+
+   PowerShell has no `<` redirection, so there pipe the file in instead:
+
+   ```powershell
+   $conf = rclone config file | Select-Object -Last 1
+   Get-Content -Raw $conf | gh secret set DRIVE_RCLONE_CONF -R cranthony/time-tracker-client
+   Get-Content -Raw $conf | gh secret set DRIVE_RCLONE_CONF -R cranthony/time-tracking-google-calendar-mcp
+   ```
+
+   Pipe it rather than passing it with `--body`: `--body` would put the
+   token on the command line, where other processes can see it.
 3. The packages go to `TimeTracker` at the top of your Drive. For another
    folder, set the repository variable **`DRIVE_FOLDER`** (an rclone path,
    e.g. `gdrive:Releases/TimeTracker`) in both repositories.
