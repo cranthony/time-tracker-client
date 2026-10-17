@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.120.0
+
+- With the app open in two windows on the web -- a browser tab and the
+  installed app, say -- they take turns changing what's waiting to save,
+  through the browser's own lock, so neither can write over a change the
+  other just made. Before, a note added in one at the moment the other
+  saved could be lost.
+
 ## 7.119.0
 
 - Notes, actions and changes to events are made once each, too, however

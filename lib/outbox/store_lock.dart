@@ -4,6 +4,9 @@ import 'dart:ui' show IsolateNameServer;
 
 import 'package:flutter/foundation.dart';
 
+import 'web_store_lock_stub.dart'
+    if (dart.library.js_interop) 'web_store_lock.dart';
+
 /// Lets one change at a time be made to what an [OutboxStore] keeps:
 /// read, changed and written back whole, with no other in between. The
 /// app and its Android background task each have their own outboxes --
@@ -61,8 +64,9 @@ class SerialStoreLock implements StoreLock {
 /// shut down mid-change -- is found out, and the lock taken from it.
 ///
 /// On Android, WorkManager runs the background task in the app's
-/// process, so this keeps the app and its task apart. The web has one
-/// isolate, and nothing to keep apart.
+/// process, so this keeps the app and its task apart. On the web, where
+/// two windows of the app can be open at once, it's the browser's lock
+/// that keeps them apart ([webStoreLock]).
 class IsolateStoreLock implements StoreLock {
   const IsolateStoreLock(this.name);
 
@@ -75,9 +79,11 @@ class IsolateStoreLock implements StoreLock {
   /// How long to wait between tries while it's held.
   static const _poll = Duration(milliseconds: 10);
 
-  /// One for [key]'s store, or none on the web.
-  static StoreLock forKey(String key) =>
-      kIsWeb ? const NoStoreLock() : IsolateStoreLock('outbox_store:$key');
+  /// One for [key]'s store: on the web, the browser's, shared by its
+  /// windows.
+  static StoreLock forKey(String key) => kIsWeb
+      ? webStoreLock('outbox_store:$key')
+      : IsolateStoreLock('outbox_store:$key');
 
   @override
   Future<T> hold<T>(
