@@ -426,6 +426,7 @@ class _FakeClient extends McpClient {
   Future<Object?> callTool(
     String name, [
     Map<String, Object?> arguments = const {},
+    String? writeId,
   ]) async => result;
 }
 

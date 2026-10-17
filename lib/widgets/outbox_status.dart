@@ -5,6 +5,7 @@ import '../outbox/note_outbox.dart';
 import '../outbox/outbox.dart';
 import '../outbox/pending_action_save.dart';
 import '../outbox/pending_note.dart';
+import '../outbox/write_queue.dart';
 import 'status_bar.dart';
 
 /// An [Outbox]'s part of the [StatusBar], each item by [label] and the
@@ -31,6 +32,9 @@ abstract class OutboxStatus<T extends OutboxItem<T>> implements StatusSource {
 
   /// Sends [item] again, now, even if the server refused it.
   void retry(T item) => outbox.retryNow();
+
+  /// What the button that [retry]s [item] says.
+  String retryLabel(T item) => 'Try again';
 
   @override
   Listenable get listenable => outbox;
@@ -128,7 +132,7 @@ abstract class OutboxStatus<T extends OutboxItem<T>> implements StatusSource {
                   if (item.lastError != null && !outbox.needsSignIn)
                     TextButton(
                       onPressed: () => retry(item),
-                      child: const Text('Try again'),
+                      child: Text(retryLabel(item)),
                     ),
                   TextButton(
                     onPressed: () async {
@@ -162,6 +166,42 @@ String _sentence(String text) =>
 String _at(BuildContext context, DateTime t) =>
     MaterialLocalizations.of(context)
         .formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()));
+
+/// The [WriteQueue]'s part of the [StatusBar]: each write by what it
+/// writes ("location “Home”"). One refused as changed elsewhere is sent as
+/// it is, over that, if the user keeps theirs.
+class WriteQueueStatus extends OutboxStatus<PendingWrite> {
+  WriteQueueStatus(WriteQueue super.outbox);
+
+  WriteQueue get _writes => outbox as WriteQueue;
+
+  @override
+  String get title => 'Changes waiting to save';
+
+  @override
+  String things(int n) => n == 1 ? '1 change' : '$n changes';
+
+  @override
+  String label(PendingWrite item) {
+    final what = _writes.label(item);
+    return switch (item.op) {
+      WriteOp.create => 'New $what',
+      WriteOp.update => 'Changes to $what',
+      WriteOp.delete => 'Deleting $what',
+    };
+  }
+
+  @override
+  void retry(PendingWrite item) =>
+      item.conflicted ? _writes.overwrite(item) : super.retry(item);
+
+  @override
+  String retryLabel(PendingWrite item) =>
+      item.conflicted ? 'Keep mine' : super.retryLabel(item);
+
+  @override
+  Future<bool> drop(PendingWrite item) => _writes.drop(item);
+}
 
 /// The [ActionOutbox]'s part of the [StatusBar]: each save by the
 /// action's name, from [nameOf] for one it changes.

@@ -11,8 +11,26 @@ import 'client_health.dart';
 import 'server_errors.dart';
 
 class McpException implements Exception {
-  McpException(this.message, {this.statusCode, this.serverMessage});
+  McpException(this.message, {this.statusCode, this.serverMessage, this.meta});
   final String message;
+
+  /// What else the server said of a tool's failure, for the app to act on:
+  /// a `conflict`, say -- what was written to changed since the version
+  /// the app last saw.
+  final Map<String, Object?>? meta;
+
+  /// The item as it is now, when a write was refused as changed since
+  /// the version it was made from: null if it's been deleted.
+  ({Map<String, Object?>? current})? get conflict =>
+      switch (meta?['conflict']) {
+        final Map conflict => (
+          current: switch (conflict['current']) {
+            final Map current => current.cast<String, Object?>(),
+            _ => null,
+          },
+        ),
+        _ => null,
+      };
 
   /// The HTTP status the server answered with, when it wasn't a 200.
   final int? statusCode;
@@ -100,15 +118,20 @@ class McpClient {
   /// Calls [name] with [arguments] and returns the tool's result, decoded
   /// from JSON where possible -- retried as the class docs say. Recorded
   /// in [health], if there is one.
+  ///
+  /// With [writeId], a write is made once however many times it's sent
+  /// (the server keeps what each write_id gave): so it's safe to send
+  /// again, as a read is.
   Future<Object?> callTool(
     String name, [
     Map<String, Object?> arguments = const {},
+    String? writeId,
   ]) async {
     final health = this.health;
-    if (health == null) return _callTool(name, arguments);
+    if (health == null) return _callTool(name, arguments, writeId);
     final watch = Stopwatch()..start();
     try {
-      final result = await _callTool(name, arguments);
+      final result = await _callTool(name, arguments, writeId);
       health.recordCall(name, watch.elapsedMilliseconds);
       return result;
     } catch (e) {
@@ -117,14 +140,18 @@ class McpClient {
     }
   }
 
-  Future<Object?> _callTool(String name, Map<String, Object?> arguments) async {
-    final safe = readsOnly(name);
+  Future<Object?> _callTool(
+    String name,
+    Map<String, Object?> arguments,
+    String? writeId,
+  ) async {
+    final safe = readsOnly(name) || writeId != null;
     for (var attempt = 0; ; attempt++) {
       // Whether the call's been sent: before it, any failure is safe to
       // retry. Per call: calls run side by side.
       final sent = [false];
       try {
-        return await _callOnce(name, arguments, sent);
+        return await _callOnce(name, arguments, sent, writeId);
       } catch (e) {
         final again =
             attempt < retryDelays.length &&
@@ -141,16 +168,25 @@ class McpClient {
     String name,
     Map<String, Object?> arguments,
     List<bool> sent,
+    String? writeId,
   ) async {
     await _ensureInitialized();
     sent.first = true;
     final result = await _request('tools/call', {
       'name': name,
       'arguments': arguments,
+      if (writeId != null) '_meta': {'write_id': writeId},
     });
     if (result['isError'] == true) {
       final said = _textContent(result);
-      throw McpException('Tool $name failed: $said', serverMessage: said);
+      throw McpException(
+        'Tool $name failed: $said',
+        serverMessage: said,
+        meta: switch (result['_meta']) {
+          final Map meta => meta.cast<String, Object?>(),
+          _ => null,
+        },
+      );
     }
     // FastMCP wraps non-object return values as {"result": ...}.
     final structured = result['structuredContent'];

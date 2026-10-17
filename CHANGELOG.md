@@ -9,6 +9,21 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.116.0
+
+- People and locations are saved through a queue kept on the device, as
+  notes are: adding or changing one never waits on the server, so it
+  works offline -- the dialog closes as soon as it's queued, and the
+  person or location shows at once, with its id, ready to pick. Each
+  change is sent once, however many times it's tried, and retried until
+  it's saved; nothing waiting is dropped unless you drop it. A change
+  naming something not saved yet -- an event at a location made offline
+  -- waits for it.
+- A change made to something changed elsewhere since -- by Claude, say --
+  is merged with what changed there when they're to different fields.
+  When they're to the same field, or it was deleted, it waits, marked
+  "Changed elsewhere", for you to keep yours or drop it.
+
 ## 7.115.0
 
 - On the Events page, T goes to now, as the button with the crosshair

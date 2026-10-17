@@ -58,6 +58,7 @@ class _Client extends McpClient {
   Future<Object?> callTool(
     String name, [
     Map<String, Object?> arguments = const {},
+    String? writeId,
   ]) async {
     called.add((name, arguments));
     if (result is Exception) throw result as Exception;
