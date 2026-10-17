@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.117.0
+
+- A change waiting as "Changed elsewhere" is resolved from the list of
+  changes waiting to save: Resolve shows each field both you and someone
+  else changed, with their value and yours, to pick one or type another;
+  the rest of your change is kept, and it's sent again on top of theirs.
+  Deleted elsewhere, it can be put back with your changes, or they can be
+  dropped; and deleting something changed elsewhere shows what changed,
+  to delete it anyway or keep it.
+
 ## 7.116.0
 
 - People and locations are saved through a queue kept on the device, as

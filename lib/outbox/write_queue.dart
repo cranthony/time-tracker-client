@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import '../models/person.dart';
 import '../services/mcp_client.dart';
 import '../services/server_errors.dart';
 import 'outbox.dart';
@@ -22,7 +23,12 @@ class WriteKind {
     required this.updateTool,
     this.deleteTool,
     this.deleteArgument,
+    required this.writable,
   });
+
+  /// What of [item], as the server lists one, a create takes: without
+  /// what the server works out (a location's path, say).
+  final Map<String, Object?> Function(Map<String, Object?> item) writable;
 
   /// Its name in the queue: what a [PendingWrite.kind] says.
   final String name;
@@ -52,7 +58,14 @@ class WriteKind {
     argument: 'person',
     createTool: 'create_person',
     updateTool: 'update_person',
+    writable: _person,
   );
+
+  static Map<String, Object?> _person(Map<String, Object?> item) =>
+      Person.fromJson({'id': '', ...item}).toJson();
+
+  static Map<String, Object?> _location(Map<String, Object?> item) =>
+      Location.fromJson({'id': '', ...item}).toJson();
 
   static const location = WriteKind(
     name: 'location',
@@ -62,6 +75,7 @@ class WriteKind {
     updateTool: 'update_location',
     deleteTool: 'delete_location',
     deleteArgument: 'location_id',
+    writable: _location,
   );
 
   /// Every kind, by name.
@@ -284,6 +298,73 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
       (w) => w
           .rewritten(base: () => null, conflicted: false, current: () => null)
           .copyWith(refused: false, lastError: () => null),
+    );
+    schedule(immediately: true);
+  }
+
+  // -- Resolving ---------------------------------------------------------
+
+  /// The fields [write], [PendingWrite.conflicted], changes that were
+  /// changed elsewhere too, to something else: for the user to pick
+  /// between.
+  static List<String> clashes(PendingWrite write) {
+    final current = write.current;
+    if (current == null) return const [];
+    final base = write.base ?? const {};
+    return [
+      for (final MapEntry(:key, :value) in write.changes.entries)
+        if (!_same(current[key], base[key]) && !_same(current[key], value)) key,
+    ];
+  }
+
+  /// The fields of [write]'s item changed elsewhere since it was made:
+  /// for a deletion, to say what deleting it would throw away.
+  static List<String> changedElsewhere(PendingWrite write) {
+    final current = write.current ?? const {};
+    final base = write.base ?? const {};
+    return [
+      for (final key in {...base.keys, ...current.keys})
+        if (key != 'version' && !_same(current[key], base[key])) key,
+    ];
+  }
+
+  /// Sends [write], [PendingWrite.conflicted], again with [changes] --
+  /// the user's picks -- made to the item as it is now.
+  Future<void> resolve(PendingWrite write, Map<String, Object?> changes) async {
+    final current = write.current;
+    await replaceUnlessSending(
+      write.id,
+      (w) => w
+          .rewritten(
+            changes: changes,
+            base: () => current,
+            conflicted: false,
+            current: () => null,
+          )
+          .copyWith(refused: false, lastError: () => null),
+    );
+    schedule(immediately: true);
+  }
+
+  /// Puts back [write]'s item, deleted elsewhere since: made again, with
+  /// its id, as it was with [write]'s changes.
+  Future<void> restore(PendingWrite write) async {
+    final kind = kindOf(write);
+    final fields = kind.writable({...?write.base, ...write.changes})
+      ..remove('id')
+      ..removeWhere((_, value) => value == null);
+    final made = PendingWrite(
+      id: _newId(),
+      kind: write.kind,
+      op: WriteOp.create,
+      itemId: write.itemId,
+      changes: fields,
+    );
+    await change(
+      (writes) => [
+        for (final w in writes)
+          if (w.id == write.id) made else w,
+      ],
     );
     schedule(immediately: true);
   }
