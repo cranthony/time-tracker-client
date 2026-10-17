@@ -6,6 +6,7 @@ import '../outbox/outbox.dart';
 import '../outbox/pending_action_save.dart';
 import '../outbox/pending_note.dart';
 import '../outbox/write_queue.dart';
+import 'write_conflict_dialog.dart';
 import 'status_bar.dart';
 
 /// An [Outbox]'s part of the [StatusBar], each item by [label] and the
@@ -35,6 +36,9 @@ abstract class OutboxStatus<T extends OutboxItem<T>> implements StatusSource {
 
   /// What the button that [retry]s [item] says.
   String retryLabel(T item) => 'Try again';
+
+  /// What that button does, in [context]: [retry], by default.
+  Future<void> act(BuildContext context, T item) async => retry(item);
 
   @override
   Listenable get listenable => outbox;
@@ -131,7 +135,7 @@ abstract class OutboxStatus<T extends OutboxItem<T>> implements StatusSource {
                 children: [
                   if (item.lastError != null && !outbox.needsSignIn)
                     TextButton(
-                      onPressed: () => retry(item),
+                      onPressed: () => act(context, item),
                       child: Text(retryLabel(item)),
                     ),
                   TextButton(
@@ -168,8 +172,8 @@ String _at(BuildContext context, DateTime t) =>
         .formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()));
 
 /// The [WriteQueue]'s part of the [StatusBar]: each write by what it
-/// writes ("location “Home”"). One refused as changed elsewhere is sent as
-/// it is, over that, if the user keeps theirs.
+/// writes ("location “Home”"). One refused as changed elsewhere is
+/// resolved field by field ([showWriteConflictDialog]).
 class WriteQueueStatus extends OutboxStatus<PendingWrite> {
   WriteQueueStatus(WriteQueue super.outbox);
 
@@ -192,12 +196,15 @@ class WriteQueueStatus extends OutboxStatus<PendingWrite> {
   }
 
   @override
-  void retry(PendingWrite item) =>
-      item.conflicted ? _writes.overwrite(item) : super.retry(item);
-
-  @override
   String retryLabel(PendingWrite item) =>
-      item.conflicted ? 'Keep mine' : super.retryLabel(item);
+      item.conflicted ? 'Resolve' : super.retryLabel(item);
+
+  /// A conflict is resolved field by field ([showWriteConflictDialog]).
+  @override
+  Future<void> act(BuildContext context, PendingWrite item) async {
+    if (!item.conflicted) return super.act(context, item);
+    await showWriteConflictDialog(context, _writes, item);
+  }
 
   @override
   Future<bool> drop(PendingWrite item) => _writes.drop(item);
