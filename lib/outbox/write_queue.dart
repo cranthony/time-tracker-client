@@ -539,22 +539,23 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
   }
 
   /// Queues [changes] -- a null clears a field -- to the [kind] [id]: into
-  /// a write to it still waiting, if there is one, unless [join] is false:
-  /// then as a write of its own, after every one queued -- for a change
-  /// that has to be made after others to other items (a goal closed after
-  /// its sub-goals). Gives it as it's shown now, with them.
+  /// a write to it still waiting, if there is one -- unless it's [ordered]:
+  /// then as a write of its own, sent only after every write of [kind]
+  /// queued before it, for one of several changes the server takes only
+  /// in order (a goal closed after its sub-goals; see
+  /// [PendingWrite.ordered]). Gives it as it's shown now, with them.
   Map<String, Object?> update(
     WriteKind kind,
     String id,
     Map<String, Object?> changes, {
     Map<String, Object?>? base,
-    bool join = true,
+    bool ordered = false,
   }) {
     _queue((writes) {
       // Not one tried: it may have been made, unheard, and sent again it's
       // answered as it was then -- what's joined to it lost. A write after
       // it, waiting for it, then.
-      final i = !join
+      final i = ordered
           ? -1
           : writes.lastIndexWhere(
               (w) =>
@@ -574,6 +575,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
             itemId: id,
             changes: changes,
             base: _known[kind.name]?[id] ?? base,
+            ordered: ordered,
           ),
         ];
       }
@@ -594,8 +596,14 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
 
   /// Queues deleting the [kind] [id]. If the server doesn't have it yet,
   /// its writes are just dropped -- unless one's being sent, when it's
-  /// deleted once that's saved.
-  void delete(WriteKind kind, String id, {Map<String, Object?>? base}) {
+  /// deleted once that's saved. [ordered], it's sent only after every
+  /// write of [kind] queued before it (see [update]).
+  void delete(
+    WriteKind kind,
+    String id, {
+    Map<String, Object?>? base,
+    bool ordered = false,
+  }) {
     _queue((writes) {
       // Its writes not tried yet: one tried may have been made, so a
       // deletion goes after it.
@@ -621,6 +629,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
           op: WriteOp.delete,
           itemId: id,
           base: _known[kind.name]?[id] ?? base,
+          ordered: ordered,
         ),
       ];
     });
@@ -844,6 +853,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
     for (final w in items) {
       if (w.id == item.id) return false;
       if (names.contains(w.itemId)) return true;
+      if (item.ordered && w.kind == item.kind) return true;
     }
     return false;
   }

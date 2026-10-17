@@ -23,10 +23,17 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     this.sendingSince,
     this.sentBy,
     this.refused = false,
+    this.ordered = false,
   });
 
   @override
   final String id;
+
+  /// Whether it's sent only after every write of its [kind] queued before
+  /// it -- one of several changes the server takes only in that order (a
+  /// goal closed after its sub-goals). One of those refused holds it till
+  /// the user retries or drops that one.
+  final bool ordered;
 
   /// What it writes: a [WriteKind.name].
   final String kind;
@@ -92,6 +99,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     sendingSince: sendingSince,
     sentBy: sentBy,
     refused: refused,
+    ordered: ordered,
   );
 
   @override
@@ -118,6 +126,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     sendingSince: sendingSince == null ? this.sendingSince : sendingSince(),
     sentBy: sentBy == null ? this.sentBy : sentBy(),
     refused: refused ?? this.refused,
+    ordered: ordered,
   );
 
   factory PendingWrite.fromJson(Map<String, dynamic> json) => PendingWrite(
@@ -135,6 +144,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     sendingSince: _date(json['sending_since']),
     sentBy: json['sent_by'] as String?,
     refused: json['refused'] as bool? ?? false,
+    ordered: json['ordered'] as bool? ?? false,
   );
 
   Map<String, dynamic> toJson() => {
@@ -152,6 +162,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     'sending_since': ?sendingSince?.toUtc().toIso8601String(),
     'sent_by': ?sentBy,
     if (refused) 'refused': true,
+    if (ordered) 'ordered': true,
   };
 
   static DateTime? _date(Object? value) =>

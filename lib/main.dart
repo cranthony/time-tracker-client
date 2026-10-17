@@ -121,8 +121,7 @@ Future<void> main() async {
         peopleRepository: people,
         habitsRepository:
             sample?.habitsRepository() ?? InMemoryHabitsRepository(),
-        goalsRepository:
-            sample?.goalsRepository() ?? InMemoryGoalsRepository(),
+        goalsRepository: sample?.goalsRepository() ?? InMemoryGoalsRepository(),
         focus: sample?.focusStore(),
         diagnosticsRepository: sample?.diagnosticsRepository(),
         calendarWidget: CalendarWidget(),

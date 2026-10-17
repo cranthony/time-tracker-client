@@ -192,10 +192,7 @@ List<GoalChange> activating(
   order.sort((a, b) => tree.depthOf(a).compareTo(tree.depthOf(b)));
   return [
     for (final id in order)
-      GoalUpdate(id, {
-        'status': 'active',
-        'deadline': ?deadlines[id],
-      }),
+      GoalUpdate(id, {'status': 'active', 'deadline': ?deadlines[id]}),
   ];
 }
 

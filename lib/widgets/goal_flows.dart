@@ -87,11 +87,15 @@ class GoalActions {
                 for (final MapEntry(:key, :value) in changes.entries)
                   key: key == 'parent_id' ? ids[value] ?? value : value,
               };
-              await repository.updateGoal(ids[id] ?? id, named, join: !several);
+              await repository.updateGoal(
+                ids[id] ?? id,
+                named,
+                ordered: several,
+              );
               return GoalUpdate(ids[id] ?? id, named);
             }(),
             GoalDelete(:final id) => await () async {
-              await repository.deleteGoal(ids[id] ?? id);
+              await repository.deleteGoal(ids[id] ?? id, ordered: several);
               return GoalDelete(ids[id] ?? id);
             }(),
           };

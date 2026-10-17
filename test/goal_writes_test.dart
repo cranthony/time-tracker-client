@@ -83,8 +83,8 @@ void main() {
     expect(server.calls[2].arguments, {'goal_id': made.id, 'if_version': 2});
   });
 
-  test("a change that mustn't join an earlier one is sent after what's "
-      'queued between them', () async {
+  test("an ordered change is sent after what's queued before it, joined "
+      'with none', () async {
     queue.shown(WriteKind.goal, [
       {'id': 'top', 'title': 'Top', 'status': 'active', 'version': 1},
       {'id': 'sub', 'title': 'Sub', 'status': 'active', 'version': 1},
@@ -93,8 +93,8 @@ void main() {
     // An edit waiting to the parent, then closing the sub-goal, then the
     // parent: the parent's close can't jump ahead of the sub-goal's.
     await goals.updateGoal('top', {'title': 'Top!'});
-    await goals.updateGoal('sub', {'status': 'done'}, join: false);
-    await goals.updateGoal('top', {'status': 'done'}, join: false);
+    await goals.updateGoal('sub', {'status': 'done'}, ordered: true);
+    await goals.updateGoal('top', {'status': 'done'}, ordered: true);
     await queue.flush();
     server.offline = false;
     server.calls.clear();
@@ -121,5 +121,27 @@ void main() {
     server.offline = false;
     final listed = await goals.goals();
     expect(listed.single.title, 'Offline');
+  });
+
+  test('an ordered change waits for an earlier write that failed', () async {
+    queue.shown(WriteKind.goal, [
+      {'id': 'top', 'title': 'Top', 'status': 'active', 'version': 1},
+      {'id': 'sub', 'title': 'Sub', 'status': 'active', 'version': 1},
+    ]);
+    server.offline = true;
+    await goals.updateGoal('sub', {'status': 'done'}, ordered: true);
+    await queue.flush();
+    // The sub-goal's write failed, and waits to be tried again; the
+    // parent's, queued after it, waits for it, though nothing names it.
+    server.offline = false;
+    await goals.updateGoal('top', {'status': 'done'}, ordered: true);
+    await queue.flush();
+    final [sub, top] = queue.items;
+    expect(queue.waits(top), isTrue);
+    expect(queue.waits(sub), isFalse);
+    expect(
+      server.calls.where((c) => (c.arguments['goal'] as Map?)?['id'] == 'top'),
+      isEmpty,
+    );
   });
 }

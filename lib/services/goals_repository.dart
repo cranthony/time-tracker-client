@@ -22,18 +22,18 @@ abstract class GoalsRepository {
   Future<Goal> createGoal(Goal goal);
 
   /// Saves [changes], keyed as `update_goal` takes them, to goal [id]; a
-  /// null clears that field. With [join] false, it's saved after every
-  /// change already waiting, rather than with an earlier one to the same
-  /// goal: for one of several changes that must be made in order. Returns
-  /// it as saved.
+  /// null clears that field. [ordered], it's saved only after every goal
+  /// change already waiting, never joined with one: for one of several
+  /// changes that must be made in order. Returns it as saved.
   Future<Goal> updateGoal(
     String id,
     Map<String, Object?> changes, {
-    bool join = true,
+    bool ordered = false,
   });
 
-  /// Deletes goal [id]. It mustn't have sub-goals by then.
-  Future<void> deleteGoal(String id);
+  /// Deletes goal [id]. It mustn't have sub-goals by then. [ordered], as
+  /// for [updateGoal].
+  Future<void> deleteGoal(String id, {bool ordered = false});
 }
 
 /// Reaches goals via the Time Tracker MCP server's tools.
@@ -102,10 +102,10 @@ class McpGoalsRepository implements GoalsRepository {
   Future<Goal> updateGoal(
     String id,
     Map<String, Object?> changes, {
-    bool join = true,
+    bool ordered = false,
   }) async => switch (_writes) {
     final writes? => Goal.fromJson(
-      writes.update(WriteKind.goal, id, changes, join: join).cast(),
+      writes.update(WriteKind.goal, id, changes, ordered: ordered).cast(),
     ),
     null => Goal.fromJson(
       _map(
@@ -126,9 +126,9 @@ class McpGoalsRepository implements GoalsRepository {
   };
 
   @override
-  Future<void> deleteGoal(String id) async {
+  Future<void> deleteGoal(String id, {bool ordered = false}) async {
     if (_writes case final writes?) {
-      writes.delete(WriteKind.goal, id);
+      writes.delete(WriteKind.goal, id, ordered: ordered);
       return;
     }
     await _client.callTool('delete_goal', {'goal_id': id});
@@ -190,7 +190,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
   Future<Goal> updateGoal(
     String id,
     Map<String, Object?> changes, {
-    bool join = true,
+    bool ordered = false,
   }) async {
     final i = _goals.indexWhere((g) => g.id == id);
     if (i < 0) throw McpException("'$id' isn't a goal");
@@ -212,7 +212,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
   }
 
   @override
-  Future<void> deleteGoal(String id) async {
+  Future<void> deleteGoal(String id, {bool ordered = false}) async {
     final rest = [
       for (final g in _goals)
         if (g.id != id) g,
