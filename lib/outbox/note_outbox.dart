@@ -75,7 +75,11 @@ class NoteOutbox extends Outbox<PendingNote, void> {
       queued = same
           ? null
           : PendingNote(
-              id: waiting?.id ?? _newId(),
+              // A new write if it was tried: made, unheard, it would be
+              // answered as it was then, not changed.
+              id: waiting != null && waiting.attempts == 0
+                  ? waiting.id
+                  : _newId(),
               note: Note(
                 timestamp: edited.timestamp,
                 description: edited.description,

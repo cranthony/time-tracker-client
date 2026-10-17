@@ -79,6 +79,17 @@ class PendingActionSave implements OutboxItem<PendingActionSave> {
         attempts: attempts,
       );
 
+  /// It as a new write, [id]: what's sent the same, made afresh -- still
+  /// checked for, if it was tried ([attempts]), as it may have been made.
+  PendingActionSave withId(String id) => PendingActionSave(
+    id: id,
+    actionId: actionId,
+    isNew: isNew,
+    changes: changes,
+    group: group,
+    attempts: attempts,
+  );
+
   @override
   PendingActionSave copyWith({
     int? attempts,

@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.119.0
+
+- Notes, actions and changes to events are made once each, too, however
+  many times they're tried: each is sent with a write id the server
+  keeps, so one sent again after its answer was lost -- a connection
+  dropped as it was saved -- isn't made twice.
+- A change joins a write still waiting only if that write hasn't been
+  tried yet; otherwise it's a write of its own, after it, so a write that
+  was made unheard can't hide it.
+
 ## 7.118.0
 
 - Circles, location groups, travel times, habits, traits and the scoring

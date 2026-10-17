@@ -72,13 +72,19 @@ class ActionOutbox extends Outbox<PendingActionSave, String?> {
       );
       if (i < 0) return [...saves, added];
       final save = saves[i];
+      final joined = save.withChanges(
+        replace ? changes : {...save.changes, ...changes},
+      );
       return [
         for (final (j, s) in saves.indexed)
-          j == i
-              ? save.withChanges(
-                  replace ? changes : {...save.changes, ...changes},
-                )
-              : s,
+          if (j != i)
+            s
+          // Tried, it may have been made, unheard: sent again as it was,
+          // it would be answered as it was then. So it's a new write.
+          else if (save.attempts > 0)
+            joined.withId(_newId())
+          else
+            joined,
       ];
     });
   }

@@ -307,11 +307,15 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
     Map<String, Object?> changes,
   ) {
     _queue((writes) {
+      // Not one tried: it may have been made, unheard, and sent again it's
+      // answered as it was then -- what's joined to it lost. A write after
+      // it, waiting for it, then.
       final i = writes.lastIndexWhere(
         (w) =>
             w.kind == kind.name &&
             w.itemId == id &&
             w.op != WriteOp.delete &&
+            w.attempts == 0 &&
             !isSending(w),
       );
       if (i < 0) {
@@ -347,8 +351,13 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
   /// deleted once that's saved.
   void delete(WriteKind kind, String id) {
     _queue((writes) {
+      // Its writes not tried yet: one tried may have been made, so a
+      // deletion goes after it.
       bool its(PendingWrite w) =>
-          w.kind == kind.name && w.itemId == id && !isSending(w);
+          w.kind == kind.name &&
+          w.itemId == id &&
+          w.attempts == 0 &&
+          !isSending(w);
       final made = writes.any(
         (w) => its(w) && w.op == WriteOp.create && !w.refused,
       );
