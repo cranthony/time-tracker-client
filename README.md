@@ -324,14 +324,13 @@ server, and its Content-Security-Policy allows no sign-in service, so it
 can't sign in to a server that wants it. The server's repository
 publishes the matching server package.
 
-Each is published twice:
-
-- **As a GitHub Release**, tagged `web-<version>`, never marked latest
-  (that's the Android release, which the APK's install link needs).
-- **In a Google Drive folder**, holding only the latest package: each run
-  copies the new one in and removes the older web packages, leaving the
-  server's alone. Without the `DRIVE_RCLONE_CONF` secret this step is
-  skipped, with a warning.
+It's published to a Google Drive folder, which holds only the latest
+package: each run copies the new one in and removes the older web
+packages, leaving the server's alone. rclone moves what it removes to
+Drive's trash, so an older package can be got back for 30 days. A push
+whose version's package is already there is skipped, and without the
+`DRIVE_RCLONE_CONF` secret, so is everything, with a warning. The packages
+aren't published as GitHub Releases; the Android app's are.
 
 A pull request that changes the workflow, `tool/ci/publish_to_drive.sh` or
 `tool/web_csp.dart` builds and packages it too, but publishes nothing.
