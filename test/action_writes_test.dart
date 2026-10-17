@@ -52,8 +52,7 @@ McpException _conflict(Map<String, Object?>? current) => McpException(
 );
 
 void main() {
-  late List<({String tool, Map<String, Object?> arguments, String writeId})>
-  calls;
+  late List<({String tool, Map<String, Object?> arguments})> calls;
   late List<Object? Function(String tool, Map<String, Object?> arguments)>
   answers;
   late WriteQueue queue;
@@ -64,8 +63,8 @@ void main() {
     answers = [];
     queue = WriteQueue(
       store: InMemoryOutboxStore(),
-      call: (tool, arguments, writeId) async {
-        calls.add((tool: tool, arguments: arguments, writeId: writeId));
+      call: (tool, arguments) async {
+        calls.add((tool: tool, arguments: arguments));
         if (answers.isEmpty) throw http.ClientException('offline');
         return answers.removeAt(0)(tool, arguments);
       },
@@ -187,7 +186,6 @@ void main() {
       {'priority': 2, 'color': '#ff0000'},
       {'priority': 0, 'color': '#00ff00'},
     ]);
-    expect(calls[1].writeId, '${calls[0].writeId}/2');
   });
 
   group('ActionWrites', () {
@@ -317,5 +315,5 @@ void main() {
 }
 
 /// A write call for a queue that's never to send.
-Future<Object?> _never(String _, Map<String, Object?> _, String _) async =>
+Future<Object?> _never(String _, Map<String, Object?> _) async =>
     throw StateError('not to be sent');

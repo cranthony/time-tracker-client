@@ -646,6 +646,32 @@ class Overwrite {
 
   /// Whether cancelling [event] counts against follow-through.
   bool counts(Event event) => countsAgainst.contains(event.id);
+
+  /// The update of the event [id] in it, if it has one.
+  (Event, Map<String, Object?>)? updateOf(String id) =>
+      updates.where((u) => u.$1.id == id).firstOrNull;
+
+  /// The cancel of the event [id] in it, if it has one.
+  Event? cancelOf(String id) => cancels.where((e) => e.id == id).firstOrNull;
+
+  /// It with the event [id] as [event] -- changed by [changes], if it's
+  /// updated and they're given -- or, with no [event], without its change.
+  Overwrite withEvent(
+    String id,
+    Event? event, {
+    Map<String, Object?>? changes,
+  }) => Overwrite(
+    cancels: [
+      for (final e in cancels)
+        if (e.id != id) e else ?event,
+    ],
+    updates: [
+      for (final (e, c) in updates)
+        if (e.id != id) (e, c) else if (event != null) (event, changes ?? c),
+    ],
+    creates: creates,
+    countsAgainst: countsAgainst,
+  );
   final List<(Event, Map<String, Object?>)> updates;
   final List<Map<String, Object?>> creates;
 

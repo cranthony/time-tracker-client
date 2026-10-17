@@ -56,7 +56,7 @@ void main() {
     answers = [];
     queue = WriteQueue(
       store: InMemoryOutboxStore(),
-      call: (tool, arguments, _) async {
+      call: (tool, arguments) async {
         calls.add((tool: tool, arguments: arguments));
         if (answers.isEmpty) throw http.ClientException('offline');
         return answers.removeAt(0)(arguments);

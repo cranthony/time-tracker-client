@@ -174,7 +174,7 @@ class ActionWrites implements Listenable {
 /// Makes the action writes' tool calls to [repository] itself, as the
 /// server would: with no server, and in tests.
 WriteCall localActionCalls(ActionsRepository repository) =>
-    (tool, arguments, writeId) async {
+    (tool, arguments) async {
       Map<String, Object?> item(String name) =>
           (arguments[name] as Map).cast<String, Object?>();
       Map<String, Object?> planned(Map<String, Object?> fields) => {

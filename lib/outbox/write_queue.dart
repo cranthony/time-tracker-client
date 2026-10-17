@@ -367,20 +367,47 @@ class WriteKind {
   };
 }
 
-/// Sends a write to the server: [tool], with [arguments], made once by
-/// its [writeId]; gives what the tool gives.
+/// How a write the server refused as changed elsewhere since
+/// ([PendingWrite.conflicted]) is resolved, for the dialog that asks the
+/// user how (showWriteConflictDialog): the [WriteQueue]'s writes, and the
+/// event outbox's.
+abstract interface class ConflictResolver {
+  /// What [write] writes, as one would name it: “location “Home””.
+  String label(PendingWrite write);
+
+  /// What one's called: "location".
+  String noun(PendingWrite write);
+
+  /// Whether [write]'s item, deleted elsewhere since, can be put back.
+  bool canRestore(PendingWrite write);
+
+  /// Sends [write] again with [changes], made to the item as it is now.
+  Future<void> resolve(PendingWrite write, Map<String, Object?> changes);
+
+  /// Sends [write] as it is over what changed elsewhere.
+  Future<void> overwrite(PendingWrite write);
+
+  /// Puts [write]'s item back, deleted elsewhere since, with its changes.
+  Future<void> restore(PendingWrite write);
+
+  /// Drops [write]. False if it's being sent.
+  Future<bool> drop(PendingWrite write);
+}
+
+/// Sends a write to the server: [tool], with [arguments]; gives what the
+/// tool gives.
 typedef WriteCall = Future<Object?> Function(
   String tool,
   Map<String, Object?> arguments,
-  String writeId,
 );
 
 /// Every write the app makes to the server of the kinds it has
 /// ([WriteKind.all]), kept on the device until it's saved: the app never
 /// waits on the server to write, so it works the same offline. Each write
-/// is sent once -- the server keeps what each write_id gave, so one sent
-/// again isn't made again -- and retried until it's saved. Nothing is
-/// dropped unless the user drops it ([drop]).
+/// is retried until it's saved, and made once however often it's sent:
+/// a new item names itself by its id, and a change says the version it
+/// was made to, so the server gives back what's made already rather than
+/// making it again. Nothing is dropped unless the user drops it ([drop]).
 ///
 /// * A new item gets its id from the app ([create]), so it can be named
 ///   -- by an event, say -- before the server has it. A write naming an
@@ -396,7 +423,8 @@ typedef WriteCall = Future<Object?> Function(
 /// * What's shown of each kind is what the server gave, with the writes
 ///   waiting made to it ([shown]) -- and those just saved, till a fetch
 ///   started after them is in.
-class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
+class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
+    implements ConflictResolver {
   WriteQueue({
     required super.store,
     required this._call,
@@ -405,9 +433,8 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
     Random? random,
   }) : _random = random ?? Random.secure();
 
-  /// Writes through [client], made once by their write_id.
-  static WriteCall callOn(McpClient client) =>
-      (tool, arguments, writeId) => client.callTool(tool, arguments, writeId);
+  /// Writes through [client].
+  static WriteCall callOn(McpClient client) => client.callTool;
 
   final WriteCall _call;
   final Random _random;
@@ -429,7 +456,14 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
 
   static WriteKind kindOf(PendingWrite write) => WriteKind.all[write.kind]!;
 
+  @override
+  String noun(PendingWrite write) => kindOf(write).noun;
+
+  @override
+  bool canRestore(PendingWrite write) => true;
+
   /// [write]'s item, as one would name it: “location “Home””.
+  @override
   String label(PendingWrite write) {
     final kind = kindOf(write);
     return kind.label({
@@ -593,6 +627,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
   /// Drops [write] without sending it -- and, for a new item, the writes
   /// to it waiting behind it, which can't be made without it. Only the
   /// user does this. False if it's being sent.
+  @override
   Future<bool> drop(PendingWrite write) async {
     if (isSending(write)) return false;
     var dropped = false;
@@ -620,6 +655,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
 
   /// Sends [write], [PendingWrite.conflicted], as it is, over what changed
   /// elsewhere: the user chose theirs.
+  @override
   Future<void> overwrite(PendingWrite write) async {
     await replaceUnlessSending(
       write.id,
@@ -687,6 +723,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
 
   /// Sends [write], [PendingWrite.conflicted], again with [changes] --
   /// the user's picks -- made to the item as it is now.
+  @override
   Future<void> resolve(PendingWrite write, Map<String, Object?> changes) async {
     final current = write.current;
     await replaceUnlessSending(
@@ -705,6 +742,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
 
   /// Puts back [write]'s item, deleted elsewhere since: made again, with
   /// its id, as it was with [write]'s changes.
+  @override
   Future<void> restore(PendingWrite write) async {
     final kind = kindOf(write);
     final fields = kind.writable({...?write.base, ...write.changes})
@@ -842,8 +880,17 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
     );
   }
 
-  static bool _same(Object? a, Object? b) =>
-      jsonEncode(_canonical(a)) == jsonEncode(_canonical(b));
+  /// Whether [a] and [b] are the same value -- two times the same moment,
+  /// however each is written.
+  static bool same(Object? a, Object? b) {
+    if (a is String && b is String && a != b && a.contains('T')) {
+      final (x, y) = (DateTime.tryParse(a), DateTime.tryParse(b));
+      if (x != null && y != null) return x.isAtSameMomentAs(y);
+    }
+    return jsonEncode(_canonical(a)) == jsonEncode(_canonical(b));
+  }
+
+  static bool _same(Object? a, Object? b) => same(a, b);
 
   static Object? _canonical(Object? value) => switch (value) {
     final Map map => {
@@ -858,15 +905,11 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
     final kind = kindOf(write);
     final version = write.baseVersion;
     if (kind.updateCalls case final calls?) {
-      // One call for each part changed, each made once by a write_id of
-      // its own.
+      // One call for each part changed: each sets it whole, so it's the
+      // same sent again.
       Object? result;
-      for (final (i, arguments) in calls(write.changes).indexed) {
-        result = await _call(
-          kind.updateTool,
-          arguments,
-          i == 0 ? write.id : '${write.id}/${i + 1}',
-        );
+      for (final arguments in calls(write.changes)) {
+        result = await _call(kind.updateTool, arguments);
       }
       return _item(kind, write, result);
     }
@@ -915,7 +958,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?> {
         },
       ),
     };
-    return _item(kind, write, await _call(tool, arguments, write.id));
+    return _item(kind, write, await _call(tool, arguments));
   }
 
   /// The item [write] made or changed, in what its tool gave: [result].

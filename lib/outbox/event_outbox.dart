@@ -13,6 +13,7 @@ import '../services/proposal_repository.dart';
 import '../widgets/other_events.dart';
 import 'outbox.dart';
 import 'pending_event_write.dart';
+import 'write_queue.dart';
 import 'proposal_notices.dart';
 
 export 'outbox.dart' show FlushResult;
@@ -150,7 +151,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
     super.clock,
     super.sender,
     Random? random,
-  }) : _random = random ?? Random();
+  }) : _random = random ?? Random.secure();
 
   /// The ids of what's being made, not saved yet (a [WriteQueue]'s
   /// [WriteQueue.making]): a write naming one -- a location made offline,
@@ -231,8 +232,24 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
     super.dispose();
   }
 
-  String _newId() =>
-      '${now().microsecondsSinceEpoch}-${_random.nextInt(0x7fffffff)}';
+  /// A write's id: 16 letters and digits, so none from two devices clash.
+  String _newId() => _token('0123456789abcdefghijklmnopqrstuvwxyz', 16);
+
+  /// A new event's id, in Calendar's form (a-v and 0-9): so it names the
+  /// event before the server has it, and a create sent again finds the
+  /// one it made.
+  String _eventId() => _token('0123456789abcdefghijklmnopqrstuv', 20);
+
+  String _token(String alphabet, int length) => String.fromCharCodes([
+    for (var i = 0; i < length; i++)
+      alphabet.codeUnitAt(_random.nextInt(alphabet.length)),
+  ]);
+
+  /// [fields], a new event's, with an id of its own.
+  Map<String, Object?> _named(Map<String, Object?> fields) => {
+    ...fields,
+    'id': fields['id'] ?? _eventId(),
+  };
 
   Future<List<Event>> _add(PendingEventWrite write) async {
     if (conflict(write) case final waiting?) throw waiting;
@@ -298,7 +315,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
       kind: EventWriteKind.create,
       label: 'Add ${_nameOf(fields)}',
       made: now(),
-      fields: fields,
+      fields: _named(fields),
     ),
   );
 
@@ -315,7 +332,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
           'Add ${_nameOf(fields)}'
           '${over.isEmpty ? '' : ', changing ${_count(over.count)}'}',
       made: now(),
-      fields: fields,
+      fields: _named(fields),
       over: over,
       allowHistory: allowHistory,
     ),
@@ -618,6 +635,131 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
   @override
   bool retries(Object error) => !_refusal(error);
 
+  /// Conflicts found sending, by write, till they're kept (see [failed]).
+  final _conflicts = <String, Map<String, Object?>?>{};
+
+  /// Of each conflict found sending, which event it's of.
+  final _conflictIds = <String, String?>{};
+
+  @override
+  void failed(PendingEventWrite item) {
+    if (!_conflicts.containsKey(item.id)) return;
+    final current = _conflicts.remove(item.id);
+    final id = _conflictIds.remove(item.id);
+    unawaited(
+      replaceUnlessSending(
+        item.id,
+        (w) => w
+            .copyWith(
+              conflicted: true,
+              current: () => current,
+              conflictId: () => id,
+            )
+            .copyWith(
+              lastError: () => current == null
+                  ? 'Deleted elsewhere since'
+                  : 'Changed elsewhere since',
+            ),
+      ).catchError((_) => false),
+    );
+  }
+
+  /// [item], an update or cancel of one event, sent by [write] -- made to
+  /// the event as it is now if the server finds it changed elsewhere in
+  /// other fields since (its etag); changed in the same, it waits,
+  /// conflicted, for the user ([failed]).
+  Future<List<Event>> _versioned(
+    PendingEventWrite item,
+    Future<List<Event>> Function(PendingEventWrite item) write,
+  ) async {
+    var sent = item;
+    for (var merged = 0; ; merged++) {
+      try {
+        return await write(sent);
+      } on McpException catch (e) {
+        final conflict = e.conflict;
+        if (conflict == null) rethrow;
+        final current = conflict.current;
+        final id = conflict.id ?? sent.event?.id;
+        final rebased = merged < 2 && id != null
+            ? _rebased(sent, id, current)
+            : null;
+        if (rebased != null) {
+          sent = rebased;
+          await change(
+            (items) => [
+              for (final w in items) w.id == rebased.id ? rebased : w,
+            ],
+          );
+          continue;
+        }
+        _conflicts[sent.id] = current;
+        _conflictIds[sent.id] = id;
+        rethrow;
+      }
+    }
+  }
+
+  /// [item] made to the event [id] as it is now, [current] -- if it can
+  /// be: it's still there, it's updated (a cancel of one changed is asked
+  /// about first), and nothing the update changes was changed elsewhere
+  /// since, or was changed the same. Null if it can't.
+  static PendingEventWrite? _rebased(
+    PendingEventWrite item,
+    String id,
+    Map<String, Object?>? current,
+  ) {
+    if (current == null) return null;
+    final now = Event.fromJson(current.cast());
+    bool merges(Event base, Map<String, Object?> changes) {
+      final was = base.toJson();
+      return changes.entries.every(
+        (c) =>
+            WriteQueue.same(current[c.key], was[c.key]) ||
+            WriteQueue.same(current[c.key], c.value),
+      );
+    }
+
+    if (item.kind == EventWriteKind.update) {
+      final base = item.event;
+      if (base == null || !merges(base, item.changes)) return null;
+      return item.copyWith(event: () => now);
+    }
+    final (base, changes) = item.over.updateOf(id) ?? (null, null);
+    if (base == null || changes == null || !merges(base, changes)) return null;
+    return item.copyWith(over: item.over.withEvent(id, now));
+  }
+
+  /// [write], conflicted, as the write-conflict dialog shows it: the
+  /// change to the one event changed elsewhere -- of a batch, its part.
+  static PendingWrite conflictOf(PendingEventWrite write) {
+    final id = write.conflictId ?? write.event?.id ?? '';
+    final (
+      Event? base,
+      Map<String, Object?> changes,
+      bool cancel,
+    ) = switch (write.kind) {
+      EventWriteKind.update => (write.event, write.changes, false),
+      EventWriteKind.cancel => (write.event, const {}, true),
+      _ => switch (write.over.updateOf(id)) {
+        (final e, final c) => (e, c, false),
+        null => (write.over.cancelOf(id), const {}, true),
+      },
+    };
+    return PendingWrite(
+      id: write.id,
+      kind: 'event',
+      op: cancel ? WriteOp.delete : WriteOp.update,
+      itemId: id,
+      changes: changes,
+      base: base?.toJson(),
+      conflicted: write.conflicted,
+      current: write.current,
+      refused: write.refused,
+      lastError: write.lastError,
+    );
+  }
+
   /// Whether the server answered, saying no: an overlap, history, a stale
   /// revision, something not there. Those aren't tried again by
   /// themselves.
@@ -632,20 +774,26 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
     final allow = item.allowHistory;
     Future<T> timed<T>(Future<T> f) => f.timeout(Outbox.requestTimeout);
     final Object? result = switch (item.kind) {
-      EventWriteKind.update => await timed(
-        _events.updateEvent(
-          item.event!,
-          item.changes,
-          allowCompactedChanges: allow,
+      EventWriteKind.update => await _versioned(
+        item,
+        (item) => timed(
+          _events.updateEvent(
+            item.event!,
+            item.changes,
+            allowCompactedChanges: allow,
+          ),
         ),
       ),
       EventWriteKind.cancel => await _unlessDone(
         maybeSaved,
-        () => timed(
-          _events.deleteEvent(
-            item.event!,
-            countsAgainstFollowThrough: item.countsAgainstFollowThrough,
-            allowCompactedChanges: allow,
+        () => _versioned(
+          item,
+          (item) => timed(
+            _events.deleteEvent(
+              item.event!,
+              countsAgainstFollowThrough: item.countsAgainstFollowThrough,
+              allowCompactedChanges: allow,
+            ),
           ),
         ),
       ),
@@ -654,11 +802,14 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
             await timed(_events.createEvent(item.fields)),
       EventWriteKind.createOver =>
         (maybeSaved ? await _alreadyMade(item.fields) : null) ??
-            await timed(
-              _events.createOver(
-                item.fields,
-                item.over,
-                allowCompactedChanges: allow,
+            await _versioned(
+              item,
+              (item) => timed(
+                _events.createOver(
+                  item.fields,
+                  item.over,
+                  allowCompactedChanges: allow,
+                ),
               ),
             ),
       EventWriteKind.makeRoom =>
@@ -667,8 +818,11 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
                 : null) ??
             await _unlessDone(
               maybeSaved,
-              () => timed(
-                _events.makeRoom(item.over, allowCompactedChanges: allow),
+              () => _versioned(
+                item,
+                (item) => timed(
+                  _events.makeRoom(item.over, allowCompactedChanges: allow),
+                ),
               ),
             ),
       EventWriteKind.amend => await _amend(item, maybeSaved: maybeSaved),
@@ -1006,4 +1160,85 @@ class HistoryKept implements Exception {
 
   @override
   String toString() => 'Kept as history: nothing was changed.';
+}
+
+/// Resolves [outbox]'s writes the server refused as made to their event
+/// since changed elsewhere, for the write-conflict dialog: each shown as
+/// the [PendingWrite] [EventOutbox.conflictOf] makes of it.
+class EventConflicts implements ConflictResolver {
+  EventConflicts(this.outbox);
+
+  final EventOutbox outbox;
+
+  PendingEventWrite? _of(PendingWrite write) =>
+      outbox.items.where((w) => w.id == write.id).firstOrNull;
+
+  @override
+  String label(PendingWrite write) => switch (write.base?['summary']) {
+    final String s when s.trim().isNotEmpty => 'event “${s.trim()}”',
+    _ => 'the event',
+  };
+
+  @override
+  String noun(PendingWrite write) => 'event';
+
+  /// An event deleted elsewhere isn't made again here: the change is only
+  /// dropped.
+  @override
+  bool canRestore(PendingWrite write) => false;
+
+  /// Made to the event as it is now -- its etag, and the fields kept
+  /// theirs -- with [changes].
+  @override
+  Future<void> resolve(PendingWrite write, Map<String, Object?> changes) =>
+      _resend(write, changes);
+
+  /// Made as it is, over what changed: to the event as it is now.
+  @override
+  Future<void> overwrite(PendingWrite write) => _resend(write, null);
+
+  @override
+  Future<void> restore(PendingWrite write) async {}
+
+  /// Drops the change to the event changed elsewhere: of one event's
+  /// change, the write; of a batch, just its part -- the rest is sent.
+  @override
+  Future<bool> drop(PendingWrite write) async {
+    final w = _of(write);
+    if (w == null) return true;
+    if (!_batch(w)) return outbox.drop(w);
+    final over = w.over.withEvent(write.itemId, null);
+    if (over.isEmpty && w.kind == EventWriteKind.makeRoom) {
+      return outbox.drop(w);
+    }
+    return outbox.edit(w, _settled(w).copyWith(over: over));
+  }
+
+  static bool _batch(PendingEventWrite w) =>
+      w.kind == EventWriteKind.makeRoom || w.kind == EventWriteKind.createOver;
+
+  /// [w] with its conflict let go.
+  static PendingEventWrite _settled(PendingEventWrite w) => w.copyWith(
+    conflicted: false,
+    current: () => null,
+    conflictId: () => null,
+  );
+
+  Future<void> _resend(
+    PendingWrite write,
+    Map<String, Object?>? changes,
+  ) async {
+    final w = _of(write);
+    final current = w?.current;
+    if (w == null || current == null) return;
+    final now = Event.fromJson(current.cast());
+    await outbox.edit(
+      w,
+      _batch(w)
+          ? _settled(w).copyWith(
+              over: w.over.withEvent(write.itemId, now, changes: changes),
+            )
+          : _settled(w).copyWith(event: () => now, changes: changes),
+    );
+  }
 }

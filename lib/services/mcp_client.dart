@@ -20,10 +20,12 @@ class McpException implements Exception {
   final Map<String, Object?>? meta;
 
   /// The item as it is now, when a write was refused as changed since
-  /// the version it was made from: null if it's been deleted.
-  ({Map<String, Object?>? current})? get conflict =>
+  /// the version it was made from: null if it's been deleted -- and its
+  /// id, which says which, of a write of several (a batch of events).
+  ({String? id, Map<String, Object?>? current})? get conflict =>
       switch (meta?['conflict']) {
         final Map conflict => (
+          id: conflict['id'] as String?,
           current: switch (conflict['current']) {
             final Map current => current.cast<String, Object?>(),
             _ => null,
@@ -41,34 +43,6 @@ class McpException implements Exception {
 
   @override
   String toString() => 'McpException: $message';
-}
-
-/// An outbox's sending of one item ([id]), as the writes it makes see it:
-/// each write tool it calls is sent with a write_id from it, the same
-/// each time the item's sent -- the first call of a tool `<id>/<tool>`,
-/// the next `<id>/<tool>/2` -- so the server makes each once, however
-/// many times the item's tried. See [Outbox] and [McpClient.callTool].
-class WriteScope {
-  WriteScope(this.id);
-
-  /// The item's id.
-  final String id;
-  final _calls = <String, int>{};
-
-  /// The write_id for the next call of [tool].
-  String next(String tool) {
-    final n = _calls[tool] = (_calls[tool] ?? 0) + 1;
-    return n == 1 ? '$id/$tool' : '$id/$tool/$n';
-  }
-
-  static const _key = #writeScope;
-
-  /// The one sending is in, if any.
-  static WriteScope? get current => Zone.current[_key] as WriteScope?;
-
-  /// Runs [body], sending the item [id]: in a scope of its own.
-  static Future<T> run<T>(String id, Future<T> Function() body) =>
-      runZoned(body, zoneValues: {_key: WriteScope(id)});
 }
 
 /// Thrown when the server needs the user to (re-)sign in.
@@ -146,22 +120,15 @@ class McpClient {
   /// Calls [name] with [arguments] and returns the tool's result, decoded
   /// from JSON where possible -- retried as the class docs say. Recorded
   /// in [health], if there is one.
-  ///
-  /// With [writeId], a write is made once however many times it's sent
-  /// (the server keeps what each write_id gave): so it's safe to send
-  /// again, as a read is. A write sent by an outbox has one from its
-  /// [WriteScope] if it's given none.
   Future<Object?> callTool(
     String name, [
     Map<String, Object?> arguments = const {},
-    String? writeId,
   ]) async {
-    writeId ??= readsOnly(name) ? null : WriteScope.current?.next(name);
     final health = this.health;
-    if (health == null) return _callTool(name, arguments, writeId);
+    if (health == null) return _callTool(name, arguments);
     final watch = Stopwatch()..start();
     try {
-      final result = await _callTool(name, arguments, writeId);
+      final result = await _callTool(name, arguments);
       health.recordCall(name, watch.elapsedMilliseconds);
       return result;
     } catch (e) {
@@ -170,18 +137,16 @@ class McpClient {
     }
   }
 
-  Future<Object?> _callTool(
-    String name,
-    Map<String, Object?> arguments,
-    String? writeId,
-  ) async {
-    final safe = readsOnly(name) || writeId != null;
+  Future<Object?> _callTool(String name, Map<String, Object?> arguments) async {
+    // A write sent and unanswered is the outbox's to send again: it knows
+    // whether it was made (see WriteQueue).
+    final safe = readsOnly(name);
     for (var attempt = 0; ; attempt++) {
       // Whether the call's been sent: before it, any failure is safe to
       // retry. Per call: calls run side by side.
       final sent = [false];
       try {
-        return await _callOnce(name, arguments, sent, writeId);
+        return await _callOnce(name, arguments, sent);
       } catch (e) {
         final again =
             attempt < retryDelays.length &&
@@ -198,14 +163,12 @@ class McpClient {
     String name,
     Map<String, Object?> arguments,
     List<bool> sent,
-    String? writeId,
   ) async {
     await _ensureInitialized();
     sent.first = true;
     final result = await _request('tools/call', {
       'name': name,
       'arguments': arguments,
-      if (writeId != null) '_meta': {'write_id': writeId},
     });
     if (result['isError'] == true) {
       final said = _textContent(result);

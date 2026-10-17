@@ -4,9 +4,9 @@ import 'outbox.dart';
 enum WriteOp { create, update, delete }
 
 /// One write waiting in the [WriteQueue] to be saved to the server: an
-/// item of some [kind] ([WriteKind.name]) made, changed or deleted. Its
-/// [id] is the write's own, sent as the server's write_id, so however many
-/// times it's sent, it's made once.
+/// item of some [kind] ([WriteKind.name]) made, changed or deleted. It's
+/// made once however many times it's sent by what it names -- a new item
+/// by the id the app gave it -- and the version it was made to.
 class PendingWrite implements OutboxItem<PendingWrite> {
   const PendingWrite({
     required this.id,
