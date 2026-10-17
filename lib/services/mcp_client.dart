@@ -43,6 +43,34 @@ class McpException implements Exception {
   String toString() => 'McpException: $message';
 }
 
+/// An outbox's sending of one item ([id]), as the writes it makes see it:
+/// each write tool it calls is sent with a write_id from it, the same
+/// each time the item's sent -- the first call of a tool `<id>/<tool>`,
+/// the next `<id>/<tool>/2` -- so the server makes each once, however
+/// many times the item's tried. See [Outbox] and [McpClient.callTool].
+class WriteScope {
+  WriteScope(this.id);
+
+  /// The item's id.
+  final String id;
+  final _calls = <String, int>{};
+
+  /// The write_id for the next call of [tool].
+  String next(String tool) {
+    final n = _calls[tool] = (_calls[tool] ?? 0) + 1;
+    return n == 1 ? '$id/$tool' : '$id/$tool/$n';
+  }
+
+  static const _key = #writeScope;
+
+  /// The one sending is in, if any.
+  static WriteScope? get current => Zone.current[_key] as WriteScope?;
+
+  /// Runs [body], sending the item [id]: in a scope of its own.
+  static Future<T> run<T>(String id, Future<T> Function() body) =>
+      runZoned(body, zoneValues: {_key: WriteScope(id)});
+}
+
 /// Thrown when the server needs the user to (re-)sign in.
 class SignInRequiredException implements Exception {
   @override
@@ -121,12 +149,14 @@ class McpClient {
   ///
   /// With [writeId], a write is made once however many times it's sent
   /// (the server keeps what each write_id gave): so it's safe to send
-  /// again, as a read is.
+  /// again, as a read is. A write sent by an outbox has one from its
+  /// [WriteScope] if it's given none.
   Future<Object?> callTool(
     String name, [
     Map<String, Object?> arguments = const {},
     String? writeId,
   ]) async {
+    writeId ??= readsOnly(name) ? null : WriteScope.current?.next(name);
     final health = this.health;
     if (health == null) return _callTool(name, arguments, writeId);
     final watch = Stopwatch()..start();

@@ -126,7 +126,8 @@ void main() {
         'hint': null,
         'map_location': '12 Fifth Ave',
       });
-      await queue.flush();
+      // Not tried yet: the change joins it.
+      await pumpEventQueue();
 
       expect(queue.items.single.changes, {
         'name': 'Home',
