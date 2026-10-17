@@ -75,6 +75,7 @@ class _Server extends InMemoryEventsRepository {
       for (final (e, changes) in over.updates)
         e.id!: (e.properties['etag'], changes),
       for (final e in over.cancels) e.id!: (e.properties['etag'], null),
+      'creates': (over.creates.map((c) => c['id']).toList(), null),
     });
     if (answers.isNotEmpty) throw answers.removeAt(0);
     return const [];
@@ -271,6 +272,74 @@ void main() {
       expect(rest.conflicted, isFalse);
       expect(rest.over.cancels, isEmpty);
       expect(rest.over.updates.single.$1.id, 'lunch');
+    });
+
+    test('each event it makes has an id of its own, so a batch stopped '
+        'partway is safe to send again', () async {
+      await outbox.makeRoom(
+        Overwrite(
+          creates: [
+            {
+              'summary': 'Rest',
+              'start': localIsoTimestamp(_at(15)),
+              'end': localIsoTimestamp(_at(16)),
+            },
+          ],
+        ),
+      );
+      await outbox.flush();
+
+      final ids = (server.batches.single['creates']! as (Object?, Object?)).$1;
+      expect(ids, [matches(RegExp(r'^[a-v0-9]{20}$'))]);
+    });
+
+    test('every event changed elsewhere is resolved in turn before it is '
+        'sent again', () async {
+      await outbox.makeRoom(
+        Overwrite(
+          updates: [
+            (Event.fromJson(_lunch()), {'summary': 'Brunch'}),
+            (Event.fromJson(_gym()), {'summary': 'Swim'}),
+          ],
+        ),
+      );
+      server.answers.add(
+        McpException(
+          'Tool update_event failed: 2 of the things it changes changed',
+          meta: {
+            'conflicts': [
+              {
+                'id': 'lunch',
+                'current': _lunch(summary: 'Late lunch', etag: 'e2'),
+              },
+              {'id': 'gym', 'current': _gym(summary: 'Climbing', etag: 'g2')},
+            ],
+          },
+        ),
+      );
+      await outbox.flush();
+      await outbox.refresh();
+
+      var waiting = outbox.items.single;
+      expect((waiting.conflicted, waiting.conflictId), (true, 'lunch'));
+      expect(waiting.moreConflicts.map((c) => c['id']), ['gym']);
+
+      final conflicts = EventConflicts(outbox);
+      await conflicts.resolve(EventOutbox.conflictOf(waiting), {
+        'summary': 'Brunch',
+      });
+      waiting = outbox.items.single;
+      expect((waiting.conflicted, waiting.conflictId), (true, 'gym'));
+      final sent = server.batches.length;
+      await outbox.flush();
+      expect(server.batches, hasLength(sent), reason: 'sent before resolved');
+
+      await conflicts.drop(EventOutbox.conflictOf(waiting));
+      await outbox.flush();
+      final last = server.batches.last;
+      expect((last['lunch']! as (Object?, Object?)).$1, 'e2');
+      expect(last.containsKey('gym'), isFalse);
+      expect(outbox.items, isEmpty);
     });
   });
 }

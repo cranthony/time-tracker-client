@@ -84,6 +84,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     this.conflicted = false,
     this.current,
     this.conflictId,
+    this.moreConflicts = const [],
   });
 
   @override
@@ -157,6 +158,11 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
   /// When [conflicted], the event that was changed elsewhere: of a batch
   /// ([over]), which of its events; of one event's change, it.
   final String? conflictId;
+
+  /// When [conflicted], of a batch: the other events changed elsewhere,
+  /// each `{id, current}`, to resolve after [conflictId], one by one,
+  /// before it's sent again.
+  final List<Map<String, Object?>> moreConflicts;
 
   /// The id an event it creates goes by until the server gives it one:
   /// [n] counts those it creates.
@@ -387,6 +393,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     Map<String, Object?>? Function()? current,
     String? Function()? conflictId,
     Overwrite? over,
+    List<Map<String, Object?>>? moreConflicts,
   }) => PendingEventWrite(
     id: id,
     kind: kind,
@@ -396,6 +403,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     conflicted: conflicted ?? this.conflicted,
     current: current != null ? current() : this.current,
     conflictId: conflictId != null ? conflictId() : this.conflictId,
+    moreConflicts: moreConflicts ?? this.moreConflicts,
     changes: changes ?? this.changes,
     fields: fields ?? this.fields,
     over: over ?? this.over,
@@ -440,6 +448,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     if (conflicted) 'conflicted': true,
     'current': ?current,
     'conflict_id': ?conflictId,
+    if (moreConflicts.isNotEmpty) 'more_conflicts': moreConflicts,
   };
 
   factory PendingEventWrite.fromJson(Map<String, dynamic> json) {
@@ -477,6 +486,10 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
       refused: json['refused'] == true,
       conflicted: json['conflicted'] == true,
       conflictId: json['conflict_id'] as String?,
+      moreConflicts: [
+        for (final c in json['more_conflicts'] as List? ?? const [])
+          (c as Map).cast<String, Object?>(),
+      ],
       current: switch (json['current']) {
         final Map current => current.cast<String, Object?>(),
         _ => null,

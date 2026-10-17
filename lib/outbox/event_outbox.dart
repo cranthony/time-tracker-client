@@ -251,6 +251,16 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
     'id': fields['id'] ?? _eventId(),
   };
 
+  /// [over], each event it makes with an id of its own -- so a batch
+  /// Calendar stopped partway is safe to send again: what it made is
+  /// found, not made twice.
+  Overwrite _namedOver(Overwrite over) => Overwrite(
+    cancels: over.cancels,
+    updates: over.updates,
+    creates: [for (final c in over.creates) _named(c)],
+    countsAgainst: over.countsAgainst,
+  );
+
   Future<List<Event>> _add(PendingEventWrite write) async {
     if (conflict(write) case final waiting?) throw waiting;
     await change((items) => [...items, write]);
@@ -333,7 +343,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
           '${over.isEmpty ? '' : ', changing ${_count(over.count)}'}',
       made: now(),
       fields: _named(fields),
-      over: over,
+      over: _namedOver(over),
       allowHistory: allowHistory,
     ),
   );
@@ -349,7 +359,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
       kind: EventWriteKind.makeRoom,
       label: label ?? 'Change ${_count(over.count)}',
       made: now(),
-      over: over,
+      over: _namedOver(over),
       allowHistory: allowHistory,
     ),
   );
@@ -626,6 +636,24 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
     return true;
   }
 
+  /// Replaces [write], conflicted, with [edited], one of its conflicts
+  /// resolved: with the next to resolve, if it has more, before it's sent;
+  /// else sent again ([edit]). False if it's being sent.
+  Future<bool> settle(PendingEventWrite write, PendingEventWrite edited) async {
+    if (edited.moreConflicts case [final next, ...final rest]) {
+      return replaceUnlessSending(
+        write.id,
+        (_) => edited.copyWith(
+          conflicted: true,
+          current: () => (next['current'] as Map?)?.cast<String, Object?>(),
+          conflictId: () => next['id'] as String?,
+          moreConflicts: rest,
+        ),
+      );
+    }
+    return edit(write, edited);
+  }
+
   /// Sends [write] again, the user having approved changing history.
   Future<void> approveHistory(PendingEventWrite write) async {
     await edit(write, write.copyWith(allowHistory: true));
@@ -636,16 +664,13 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
   bool retries(Object error) => !_refusal(error);
 
   /// Conflicts found sending, by write, till they're kept (see [failed]).
-  final _conflicts = <String, Map<String, Object?>?>{};
-
-  /// Of each conflict found sending, which event it's of.
-  final _conflictIds = <String, String?>{};
+  final _conflicts =
+      <String, List<({String? id, Map<String, Object?>? current})>>{};
 
   @override
   void failed(PendingEventWrite item) {
     if (!_conflicts.containsKey(item.id)) return;
-    final current = _conflicts.remove(item.id);
-    final id = _conflictIds.remove(item.id);
+    final [(:id, :current), ...more] = _conflicts.remove(item.id)!;
     unawaited(
       replaceUnlessSending(
         item.id,
@@ -654,6 +679,9 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
               conflicted: true,
               current: () => current,
               conflictId: () => id,
+              moreConflicts: [
+                for (final c in more) {'id': c.id, 'current': c.current},
+              ],
             )
             .copyWith(
               lastError: () => current == null
@@ -677,24 +705,40 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
       try {
         return await write(sent);
       } on McpException catch (e) {
-        final conflict = e.conflict;
-        if (conflict == null) rethrow;
-        final current = conflict.current;
-        final id = conflict.id ?? sent.event?.id;
-        final rebased = merged < 2 && id != null
-            ? _rebased(sent, id, current)
-            : null;
-        if (rebased != null) {
-          sent = rebased;
-          await change(
-            (items) => [
-              for (final w in items) w.id == rebased.id ? rebased : w,
-            ],
-          );
-          continue;
+        if (e.conflict == null) rethrow;
+        // Each event changed elsewhere in other fields is made to as it is
+        // now; those changed in the same, each in turn, wait for the user.
+        // Sent again once or twice, if all merge.
+        final left = <({String? id, Map<String, Object?>? current})>[];
+        for (final stale in e.conflicts) {
+          final id = stale.id ?? sent.event?.id;
+          final rebased = id == null ? null : _rebased(sent, id, stale.current);
+          if (rebased == null) {
+            left.add((id: id, current: stale.current));
+          } else {
+            sent = rebased;
+          }
         }
-        _conflicts[sent.id] = current;
-        _conflictIds[sent.id] = id;
+        // Kept as merged, still claimed as it's being sent.
+        final kept = sent;
+        await change(
+          (items) => [
+            for (final w in items)
+              w.id == kept.id
+                  ? kept.copyWith(
+                      sendingSince: () => w.sendingSince,
+                      sentBy: () => w.sentBy,
+                    )
+                  : w,
+          ],
+        );
+        if (left.isEmpty && merged < 2) continue;
+        _conflicts[sent.id] = left.isEmpty
+            ? [
+                for (final c in e.conflicts)
+                  (id: c.id ?? sent.event?.id, current: c.current),
+              ]
+            : left;
         rethrow;
       }
     }
@@ -1211,7 +1255,7 @@ class EventConflicts implements ConflictResolver {
     if (over.isEmpty && w.kind == EventWriteKind.makeRoom) {
       return outbox.drop(w);
     }
-    return outbox.edit(w, _settled(w).copyWith(over: over));
+    return outbox.settle(w, _settled(w).copyWith(over: over));
   }
 
   static bool _batch(PendingEventWrite w) =>
@@ -1232,7 +1276,7 @@ class EventConflicts implements ConflictResolver {
     final current = w?.current;
     if (w == null || current == null) return;
     final now = Event.fromJson(current.cast());
-    await outbox.edit(
+    await outbox.settle(
       w,
       _batch(w)
           ? _settled(w).copyWith(

@@ -23,16 +23,26 @@ class McpException implements Exception {
   /// the version it was made from: null if it's been deleted -- and its
   /// id, which says which, of a write of several (a batch of events).
   ({String? id, Map<String, Object?>? current})? get conflict =>
-      switch (meta?['conflict']) {
-        final Map conflict => (
+      conflicts.firstOrNull;
+
+  /// Every item a write was refused for, as changed since the version it
+  /// was made from -- each as [conflict] says one -- for a write of
+  /// several (a batch); none, if it wasn't refused so. A server from
+  /// before batches said only the first.
+  List<({String? id, Map<String, Object?>? current})> get conflicts => [
+    for (final found in switch (meta?['conflicts']) {
+      final List all => all,
+      _ => [?meta?['conflict']],
+    })
+      if (found case final Map conflict)
+        (
           id: conflict['id'] as String?,
           current: switch (conflict['current']) {
             final Map current => current.cast<String, Object?>(),
             _ => null,
           },
         ),
-        _ => null,
-      };
+  ];
 
   /// The HTTP status the server answered with, when it wasn't a 200.
   final int? statusCode;

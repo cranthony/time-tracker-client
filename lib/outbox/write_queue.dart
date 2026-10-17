@@ -478,7 +478,8 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
   final _known = <String, Map<String, Map<String, Object?>>>{};
 
   /// Conflicts found sending, by write, till they're kept (see [failed]).
-  final _conflicts = <String, ({String? id, Map<String, Object?>? current})>{};
+  final _conflicts =
+      <String, List<({String? id, Map<String, Object?>? current})>>{};
 
   static const _idAlphabet = '0123456789abcdefghijklmnopqrstuvwxyz';
 
@@ -827,11 +828,21 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
           },
         );
       }
+      // The next item changed elsewhere, if there's one, to resolve
+      // before it's sent again.
+      if (out.moreConflicts case [final next, ...final rest]) {
+        return out.rewritten(
+          current: () => (next['current'] as Map?)?.cast<String, Object?>(),
+          conflictId: () => next['id'] as String?,
+          moreConflicts: rest,
+        );
+      }
       return out
           .rewritten(
             conflicted: false,
             current: () => null,
             conflictId: () => null,
+            moreConflicts: const [],
           )
           .copyWith(refused: false, lastError: () => null);
     });
@@ -842,13 +853,19 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
   /// elsewhere: the user chose theirs.
   @override
   Future<void> overwrite(PendingWrite write) async {
+    // Made to the item as it is now: its version, so the server, which
+    // takes no change to an item without one, makes it over what changed.
     if (_batchOf(write) != null) {
-      return _resendPart(write, (p) => {...p}..remove('base'));
+      return _resendPart(write, (p) => {...p, 'base': write.current});
     }
     await replaceUnlessSending(
       write.id,
       (w) => w
-          .rewritten(base: () => null, conflicted: false, current: () => null)
+          .rewritten(
+            base: () => w.current,
+            conflicted: false,
+            current: () => null,
+          )
           .copyWith(refused: false, lastError: () => null),
     );
     schedule(immediately: true);
@@ -1073,24 +1090,38 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
         if (conflict == null) rethrow;
         final current = conflict.current;
         if (write.op == WriteOp.batch) {
-          // One item's part changed elsewhere in other fields, and only
-          // once or twice: that part made to it as it is now.
-          final id = conflict.id;
-          if (merged < 2 && id != null && _partMerges(write, id, current)) {
-            write = _withPart(
-              write,
-              'updates',
-              id,
-              (p) => {...p, 'base': current},
-            );
-            await change(
-              (writes) => [
-                for (final w in writes) w.id == write.id ? write : w,
-              ],
-            );
-            continue;
+          // Each item's part changed elsewhere in other fields is made to
+          // it as it is now; those changed in the same, each in turn, wait
+          // for the user. Sent again once or twice, if all merge.
+          final left = <({String? id, Map<String, Object?>? current})>[];
+          for (final stale in e.conflicts) {
+            final id = stale.id;
+            if (id != null && _partMerges(write, id, stale.current)) {
+              write = _withPart(
+                write,
+                'updates',
+                id,
+                (p) => {...p, 'base': stale.current},
+              );
+            } else {
+              left.add(stale);
+            }
           }
-          _conflicts[write.id] = (id: id, current: current);
+          // Kept as merged, still claimed as it's being sent.
+          final rebased = write;
+          await change(
+            (writes) => [
+              for (final w in writes)
+                w.id == rebased.id
+                    ? rebased.copyWith(
+                        sendingSince: () => w.sendingSince,
+                        sentBy: () => w.sentBy,
+                      )
+                    : w,
+            ],
+          );
+          if (left.isEmpty && merged < 2) continue;
+          _conflicts[write.id] = left.isEmpty ? e.conflicts : left;
           rethrow;
         }
         // Changed elsewhere in other fields, and only once or twice:
@@ -1102,7 +1133,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
           );
           continue;
         }
-        _conflicts[write.id] = (id: null, current: current);
+        _conflicts[write.id] = [(id: null, current: current)];
         rethrow;
       }
     }
@@ -1183,9 +1214,16 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
     _ => value,
   };
 
+  /// The version the [kind] [id] was last read at, for a write made to
+  /// it without saying -- one an older version of the app kept, say: the
+  /// server takes no change to an item with a version that doesn't say
+  /// which it was made to.
+  int? _knownVersion(WriteKind kind, Object? id) =>
+      _versionOf(_known[kind.name]?[id]);
+
   Future<Map<String, Object?>?> _send(PendingWrite write) async {
     final kind = kindOf(write);
-    final version = write.baseVersion;
+    final version = write.baseVersion ?? _knownVersion(kind, write.itemId);
     if (kind.updateCalls case final calls?) {
       // One call for each part changed: each sets it whole, so it's the
       // same sent again.
@@ -1212,7 +1250,9 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
                             .cast<String, Object?>()
                             .entries)
                       key: ?value,
-                    'version': ?_versionOf(u['base']),
+                    'version':
+                        ?(_versionOf(u['base']) ??
+                        _knownVersion(kind, u['id'])),
                   },
                   if ([
                         for (final MapEntry(:key, :value)
@@ -1228,7 +1268,8 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
               for (final d in deletes)
                 {
                   kind.deleteArgument!: d['id'],
-                  'if_version': ?_versionOf(d['base']),
+                  'if_version':
+                      ?(_versionOf(d['base']) ?? _knownVersion(kind, d['id'])),
                 },
             ],
         },
@@ -1363,7 +1404,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
   @override
   void failed(PendingWrite item) {
     if (!_conflicts.containsKey(item.id)) return;
-    final (:id, :current) = _conflicts.remove(item.id)!;
+    final [(:id, :current), ...more] = _conflicts.remove(item.id)!;
     unawaited(
       replaceUnlessSending(
         item.id,
@@ -1372,6 +1413,10 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
               conflicted: true,
               current: () => current,
               conflictId: () => w.op == WriteOp.batch ? id : null,
+              moreConflicts: [
+                if (w.op == WriteOp.batch)
+                  for (final c in more) {'id': c.id, 'current': c.current},
+              ],
             )
             .copyWith(
               lastError: () => current == null

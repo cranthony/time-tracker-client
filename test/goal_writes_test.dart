@@ -287,6 +287,66 @@ void main() {
       },
     );
 
+    test('every goal changed elsewhere is resolved in turn before the '
+        'batch is sent again', () async {
+      server.answers.add(
+        (_, _) => throw McpException(
+          'Tool failed: 2 of the things it changes changed',
+          serverMessage: '2 of the things it changes changed',
+          meta: {
+            'conflicts': [
+              {
+                'id': 'sub',
+                'current': {...sub, 'parent_id': null, 'version': 2},
+              },
+              {
+                'id': 'top',
+                'current': {...top, 'status': 'inactive', 'version': 3},
+              },
+            ],
+          },
+        ),
+      );
+      await close();
+      await queue.flush();
+      await pumpEventQueue();
+
+      var write = queue.items.single;
+      expect((write.conflicted, write.conflictId), (true, 'sub'));
+      expect(write.moreConflicts.map((c) => c['id']), ['top']);
+
+      // The first resolved: on to the next, still waiting.
+      await queue.resolve(queue.conflictView(write), {'parent_id': 'new'});
+      await pumpEventQueue();
+      write = queue.items.single;
+      expect((write.conflicted, write.conflictId), (true, 'top'));
+      expect(write.moreConflicts, isEmpty);
+      final sent = server.calls.length;
+      await queue.flush();
+      expect(server.calls, hasLength(sent), reason: 'sent before resolved');
+
+      // The last: sent, each made to the version it is now.
+      await queue.resolve(queue.conflictView(write), {'status': 'done'});
+      await queue.flush();
+      final updates = server.calls.last.arguments['updates'] as List;
+      expect([for (final u in updates) (u as Map)['goal']['version']], [2, 3]);
+      expect(queue.items, isEmpty);
+    });
+
+    test('a write with no base says the version last read', () async {
+      final kept = PendingWrite(
+        id: 'w1',
+        kind: WriteKind.goal.name,
+        op: WriteOp.update,
+        itemId: 'top',
+        changes: const {'title': 'Top!'},
+      );
+      await queue.putBack(kept);
+      await queue.flush();
+
+      expect((server.calls.last.arguments['goal'] as Map)['version'], 1);
+    });
+
     group('a goal changed elsewhere in the same field', () {
       Future<PendingWrite> conflicted() async {
         server.answers.add(

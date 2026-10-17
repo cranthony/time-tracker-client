@@ -9,6 +9,21 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.128.0
+
+- When several of the things one change touches were changed elsewhere
+  -- goals saved together, or events moved to make room -- each is
+  shown in turn to resolve, field by field, and the change is saved once
+  they all are. Before, only the first was found.
+- "Keep mine" on a change made elsewhere saves yours over it, as before,
+  now saying the version it's made over -- which the server now asks of
+  every change.
+- A change kept from an older version of the app, which didn't say which
+  version it was made to, says the one last read when it's sent.
+- Events made by a change that moves others to make room have ids of
+  their own, so if the calendar stops that change partway, sending it
+  again doesn't make them twice.
+
 ## 7.127.0
 
 - Events can be tagged with goals: the event dialog has a Goals row,

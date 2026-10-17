@@ -27,6 +27,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     this.refused = false,
     this.ordered = false,
     this.conflictId,
+    this.moreConflicts = const [],
   });
 
   @override
@@ -41,6 +42,11 @@ class PendingWrite implements OutboxItem<PendingWrite> {
   /// For a [WriteOp.batch] write, [conflicted]: the item whose part the
   /// server found changed elsewhere since its base.
   final String? conflictId;
+
+  /// For a [WriteOp.batch] write, [conflicted]: the other items the server
+  /// found changed elsewhere, each `{id, current}`, to resolve after
+  /// [conflictId], one by one, before it's sent again.
+  final List<Map<String, Object?>> moreConflicts;
 
   /// A [WriteOp.batch] write's parts: the items it makes (each with its
   /// id), changes (`{id, changes, base}`) and deletes (`{id, base}`).
@@ -99,6 +105,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     bool? conflicted,
     Map<String, Object?>? Function()? current,
     String? Function()? conflictId,
+    List<Map<String, Object?>>? moreConflicts,
   }) => PendingWrite(
     id: id,
     kind: kind,
@@ -116,6 +123,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     refused: refused,
     ordered: ordered,
     conflictId: conflictId == null ? this.conflictId : conflictId(),
+    moreConflicts: moreConflicts ?? this.moreConflicts,
   );
 
   @override
@@ -144,6 +152,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     refused: refused ?? this.refused,
     ordered: ordered,
     conflictId: refused == false ? null : conflictId,
+    moreConflicts: refused == false ? const [] : moreConflicts,
   );
 
   factory PendingWrite.fromJson(Map<String, dynamic> json) => PendingWrite(
@@ -163,6 +172,10 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     refused: json['refused'] as bool? ?? false,
     ordered: json['ordered'] as bool? ?? false,
     conflictId: json['conflict_id'] as String?,
+    moreConflicts: [
+      for (final c in json['more_conflicts'] as List? ?? const [])
+        (c as Map).cast<String, Object?>(),
+    ],
   );
 
   Map<String, dynamic> toJson() => {
@@ -182,6 +195,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     if (refused) 'refused': true,
     if (ordered) 'ordered': true,
     'conflict_id': ?conflictId,
+    if (moreConflicts.isNotEmpty) 'more_conflicts': moreConflicts,
   };
 
   static DateTime? _date(Object? value) =>
