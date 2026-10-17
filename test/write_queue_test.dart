@@ -255,8 +255,9 @@ void main() {
     await queue.overwrite(waiting);
     await queue.flush();
     expect(queue.items, isEmpty);
+    // Made over what changed: to the version it is now.
     expect(server.calls.last.arguments, {
-      'location': {'id': 'loc1', 'name': 'Flat'},
+      'location': {'id': 'loc1', 'name': 'Flat', 'version': 2},
     });
   });
 
