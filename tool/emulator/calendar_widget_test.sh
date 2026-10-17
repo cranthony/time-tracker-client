@@ -67,6 +67,10 @@ logcat=$!
 
 launch() { adb shell am start -W -n "$PKG/.MainActivity" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER >/dev/null; }
 home() { adb shell input keyevent KEYCODE_HOME; }
+# The launcher's package, for widget_home to start it again.
+LAUNCHER=$(adb shell cmd package resolve-activity --brief \
+  -a android.intent.action.MAIN -c android.intent.category.HOME |
+  tr -d '\r' | tail -1 | cut -d/ -f1)
 
 # The on-screen views (Flutter's semantics, and the launcher's widget,
 # included), one per line.
@@ -92,6 +96,19 @@ tap_view() {
 # Waits up to $2 seconds for a view $1 (exactly), of those $3 picks, to
 # show.
 wait_for() { poll "$2" on_screen "$1" "${3:-.}"; }
+# Goes to the home screen, and waits up to 20 seconds for the widget.
+# Relaunched for a configuration change, as it can be in the emulator's
+# first minutes, the launcher may come back without the widget, though
+# it's still added and bound: started again, it reads its home screen
+# afresh, the widget included.
+widget_home() {
+  home
+  wait_for 'Add note' 20 "$WIDGET" && return 0
+  echo "The widget's not on the home screen; starting the launcher ($LAUNCHER) again"
+  adb shell am force-stop "$LAUNCHER"
+  home
+  wait_for 'Add note' 30 "$WIDGET"
+}
 # The bounds of the widget's list, as "left top right bottom".
 list_bounds() {
   ui_nodes | grep "class=\"android.widget.ListView\" package=\"$PKG\"" | head -1 |
@@ -267,16 +284,21 @@ widget_settled() { widget_drawn && sleep 3 && widget_drawn; }
 # update, as packages change after the emulator's boot), or to restart
 # WorkManager's job service: then it's let draw the widget before it's
 # killed again -- killed while drawing, it leaves the widget on its
-# loading view, with nothing to tap until the app draws it again. Done
-# once there's been no process for 3 seconds running.
-for _ in $(seq 1 6); do
+# loading view, with nothing to tap until the app draws it again. Its
+# jobs are cancelled before each kill, so the job service isn't one of
+# them. Done once there's been no process for 3 seconds running, for up
+# to 2 minutes: the restarts come as long as packages keep changing.
+end=$((SECONDS + 120))
+while [ $SECONDS -lt $end ]; do
   pid=$(adb shell pidof "$PKG" | tr -d '\r')
   if [ -z "$pid" ]; then
     sleep 3
     [ -z "$(adb shell pidof "$PKG" | tr -d '\r')" ] && break
     continue
   fi
+  echo "Killing the app (pid $pid)"
   poll 30 widget_settled || echo "The widget wasn't drawn again before the kill"
+  adb shell cmd jobscheduler cancel "$PKG" >/dev/null
   adb shell kill -9 $(adb shell pidof "$PKG" | tr -d '\r')
   sleep 1
 done
@@ -310,7 +332,7 @@ fi
 launch
 wait_for Notes 30 && tap_view Notes >/dev/null
 sleep 1
-home
+widget_home
 to_day_header
 day=$(day_header)
 if [ -n "$day" ] && tap_view "$day" "$WIDGET" && wait_for 'Previous day' 20; then
@@ -321,8 +343,7 @@ else
 fi
 
 # Its "+".
-home
-if wait_for 'Add note' 20 "$WIDGET" && tap_view 'Add note' "$WIDGET" &&
+if widget_home && tap_view 'Add note' "$WIDGET" &&
   wait_for 'New note' 20; then
   adb exec-out screencap -p > "$OUT/calendar_add_note.png"
   pass add_note
@@ -347,7 +368,7 @@ title_moved() {
 widget_id=$(adb shell dumpsys appwidget | tr -d '\r' |
   awk '/id=[0-9]+/ { match($0, /id=[0-9]+/); id = substr($0, RSTART + 3, RLENGTH - 3) }
        /CalendarWidgetReceiver/ && id != "" { print id; exit }')
-home
+widget_home
 to_day_header
 before_title=$(top_of Calendar)
 before_day=$(top_of '(Today|Tomorrow)')
