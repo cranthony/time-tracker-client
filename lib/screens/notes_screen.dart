@@ -342,6 +342,7 @@ class _NotesScreenState extends State<NotesScreen> {
                 onSignOut: widget.onSignOut == null || needsSignIn
                     ? null
                     : _signOut,
+                onRefresh: _refresh,
               ),
             ],
           ),

@@ -19,13 +19,16 @@ import 'status_bar.dart';
 /// out when [onSignOut] is set. Ctrl+B, then S, opens it; while a dialog
 /// is open, the screen shakes instead. Builds for the emulator test offer
 /// to add
-/// the home screen calendar too ([CalendarWidget.pinOffered]).
+/// the home screen calendar too ([CalendarWidget.pinOffered]). With
+/// [onRefresh], a refresh button comes before it, for refreshing the page
+/// with a mouse rather than by pulling it down.
 class AppMenu extends StatefulWidget {
   const AppMenu({
     super.key,
     required this.serverLabel,
     this.version,
     this.onSignOut,
+    this.onRefresh,
   });
 
   /// Which server this build talks to, or that it's the offline demo.
@@ -34,6 +37,9 @@ class AppMenu extends StatefulWidget {
   /// The app's version; null until it's known.
   final String? version;
   final VoidCallback? onSignOut;
+
+  /// What pulling the page down does; null for no refresh button.
+  final Future<void> Function()? onRefresh;
 
   @override
   State<AppMenu> createState() => _AppMenuState();
@@ -64,7 +70,7 @@ class _AppMenuState extends State<AppMenu> {
     final status = StatusScope.of(context);
     final diagnostics = DiagnosticsScope.of(context);
     final settings = AppSettings.of(context);
-    return HotkeyBindings(
+    final menu = HotkeyBindings(
       bindings: [
         HotkeyBinding(
           const HotkeyTrigger.afterCtrlB(LogicalKeyboardKey.keyS),
@@ -77,6 +83,16 @@ class _AppMenuState extends State<AppMenu> {
         child: _menu(context, refresh, status, diagnostics, settings),
       ),
     );
+    return switch (widget.onRefresh) {
+      null => menu,
+      final onRefresh => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          RefreshButton(onRefresh: onRefresh),
+          menu,
+        ],
+      ),
+    };
   }
 
   Widget _menu(
@@ -166,6 +182,41 @@ class _AppMenuState extends State<AppMenu> {
       ],
     );
   }
+}
+
+/// Refreshes the page, spinning, and off, until it's done.
+class RefreshButton extends StatefulWidget {
+  const RefreshButton({super.key, required this.onRefresh});
+
+  final Future<void> Function() onRefresh;
+
+  @override
+  State<RefreshButton> createState() => _RefreshButtonState();
+}
+
+class _RefreshButtonState extends State<RefreshButton> {
+  bool _refreshing = false;
+
+  Future<void> _refresh() async {
+    setState(() => _refreshing = true);
+    try {
+      await widget.onRefresh();
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    tooltip: 'Refresh',
+    onPressed: _refreshing ? null : _refresh,
+    icon: _refreshing
+        ? const SizedBox.square(
+            dimension: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : const Icon(Icons.refresh),
+  );
 }
 
 enum _MenuItem {

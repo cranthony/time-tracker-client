@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.122.0
+
+- A refresh button beside the menu, on the Day, Plan and Notes pages,
+  refreshes the page -- on Plan, the pane shown -- as pulling it down
+  does, for refreshing with a mouse. It spins until it's done.
+
 ## 7.121.0
 
 - The arrow keys scroll the Plan page's pane shown -- Locations, say --

@@ -4529,6 +4529,7 @@ class _EventsScreenState extends State<EventsScreen> {
               onSignOut: widget.onSignOut == null || _needsSignIn
                   ? null
                   : _signOut,
+              onRefresh: _needsSignIn ? null : _refreshAll,
             ),
           ],
         ),
@@ -5083,15 +5084,18 @@ class _EventsScreenState extends State<EventsScreen> {
     if (_shownProposal case final proposal?) _buildDetails(proposal),
   ];
 
+  /// Pulling the days down, or the refresh button: everything shown again.
+  Future<void> _refreshAll() {
+    unawaited(_loadNotes());
+    unawaited(_loadProposal());
+    GoogleCalendars.of(context)?.refresh();
+    return _refresh();
+  }
+
   /// The days themselves, scrolled up and down by [_scroll].
   Widget _buildDays(ScrollPhysics? noDrag) => LayoutBuilder(
     builder: (context, view) => RefreshIndicator(
-      onRefresh: () {
-        unawaited(_loadNotes());
-        unawaited(_loadProposal());
-        GoogleCalendars.of(context)?.refresh();
-        return _refresh();
-      },
+      onRefresh: _refreshAll,
       child: NotificationListener<ScrollEndNotification>(
         // The days' sliding, not the timeline's scrolling.
         onNotification: (notification) {
