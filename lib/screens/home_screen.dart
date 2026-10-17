@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/event.dart';
-import '../outbox/action_outbox.dart';
+import '../outbox/action_writes.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/note_outbox.dart';
 import '../outbox/write_queue.dart';
@@ -41,7 +41,7 @@ class HomeScreen extends StatefulWidget {
     required this.eventsRepository,
     required this.actionsRepository,
     required this.outbox,
-    required this.actionOutbox,
+    required this.actionWrites,
     this.eventOutbox,
     this.writeQueue,
     this.proposalsRepository,
@@ -65,7 +65,7 @@ class HomeScreen extends StatefulWidget {
   /// Notes being written, kept as they're typed: the app's, on the
   /// device, or else the screen's own, while it lasts.
   final NoteDrafts? noteDrafts;
-  final ActionOutbox actionOutbox;
+  final ActionWrites actionWrites;
 
   /// Changes to events, and the proposal, waiting to be saved: a line at
   /// the foot of every page says so while there are any. Without it,
@@ -205,13 +205,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _proposalProblem,
     if (widget.eventOutbox case final outbox?)
       EventOutboxStatus(outbox, lookup: _lookup, onShow: _showEvent),
-    ActionOutboxStatus(widget.actionOutbox, nameOf: _actionName),
     if (widget.writeQueue case final writes?) WriteQueueStatus(writes),
     NoteOutboxStatus(widget.outbox),
   ];
-
-  String? _actionName(String id) =>
-      _planMemory.actions?.actions.where((a) => a.id == id).firstOrNull?.name;
 
   @override
   Widget build(BuildContext context) => StatusScope(
@@ -304,7 +300,7 @@ class _HomeScreenState extends State<HomeScreen> {
           eventsRepository: widget.eventsRepository,
           notesRepository: widget.notesRepository,
           memory: _planMemory,
-          outbox: widget.actionOutbox,
+          outbox: widget.actionWrites,
           serverLabel: widget.notesRepository.label,
           onSignIn: widget.onSignIn,
           onSignOut: widget.onSignOut,

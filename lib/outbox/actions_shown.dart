@@ -1,64 +1,34 @@
 import '../models/plan_action.dart';
-import 'action_outbox.dart';
-import 'pending_action_save.dart';
+import 'action_writes.dart';
+import 'pending_write.dart';
 
-/// [actions] as they're to be shown: with the saves [outbox] has made since
-/// they were fetched, then those it's still to make, or that failed, made
-/// to them -- on every page alike, as soon as each is made.
-ActionList actionsShown(ActionList actions, ActionOutbox outbox) =>
-    _withSaves(_withSaved(actions, outbox.justSaved), outbox.saves);
-
-/// [actions] with [saved], saves the server has answered, made to them, as
-/// far as they don't have them yet: each new action added, with the id the
-/// server gave it if that's known, and each action's changes made.
-ActionList _withSaved(
-  ActionList actions,
-  List<({PendingActionSave item, String? result})> saved,
-) {
-  var shown = actions;
-  for (final (:item, :result) in saved) {
-    if (!item.isNew) {
-      shown = _withChanged(shown, item.actionId, item.changes);
-    } else if (item.madeIn(shown) == null &&
-        !shown.actions.any((g) => result != null && g.id == result)) {
-      shown = _inTree(shown, [
-        ...shown.actions,
-        PlanAction.fromJson({
-          ...item.action.toJson(),
-          'id': result ?? item.actionId,
-        }),
-      ]);
+/// [actions] as they're to be shown: with the writes [writes] has made
+/// since they were fetched, then those it's still to make, or that failed,
+/// made to them -- on every page alike, as soon as each is made.
+ActionList actionsShown(ActionList actions, ActionWrites writes) {
+  final all = [...writes.justSaved, ...writes.saves];
+  if (all.isEmpty) return actions;
+  var list = [...actions.actions];
+  for (final save in all) {
+    final at = list.indexWhere((a) => a.id == save.actionId);
+    switch (save.write.op) {
+      case WriteOp.create when at < 0:
+        list.add(
+          PlanAction.fromJson({
+            'status': 'active',
+            ...save.changes,
+            'id': save.actionId,
+          }),
+        );
+      case WriteOp.create || WriteOp.update when at >= 0:
+        list[at] = PlanAction.fromJson({...list[at].toJson(), ...save.changes});
+      case WriteOp.delete when at >= 0:
+        list.removeAt(at);
+      case _:
     }
   }
-  return shown;
+  return _inTree(actions, list);
 }
-
-/// [actions] with [saves] made to them, oldest first: each new action added,
-/// and each action's changes made.
-ActionList _withSaves(ActionList actions, List<PendingActionSave> saves) {
-  if (saves.isEmpty) return actions;
-  var shown = actions;
-  for (final save in saves) {
-    shown = save.isNew
-        ? _inTree(shown, [...shown.actions, save.action])
-        : _withChanged(shown, save.actionId, save.changes);
-  }
-  return shown;
-}
-
-/// [actions] with [changes], keyed as `update_action` takes them, made to the
-/// action with [id]: moved, if it's given another parent, and renamed in
-/// its sub-actions' paths.
-ActionList _withChanged(
-  ActionList actions,
-  String? id,
-  Map<String, Object?> changes,
-) => _inTree(actions, [
-  for (final action in actions.actions)
-    action.id == id
-        ? PlanAction.fromJson({...action.toJson(), ...changes})
-        : action,
-]);
 
 /// [actions] in place of [list]'s, parents first, each action's sub-actions
 /// after it in the order given, and each path made again from its

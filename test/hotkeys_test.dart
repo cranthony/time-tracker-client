@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:time_tracker_client/outbox/action_outbox.dart';
+import 'package:time_tracker_client/outbox/action_writes.dart';
 import 'package:time_tracker_client/outbox/note_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
@@ -30,9 +30,7 @@ void main() {
         eventsRepository: InMemoryEventsRepository(const []),
         actionsRepository: InMemoryActionsRepository(),
         outbox: outbox,
-        actionOutbox: ActionOutbox(
-          store: InMemoryOutboxStore(),
-          repository: InMemoryActionsRepository(),
+        actionWrites: ActionWrites.local(InMemoryActionsRepository(),
         ),
       ),
     );

@@ -3,7 +3,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'pending_action_save.dart';
+import 'legacy_writes.dart';
 import 'pending_event_write.dart';
 import 'pending_note.dart';
 import 'pending_write.dart';
@@ -59,27 +59,12 @@ class PrefsOutboxStore<T> extends OutboxStore<T> {
         prefs: prefs,
       );
 
-  /// Where action saves waiting to be sent, or that failed, are kept.
-  static PrefsOutboxStore<PendingActionSave> actions({
-    SharedPreferencesAsync? prefs,
-  }) => PrefsOutboxStore(
-    // Named from when actions were goals: kept, so saves waiting from an
-    // older version aren't lost.
-    key: 'goal_outbox',
-    fromJson: PendingActionSave.fromJson,
-    toJson: (save) => save.toJson(),
-    prefs: prefs,
-  );
-
   /// Where the [WriteQueue]'s writes waiting to be saved are kept.
+  /// With what older versions left waiting in the outboxes they had
+  /// before (see [WriteQueueStore]).
   static PrefsOutboxStore<PendingWrite> writes({
     SharedPreferencesAsync? prefs,
-  }) => PrefsOutboxStore(
-    key: 'write_queue',
-    fromJson: PendingWrite.fromJson,
-    toJson: (write) => write.toJson(),
-    prefs: prefs,
-  );
+  }) => WriteQueueStore(prefs: prefs);
 
   /// Where changes to events, and the proposal, waiting to be saved are
   /// kept.

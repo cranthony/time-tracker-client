@@ -15,7 +15,7 @@ import '../models/time_split.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../outbox/actions_shown.dart';
-import '../outbox/action_outbox.dart';
+import '../outbox/action_writes.dart';
 import 'event_store.dart';
 import 'focus_store.dart';
 import 'actions_repository.dart';
@@ -55,12 +55,12 @@ class PlanMemory extends ChangeNotifier {
   /// The actions as the server last listed them.
   ActionList? actions;
 
-  /// [actions] as they're shown: with the saves the action outbox made
-  /// since they were fetched, or is still to make, made to them (see
-  /// [useActionOutbox]) -- an action renamed shows its new name on every
+  /// [actions] as they're shown: with the writes to actions made since
+  /// they were fetched, or still to make, made to them (see
+  /// [useActionWrites]) -- an action renamed shows its new name on every
   /// page at once, not once they're fetched again.
   ActionList? get shownActions {
-    final actions = this.actions, outbox = _actionOutbox;
+    final actions = this.actions, outbox = _actionWrites;
     if (actions == null || outbox == null) return actions;
     if (_shown case (final from, final shown) when identical(from, actions)) {
       return shown;
@@ -71,13 +71,13 @@ class PlanMemory extends ChangeNotifier {
   }
 
   (ActionList, ActionList)? _shown;
-  ActionOutbox? _actionOutbox;
+  ActionWrites? _actionWrites;
 
-  /// Shows [outbox]'s saves in [shownActions], and tells listeners as they
-  /// change.
-  void useActionOutbox(ActionOutbox outbox) {
-    if (_actionOutbox != null) return;
-    _actionOutbox = outbox..addListener(_actionsSaved);
+  /// Shows [writes]' writes in [shownActions], and tells listeners as
+  /// they change.
+  void useActionWrites(ActionWrites writes) {
+    if (_actionWrites != null) return;
+    _actionWrites = writes..addListener(_actionsSaved);
   }
 
   void _actionsSaved() {
