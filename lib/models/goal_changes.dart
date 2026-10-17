@@ -28,6 +28,41 @@ class GoalDelete extends GoalChange {
   final String id;
 }
 
+/// Several [changes], made at once ([GoalsRepository.changeGoals]): to
+/// [planned], one step, so only the goals after all of them are checked.
+class GoalBatch extends GoalChange {
+  const GoalBatch(this.changes);
+  final List<GoalChange> changes;
+}
+
+/// [changes], each goal named by [ids] (a goal made here, by the id it
+/// was given in place of its own) named so instead -- itself, and as a
+/// parent.
+List<GoalChange> renamed(List<GoalChange> changes, Map<String, String> ids) {
+  String name(String id) => ids[id] ?? id;
+  return [
+    for (final c in changes)
+      switch (c) {
+        GoalCreate(:final goal) => GoalCreate(
+          Goal.fromJson({
+            ...goal.toJson(),
+            'id': name(goal.id),
+            'parent_id': ?switch (goal.parentId) {
+              final p? => name(p),
+              null => null,
+            },
+          }),
+        ),
+        GoalUpdate(:final id, :final changes) => GoalUpdate(name(id), {
+          for (final MapEntry(:key, :value) in changes.entries)
+            key: key == 'parent_id' && value is String ? name(value) : value,
+        }),
+        GoalDelete(:final id) => GoalDelete(name(id)),
+        GoalBatch(changes: final several) => GoalBatch(renamed(several, ids)),
+      },
+  ];
+}
+
 /// [goals] once [changes] are made, in order, a status changed at [now]
 /// added to the goal's history as the server adds it.
 List<Goal> applied(
@@ -63,6 +98,11 @@ List<Goal> applied(
         out[i] = Goal.fromJson(json);
       case GoalDelete(:final id):
         out.removeWhere((g) => g.id == id);
+      case GoalBatch(changes: final several):
+        final after = applied(out, several, now: now);
+        out
+          ..clear()
+          ..addAll(after);
     }
   }
   return out;

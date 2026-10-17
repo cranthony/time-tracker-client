@@ -31,6 +31,7 @@ List<String> _described(List<GoalChange> changes) => [
       GoalCreate(:final goal) => 'create ${goal.id}',
       GoalUpdate(:final id, :final changes) => 'update $id $changes',
       GoalDelete(:final id) => 'delete $id',
+      GoalBatch(:final changes) => 'batch ${_described(changes)}',
     },
 ];
 

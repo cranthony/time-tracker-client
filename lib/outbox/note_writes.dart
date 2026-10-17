@@ -80,6 +80,7 @@ class NoteWrites implements Listenable {
         change: NoteChange.delete,
         original: at(base),
       ),
+      WriteOp.batch => null,
     };
   }
 

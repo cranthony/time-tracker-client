@@ -1,7 +1,9 @@
 import 'outbox.dart';
 
-/// What a [PendingWrite] does to its item.
-enum WriteOp { create, update, delete }
+/// What a [PendingWrite] does to its item -- or, [batch], to several of a
+/// kind at once, by its batch tool ([WriteKind.batchTool]): its changes
+/// are then its parts (see [PendingWrite.parts]).
+enum WriteOp { create, update, delete, batch }
 
 /// One write waiting in the [WriteQueue] to be saved to the server: an
 /// item of some [kind] ([WriteKind.name]) made, changed or deleted. It's
@@ -24,6 +26,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     this.sentBy,
     this.refused = false,
     this.ordered = false,
+    this.conflictId,
   });
 
   @override
@@ -34,6 +37,17 @@ class PendingWrite implements OutboxItem<PendingWrite> {
   /// goal closed after its sub-goals). One of those refused holds it till
   /// the user retries or drops that one.
   final bool ordered;
+
+  /// For a [WriteOp.batch] write, [conflicted]: the item whose part the
+  /// server found changed elsewhere since its base.
+  final String? conflictId;
+
+  /// A [WriteOp.batch] write's parts: the items it makes (each with its
+  /// id), changes (`{id, changes, base}`) and deletes (`{id, base}`).
+  List<Map<String, Object?>> parts(String which) => [
+    for (final p in changes[which] as List? ?? const [])
+      (p as Map).cast<String, Object?>(),
+  ];
 
   /// What it writes: a [WriteKind.name].
   final String kind;
@@ -84,6 +98,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     Map<String, Object?>? Function()? base,
     bool? conflicted,
     Map<String, Object?>? Function()? current,
+    String? Function()? conflictId,
   }) => PendingWrite(
     id: id,
     kind: kind,
@@ -100,6 +115,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     sentBy: sentBy,
     refused: refused,
     ordered: ordered,
+    conflictId: conflictId == null ? this.conflictId : conflictId(),
   );
 
   @override
@@ -127,6 +143,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     sentBy: sentBy == null ? this.sentBy : sentBy(),
     refused: refused ?? this.refused,
     ordered: ordered,
+    conflictId: refused == false ? null : conflictId,
   );
 
   factory PendingWrite.fromJson(Map<String, dynamic> json) => PendingWrite(
@@ -145,6 +162,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     sentBy: json['sent_by'] as String?,
     refused: json['refused'] as bool? ?? false,
     ordered: json['ordered'] as bool? ?? false,
+    conflictId: json['conflict_id'] as String?,
   );
 
   Map<String, dynamic> toJson() => {
@@ -163,6 +181,7 @@ class PendingWrite implements OutboxItem<PendingWrite> {
     'sent_by': ?sentBy,
     if (refused) 'refused': true,
     if (ordered) 'ordered': true,
+    'conflict_id': ?conflictId,
   };
 
   static DateTime? _date(Object? value) =>

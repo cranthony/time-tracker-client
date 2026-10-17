@@ -188,6 +188,7 @@ class WriteQueueStatus extends OutboxStatus<PendingWrite> {
       WriteOp.create => 'New $what',
       WriteOp.update => 'Changes to $what',
       WriteOp.delete => 'Deleting $what',
+      WriteOp.batch => 'Changes to $what',
     };
   }
 
@@ -199,7 +200,8 @@ class WriteQueueStatus extends OutboxStatus<PendingWrite> {
   @override
   Future<void> act(BuildContext context, PendingWrite item) async {
     if (!item.conflicted) return super.act(context, item);
-    await showWriteConflictDialog(context, _writes, item);
+    // A batch's, by the part in conflict.
+    await showWriteConflictDialog(context, _writes, _writes.conflictView(item));
   }
 
   @override

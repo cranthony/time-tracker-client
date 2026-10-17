@@ -33,7 +33,16 @@ class WriteKind {
     this.updateCalls,
     this.updateArguments,
     this.nameOf,
+    this.batchTool,
   });
+
+  /// The tool that makes, changes and deletes several at once, checked
+  /// whole ([WriteQueue.batch]): taking `creates` (each as [createTool]
+  /// takes one), `updates` (each `{[argument]: {id, ..., version},
+  /// clear_fields}`) and `deletes` (each `{[deleteArgument]: id,
+  /// if_version}`), and giving those it made or changed, as
+  /// `"<argument>s"`, and the ids it deleted, as `deleted_ids`.
+  final String? batchTool;
 
   /// For a kind whose update takes its fields beside its id rather than
   /// under [argument] (a note's): the update's arguments, from the item's
@@ -293,9 +302,10 @@ class WriteKind {
     writable: _habit,
   );
 
-  /// A goal: made, changed and deleted one at a time, in order -- a
-  /// change to several (closing a goal and its sub-goals, say) is queued
-  /// as each goal's write in the order the server takes them.
+  /// A goal: made, changed and deleted one at a time -- or, a change to
+  /// several (closing a goal and its sub-goals, say), all at once, by
+  /// `update_goals` ([WriteQueue.batch]), so the server's rules hold for
+  /// the result rather than each step.
   static const goal = WriteKind(
     name: 'goal',
     noun: 'goal',
@@ -306,6 +316,7 @@ class WriteKind {
     deleteArgument: 'goal_id',
     writable: _goal,
     nameOf: _goalTitle,
+    batchTool: 'update_goals',
   );
 
   static Map<String, Object?> _goal(Map<String, Object?> item) =>
@@ -467,7 +478,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
   final _known = <String, Map<String, Map<String, Object?>>>{};
 
   /// Conflicts found sending, by write, till they're kept (see [failed]).
-  final _conflicts = <String, Map<String, Object?>?>{};
+  final _conflicts = <String, ({String? id, Map<String, Object?>? current})>{};
 
   static const _idAlphabet = '0123456789abcdefghijklmnopqrstuvwxyz';
 
@@ -489,6 +500,10 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
   @override
   String label(PendingWrite write) {
     final kind = kindOf(write);
+    if (write.op == WriteOp.batch) {
+      final n = _batchIds(write).length;
+      return n == 1 ? '1 ${kind.noun}' : '$n ${kind.noun}s';
+    }
     return kind.label({
       ...?write.base,
       ...?_known[kind.name]?[write.itemId],
@@ -500,8 +515,21 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
   /// -- in this queue or another -- waits for.
   Set<String> get making => {
     for (final w in items)
-      if (w.op == WriteOp.create) w.itemId,
+      if (w.op == WriteOp.create)
+        w.itemId
+      else if (w.op == WriteOp.batch)
+        for (final c in w.parts('creates')) ?c['id'] as String?,
   };
+
+  /// The ids of the items a [WriteOp.batch] write makes, changes or
+  /// deletes.
+  static Set<String> _batchIds(PendingWrite write) => {
+    for (final which in const ['creates', 'updates', 'deletes'])
+      for (final p in write.parts(which)) ?p['id'] as String?,
+  };
+
+  /// A new id, as [create] gives one: for a new item in a [batch].
+  String newId() => _newId();
 
   // -- Queueing ----------------------------------------------------------
 
@@ -594,6 +622,52 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
     return item(kind, id) ?? {'id': id, ...changes};
   }
 
+  /// Queues several changes to [kind]s as one write, made at once by its
+  /// [WriteKind.batchTool]: the items [creates] makes (each with its id,
+  /// from [newId]), the [updates] to others (each an id and its changes,
+  /// a null clearing a field) and the ids [deletes] deletes. It's
+  /// [PendingWrite.ordered]: sent after every write of [kind] queued
+  /// before it, and those after it wait for it.
+  void batch(
+    WriteKind kind, {
+    List<Map<String, Object?>> creates = const [],
+    List<(String, Map<String, Object?>)> updates = const [],
+    List<String> deletes = const [],
+  }) {
+    final known = _known[kind.name] ?? const {};
+    _queue(
+      (writes) => [
+        ...writes,
+        PendingWrite(
+          id: _newId(),
+          kind: kind.name,
+          op: WriteOp.batch,
+          itemId: 'batch:${_newId()}',
+          ordered: true,
+          changes: {
+            if (creates.isNotEmpty)
+              'creates': [
+                for (final c in creates)
+                  {
+                    for (final MapEntry(:key, :value) in c.entries)
+                      if (key != 'version' && value != null) key: value,
+                  },
+              ],
+            if (updates.isNotEmpty)
+              'updates': [
+                for (final (id, changes) in updates)
+                  {'id': id, 'changes': changes, 'base': ?known[id]},
+              ],
+            if (deletes.isNotEmpty)
+              'deletes': [
+                for (final id in deletes) {'id': id, 'base': ?known[id]},
+              ],
+          },
+        ),
+      ],
+    );
+  }
+
   /// Queues deleting the [kind] [id]. If the server doesn't have it yet,
   /// its writes are just dropped -- unless one's being sent, when it's
   /// deleted once that's saved. [ordered], it's sent only after every
@@ -666,6 +740,17 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
   /// user does this. False if it's being sent.
   @override
   Future<bool> drop(PendingWrite write) async {
+    // A batch's part in conflict: dropped, and the rest sent -- or, with
+    // nothing else in it, the whole write.
+    if (_batchOf(write) case final batch?
+        when write.op != WriteOp.batch && _batchIds(batch).length > 1) {
+      if (isSending(batch)) return false;
+      await _resendPart(write, (_) => null);
+      return true;
+    }
+    if (_batchOf(write) case final batch? when write.op != WriteOp.batch) {
+      write = batch;
+    }
     if (isSending(write)) return false;
     var dropped = false;
     await change((writes) {
@@ -690,10 +775,76 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
     return dropped;
   }
 
+  /// [write], [PendingWrite.conflicted], as the conflict dialog shows it:
+  /// for a [WriteOp.batch] write, the part in conflict as a write of its
+  /// own -- the item's changes or deletion, its base and the item as it
+  /// is now -- with the batch's id, so what's done to it is done to that
+  /// part ([resolve], [overwrite], [restore], [drop]).
+  PendingWrite conflictView(PendingWrite write) {
+    final id = write.conflictId;
+    if (write.op != WriteOp.batch || id == null) return write;
+    Map<String, Object?>? map(Object? value) =>
+        (value as Map?)?.cast<String, Object?>();
+    final update = write.parts('updates').where((p) => p['id'] == id);
+    final delete = write.parts('deletes').where((p) => p['id'] == id);
+    final part = update.firstOrNull ?? delete.firstOrNull;
+    return PendingWrite(
+      id: write.id,
+      kind: write.kind,
+      op: update.isNotEmpty ? WriteOp.update : WriteOp.delete,
+      itemId: id,
+      changes: map(part?['changes']) ?? const {},
+      base: map(part?['base']),
+      conflicted: write.conflicted,
+      current: write.current,
+      attempts: write.attempts,
+      lastError: write.lastError,
+      refused: write.refused,
+      ordered: true,
+    );
+  }
+
+  /// The [WriteOp.batch] write [view] is a part of ([conflictView]), if
+  /// it's one.
+  PendingWrite? _batchOf(PendingWrite view) =>
+      items.where((w) => w.id == view.id && w.op == WriteOp.batch).firstOrNull;
+
+  /// The batch [view]'s of, its part for [view] as [edit] makes it (gone,
+  /// if null), sent again.
+  Future<void> _resendPart(
+    PendingWrite view,
+    Map<String, Object?>? Function(Map<String, Object?> part) edit, {
+    Map<String, Object?>? made,
+  }) async {
+    await replaceUnlessSending(view.id, (w) {
+      var out = _withPart(w, 'updates', view.itemId, edit);
+      out = _withPart(out, 'deletes', view.itemId, edit);
+      if (made != null) {
+        out = out.rewritten(
+          changes: {
+            ...out.changes,
+            'creates': [...out.parts('creates'), made],
+          },
+        );
+      }
+      return out
+          .rewritten(
+            conflicted: false,
+            current: () => null,
+            conflictId: () => null,
+          )
+          .copyWith(refused: false, lastError: () => null);
+    });
+    schedule(immediately: true);
+  }
+
   /// Sends [write], [PendingWrite.conflicted], as it is, over what changed
   /// elsewhere: the user chose theirs.
   @override
   Future<void> overwrite(PendingWrite write) async {
+    if (_batchOf(write) != null) {
+      return _resendPart(write, (p) => {...p}..remove('base'));
+    }
     await replaceUnlessSending(
       write.id,
       (w) => w
@@ -763,6 +914,12 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
   @override
   Future<void> resolve(PendingWrite write, Map<String, Object?> changes) async {
     final current = write.current;
+    if (_batchOf(write) != null) {
+      return _resendPart(
+        write,
+        (p) => {...p, 'changes': changes, 'base': ?current},
+      );
+    }
     await replaceUnlessSending(
       write.id,
       (w) => w
@@ -785,6 +942,14 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
     final fields = kind.writable({...?write.base, ...write.changes})
       ..remove('id')
       ..removeWhere((_, value) => value == null);
+    if (_batchOf(write) != null) {
+      // Made again, with its id, in the batch's creates.
+      return _resendPart(
+        write,
+        (_) => null,
+        made: {...fields, 'id': write.itemId},
+      );
+    }
     final made = PendingWrite(
       id: _newId(),
       kind: write.kind,
@@ -831,6 +996,24 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
     final writes = [for (final s in justSaved) s.item, ...items];
     for (final w in writes) {
       if (w.kind != kind.name) continue;
+      if (w.op == WriteOp.batch) {
+        for (final c in w.parts('creates')) {
+          if (!out.any((i) => i['id'] == c['id'])) out.add({...c});
+        }
+        for (final u in w.parts('updates')) {
+          final at = out.indexWhere((i) => i['id'] == u['id']);
+          if (at >= 0) {
+            out[at] = {
+              ...out[at],
+              ...(u['changes'] as Map? ?? const {}).cast<String, Object?>(),
+            };
+          }
+        }
+        for (final d in w.parts('deletes')) {
+          out.removeWhere((i) => i['id'] == d['id']);
+        }
+        continue;
+      }
       final at = out.indexWhere((i) => i['id'] == w.itemId);
       switch (w.op) {
         case WriteOp.create when at < 0:
@@ -889,6 +1072,27 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
         final conflict = e.conflict;
         if (conflict == null) rethrow;
         final current = conflict.current;
+        if (write.op == WriteOp.batch) {
+          // One item's part changed elsewhere in other fields, and only
+          // once or twice: that part made to it as it is now.
+          final id = conflict.id;
+          if (merged < 2 && id != null && _partMerges(write, id, current)) {
+            write = _withPart(
+              write,
+              'updates',
+              id,
+              (p) => {...p, 'base': current},
+            );
+            await change(
+              (writes) => [
+                for (final w in writes) w.id == write.id ? write : w,
+              ],
+            );
+            continue;
+          }
+          _conflicts[write.id] = (id: id, current: current);
+          rethrow;
+        }
         // Changed elsewhere in other fields, and only once or twice:
         // made to it as it is now.
         if (merged < 2 && _merges(write, current)) {
@@ -898,7 +1102,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
           );
           continue;
         }
-        _conflicts[write.id] = current;
+        _conflicts[write.id] = (id: null, current: current);
         rethrow;
       }
     }
@@ -917,6 +1121,46 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
           _same(current[c.key], base[c.key]) || _same(current[c.key], c.value),
     );
   }
+
+  /// Whether [write], a [WriteOp.batch] write, can make its changes to
+  /// [id] to it as it is now, [current] (as [_merges] says for one item).
+  static bool _partMerges(
+    PendingWrite write,
+    String id,
+    Map<String, Object?>? current,
+  ) {
+    final part = write.parts('updates').where((p) => p['id'] == id).firstOrNull;
+    if (part == null || current == null) return false;
+    final base = (part['base'] as Map? ?? const {}).cast<String, Object?>();
+    final changes = (part['changes'] as Map? ?? const {})
+        .cast<String, Object?>();
+    return changes.entries.every(
+      (c) =>
+          _same(current[c.key], base[c.key]) || _same(current[c.key], c.value),
+    );
+  }
+
+  /// [write], a [WriteOp.batch] write, with its [which] part for [id] as
+  /// [edit] makes it -- or gone, if [edit] gives null.
+  static PendingWrite _withPart(
+    PendingWrite write,
+    String which,
+    String id,
+    Map<String, Object?>? Function(Map<String, Object?> part) edit,
+  ) => write.rewritten(
+    changes: {
+      ...write.changes,
+      which: [
+        for (final p in write.parts(which))
+          if (p['id'] != id) p else ?edit(p),
+      ],
+    }..removeWhere((_, v) => v is List && v.isEmpty),
+  );
+
+  static int? _versionOf(Object? base) => switch (base) {
+    {'version': final int version} => version,
+    _ => null,
+  };
 
   /// Whether [a] and [b] are the same value -- two times the same moment,
   /// however each is written.
@@ -952,6 +1196,43 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
       return _item(kind, write, result);
     }
     final (tool, arguments) = switch (write.op) {
+      WriteOp.batch => (
+        kind.batchTool!,
+        <String, Object?>{
+          if (write.parts('creates') case final creates when creates.isNotEmpty)
+            'creates': creates,
+          if (write.parts('updates') case final updates when updates.isNotEmpty)
+            'updates': [
+              for (final u in updates)
+                {
+                  kind.argument: {
+                    'id': u['id'],
+                    for (final MapEntry(:key, :value)
+                        in (u['changes'] as Map? ?? const {})
+                            .cast<String, Object?>()
+                            .entries)
+                      key: ?value,
+                    'version': ?_versionOf(u['base']),
+                  },
+                  if ([
+                        for (final MapEntry(:key, :value)
+                            in (u['changes'] as Map? ?? const {}).entries)
+                          if (value == null) key,
+                      ]
+                      case final cleared when cleared.isNotEmpty)
+                    'clear_fields': cleared,
+                },
+            ],
+          if (write.parts('deletes') case final deletes when deletes.isNotEmpty)
+            'deletes': [
+              for (final d in deletes)
+                {
+                  kind.deleteArgument!: d['id'],
+                  'if_version': ?_versionOf(d['base']),
+                },
+            ],
+        },
+      ),
       WriteOp.create => (
         kind.createTool,
         <String, Object?>{
@@ -1005,6 +1286,10 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
     PendingWrite write,
     Object? result,
   ) {
+    // A batch's result, whole: see _saved.
+    if (write.op == WriteOp.batch) {
+      return result is Map ? result.cast<String, Object?>() : null;
+    }
     if (kind.itemIn case final itemIn?) {
       return result is Map ? itemIn(result.cast(), write.itemId) : null;
     }
@@ -1024,6 +1309,31 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
   /// known of it now, and what the writes to it waiting behind are made to.
   Future<void> _saved(PendingWrite write, Map<String, Object?>? item) async {
     final known = _known.putIfAbsent(write.kind, () => {});
+    if (write.op == WriteOp.batch) {
+      final kind = kindOf(write);
+      final made = {
+        for (final i in item?['${kind.argument}s'] as List? ?? const [])
+          if ((i as Map)['id'] case final String id)
+            id: i.cast<String, Object?>(),
+      };
+      for (final id in item?['deleted_ids'] as List? ?? const []) {
+        known.remove('$id');
+      }
+      known.addAll(made);
+      await change(
+        (writes) => [
+          for (final w in writes)
+            w.id != write.id &&
+                    w.kind == write.kind &&
+                    made.containsKey(w.itemId) &&
+                    w.op != WriteOp.create &&
+                    !isSending(w)
+                ? w.rewritten(base: () => made[w.itemId])
+                : w,
+        ],
+      );
+      return;
+    }
     if (write.op == WriteOp.delete) {
       known.remove(write.itemId);
       return;
@@ -1053,12 +1363,16 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
   @override
   void failed(PendingWrite item) {
     if (!_conflicts.containsKey(item.id)) return;
-    final current = _conflicts.remove(item.id);
+    final (:id, :current) = _conflicts.remove(item.id)!;
     unawaited(
       replaceUnlessSending(
         item.id,
         (w) => w
-            .rewritten(conflicted: true, current: () => current)
+            .rewritten(
+              conflicted: true,
+              current: () => current,
+              conflictId: () => w.op == WriteOp.batch ? id : null,
+            )
             .copyWith(
               lastError: () => current == null
                   ? 'Deleted elsewhere since'

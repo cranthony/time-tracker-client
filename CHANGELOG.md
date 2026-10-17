@@ -29,7 +29,11 @@ on. Add the new version's section here at the same time; CI checks both.
 - Descriptions and definitions of done are HTML, edited in a large box
   with a preview a swipe to the right.
 - Goals are saved through the write queue like everything else, offline
-  too, and checked against the server's rules before they're queued.
+  too, and checked against the server's rules before they're queued. A
+  change to several goals at once -- closing a goal and what's left open
+  under it, say -- is saved as one change, checked whole; if another
+  device changed one of those goals meanwhile, only that goal's part
+  waits for you to resolve it.
 
 ## 7.125.1
 

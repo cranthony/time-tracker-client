@@ -46,7 +46,10 @@ class GoalActions {
   /// which, under [title], and saves nothing. True if they're saved.
   Future<bool> save(String title, List<GoalChange> changes) async {
     if (changes.isEmpty) return true;
-    final problems = planned(goals, changes, now: now());
+    // Several at once are checked as the server checks them: whole.
+    final problems = changes.length > 1
+        ? planned(goals, [GoalBatch(changes)], now: now())
+        : planned(goals, changes, now: now());
     if (problems.isNotEmpty) {
       await showDialog<void>(
         context: context,
@@ -63,49 +66,49 @@ class GoalActions {
       );
       return false;
     }
-    final several = changes.length > 1;
-    // A goal made here gets its id as it's made: what names it after
-    // that is given that one.
-    final ids = <String, String>{};
-    final made = <GoalChange>[];
+    // One goal's change on its own, through the write queue; several at
+    // once, checked whole.
+    if (changes.length > 1) {
+      return runOrShowError(
+        context,
+        title: title,
+        action: () async {
+          final ids = await repository.changeGoals(changes);
+          _shown(renamed(changes, ids));
+        },
+      );
+    }
     return runOrShowError(
       context,
       title: title,
       action: () async {
-        for (final change in changes.skip(made.length)) {
-          final done = switch (change) {
-            GoalCreate(:final goal) => await () async {
-              // Its id is the repository's to give.
-              final created = await repository.createGoal(
-                Goal.fromJson({...goal.toJson(), 'id': ''}),
-              );
-              ids[goal.id] = created.id;
-              return GoalCreate(created);
-            }(),
-            GoalUpdate(:final id, :final changes) => await () async {
-              final named = {
-                for (final MapEntry(:key, :value) in changes.entries)
-                  key: key == 'parent_id' ? ids[value] ?? value : value,
-              };
-              await repository.updateGoal(
-                ids[id] ?? id,
-                named,
-                ordered: several,
-              );
-              return GoalUpdate(ids[id] ?? id, named);
-            }(),
-            GoalDelete(:final id) => await () async {
-              await repository.deleteGoal(ids[id] ?? id, ordered: several);
-              return GoalDelete(ids[id] ?? id);
-            }(),
-          };
-          made.add(done);
+        final change = changes.single;
+        switch (change) {
+          case GoalCreate(:final goal):
+            // Its id is the repository's to give.
+            final created = await repository.createGoal(
+              Goal.fromJson({...goal.toJson(), 'id': ''}),
+            );
+            _shown([GoalCreate(created)]);
+          case GoalUpdate(:final id, changes: final fields):
+            await repository.updateGoal(id, fields);
+            _shown([change]);
+          case GoalDelete(:final id):
+            await repository.deleteGoal(id);
+            _shown([change]);
+          case GoalBatch(changes: final several):
+            final ids = await repository.changeGoals(several);
+            _shown(renamed(several, ids));
         }
-        memory.showGoals(applied(goals, made, now: now()));
-        // Then as the server has them, best effort.
-        memory.loadGoals(repository, again: true).ignore();
       },
     );
+  }
+
+  /// Shows [made] in [memory] at once, then the goals as the server has
+  /// them, best effort.
+  void _shown(List<GoalChange> made) {
+    memory.showGoals(applied(goals, made, now: now()));
+    memory.loadGoals(repository, again: true).ignore();
   }
 
   /// Adds a goal under [parent] (the top level, if null).
