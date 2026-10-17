@@ -15,7 +15,7 @@ import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/outbox/event_outbox.dart';
-import 'package:time_tracker_client/outbox/note_outbox.dart';
+import 'package:time_tracker_client/outbox/note_writes.dart';
 import 'package:time_tracker_client/outbox/outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/people_pane.dart';
@@ -1496,8 +1496,7 @@ void main() {
 
     testWidgets('notes ($mode)', (tester) async {
       final notes = sample.notesRepository();
-      final outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: notes)
-        ..start();
+      final outbox = NoteWrites.local(notes)..start();
       addTearDown(outbox.stop);
       await render(
         tester,
@@ -1508,8 +1507,7 @@ void main() {
 
     testWidgets('editing a note ($mode)', (tester) async {
       final notes = sample.notesRepository();
-      final outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: notes)
-        ..start();
+      final outbox = NoteWrites.local(notes)..start();
       addTearDown(outbox.stop);
       await render(
         tester,
@@ -1529,8 +1527,8 @@ void main() {
 Finder _tile(String name) => find.textContaining(name, findRichText: true).last;
 
 /// For a Plan page that saves nothing.
-ActionWrites _idleActionWrites() => ActionWrites.local(InMemoryActionsRepository(),
-);
+ActionWrites _idleActionWrites() =>
+    ActionWrites.local(InMemoryActionsRepository());
 
 /// The list a pane scrolls: not its search field, which scrolls too.
 final _list = find

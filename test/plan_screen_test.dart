@@ -40,10 +40,7 @@ void main() {
   }) => MaterialApp(
     home: PlanScreen(
       repository: repo,
-      outbox:
-          outbox ??
-          (ActionWrites.local(repo)
-            ..start()),
+      outbox: outbox ?? (ActionWrites.local(repo)..start()),
       serverLabel: 'offline demo',
       onSignIn: onSignIn,
       eventsRepository: events,
@@ -709,8 +706,7 @@ void main() {
       'again', (tester) async {
     final store = InMemoryOutboxStore<PendingWrite>();
     final repo = _GatedActionsRepository(tree());
-    ActionWrites outbox() =>
-        ActionWrites.local(repo, store: store)..start();
+    ActionWrites outbox() => ActionWrites.local(repo, store: store)..start();
     await tester.pumpWidget(app(repo, outbox: outbox()));
     await tester.pumpAndSettle();
     await addAction(tester, 'Running');

@@ -9,6 +9,18 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.124.0
+
+- Notes save through the same queue as everything else: a new note has
+  its own id from the moment it's written, so it's saved once however
+  often it's sent, and keeps its id when its time changes. An edit is
+  made to the note as you last saw it; one changed elsewhere since waits
+  for you to resolve, from the bar at the foot of the page.
+- Notes waiting to save from before the update carry over, so nothing
+  waiting is lost.
+- Cancelling a change the background task is sending at that moment is
+  refused, as it should be, rather than said to be done.
+
 ## 7.123.0
 
 - Actions, action groups and the priority colors save the way people

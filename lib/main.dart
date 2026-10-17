@@ -15,7 +15,7 @@ import 'models/event.dart';
 import 'outbox/background_sync.dart';
 import 'outbox/action_writes.dart';
 import 'outbox/event_outbox.dart';
-import 'outbox/note_outbox.dart';
+import 'outbox/note_writes.dart';
 import 'outbox/outbox.dart';
 import 'outbox/outbox_store.dart';
 import 'outbox/write_queue.dart';
@@ -94,14 +94,10 @@ Future<void> main() async {
     );
     _recordUncaughtErrors(health);
     _recordWork(health);
-    final noteOutbox = NoteOutbox(
-      store: InMemoryOutboxStore(),
-      repository: repository,
-    );
-    // Kept in memory, and made to the actions themselves.
+    // Kept in memory, and made to the notes and actions themselves.
     final writeQueue = WriteQueue(
       store: InMemoryOutboxStore(),
-      call: localActionCalls(actions),
+      call: localWrites(actions: actions, notes: repository),
     );
     final eventOutbox = EventOutbox(
       store: InMemoryOutboxStore(),
@@ -109,14 +105,13 @@ Future<void> main() async {
       proposals: proposals,
       notices: ProposalNotices(persist: false),
     );
-    _watchQueues(health, noteOutbox, writeQueue, eventOutbox);
+    _watchQueues(health, writeQueue, eventOutbox);
     runApp(
       TimeTrackerApp(
         repository: repository,
         eventsRepository: events,
         proposalsRepository: proposals,
         actionsRepository: actions,
-        outbox: noteOutbox,
         writeQueue: writeQueue,
         eventOutbox: eventOutbox,
         clientHealth: health,
@@ -162,24 +157,22 @@ Future<void> main() async {
   final auth = _authSession(interactive: true);
   final client = _client(auth, health);
   final cache = PrefsResponseCache();
-  final repository = McpNotesRepository(client, cache: cache);
-  final events = McpEventsRepository(client);
-  final proposals = McpProposalRepository(client, cache: cache);
-  final settings = AppSettings();
-  // Every write of actions, people, places and the rest, kept on the
-  // device and sent once, so none waits on the server.
   final writeQueue = WriteQueue(
     store: PrefsOutboxStore.writes(),
     call: WriteQueue.callOn(client),
   );
-  final actions = McpActionsRepository(
+  final repository = McpNotesRepository(
     client,
     cache: cache,
     writes: writeQueue,
   );
-  final noteOutbox = NoteOutbox(
-    store: PrefsOutboxStore.notes(),
-    repository: repository,
+  final events = McpEventsRepository(client);
+  final proposals = McpProposalRepository(client, cache: cache);
+  final settings = AppSettings();
+  final actions = McpActionsRepository(
+    client,
+    cache: cache,
+    writes: writeQueue,
   );
   final eventOutbox = EventOutbox(
     store: PrefsOutboxStore.events(),
@@ -189,7 +182,7 @@ Future<void> main() async {
     persistPause: true,
     making: () => writeQueue.making,
   );
-  _watchQueues(health, noteOutbox, writeQueue, eventOutbox);
+  _watchQueues(health, writeQueue, eventOutbox);
   // From Open-Meteo, for a place the user gives, or where the device is
   // -- asked only once they pick that, in Settings.
   final weather = Weather(
@@ -203,7 +196,6 @@ Future<void> main() async {
       eventsRepository: events,
       proposalsRepository: proposals,
       actionsRepository: actions,
-      outbox: noteOutbox,
       eventOutbox: eventOutbox,
       writeQueue: writeQueue,
       clientHealth: health,
@@ -260,11 +252,6 @@ void backgroundDispatcher() {
         _authSession(interactive: false),
         _backgroundHealth,
       );
-      final notes = NoteOutbox(
-        store: PrefsOutboxStore.notes(),
-        repository: McpNotesRepository(client),
-        sender: Outbox.backgroundSender,
-      );
       final writes = WriteQueue(
         store: PrefsOutboxStore.writes(),
         call: WriteQueue.callOn(client),
@@ -280,9 +267,9 @@ void backgroundDispatcher() {
         notices: ProposalNotices(),
         persistPause: true,
       );
-      _watchQueues(_backgroundHealth, notes, writes, events);
+      _watchQueues(_backgroundHealth, writes, events);
       // The writes first: an event may name what one makes.
-      return [writes, notes, events];
+      return [writes, events];
     },
   );
 }
@@ -307,18 +294,19 @@ Future<void> _refreshWeatherInBackground() async {
 final _backgroundHealth = ClientHealthRecorder(origin: CallOrigin.background);
 
 /// Records [health]'s queues' lengths as they change: those waiting to be
-/// sent, refused or not -- the write queue's as the actions', which were
-/// the first it held.
+/// sent, refused or not -- the write queue's notes as the notes', and the
+/// rest as the actions', which were the first it held.
 void _watchQueues(
   ClientHealthRecorder health,
-  NoteOutbox notes,
   WriteQueue writes,
   EventOutbox events,
 ) => health.watchQueues(
-  notes: notes,
-  notesCount: () => notes.items.length,
+  notes: writes,
+  notesCount: () =>
+      writes.items.where((w) => w.kind == WriteKind.note.name).length,
   actions: writes,
-  actionsCount: () => writes.items.length,
+  actionsCount: () =>
+      writes.items.where((w) => w.kind != WriteKind.note.name).length,
   events: events,
   eventsCount: () => events.items.length,
 );
@@ -415,7 +403,6 @@ class TimeTrackerApp extends StatefulWidget {
     required this.repository,
     required this.eventsRepository,
     required this.actionsRepository,
-    required this.outbox,
     this.eventOutbox,
     this.writeQueue,
     this.auth,
@@ -484,7 +471,6 @@ class TimeTrackerApp extends StatefulWidget {
   final CalendarWidget? calendarWidget;
   final EventsRepository eventsRepository;
   final ActionsRepository actionsRepository;
-  final NoteOutbox outbox;
 
   /// Changes to events, and the open proposal, waiting to be sent, or
   /// that failed; without it, each is saved as it's made.
@@ -524,8 +510,14 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       widget.writeQueue ??
       WriteQueue(
         store: InMemoryOutboxStore(),
-        call: localActionCalls(widget.actionsRepository),
+        call: localWrites(
+          actions: widget.actionsRepository,
+          notes: widget.repository,
+        ),
       );
+
+  /// The notes page's writes, through [_writeQueue].
+  late final _noteWrites = NoteWrites(_writeQueue);
 
   /// The Plan page's writes, through [_writeQueue].
   late final _actionWrites = ActionWrites(_writeQueue);
@@ -544,7 +536,6 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     // Every page shows the actions with the saves waiting, or just made.
     _planMemory.useActionWrites(_actionWrites);
     BackgroundSync.cancel();
-    widget.outbox.start();
     _writeQueue.start();
     _startEventOutbox();
     // Their times, and the next fetch scheduled from them. Best effort.
@@ -635,22 +626,17 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     widget.auth?.reload();
     // What the background task's changes to the proposal came to.
     unawaited(widget.eventOutbox?.notices?.load());
-    widget.outbox.start();
     widget.eventOutbox?.start();
     _writeQueue.start();
   }
 
   Future<void> _onBackground() async {
-    widget.outbox.stop();
     widget.eventOutbox?.stop();
     _writeQueue.stop();
-    await widget.outbox.refresh();
     await widget.eventOutbox?.refresh();
     await _writeQueue.refresh();
     await widget.clientHealth?.flush();
-    if (widget.outbox.hasUnsent ||
-        (widget.eventOutbox?.hasUnsent ?? false) ||
-        _writeQueue.hasUnsent) {
+    if ((widget.eventOutbox?.hasUnsent ?? false) || _writeQueue.hasUnsent) {
       await BackgroundSync.schedule();
     }
   }
@@ -671,7 +657,6 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     _planMemory.removeListener(_calendarChanged);
     _calendarWeather?.dispose();
     widget.calendarWidget?.dispose();
-    widget.outbox.dispose();
     _savedWrites?.cancel();
     widget.eventOutbox?.dispose();
     _writeQueue.dispose();
@@ -728,7 +713,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         eventsRepository: widget.eventsRepository,
         proposalsRepository: widget.proposalsRepository,
         actionsRepository: widget.actionsRepository,
-        outbox: widget.outbox,
+        outbox: _noteWrites,
         actionWrites: _actionWrites,
         eventOutbox: widget.eventOutbox,
         writeQueue: _writeQueue,

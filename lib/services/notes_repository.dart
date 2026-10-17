@@ -1,4 +1,5 @@
 import '../models/note.dart';
+import '../outbox/write_queue.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
@@ -37,10 +38,19 @@ abstract class NotesRepository {
 /// Reads and writes notes via the Time Tracker MCP server's `get_notes`,
 /// `note`, `edit_note` and `delete_note` tools.
 class McpNotesRepository implements NotesRepository {
-  McpNotesRepository(this._client, {this._cache});
+  McpNotesRepository(this._client, {this._cache, this._writes});
 
   final McpClient _client;
   final ResponseCache? _cache;
+
+  /// What the notes page writes through: the notes read are what its
+  /// changes are made to, with their versions. The page shows its writes
+  /// waiting itself.
+  final WriteQueue? _writes;
+
+  void _know(Object? result) => _writes?.know(WriteKind.note, [
+    for (final n in result as List) (n as Map).cast<String, Object?>(),
+  ]);
 
   static const _cacheKey = 'get_notes';
   static const _statusCacheKey = 'get_compaction_status';
@@ -54,6 +64,7 @@ class McpNotesRepository implements NotesRepository {
       'include_compacted': false,
     });
     final notes = _notes(result);
+    _know(result);
     await _cache?.write(_cacheKey, result);
     return notes;
   }
@@ -62,7 +73,10 @@ class McpNotesRepository implements NotesRepository {
   Future<List<Note>?> cachedUncompactedNotes() async {
     try {
       final result = await _cache?.read(_cacheKey);
-      return result == null ? null : _notes(result);
+      if (result == null) return null;
+      final notes = _notes(result);
+      _know(result);
+      return notes;
     } catch (_) {
       return null; // From an older version of the app, perhaps.
     }
@@ -158,7 +172,19 @@ class InMemoryNotesRepository implements NotesRepository {
   Future<Note> addNote(Note note) async => _store(note);
 
   Note _store(Note note) {
-    final stored = _withId(note, _nextRow++);
+    // Made already under its id -- this one sent again -- it's as it is,
+    // as the server gives it.
+    if (_notes.where((n) => note.id != null && n.id == note.id).firstOrNull
+        case final made?) {
+      if (made.timestamp.isAtSameMomentAs(note.timestamp) &&
+          made.description == note.description) {
+        return made;
+      }
+      throw McpException('The id ${note.id} is already used');
+    }
+    final row = _nextRow++;
+    // One the app named keeps its id, as the server keeps it.
+    final stored = note.id == null ? _withId(note, row) : note;
     _notes.add(stored);
     return stored;
   }
@@ -177,7 +203,13 @@ class InMemoryNotesRepository implements NotesRepository {
           ? old.description
           : (description.isEmpty ? null : description),
     );
-    return _notes[i] = _withId(edited, _rowOf(id));
+    return _notes[i] = id.contains('#')
+        ? _withId(edited, _rowOf(id))
+        : Note(
+            timestamp: edited.timestamp,
+            description: edited.description,
+            id: id,
+          );
   }
 
   @override

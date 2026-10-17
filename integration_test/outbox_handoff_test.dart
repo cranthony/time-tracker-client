@@ -28,7 +28,7 @@ import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/outbox/background_sync.dart';
 import 'package:time_tracker_client/outbox/event_outbox.dart';
-import 'package:time_tracker_client/outbox/note_outbox.dart';
+import 'package:time_tracker_client/outbox/note_writes.dart';
 import 'package:time_tracker_client/outbox/outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
@@ -39,11 +39,11 @@ import 'package:time_tracker_client/services/notes_repository.dart';
 @pragma('vm:entry-point')
 void handoffDispatcher() => BackgroundSync.run(
   () => [
-    NoteOutbox(
-      store: PrefsOutboxStore.notes(),
-      repository: _FileNotes('background'),
+    NoteWrites.local(
+      _FileNotes('background'),
+      store: PrefsOutboxStore.writes(),
       sender: Outbox.backgroundSender,
-    ),
+    ).queue,
     EventOutbox(
       store: PrefsOutboxStore.events(),
       events: _FileEvents('background'),
@@ -89,8 +89,14 @@ class _FileNotes extends InMemoryNotesRepository {
   @override
   Future<Note> addNote(Note note) async {
     await _wire();
+    // Made already under its id: as the server, it isn't made again.
+    if ((await _saved()).any(
+      (f) => f[0] == 'note' && f.length > 4 && f[4] == note.id,
+    )) {
+      return note;
+    }
     await (await _file('note', who)).writeAsString(
-      'note|${note.timestamp.toUtc().toIso8601String()}|${note.description}|$who\n',
+      'note|${note.timestamp.toUtc().toIso8601String()}|${note.description}|$who|${note.id}\n',
       mode: FileMode.append,
       flush: true,
     );
@@ -103,7 +109,11 @@ class _FileNotes extends InMemoryNotesRepository {
   Future<List<Note>> uncompactedNotes() async => [
     for (final f in await _saved())
       if (f[0] == 'note')
-        Note(timestamp: DateTime.parse(f[1]).toLocal(), description: f[2]),
+        Note(
+          timestamp: DateTime.parse(f[1]).toLocal(),
+          description: f[2],
+          id: f.length > 4 ? f[4] : null,
+        ),
   ];
 }
 
@@ -151,14 +161,15 @@ void main() {
     (tester) async {
       final prefs = SharedPreferencesAsync();
       await prefs.remove('note_outbox');
+      await prefs.remove('write_queue');
       await prefs.remove('event_outbox');
       final server = await _server();
       if (server.existsSync()) server.deleteSync(recursive: true);
       await BackgroundSync.initialize(handoffDispatcher);
 
-      final notes = NoteOutbox(
-        store: PrefsOutboxStore.notes(),
-        repository: _FileNotes('app'),
+      final notes = NoteWrites.local(
+        _FileNotes('app'),
+        store: PrefsOutboxStore.writes(),
       );
       final events = EventOutbox(
         store: PrefsOutboxStore.events(),
@@ -233,7 +244,7 @@ void main() {
       // Both at once, till nothing's waiting.
       await BackgroundSync.schedule();
       final deadline = DateTime.now().add(const Duration(minutes: 3));
-      while (((await PrefsOutboxStore.notes().load()).isNotEmpty ||
+      while (((await PrefsOutboxStore.writes().load()).isNotEmpty ||
               (await PrefsOutboxStore.events().load()).isNotEmpty) &&
           DateTime.now().isBefore(deadline)) {
         await Future<void>.delayed(const Duration(milliseconds: 250));
@@ -261,7 +272,7 @@ void main() {
         '${await sentBy('background')}.',
       );
 
-      expect(await PrefsOutboxStore.notes().load(), isEmpty);
+      expect(await PrefsOutboxStore.writes().load(), isEmpty);
       expect(await PrefsOutboxStore.events().load(), isEmpty);
       // Each once: none lost, none twice.
       expect(savedNotes..sort(), [for (final k in made) 'n$k']..sort());

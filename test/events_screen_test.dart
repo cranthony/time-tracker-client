@@ -10,8 +10,7 @@ import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/recurrence.dart';
 import 'package:time_tracker_client/models/repeat.dart';
-import 'package:time_tracker_client/outbox/note_outbox.dart';
-import 'package:time_tracker_client/outbox/outbox_store.dart';
+import 'package:time_tracker_client/outbox/note_writes.dart';
 import 'package:time_tracker_client/platform/calendar_widget.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/home_screen.dart';
@@ -2914,7 +2913,7 @@ void main() {
       Note(timestamp: at(29, 22), description: 'Yesterday'),
     ]);
     // Not started, so it stays unsaved.
-    final outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: notes);
+    final outbox = NoteWrites.local(notes);
     await tester.pumpWidget(
       MaterialApp(
         home: EventsScreen(
@@ -2944,7 +2943,7 @@ void main() {
   });
 
   group('HomeScreen', () {
-    late NoteOutbox outbox;
+    late NoteWrites outbox;
     late InMemoryNotesRepository notes;
 
     Widget home({
@@ -2953,16 +2952,14 @@ void main() {
       List<Event> events = const [],
     }) {
       notes = InMemoryNotesRepository();
-      outbox = NoteOutbox(store: InMemoryOutboxStore(), repository: notes)
-        ..start();
+      outbox = NoteWrites.local(notes)..start();
       return MaterialApp(
         home: HomeScreen(
           notesRepository: notes,
           eventsRepository: InMemoryEventsRepository(events),
           actionsRepository: InMemoryActionsRepository(),
           outbox: outbox,
-          actionWrites: ActionWrites.local(InMemoryActionsRepository(),
-          ),
+          actionWrites: ActionWrites.local(InMemoryActionsRepository()),
           addNoteRequests: addNoteRequests,
           calendarTaps: calendarTaps,
         ),
