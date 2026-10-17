@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/facts.dart';
+import '../models/goal.dart';
 import '../models/habit.dart';
 import '../models/plan_action.dart';
 import '../models/person.dart';
@@ -280,6 +281,64 @@ Set<String> _habitsOf(
     },
   );
   return (shares(day), shares(week));
+}
+
+/// [window]'s time by top-level goal: each event's time split between
+/// the top-level goals it's for, each its share with its sub-goals'
+/// ([topLevelFractions]) -- scaled down together if they'd take more
+/// than the event -- and what's left of it "No goal".
+(List<SummarySlice>, List<SummarySlice>) goalTime(
+  List<Event> events,
+  SummaryWindow window,
+  List<Goal> goals,
+) {
+  final tree = GoalTree(goals);
+  Map<String?, Duration> by(DateTime from, DateTime to) {
+    final time = <String?, Duration>{};
+    void add(String? key, Duration length) =>
+        time[key] = (time[key] ?? Duration.zero) + length;
+    for (final MapEntry(key: event, value: length) in timeByEvent(
+      events,
+      from,
+      to,
+    ).entries) {
+      if (event == null) {
+        add(null, length);
+        continue;
+      }
+      var given = Duration.zero;
+      final fractions = topLevelFractions(
+        event.goals,
+        event.end.difference(event.start),
+        tree,
+      );
+      for (final MapEntry(key: id, value: fraction) in fractions.entries) {
+        final share = length * fraction;
+        add(id, share);
+        given += share;
+      }
+      if (length > given) add('', length - given);
+    }
+    return time;
+  }
+
+  final (dayFrom, dayTo) = window.day;
+  final (weekFrom, weekTo) = window.week;
+  List<SummarySlice> shares(Map<String?, Duration> time) => planShares(
+    time,
+    none: '',
+    noneLabel: 'No goal',
+    others: 'goals',
+    slice: (id, time) => SummarySlice(
+      switch (tree[id]) {
+        final goal? => goalTitle(goal),
+        null => id,
+      },
+      colorFor(id),
+      time,
+    ),
+  );
+  return (shares(by(dayFrom, dayTo)), shares(by(weekFrom, weekTo)));
 }
 
 /// The key for the habits not scored yet, in [habitHealthTime].

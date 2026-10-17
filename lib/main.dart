@@ -30,6 +30,7 @@ import 'services/client_health.dart';
 import 'services/diagnostics_repository.dart';
 import 'services/events_repository.dart';
 import 'services/focus_store.dart';
+import 'services/goals_repository.dart';
 import 'services/habits_repository.dart';
 import 'services/mcp_client.dart';
 import 'services/note_drafts.dart';
@@ -120,6 +121,7 @@ Future<void> main() async {
         peopleRepository: people,
         habitsRepository:
             sample?.habitsRepository() ?? InMemoryHabitsRepository(),
+        goalsRepository: sample?.goalsRepository() ?? InMemoryGoalsRepository(),
         focus: sample?.focusStore(),
         diagnosticsRepository: sample?.diagnosticsRepository(),
         calendarWidget: CalendarWidget(),
@@ -212,6 +214,11 @@ Future<void> main() async {
         writes: writeQueue,
       ),
       habitsRepository: McpHabitsRepository(
+        client,
+        cache: cache,
+        writes: writeQueue,
+      ),
+      goalsRepository: McpGoalsRepository(
         client,
         cache: cache,
         writes: writeQueue,
@@ -410,6 +417,7 @@ class TimeTrackerApp extends StatefulWidget {
     this.traitsRepository,
     this.peopleRepository,
     this.habitsRepository,
+    this.goalsRepository,
     this.backgroundRefresh,
     this.diagnosticsRepository,
     this.clientHealth,
@@ -449,6 +457,10 @@ class TimeTrackerApp extends StatefulWidget {
   /// Self's habits, for every screen below (see [HabitsScope]); without
   /// it, they aren't offered.
   final HabitsRepository? habitsRepository;
+
+  /// The user's goals, for every screen below (see [GoalsScope]); without
+  /// it, they aren't offered.
+  final GoalsRepository? goalsRepository;
 
   /// The background fetches' times, and their schedule (see
   /// [BackgroundRefreshScope]); without it, there are none.
@@ -692,6 +704,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         }
         if (widget.habitsRepository case final habits?) {
           scoped = HabitsScope(repository: habits, child: scoped);
+        }
+        if (widget.goalsRepository case final goals?) {
+          scoped = GoalsScope(repository: goals, child: scoped);
         }
         if (widget.peopleRepository case final people?) {
           scoped = PeopleScope(repository: people, child: scoped);

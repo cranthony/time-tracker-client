@@ -9,6 +9,32 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.126.0
+
+- Goals: a new pane on the Plan page, "Goals" (aim), first of the five,
+  for outcomes you mean to reach and can mark done. It lists your top-level goals,
+  soonest due first, each with its deadline and the time spent toward it
+  against what you expect it to take; the summary splits the window's
+  time by top-level goal. The tabs are narrower, so all five fit on a
+  phone.
+- A goal's page shows its path and how deep it is, its status, deadline,
+  history, description and definition of done, and the goals under it,
+  each opening a page of its own. Mark a goal done or obsolete and you
+  pick what becomes of what's left open under it: done, obsolete, or
+  moved, under another goal or a new one. Activating a goal activates the
+  goals it's under; select several inactive sub-goals to activate them
+  together, giving each a deadline (end of today, end of this week, a
+  date, or its parent's). Moving a goal offers to make it fit its new
+  parent, and deleting one warns if events are tagged with it.
+- Descriptions and definitions of done are HTML, edited in a large box
+  with a preview a swipe to the right.
+- Goals are saved through the write queue like everything else, offline
+  too, and checked against the server's rules before they're queued. A
+  change to several goals at once -- closing a goal and what's left open
+  under it, say -- is saved as one change, checked whole; if another
+  device changed one of those goals meanwhile, only that goal's part
+  waits for you to resolve it.
+
 ## 7.125.1
 
 - Carrying over what an older version left waiting is safer still: with

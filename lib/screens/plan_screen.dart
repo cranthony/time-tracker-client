@@ -12,6 +12,7 @@ import '../outbox/action_writes.dart';
 import '../outbox/actions_shown.dart';
 import '../services/event_store.dart';
 import '../services/events_repository.dart';
+import '../services/goals_repository.dart';
 import '../services/habits_repository.dart';
 import '../services/actions_repository.dart';
 import '../services/mcp_client.dart';
@@ -19,6 +20,7 @@ import '../services/notes_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
+import 'goals_pane.dart';
 import 'locations_pane.dart';
 import 'people_pane.dart';
 import 'habits_pane.dart';
@@ -44,8 +46,10 @@ import '../services/work_timing.dart';
 /// The Plan page: panes to swipe between, or pick from the tabs at the
 /// top, each with a search of its own --
 ///
-/// * **Actions**, what to do, leftmost: the actions, kept as actions, and
-///   the groups they're in, as a tree;
+/// * **Goals**, what to aim for, leftmost ([GoalsPane]), from the
+///   [GoalsScope];
+/// * **Actions**, what to do: the actions, kept as actions, and the
+///   groups they're in, as a tree;
 /// * **Habits**, what to practice ([HabitsPane]), from the [HabitsScope];
 /// * **People**, who to be with, Self always among them, with the traits
 ///   -- how to be -- under them ([PeoplePane]), from the [PeopleScope]
@@ -159,6 +163,7 @@ class _PlanScreenState extends State<PlanScreen> {
   final _habitsPane = GlobalKey<HabitsPaneState>();
   final _peoplePane = GlobalKey<PeoplePaneState>();
   final _locationsPane = GlobalKey<LocationsPaneState>();
+  final _goalsPane = GlobalKey<GoalsPaneState>();
 
   /// The statuses shown.
   final _shown = {...defaultActionStatuses};
@@ -242,6 +247,7 @@ class _PlanScreenState extends State<PlanScreen> {
     final traits = TraitsScope.of(context);
     final people = PeopleScope.of(context);
     final habits = HabitsScope.of(context);
+    final goals = GoalsScope.of(context);
     // On its own, without the home screen to load the events the traits
     // are scored from as the app opens: loads them here.
     if (!_memory.warmed && widget.eventsRepository != null) {
@@ -254,7 +260,12 @@ class _PlanScreenState extends State<PlanScreen> {
         ),
       );
     }
-    await _memory.loadKept(traits: traits, people: people, habits: habits);
+    await _memory.loadKept(
+      traits: traits,
+      people: people,
+      habits: habits,
+      goals: goals,
+    );
     if (mounted) setState(() {});
     Future<void> quietly(Future<void>? loading) async {
       try {
@@ -270,6 +281,7 @@ class _PlanScreenState extends State<PlanScreen> {
       quietly(people == null ? null : _memory.loadPeople(people)),
       quietly(people == null ? null : _memory.loadLocations(people)),
       quietly(habits == null ? null : _memory.loadHabits(habits)),
+      quietly(goals == null ? null : _memory.loadGoals(goals)),
     ]);
   }
 
@@ -779,13 +791,24 @@ class _PlanScreenState extends State<PlanScreen> {
     final traits = TraitsScope.of(context);
     final people = PeopleScope.of(context);
     final habits = HabitsScope.of(context);
+    final goals = GoalsScope.of(context);
     final personNames = {
       for (final person in _people?.withSelf ?? const [defaultSelf])
         person.id: personName(person),
     };
-    // Actions leftmost, so swiping a group right, to open or close it,
-    // has nothing else to do.
+    // Goals first: what the rest is for.
     final panes = <(String, String, Widget)>[
+      if (goals != null)
+        (
+          'Goals',
+          'aim',
+          GoalsPane(
+            key: _goalsPane,
+            repository: goals,
+            memory: _memory,
+            summary: _summaryView,
+          ),
+        ),
       // Built only while it's shown: what it works out is costly.
       ('Actions', 'do', Builder(builder: _actionsPane)),
       if (habits != null)
@@ -870,6 +893,8 @@ class _PlanScreenState extends State<PlanScreen> {
             bottom: reordering || _needsSignIn || panes.length < 2
                 ? null
                 : TabBar(
+                    // Narrow enough for every pane's tab on a phone.
+                    labelPadding: const EdgeInsets.symmetric(horizontal: 4),
                     tabs: [
                       for (final (title, annotation, _) in panes)
                         Tab(
@@ -929,6 +954,7 @@ class _PlanScreenState extends State<PlanScreen> {
       'Habits' => _habitsPane.currentState?.reload(),
       'People' => _peoplePane.currentState?.reload(),
       'Locations' => _locationsPane.currentState?.reload(),
+      'Goals' => _goalsPane.currentState?.reload(),
       _ => Future.wait([_load(), _loadEvents(again: true)]),
     };
   }
