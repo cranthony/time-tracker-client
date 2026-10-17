@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'hotkeys.dart';
 import '../models/habit.dart';
 import '../models/habit_graph.dart';
 import '../models/person.dart';
@@ -173,37 +174,43 @@ class _HabitEditorState extends State<_HabitEditor> {
       saving: _saving,
       onSave: _save,
       children: [
-        TextField(
-          controller: _name,
-          autofocus: widget.habit == null,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            labelText: 'Name',
-            hintText: 'e.g. Practice guitar mindfully',
-            border: OutlineInputBorder(),
-            isDense: true,
+        FieldHotkey(
+          'N',
+          child: TextField(
+            controller: _name,
+            autofocus: widget.habit == null,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Name',
+              hintText: 'e.g. Practice guitar mindfully',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (_) => setState(() {}),
           ),
-          onChanged: (_) => setState(() {}),
         ),
         Padding(
           padding: const EdgeInsets.only(top: 16, bottom: 4),
           child: Text('Action or group', style: theme.textTheme.titleSmall),
         ),
-        ActionField(
-          actions: widget.actions,
-          value: _actionId,
-          title: 'What is it about?',
-          hint: 'Pick an action or group',
-          exclude: {
-            // Nothing deleted, nor put away, unless it's there
-            // already.
-            for (final a in widget.actions)
-              if (const {'archived', 'deleted'}.contains(a.status) &&
-                  a.id != _actionId)
-                ?a.id,
-          },
-          marker: actionDot,
-          onChanged: (id) => setState(() => _actionId = id),
+        FieldHotkey(
+          'A',
+          child: ActionField(
+            actions: widget.actions,
+            value: _actionId,
+            title: 'What is it about?',
+            hint: 'Pick an action or group',
+            exclude: {
+              // Nothing deleted, nor put away, unless it's there
+              // already.
+              for (final a in widget.actions)
+                if (const {'archived', 'deleted'}.contains(a.status) &&
+                    a.id != _actionId)
+                  ?a.id,
+            },
+            marker: actionDot,
+            onChanged: (id) => setState(() => _actionId = id),
+          ),
         ),
         Padding(
           padding: const EdgeInsets.only(top: 4),
@@ -215,86 +222,102 @@ class _HabitEditorState extends State<_HabitEditor> {
         ),
         Padding(
           padding: const EdgeInsets.only(top: 16),
-          child: TextField(
-            controller: _note,
-            minLines: 4,
-            maxLines: null,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: 'Note (optional)',
-              hintText:
-                  'What it is for, and what doing it well looks '
-                  'like',
-              helperText: 'Claude judges its events with this in mind.',
-              helperMaxLines: 2,
-              border: OutlineInputBorder(),
-              floatingLabelBehavior: FloatingLabelBehavior.always,
+          child: FieldHotkey(
+            'O',
+            child: TextField(
+              controller: _note,
+              minLines: 4,
+              maxLines: null,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Note (optional)',
+                hintText:
+                    'What it is for, and what doing it well looks '
+                    'like',
+                helperText: 'Claude judges its events with this in mind.',
+                helperMaxLines: 2,
+                border: OutlineInputBorder(),
+                floatingLabelBehavior: FloatingLabelBehavior.always,
+              ),
             ),
           ),
         ),
         if (widget.foundationChoices case final choices?)
           Padding(
             padding: const EdgeInsets.only(top: 16),
-            child: FoundationsField(
-              value: _foundations,
-              choices: choices,
-              names: widget.foundationNames,
-              onChanged: (picked) => setState(() => _foundations = picked),
+            child: FieldHotkey(
+              'B',
+              child: FoundationsField(
+                value: _foundations,
+                choices: choices,
+                names: widget.foundationNames,
+                onChanged: (picked) => setState(() => _foundations = picked),
+              ),
             ),
           ),
-        TraitsField(
-          // Again for another action, so its warnings are new.
-          key: ValueKey(_actionId),
-          traits: widget.traits,
-          value: _traits,
-          own: 'Its own',
-          actions: _inScope,
-          // Sleep, say, needn't be in its scope to be set aside.
-          exceptionActions: {
-            for (final a in widget.actions)
-              if (a.id case final id? when a.status != 'deleted')
-                id: a.path ?? actionName(a),
-          },
-          partsTitle: (trait) => '${trait.name} for $name',
-          partsExplanation: (trait) =>
-              "Its own parts for ${trait.name}, in place of the "
-              "trait's: a rubric for this habit alone, say. Counts, "
-              'time spent and the like count only its events, and '
-              "you're at every one.",
-          warnings: _actionId == null
-              ? null
-              : (parts) => habitPartWarnings(
-                  parts,
-                  _actionId!,
-                  (id) => _byId[id]?.parentId,
-                  {for (final id in _byId.keys) id: _actionName(id)},
+        FieldHotkey(
+          'T',
+          focusOnly: true,
+          child: TraitsField(
+            // Again for another action, so its warnings are new.
+            key: ValueKey(_actionId),
+            traits: widget.traits,
+            value: _traits,
+            own: 'Its own',
+            actions: _inScope,
+            // Sleep, say, needn't be in its scope to be set aside.
+            exceptionActions: {
+              for (final a in widget.actions)
+                if (a.id case final id? when a.status != 'deleted')
+                  id: a.path ?? actionName(a),
+            },
+            partsTitle: (trait) => '${trait.name} for $name',
+            partsExplanation: (trait) =>
+                "Its own parts for ${trait.name}, in place of the "
+                "trait's: a rubric for this habit alone, say. Counts, "
+                'time spent and the like count only its events, and '
+                "you're at every one.",
+            warnings: _actionId == null
+                ? null
+                : (parts) => habitPartWarnings(
+                    parts,
+                    _actionId!,
+                    (id) => _byId[id]?.parentId,
+                    {for (final id in _byId.keys) id: _actionName(id)},
+                  ),
+            preview: switch ((widget.scoreParts, _actionId)) {
+              (final score?, final actionId?) => (trait, parts) => score(
+                Subject(
+                  id: widget.habit?.subject ?? 'habit:',
+                  cancelledEvents: widget.habit?.cancelledEvents ?? const [],
+                  scope: actionId,
                 ),
-          preview: switch ((widget.scoreParts, _actionId)) {
-            (final score?, final actionId?) => (trait, parts) => score(
-              Subject(
-                id: widget.habit?.subject ?? 'habit:',
-                cancelledEvents: widget.habit?.cancelledEvents ?? const [],
-                scope: actionId,
+                trait.id!,
+                parts,
               ),
-              trait.id!,
-              parts,
-            ),
-            _ => null,
-          },
-          onChanged: (traits) => setState(() => _traits = traits),
+              _ => null,
+            },
+            onChanged: (traits) => setState(() => _traits = traits),
+          ),
         ),
         ..._warnings(theme),
         if (widget.habit != null) ...[
           const SizedBox(height: 16),
-          SegmentedButton<String>(
-            showSelectedIcon: false,
-            segments: [
-              for (final MapEntry(:key, :value) in habitStatuses.entries)
-                ButtonSegment(value: key, label: Text(value)),
-            ],
-            selected: {_status},
-            onSelectionChanged: (picked) =>
-                setState(() => _status = picked.single),
+          FieldHotkey(
+            'S',
+            onPressed: () => setState(
+              () => _status = nextOf(habitStatuses.keys.toList(), _status),
+            ),
+            child: SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: [
+                for (final MapEntry(:key, :value) in habitStatuses.entries)
+                  ButtonSegment(value: key, label: Text(value)),
+              ],
+              selected: {_status},
+              onSelectionChanged: (picked) =>
+                  setState(() => _status = picked.single),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.only(top: 4),

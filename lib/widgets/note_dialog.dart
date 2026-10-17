@@ -350,24 +350,27 @@ class _NoteDialogState extends State<_NoteDialog> {
             ],
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _description,
-            focusNode: _focus,
-            // Only for a new note: an edit may be just to the time.
-            autofocus: !_editing,
-            minLines: 4,
-            maxLines: 8,
-            // Wraps onto several lines, but Enter adds the note rather
-            // than a new line.
-            keyboardType: TextInputType.text,
-            textInputAction: TextInputAction.done,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              hintText: 'What are you doing? (optional)',
-              filled: true,
-              border: OutlineInputBorder(borderSide: BorderSide.none),
+          FieldHotkey(
+            'D',
+            child: TextField(
+              controller: _description,
+              focusNode: _focus,
+              // Only for a new note: an edit may be just to the time.
+              autofocus: !_editing,
+              minLines: 4,
+              maxLines: 8,
+              // Wraps onto several lines, but Enter adds the note rather
+              // than a new line.
+              keyboardType: TextInputType.text,
+              textInputAction: TextInputAction.done,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                hintText: 'What are you doing? (optional)',
+                filled: true,
+                border: OutlineInputBorder(borderSide: BorderSide.none),
+              ),
+              onSubmitted: (_) => _submit(),
             ),
-            onSubmitted: (_) => _submit(),
           ),
           if (_keepError case final error?)
             Padding(
@@ -393,10 +396,13 @@ class _NoteDialogState extends State<_NoteDialog> {
                       visualDensity: _dense,
                       onPressed: () => _nudge(const Duration(minutes: -1)),
                     ),
-                    ActionChip(
-                      avatar: const Icon(Icons.schedule),
-                      label: Text(time),
-                      onPressed: _pickTime,
+                    FieldHotkey(
+                      'T',
+                      child: ActionChip(
+                        avatar: const Icon(Icons.schedule),
+                        label: Text(time),
+                        onPressed: _pickTime,
+                      ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.add),
@@ -404,10 +410,13 @@ class _NoteDialogState extends State<_NoteDialog> {
                       visualDensity: _dense,
                       onPressed: () => _nudge(const Duration(minutes: 1)),
                     ),
-                    TextButton(
-                      style: TextButton.styleFrom(visualDensity: _dense),
-                      onPressed: () => _setTime(DateTime.now()),
-                      child: const Text('Now'),
+                    FieldHotkey(
+                      'N',
+                      child: TextButton(
+                        style: TextButton.styleFrom(visualDensity: _dense),
+                        onPressed: () => _setTime(DateTime.now()),
+                        child: const Text('Now'),
+                      ),
                     ),
                   ],
                 ),

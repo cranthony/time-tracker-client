@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'hotkeys.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart' show defaultWindowDays;
 import 'duration_field.dart';
@@ -107,16 +108,23 @@ class _PartsEditorState extends State<PartsEditor> {
       mainAxisSize: MainAxisSize.min,
       children: [
         for (final (i, draft) in _drafts.indexed)
-          _card(theme, i, draft, previews?.elementAtOrNull(i)),
+          FieldHotkey(
+            i < 9 ? '${i + 1}' : null,
+            focusOnly: true,
+            child: _card(theme, i, draft, previews?.elementAtOrNull(i)),
+          ),
         Align(
           alignment: AlignmentDirectional.centerStart,
-          child: TextButton.icon(
-            onPressed: () {
-              _drafts.add(_PartDraft.from(newJudgment));
-              _changed();
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Add part'),
+          child: FieldHotkey(
+            'A',
+            child: TextButton.icon(
+              onPressed: () {
+                _drafts.add(_PartDraft.from(newJudgment));
+                _changed();
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Add part'),
+            ),
           ),
         ),
       ],

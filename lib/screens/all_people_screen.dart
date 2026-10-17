@@ -4,6 +4,7 @@ import '../models/people_times.dart';
 import '../models/person.dart';
 import '../models/trait_scores.dart';
 import '../services/plan_memory.dart';
+import '../widgets/hotkeys.dart';
 import '../widgets/health.dart';
 import '../widgets/plan_pane.dart';
 
@@ -52,6 +53,7 @@ class AllPeopleScreen extends StatefulWidget {
 
 class _AllPeopleScreenState extends State<AllPeopleScreen> {
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
   String _query = '';
   bool _archived = false;
   String? _circle;
@@ -71,6 +73,7 @@ class _AllPeopleScreenState extends State<AllPeopleScreen> {
   void dispose() {
     widget.memory.removeListener(_changed);
     _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -162,21 +165,25 @@ class _AllPeopleScreenState extends State<AllPeopleScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: TextField(
-              controller: _search,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                hintText: 'Search people',
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                filled: true,
-                fillColor: theme.colorScheme.surfaceContainerHighest,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
+            child: SearchHotkey(
+              focus: _searchFocus,
+              child: TextField(
+                controller: _search,
+                focusNode: _searchFocus,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'Search people',
+                  prefixIcon: const Icon(Icons.search),
+                  isDense: true,
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
+                onChanged: (text) => setState(() => _query = text),
               ),
-              onChanged: (text) => setState(() => _query = text),
             ),
           ),
           if (_sort != PeopleSort.listed)

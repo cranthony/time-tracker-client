@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/hotkeys.dart';
 import '../models/scoring.dart';
 import '../models/trait.dart';
 import '../services/plan_memory.dart';
@@ -73,50 +74,59 @@ class _ScoringDefaultsPageState extends State<_ScoringDefaultsPage> {
           'set its own in place of these.',
           style: theme.textTheme.bodySmall,
         ),
-        AggregationTile(
-          title: 'Traits',
-          label: "A person's or habit's traits",
-          explanation: 'Into the score of their day.',
-          value: _defaults.traits,
-          items: traits,
-          noun: 'traits',
-          fallback: 'Mean',
-          onChanged: (scoring) => setState(
-            () => _defaults = ScoringDefaults(
-              traits: scoring,
-              circles: _defaults.circles,
-              habitLayers: _defaults.habitLayers,
+        FieldHotkey(
+          'T',
+          child: AggregationTile(
+            title: 'Traits',
+            label: "A person's or habit's traits",
+            explanation: 'Into the score of their day.',
+            value: _defaults.traits,
+            items: traits,
+            noun: 'traits',
+            fallback: 'Mean',
+            onChanged: (scoring) => setState(
+              () => _defaults = ScoringDefaults(
+                traits: scoring,
+                circles: _defaults.circles,
+                habitLayers: _defaults.habitLayers,
+              ),
             ),
           ),
         ),
-        AggregationTile(
-          title: 'Circles',
-          label: "A circle's people",
-          explanation: "Into the circle's health.",
-          value: _defaults.circles,
-          noun: 'people',
-          fallback: 'Mean',
-          onChanged: (scoring) => setState(
-            () => _defaults = ScoringDefaults(
-              traits: _defaults.traits,
-              circles: scoring,
-              habitLayers: _defaults.habitLayers,
+        FieldHotkey(
+          'C',
+          child: AggregationTile(
+            title: 'Circles',
+            label: "A circle's people",
+            explanation: "Into the circle's health.",
+            value: _defaults.circles,
+            noun: 'people',
+            fallback: 'Mean',
+            onChanged: (scoring) => setState(
+              () => _defaults = ScoringDefaults(
+                traits: _defaults.traits,
+                circles: scoring,
+                habitLayers: _defaults.habitLayers,
+              ),
             ),
           ),
         ),
-        AggregationTile(
-          title: 'Habit layers',
-          label: 'A layer of the habits pane',
-          explanation: "Its habits' and people's ratings, into the layer's.",
-          value: _defaults.habitLayers,
-          noun: 'habits and people',
-          fallback: 'Lowest',
-          fallbackValue: Aggregation.lowest,
-          onChanged: (scoring) => setState(
-            () => _defaults = ScoringDefaults(
-              traits: _defaults.traits,
-              circles: _defaults.circles,
-              habitLayers: scoring,
+        FieldHotkey(
+          'H',
+          child: AggregationTile(
+            title: 'Habit layers',
+            label: 'A layer of the habits pane',
+            explanation: "Its habits' and people's ratings, into the layer's.",
+            value: _defaults.habitLayers,
+            noun: 'habits and people',
+            fallback: 'Lowest',
+            fallbackValue: Aggregation.lowest,
+            onChanged: (scoring) => setState(
+              () => _defaults = ScoringDefaults(
+                traits: _defaults.traits,
+                circles: _defaults.circles,
+                habitLayers: scoring,
+              ),
             ),
           ),
         ),

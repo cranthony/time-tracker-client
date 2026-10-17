@@ -569,9 +569,14 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     final theme = Theme.of(context);
     final count = _changes.length;
     final oneWay = widget.oneWayAction;
+    final letters = fieldLetters([
+      for (final key in _original.keys)
+        if (_editable && widget.kinds.containsKey(key)) key,
+    ]);
     return SaveOrDiscard(
       changed: () => _changedHere,
       onSave: _saving || !(count > 0 || _editing != null) ? null : _save,
+      escLeavesFields: true,
       onDiscard: () {
         if (!_saving) Navigator.of(context).pop();
       },
@@ -616,7 +621,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
                       ],
                     ),
                   ),
-                for (final key in _original.keys) _row(context, key),
+                for (final key in _original.keys)
+                  _row(context, key, letters[key]),
               ],
             ),
           ),
@@ -668,7 +674,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     );
   }
 
-  Widget _row(BuildContext context, String key) {
+  /// [key]'s row; [letter] opens it to edit.
+  Widget _row(BuildContext context, String key, String? letter) {
     final theme = Theme.of(context);
     final waits = waitsFor(widget.waiting, key);
     final editable = _editable && widget.kinds.containsKey(key) && !waits;
@@ -736,30 +743,34 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
           : null,
       child: !editable
           ? shown
-          : InkWell(
-              onTap: _saving
-                  ? null
-                  : () {
-                      if (_confirmEdit()) _open(key);
-                    },
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(width: double.infinity, child: shown),
-                    if (changed)
-                      Text(
-                        _original[key] == null
-                            ? '(none)'
-                            : _format(context, key, _original[key]!),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.hintColor,
-                          decoration: TextDecoration.lineThrough,
+          : FieldHotkey(
+              letter,
+              enabled: !_saving,
+              child: InkWell(
+                onTap: _saving
+                    ? null
+                    : () {
+                        if (_confirmEdit()) _open(key);
+                      },
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(width: double.infinity, child: shown),
+                      if (changed)
+                        Text(
+                          _original[key] == null
+                              ? '(none)'
+                              : _format(context, key, _original[key]!),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.hintColor,
+                            decoration: TextDecoration.lineThrough,
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

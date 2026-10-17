@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'hotkeys.dart';
 import 'error_sheet.dart';
 import 'color_picker.dart';
 
@@ -84,21 +85,24 @@ class _PriorityColorsDialogState extends State<PriorityColorsDialog> {
             mainAxisSize: MainAxisSize.min,
             children: [
               for (final p in priorities)
-                ListTile(
-                  key: Key('priority-color-$p'),
-                  contentPadding: EdgeInsets.zero,
-                  leading: ColorDot(color: priorityColor(p), size: 24),
-                  title: Text(
-                    p == defaultPriority ? 'P$p (and no priority)' : 'P$p',
+                FieldHotkey(
+                  p >= 0 && p <= 9 ? '$p' : null,
+                  child: ListTile(
+                    key: Key('priority-color-$p'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: ColorDot(color: priorityColor(p), size: 24),
+                    title: Text(
+                      p == defaultPriority ? 'P$p (and no priority)' : 'P$p',
+                    ),
+                    subtitle: Text(colorToHex(priorityColor(p))),
+                    trailing: _saving == p
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.edit_outlined),
+                    onTap: _saving == null ? () => _change(p) : null,
                   ),
-                  subtitle: Text(colorToHex(priorityColor(p))),
-                  trailing: _saving == p
-                      ? const SizedBox.square(
-                          dimension: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.edit_outlined),
-                  onTap: _saving == null ? () => _change(p) : null,
                 ),
             ],
           ),

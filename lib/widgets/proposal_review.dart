@@ -669,6 +669,7 @@ class _NoteDialogState extends State<_NoteDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return SaveOrDiscard(
+      escLeavesFields: true,
       changed: () => _text.text.trim().isNotEmpty,
       onSave: _leave,
       child: AlertDialog(
@@ -691,35 +692,42 @@ class _NoteDialogState extends State<_NoteDialog> {
               if (widget.subject case final subject?)
                 Text(subject, style: theme.textTheme.titleSmall)
               else if (widget.events.isNotEmpty)
-                DropdownButtonFormField<String?>(
-                  initialValue: _about,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'About'),
-                  items: [
-                    const DropdownMenuItem(
-                      value: null,
-                      child: Text('All of it'),
-                    ),
-                    for (final MapEntry(:key, :value) in widget.events.entries)
-                      DropdownMenuItem(
-                        value: key,
-                        child: Text(value, overflow: TextOverflow.ellipsis),
+                FieldHotkey(
+                  'A',
+                  child: DropdownButtonFormField<String?>(
+                    initialValue: _about,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'About'),
+                    items: [
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text('All of it'),
                       ),
-                  ],
-                  onChanged: (value) => setState(() => _about = value),
+                      for (final MapEntry(:key, :value)
+                          in widget.events.entries)
+                        DropdownMenuItem(
+                          value: key,
+                          child: Text(value, overflow: TextOverflow.ellipsis),
+                        ),
+                    ],
+                    onChanged: (value) => setState(() => _about = value),
+                  ),
                 ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _text,
-                autofocus: true,
-                minLines: 2,
-                maxLines: 6,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  hintText: 'What should Claude change?',
-                  border: OutlineInputBorder(),
+              FieldHotkey(
+                'N',
+                child: TextField(
+                  controller: _text,
+                  autofocus: true,
+                  minLines: 2,
+                  maxLines: 6,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    hintText: 'What should Claude change?',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (_) => setState(() {}),
                 ),
-                onChanged: (_) => setState(() {}),
               ),
             ],
           ),
@@ -1825,16 +1833,23 @@ class _CreateAdditionDialogState extends State<_CreateAdditionDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: _name,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Name'),
-              onChanged: (_) => setState(() {}),
+            FieldHotkey(
+              'N',
+              child: TextField(
+                controller: _name,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Name'),
+                onChanged: (_) => setState(() {}),
+              ),
             ),
             if (detail != null)
-              TextField(
-                controller: _detail,
-                decoration: InputDecoration(labelText: detail),
+              FieldHotkey(
+                // Context, or hint.
+                detail[0],
+                child: TextField(
+                  controller: _detail,
+                  decoration: InputDecoration(labelText: detail),
+                ),
               ),
           ],
         ),
@@ -2219,24 +2234,27 @@ class _CancelledDialogState extends State<_CancelledDialog> {
             ),
             if (!merged) ...[
               const SizedBox(height: 16),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Counts against follow-through'),
-                subtitle: Text(
-                  counts
-                      ? 'A commitment dropped'
-                      : 'A change of plan: no one’s follow-through',
+              FieldHotkey(
+                'F',
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Counts against follow-through'),
+                  subtitle: Text(
+                    counts
+                        ? 'A commitment dropped'
+                        : 'A change of plan: no one’s follow-through',
+                  ),
+                  secondary: _saving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : null,
+                  value: counts,
+                  onChanged: _saving || widget.setCounts == null
+                      ? null
+                      : _setCounts,
                 ),
-                secondary: _saving
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : null,
-                value: counts,
-                onChanged: _saving || widget.setCounts == null
-                    ? null
-                    : _setCounts,
               ),
               if (counts) ...[
                 const SizedBox(height: 4),

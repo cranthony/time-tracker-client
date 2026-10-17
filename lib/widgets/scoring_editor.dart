@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'hotkeys.dart';
+
 import 'package:flutter/material.dart';
 
 import '../models/scoring.dart';
@@ -233,25 +235,28 @@ class _AggregationPageState extends State<_AggregationPage> {
           ),
         ),
         _heading(theme, 'Combined as'),
-        _segments(scoringStatistics, _statistic, (v) => _statistic = v),
+        _segments('C', scoringStatistics, _statistic, (v) => _statistic = v),
         if (_statistic == 'percentile') ...[
-          _numberField(_percentile, 'Percentile, 0 to 100'),
+          _numberField(_percentile, 'Percentile, 0 to 100', letter: 'P'),
           _hint(
             theme,
             'The lowest score with at least that share of the weight at or '
             'below it: 0 is the lowest, 50 the median, 100 the highest.',
           ),
         ],
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: Text('Only some $noun count'),
-          value: _limited,
-          onChanged: (on) => setState(() => _limited = on),
+        FieldHotkey(
+          'O',
+          child: SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text('Only some $noun count'),
+            value: _limited,
+            onChanged: (on) => setState(() => _limited = on),
+          ),
         ),
         if (_limited) ...[
-          _segments(aggregationLimitBy, _limitBy, (v) => _limitBy = v),
-          _numberField(_limit, 'How many'),
+          _segments('B', aggregationLimitBy, _limitBy, (v) => _limitBy = v),
+          _numberField(_limit, 'How many', letter: 'H'),
         ],
         if (_weights.isNotEmpty) ...[
           _heading(theme, 'Weights'),
@@ -260,33 +265,48 @@ class _AggregationPageState extends State<_AggregationPage> {
             'Each counts once unless you say: 2 counts twice, 0 leaves it '
             'out.',
           ),
-          for (final MapEntry(key: id, value: field) in _weights.entries)
-            _numberField(field, widget.items[id] ?? '$id (gone)', hint: '1'),
+          for (final (i, MapEntry(key: id, value: field))
+              in _weights.entries.indexed)
+            _numberField(
+              field,
+              widget.items[id] ?? '$id (gone)',
+              hint: '1',
+              // The first, to go on from with Tab.
+              letter: i == 0 ? 'W' : null,
+            ),
         ],
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Capped while any is low'),
-          value: _capped,
-          onChanged: (on) => setState(() => _capped = on),
+        FieldHotkey(
+          'A',
+          child: SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Capped while any is low'),
+            value: _capped,
+            onChanged: (on) => setState(() => _capped = on),
+          ),
         ),
         if (_capped)
           Row(
             children: [
-              Expanded(child: _numberField(_cap, 'At most')),
+              Expanded(child: _numberField(_cap, 'At most', letter: 'M')),
               const SizedBox(width: 8),
-              Expanded(child: _numberField(_threshold, 'With any under')),
+              Expanded(
+                child: _numberField(_threshold, 'With any under', letter: 'U'),
+              ),
             ],
           ),
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: Text('Count $noun with nothing to rate them by'),
-          subtitle: const Text('Otherwise, they are left out.'),
-          value: _counted,
-          onChanged: (on) => setState(() => _counted = on),
+        FieldHotkey(
+          'N',
+          child: SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text('Count $noun with nothing to rate them by'),
+            subtitle: const Text('Otherwise, they are left out.'),
+            value: _counted,
+            onChanged: (on) => setState(() => _counted = on),
+          ),
         ),
-        if (_counted) _numberField(_missing, 'As a score of'),
+        if (_counted) _numberField(_missing, 'As a score of', letter: 'S'),
         if (problem == null)
           Padding(
             padding: const EdgeInsets.only(top: 12),
@@ -309,43 +329,65 @@ class _AggregationPageState extends State<_AggregationPage> {
     child: Text(text, style: theme.textTheme.bodySmall),
   );
 
+  /// One of [options], [selected]; [letter] picks the next.
   Widget _segments(
+    String letter,
     Map<String, String> options,
     String selected,
     void Function(String) pick,
-  ) => SegmentedButton<String>(
-    showSelectedIcon: false,
-    segments: [
-      for (final MapEntry(:key, :value) in options.entries)
-        ButtonSegment(value: key, label: Text(value)),
-    ],
-    selected: {selected},
-    onSelectionChanged: (picked) => setState(() => pick(picked.single)),
+  ) => FieldHotkey(
+    letter,
+    onPressed: () =>
+        setState(() => pick(nextOf(options.keys.toList(), selected))),
+    child: SegmentedButton<String>(
+      showSelectedIcon: false,
+      segments: [
+        for (final MapEntry(:key, :value) in options.entries)
+          ButtonSegment(value: key, label: Text(value)),
+      ],
+      selected: {selected},
+      onSelectionChanged: (picked) => setState(() => pick(picked.single)),
+    ),
   );
 
-  Widget _numberField(TextEditingController c, String label, {String? hint}) =>
-      numberField(c, label, hint: hint, onChanged: () => setState(() {}));
+  Widget _numberField(
+    TextEditingController c,
+    String label, {
+    String? hint,
+    String? letter,
+  }) => numberField(
+    c,
+    label,
+    hint: hint,
+    letter: letter,
+    onChanged: () => setState(() {}),
+  );
 }
 
-/// A field for a number, labelled [label].
+/// A field for a number, labelled [label]; [letter] goes to it
+/// ([FieldHotkey]).
 Widget numberField(
   TextEditingController controller,
   String label, {
   String? hint,
+  String? letter,
   required VoidCallback onChanged,
 }) => Padding(
   padding: const EdgeInsets.only(top: 8),
-  child: TextField(
-    controller: controller,
-    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-    decoration: InputDecoration(
-      labelText: label,
-      hintText: hint,
-      isDense: true,
-      border: const OutlineInputBorder(),
-      floatingLabelBehavior: FloatingLabelBehavior.always,
+  child: FieldHotkey(
+    letter,
+    child: TextField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        isDense: true,
+        border: const OutlineInputBorder(),
+        floatingLabelBehavior: FloatingLabelBehavior.always,
+      ),
+      onChanged: (_) => onChanged(),
     ),
-    onChanged: (_) => onChanged(),
   ),
 );
 

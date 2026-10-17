@@ -251,6 +251,7 @@ class _ActionDialogState extends State<_ActionDialog> {
     return SaveOrDiscard(
       changed: () => _changes.isNotEmpty || (widget.isNew && named),
       onSave: _saving || !named || !changed ? null : _save,
+      escLeavesFields: true,
       onDiscard: () {
         if (!_saving) Navigator.of(context).pop();
       },
@@ -270,22 +271,26 @@ class _ActionDialogState extends State<_ActionDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 4),
-                TextField(
-                  controller: _name,
-                  autofocus: widget.isNew,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: InputDecoration(
-                    labelText: 'Name',
-                    hintText: _action.isGroup
-                        ? 'e.g. Cooking'
-                        : 'e.g. Make tofu',
-                    border: const OutlineInputBorder(),
-                    isDense: true,
+                FieldHotkey(
+                  'N',
+                  child: TextField(
+                    controller: _name,
+                    autofocus: widget.isNew,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      labelText: 'Name',
+                      hintText: _action.isGroup
+                          ? 'e.g. Cooking'
+                          : 'e.g. Make tofu',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (typed) => _set('name', _trimmed(typed)),
                   ),
-                  onChanged: (typed) => _set('name', _trimmed(typed)),
                 ),
                 _Section(
                   label: 'Group',
+                  letter: 'G',
                   child: ActionField(
                     actions: widget.actions,
                     value: _parentId,
@@ -313,6 +318,11 @@ class _ActionDialogState extends State<_ActionDialog> {
                 if (!_action.isGroup && !widget.isNew)
                   _Section(
                     label: 'Status',
+                    letter: 'S',
+                    onLetter: () => _set(
+                      'status',
+                      nextOf(actionStatuses.keys.toList(), _status),
+                    ),
                     hint: _status == 'active' || _status == 'proposed'
                         ? "It holds one of the calendar's event labels."
                         : "It doesn't hold an event label; its history is kept.",
@@ -333,6 +343,15 @@ class _ActionDialogState extends State<_ActionDialog> {
                   ),
                 _Section(
                   label: 'Priority',
+                  letter: 'P',
+                  onLetter: () {
+                    _otherPriority = false;
+                    _otherController.clear();
+                    _set(
+                      'priority',
+                      nextOf<int?>([null, ..._priorities], _priority),
+                    );
+                  },
                   hint: switch ((_priority, _inheritedPriority)) {
                     (_?, _) =>
                       '0 is the most important. Its events, and the actions in '
@@ -346,6 +365,7 @@ class _ActionDialogState extends State<_ActionDialog> {
                 ),
                 _Section(
                   label: 'Color',
+                  letter: 'C',
                   hint: switch ((parseColor(_color), _colorFrom)) {
                     (_?, _) => null,
                     (null, final from?) =>
@@ -363,31 +383,37 @@ class _ActionDialogState extends State<_ActionDialog> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                TextField(
-                  controller: _note,
-                  minLines: 2,
-                  maxLines: 6,
-                  decoration: InputDecoration(
-                    labelText: 'Note (optional)',
-                    hintText: _action.isGroup
-                        ? 'What it covers'
-                        : 'What counts as it',
-                    border: const OutlineInputBorder(),
-                    isDense: true,
+                FieldHotkey(
+                  'O',
+                  child: TextField(
+                    controller: _note,
+                    minLines: 2,
+                    maxLines: 6,
+                    decoration: InputDecoration(
+                      labelText: 'Note (optional)',
+                      hintText: _action.isGroup
+                          ? 'What it covers'
+                          : 'What counts as it',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (typed) => _set('note', _trimmed(typed)),
                   ),
-                  onChanged: (typed) => _set('note', _trimmed(typed)),
                 ),
                 if (!_action.isGroup)
-                  SwitchListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                    secondary: const Icon(Icons.directions_walk),
-                    title: const Text('A way to commute'),
-                    subtitle: const Text(
-                      'Events with a commute are pushed with the events they '
-                      'lead to or from.',
+                  FieldHotkey(
+                    'M',
+                    child: SwitchListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      secondary: const Icon(Icons.directions_walk),
+                      title: const Text('A way to commute'),
+                      subtitle: const Text(
+                        'Events with a commute are pushed with the events they '
+                        'lead to or from.',
+                      ),
+                      value: _commute,
+                      onChanged: (on) => _set('commute', on),
                     ),
-                    value: _commute,
-                    onChanged: (on) => _set('commute', on),
                   ),
               ],
             ),
@@ -478,11 +504,20 @@ class _ActionDialogState extends State<_ActionDialog> {
 }
 
 /// One of the dialog's fields: [label] over [child], and [hint], if
-/// there's one, under it.
+/// there's one, under it; [letter] goes to it ([FieldHotkey]), or does
+/// [onLetter].
 class _Section extends StatelessWidget {
-  const _Section({required this.label, required this.child, this.hint});
+  const _Section({
+    required this.label,
+    required this.letter,
+    required this.child,
+    this.hint,
+    this.onLetter,
+  });
 
   final String label;
+  final String letter;
+  final VoidCallback? onLetter;
   final Widget child;
   final String? hint;
 
@@ -499,7 +534,7 @@ class _Section extends StatelessWidget {
         children: [
           Text(label, style: theme.textTheme.labelLarge),
           const SizedBox(height: 6),
-          child,
+          FieldHotkey(letter, onPressed: onLetter, child: child),
           if (hint case final hint?)
             Padding(
               padding: const EdgeInsets.only(top: 4),

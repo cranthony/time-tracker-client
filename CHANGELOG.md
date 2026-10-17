@@ -9,6 +9,23 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.121.0
+
+- The arrow keys scroll the Plan page's pane shown -- Locations, say --
+  rather than the Actions pane kept beside it.
+- "/" goes to the search box shown, what's in it selected, everywhere
+  there's one: each Plan pane, the people list, travel times, and the
+  pickers -- the search of the tab shown, in one with tabs.
+- Dialogs, sheets and editors have a letter for each field, shown on it
+  while Ctrl is held: a text field is focused, what's in it selected; a
+  switch or checkbox flipped; a picker opened; a choice -- a status, a
+  priority -- moved on to the next. Lists of like things -- parts,
+  events to cancel, notes on each person -- go by number. In an event,
+  P, C, T, R and N join W, L, D, A and S: its priority, commute, time,
+  recurrence and notes. In these, Esc in a text field first leaves it,
+  so the letters work; a second Esc closes, as before.
+- Holding Ctrl no longer takes the cursor out of the text field it's in.
+
 ## 7.120.0
 
 - With the app open in two windows on the web -- a browser tab and the

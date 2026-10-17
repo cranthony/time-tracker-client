@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'hotkeys.dart';
 import '../models/scoring.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart' show partKeys;
@@ -123,39 +124,51 @@ class _TraitEditorState extends State<_TraitEditor> {
       saving: _saving,
       onSave: _save,
       children: [
-        TextField(
-          controller: _name,
-          maxLength: 50,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Name',
-            border: OutlineInputBorder(),
-            isDense: true,
+        FieldHotkey(
+          'N',
+          child: TextField(
+            controller: _name,
+            maxLength: 50,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Name',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (_) => setState(() {}),
           ),
-          onChanged: (_) => setState(() {}),
         ),
-        TextField(
-          controller: _definition,
-          minLines: 3,
-          maxLines: null,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            labelText: 'Definition',
-            hintText: 'What it means, in a sentence or two',
-            border: OutlineInputBorder(),
-            isDense: true,
+        FieldHotkey(
+          'D',
+          child: TextField(
+            controller: _definition,
+            minLines: 3,
+            maxLines: null,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Definition',
+              hintText: 'What it means, in a sentence or two',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
           ),
         ),
         const SizedBox(height: 12),
-        SegmentedButton<String>(
-          showSelectedIcon: false,
-          segments: [
-            for (final MapEntry(:key, :value) in traitStatuses.entries)
-              ButtonSegment(value: key, label: Text(value)),
-          ],
-          selected: {_status},
-          onSelectionChanged: (picked) =>
-              setState(() => _status = picked.single),
+        FieldHotkey(
+          'S',
+          onPressed: () => setState(
+            () => _status = nextOf(traitStatuses.keys.toList(), _status),
+          ),
+          child: SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: [
+              for (final MapEntry(:key, :value) in traitStatuses.entries)
+                ButtonSegment(value: key, label: Text(value)),
+            ],
+            selected: {_status},
+            onSelectionChanged: (picked) =>
+                setState(() => _status = picked.single),
+          ),
         ),
         Padding(
           padding: const EdgeInsets.only(top: 4),
@@ -175,25 +188,32 @@ class _TraitEditorState extends State<_TraitEditor> {
           'score it by.',
           style: theme.textTheme.bodySmall,
         ),
-        PartsEditor(
-          parts: _parts,
-          actions: widget.actions,
-          preview: widget.preview,
-          previewLabel: 'Yesterday, for you',
-          onChanged: (parts) => setState(() => _parts = parts),
+        FieldHotkey(
+          'P',
+          focusOnly: true,
+          child: PartsEditor(
+            parts: _parts,
+            actions: widget.actions,
+            preview: widget.preview,
+            previewLabel: 'Yesterday, for you',
+            onChanged: (parts) => setState(() => _parts = parts),
+          ),
         ),
-        AggregationTile(
-          title: 'How its parts combine',
-          label: 'How its parts combine',
-          explanation:
-              "Into its score for a person, unless their own say. A new "
-              'part can be weighed once the trait is saved.',
-          value: _kept,
-          items: _weighable,
-          checkWeights: true,
-          noun: 'parts',
-          fallback: 'Mean',
-          onChanged: (scoring) => setState(() => _scoring = scoring),
+        FieldHotkey(
+          'C',
+          child: AggregationTile(
+            title: 'How its parts combine',
+            label: 'How its parts combine',
+            explanation:
+                "Into its score for a person, unless their own say. A new "
+                'part can be weighed once the trait is saved.',
+            value: _kept,
+            items: _weighable,
+            checkWeights: true,
+            noun: 'parts',
+            fallback: 'Mean',
+            onChanged: (scoring) => setState(() => _scoring = scoring),
+          ),
         ),
       ],
     );
