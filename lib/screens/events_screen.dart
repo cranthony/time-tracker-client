@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/commute.dart';
 import '../models/event.dart';
 import '../models/facts.dart';
+import '../models/goal.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
@@ -20,6 +21,7 @@ import '../services/app_settings.dart';
 import '../services/actions_repository.dart';
 import '../services/event_store.dart';
 import '../services/events_repository.dart';
+import '../services/goals_repository.dart';
 import '../services/habits_repository.dart';
 import '../services/mcp_client.dart';
 import '../services/events_place.dart';
@@ -314,6 +316,11 @@ class _EventsScreenState extends State<EventsScreen> {
   Map<String, String> get _locationNames => {
     ...?_shownProposal?.addedNames,
     for (final l in _memory.locations ?? const <Location>[]) l.id: l.name,
+  };
+
+  /// Every goal's title by id, for the goals events are for.
+  Map<String, String> get _goalNames => {
+    for (final g in _memory.goals ?? const <Goal>[]) g.id: goalTitle(g),
   };
 
   /// When notes were last compacted; null until it's known.
@@ -1154,6 +1161,7 @@ class _EventsScreenState extends State<EventsScreen> {
         traits: TraitsScope.of(context),
         people: people,
         habits: HabitsScope.of(context),
+        goals: GoalsScope.of(context),
       ),
       // For the commutes a moved event can have: best effort.
       if (people != null)
@@ -2875,6 +2883,52 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
+  /// Whether each of [updates] -- an event and its changes -- leaves room
+  /// for the minutes its goals take; if one doesn't, says which, and
+  /// that its goals' shares need changing first: the app never shortens
+  /// an event below what its goals take.
+  Future<bool> _goalsFit(
+    Iterable<(Event, Map<String, Object?>)> updates,
+  ) async {
+    final problems = <String>[];
+    for (final (event, changes) in updates) {
+      final shares = event.goals;
+      if (shares.isEmpty) continue;
+      DateTime at(String key, DateTime was) => switch (changes[key]) {
+        final String s => DateTime.parse(s),
+        _ => was,
+      };
+      final minutes = at(
+        'end',
+        event.end,
+      ).difference(at('start', event.start)).inMinutes;
+      if (shareProblems(shares, minutes).isNotEmpty) {
+        problems.add(
+          '${_named(event)} would be ${formatMinutes(minutes)}, but its '
+          'goals take more of it than that.',
+        );
+      }
+    }
+    if (problems.isEmpty) return true;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Its goals don't fit"),
+        content: Text(
+          '${problems.join('\n')}\n\nChange how much of it its goals take '
+          'first, then shorten it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    return false;
+  }
+
   /// Whether [a] and [b] are the same ids, in the same order.
   static bool _sameIds(List<String> a, List<String> b) =>
       a.length == b.length &&
@@ -2938,6 +2992,18 @@ class _EventsScreenState extends State<EventsScreen> {
       (_, false) => ', adding commutes',
       _ => ', adding and changing commutes',
     };
+    // Shortening an event below what its goals take is refused here,
+    // before anything's asked: the box stays up, as it was.
+    if (!await _goalsFit([
+      (
+        event,
+        {'start': localIsoTimestamp(start), 'end': localIsoTimestamp(end)},
+      ),
+      ..._withCommuteEdits(makingRoom).updates,
+    ])) {
+      return;
+    }
+    if (!mounted) return;
     final asked = await askFollowThrough(context, makingRoom.cancels);
     // Called off: the box stays up, as it was.
     if (asked == null || !mounted) return;
@@ -3438,6 +3504,10 @@ class _EventsScreenState extends State<EventsScreen> {
                 _Clearing.trims => 'Clear the time',
               },
               run: () async {
+                if (!await _goalsFit(inTheWay.updates)) {
+                  throw const CalledOff();
+                }
+                if (!mounted) throw const CalledOff();
                 final asked = await askFollowThrough(context, inTheWay.cancels);
                 if (asked == null) throw const CalledOff();
                 final over = inTheWay.counting(asked);
@@ -5316,6 +5386,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 actions: _actionsById,
                 personNames: _personNames,
                 locationNames: _locationNames,
+                goalNames: _goalNames,
                 scale: _scale,
                 now: widget.clock(),
                 lastCompaction: _lastCompaction,

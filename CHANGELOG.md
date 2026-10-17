@@ -9,6 +9,20 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.127.0
+
+- Events can be tagged with goals: the event dialog has a Goals row,
+  picked from the goals the way actions are, each picked goal's chip
+  tapped to set how much of the event it takes -- all of it, some
+  minutes, or a percentage of what the minutes leave. Tagging an event
+  with an inactive goal offers to activate it from when the event starts.
+- On the Events page, an event's goals are listed under its actions
+  where there's room, and a goal icon -- two stacked, for more than one
+  goal -- replaces its priority chip.
+- The app won't shorten an event -- from its dialog, by moving it, or
+  making room for another -- below the minutes its goals take: it says
+  so, and the goals' shares can be changed first.
+
 ## 7.126.0
 
 - Goals: a new pane on the Plan page, "Goals" (aim), first of the five,

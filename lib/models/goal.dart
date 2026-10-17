@@ -1,5 +1,6 @@
 import 'event.dart';
 import 'note.dart';
+import '../widgets/durations.dart';
 
 /// A goal of the user's, mirroring the Time Tracker MCP server's
 /// `ListedGoal`: an outcome they mean to reach and can mark done --
@@ -330,13 +331,6 @@ class GoalShare {
 
   @override
   String toString() => 'GoalShare($goalId, $label)';
-}
-
-/// [minutes] briefly: "45m", "2h", "1h 30m".
-String formatMinutes(int minutes) {
-  final (h, m) = (minutes ~/ 60, minutes % 60);
-  if (h == 0) return '${m}m';
-  return m == 0 ? '${h}h' : '${h}h ${m}m';
 }
 
 extension EventGoals on Event {

@@ -1,3 +1,6 @@
+import '../models/goal.dart';
+import 'goal_icon.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -81,6 +84,9 @@ const _detailGap = 8.0;
 /// inside a chip either side of its text.
 const _chipGap = 6.0;
 const _chipPadding = 4.0;
+
+/// How big an event's goal icons are, by its chips.
+const _goalIconSize = 14.0;
 
 /// The size of a commute's icon before its summary, and the space after.
 const _commuteIconSize = 14.0;
@@ -500,6 +506,7 @@ class DayTimeline extends StatelessWidget {
     this.actions = const {},
     this.personNames = const {},
     this.locationNames = const {},
+    this.goalNames = const {},
     this.scale = defaultTimelineScale,
     this.now,
     this.lastCompaction,
@@ -575,6 +582,11 @@ class DayTimeline extends StatelessWidget {
   /// not among them is shown by its id.
   final Map<String, String> personNames;
   final Map<String, String> locationNames;
+
+  /// Goals' titles by id, for the goals events are for: listed under an
+  /// event's actions where there's room. One not among them isn't listed
+  /// (deleted since), though it's counted.
+  final Map<String, String> goalNames;
   final double scale;
   final DateTime? now;
 
@@ -852,6 +864,7 @@ class DayTimeline extends StatelessWidget {
                                 ? theme.scaffoldBackgroundColor
                                 : null,
                             actions: actions,
+                            goalNames: goalNames,
                             details: _details(placement.event),
                             styles: styles,
                             onTap: onTap == null
@@ -1858,8 +1871,10 @@ class _CardStyles {
   final TextStyle? mark;
 }
 
-/// An event: its summary, its actions' diamonds stacked by its chips,
-/// then as many of its actions, each after a diamond, as fit whole.
+/// An event: its summary, its actions' diamonds stacked by its chips --
+/// and, if it's for any goals, a stack of goal icons saying how many --
+/// then as many of its actions, each after a diamond, and then its goals,
+/// each after a goal icon, as fit whole.
 class _EventCard extends StatelessWidget {
   const _EventCard({
     required this.placement,
@@ -1867,6 +1882,7 @@ class _EventCard extends StatelessWidget {
     required this.joinedBelow,
     required this.seamColor,
     required this.actions,
+    this.goalNames = const {},
     required this.details,
     required this.styles,
     required this.onTap,
@@ -1889,6 +1905,9 @@ class _EventCard extends StatelessWidget {
   /// from the one above's, if they're too alike to tell apart.
   final Color? seamColor;
   final Map<String, PlanAction> actions;
+
+  /// Goals' titles by id.
+  final Map<String, String> goalNames;
 
   /// The names of its locations, of the people with the user, and of
   /// those it was for, listed down its right where there's room.
@@ -1927,7 +1946,9 @@ class _EventCard extends StatelessWidget {
     final muted = colors.onSurfaceVariant;
     final strike = cancelled ? TextDecoration.lineThrough : null;
     final duration = formatDuration(event.end.difference(event.start));
-    final priority = event.effectivePriority ?? defaultPriority;
+    final goals = event.goals;
+    // Those still there, by title, to list under its actions.
+    final goalTitles = [for (final g in goals) ?goalNames[g.goalId]];
     final fill = switch (mark) {
       null => colors.surfaceContainerHigh,
       EventMark(changed: true) => reviewColors(colors).changed,
@@ -1988,6 +2009,15 @@ class _EventCard extends StatelessWidget {
                           labelled: mark?.label != null,
                           count: ids.length,
                         );
+                        // Its goals, under its actions, as many as fit.
+                        final goalsListed =
+                            _actionsThatFit(
+                              context,
+                              constraints.maxHeight,
+                              labelled: mark?.label != null,
+                              count: ids.length + goalTitles.length,
+                            ) -
+                            listed;
                         // Its locations and people, only where there's
                         // room beside its actions.
                         final detailStyle = styles.action?.copyWith(
@@ -2030,10 +2060,6 @@ class _EventCard extends StatelessWidget {
                           color: cancelled ? muted : null,
                           decoration: strike,
                         );
-                        final priorityStyle = styles.chip?.copyWith(
-                          color: Colors.black87,
-                          fontWeight: FontWeight.w600,
-                        );
                         final located = locationsListed
                             ? null
                             : switch ([
@@ -2045,15 +2071,14 @@ class _EventCard extends StatelessWidget {
                                 ),
                                 _ => null,
                               };
-                        final (:locationWidth, :prioritized) = _summaryLine(
+                        final (:locationWidth, :goalStack) = _summaryLine(
                           context,
                           constraints.maxWidth,
                           summary: summary,
                           summaryStyle: summaryStyle,
                           location: located,
                           locationStyle: detailStyle,
-                          priority: 'P$priority',
-                          priorityStyle: priorityStyle,
+                          goals: goals.length,
                           duration: duration,
                         );
                         return Column(
@@ -2119,12 +2144,16 @@ class _EventCard extends StatelessWidget {
                                         ? _ChipShape.openTop
                                         : _ChipShape.rounded,
                                   ),
-                                if (prioritized)
-                                  _Chip(
-                                    text: 'P$priority',
-                                    style: priorityStyle,
-                                    fill: priorityColor(priority),
-                                    border: priorityColor(priority),
+                                if (goalStack && goals.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: _chipGap,
+                                    ),
+                                    child: GoalStack(
+                                      count: goals.length,
+                                      size: _goalIconSize,
+                                      color: muted,
+                                    ),
                                   ),
                               ],
                             ),
@@ -2161,7 +2190,7 @@ class _EventCard extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                            if (listed > 0 || detailed > 0)
+                            if (listed > 0 || goalsListed > 0 || detailed > 0)
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -2191,6 +2220,28 @@ class _EventCard extends StatelessWidget {
                                                               : null) ??
                                                           id,
                                                   },
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: styles.action
+                                                      ?.copyWith(
+                                                        color: muted,
+                                                        decoration: strike,
+                                                      ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        for (final title in goalTitles.take(
+                                          goalsListed,
+                                        ))
+                                          Row(
+                                            children: [
+                                              GoalIcon(size: 10, color: muted),
+                                              const SizedBox(width: 6),
+                                              Expanded(
+                                                child: Text(
+                                                  title,
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
@@ -2314,20 +2365,19 @@ extension on _EventCard {
   /// How its summary's line, [width] wide, fits its [location] (if
   /// it's there) between its summary and its diamonds: as much of it as
   /// fits once its summary has whatever it needs of half the line. If
-  /// that's not all of it, the line goes without its [priority] chip, to
-  /// make more room.
-  ({double locationWidth, bool prioritized}) _summaryLine(
+  /// that's not all of it, the line goes without its stack of [goals]'
+  /// icons, to make more room.
+  ({double locationWidth, bool goalStack}) _summaryLine(
     BuildContext context,
     double width, {
     required String summary,
     required TextStyle? summaryStyle,
     required String? location,
     required TextStyle? locationStyle,
-    required String priority,
-    required TextStyle? priorityStyle,
+    required int goals,
     required String? duration,
   }) {
-    if (location == null) return (locationWidth: 0, prioritized: true);
+    if (location == null) return (locationWidth: 0, goalStack: true);
     double chip(String text, TextStyle? style) =>
         _chipGap + 2 * _chipPadding + _widthOf(context, text, style);
     final ids = placement.event.actionIds;
@@ -2344,10 +2394,14 @@ extension on _EventCard {
     final summaryWidth = _widthOf(context, summary, summaryStyle);
     double fit(double room) =>
         math.max(0, math.min(wanted, room - math.min(summaryWidth, room / 2)));
-    final withPriority = fit(room - chip(priority, priorityStyle));
-    return withPriority >= wanted
-        ? (locationWidth: withPriority, prioritized: true)
-        : (locationWidth: fit(room), prioritized: false);
+    final stack = goals == 0
+        ? 0.0
+        : _chipGap +
+              _goalIconSize * GoalPainter.widthOf(math.min(goals, 2)) / 24;
+    final withGoals = fit(room - stack);
+    return withGoals >= wanted
+        ? (locationWidth: withGoals, goalStack: true)
+        : (locationWidth: fit(room), goalStack: false);
   }
 
   /// How many of its [count] actions' lines fit whole in [height], under
@@ -2570,14 +2624,12 @@ class _Chip extends StatelessWidget {
     required this.text,
     required this.style,
     required this.border,
-    this.fill,
     this.shape = _ChipShape.rounded,
   });
 
   final String text;
   final TextStyle? style;
   final Color border;
-  final Color? fill;
   final _ChipShape shape;
 
   @override
@@ -2590,7 +2642,6 @@ class _Chip extends StatelessWidget {
         foregroundPainter: open ? _OpenTopPainter(border, radius) : null,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: fill,
             border: open ? null : Border.all(color: border),
             borderRadius: BorderRadius.circular(radius),
           ),

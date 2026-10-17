@@ -486,17 +486,24 @@ class PlanMemory extends ChangeNotifier {
     );
   }
 
-  /// Loads everyone, every location, every trait and Self's habits --
-  /// from what was kept from the app's last run, then afresh -- for what
-  /// names them: an event's people, location and judgments. Best effort;
+  /// Loads everyone, every location, every trait, Self's habits and the
+  /// goals -- from what was kept from the app's last run, then afresh --
+  /// for what names them: an event's people, location, judgments and
+  /// goals. Best effort;
   /// [onLoaded] is called as each comes in.
   Future<void> prefetchNames({
     TraitsRepository? traits,
     PeopleRepository? people,
     HabitsRepository? habits,
+    GoalsRepository? goals,
     VoidCallback? onLoaded,
   }) async {
-    await loadKept(traits: traits, people: people, habits: habits);
+    await loadKept(
+      traits: traits,
+      people: people,
+      habits: habits,
+      goals: goals,
+    );
     onLoaded?.call();
     Future<void> quietly(Future<void>? loading) async {
       try {
@@ -512,6 +519,7 @@ class PlanMemory extends ChangeNotifier {
       quietly(people == null ? null : loadPeople(people)),
       quietly(people == null ? null : loadLocations(people)),
       quietly(habits == null ? null : loadHabits(habits)),
+      quietly(goals == null ? null : loadGoals(goals)),
     ]);
   }
 
