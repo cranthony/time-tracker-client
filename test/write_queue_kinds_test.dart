@@ -33,11 +33,7 @@ void main() {
   late WriteQueue queue;
   var offline = true;
 
-  Future<Object?> call(
-    String tool,
-    Map<String, Object?> arguments,
-    String _,
-  ) async {
+  Future<Object?> call(String tool, Map<String, Object?> arguments) async {
     calls.add((tool: tool, arguments: arguments));
     if (offline) throw http.ClientException('Failed host lookup');
     final item = (arguments.values.first as Map).cast<String, Object?>();

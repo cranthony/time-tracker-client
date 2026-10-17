@@ -379,11 +379,7 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
         // schedule).
         if (elsewhere) break;
         if (!claimed) continue;
-        // Its writes made once, however many times it's tried.
-        final result = await WriteScope.run(
-          next.id,
-          () => send(next, maybeSaved: maybeSaved),
-        );
+        final result = await send(next, maybeSaved: maybeSaved);
         _sendingId = null;
         // Kept before it's dropped, so whatever shows it can show it as
         // saved without it going missing in between.

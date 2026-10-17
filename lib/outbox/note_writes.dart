@@ -202,7 +202,7 @@ class NoteWrites implements Listenable {
 /// Makes the note writes' tool calls to [repository] itself, as the
 /// server would: with no server, and in tests.
 WriteCall localNoteCalls(NotesRepository repository) =>
-    (tool, arguments, writeId) async {
+    (tool, arguments) async {
       switch (tool) {
         case 'note':
           final item = (arguments['noted_time'] as Map).cast<String, Object?>();
@@ -230,11 +230,11 @@ WriteCall localNoteCalls(NotesRepository repository) =>
 WriteCall localWrites({ActionsRepository? actions, NotesRepository? notes}) {
   final toActions = actions == null ? null : localActionCalls(actions);
   final toNotes = notes == null ? null : localNoteCalls(notes);
-  return (tool, arguments, writeId) {
+  return (tool, arguments) {
     final call = const {'note', 'edit_note', 'delete_note'}.contains(tool)
         ? toNotes
         : toActions;
     if (call == null) throw McpException('No tool $tool here');
-    return call(tool, arguments, writeId);
+    return call(tool, arguments);
   };
 }

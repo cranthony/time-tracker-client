@@ -37,11 +37,7 @@ void main() {
     return queue.items.single;
   }
 
-  Future<Object?> call(
-    String tool,
-    Map<String, Object?> arguments,
-    String _,
-  ) async {
+  Future<Object?> call(String tool, Map<String, Object?> arguments) async {
     calls.add((tool: tool, arguments: arguments));
     if (answers.isNotEmpty) return answers.removeAt(0)();
     final item = (arguments.values.first as Map).cast<String, Object?>();

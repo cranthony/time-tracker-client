@@ -81,6 +81,8 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     this.sendingSince,
     this.sentBy,
     this.refused = false,
+    this.conflicted = false,
+    this.current,
   });
 
   @override
@@ -141,6 +143,15 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
   final String? sentBy;
   @override
   final bool refused;
+
+  /// Whether the server refused an update or cancel as made to the event
+  /// since changed elsewhere (its etag): it waits, [refused], for the user
+  /// to resolve, field by field.
+  final bool conflicted;
+
+  /// When [conflicted], the event as the server has it now; null if it's
+  /// been deleted, or cancelled.
+  final Map<String, Object?>? current;
 
   /// The id an event it creates goes by until the server gives it one:
   /// [n] counts those it creates.
@@ -366,12 +377,17 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     bool? allowHistory,
     int? revision,
     ProposalEdits? edits,
+    Event? Function()? event,
+    bool? conflicted,
+    Map<String, Object?>? Function()? current,
   }) => PendingEventWrite(
     id: id,
     kind: kind,
     label: label ?? this.label,
     made: made,
-    event: event,
+    event: event != null ? event() : this.event,
+    conflicted: conflicted ?? this.conflicted,
+    current: current != null ? current() : this.current,
     changes: changes ?? this.changes,
     fields: fields ?? this.fields,
     over: over,
@@ -413,6 +429,8 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     'sending_since': ?sendingSince?.toUtc().toIso8601String(),
     'sent_by': ?sentBy,
     if (refused) 'refused': true,
+    if (conflicted) 'conflicted': true,
+    'current': ?current,
   };
 
   factory PendingEventWrite.fromJson(Map<String, dynamic> json) {
@@ -448,6 +466,11 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
       sendingSince: time(json['sending_since']),
       sentBy: json['sent_by'] as String?,
       refused: json['refused'] == true,
+      conflicted: json['conflicted'] == true,
+      current: switch (json['current']) {
+        final Map current => current.cast<String, Object?>(),
+        _ => null,
+      },
     );
   }
 }

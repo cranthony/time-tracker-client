@@ -250,6 +250,8 @@ class McpEventsRepository implements EventsRepository {
         {
           'event_id': event.id,
           'counts_against_follow_through': countsAgainstFollowThrough,
+          // The version shown: refused if it's changed since.
+          'etag': ?(event.properties['etag'] as String?),
         },
       ],
       if (allowCompactedChanges) 'allow_compacted_changes': true,

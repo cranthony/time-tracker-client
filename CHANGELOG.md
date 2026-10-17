@@ -9,6 +9,17 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.125.0
+
+- A change to an event is made to the event as you saw it. One changed
+  elsewhere since -- on the calendar, say -- is made to it as it is now
+  when the two touch different fields; when they touch the same, it
+  waits for you to pick, field by field, from the changes waiting.
+- A new event has its own id from the moment it's made, so it's made
+  once however often it's sent.
+- Every write is made once by what it names and the version it was made
+  to, rather than by an id kept for each write.
+
 ## 7.124.0
 
 - Notes save through the same queue as everything else: a new note has

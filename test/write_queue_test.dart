@@ -14,8 +14,7 @@ import 'package:time_tracker_client/services/response_cache.dart';
 /// A server, as the queue sees it: each call recorded; answered by
 /// [answer], or else as the server would answer a write it made.
 class _Server {
-  final calls =
-      <({String tool, Map<String, Object?> arguments, String writeId})>[];
+  final calls = <({String tool, Map<String, Object?> arguments})>[];
 
   /// What the next call does: throws, or gives something; null for the
   /// default.
@@ -25,12 +24,8 @@ class _Server {
   bool offline = false;
   var version = 1;
 
-  Future<Object?> call(
-    String tool,
-    Map<String, Object?> arguments,
-    String writeId,
-  ) async {
-    calls.add((tool: tool, arguments: arguments, writeId: writeId));
+  Future<Object?> call(String tool, Map<String, Object?> arguments) async {
+    calls.add((tool: tool, arguments: arguments));
     if (offline) throw http.ClientException('Failed host lookup');
     if (answers.isNotEmpty) return answers.removeAt(0)(tool, arguments);
     final item = (arguments.values.first as Map).cast<String, Object?>();
@@ -73,7 +68,6 @@ void main() {
     expect(server.calls.single.arguments, {
       'location': {'name': 'Home', 'id': id},
     });
-    expect(server.calls.single.writeId, isNot(id));
     expect(queue.items, isEmpty);
   });
 
@@ -93,7 +87,11 @@ void main() {
     server.offline = false;
     await queue.retryNow();
     expect(queue.items, isEmpty);
-    expect(server.calls.map((c) => c.writeId).toSet(), hasLength(1));
+    // Each time by the id the app gave it: made once.
+    expect(
+      server.calls.map((c) => (c.arguments['location'] as Map)['id']).toSet(),
+      {id},
+    );
   });
 
   test(
@@ -236,8 +234,6 @@ void main() {
       expect(server.calls.last.arguments, {
         'location': {'id': 'loc1', 'name': 'Flat', 'version': 2},
       });
-      // The same write: made once.
-      expect(server.calls.map((c) => c.writeId).toSet(), hasLength(1));
     },
   );
 

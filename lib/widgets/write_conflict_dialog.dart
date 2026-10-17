@@ -6,19 +6,21 @@ import '../outbox/write_queue.dart';
 import 'hotkeys.dart';
 
 /// Resolves [write], a change the server refused as made to its item since
-/// changed elsewhere ([PendingWrite.conflicted]), in [queue]:
+/// changed elsewhere ([PendingWrite.conflicted]), through [queue] -- the
+/// [WriteQueue], or the event outbox's resolver:
 ///
 /// * Changed elsewhere: each field both changed is shown with the server's
 ///   value and the user's, to pick one or type another; the rest of the
 ///   change is kept. Saved, it's sent again, made to the item as it is.
-/// * Deleted elsewhere: put back with the change, or the change dropped.
+/// * Deleted elsewhere: put back with the change, where it can be
+///   ([ConflictResolver.canRestore]), or the change dropped.
 /// * A deletion of what was changed elsewhere: what changed is shown, to
 ///   delete it all the same or keep it.
 ///
 /// Gives whether it was resolved; false if called off, still waiting.
 Future<bool> showWriteConflictDialog(
   BuildContext context,
-  WriteQueue queue,
+  ConflictResolver queue,
   PendingWrite write,
 ) async =>
     await showDialog<bool>(
@@ -30,7 +32,7 @@ Future<bool> showWriteConflictDialog(
 class _ConflictDialog extends StatefulWidget {
   const _ConflictDialog({required this.queue, required this.write});
 
-  final WriteQueue queue;
+  final ConflictResolver queue;
   final PendingWrite write;
 
   @override
@@ -104,7 +106,7 @@ class _ConflictDialogState extends State<_ConflictDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final kind = WriteQueue.kindOf(_write);
+    final noun = widget.queue.noun(_write);
     final what = widget.queue.label(_write);
     final (title, body, actions) = switch (_write) {
       PendingWrite(op: WriteOp.delete) => (
@@ -122,23 +124,27 @@ class _ConflictDialogState extends State<_ConflictDialog> {
         ],
       ),
       PendingWrite(current: null) => (
-        '${_capital(kind.noun)} deleted elsewhere',
+        '${_capital(noun)} deleted elsewhere',
         Text(
-          '$what was deleted after you changed it here. Put it back, with '
-          'your changes, or drop them?',
+          widget.queue.canRestore(_write)
+              ? '$what was deleted after you changed it here. Put it back, '
+                    'with your changes, or drop them?'
+              : '$what was deleted after you changed it here, so your '
+                    'changes can only be dropped.',
         ),
         [
           TextButton(
             onPressed: () => _drop(),
             child: const Text('Drop my changes'),
           ),
-          FilledButton(
-            onPressed: () async {
-              await widget.queue.restore(_write);
-              if (mounted) _close(true);
-            },
-            child: const Text('Put it back'),
-          ),
+          if (widget.queue.canRestore(_write))
+            FilledButton(
+              onPressed: () async {
+                await widget.queue.restore(_write);
+                if (mounted) _close(true);
+              },
+              child: const Text('Put it back'),
+            ),
         ],
       ),
       _ => (

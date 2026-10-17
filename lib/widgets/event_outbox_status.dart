@@ -1,3 +1,5 @@
+import 'write_conflict_dialog.dart';
+
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
@@ -262,7 +264,19 @@ class _WriteTile extends StatelessWidget {
                       onPressed: () => _approveHistory(context),
                       child: const Text('Change history'),
                     ),
-                  if (write.refused && !write.refusedAsHistory)
+                  // Changed elsewhere: resolved field by field.
+                  if (write.conflicted)
+                    TextButton(
+                      onPressed: () => showWriteConflictDialog(
+                        context,
+                        EventConflicts(outbox),
+                        EventOutbox.conflictOf(write),
+                      ),
+                      child: const Text('Resolve'),
+                    ),
+                  if (write.refused &&
+                      !write.refusedAsHistory &&
+                      !write.conflicted)
                     TextButton(
                       onPressed: () => outbox.retryNow(),
                       child: const Text('Try again'),
