@@ -131,7 +131,11 @@ class McpPeopleRepository implements PeopleRepository {
   Object? _withPeopleWrites(Object? result) {
     if (_writes == null) return result;
     final json = (result as Map).cast<String, Object?>();
-    return {...json, 'people': _shown(WriteKind.person, json['people'])};
+    return {
+      ...json,
+      'people': _shown(WriteKind.person, json['people']),
+      'circles': _shown(WriteKind.circle, json['circles']),
+    };
   }
 
   static const _peopleKey = 'people';
@@ -254,7 +258,14 @@ class McpPeopleRepository implements PeopleRepository {
       );
 
   @override
-  Future<Circle> createCircle(Circle circle) async => Circle.fromJson(
+  Future<Circle> createCircle(Circle circle) async => switch (_writes) {
+    final writes? => Circle.fromJson(
+      writes.created(WriteKind.circle, circle.toJson()).cast(),
+    ),
+    null => await _createCircle(circle),
+  };
+
+  Future<Circle> _createCircle(Circle circle) async => Circle.fromJson(
     _map(
       _map(
         await _client.callTool('create_circle', {
@@ -266,6 +277,14 @@ class McpPeopleRepository implements PeopleRepository {
 
   @override
   Future<Circle> updateCircle(String id, Map<String, Object?> changes) async =>
+      switch (_writes) {
+        final writes? => Circle.fromJson(
+          writes.update(WriteKind.circle, id, changes).cast(),
+        ),
+        null => await _updateCircle(id, changes),
+      };
+
+  Future<Circle> _updateCircle(String id, Map<String, Object?> changes) async =>
       Circle.fromJson(
         _map(
           await _client.callTool(
@@ -276,7 +295,12 @@ class McpPeopleRepository implements PeopleRepository {
       );
 
   @override
-  Future<void> deleteCircle(String id) =>
+  Future<void> deleteCircle(String id) async => switch (_writes) {
+    final writes? => writes.delete(WriteKind.circle, id),
+    null => await _deleteCircle(id),
+  };
+
+  Future<void> _deleteCircle(String id) =>
       _client.callTool('delete_circle', {'circle_id': id});
 
   @override
@@ -345,12 +369,23 @@ class McpPeopleRepository implements PeopleRepository {
 
   @override
   Future<List<LocationGroup>> locationGroups() async => [
-    for (final g in await _client.callTool('get_location_groups', {}) as List)
+    for (final g in _shown(
+      WriteKind.locationGroup,
+      await _client.callTool('get_location_groups', {}),
+    ))
       LocationGroup.fromJson((g as Map).cast<String, dynamic>()),
   ];
 
   @override
   Future<LocationGroup> createLocationGroup(LocationGroup group) async =>
+      switch (_writes) {
+        final writes? => LocationGroup.fromJson(
+          writes.created(WriteKind.locationGroup, group.toJson()).cast(),
+        ),
+        null => await _createLocationGroup(group),
+      };
+
+  Future<LocationGroup> _createLocationGroup(LocationGroup group) async =>
       LocationGroup.fromJson(
         _map(
           _map(
@@ -365,6 +400,16 @@ class McpPeopleRepository implements PeopleRepository {
   Future<LocationGroup> updateLocationGroup(
     String id,
     Map<String, Object?> changes,
+  ) async => switch (_writes) {
+    final writes? => LocationGroup.fromJson(
+      writes.update(WriteKind.locationGroup, id, changes).cast(),
+    ),
+    null => await _updateLocationGroup(id, changes),
+  };
+
+  Future<LocationGroup> _updateLocationGroup(
+    String id,
+    Map<String, Object?> changes,
   ) async => LocationGroup.fromJson(
     _map(
       await _client.callTool(
@@ -375,17 +420,33 @@ class McpPeopleRepository implements PeopleRepository {
   );
 
   @override
-  Future<void> deleteLocationGroup(String id) =>
+  Future<void> deleteLocationGroup(String id) async => switch (_writes) {
+    final writes? => writes.delete(WriteKind.locationGroup, id),
+    null => await _deleteLocationGroup(id),
+  };
+
+  Future<void> _deleteLocationGroup(String id) =>
       _client.callTool('delete_location_group', {'group_id': id});
 
   @override
   Future<List<TravelTime>> travelTimes() async => [
-    for (final t in await _client.callTool('get_travel_times', {}) as List)
+    for (final t in _shown(
+      WriteKind.travelTime,
+      await _client.callTool('get_travel_times', {}),
+    ))
       TravelTime.fromJson((t as Map).cast<String, dynamic>()),
   ];
 
   @override
   Future<TravelTime> createTravelTime(TravelTime travel) async =>
+      switch (_writes) {
+        final writes? => TravelTime.fromJson(
+          writes.created(WriteKind.travelTime, travel.toJson()).cast(),
+        ),
+        null => await _createTravelTime(travel),
+      };
+
+  Future<TravelTime> _createTravelTime(TravelTime travel) async =>
       TravelTime.fromJson(
         _map(
           _map(
@@ -400,6 +461,16 @@ class McpPeopleRepository implements PeopleRepository {
   Future<TravelTime> updateTravelTime(
     String id,
     Map<String, Object?> changes,
+  ) async => switch (_writes) {
+    final writes? => TravelTime.fromJson(
+      writes.update(WriteKind.travelTime, id, changes).cast(),
+    ),
+    null => await _updateTravelTime(id, changes),
+  };
+
+  Future<TravelTime> _updateTravelTime(
+    String id,
+    Map<String, Object?> changes,
   ) async => TravelTime.fromJson(
     _map(
       await _client.callTool(
@@ -410,7 +481,12 @@ class McpPeopleRepository implements PeopleRepository {
   );
 
   @override
-  Future<void> deleteTravelTime(String id) =>
+  Future<void> deleteTravelTime(String id) async => switch (_writes) {
+    final writes? => writes.delete(WriteKind.travelTime, id),
+    null => await _deleteTravelTime(id),
+  };
+
+  Future<void> _deleteTravelTime(String id) =>
       _client.callTool('delete_travel_time', {'travel_time_id': id});
 }
 

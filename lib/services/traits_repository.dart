@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../models/scoring.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart' show withPartIds;
+import '../outbox/write_queue.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
@@ -41,7 +42,29 @@ abstract class TraitsRepository {
 
 /// Reaches traits via the Time Tracker MCP server.
 class McpTraitsRepository implements TraitsRepository {
-  McpTraitsRepository(this._client, {this._cache});
+  /// With [writes], traits and the scoring defaults are written through
+  /// it: queued, kept on the device and sent once -- and what's read is
+  /// shown with them made.
+  McpTraitsRepository(this._client, {this._cache, this._writes});
+
+  final WriteQueue? _writes;
+
+  /// [result], `get_traits`', with the writes waiting made to it.
+  Object? _shown(Object? result) =>
+      _writes?.shown(WriteKind.trait, [
+        for (final t in result as List) (t as Map).cast<String, Object?>(),
+      ]) ??
+      result;
+
+  /// [result], `get_scoring_defaults`', with the writes waiting made to it.
+  Object? _shownDefaults(Object? result) {
+    final writes = _writes;
+    if (writes == null || result is! Map) return result;
+    final shown = writes.shown(WriteKind.scoringDefaults, [
+      {...result.cast<String, Object?>(), 'id': WriteKind.one},
+    ]);
+    return {...shown.single}..remove('id');
+  }
 
   final McpClient _client;
 
@@ -63,14 +86,14 @@ class McpTraitsRepository implements TraitsRepository {
       'statuses': ?statuses,
     });
     await _cache?.write(_cacheKey(statuses), result);
-    return _decode(result);
+    return _decode(_shown(result));
   }
 
   @override
   Future<List<Trait>?> cachedTraits({List<String>? statuses}) async {
     try {
       final result = await _cache?.read(_cacheKey(statuses));
-      return result == null ? null : _decode(result);
+      return result == null ? null : _decode(_shown(result));
     } catch (_) {
       return null; // From an older version of the app, perhaps.
     }
@@ -85,11 +108,19 @@ class McpTraitsRepository implements TraitsRepository {
       return const ScoringDefaults(); // A server from before them.
     }
     await _cache?.write(_defaultsKey, result);
-    return ScoringDefaults.fromJson(result);
+    return ScoringDefaults.fromJson(_shownDefaults(result));
   }
 
   @override
   Future<ScoringDefaults> setScoringDefaults(ScoringDefaults defaults) async {
+    if (_writes case final writes?) {
+      final shown = writes.update(
+        WriteKind.scoringDefaults,
+        WriteKind.one,
+        defaults.toJson(),
+      );
+      return ScoringDefaults.fromJson({...shown}..remove('id'));
+    }
     final json = defaults.toJson();
     final result = await _client.callTool('set_scoring_defaults', {
       'defaults': {
@@ -108,14 +139,23 @@ class McpTraitsRepository implements TraitsRepository {
   Future<ScoringDefaults?> cachedScoringDefaults() async {
     try {
       final result = await _cache?.read(_defaultsKey);
-      return result == null ? null : ScoringDefaults.fromJson(result);
+      return result == null
+          ? null
+          : ScoringDefaults.fromJson(_shownDefaults(result));
     } catch (_) {
       return null;
     }
   }
 
   @override
-  Future<Trait> createTrait(Trait trait) async {
+  Future<Trait> createTrait(Trait trait) async => switch (_writes) {
+    final writes? => Trait.fromJson(
+      writes.created(WriteKind.trait, trait.toJson()).cast(),
+    ),
+    null => await _createTrait(trait),
+  };
+
+  Future<Trait> _createTrait(Trait trait) async {
     final result = await _client.callTool('create_trait', {
       'trait': {...trait.toJson()..remove('id')},
     });
@@ -123,7 +163,15 @@ class McpTraitsRepository implements TraitsRepository {
   }
 
   @override
-  Future<Trait> updateTrait(String id, Map<String, Object?> changes) async {
+  Future<Trait> updateTrait(String id, Map<String, Object?> changes) async =>
+      switch (_writes) {
+        final writes? => Trait.fromJson(
+          writes.update(WriteKind.trait, id, changes).cast(),
+        ),
+        null => await _updateTrait(id, changes),
+      };
+
+  Future<Trait> _updateTrait(String id, Map<String, Object?> changes) async {
     final cleared = [
       for (final MapEntry(:key, :value) in changes.entries)
         if (value == null) key,

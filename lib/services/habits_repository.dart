@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../models/habit.dart';
+import '../outbox/write_queue.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
@@ -26,7 +27,18 @@ abstract class HabitsRepository {
 
 /// Reaches habits via the Time Tracker MCP server's tools.
 class McpHabitsRepository implements HabitsRepository {
-  McpHabitsRepository(this._client, {this._cache});
+  /// With [writes], habits are written through it: queued, kept on the
+  /// device and sent once -- and what's read is shown with them made.
+  McpHabitsRepository(this._client, {this._cache, this._writes});
+
+  final WriteQueue? _writes;
+
+  /// [result], `get_habits`', with the writes waiting made to it.
+  Object? _shown(Object? result) =>
+      _writes?.shown(WriteKind.habit, [
+        for (final h in result as List) (h as Map).cast<String, Object?>(),
+      ]) ??
+      result;
 
   final McpClient _client;
   final ResponseCache? _cache;
@@ -45,7 +57,7 @@ class McpHabitsRepository implements HabitsRepository {
   Future<List<Habit>?> cachedHabits() async {
     try {
       final result = await _cache?.read(_habitsKey);
-      return result == null ? null : _decode(result);
+      return result == null ? null : _decode(_shown(result));
     } catch (_) {
       return null; // From an older version of the app, perhaps.
     }
@@ -57,11 +69,18 @@ class McpHabitsRepository implements HabitsRepository {
       'statuses': habitStatuses.keys.toList(),
     });
     await _cache?.write(_habitsKey, result);
-    return _decode(result);
+    return _decode(_shown(result));
   }
 
   @override
-  Future<Habit> createHabit(Habit habit) async => Habit.fromJson(
+  Future<Habit> createHabit(Habit habit) async => switch (_writes) {
+    final writes? => Habit.fromJson(
+      writes.created(WriteKind.habit, habit.toJson()).cast(),
+    ),
+    null => await _createHabit(habit),
+  };
+
+  Future<Habit> _createHabit(Habit habit) async => Habit.fromJson(
     _map(
       _map(
         await _client.callTool('create_habit', {
@@ -72,7 +91,15 @@ class McpHabitsRepository implements HabitsRepository {
   );
 
   @override
-  Future<Habit> updateHabit(String id, Map<String, Object?> changes) async {
+  Future<Habit> updateHabit(String id, Map<String, Object?> changes) async =>
+      switch (_writes) {
+        final writes? => Habit.fromJson(
+          writes.update(WriteKind.habit, id, changes).cast(),
+        ),
+        null => await _updateHabit(id, changes),
+      };
+
+  Future<Habit> _updateHabit(String id, Map<String, Object?> changes) async {
     final clear = [
       for (final MapEntry(:key, :value) in changes.entries)
         if (value == null) key,
