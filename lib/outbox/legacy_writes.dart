@@ -3,17 +3,24 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/note.dart';
-
 import 'outbox_store.dart';
+import 'store_lock.dart';
 import 'write_queue.dart';
 
 /// The [WriteQueue]'s store, which also holds what an older version of
 /// the app left waiting in the outboxes it had before -- action saves
-/// ('goal_outbox') and notes ('note_outbox') -- as writes: so nothing waiting is lost when the app's
-/// updated. They're read in with what's in the queue, first, being older;
-/// once the queue's saved with them, they're removed from where they
-/// were. Each becomes the same write however often it's read in, so one
-/// read in twice -- the app closed between the two -- is kept once.
+/// ('goal_outbox') and notes ('note_outbox') -- as writes: so nothing
+/// waiting is lost when the app's updated. They're read in with what's in
+/// the queue, first, being older; once the queue's saved with them,
+/// they're taken out of where they were. Each becomes the same write
+/// however often it's read in, so one read in twice -- the app closed
+/// between the two -- is kept once.
+///
+/// Only what was read in is taken out, under the old store's own lock --
+/// the one an older version's window, still open on the web, holds to
+/// change it -- so what that adds meanwhile stays, to be read in next
+/// time. What can't be read (from a version this doesn't know) stays
+/// where it is, rather than be lost.
 class WriteQueueStore extends PrefsOutboxStore<PendingWrite> {
   WriteQueueStore({super.prefs})
     : _legacy = prefs ?? SharedPreferencesAsync(),
@@ -31,8 +38,9 @@ class WriteQueueStore extends PrefsOutboxStore<PendingWrite> {
   /// Where an older version kept notes waiting to be saved.
   static const notesKey = 'note_outbox';
 
-  /// The older stores read in, by [load], not yet removed.
-  final _readIn = <String>{};
+  /// Of each older store, the ids of what [load] read in from it, not yet
+  /// taken out.
+  final _readIn = <String, Set<String>>{};
 
   @override
   Future<List<PendingWrite>> load() async {
@@ -43,12 +51,16 @@ class WriteQueueStore extends PrefsOutboxStore<PendingWrite> {
       (actionsKey, actionWrite),
       (notesKey, noteWrite),
     ]) {
-      final json = await _legacy.getString(key);
-      if (json == null) continue;
-      _readIn.add(key);
-      for (final item in jsonDecode(json) as List) {
-        final write = convert((item as Map).cast<String, Object?>());
-        if (write != null && ids.add(write.id)) legacy.add(write);
+      final read = _entries(await _legacy.getString(key));
+      if (read == null) continue;
+      final taken = _readIn[key] = {};
+      for (final item in read) {
+        final write = item is Map
+            ? convert(item.cast<String, Object?>())
+            : null;
+        if (write == null) continue;
+        taken.add(write.id);
+        if (ids.add(write.id)) legacy.add(write);
       }
     }
     return [...legacy, ...writes];
@@ -57,10 +69,38 @@ class WriteQueueStore extends PrefsOutboxStore<PendingWrite> {
   @override
   Future<void> save(List<PendingWrite> items) async {
     await super.save(items);
-    // Kept in the queue now, so gone from where they were.
-    for (final key in [..._readIn]) {
-      await _legacy.remove(key);
+    // Kept in the queue now, so taken out of where they were.
+    for (final MapEntry(key: key, value: taken) in [..._readIn.entries]) {
+      await IsolateStoreLock.forKey(key).hold((_) async {
+        final json = await _legacy.getString(key);
+        final now = _entries(json);
+        if (now == null) return;
+        final left = [
+          for (final item in now)
+            if (item is! Map || !taken.contains(item['id'])) item,
+        ];
+        if (left.length == now.length) return;
+        if (left.isEmpty) {
+          await _legacy.remove(key);
+        } else {
+          await _legacy.setString(key, jsonEncode(left));
+        }
+      });
       _readIn.remove(key);
+    }
+  }
+
+  /// What an older store keeps, [json], as its entries; null if there's
+  /// nothing, or it can't be read -- when it's left as it is.
+  static List<Object?>? _entries(String? json) {
+    if (json == null) return null;
+    try {
+      return switch (jsonDecode(json)) {
+        final List entries => entries,
+        _ => null,
+      };
+    } on FormatException {
+      return null;
     }
   }
 
