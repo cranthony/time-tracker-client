@@ -156,6 +156,11 @@ class _PlanScreenState extends State<PlanScreen> {
   Object? get _error => _loads.error;
   bool _signingIn = false;
 
+  /// The panes besides Actions, for the refresh button to refresh.
+  final _habitsPane = GlobalKey<HabitsPaneState>();
+  final _peoplePane = GlobalKey<PeoplePaneState>();
+  final _locationsPane = GlobalKey<LocationsPaneState>();
+
   /// The statuses shown.
   final _shown = {...defaultActionStatuses};
 
@@ -794,6 +799,7 @@ class _PlanScreenState extends State<PlanScreen> {
           'Habits',
           'build',
           HabitsPane(
+            key: _habitsPane,
             repository: habits,
             memory: _memory,
             summary: _summaryView,
@@ -807,6 +813,7 @@ class _PlanScreenState extends State<PlanScreen> {
           'People',
           'who',
           PeoplePane(
+            key: _peoplePane,
             repository: people,
             memory: _memory,
             summary: _summaryView,
@@ -821,6 +828,7 @@ class _PlanScreenState extends State<PlanScreen> {
           'Locations',
           'where',
           LocationsPane(
+            key: _locationsPane,
             repository: people,
             actions: widget.repository,
             memory: _memory,
@@ -849,12 +857,20 @@ class _PlanScreenState extends State<PlanScreen> {
                     ),
                   ]
                 : [
-                    AppMenu(
-                      serverLabel: widget.serverLabel,
-                      version: widget.version,
-                      onSignOut: widget.onSignOut == null || _needsSignIn
-                          ? null
-                          : _signOut,
+                    Builder(
+                      builder: (context) => AppMenu(
+                        serverLabel: widget.serverLabel,
+                        version: widget.version,
+                        onSignOut: widget.onSignOut == null || _needsSignIn
+                            ? null
+                            : _signOut,
+                        onRefresh: _needsSignIn
+                            ? null
+                            : () => _refreshPane(
+                                panes[DefaultTabController.of(context).index]
+                                    .$1,
+                              ),
+                      ),
                     ),
                   ],
             bottom: reordering || _needsSignIn || panes.length < 2
@@ -913,6 +929,16 @@ class _PlanScreenState extends State<PlanScreen> {
     );
   }
 
+  /// The refresh button: the pane shown refreshed, as pulling it down does.
+  Future<void> _refreshPane(String title) async {
+    await switch (title) {
+      'Habits' => _habitsPane.currentState?.reload(),
+      'People' => _peoplePane.currentState?.reload(),
+      'Locations' => _locationsPane.currentState?.reload(),
+      _ => Future.wait([_load(), _loadEvents(again: true)]),
+    };
+  }
+
   Widget _signInPrompt() => FillViewport(
     child: StatusMessage(
       icon: Icons.lock_outline,
@@ -950,7 +976,7 @@ class _PlanScreenState extends State<PlanScreen> {
       ),
     ],
     child: RefreshIndicator(
-      onRefresh: () => Future.wait([_load(), _loadEvents(again: true)]),
+      onRefresh: () => _refreshPane('Actions'),
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(bottom: 24),
