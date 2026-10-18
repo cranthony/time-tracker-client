@@ -5,7 +5,7 @@ import '../widgets/durations.dart';
 /// share), [percent] (of what the fixed shares leave), or neither -- a
 /// part of the remaining time, what the minutes and percents leave. One
 /// with minutes or percent can take a part of the remaining time too
-/// ([plusRemaining], "+r").
+/// ([plusRemaining]; "+r" as the server keeps it).
 abstract class Share {
   const Share(this.id, {this.minutes, this.percent, bool remaining = false})
     : _alsoRemaining = remaining;
@@ -25,12 +25,15 @@ abstract class Share {
   /// always does.
   bool get remaining => whole || _alsoRemaining;
 
-  /// What it takes, briefly: "45m", "30%", "45m+r", or "" for neither.
+  /// What it takes, briefly: "45m", "30%", "45m + the rest", or "" for
+  /// neither.
   String get label => switch ((minutes, percent)) {
-    (final m?, _) => '${formatMinutes(m)}${plusRemaining ? '+r' : ''}',
-    (null, final p?) => '$p%${plusRemaining ? '+r' : ''}',
+    (final m?, _) => '${formatMinutes(m)}${plusRemaining ? _andRest : ''}',
+    (null, final p?) => '$p%${plusRemaining ? _andRest : ''}',
     _ => '',
   };
+
+  static const _andRest = ' + the rest';
 
   @override
   bool operator ==(Object other) =>

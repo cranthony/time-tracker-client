@@ -34,7 +34,7 @@ void main() {
       expect(times, {'b': _m(20), 'd': _m(10), 'a': _m(15), 'c': _m(15)});
     });
 
-    test('with +r, takes the remaining time as well as its own', () {
+    test('with the rest too, takes the remaining time as well as its own', () {
       final times = shareTimes(const [
         GoalShare('a', minutes: 20, remaining: true),
         GoalShare('b', percent: 50),
@@ -45,9 +45,9 @@ void main() {
       expect(times, {'a': _m(40), 'b': _m(20), 'c': _m(20)});
     });
 
-    test('says +r in its label and to the server', () {
+    test('says it takes the rest in its label and to the server', () {
       const share = GoalShare('a', minutes: 20, remaining: true);
-      expect(share.label, '20m+r');
+      expect(share.label, '20m + the rest');
       expect(share.toJson(), {
         'goal_id': 'a',
         'minutes': 20,

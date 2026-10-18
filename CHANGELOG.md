@@ -13,8 +13,10 @@ on. Add the new version's section here at the same time; CI checks both.
 
 - An event's people and places can each take a share of it too, as its
   goals and actions can: minutes, or a percent of what the minutes
-  leave, and "+r" for the rest as well. Tap the chip on someone, or a
-  place, in the Who or Location sheet to set it.
+  leave, and the rest as well. Tap the chip on someone, or a place, in
+  the Who or Location sheet to set it.
+- A share that takes the rest as well says so in words ("45m + the
+  rest"), and its box is "And the rest too".
 - Each person given neither takes all the rest of the event, as goals
   do: an hour with Sam and Kim is an hour with each on the People
   pane. The "By person" summary scales them down together so it still

@@ -1667,7 +1667,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   List<String> get _actionIds => [for (final a in _actionShares) a.actionId];
 
   /// [share], which says how much of the event an action or goal takes
-  /// ("45m", "30%+r"), or what it takes without one: a chip that sets it
+  /// ("45m", "30% + the rest"), or what it takes without one: a chip that sets it
   /// with [onTap].
   Widget _shareChip(
     BuildContext context,
