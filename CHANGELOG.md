@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.136.0
+
+- The Diagnostics page has hotkeys: H and L go between its Server and
+  App panes, J and K from graph to graph (outlined while highlighted;
+  Home and End to the first and last), and = and - zoom the pane's
+  graphs in and out.
+
 ## 7.135.0
 
 - An event's actions can each take a share of it, as its goals can:

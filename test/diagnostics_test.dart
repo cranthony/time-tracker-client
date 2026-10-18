@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/server_health.dart';
 import 'package:time_tracker_client/screens/diagnostics_screen.dart';
@@ -9,6 +10,7 @@ import 'package:time_tracker_client/services/diagnostics_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/response_cache.dart';
 import 'package:time_tracker_client/widgets/app_menu.dart';
+import 'package:time_tracker_client/widgets/hotkeys.dart';
 
 final _now = DateTime.utc(2026, 10, 9, 12);
 
@@ -269,13 +271,70 @@ void main() {
       tester.view.physicalSize = Size(width, 2400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
+      final hotkeys = Hotkeys();
       await tester.pumpWidget(
         MaterialApp(
+          navigatorObservers: [hotkeys],
+          builder: (context, child) =>
+              HotkeyScope(hotkeys: hotkeys, child: child!),
           home: DiagnosticsScreen(repository: repository, clock: () => _now),
         ),
       );
       await tester.pumpAndSettle();
     }
+
+    Future<void> press(WidgetTester tester, LogicalKeyboardKey key) async {
+      await tester.sendKeyEvent(key);
+      await tester.pumpAndSettle();
+    }
+
+    /// The title of the graph highlighted.
+    String? highlighted() {
+      final context = FocusManager.instance.primaryFocus?.context;
+      if (context == null) return null;
+      final titles = find
+          .descendant(
+            of: find.byElementPredicate((e) => e == context),
+            matching: find.byType(Text),
+          )
+          .evaluate();
+      return titles.isEmpty ? null : (titles.first.widget as Text).data;
+    }
+
+    testWidgets('J and K go from graph to graph, not to the menus over '
+        'them', (tester) async {
+      await open(tester, InMemoryDiagnosticsRepository(_health()));
+      await press(tester, LogicalKeyboardKey.keyJ);
+      final first = highlighted();
+      expect(first, isNotNull);
+      expect(find.byType(DropdownButton<ToolFilter>), findsOneWidget);
+      await press(tester, LogicalKeyboardKey.keyJ);
+      final second = highlighted();
+      expect(second, isNot(first));
+      await press(tester, LogicalKeyboardKey.keyK);
+      expect(highlighted(), first);
+    });
+
+    testWidgets('= zooms in, and - back out', (tester) async {
+      await open(tester, InMemoryDiagnosticsRepository(_health()));
+      expect(find.textContaining('(zoomed in)'), findsNothing);
+      await press(tester, LogicalKeyboardKey.equal);
+      expect(find.textContaining('(zoomed in)'), findsOneWidget);
+      await press(tester, LogicalKeyboardKey.minus);
+      expect(find.textContaining('(zoomed in)'), findsNothing);
+    });
+
+    testWidgets('H and L go between the Server and App panes', (tester) async {
+      await open(tester, InMemoryDiagnosticsRepository(_health()));
+      final tabs = DefaultTabController.of(
+        tester.element(find.byType(TabBarView)),
+      );
+      expect(tabs.index, 0);
+      await press(tester, LogicalKeyboardKey.keyL);
+      expect(tabs.index, 1);
+      await press(tester, LogicalKeyboardKey.keyH);
+      expect(tabs.index, 0);
+    });
 
     testWidgets("shows the last day's calls, memory and restarts, each "
         'summed up', (tester) async {

@@ -10,6 +10,7 @@ import '../services/client_health.dart';
 import '../services/diagnostics.dart';
 import '../services/diagnostics_repository.dart';
 import '../services/work_timing.dart';
+import '../widgets/hotkeys.dart';
 import '../widgets/status_message.dart';
 
 /// How the app and the server are doing: the server's health metrics
@@ -62,14 +63,33 @@ class DiagnosticsScreen extends StatelessWidget {
           ),
         ),
         body: _PausingFrames(
-          child: TabBarView(
-            children: [
-              _ServerPane(repository: repository, clock: clock),
-              if (client != null)
-                _ClientPane(client: client, clock: clock)
-              else
-                const _AppPane(),
-            ],
+          child: Builder(
+            builder: (context) {
+              final tabs = DefaultTabController.of(context);
+              void go(int by) =>
+                  tabs.animateTo((tabs.index + by).clamp(0, tabs.length - 1));
+              return HotkeyBindings(
+                bindings: [
+                  HotkeyBinding(
+                    const HotkeyTrigger.key(LogicalKeyboardKey.keyH),
+                    () => go(-1),
+                  ),
+                  HotkeyBinding(
+                    const HotkeyTrigger.key(LogicalKeyboardKey.keyL),
+                    () => go(1),
+                  ),
+                ],
+                child: TabBarView(
+                  children: [
+                    _ServerPane(repository: repository, clock: clock),
+                    if (client != null)
+                      _ClientPane(client: client, clock: clock)
+                    else
+                      const _AppPane(),
+                  ],
+                ),
+              );
+            },
           ),
         ),
       ),
@@ -168,6 +188,26 @@ mixin _Timeline<T extends StatefulWidget> on State<T> {
     });
   }
 
+  /// [child], the pane's list of graphs: J and K go from one to the next
+  /// ([HotkeyItems]), = zooms in and - out, while it's shown.
+  Widget withKeys(Widget child) => HotkeyBindings(
+    bindings: [
+      HotkeyBinding(
+        const HotkeyTrigger.key(LogicalKeyboardKey.equal),
+        () => zoomBy(2),
+        when: () => isPainted(context),
+      ),
+      for (final key in const [
+        LogicalKeyboardKey.minus,
+        LogicalKeyboardKey.numpadSubtract,
+      ])
+        HotkeyBinding(HotkeyTrigger.key(key), () {
+          if (zoom != null) zoomBy(0.5);
+        }, when: () => isPainted(context)),
+    ],
+    child: HotkeyItems(child: child),
+  );
+
   /// [child]'s graphs, zoomed together.
   Widget zoomable(Widget child) => _Zoomable(
     onZoom: zoomBy,
@@ -185,80 +225,83 @@ mixin _Timeline<T extends StatefulWidget> on State<T> {
     String time(DateTime t) =>
         '${strings.formatShortMonthDay(t.toLocal())}, '
         '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()))}';
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _Picker<ToolFilter>(
-                label: 'Tools',
-                value: filter,
-                items: {for (final f in filters) f: f.label},
-                onChanged: (f) => setState(() => filter = f),
-              ),
-              _Picker<TimeRange>(
-                label: 'Range',
-                value: range,
-                items: {for (final r in TimeRange.values) r: r.label},
-                onChanged: (r) => setState(() {
-                  range = r;
-                  zoom = null;
-                }),
-              ),
-              _Picker<Statistic?>(
-                label: 'Show',
-                value: statistic,
-                items: {
-                  null: 'Each call',
-                  for (final s in Statistic.values) s: s.label,
-                },
-                onChanged: (s) => setState(() => statistic = s),
-              ),
-              if (statistic != null)
-                _Picker<BucketSize>(
-                  label: 'Per',
-                  value: bucket,
-                  items: {for (final b in BucketSize.values) b: b.label},
-                  onChanged: (b) => setState(() => bucket = b),
+    // Not a graph: J and K pass it by, though Tab goes to it.
+    return NotAnItem(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _Picker<ToolFilter>(
+                  label: 'Tools',
+                  value: filter,
+                  items: {for (final f in filters) f: f.label},
+                  onChanged: (f) => setState(() => filter = f),
                 ),
-            ],
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${time(from)} – ${time(to)}${zoom == null ? '' : ' (zoomed in)'}',
-                  style: Theme.of(context).textTheme.bodySmall,
+                _Picker<TimeRange>(
+                  label: 'Range',
+                  value: range,
+                  items: {for (final r in TimeRange.values) r: r.label},
+                  onChanged: (r) => setState(() {
+                    range = r;
+                    zoom = null;
+                  }),
                 ),
-              ),
-              IconButton(
-                tooltip: 'Earlier',
-                icon: const Icon(Icons.chevron_left),
-                onPressed: zoom == null ? null : () => zoomBy(1, shift: 0.5),
-              ),
-              IconButton(
-                tooltip: 'Zoom out',
-                icon: const Icon(Icons.zoom_out),
-                onPressed: zoom == null ? null : () => zoomBy(0.5),
-              ),
-              IconButton(
-                tooltip: 'Zoom in',
-                icon: const Icon(Icons.zoom_in),
-                onPressed: () => zoomBy(2),
-              ),
-              IconButton(
-                tooltip: 'Later',
-                icon: const Icon(Icons.chevron_right),
-                onPressed: zoom == null ? null : () => zoomBy(1, shift: -0.5),
-              ),
-            ],
-          ),
-        ],
+                _Picker<Statistic?>(
+                  label: 'Show',
+                  value: statistic,
+                  items: {
+                    null: 'Each call',
+                    for (final s in Statistic.values) s: s.label,
+                  },
+                  onChanged: (s) => setState(() => statistic = s),
+                ),
+                if (statistic != null)
+                  _Picker<BucketSize>(
+                    label: 'Per',
+                    value: bucket,
+                    items: {for (final b in BucketSize.values) b: b.label},
+                    onChanged: (b) => setState(() => bucket = b),
+                  ),
+              ],
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${time(from)} – ${time(to)}${zoom == null ? '' : ' (zoomed in)'}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Earlier',
+                  icon: const Icon(Icons.chevron_left),
+                  onPressed: zoom == null ? null : () => zoomBy(1, shift: 0.5),
+                ),
+                IconButton(
+                  tooltip: 'Zoom out',
+                  icon: const Icon(Icons.zoom_out),
+                  onPressed: zoom == null ? null : () => zoomBy(0.5),
+                ),
+                IconButton(
+                  tooltip: 'Zoom in',
+                  icon: const Icon(Icons.zoom_in),
+                  onPressed: () => zoomBy(2),
+                ),
+                IconButton(
+                  tooltip: 'Later',
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: zoom == null ? null : () => zoomBy(1, shift: -0.5),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -367,46 +410,50 @@ class _ServerPaneState extends State<_ServerPane>
     final restarts = within(health.restarts, (r) => r, from, to);
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
-        children: [
-          if (error != null)
-            LoadError(
-              what: "the server's health",
-              error: error,
-              stale: true,
-              onRetry: _load,
-            ),
-          controls(context, [for (final t in health.tools) t.tool]),
-          zoomable(
-            Column(
-              children: [
-                _LatencyCard(
-                  calls: calls,
-                  points: latencyPoints(
-                    calls,
-                    statistic: statistic,
-                    bucket: bucket,
-                  ),
-                  tools: filter.label,
-                  from: from,
-                  to: to,
+      child: withKeys(
+        ListView(
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            if (error != null)
+              NotAnItem(
+                child: LoadError(
+                  what: "the server's health",
+                  error: error,
+                  stale: true,
+                  onRetry: _load,
                 ),
-                _MemoryCard(
-                  memory: memory,
-                  points: memoryPoints(
-                    memory,
-                    statistic: statistic,
-                    bucket: bucket,
+              ),
+            controls(context, [for (final t in health.tools) t.tool]),
+            zoomable(
+              Column(
+                children: [
+                  _LatencyCard(
+                    calls: calls,
+                    points: latencyPoints(
+                      calls,
+                      statistic: statistic,
+                      bucket: bucket,
+                    ),
+                    tools: filter.label,
+                    from: from,
+                    to: to,
                   ),
-                  from: from,
-                  to: to,
-                ),
-                _RestartsCard(restarts: restarts, from: from, to: to),
-              ],
+                  _MemoryCard(
+                    memory: memory,
+                    points: memoryPoints(
+                      memory,
+                      statistic: statistic,
+                      bucket: bucket,
+                    ),
+                    from: from,
+                    to: to,
+                  ),
+                  _RestartsCard(restarts: restarts, from: from, to: to),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -508,33 +555,65 @@ class _ClientPaneState extends State<_ClientPane>
         await widget.client.flush();
         await _load();
       },
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
-        children: [
-          controls(context, health.calls.keys),
-          zoomable(
-            Column(
-              children: [
-                _ClientCallsCard(
-                  calls: calls,
-                  statistic: statistic,
-                  bucket: bucket,
-                  tools: filter.label,
-                  from: from,
-                  to: to,
-                ),
-                _QueueCard(queue: queue, from: from, to: to),
-                _SlowFramesCard(frames: frames, from: from, to: to),
-              ],
+      child: withKeys(
+        ListView(
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            controls(context, health.calls.keys),
+            zoomable(
+              Column(
+                children: [
+                  _ClientCallsCard(
+                    calls: calls,
+                    statistic: statistic,
+                    bucket: bucket,
+                    tools: filter.label,
+                    from: from,
+                    to: to,
+                  ),
+                  _QueueCard(queue: queue, from: from, to: to),
+                  _SlowFramesCard(frames: frames, from: from, to: to),
+                ],
+              ),
             ),
-          ),
-          _PlanVisitsCard(visits: visits),
-          _WorkCard(work: work),
-          _ErrorsCard(errors: errors, kept: health.errors.length),
-        ],
+            _PlanVisitsCard(visits: visits),
+            _WorkCard(work: work),
+            _ErrorsCard(errors: errors, kept: health.errors.length),
+          ],
+        ),
       ),
     );
   }
+}
+
+/// A card of the page -- a graph, say -- that J and K can highlight,
+/// outlined while it is.
+class _ItemCard extends StatelessWidget {
+  const _ItemCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Focus(
+    child: Builder(
+      builder: (context) {
+        final focused = Focus.of(context).hasPrimaryFocus;
+        return Card(
+          margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          shape: focused
+              ? RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 2,
+                  ),
+                )
+              : null,
+          child: child,
+        );
+      },
+    ),
+  );
 }
 
 /// A labelled drop-down of [items]' values, each with its label.
@@ -701,8 +780,7 @@ class _GraphCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+    return _ItemCard(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 12, 12, 12),
         child: Column(
@@ -1579,8 +1657,7 @@ class _ErrorsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final newest = errors.firstOrNull;
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+    return _ItemCard(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
         child: Column(
@@ -1961,8 +2038,7 @@ class _WorkCard extends StatelessWidget {
         if (why.isNotEmpty) whys[why] = (whys[why] ?? 0) + 1;
       }
     }
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+    return _ItemCard(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Column(
