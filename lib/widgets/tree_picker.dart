@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'hotkeys.dart';
 import 'picker_search.dart';
 
 /// One row a [TreePicker] can show: something to pick, or a group of them
@@ -260,15 +261,19 @@ class _TreePickerState extends State<TreePicker> {
         if (widget.add case (:final noun, :final icon, :final onAdd))
           PickerAddTile(noun: noun, search: _search, icon: icon, onAdd: onAdd),
         switch (widget.maxListHeight) {
-          null => Expanded(child: ListView(children: list)),
+          null => Expanded(
+            child: HotkeyItems(child: ListView(children: list)),
+          ),
           // Not a ListView: a dialog measures its content's intrinsic
           // width, which a lazy list can't give.
           final most => ConstrainedBox(
             constraints: BoxConstraints(maxHeight: most),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: list,
+            child: HotkeyItems(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: list,
+                ),
               ),
             ),
           ),

@@ -9,6 +9,7 @@ import '../services/plan_memory.dart';
 import 'error_sheet.dart';
 import 'goal_editor.dart';
 import 'goal_icon.dart';
+import 'hotkeys.dart';
 
 /// What the Goals pane and a goal's page do to goals: add, edit, change
 /// their status, move and delete them -- each a change to one goal or
@@ -560,35 +561,37 @@ class _DestinationDialogState extends State<_DestinationDialog> {
               ),
             ),
             Expanded(
-              child: ListView(
-                children: [
-                  if (widget.goal.parentId != null)
-                    ListTile(
-                      leading: const Icon(Icons.vertical_align_top),
-                      title: const Text('To the top level'),
-                      onTap: () => Navigator.of(context).pop(const _Top()),
-                    ),
-                  ListTile(
-                    leading: const Icon(Icons.add),
-                    title: const Text('Under a new top-level goal…'),
-                    onTap: () => Navigator.of(context).pop(const _New()),
-                  ),
-                  const Divider(),
-                  for (final g in shown)
-                    ListTile(
-                      enabled: g.id != widget.goal.parentId,
-                      contentPadding: EdgeInsetsDirectional.only(
-                        start: 16.0 + 16 * widget.tree.depthOf(g.id),
-                        end: 16,
+              child: HotkeyItems(
+                child: ListView(
+                  children: [
+                    if (widget.goal.parentId != null)
+                      ListTile(
+                        leading: const Icon(Icons.vertical_align_top),
+                        title: const Text('To the top level'),
+                        onTap: () => Navigator.of(context).pop(const _Top()),
                       ),
-                      leading: const GoalIcon(size: 20),
-                      title: Text(goalTitle(g)),
-                      subtitle: g.deadline == null
-                          ? null
-                          : Text('Due ${deadlineLabel(context, g.deadline)}'),
-                      onTap: () => Navigator.of(context).pop(g),
+                    ListTile(
+                      leading: const Icon(Icons.add),
+                      title: const Text('Under a new top-level goal…'),
+                      onTap: () => Navigator.of(context).pop(const _New()),
                     ),
-                ],
+                    const Divider(),
+                    for (final g in shown)
+                      ListTile(
+                        enabled: g.id != widget.goal.parentId,
+                        contentPadding: EdgeInsetsDirectional.only(
+                          start: 16.0 + 16 * widget.tree.depthOf(g.id),
+                          end: 16,
+                        ),
+                        leading: const GoalIcon(size: 20),
+                        title: Text(goalTitle(g)),
+                        subtitle: g.deadline == null
+                            ? null
+                            : Text('Due ${deadlineLabel(context, g.deadline)}'),
+                        onTap: () => Navigator.of(context).pop(g),
+                      ),
+                  ],
+                ),
               ),
             ),
           ],

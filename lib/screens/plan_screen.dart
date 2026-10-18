@@ -725,14 +725,14 @@ class _PlanScreenState extends State<PlanScreen> {
 
   /// J or K: the next item in the pane shown, [later] down it or up
   /// ([stepItems]); Enter taps it.
-  void _stepInPane(FocusNode pane, {required bool later}) =>
-      stepItems(pane, later: later);
+  void _stepInPane(FocusNode pane, {required bool later, bool toEnd = false}) =>
+      stepItems(pane, later: later, toEnd: toEnd);
 
   /// The Plan page's hotkeys, with the [panes] shown in [tabs]: J and K
   /// down and up the one shown, H and L to the one beside it.
   List<HotkeyBinding> _paneKeys(TabController tabs, List<String> panes) {
-    void step(bool later) =>
-        _stepInPane(_paneNode(panes[tabs.index]), later: later);
+    void step(bool later, {bool toEnd = false}) =>
+        _stepInPane(_paneNode(panes[tabs.index]), later: later, toEnd: toEnd);
     void go(int by) =>
         tabs.animateTo((tabs.index + by).clamp(0, tabs.length - 1));
     return [
@@ -743,6 +743,14 @@ class _PlanScreenState extends State<PlanScreen> {
       HotkeyBinding(
         const HotkeyTrigger.key(LogicalKeyboardKey.keyK),
         () => step(false),
+      ),
+      HotkeyBinding(
+        const HotkeyTrigger.key(LogicalKeyboardKey.home),
+        () => step(false, toEnd: true),
+      ),
+      HotkeyBinding(
+        const HotkeyTrigger.key(LogicalKeyboardKey.end),
+        () => step(true, toEnd: true),
       ),
       HotkeyBinding(
         const HotkeyTrigger.key(LogicalKeyboardKey.keyH),

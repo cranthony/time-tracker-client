@@ -42,7 +42,8 @@ void main() {
     final list = ScrollController();
     const row = 50.0;
 
-    /// A button over a list of 40 that scrolls, scrolled to [offset].
+    /// A button over a list of 40 items that scrolls, scrolled to
+    /// [offset].
     Future<void> pump(WidgetTester tester, double offset) async {
       await tester.pumpWidget(
         withHotkeys(
@@ -51,13 +52,15 @@ void main() {
               children: [
                 TextButton(onPressed: () {}, child: const Text('Header')),
                 Expanded(
-                  child: ListView(
-                    controller: list,
-                    itemExtent: row,
-                    children: [
-                      for (var i = 0; i < 40; i++)
-                        TextButton(onPressed: () {}, child: Text('Item $i')),
-                    ],
+                  child: HotkeyItems(
+                    child: ListView(
+                      controller: list,
+                      itemExtent: row,
+                      children: [
+                        for (var i = 0; i < 40; i++)
+                          TextButton(onPressed: () {}, child: Text('Item $i')),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -81,6 +84,18 @@ void main() {
       expect(highlighted(), 'Item 11');
       await press(tester, LogicalKeyboardKey.keyJ);
       expect(highlighted(), 'Item 12');
+    });
+
+    testWidgets('End highlights the last item, scrolled to; Home, the '
+        'first', (tester) async {
+      await pump(tester, 10 * row);
+      await press(tester, LogicalKeyboardKey.end);
+      expect(highlighted(), 'Item 39');
+      final view = tester.getRect(find.byType(ListView));
+      expect(rectOf(tester, 'Item 39').bottom, lessThanOrEqualTo(view.bottom));
+      await press(tester, LogicalKeyboardKey.home);
+      expect(highlighted(), 'Item 0');
+      expect(rectOf(tester, 'Item 0').top, greaterThanOrEqualTo(view.top));
     });
 
     testWidgets('K starts at the last of the list wholly in view', (
@@ -199,6 +214,16 @@ void main() {
       final tile = context.findAncestorWidgetOfExactType<ListTile>();
       final title = tile?.title as Text?;
       expect(title?.data ?? (title?.textSpan as TextSpan?)?.text, 'Cooking');
+    });
+
+    testWidgets('Home and End go to the first and last goal of the pane', (
+      tester,
+    ) async {
+      final titles = await pump(tester);
+      await press(tester, LogicalKeyboardKey.end);
+      expect(goalHighlighted(), titles.last);
+      await press(tester, LogicalKeyboardKey.home);
+      expect(goalHighlighted(), titles.first);
     });
 
     testWidgets('K highlights the last goal, not its edit button', (

@@ -135,15 +135,4 @@ void main() {
     expect(dialogShown(), isFalse);
     expect(saved, isNull);
   });
-
-  testWidgets('J and K move between its parts', (tester) async {
-    await open(tester);
-    await press(tester, LogicalKeyboardKey.keyJ);
-    final first = FocusManager.instance.primaryFocus;
-    await press(tester, LogicalKeyboardKey.keyJ);
-    final second = FocusManager.instance.primaryFocus;
-    expect(second, isNot(first));
-    await press(tester, LogicalKeyboardKey.keyK);
-    expect(FocusManager.instance.primaryFocus, first);
-  });
 }

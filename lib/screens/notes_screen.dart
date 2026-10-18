@@ -529,23 +529,25 @@ class _NotesScreenState extends State<NotesScreen> {
         ],
       );
     }
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 88), // clear the FAB
-      children: [
-        ...compaction,
-        ?banner,
-        for (final (i, row) in rows.indexed) ...[
-          // The compacted note's day isn't headed twice.
-          if (i == 0
-              ? latest == null || !sameDay(latest.timestamp, row.at)
-              : !sameDay(rows[i - 1].at, row.at))
-            DayHeader(day: row.at, today: widget.clock())
-          else if (i > 0)
-            const Divider(height: 1),
-          row.tile,
+    return HotkeyItems(
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(bottom: 88), // clear the FAB
+        children: [
+          ...compaction,
+          ?banner,
+          for (final (i, row) in rows.indexed) ...[
+            // The compacted note's day isn't headed twice.
+            if (i == 0
+                ? latest == null || !sameDay(latest.timestamp, row.at)
+                : !sameDay(rows[i - 1].at, row.at))
+              DayHeader(day: row.at, today: widget.clock())
+            else if (i > 0)
+              const Divider(height: 1),
+            row.tile,
+          ],
         ],
-      ],
+      ),
     );
   }
 }

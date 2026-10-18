@@ -164,10 +164,12 @@ class _GoalScreenState extends State<GoalScreen> {
                 ),
               ]
             : [
-                IconButton(
-                  tooltip: 'Edit',
-                  icon: const Icon(Icons.edit_outlined),
-                  onPressed: () => _actions.edit(goal),
+                EditHotkey(
+                  child: IconButton(
+                    tooltip: 'Edit',
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () => _actions.edit(goal),
+                  ),
                 ),
                 PopupMenuButton<String>(
                   onSelected: (action) => _menu(action, goal),
@@ -245,17 +247,27 @@ class _GoalScreenState extends State<GoalScreen> {
                 style: TextStyle(color: theme.hintColor),
               ),
             ),
-          for (final child in shown)
-            GoalTile(
-              goal: child,
-              spent: spent[child.id],
-              subGoals: tree.childrenOf(child.id).length,
-              selecting: selecting,
-              selected: _selected.contains(child.id),
-              onTap: selecting ? () => _toggle(child) : () => _open(child),
-              onLongPress: () => _toggle(child),
-              onEdit: () => _actions.edit(child),
+          // What J and K go down and up: not the buttons over them, nor
+          // the history under them.
+          HotkeyItems(
+            child: Column(
+              children: [
+                for (final child in shown)
+                  GoalTile(
+                    goal: child,
+                    spent: spent[child.id],
+                    subGoals: tree.childrenOf(child.id).length,
+                    selecting: selecting,
+                    selected: _selected.contains(child.id),
+                    onTap: selecting
+                        ? () => _toggle(child)
+                        : () => _open(child),
+                    onLongPress: () => _toggle(child),
+                    onEdit: () => _actions.edit(child),
+                  ),
+              ],
             ),
+          ),
           const Divider(height: 24),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),

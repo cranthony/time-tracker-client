@@ -200,12 +200,14 @@ class _AllPeopleScreenState extends State<AllPeopleScreen> {
           Expanded(
             child: RefreshIndicator(
               onRefresh: widget.onReload ?? () async {},
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.only(bottom: 24),
-                children: people == null
-                    ? const [LinearProgressIndicator()]
-                    : _list(context, people),
+              child: HotkeyItems(
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.only(bottom: 24),
+                  children: people == null
+                      ? const [LinearProgressIndicator()]
+                      : _list(context, people),
+                ),
               ),
             ),
           ),

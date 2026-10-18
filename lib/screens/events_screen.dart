@@ -2311,6 +2311,15 @@ class _EventsScreenState extends State<EventsScreen> {
     if (_canStep(role, later: later)) _stepCursor(role, later: later);
   }
 
+  /// Home or End ([last]): highlights the day's first event, or its
+  /// last -- not while a cursor is out, which J and K move.
+  void _keyEnd({required bool last}) {
+    if (_box != null) return;
+    final events = _steppable();
+    if (events.isEmpty) return;
+    _keyTo(last ? events.last : events.first);
+  }
+
   /// Enter: with just the one cursor, sets the start, making the box to
   /// the next stop after it, for J and K to move its end; with the box,
   /// goes on, as ✓ does. Picking events, picks the one highlighted; or
@@ -2360,6 +2369,14 @@ class _EventsScreenState extends State<EventsScreen> {
     HotkeyBinding(
       const HotkeyTrigger.key(LogicalKeyboardKey.keyK),
       () => _keyStep(later: false),
+    ),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.home),
+      () => _keyEnd(last: false),
+    ),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.end),
+      () => _keyEnd(last: true),
     ),
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.enter), _keyEnter),
     HotkeyBinding(

@@ -99,6 +99,18 @@ void main() {
     expect(timeline(tester, at(29, 0)).keyed, 'y-late');
   });
 
+  testWidgets("Home and End go to the day's first and last event", (
+    tester,
+  ) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final today = at(30, 0);
+    await press(tester, LogicalKeyboardKey.end);
+    expect(timeline(tester, today).keyed, 'walk');
+    await press(tester, LogicalKeyboardKey.home);
+    expect(timeline(tester, today).keyed, 'work');
+  });
+
   testWidgets('Enter opens the event highlighted', (tester) async {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
