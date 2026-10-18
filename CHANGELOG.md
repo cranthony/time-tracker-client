@@ -9,6 +9,17 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.133.0
+
+- A strip across the top of every screen says when the metadata
+  spreadsheet or the calendar was changed outside the server in the last
+  week -- how many times, and when last -- and goes once the server says
+  there were none. Tapping it lists each change, newest first: when, what
+  (cells edited, a tab deleted, events changed), which tab, the cells as
+  found and as the server put them back. The spreadsheet is the
+  server's alone, so hand edits are put back. Needs the server that warns
+  of them.
+
 ## 7.132.0
 
 - + makes a new one of what's shown, as the page's or pane's + does: on

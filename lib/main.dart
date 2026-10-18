@@ -22,6 +22,7 @@ import 'outbox/write_queue.dart';
 import 'platform/add_note_shortcut.dart';
 import 'platform/calendar_widget.dart';
 import 'screens/home_screen.dart';
+import 'screens/sheet_warnings_screen.dart';
 import 'services/app_settings.dart';
 import 'services/event_store.dart';
 import 'services/actions_repository.dart';
@@ -52,6 +53,7 @@ import 'demo/weather_sample.dart';
 import 'services/work_timing.dart';
 import 'theme.dart';
 import 'widgets/hotkeys.dart';
+import 'widgets/sheet_warnings_banner.dart';
 import 'widgets/sign_in_off_banner.dart';
 
 /// The Time Tracker MCP server's endpoint, passed at build time, e.g.
@@ -511,6 +513,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
 
   /// The keys the app answers, wherever it is.
   final _hotkeys = Hotkeys();
+
+  /// The app's navigator: for the banners above it to open pages.
+  final _navigator = GlobalKey<NavigatorState>();
   String? _version;
 
   /// What's been loaded of the plan, and the events, for every page to
@@ -681,6 +686,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       title: 'Time Tracker',
       theme: appTheme(Brightness.light),
       darkTheme: appTheme(Brightness.dark),
+      navigatorKey: _navigator,
       navigatorObservers: [_hotkeys],
       // Above the navigator, so every route and dialog finds it.
       builder: (context, child) {
@@ -719,6 +725,20 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         if (widget.traitsRepository case final traits?) {
           scoped = TraitsScope(repository: traits, child: scoped);
         }
+        // Over every screen and dialog, while the server says it found
+        // changes made behind its back lately.
+        final diagnostics = widget.diagnosticsRepository;
+        scoped = SheetWarningsBanner(
+          onOpen: diagnostics == null
+              ? null
+              : () => _navigator.currentState?.push(
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        SheetWarningsScreen(repository: diagnostics),
+                  ),
+                ),
+          child: scoped,
+        );
         // Over every screen and dialog, while the server skips sign-in.
         scoped = SignInOffBanner(child: scoped);
         return HotkeyScope(hotkeys: _hotkeys, child: scoped);

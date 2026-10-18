@@ -16,6 +16,10 @@ abstract class DiagnosticsRepository {
   /// What [serverHealth] last returned, kept from an earlier run of the
   /// app; null if there's nothing kept.
   Future<ServerHealth?> cachedServerHealth();
+
+  /// What the server found changed behind its back, now: its health's
+  /// warnings, without its samples. Oldest first.
+  Future<List<SheetWarning>> sheetWarnings();
 }
 
 /// Whether [error] says the server has no `get_health`: an older one.
@@ -41,6 +45,11 @@ class McpDiagnosticsRepository implements DiagnosticsRepository {
   }
 
   @override
+  Future<List<SheetWarning>> sheetWarnings() async =>
+      _decode(await _client.callTool('get_health', {'samples': false}))
+          .sheetWarnings;
+
+  @override
   Future<ServerHealth?> cachedServerHealth() async {
     try {
       final kept = await _cache?.read(_key);
@@ -62,6 +71,9 @@ class InMemoryDiagnosticsRepository implements DiagnosticsRepository {
 
   @override
   Future<ServerHealth?> cachedServerHealth() async => null;
+
+  @override
+  Future<List<SheetWarning>> sheetWarnings() async => health.sheetWarnings;
 }
 
 /// Makes a [DiagnosticsRepository] available below it -- for the app

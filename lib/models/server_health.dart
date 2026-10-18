@@ -1,11 +1,13 @@
 /// The server's health metrics, as its `get_health` gives them: each tool's
-/// last calls, its memory after each of its last calls, and its restarts.
-/// Times are UTC, oldest first.
+/// last calls, its memory after each of its last calls, its restarts, and
+/// its warnings of changes made behind its back. Times are UTC, oldest
+/// first.
 class ServerHealth {
   const ServerHealth({
     this.tools = const [],
     this.memory = const [],
     this.restarts = const [],
+    this.sheetWarnings = const [],
   });
 
   final List<ToolCalls> tools;
@@ -14,6 +16,9 @@ class ServerHealth {
   /// When the server last started, up to 100 times: there's one server,
   /// so each after the first is a restart -- a crash, or a deploy.
   final List<DateTime> restarts;
+
+  /// What the server found changed behind its back, up to the last 100.
+  final List<SheetWarning> sheetWarnings;
 
   /// Every call, of every tool, oldest first.
   List<ToolCall> get calls =>
@@ -32,6 +37,10 @@ class ServerHealth {
       for (final r in json['restarts'] as List? ?? const [])
         ?DateTime.tryParse('$r'),
     ]..sort(),
+    sheetWarnings: [
+      for (final w in json['sheet_warnings'] as List? ?? const [])
+        ?SheetWarning.fromJson((w as Map).cast<String, dynamic>()),
+    ]..sort((a, b) => a.at.compareTo(b.at)),
   );
 }
 
@@ -107,4 +116,84 @@ class MemorySample {
     if (at == null || mib is! num) return null;
     return MemorySample(at: at, mib: mib.toDouble());
   }
+}
+
+/// What the server found changed behind its back, as `get_health`'s
+/// `sheet_warnings` gives it: the metadata spreadsheet's cells edited by
+/// hand, or a tab of it deleted -- put back as the server keeps it, when
+/// it could be -- or events changed outside the server (in Google
+/// Calendar, say), taken as they are.
+class SheetWarning {
+  const SheetWarning({
+    required this.at,
+    required this.kind,
+    this.tab,
+    this.cells = const [],
+    this.cellCount = 0,
+    this.restored = false,
+  });
+
+  final DateTime at;
+  final SheetWarningKind kind;
+
+  /// The spreadsheet tab's title; none for a calendar warning.
+  final String? tab;
+
+  /// The first 20 cells changed -- for a calendar warning, events.
+  final List<WarnedCell> cells;
+
+  /// How many cells (or events) were changed in all.
+  final int cellCount;
+
+  /// Whether the server put back what it keeps. Never, for the calendar.
+  final bool restored;
+
+  static SheetWarning? fromJson(Map<String, dynamic> json) {
+    final at = DateTime.tryParse('${json['at']}');
+    if (at == null) return null;
+    final cells = [
+      for (final c in json['cells'] as List? ?? const [])
+        if (c is Map) WarnedCell.fromJson(c.cast<String, dynamic>()),
+    ];
+    return SheetWarning(
+      at: at,
+      kind: switch (json['kind']) {
+        'deleted' => SheetWarningKind.deleted,
+        'calendar' => SheetWarningKind.calendar,
+        _ => SheetWarningKind.edited,
+      },
+      tab: json['tab'] as String?,
+      cells: cells,
+      cellCount: (json['cell_count'] as num?)?.toInt() ?? cells.length,
+      restored: json['restored'] == true,
+    );
+  }
+}
+
+enum SheetWarningKind {
+  /// Cells of the metadata spreadsheet edited by hand.
+  edited,
+
+  /// A tab of the metadata spreadsheet deleted by hand.
+  deleted,
+
+  /// Events changed outside the server.
+  calendar,
+}
+
+/// A cell changed behind the server's back: its A1 name, what was found
+/// there, and what the server keeps (and put back). For the calendar, the
+/// event's id, its summary and status as found, and nothing kept.
+class WarnedCell {
+  const WarnedCell({required this.cell, required this.found, this.kept = ''});
+
+  final String cell;
+  final String found;
+  final String kept;
+
+  factory WarnedCell.fromJson(Map<String, dynamic> json) => WarnedCell(
+    cell: '${json['cell'] ?? ''}',
+    found: '${json['found'] ?? ''}',
+    kept: '${json['kept'] ?? ''}',
+  );
 }
