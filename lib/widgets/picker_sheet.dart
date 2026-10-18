@@ -5,6 +5,7 @@ import '../models/facts.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/proposal.dart';
+import '../models/share.dart';
 import '../services/maps.dart';
 import '../services/people_repository.dart';
 import '../services/server_errors.dart';
@@ -14,6 +15,7 @@ import 'event_description.dart';
 import 'hotkeys.dart';
 import 'picker_edits.dart';
 import 'picker_search.dart';
+import 'share_dialog.dart';
 import 'tree_picker.dart';
 
 /// A sheet up from the foot of the screen, as a note's is, with room to
@@ -337,6 +339,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
   String? mapLocation,
   String? query,
   List<ProposalAddition> additions = const [],
+  int? eventMinutes,
 }) {
   var map = mapLocation;
   final typed = query?.trim() ?? '';
@@ -353,6 +356,32 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
   final with_ = {...facts.withIds}..remove(selfPersonId);
   final for_ = {...facts.forIds}..remove(selfPersonId);
   final where_ = [...facts.locationIds];
+  // How much of it each takes, for those given minutes or a percent.
+  var withSplits = facts.withSplits;
+  var forSplits = facts.forSplits;
+  var whereSplits = facts.locationSplits;
+  final minutes = eventMinutes;
+
+  // Sets how much of it [share]'s person or place takes, called [name].
+  Future<S?> setShare<S extends Share>(
+    S share,
+    String name,
+    String kind,
+    String rest,
+    S Function(int? minutes, int? percent, bool remaining) make,
+  ) async {
+    if (minutes == null) return null;
+    return showShareDialog(
+      context,
+      title: name,
+      share: share,
+      eventMinutes: minutes,
+      kind: kind,
+      rest: rest,
+      make: make,
+    );
+  }
+
   final repository = PeopleScope.of(context);
   final memory = PlanMemoryScope.of(context);
   var people = _people(repository, memory);
@@ -383,6 +412,8 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
           ..addAll(ids);
         other.removeAll(ids);
       });
+      final isWith = identical(picked, with_);
+      Map<String, PersonShare> splits() => isWith ? withSplits : forSplits;
       return TreePicker(
         nodes: [
           for (final p in [
@@ -401,6 +432,37 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
         empty: 'No one yet.',
         search: search,
         onChanged: picking,
+        chipDetail: minutes == null
+            ? null
+            : (id) => splits()[id]?.label ?? 'The rest',
+        onChipTap: minutes == null
+            ? null
+            : (id) async {
+                final set = await setShare(
+                  splits()[id] ?? PersonShare(id),
+                  switch (byId[id]) {
+                    final p? => personName(p),
+                    null => id,
+                  },
+                  'person',
+                  "They take the time the others' minutes and percents "
+                      'leave, as everyone given neither does.',
+                  (minutes, percent, remaining) => PersonShare(
+                    id,
+                    minutes: minutes,
+                    percent: percent,
+                    remaining: remaining,
+                  ),
+                );
+                if (set == null) return;
+                setState(() {
+                  if (isWith) {
+                    withSplits = Facts.withSplit(withSplits, set);
+                  } else {
+                    forSplits = Facts.withSplit(forSplits, set);
+                  }
+                });
+              },
         onEdit: repository == null
             ? null
             : (node) async {
@@ -449,6 +511,28 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
         caption: 'Where it was: one place, or each it moved between',
         empty: 'No locations yet.',
         search: search,
+        chipDetail: minutes == null
+            ? null
+            : (id) => whereSplits[id]?.label ?? 'The rest',
+        onChipTap: minutes == null
+            ? null
+            : (id) async {
+                final set = await setShare(
+                  whereSplits[id] ?? LocationShare(id),
+                  byId[id]?.name ?? id,
+                  'location',
+                  "It shares the time the other places' minutes and "
+                      'percents leave evenly with the others given neither.',
+                  (minutes, percent, remaining) => LocationShare(
+                    id,
+                    minutes: minutes,
+                    percent: percent,
+                    remaining: remaining,
+                  ),
+                );
+                if (set == null) return;
+                setState(() => whereSplits = Facts.withSplit(whereSplits, set));
+              },
         onChanged: (ids) => setState(
           () => where_
             ..clear()
@@ -485,7 +569,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
     context,
     title: where ? 'Location' : 'Who',
     result: () => (
-      facts: Facts(
+      facts: facts.copyWith(
         locationIds: [...where_],
         withIds: [...with_],
         forIds: [...for_],
@@ -493,7 +577,9 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
           for (final MapEntry(:key, :value) in facts.notes.entries)
             if (key == selfPersonId || with_.contains(key)) key: value,
         },
-        commute: facts.commute,
+        locationSplits: whereSplits,
+        withSplits: withSplits,
+        forSplits: forSplits,
       ),
       mapLocation: map,
     ),

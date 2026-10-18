@@ -1,4 +1,5 @@
 import 'person.dart';
+import 'share.dart';
 
 /// What compaction established about an event, kept in its private
 /// properties, mirroring the Time Tracker MCP server's `Facts` (its
@@ -8,6 +9,11 @@ import 'person.dart';
 /// [commute]. Every field is optional.
 /// What was done at it isn't here: that's its actions, which set its
 /// label. They're saved whole through `update_event`.
+///
+/// A person or place can take a share of the event ([PersonShare],
+/// [LocationShare]): the ids are in [withIds], [forIds] and
+/// [locationIds] all the same, and those with a share have it in
+/// [withSplits], [forSplits] or [locationSplits].
 class Facts {
   const Facts({
     this.locationIds = const [],
@@ -15,7 +21,75 @@ class Facts {
     this.forIds = const [],
     this.notes = const {},
     this.commute = false,
+    this.locationSplits = const {},
+    this.withSplits = const {},
+    this.forSplits = const {},
   });
+
+  /// The shares of those in [locationIds], [withIds] and [forIds] that
+  /// have one -- minutes or a percent -- by id.
+  final Map<String, LocationShare> locationSplits;
+  final Map<String, PersonShare> withSplits;
+  final Map<String, PersonShare> forSplits;
+
+  /// The places it was, and how much of it each takes.
+  List<LocationShare> get locationShares => [
+    for (final id in locationIds) locationSplits[id] ?? LocationShare(id),
+  ];
+
+  /// The people with the user, and how much of it each takes.
+  List<PersonShare> get withShares => [
+    for (final id in withIds) withSplits[id] ?? PersonShare(id),
+  ];
+
+  /// The people it was for, and how much of it each takes.
+  List<PersonShare> get forShares => [
+    for (final id in forIds) forSplits[id] ?? PersonShare(id),
+  ];
+
+  /// These, with what's given changed: each place and person kept keeps
+  /// the share it had.
+  Facts copyWith({
+    List<String>? locationIds,
+    List<String>? withIds,
+    List<String>? forIds,
+    Map<String, String>? notes,
+    bool? commute,
+    Map<String, LocationShare>? locationSplits,
+    Map<String, PersonShare>? withSplits,
+    Map<String, PersonShare>? forSplits,
+  }) {
+    Map<String, S> kept<S>(Map<String, S> splits, List<String> ids) => {
+      for (final MapEntry(:key, :value) in splits.entries)
+        if (ids.contains(key)) key: value,
+    };
+    final (where, with_, for_) = (
+      locationIds ?? this.locationIds,
+      withIds ?? this.withIds,
+      forIds ?? this.forIds,
+    );
+    return Facts(
+      locationIds: where,
+      withIds: with_,
+      forIds: for_,
+      notes: notes ?? this.notes,
+      commute: commute ?? this.commute,
+      locationSplits: kept(locationSplits ?? this.locationSplits, where),
+      withSplits: kept(withSplits ?? this.withSplits, with_),
+      forSplits: kept(forSplits ?? this.forSplits, for_),
+    );
+  }
+
+  /// [splits] with [share] set: kept if it has minutes or a percent, left
+  /// out if it has neither.
+  static Map<String, S> withSplit<S extends Share>(
+    Map<String, S> splits,
+    S share,
+  ) => {
+    for (final MapEntry(:key, :value) in splits.entries)
+      if (key != share.id) key: value,
+    if (!share.whole) share.id: share,
+  };
 
   /// Where it was: the ids of the locations it was at, usually one;
   /// several when it moved between them.
@@ -46,13 +120,7 @@ class Facts {
       !commute;
 
   /// These, but a commute or not as [commute] says.
-  Facts withCommute(bool commute) => Facts(
-    locationIds: locationIds,
-    withIds: withIds,
-    forIds: forIds,
-    notes: notes,
-    commute: commute,
-  );
+  Facts withCommute(bool commute) => copyWith(commute: commute);
 
   /// Everyone it involves, with them or for them, each once.
   List<String> get personIds => {...withIds, ...forIds}.toList();
@@ -60,15 +128,30 @@ class Facts {
   /// From a `PublicEvent`'s `facts`; null for none.
   static Facts? fromJson(Object? json) {
     if (json is! Map) return null;
-    List<String> ids(Object? value) => [
-      for (final id in value as List? ?? const []) '$id',
-    ];
+    final where = sharesFromJson(
+      json['location_ids'],
+      'location_id',
+      LocationShare.new,
+    );
+    final with_ = sharesFromJson(
+      json['with_ids'],
+      'person_id',
+      PersonShare.new,
+    );
+    final for_ = sharesFromJson(json['for_ids'], 'person_id', PersonShare.new);
+    Map<String, S> splits<S extends Share>(List<S> shares) => {
+      for (final s in shares)
+        if (!s.whole) s.id: s,
+    };
     String? text(Object? value) =>
         value is String && value.trim().isNotEmpty ? value : null;
     return Facts(
-      locationIds: ids(json['location_ids']),
-      withIds: ids(json['with_ids']),
-      forIds: ids(json['for_ids']),
+      locationIds: [for (final s in where) s.id],
+      withIds: [for (final s in with_) s.id],
+      forIds: [for (final s in for_) s.id],
+      locationSplits: splits(where),
+      withSplits: splits(with_),
+      forSplits: splits(for_),
       notes: {
         for (final MapEntry(:key, :value)
             in (json['notes'] as Map? ?? const {}).entries)
@@ -80,9 +163,11 @@ class Facts {
 
   /// As `update_event` takes them, leaving out what's unset.
   Map<String, Object?> toJson() => {
-    if (locationIds.isNotEmpty) 'location_ids': locationIds,
-    if (withIds.isNotEmpty) 'with_ids': withIds,
-    if (forIds.isNotEmpty) 'for_ids': forIds,
+    if (locationIds.isNotEmpty)
+      'location_ids': [for (final s in locationShares) s.toJson()],
+    if (withIds.isNotEmpty)
+      'with_ids': [for (final s in withShares) s.toJson()],
+    if (forIds.isNotEmpty) 'for_ids': [for (final s in forShares) s.toJson()],
     if (notes.isNotEmpty) 'notes': notes,
     if (commute) 'commute': true,
   };
@@ -129,6 +214,9 @@ class Facts {
       _sameList(withIds, other.withIds) &&
       _sameList(forIds, other.forIds) &&
       commute == other.commute &&
+      _sameList(locationShares, other.locationShares) &&
+      _sameList(withShares, other.withShares) &&
+      _sameList(forShares, other.forShares) &&
       notes.length == other.notes.length &&
       notes.entries.every((e) => other.notes[e.key] == e.value);
 
@@ -137,6 +225,11 @@ class Facts {
     Object.hashAll(locationIds),
     Object.hashAll(withIds),
     Object.hashAll(forIds),
+    Object.hashAll([
+      ...locationSplits.values,
+      ...withSplits.values,
+      ...forSplits.values,
+    ]),
     Object.hashAllUnordered(notes.entries.map((e) => (e.key, e.value))),
     commute,
   );
@@ -219,6 +312,6 @@ Map<String, Object?> judgmentsToJson(Iterable<Judgment> judgments) {
   return json;
 }
 
-bool _sameList(List<String> a, List<String> b) =>
+bool _sameList(List<Object> a, List<Object> b) =>
     a.length == b.length &&
     [for (var i = 0; i < a.length; i++) a[i] == b[i]].every((same) => same);

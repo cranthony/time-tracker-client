@@ -5,8 +5,9 @@ import 'time_split.dart';
 
 /// What the People pane says of each person beside their health, as the
 /// Plan page's summary measures it: their time with the user in its 24
-/// hours and 7 days -- each event's time split evenly among those there,
-/// as "By person" splits it -- and the event with them nearest its
+/// hours and 7 days -- each one's share of each event they were at
+/// ([Event.withFractions]: with no share, all the time the others'
+/// shares leave, as goals take it) -- and the event with them nearest its
 /// window: the last that started before it, or, looking on ("Next"), the
 /// first that starts in or after it.
 class PeopleTimes {
@@ -24,7 +25,7 @@ class PeopleTimes {
         Facts.fromJson(e.properties['facts'])?.withIds ?? const [];
     final (day, week) = windowEvents == null
         ? (null, null)
-        : window.split<String>(windowEvents, withIds, '');
+        : window.splitParts<String>(windowEvents, (e) => e.withFractions, '');
     final nearest = <String, Event>{};
     for (final e in known) {
       if (e.isCancelled) continue;

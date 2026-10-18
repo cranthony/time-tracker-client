@@ -198,7 +198,7 @@ void main() {
       event('call', DateTime(2026, 10, 12, 8), 1, ['sam']),
     ];
 
-    test("split each event's time among those there, as By person does, "
+    test("give each there all of an event's time, as goals take it, "
         'and find the last event with each', () {
       final times = PeopleTimes.compute(
         window: SummaryWindow(asOf: asOf),
@@ -206,8 +206,10 @@ void main() {
         known: events,
       );
 
-      expect(times.day('sam'), const Duration(hours: 1));
-      expect(times.week('sam'), const Duration(hours: 2));
+      // The dinner was two hours with Sam, and with Mom.
+      expect(times.day('sam'), const Duration(hours: 2));
+      expect(times.day('mom'), const Duration(hours: 2));
+      expect(times.week('sam'), const Duration(hours: 3));
       expect(times.day('jo'), Duration.zero);
       expect(times.nearest('sam')!.id, 'dinner');
       expect(times.nearest('mom')!.id, 'dinner');

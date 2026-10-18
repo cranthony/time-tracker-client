@@ -65,6 +65,24 @@ class Event {
   /// What compaction established about it, if anything.
   Facts? get facts => Facts.fromJson(properties['facts']);
 
+  /// The fraction of it each person it was with takes, by id, as their
+  /// shares say: each given neither takes all the remaining time, so
+  /// together they may take more than all of it (see [scaledDown]).
+  Map<String, double> get withFractions =>
+      shareFractions(facts?.withShares ?? const [], end.difference(start));
+
+  /// The fraction of it each person it was for takes, as [withFractions].
+  Map<String, double> get forFractions =>
+      shareFractions(facts?.forShares ?? const [], end.difference(start));
+
+  /// The fraction of it each place it was at takes, by id, as their
+  /// shares say: those given neither share the remaining time evenly.
+  Map<String, double> get locationFractions => shareFractions(
+    facts?.locationShares ?? const [],
+    end.difference(start),
+    split: RemainingSplit.even,
+  );
+
   /// Whether it's getting from one place to another.
   bool get isCommute => facts?.commute ?? false;
 

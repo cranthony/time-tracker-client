@@ -115,7 +115,7 @@ class _FactsDialogState extends State<_FactsDialog> {
     super.dispose();
   }
 
-  Facts get _facts => Facts(
+  Facts get _facts => widget.facts.copyWith(
     locationIds: [..._where],
     withIds: [..._with],
     forIds: [..._for],
@@ -124,7 +124,6 @@ class _FactsDialogState extends State<_FactsDialog> {
         if (key == selfPersonId || _with.contains(key))
           if (value.text.trim().isNotEmpty) key: value.text.trim(),
     },
-    commute: widget.facts.commute,
   );
 
   Future<void> _newLocation() async {
@@ -279,14 +278,8 @@ class _FactsDialogState extends State<_FactsDialog> {
           // Just the notes: who and where are kept.
           else if (!widget.pickers && widget.facts.notes.isNotEmpty)
             TextButton(
-              onPressed: () => Navigator.of(context).pop(
-                Facts(
-                  locationIds: widget.facts.locationIds,
-                  withIds: widget.facts.withIds,
-                  forIds: widget.facts.forIds,
-                  commute: widget.facts.commute,
-                ),
-              ),
+              onPressed: () =>
+                  Navigator.of(context).pop(widget.facts.copyWith(notes: {})),
               child: const Text('Clear notes'),
             ),
           TextButton(

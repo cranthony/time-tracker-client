@@ -9,6 +9,22 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.138.0
+
+- An event's people and places can each take a share of it too, as its
+  goals and actions can: minutes, or a percent of what the minutes
+  leave, and "+r" for the rest as well. Tap the chip on someone, or a
+  place, in the Who or Location sheet to set it.
+- Each person given neither takes all the rest of the event, as goals
+  do: an hour with Sam and Kim is an hour with each on the People
+  pane. The "By person" summary scales them down together so it still
+  adds up to the day.
+- Each place given neither shares the rest evenly with the others, as
+  actions do, in the "By location" summary.
+- A trait's duration with someone counts only their share of each
+  event.
+- Needs the server that keeps people's and places' shares to set them.
+
 ## 7.137.0
 
 - The Diagnostics page's Memory graph shows what the server's memory is

@@ -2003,6 +2003,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       mapLocation: _value('location') as String?,
       query: _value('summary') as String?,
       additions: widget.additions,
+      eventMinutes: _time('end').difference(_time('start')).inMinutes,
     );
     if (!mounted) return;
     // Someone, or a location, may have been added, or renamed, from the
