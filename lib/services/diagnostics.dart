@@ -283,11 +283,60 @@ class LatencyPoint {
   double get overhead => total - work;
 }
 
-/// A point of the memory graph, in MiB.
+/// A point of the memory graph, in MiB, and what it's made of when the
+/// server said.
 class MemoryPoint {
-  const MemoryPoint({required this.at, required this.mib});
+  const MemoryPoint({required this.at, required this.mib, this.parts});
   final DateTime at;
   final double mib;
+  final List<MemoryPart>? parts;
+
+  /// [parts], or with none, the whole of it as the rest of the server.
+  List<MemoryPart> get partsOrWhole =>
+      parts ?? [MemoryPart(name: MemoryPart.rest, mib: mib)];
+}
+
+/// A layer of the memory graph: a part of the server's memory -- or all
+/// its sheet tabs together, as [sheets] -- with its MiB at each point.
+class MemoryLayer {
+  const MemoryLayer(this.name, this.values);
+
+  /// A part's name, or [sheets].
+  final String name;
+  final List<double> values;
+
+  static const sheets = 'Sheets';
+
+  bool get isSheet => name == sheets || name.startsWith(MemoryPart.sheetPrefix);
+}
+
+/// [points]' parts as the memory graph stacks them, bottom up: the rest
+/// of the server, whatever else isn't a sheet tab (the calendar), then
+/// the sheet tabs, as the server first named them -- or with
+/// [groupSheets], all of them as one. A point without a part has none
+/// of it; one not broken down is all the rest of the server.
+List<MemoryLayer> memoryLayers(
+  List<MemoryPoint> points, {
+  bool groupSheets = false,
+}) {
+  String layerOf(MemoryPart p) =>
+      groupSheets && p.isSheet ? MemoryLayer.sheets : p.name;
+  final others = <String>{MemoryPart.rest};
+  final sheets = <String>{};
+  for (final point in points) {
+    for (final part in point.partsOrWhole) {
+      (part.isSheet ? sheets : others).add(layerOf(part));
+    }
+  }
+  return [
+    for (final name in [...others, ...sheets])
+      MemoryLayer(name, [
+        for (final point in points)
+          point.partsOrWhole
+              .where((p) => layerOf(p) == name)
+              .fold(0.0, (sum, p) => sum + p.mib),
+      ]),
+  ];
 }
 
 /// Which of [samples] fall in [from] to [to], each at [at].
@@ -347,14 +396,51 @@ List<MemoryPoint> memoryPoints(
   BucketSize bucket = BucketSize.hour,
 }) {
   if (statistic == null) {
-    return [for (final s in samples) MemoryPoint(at: s.at, mib: s.mib)];
+    return [
+      for (final s in samples)
+        MemoryPoint(at: s.at, mib: s.mib, parts: s.parts),
+    ];
   }
   return [
     for (final (at, group) in _buckets(samples, (s) => s.at, bucket))
-      MemoryPoint(
-        at: at,
-        mib: statisticOf(statistic, [for (final s in group) s.mib]),
-      ),
+      () {
+        final mib = statisticOf(statistic, [for (final s in group) s.mib]);
+        return MemoryPoint(
+          at: at,
+          mib: mib,
+          parts: statistic == Statistic.mean
+              ? _meanParts(group)
+              // The parts of the sample it falls on, or nearest it.
+              : group
+                    .reduce(
+                      (a, b) =>
+                          (b.mib - mib).abs() < (a.mib - mib).abs() ? b : a,
+                    )
+                    .parts,
+        );
+      }(),
+  ];
+}
+
+/// Each part's mean over [samples], counting none of it where a sample
+/// hasn't it, so they sum to the mean of their totals: a sample not
+/// broken down counts as all the rest of the server. None, if none is.
+List<MemoryPart>? _meanParts(List<MemorySample> samples) {
+  if (samples.every((s) => s.parts == null)) return null;
+  final sums = <String, double>{};
+  for (final s in samples) {
+    for (final p
+        in s.parts ?? [MemoryPart(name: MemoryPart.rest, mib: s.mib)]) {
+      sums[p.name] = (sums[p.name] ?? 0) + p.mib;
+    }
+  }
+  // The rest last, as the server gives it.
+  final rest = sums.remove(MemoryPart.rest);
+  return [
+    for (final MapEntry(:key, :value) in sums.entries)
+      MemoryPart(name: key, mib: value / samples.length),
+    if (rest != null)
+      MemoryPart(name: MemoryPart.rest, mib: rest / samples.length),
   ];
 }
 

@@ -143,6 +143,8 @@ class SampleData {
   DiagnosticsRepository diagnosticsRepository({DateTime? now}) =>
       InMemoryDiagnosticsRepository(serverHealth(now ?? DateTime.now()));
 
+  static double _tenth(double mib) => (mib * 10).round() / 10;
+
   static ServerHealth serverHealth(DateTime now) {
     final random = Random(7);
     final end = now.toUtc();
@@ -192,17 +194,55 @@ class SampleData {
       health.add(ToolCalls(tool: tool, calls: mine));
     }
     calls.sort((a, b) => a.at.compareTo(b.at));
+    // Sampled after each call and each refresh, every 5 minutes, the last
+    // 500 of them: what the server keeps growing between its restarts,
+    // the rest of it a little.
+    final times = {
+      for (final c in calls) c.at,
+      for (
+        var t = end;
+        end.difference(t) < const Duration(days: 4);
+        t = t.subtract(const Duration(minutes: 5))
+      )
+        t,
+    }.toList()..sort();
+    const tabs = [
+      ('Actions', 0.9, 0.25),
+      ('People', 0.3, 0.05),
+      ('Noted Times', 0.7, 0.4),
+      ('Goals', 0.5, 0.1),
+      ('Habits', 0.2, 0.05),
+    ];
     final memory = [
-      for (final c in calls.skip(max(0, calls.length - 100)))
+      for (final at in times.skip(max(0, times.length - 500)))
         () {
           final since = restarts.lastWhere(
-            (r) => !r.isAfter(c.at),
+            (r) => !r.isAfter(at),
             orElse: () => restarts.first,
           );
-          final hours = c.at.difference(since).inMinutes / 60;
+          final hours = at.difference(since).inMinutes / 60;
+          final parts = [
+            for (final (title, base, growth) in tabs)
+              MemoryPart(
+                name: '${MemoryPart.sheetPrefix}$title',
+                mib: _tenth(base + hours * growth),
+              ),
+            MemoryPart(
+              name: MemoryPart.calendar,
+              mib: _tenth(3.5 + hours * 0.9),
+            ),
+          ];
+          final total = _tenth(176 + hours * 2.4 + random.nextDouble() * 6);
           return MemorySample(
-            at: c.at,
-            mib: 182 + hours * 2.4 + random.nextDouble() * 6,
+            at: at,
+            mib: total,
+            parts: [
+              ...parts,
+              MemoryPart(
+                name: MemoryPart.rest,
+                mib: _tenth(total - parts.fold(0.0, (s, p) => s + p.mib)),
+              ),
+            ],
           );
         }(),
     ];
