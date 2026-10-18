@@ -5,6 +5,7 @@ import '../models/person.dart';
 import '../models/scoring.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
+import '../widgets/hotkeys.dart';
 import '../widgets/status_message.dart';
 import '../services/focus_store.dart';
 import '../services/people_repository.dart';
@@ -335,10 +336,12 @@ class PeoplePaneState extends State<PeoplePane> {
               scale: HealthScale.relationship,
               consistency: _scores?.consistency(self.id) ?? 0,
             ),
-          IconButton(
-            tooltip: 'Your page',
-            icon: const Icon(Icons.person_outline),
-            onPressed: () => _open(self),
+          NewHotkey(
+            child: IconButton(
+              tooltip: 'Your page',
+              icon: const Icon(Icons.person_outline),
+              onPressed: () => _open(self),
+            ),
           ),
         ],
       ),

@@ -42,8 +42,9 @@ class Hotkey {
   final String? afterCtrlB;
 
   static const newNote = Hotkey(
-    'Ctrl+M',
-    'Write a note, over whatever is open; closing it goes back there',
+    'Ctrl+M / +',
+    'Write a note, over whatever is open; closing it goes back there. On '
+        'the Notes page, + does too',
     HotkeyPlace.anywhere,
   );
   static const notes = Hotkey(
@@ -92,6 +93,13 @@ class Hotkey {
     HotkeyPlace.anywhere,
   );
   static const help = Hotkey('?', 'Show this list', HotkeyPlace.anywhere);
+  static const newThing = Hotkey(
+    '+',
+    'Make a new one of what the page or pane shows, as its + does: a '
+        "goal, or on a goal's page a sub-goal; an action, habit, person, "
+        'location or travel time. A note or an event, too: see Ctrl+M and C',
+    HotkeyPlace.anywhere,
+  );
   static const signIn = Hotkey(
     'S',
     'Sign in, where a page asks you to',
@@ -150,7 +158,7 @@ class Hotkey {
   );
   static const now = Hotkey('T', 'Go to now', HotkeyPlace.events);
   static const create = Hotkey(
-    'C',
+    'C / +',
     'Make an event: a cursor, at the end of the event highlighted, or now',
     HotkeyPlace.events,
   );
@@ -232,6 +240,7 @@ class Hotkey {
     discard,
     editText,
     help,
+    newThing,
     signIn,
     stepAny,
     scrollAny,
@@ -506,6 +515,13 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
     }
     if (down && event.character == '?') {
       unawaited(_showHelp());
+      return KeyEventResult.handled;
+    }
+    // +, shifted or not, whatever the keyboard: what makes a new one.
+    if (event.character == '+' || key == LogicalKeyboardKey.numpadAdd) {
+      final binding = _find(_Kind.key, LogicalKeyboardKey.add);
+      if (binding == null) return KeyEventResult.ignored;
+      if (down) binding.onPressed();
       return KeyEventResult.handled;
     }
     if (keyboard.isShiftPressed) return KeyEventResult.ignored;
@@ -844,6 +860,7 @@ class FieldHotkey extends StatefulWidget {
     this.onPressed,
     this.enabled = true,
     this.focusOnly = false,
+    this.hint,
     required this.child,
   }) : assert(letter == null || letter.length == 1);
 
@@ -853,6 +870,10 @@ class FieldHotkey extends StatefulWidget {
   final VoidCallback? onPressed;
   final bool enabled;
   final bool focusOnly;
+
+  /// What holding Ctrl shows on it, if not just [letter]: every key that
+  /// does what it does.
+  final Hotkey? hint;
   final Widget child;
 
   @override
@@ -909,9 +930,30 @@ class _FieldHotkeyState extends State<FieldHotkey> {
       ],
       child: letter == null
           ? field
-          : HotkeyHint(Hotkey(letter, '', HotkeyPlace.anywhere), child: field),
+          : HotkeyHint(
+              widget.hint ?? Hotkey(letter, '', HotkeyPlace.anywhere),
+              child: field,
+            ),
     );
   }
+}
+
+/// [child], a + button that makes something new: + presses it while
+/// it's shown and can be, and holding Ctrl shows [hint] on it -- + and,
+/// where another key does the same, that too.
+class NewHotkey extends StatelessWidget {
+  const NewHotkey({
+    super.key,
+    this.hint = Hotkey.newThing,
+    required this.child,
+  });
+
+  final Hotkey hint;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      FieldHotkey('+', hint: hint, child: child);
 }
 
 /// A letter for each of [names] -- fields named by what they hold, in

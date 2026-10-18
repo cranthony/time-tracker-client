@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.132.0
+
+- + makes a new one of what's shown, as the page's or pane's + does: on
+  the Plan page's Goals pane a goal, and on a goal's page a sub-goal; on
+  its other panes an action or group, habit, person or location; on the
+  People and Travel times pages, a person or circle, or a travel time.
+  On the Events page, + does what C does, and on the Notes page what
+  Ctrl+M does. Where two keys do the same, the list of hotkeys (?) and
+  the hint while Ctrl is held give both: C / +, Ctrl+M / +.
+
 ## 7.131.1
 
 - An event added in the app and changed or cancelled from a dialog

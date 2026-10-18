@@ -15,6 +15,7 @@ import '../widgets/error_sheet.dart';
 import '../widgets/foundations_field.dart';
 import '../widgets/habit_dialog.dart';
 import '../widgets/health.dart';
+import '../widgets/hotkeys.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
 import '../widgets/refreshing_bar.dart';
@@ -453,10 +454,12 @@ class HabitsPaneState extends State<HabitsPane> {
             icon: const Icon(Icons.person_add_alt),
             onPressed: habits == null ? null : _addPeople,
           ),
-        IconButton(
-          tooltip: 'New habit',
-          icon: const Icon(Icons.add),
-          onPressed: habits == null ? null : () => _edit(null),
+        NewHotkey(
+          child: IconButton(
+            tooltip: 'New habit',
+            icon: const Icon(Icons.add),
+            onPressed: habits == null ? null : () => _edit(null),
+          ),
         ),
       ],
       // Health as it was, while it's worked out again.

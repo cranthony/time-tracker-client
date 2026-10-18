@@ -7,6 +7,7 @@ import '../widgets/event_description.dart';
 import '../widgets/goal_editor.dart';
 import '../widgets/goal_flows.dart';
 import '../widgets/goal_tile.dart';
+import '../widgets/hotkeys.dart';
 
 /// A goal's page, the same for a goal at any depth: read only, with the
 /// pencil in its bar to edit it. Its title has its path (its parents'
@@ -214,12 +215,14 @@ class _GoalScreenState extends State<GoalScreen> {
                   statuses: _statuses,
                   onChanged: (picked) => setState(() => _statuses = picked),
                 ),
-                IconButton(
-                  tooltip: 'New sub-goal',
-                  icon: const Icon(Icons.add),
-                  onPressed: goal.closed
-                      ? null
-                      : () => _actions.add(parent: goal),
+                NewHotkey(
+                  child: IconButton(
+                    tooltip: 'New sub-goal',
+                    icon: const Icon(Icons.add),
+                    onPressed: goal.closed
+                        ? null
+                        : () => _actions.add(parent: goal),
+                  ),
                 ),
               ],
             ),

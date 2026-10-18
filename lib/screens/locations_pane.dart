@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/person.dart';
+import '../widgets/hotkeys.dart';
 import '../widgets/status_message.dart';
 import '../services/actions_repository.dart';
 import '../services/people_repository.dart';
@@ -221,10 +222,12 @@ class LocationsPaneState extends State<LocationsPane> {
           icon: const Icon(Icons.create_new_folder_outlined),
           onPressed: locations == null ? null : () => _editGroup(null),
         ),
-        IconButton(
-          tooltip: 'New location',
-          icon: const Icon(Icons.add),
-          onPressed: locations == null ? null : () => _edit(null),
+        NewHotkey(
+          child: IconButton(
+            tooltip: 'New location',
+            icon: const Icon(Icons.add),
+            onPressed: locations == null ? null : () => _edit(null),
+          ),
         ),
       ],
       child: RefreshIndicator(

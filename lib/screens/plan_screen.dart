@@ -952,15 +952,17 @@ class _PlanScreenState extends State<PlanScreen> {
         onChanged: (status, on) =>
             setState(() => on ? _shown.add(status) : _shown.remove(status)),
       ),
-      PopupMenuButton<bool>(
-        tooltip: 'Add an action or group',
-        icon: const Icon(Icons.add),
-        enabled: _actions != null,
-        onSelected: (group) => _add(group: group),
-        itemBuilder: (_) => const [
-          PopupMenuItem(value: false, child: Text('New action')),
-          PopupMenuItem(value: true, child: Text('New group')),
-        ],
+      NewHotkey(
+        child: PopupMenuButton<bool>(
+          tooltip: 'Add an action or group',
+          icon: const Icon(Icons.add),
+          enabled: _actions != null,
+          onSelected: (group) => _add(group: group),
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: false, child: Text('New action')),
+            PopupMenuItem(value: true, child: Text('New group')),
+          ],
+        ),
       ),
     ],
     child: RefreshIndicator(

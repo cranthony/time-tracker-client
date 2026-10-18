@@ -121,10 +121,12 @@ class _TravelTimesScreenState extends State<TravelTimesScreen> {
       appBar: AppBar(
         title: const Text('Travel times'),
         actions: [
-          IconButton(
-            tooltip: 'New travel time',
-            icon: const Icon(Icons.add),
-            onPressed: travel == null ? null : () => _edit(null),
+          NewHotkey(
+            child: IconButton(
+              tooltip: 'New travel time',
+              icon: const Icon(Icons.add),
+              onPressed: travel == null ? null : () => _edit(null),
+            ),
           ),
         ],
       ),
