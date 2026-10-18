@@ -5,6 +5,7 @@ import '../services/goals_repository.dart';
 import '../services/plan_memory.dart';
 import '../widgets/goal_flows.dart';
 import '../widgets/goal_tile.dart';
+import '../widgets/hotkeys.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
 import 'goal_screen.dart';
@@ -117,10 +118,12 @@ class GoalsPaneState extends State<GoalsPane> {
           statuses: _statuses,
           onChanged: (picked) => setState(() => _statuses = picked),
         ),
-        IconButton(
-          tooltip: 'New goal',
-          icon: const Icon(Icons.add),
-          onPressed: goals == null ? null : () => _actions.add(),
+        NewHotkey(
+          child: IconButton(
+            tooltip: 'New goal',
+            icon: const Icon(Icons.add),
+            onPressed: goals == null ? null : () => _actions.add(),
+          ),
         ),
       ],
       child: RefreshIndicator(

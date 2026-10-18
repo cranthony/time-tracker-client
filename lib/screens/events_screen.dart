@@ -2383,10 +2383,11 @@ class _EventsScreenState extends State<EventsScreen> {
       () => _scrollByKey(later: true),
     ),
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyT), _goToNow),
-    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyC), () {
-      if (_box != null || _selecting != null) return;
-      _startCreating(_keyedEvent?.end);
-    }),
+    for (final key in const [LogicalKeyboardKey.keyC, LogicalKeyboardKey.add])
+      HotkeyBinding(HotkeyTrigger.key(key), () {
+        if (_box != null || _selecting != null) return;
+        _startCreating(_keyedEvent?.end);
+      }),
   ];
 
   /// What a new event logged from [event] starts with: its title,

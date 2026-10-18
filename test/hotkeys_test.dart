@@ -169,14 +169,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('Ctrl+M'), findsNothing);
+    expect(find.text('Ctrl+M / +'), findsNothing);
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('Ctrl+M'), findsOneWidget);
+    expect(find.text('Ctrl+M / +'), findsOneWidget);
     expect(find.text('Ctrl+B E'), findsOneWidget);
 
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
-    expect(find.text('Ctrl+M'), findsNothing);
+    expect(find.text('Ctrl+M / +'), findsNothing);
   });
 
   testWidgets('a quick Ctrl shortcut shows no hints', (tester) async {

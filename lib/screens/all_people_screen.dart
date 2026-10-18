@@ -138,14 +138,16 @@ class _AllPeopleScreenState extends State<AllPeopleScreen> {
                 ),
             ],
           ),
-          IconButton(
-            tooltip: _archived
-                ? 'Hide archived people'
-                : 'Show archived people',
-            icon: Icon(
-              _archived ? Icons.inventory_2 : Icons.inventory_2_outlined,
+          NewHotkey(
+            child: IconButton(
+              tooltip: _archived
+                  ? 'Hide archived people'
+                  : 'Show archived people',
+              icon: Icon(
+                _archived ? Icons.inventory_2 : Icons.inventory_2_outlined,
+              ),
+              onPressed: () => setState(() => _archived = !_archived),
             ),
-            onPressed: () => setState(() => _archived = !_archived),
           ),
           PopupMenuButton<String>(
             tooltip: 'Add a person or circle',

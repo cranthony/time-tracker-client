@@ -354,8 +354,8 @@ class _NotesScreenState extends State<NotesScreen> {
           ),
           // Always available: notes wait in the outbox until they can be
           // saved, even while signed out or offline.
-          floatingActionButton: HotkeyHint(
-            Hotkey.newNote,
+          floatingActionButton: NewHotkey(
+            hint: Hotkey.newNote,
             child: FloatingActionButton(
               onPressed: () => _addNote(),
               tooltip: 'Add note',
