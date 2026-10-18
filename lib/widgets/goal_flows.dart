@@ -149,7 +149,7 @@ class GoalActions {
         await activate([goal]);
       case 'inactive':
         await deactivate(goal);
-      case 'done' || 'obsolete':
+      case 'done' || 'missed' || 'obsolete':
         await close(goal, status);
     }
   }
@@ -213,9 +213,9 @@ class GoalActions {
     );
   }
 
-  /// Marks [goal] [status] ("done" or "obsolete"), asking what becomes of
-  /// each sub-goal left open: done, obsolete, or moved elsewhere. Done
-  /// waits for its required sub-goals.
+  /// Marks [goal] [status] ("done", "missed" or "obsolete"), asking what
+  /// becomes of each sub-goal left open: done, missed, obsolete, or moved
+  /// elsewhere. Done waits for its required sub-goals.
   Future<void> close(Goal goal, String status) async {
     final tree = this.tree;
     if (status == 'done') {
@@ -225,7 +225,7 @@ class GoalActions {
           title: "${goalTitle(goal)} isn't done yet",
           text:
               'It needs ${needed.map((g) => '“${goalTitle(g)}”').join(', ')} '
-              'done first (or marked obsolete).',
+              'done first (or marked missed or obsolete).',
           action: null,
         );
         return;
@@ -721,7 +721,7 @@ class _DeadlinesDialogState extends State<_DeadlinesDialog> {
 }
 
 /// What becomes of each of [open], [goal]'s sub-goals left open, as it's
-/// closed as [status]: done, obsolete or moved -- picked where to with
+/// closed as [status]: done, missed, obsolete or moved -- picked where to with
 /// [pick]. Gives them by id, with any new top-level goal made for them.
 class _LeftoversDialog extends StatefulWidget {
   const _LeftoversDialog({
@@ -802,6 +802,7 @@ class _LeftoversDialogState extends State<_LeftoversDialog> {
                 showSelectedIcon: false,
                 segments: const [
                   ButtonSegment(value: 'done', label: Text('Done')),
+                  ButtonSegment(value: 'missed', label: Text('Missed')),
                   ButtonSegment(value: 'obsolete', label: Text('Obsolete')),
                   ButtonSegment(value: 'move', label: Text('Move…')),
                 ],

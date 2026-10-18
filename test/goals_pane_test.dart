@@ -161,7 +161,9 @@ void main() {
     await tester.tap(find.text('Ship the app'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Mark obsolete'));
+    await tester.tap(find.byType(PopupMenuButton<String>).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Mark obsolete').last);
     await tester.pumpAndSettle();
     expect(
       find.text("What becomes of what's still open under it?"),
@@ -175,6 +177,29 @@ void main() {
     expect(saved, containsPair('pane', 'obsolete'));
     expect(saved, containsPair('icon', 'obsolete'));
     expect(saved, containsPair('polish', 'obsolete'));
+  });
+
+  testWidgets('a goal marked missed has its open sub-goals missed too', (
+    tester,
+  ) async {
+    await pump(tester);
+    await tester.tap(find.text('Ship the app'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Mark missed'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text("What becomes of what's still open under it?"),
+      findsOneWidget,
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Mark missed'));
+    await tester.pumpAndSettle();
+
+    final saved = {for (final g in await repository.goals()) g.id: g.status};
+    expect(saved, containsPair('ship', 'missed'));
+    expect(saved, containsPair('pane', 'missed'));
+    expect(saved, containsPair('polish', 'missed'));
+    expect(memory.goals!.firstWhere((g) => g.id == 'ship').closed, isTrue);
   });
 
   testWidgets('selected sub-goals are activated together, each given a '

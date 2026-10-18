@@ -67,8 +67,9 @@ class Goal {
   bool get active => status == 'active';
   bool get inactive => status == 'inactive';
 
-  /// Done or obsolete: nothing more to do for it.
-  bool get closed => status == 'done' || status == 'obsolete';
+  /// Done, missed or obsolete: nothing more to do for it.
+  bool get closed =>
+      status == 'done' || status == 'missed' || status == 'obsolete';
 
   /// Inactive or active.
   bool get open => !closed;
@@ -77,7 +78,7 @@ class Goal {
   DateTime? get startedAt =>
       history.where((c) => c.status == 'active').firstOrNull?.at;
 
-  /// When it was done or made obsolete, if it is.
+  /// When it was done, missed or made obsolete, if it is.
   DateTime? get closedAt => closed ? history.lastOrNull?.at : null;
 
   /// When it falls due, local: a date's at the midnight after it.
@@ -153,6 +154,7 @@ const goalStatuses = {
   'inactive': 'Inactive',
   'active': 'Active',
   'done': 'Done',
+  'missed': 'Missed',
   'obsolete': 'Obsolete',
 };
 

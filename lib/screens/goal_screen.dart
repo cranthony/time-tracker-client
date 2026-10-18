@@ -283,12 +283,14 @@ class _GoalScreenState extends State<GoalScreen> {
       switch (goal.status) {
         'active' => const [
           ('done', 'Mark done'),
+          ('missed', 'Mark missed'),
           ('obsolete', 'Mark obsolete'),
           ('inactive', 'Deactivate'),
         ],
         'inactive' => const [
           ('active', 'Activate'),
           ('obsolete', 'Mark obsolete'),
+          ('missed', 'Mark missed'),
         ],
         _ => const [('active', 'Reopen'), ('inactive', 'Reopen as inactive')],
       };

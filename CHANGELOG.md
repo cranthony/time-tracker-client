@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.130.0
+
+- A goal can be marked missed: not reached, and no longer pursued.
+  It's closed like a done one -- listed only when the filter shows
+  missed goals, and reopenable -- and a goal's page offers it beside
+  Mark done (and in its menu); what's still open under a goal can be
+  missed with it. A required sub-goal that was missed doesn't hold up
+  its parent being done. Needs the server that has missed goals.
+
 ## 7.129.0
 
 - An event's goals can be added, changed and cleared while reviewing

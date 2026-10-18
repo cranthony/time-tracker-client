@@ -69,6 +69,37 @@ void main() {
     expect(requiredOpen(tree, tree['top']!).map((g) => g.id), ['a']);
   });
 
+  test('a missed goal is closed, and a missed required sub-goal does not '
+      'hold up its parent', () {
+    final missed = [
+      _goal('top'),
+      _goal(
+        'a',
+        parent: 'top',
+        status: 'missed',
+        deadline: null,
+        required: true,
+      ),
+      _goal('b', parent: 'top', deadline: '2026-11-01'),
+    ];
+    final t = GoalTree(missed);
+    expect(t['a']!.closed, isTrue);
+    expect(t['a']!.closedAt, DateTime(2026, 10, 1, 9));
+    expect(requiredOpen(t, t['top']!), isEmpty);
+
+    final changes = closing(
+      t,
+      t['top']!,
+      'done',
+      leftovers: {'b': const CloseLeftover('missed')},
+    );
+    expect(_described(changes), [
+      'update b {status: missed}',
+      'update top {status: done}',
+    ]);
+    expect(planned(missed, changes, now: _now), isEmpty);
+  });
+
   test('closing a goal alone is refused while its sub-goals are open', () {
     final problems = planned(goals, [
       const GoalUpdate('top', {'status': 'done'}),
