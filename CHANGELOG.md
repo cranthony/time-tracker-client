@@ -25,6 +25,12 @@ on. Add the new version's section here at the same time; CI checks both.
   the Events page, the day's first and last event.
 - In an event's dialog, J and K no longer go between its parts: Tab and
   Shift+Tab do.
+- U goes up a level, as the back button does: from an editor to what
+  it edits (with changes made, as Esc does), from a page -- a habit's,
+  say -- to the one under it, and out of a dialog or menu. A field's
+  letter is never U.
+- Enter and Space press nothing in a pane of the Plan page swiped away
+  from: what was highlighted there is let go.
 
 ## 7.133.0
 

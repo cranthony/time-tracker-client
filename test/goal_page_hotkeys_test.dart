@@ -127,6 +127,42 @@ void main() {
     expect(editor.goal?.id, 'ship');
   });
 
+  testWidgets("U goes up a level: from a goal's editor to its page, and "
+      'from there to the Plan page', (tester) async {
+    await pumpGoal(tester);
+    await press(tester, LogicalKeyboardKey.keyE);
+    expect(find.byType(GoalEditorPage), findsOneWidget);
+
+    await press(tester, LogicalKeyboardKey.keyU);
+    expect(find.byType(GoalEditorPage), findsNothing);
+    expect(find.byType(GoalScreen), findsOneWidget);
+
+    await press(tester, LogicalKeyboardKey.keyU);
+    expect(find.byType(GoalScreen), findsNothing);
+    expect(find.byType(PlanScreen), findsOneWidget);
+
+    // Nothing over the first page: nothing to go up from.
+    await press(tester, LogicalKeyboardKey.keyU);
+    expect(find.byType(PlanScreen), findsOneWidget);
+  });
+
+  testWidgets('Enter presses nothing in a pane swiped away from', (
+    tester,
+  ) async {
+    await pumpGoal(tester);
+    await press(tester, LogicalKeyboardKey.keyU);
+    // A goal highlighted on the Goals pane, then off to the Actions pane.
+    await press(tester, LogicalKeyboardKey.keyJ);
+    expect(
+      FocusManager.instance.primaryFocus?.context
+          ?.findAncestorWidgetOfExactType<GoalTile>(),
+      isNotNull,
+    );
+    await press(tester, LogicalKeyboardKey.keyL);
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(find.byType(GoalScreen), findsNothing);
+  });
+
   testWidgets('J and K do nothing in a dialog with no list; Tab goes on', (
     tester,
   ) async {

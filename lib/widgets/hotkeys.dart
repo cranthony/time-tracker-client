@@ -94,6 +94,13 @@ class Hotkey {
     HotkeyPlace.anywhere,
   );
   static const help = Hotkey('?', 'Show this list', HotkeyPlace.anywhere);
+  static const up = Hotkey(
+    'U',
+    'Go up a level, as the back button does: from an editor to what it '
+        "edits -- with changes made, as Esc does -- or from a habit's page, "
+        'say, back to the Habits pane; and close a dialog or menu',
+    HotkeyPlace.anywhere,
+  );
   static const newThing = Hotkey(
     '+',
     'Make a new one of what the page or pane shows, as its + does: a '
@@ -253,6 +260,7 @@ class Hotkey {
     discard,
     editText,
     help,
+    up,
     newThing,
     signIn,
     stepAny,
@@ -528,6 +536,21 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
       }
       return KeyEventResult.ignored;
     }
+    // Enter or Space on what's no longer shown -- in a pane of the Plan
+    // page swiped away from, say -- presses nothing: it lets go of it.
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter ||
+        key == LogicalKeyboardKey.space) {
+      final focus = FocusManager.instance.primaryFocus;
+      final context = focus?.context;
+      if (focus != null &&
+          context != null &&
+          focus is! FocusScopeNode &&
+          !isPainted(context)) {
+        if (down) focus.unfocus();
+        return KeyEventResult.handled;
+      }
+    }
     if (down && event.character == '?') {
       unawaited(_showHelp());
       return KeyEventResult.handled;
@@ -550,6 +573,10 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
           ? KeyEventResult.handled
           : KeyEventResult.ignored;
     }
+    if (key == LogicalKeyboardKey.keyU) {
+      if (!down) return KeyEventResult.handled;
+      return goUp() ? KeyEventResult.handled : KeyEventResult.ignored;
+    }
     if (key == LogicalKeyboardKey.home || key == LogicalKeyboardKey.end) {
       return stepFocus(later: key == LogicalKeyboardKey.end, toEnd: true)
           ? KeyEventResult.handled
@@ -562,6 +589,17 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
           : KeyEventResult.ignored;
     }
     return KeyEventResult.ignored;
+  }
+
+  /// U where nothing else -- an editor, say ([SaveOrDiscard]) -- takes
+  /// it: up a level, as the back button does, closing what's on top --
+  /// a page, dialog, sheet or menu -- but not the first page. Whether
+  /// there was one to.
+  bool goUp() {
+    final route = _routes.lastOrNull;
+    if (route is! ModalRoute || route.isFirst) return false;
+    unawaited(route.navigator?.maybePop());
+    return true;
   }
 
   /// J or K where nothing else takes them: highlights the next item in
@@ -1090,12 +1128,12 @@ class EditHotkey extends StatelessWidget {
 /// A letter for each of [names] -- fields named by what they hold, in
 /// the order they're shown -- for [FieldHotkey]s: the first of its own
 /// not taken already, nor [taken], nor J or K, which go from one thing
-/// to the next; none if every one is.
+/// to the next, nor U, which goes up a level; none if every one is.
 Map<String, String> fieldLetters(
   Iterable<String> names, {
   Set<String> taken = const {},
 }) {
-  final used = {'J', 'K', ...taken};
+  final used = {'J', 'K', 'U', ...taken};
   final letters = <String, String>{};
   for (final name in names) {
     for (final c in name.toUpperCase().split('')) {
@@ -1327,6 +1365,8 @@ class _SaveOrDiscardState extends State<SaveOrDiscard> {
       HotkeyBinding(const HotkeyTrigger.ctrl(LogicalKeyboardKey.enter), () {
         widget.onSave?.call();
       }),
+      // Up a level, as the back button does: as Esc, outside its fields.
+      HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyU), _escape),
     ],
     child: widget.child,
   );
