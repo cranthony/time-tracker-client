@@ -723,43 +723,10 @@ class _PlanScreenState extends State<PlanScreen> {
     ),
   );
 
-  /// J or K: the next of what can be tapped in the pane shown, [later]
-  /// down it or up, highlighted -- and Enter taps it -- scrolled into
-  /// view: with nothing highlighted, or what is scrolled away, the first
-  /// of its list in view, or the last. Not its search: letters would go
-  /// into it.
-  void _stepInPane(FocusNode pane, {required bool later}) {
-    final stops =
-        [
-          for (final node in pane.traversalDescendants)
-            if (node.canRequestFocus &&
-                !node.skipTraversal &&
-                node.context != null &&
-                node.context!.findAncestorWidgetOfExactType<EditableText>() ==
-                    null &&
-                node.context!.widget is! EditableText)
-              node,
-        ]..sort((a, b) {
-          final ra = a.rect, rb = b.rect;
-          final dy = ra.top.compareTo(rb.top);
-          return dy != 0 ? dy : ra.left.compareTo(rb.left);
-        });
-    if (stops.isEmpty) return;
-    var at = stops.indexOf(FocusManager.instance.primaryFocus!);
-    if (at >= 0 && inScrolledView(stops[at], wholly: false) == false) at = -1;
-    final next = at < 0
-        ? (startInView(stops, later: later) ??
-              (later ? stops.first : stops.last))
-        : stops[(at + (later ? 1 : -1)).clamp(0, stops.length - 1)];
-    next.requestFocus();
-    Scrollable.ensureVisible(
-      next.context!,
-      alignmentPolicy: later
-          ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
-          : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
-      duration: const Duration(milliseconds: 120),
-    );
-  }
+  /// J or K: the next item in the pane shown, [later] down it or up
+  /// ([stepItems]); Enter taps it.
+  void _stepInPane(FocusNode pane, {required bool later}) =>
+      stepItems(pane, later: later);
 
   /// The Plan page's hotkeys, with the [panes] shown in [tabs]: J and K
   /// down and up the one shown, H and L to the one beside it.

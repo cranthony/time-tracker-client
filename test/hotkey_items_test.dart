@@ -95,15 +95,19 @@ void main() {
       expect(rectOf(tester, 'Item ${n + 1}').bottom, greaterThan(view.bottom));
     });
 
-    testWidgets('J, after what was highlighted is scrolled away, starts in '
-        'view again', (tester) async {
+    testWidgets('J, after what was highlighted is scrolled away, goes on '
+        'from it, scrolling the next back into view', (tester) async {
       await pump(tester, 0);
       await press(tester, LogicalKeyboardKey.keyJ);
       expect(highlighted(), 'Item 0');
       list.jumpTo(20 * row);
       await tester.pumpAndSettle();
       await press(tester, LogicalKeyboardKey.keyJ);
-      expect(highlighted(), 'Item 20');
+      expect(highlighted(), 'Item 1');
+      final view = tester.getRect(find.byType(ListView));
+      final item = rectOf(tester, 'Item 1');
+      expect(item.top, greaterThanOrEqualTo(view.top));
+      expect(item.bottom, lessThanOrEqualTo(view.bottom));
     });
   });
 
@@ -158,6 +162,17 @@ void main() {
       final titles = await pump(tester);
       await press(tester, LogicalKeyboardKey.keyJ);
       expect(goalHighlighted(), titles.first);
+    });
+
+    testWidgets('J and K go from goal to goal, not to their edit buttons', (
+      tester,
+    ) async {
+      final titles = await pump(tester);
+      await press(tester, LogicalKeyboardKey.keyJ);
+      await press(tester, LogicalKeyboardKey.keyJ);
+      expect(goalHighlighted(), titles[1]);
+      await press(tester, LogicalKeyboardKey.keyK);
+      expect(goalHighlighted(), titles[0]);
     });
 
     testWidgets('K highlights the last goal, not its edit button', (

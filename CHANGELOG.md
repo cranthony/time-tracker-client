@@ -12,11 +12,13 @@ on. Add the new version's section here at the same time; CI checks both.
 ## 7.131.0
 
 - S presses the Sign in button, where a page asks you to sign in.
-- J and K start from what's in view: on the Plan page, J highlights the
-  first row of the pane's list that's in view -- the first goal on the
-  Goals pane, not a button over the list -- and K the last; the same
-  goes for a list that scrolls in a dialog or menu. And with what was
-  highlighted scrolled away, they start from what's in view again.
+- J and K go from item to item -- on the Plan page, from goal to goal,
+  not through each goal's edit button, nor the buttons over the list;
+  in a dialog or menu, from row to row. Tab still goes to every button.
+  With nothing highlighted, J starts at the first item in view (on the
+  Goals pane, the first goal) and K at the last. With the item
+  highlighted scrolled away, they go on from it, scrolling the next
+  one into view.
 
 ## 7.130.0
 
