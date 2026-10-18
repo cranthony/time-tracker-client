@@ -1,7 +1,7 @@
 /// The server's health metrics, as its `get_health` gives them: each tool's
-/// last calls, its memory after each of its last calls, its restarts, and
-/// its warnings of changes made behind its back. Times are UTC, oldest
-/// first.
+/// last calls, its memory -- up to its last 500 seconds' most -- after its
+/// calls and its own work, its restarts, and its warnings of changes made
+/// behind its back. Times are UTC, oldest first.
 class ServerHealth {
   const ServerHealth({
     this.tools = const [],
@@ -103,19 +103,66 @@ class ToolCall {
   }
 }
 
-/// The server's resident memory, in MiB, after a call -- any tool's.
+/// The server's resident memory, in MiB: the most of each second, after a
+/// call -- any tool's -- or its own work in the background. With [parts],
+/// what it's made of, as the server reckons it: none from a server that
+/// doesn't break it down.
 class MemorySample {
-  const MemorySample({required this.at, required this.mib});
+  const MemorySample({required this.at, required this.mib, this.parts});
 
   final DateTime at;
   final double mib;
+
+  /// Each tab of the metadata spreadsheet the server keeps ("Sheet: "
+  /// and its title), the calendar it keeps, and, last, the rest of it:
+  /// summing to [mib], give or take rounding.
+  final List<MemoryPart>? parts;
 
   static MemorySample? fromJson(Map<String, dynamic> json) {
     final at = DateTime.tryParse('${json['at']}');
     final mib = json['rss_mib'];
     if (at == null || mib is! num) return null;
-    return MemorySample(at: at, mib: mib.toDouble());
+    final parts = json['parts'];
+    return MemorySample(
+      at: at,
+      mib: mib.toDouble(),
+      parts: parts is List
+          ? [
+              for (final p in parts)
+                if (p is Map && p['mib'] is num)
+                  MemoryPart(
+                    name: '${p['name']}',
+                    mib: (p['mib'] as num).toDouble(),
+                  ),
+            ]
+          : null,
+    );
   }
+}
+
+/// A part of the server's memory: its name, and its MiB.
+class MemoryPart {
+  const MemoryPart({required this.name, required this.mib});
+
+  /// "Sheet: " and a tab's title, [calendar] or [rest].
+  final String name;
+  final double mib;
+
+  static const calendar = 'Calendar';
+  static const rest = 'Rest of server';
+  static const sheetPrefix = 'Sheet: ';
+
+  bool get isSheet => name.startsWith(sheetPrefix);
+
+  @override
+  bool operator ==(Object other) =>
+      other is MemoryPart && other.name == name && other.mib == mib;
+
+  @override
+  int get hashCode => Object.hash(name, mib);
+
+  @override
+  String toString() => '$name: $mib';
 }
 
 /// What the server found changed behind its back, as `get_health`'s

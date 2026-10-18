@@ -9,6 +9,22 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.137.0
+
+- The Diagnostics page's Memory graph shows what the server's memory is
+  made of, stacked: each tab of the metadata spreadsheet it keeps, the
+  calendar it keeps, and the rest of the server, at the foot. The tabs
+  are one "Sheets" layer while there are more than three; its arrows
+  open it out into each tab.
+- Tapping a layer in the graph's legend shows it alone, summed up under
+  the graph on its own; tapping it again, or All, shows them all.
+- Tapping the graph, or hovering on it, says under it what that point is
+  made of, largest first. At first it says the latest.
+- The server samples its memory up to once a second, after each call
+  and each refresh in the background, so the graph is joined, not dots;
+  it breaks where samples are more than 15 minutes apart.
+- An older server's memory, not broken down, is one layer, as before.
+
 ## 7.136.0
 
 - The Diagnostics page has hotkeys: H and L go between its Server and

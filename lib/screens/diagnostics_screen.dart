@@ -23,10 +23,11 @@ import '../widgets/status_message.dart';
 /// under the rest of its request, to the whole request's time -- its
 /// memory, and its restarts, ticked. The app's: its tool calls' latencies,
 /// the app's and the background task's, and how many changes waited to
-/// save, in each outbox, stacked; and its last errors, in full. Calls and
-/// memory are dots, not joined -- they come in bursts, with long gaps
-/// between -- with their mean, median, p95 and max marked across; failed
-/// calls are red. Which tools' calls, how far back, and each call
+/// save, in each outbox, stacked; and its last errors, in full. Calls are
+/// dots, not joined -- they come in bursts, with long gaps between -- and
+/// memory is stacked by what holds it, each with their mean, median, p95
+/// and max marked across; failed calls are red. Which tools' calls, how
+/// far back, and each call
 /// or a statistic of each bucket of them are picked from the menus above;
 /// each graph says the mean, median, 95th percentile and max of what's in
 /// view. Pinching -- on a touchscreen or a trackpad, or Ctrl and the mouse
@@ -447,6 +448,12 @@ class _ServerPaneState extends State<_ServerPane>
                     ),
                     from: from,
                     to: to,
+                    // The server refreshes what it keeps every 5 minutes,
+                    // by default, sampling as it does; buckets come one
+                    // after another.
+                    joinWithin: statistic == null
+                        ? const Duration(minutes: 15)
+                        : bucket.span * 1.5,
                   ),
                   _RestartsCard(restarts: restarts, from: from, to: to),
                 ],
@@ -1221,83 +1228,382 @@ class _LatencyCard extends StatelessWidget {
   }
 }
 
-/// The server's memory after each call, whichever tool's: a dot for each,
-/// with their mean, median, p95 and max marked across.
-class _MemoryCard extends StatelessWidget {
+/// The server's memory, the most of each second after a call or its own
+/// work in the background, stacked by what it's made of as the server
+/// reckons it -- the rest of the server at the foot, then the calendar it
+/// keeps, then its sheet tabs, as one layer while they're many, until
+/// opened out -- with the total's mean, median, p95 and max marked
+/// across. Points further apart than [joinWithin] aren't joined.
+///
+/// Tapping a layer in the legend shows it alone, and tapping it again,
+/// or "All", shows them all. Tapping the graph, or hovering on it, says
+/// under it what that point is made of, largest first: at first, the
+/// latest. Samples from a server that doesn't break its memory down are
+/// all the rest of the server.
+class _MemoryCard extends StatefulWidget {
   const _MemoryCard({
     required this.memory,
     required this.points,
     required this.from,
     required this.to,
+    required this.joinWithin,
   });
 
   final List<MemorySample> memory;
   final List<MemoryPoint> points;
   final DateTime from;
   final DateTime to;
+  final Duration joinWithin;
+
+  @override
+  State<_MemoryCard> createState() => _MemoryCardState();
+}
+
+class _MemoryCardState extends State<_MemoryCard> {
+  /// The layer shown alone -- a part's name, or all the sheet tabs' -- if
+  /// one is.
+  String? _alone;
+
+  /// Whether each sheet tab is a layer of its own: at first, only while
+  /// they're few.
+  bool? _tabsOpen;
+
+  /// When the point said under the graph is: none, the latest.
+  DateTime? _picked;
+
+  /// Sheet tabs more than this are one layer, to begin with.
+  static const _fewTabs = 3;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final summary = Summary.of([for (final m in memory) m.mib]);
-    final values = [for (final p in points) p.mib, ..._marked(summary)];
-    final low = values.isEmpty ? 0.0 : values.reduce(min);
-    final high = values.isEmpty ? 1.0 : values.reduce(max);
-    final pad = max(1.0, (high - low) * 0.15);
+    final points = widget.points;
+    final tabs = {
+      for (final s in widget.memory)
+        for (final part in s.parts ?? const <MemoryPart>[])
+          if (part.isSheet) part.name,
+    }.toList();
+    final tabsOpen = _tabsOpen ?? tabs.length <= _fewTabs;
+    final layers = memoryLayers(points, groupSheets: !tabsOpen);
+    final broken = layers.length > 1;
+    var alone = _alone;
+    bool shows(String name) =>
+        alone == null ||
+        name == alone ||
+        (alone == MemoryLayer.sheets &&
+            name.startsWith(MemoryPart.sheetPrefix));
+    if (!layers.any((l) => shows(l.name))) alone = null;
+    final shown = [
+      for (final l in layers)
+        if (shows(l.name)) l,
+    ];
+
+    final hsl = HSLColor.fromColor(colors.primary);
+    Color colorOf(String name) {
+      if (name == MemoryPart.rest) return colors.outlineVariant;
+      if (name == MemoryPart.calendar) return colors.tertiary;
+      if (name == MemoryLayer.sheets) return colors.primary;
+      final i = tabs.indexOf(name);
+      if (i < 0) return colors.secondary;
+      // A family of the primary's, muted: darker to lighter, a little
+      // apart in hue.
+      final t = tabs.length < 2 ? 0.5 : i / (tabs.length - 1);
+      return hsl
+          .withSaturation(min(hsl.saturation, 0.5))
+          .withLightness(0.3 + 0.4 * t)
+          .withHue((hsl.hue - 15 + 30 * t) % 360)
+          .toColor();
+    }
+
+    // What's summed up: the whole, or what's shown alone, of each sample.
+    final List<double> values;
+    if (alone == null) {
+      values = [for (final s in widget.memory) s.mib];
+    } else {
+      final sampled = memoryLayers([
+        for (final s in widget.memory)
+          MemoryPoint(at: s.at, mib: s.mib, parts: s.parts),
+      ], groupSheets: !tabsOpen);
+      values = [
+        for (var i = 0; i < widget.memory.length; i++)
+          sampled
+              .where((l) => shows(l.name))
+              .fold(0.0, (sum, l) => sum + l.values[i]),
+      ];
+    }
+    final summary = Summary.of(values);
+
+    // Each point's index among the spots, with a break where they're far
+    // apart -- the same in every layer, so each fills between its own.
+    final at = <int?>[];
+    for (final (i, p) in points.indexed) {
+      if (i > 0 && p.at.difference(points[i - 1].at) > widget.joinWithin) {
+        at.add(null);
+      }
+      at.add(i);
+    }
+    List<FlSpot> spotsOf(double Function(int) y) => [
+      for (final i in at)
+        i == null ? FlSpot.nullSpot : FlSpot(_x(points[i].at), y(i)),
+    ];
+    final tops = <List<FlSpot>>[];
+    final sum = List.filled(points.length, 0.0);
+    for (final layer in shown) {
+      for (var i = 0; i < points.length; i++) {
+        sum[i] += layer.values[i];
+      }
+      final heights = [...sum];
+      tops.add(spotsOf((i) => heights[i]));
+    }
+    final high = [...sum, ..._marked(summary)].fold(0.0, max);
+    final maxY = high + max(1.0, high * 0.12);
+
+    final picked =
+        points.where((p) => p.at == _picked).firstOrNull ?? points.lastOrNull;
+    final byX = {for (final p in points) _x(p.at): p};
+    // A point alone in its stretch, with nothing to fill to, is a dot.
+    bool lone(FlSpot spot, LineChartBarData bar) {
+      final i = bar.spots.indexOf(spot);
+      bool gap(int j) =>
+          j < 0 || j >= bar.spots.length || bar.spots[j].isNull();
+      return gap(i - 1) && gap(i + 1);
+    }
+
+    final markers = _markers(context, summary, _mib, range: (0, maxY));
+    final style = Theme.of(context).textTheme.bodySmall;
+
+    Widget chip(String name, {String? label, bool sheets = false}) {
+      final selected = name == alone;
+      return InputChip(
+        label: Text(label ?? name),
+        labelStyle: style,
+        avatar: Container(width: 12, height: 12, color: colorOf(name)),
+        selected: selected,
+        showCheckmark: false,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        tooltip: selected ? 'Show all' : 'Show ${label ?? name} alone',
+        onSelected: (_) => setState(() => _alone = selected ? null : name),
+        onDeleted: sheets
+            ? () => setState(() {
+                _tabsOpen = !tabsOpen;
+                if (alone != null && alone.startsWith(MemoryPart.sheetPrefix)) {
+                  _alone = MemoryLayer.sheets;
+                }
+              })
+            : null,
+        deleteIcon: Icon(tabsOpen ? Icons.unfold_less : Icons.unfold_more),
+        deleteButtonTooltipMessage: tabsOpen
+            ? 'Show the tabs as one'
+            : 'Show each tab',
+      );
+    }
+
+    // The legend, the top of the stack first. Opened out, the tabs come
+    // after "Sheets", which shows them all alone.
+    final sheetsChip = chip(
+      MemoryLayer.sheets,
+      label: 'Sheets (${tabs.length})',
+      sheets: true,
+    );
+    final legend = <Widget>[];
+    for (final l in layers.reversed) {
+      if (!l.name.startsWith(MemoryPart.sheetPrefix)) {
+        legend.add(l.name == MemoryLayer.sheets ? sheetsChip : chip(l.name));
+      } else {
+        if (!legend.contains(sheetsChip)) legend.add(sheetsChip);
+        legend.add(
+          chip(l.name, label: l.name.substring(MemoryPart.sheetPrefix.length)),
+        );
+      }
+    }
+
     return _GraphCard(
       title: 'Memory',
       subtitle:
-          "The server's resident memory after each call, whichever tool's",
+          "The server's resident memory, the most of each second after a "
+          'call or its work in the background${broken ? ', stacked by what '
+                    'holds it' : ''}',
       graph: points.isEmpty
           ? _empty(context, 'No memory samples in view.')
-          : SizedBox(
-              height: 160,
-              child: LineChart(
-                LineChartData(
-                  minX: _x(from),
-                  maxX: _x(to),
-                  minY: max(0, low - pad),
-                  maxY: high + pad,
-                  clipData: const FlClipData.all(),
-                  titlesData: FlTitlesData(
-                    bottomTitles: _timeAxis(context, from, to),
-                    leftTitles: _valueAxis(context, _mib),
-                    topTitles: _noTitles,
-                    rightTitles: _noTitles,
-                  ),
-                  borderData: FlBorderData(show: false),
-                  extraLinesData: _markers(
-                    context,
-                    summary,
-                    _mib,
-                    range: (max(0, low - pad), high + pad),
-                  ),
-                  lineBarsData: [
-                    _dots([
-                      for (final p in points) FlSpot(_x(p.at), p.mib),
-                    ], colors.secondary),
-                  ],
-                  lineTouchData: LineTouchData(
-                    touchTooltipData: LineTouchTooltipData(
-                      getTooltipItems: (spots) => [
-                        for (final s in spots)
-                          LineTooltipItem(
-                            _mib(s.y),
-                            TextStyle(
-                              color: colors.onInverseSurface,
-                              fontSize: 12,
-                            ),
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (broken)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8, bottom: 8),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        ...legend,
+                        if (alone != null)
+                          ActionChip(
+                            label: const Text('All'),
+                            labelStyle: style,
+                            avatar: const Icon(Icons.layers_outlined),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            onPressed: () => setState(() => _alone = null),
                           ),
                       ],
                     ),
                   ),
+                SizedBox(
+                  height: 180,
+                  child: LineChart(
+                    LineChartData(
+                      minX: _x(widget.from),
+                      maxX: _x(widget.to),
+                      minY: 0,
+                      maxY: maxY,
+                      clipData: const FlClipData.all(),
+                      titlesData: FlTitlesData(
+                        bottomTitles: _timeAxis(
+                          context,
+                          widget.from,
+                          widget.to,
+                        ),
+                        leftTitles: _valueAxis(context, _mib),
+                        topTitles: _noTitles,
+                        rightTitles: _noTitles,
+                      ),
+                      borderData: FlBorderData(show: false),
+                      extraLinesData: ExtraLinesData(
+                        horizontalLines: markers.horizontalLines,
+                        verticalLines: [
+                          if (picked != null)
+                            VerticalLine(
+                              x: _x(picked.at),
+                              color: colors.onSurfaceVariant,
+                              strokeWidth: 1,
+                            ),
+                        ],
+                      ),
+                      lineBarsData: [
+                        // The foot, each layer filled from the one under it.
+                        LineChartBarData(
+                          spots: spotsOf((_) => 0),
+                          barWidth: 0,
+                          dotData: const FlDotData(show: false),
+                        ),
+                        for (final (i, spots) in tops.indexed)
+                          LineChartBarData(
+                            spots: spots,
+                            // The whole's edge, over the top layer.
+                            color: colors.onSurfaceVariant,
+                            barWidth: i == tops.length - 1 ? 1 : 0,
+                            dotData: FlDotData(
+                              show: i == tops.length - 1,
+                              checkToShowDot: lone,
+                              getDotPainter: (_, _, _, _) => FlDotCirclePainter(
+                                radius: 2.5,
+                                color: colors.onSurfaceVariant,
+                                strokeWidth: 0,
+                              ),
+                            ),
+                          ),
+                      ],
+                      betweenBarsData: [
+                        for (final (i, layer) in shown.indexed)
+                          BetweenBarsData(
+                            fromIndex: i,
+                            toIndex: i + 1,
+                            color: colorOf(layer.name).withValues(alpha: 0.85),
+                          ),
+                      ],
+                      lineTouchData: LineTouchData(
+                        handleBuiltInTouches: false,
+                        touchSpotThreshold: double.infinity,
+                        touchCallback: (event, response) {
+                          final x = response?.lineBarSpots?.firstOrNull?.x;
+                          final point = byX[x];
+                          if (!event.isInterestedForInteractions ||
+                              point == null ||
+                              point.at == picked?.at) {
+                            return;
+                          }
+                          setState(() => _picked = point.at);
+                        },
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+                if (picked != null)
+                  _MemoryBreakdown(
+                    point: picked,
+                    latest: picked == points.last,
+                    colorOf: colorOf,
+                  ),
+              ],
             ),
       footer: _SummaryTable(
         format: _mib,
-        rows: [('Memory', summary)],
-        extra: ('Latest', [memory.isEmpty ? '–' : _mib(memory.last.mib)]),
+        rows: [(alone ?? 'Memory', summary)],
+        extra: ('Latest', [values.isEmpty ? '–' : _mib(values.last)]),
+      ),
+    );
+  }
+}
+
+/// What [point] of the memory graph is made of: when it is, its total,
+/// and each part, largest first, each in its layer's color.
+class _MemoryBreakdown extends StatelessWidget {
+  const _MemoryBreakdown({
+    required this.point,
+    required this.latest,
+    required this.colorOf,
+  });
+
+  final MemoryPoint point;
+  final bool latest;
+  final Color Function(String) colorOf;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodySmall;
+    final strings = MaterialLocalizations.of(context);
+    final t = point.at.toLocal();
+    final seconds = t.second.toString().padLeft(2, '0');
+    // To the second: samples are a second apart at the closest.
+    final clock = strings
+        .formatTimeOfDay(TimeOfDay.fromDateTime(t))
+        .replaceFirstMapped(RegExp(r':(\d\d)'), (m) => ':${m[1]}:$seconds');
+    final parts = point.parts?.toList()
+      ?..sort((a, b) => b.mib.compareTo(a.mib));
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 0, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${latest ? 'Latest · ' : ''}'
+            '${strings.formatShortMonthDay(t)}, $clock · ${_mib(point.mib)}',
+            style: style?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          if (parts == null)
+            Text('Not broken down by the server', style: style)
+          else
+            for (final part in parts)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  children: [
+                    Container(width: 10, height: 10, color: colorOf(part.name)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        part.name,
+                        style: style,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(_mib(part.mib), style: style),
+                  ],
+                ),
+              ),
+        ],
       ),
     );
   }

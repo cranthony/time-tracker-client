@@ -98,6 +98,40 @@ ServerHealth _health() => ServerHealth(
   restarts: [_ago(const Duration(hours: 5))],
 );
 
+/// [_health], with its memory broken down, and [tabs] sheet tabs kept.
+ServerHealth _brokenDown({int tabs = 2}) {
+  List<MemoryPart> parts(double total, double sheets, double calendar) => [
+    for (var i = 0; i < tabs; i++)
+      MemoryPart(name: 'Sheet: Tab $i', mib: sheets * (i + 1)),
+    MemoryPart(name: 'Calendar', mib: calendar),
+    MemoryPart(
+      name: 'Rest of server',
+      mib: total - calendar - sheets * tabs * (tabs + 1) / 2,
+    ),
+  ];
+  return ServerHealth(
+    tools: _health().tools,
+    memory: [
+      MemorySample(
+        at: _ago(const Duration(hours: 2)),
+        mib: 190,
+        parts: parts(190, 1, 4),
+      ),
+      MemorySample(
+        at: _ago(const Duration(hours: 1, minutes: 55)),
+        mib: 200,
+        parts: parts(200, 2, 5),
+      ),
+      MemorySample(
+        at: _ago(const Duration(hours: 1, minutes: 50)),
+        mib: 210,
+        parts: parts(210, 3, 7),
+      ),
+    ],
+    restarts: _health().restarts,
+  );
+}
+
 void main() {
   group('The server health', () {
     test('is read as get_health gives it', () {
@@ -111,6 +145,38 @@ void main() {
       expect(calls.last.wholeMs, 20);
       expect(health.memory.single.mib, 201.5);
       expect(health.restarts.single, DateTime.utc(2026, 10, 9, 9));
+    });
+
+    test("reads what the server's memory is made of, when it says", () {
+      final health = ServerHealth.fromJson({
+        'memory': [
+          {'at': '2026-10-09T10:00:00.000Z', 'rss_mib': 180.0, 'parts': null},
+          {'at': '2026-10-09T10:00:01.000Z', 'rss_mib': 181.0},
+          {
+            'at': '2026-10-09T11:00:00.000Z',
+            'rss_mib': 201.5,
+            'parts': [
+              {'name': 'Sheet: Actions', 'mib': 1.5},
+              {'name': 'Calendar', 'mib': 4},
+              {'name': 'Rest of server', 'mib': 196},
+            ],
+          },
+        ],
+        'memory_latest_mib': 201.5,
+        'memory_min_mib': 180.0,
+        'memory_max_mib': 201.5,
+      });
+
+      final [old, older, broken] = health.memory;
+      expect(old.parts, isNull);
+      expect(older.parts, isNull);
+      expect(broken.parts, const [
+        MemoryPart(name: 'Sheet: Actions', mib: 1.5),
+        MemoryPart(name: 'Calendar', mib: 4),
+        MemoryPart(name: 'Rest of server', mib: 196),
+      ]);
+      expect(broken.parts!.first.isSheet, isTrue);
+      expect(broken.parts!.last.isSheet, isFalse);
     });
 
     test('is fetched with get_health, and kept for next time', () async {
@@ -260,6 +326,99 @@ void main() {
       expect(memoryPoints(memory, statistic: Statistic.mean).single.mib, 150);
       expect(memoryPoints(memory), hasLength(2));
     });
+
+    test("of each bucket of memory's parts: the mean of each, or the parts "
+        'of the sample the statistic falls on', () {
+      final memory = [
+        MemorySample(
+          at: _ago(const Duration(minutes: 50)),
+          mib: 100,
+          parts: const [
+            MemoryPart(name: 'Calendar', mib: 4),
+            MemoryPart(name: 'Rest of server', mib: 96),
+          ],
+        ),
+        MemorySample(
+          at: _ago(const Duration(minutes: 45)),
+          mib: 200,
+          parts: const [
+            MemoryPart(name: 'Sheet: Actions', mib: 2),
+            MemoryPart(name: 'Calendar', mib: 6),
+            MemoryPart(name: 'Rest of server', mib: 192),
+          ],
+        ),
+        // From before the server broke it down: all the rest of it.
+        MemorySample(at: _ago(const Duration(minutes: 40)), mib: 120),
+      ];
+
+      final mean = memoryPoints(memory, statistic: Statistic.mean).single;
+      expect(mean.mib, 140);
+      expect(mean.parts, const [
+        MemoryPart(name: 'Calendar', mib: 10 / 3),
+        MemoryPart(name: 'Sheet: Actions', mib: 2 / 3),
+        MemoryPart(name: 'Rest of server', mib: 136),
+      ]);
+      final top = memoryPoints(memory, statistic: Statistic.max).single;
+      expect(top.parts, memory[1].parts);
+      final median = memoryPoints(memory, statistic: Statistic.median).single;
+      expect(median.mib, 120);
+      expect(median.parts, isNull);
+      expect(
+        memoryPoints([memory.last], statistic: Statistic.mean).single.parts,
+        isNull,
+      );
+    });
+
+    test('of memory, stacked: the rest of the server at the foot, the '
+        'calendar, then the sheet tabs, as the server first named them, or '
+        'all of them as one', () {
+      final points = [
+        MemoryPoint(at: _ago(const Duration(hours: 3)), mib: 150),
+        MemoryPoint(
+          at: _ago(const Duration(hours: 2)),
+          mib: 190,
+          parts: const [
+            MemoryPart(name: 'Sheet: Actions', mib: 1.5),
+            MemoryPart(name: 'Calendar', mib: 4),
+            MemoryPart(name: 'Rest of server', mib: 184.5),
+          ],
+        ),
+        MemoryPoint(
+          at: _ago(const Duration(hours: 1)),
+          mib: 210,
+          parts: const [
+            MemoryPart(name: 'Sheet: Actions', mib: 2),
+            MemoryPart(name: 'Sheet: People', mib: 1),
+            MemoryPart(name: 'Calendar', mib: 5),
+            MemoryPart(name: 'Rest of server', mib: 202),
+          ],
+        ),
+      ];
+
+      final layers = memoryLayers(points);
+      expect(
+        [for (final l in layers) l.name],
+        ['Rest of server', 'Calendar', 'Sheet: Actions', 'Sheet: People'],
+      );
+      expect(
+        [for (final l in layers) l.values],
+        [
+          [150, 184.5, 202],
+          [0, 4, 5],
+          [0, 1.5, 2],
+          [0, 0, 1],
+        ],
+      );
+      expect([for (final l in layers) l.isSheet], [false, false, true, true]);
+
+      final grouped = memoryLayers(points, groupSheets: true);
+      expect(
+        [for (final l in grouped) l.name],
+        ['Rest of server', 'Calendar', 'Sheets'],
+      );
+      expect(grouped.last.values, [0, 1.5, 3]);
+      expect(grouped.last.isSheet, isTrue);
+    });
   });
 
   group('The Diagnostics page', () {
@@ -348,9 +507,9 @@ void main() {
       expect(find.textContaining('1 in view'), findsOneWidget);
     });
 
-    testWidgets('draws the calls and memory as dots, unjoined, with the '
-        "mean, median, p95 and max marked, each labelled with whose call it's "
-        'on, the mean with the tools shown', (tester) async {
+    testWidgets('draws the calls as dots, unjoined, and both them and the '
+        "memory with the mean, median, p95 and max marked, each labelled with "
+        "whose call it's on, the mean with the tools shown", (tester) async {
       await open(tester, InMemoryDiagnosticsRepository(_health()));
       final [calls, memory, ...] = [
         for (final chart in tester.widgetList<LineChart>(
@@ -358,13 +517,8 @@ void main() {
         ))
           chart.data,
       ];
-      for (final data in [calls, memory]) {
-        expect(data.lineBarsData.map((b) => b.barWidth), everyElement(0));
-        expect(
-          data.lineBarsData.map((b) => b.dotData.show),
-          everyElement(true),
-        );
-      }
+      expect(calls.lineBarsData.map((b) => b.barWidth), everyElement(0));
+      expect(calls.lineBarsData.map((b) => b.dotData.show), everyElement(true));
       List<String> labels(LineChartData data) => [
         for (final line in data.extraLinesData.horizontalLines)
           line.label.labelResolver(line),
@@ -500,6 +654,153 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.textContaining('(zoomed in)'), findsOneWidget);
+    });
+
+    /// Taps [finder] in a graph's card, past the wait for a double tap,
+    /// which zooms back out.
+    Future<void> tapGraph(WidgetTester tester, Finder finder) async {
+      await tester.tap(finder);
+      await tester.pump(kDoubleTapTimeout);
+      await tester.pumpAndSettle();
+    }
+
+    LineChartData memoryChart(WidgetTester tester) =>
+        tester.widgetList<LineChart>(find.byType(LineChart)).elementAt(1).data;
+
+    /// Each point's top, in each layer shown, bottom up, with the layers'
+    /// colors.
+    List<List<double>> stacked(WidgetTester tester) => [
+      for (final bar in memoryChart(tester).lineBarsData.skip(1))
+        [
+          for (final s in bar.spots)
+            if (!s.isNull()) s.y,
+        ],
+    ];
+
+    testWidgets("stacks what the server's memory is made of, the rest of it "
+        'at the foot', (tester) async {
+      await open(tester, InMemoryDiagnosticsRepository(_brokenDown()));
+
+      final data = memoryChart(tester);
+      expect(data.minY, 0);
+      expect(stacked(tester), [
+        [183, 189, 194], // The rest of the server.
+        [187, 194, 201], // The calendar.
+        [188, 196, 204], // Tab 0.
+        [190, 200, 210], // Tab 1, the whole.
+      ]);
+      // Each layer filled from the one under it.
+      expect(
+        [for (final b in data.betweenBarsData) (b.fromIndex, b.toIndex)],
+        [(0, 1), (1, 2), (2, 3), (3, 4)],
+      );
+      expect(data.betweenBarsData.map((b) => b.color).toSet(), hasLength(4));
+      for (final name in ['Rest of server', 'Calendar', 'Tab 0', 'Tab 1']) {
+        expect(find.widgetWithText(InputChip, name), findsOneWidget);
+      }
+    });
+
+    testWidgets('shows a layer alone, tapped in the legend, and all again '
+        'when it is tapped again, or All', (tester) async {
+      await open(tester, InMemoryDiagnosticsRepository(_brokenDown()));
+
+      await tapGraph(tester, find.widgetWithText(InputChip, 'Calendar'));
+      expect(stacked(tester), [
+        [4, 5, 7],
+      ]);
+      expect(memoryChart(tester).betweenBarsData, hasLength(1));
+      // Summed up alone, too.
+      expect(find.text('Calendar'), findsWidgets);
+      expect(find.text('7.0 MiB'), findsWidgets);
+
+      await tapGraph(tester, find.widgetWithText(InputChip, 'Calendar'));
+      expect(stacked(tester), hasLength(4));
+      expect(find.widgetWithText(ActionChip, 'All'), findsNothing);
+
+      await tapGraph(tester, find.widgetWithText(InputChip, 'Tab 1'));
+      expect(stacked(tester), [
+        [2, 4, 6],
+      ]);
+      await tapGraph(tester, find.widgetWithText(ActionChip, 'All'));
+      expect(stacked(tester), hasLength(4));
+    });
+
+    testWidgets('makes many sheet tabs one layer, opened out into each and '
+        'shown alone together', (tester) async {
+      await open(tester, InMemoryDiagnosticsRepository(_brokenDown(tabs: 5)));
+
+      expect(stacked(tester), hasLength(3));
+      expect(stacked(tester).last, [190, 200, 210]);
+      expect(find.widgetWithText(InputChip, 'Tab 0'), findsNothing);
+
+      await tapGraph(tester, find.byTooltip('Show each tab'));
+      expect(stacked(tester), hasLength(7));
+      expect(find.widgetWithText(InputChip, 'Tab 4'), findsOneWidget);
+
+      await tapGraph(tester, find.widgetWithText(InputChip, 'Sheets (5)'));
+      expect(stacked(tester), hasLength(5)); // Each tab, alone together.
+      expect(stacked(tester).last, [15, 30, 45]);
+
+      await tapGraph(tester, find.byTooltip('Show the tabs as one'));
+      expect(stacked(tester), [
+        [15, 30, 45],
+      ]);
+    });
+
+    testWidgets('says what a point is made of, largest first: the latest, '
+        'and what is tapped', (tester) async {
+      await open(tester, InMemoryDiagnosticsRepository(_brokenDown()));
+
+      List<String> said() => [
+        for (final t in tester.widgetList<Text>(
+          find.descendant(
+            of: find.byWidgetPredicate(
+              (w) => w.runtimeType.toString() == '_MemoryBreakdown',
+            ),
+            matching: find.byType(Text),
+          ),
+        ))
+          t.data!,
+      ];
+      expect(said().first, startsWith('Latest · '));
+      expect(said().first, endsWith(' · 210 MiB'));
+      expect(said().skip(1), [
+        'Rest of server', '194 MiB', //
+        'Calendar', '7.0 MiB',
+        'Sheet: Tab 1', '6.0 MiB',
+        'Sheet: Tab 0', '3.0 MiB',
+      ]);
+
+      // The first point, at the left.
+      final chart = tester.getRect(find.byType(LineChart).at(1));
+      final from = _now.subtract(const Duration(days: 1));
+      final across =
+          _ago(const Duration(hours: 2)).difference(from).inMilliseconds /
+          const Duration(days: 1).inMilliseconds;
+      await tester.tapAt(
+        Offset(chart.left + 60 + (chart.width - 60) * across, chart.center.dy),
+      );
+      await tester.pumpAndSettle();
+      expect(said().first, isNot(startsWith('Latest')));
+      expect(said().first, endsWith(' · 190 MiB'));
+      expect(said()[1], 'Rest of server');
+      expect(said()[2], '183 MiB');
+      expect(
+        memoryChart(tester).extraLinesData.verticalLines.single.x,
+        _ago(const Duration(hours: 2)).millisecondsSinceEpoch.toDouble(),
+      );
+    });
+
+    testWidgets("draws an older server's memory, not broken down, as one "
+        'layer', (tester) async {
+      await open(tester, InMemoryDiagnosticsRepository(_health()));
+
+      expect(stacked(tester), [
+        [190, 210],
+      ]);
+      expect(find.byType(InputChip), findsNothing);
+      expect(find.text('Not broken down by the server'), findsOneWidget);
+      expect(find.text('210 MiB'), findsWidgets); // Max, and latest.
     });
 
     testWidgets('says when the server has no get_health', (tester) async {
