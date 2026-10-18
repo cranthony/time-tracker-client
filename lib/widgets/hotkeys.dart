@@ -12,7 +12,8 @@ enum HotkeyPlace {
   events('On the Events page'),
   creating('Making or moving an event'),
   event('In an event'),
-  plan('On the Plan page');
+  plan('On the Plan page'),
+  diagnostics('On the Diagnostics page');
 
   const HotkeyPlace(this.title);
   final String title;
@@ -249,6 +250,22 @@ class Hotkey {
     HotkeyPlace.plan,
   );
 
+  static const diagnosticsPanes = Hotkey(
+    'H / L',
+    'Go to the Server pane (H) or the App pane (L)',
+    HotkeyPlace.diagnostics,
+  );
+  static const graphs = Hotkey(
+    'J / K',
+    'Highlight the next graph (J) or the one before (K)',
+    HotkeyPlace.diagnostics,
+  );
+  static const zoom = Hotkey(
+    '= / -',
+    "Zoom the pane's graphs in (=) or out (-)",
+    HotkeyPlace.diagnostics,
+  );
+
   /// Every one, in the order the list shows them.
   static const all = [
     newNote,
@@ -294,6 +311,9 @@ class Hotkey {
     planItems,
     planEnds,
     planPanes,
+    diagnosticsPanes,
+    graphs,
+    zoom,
   ];
 }
 
