@@ -1,5 +1,6 @@
 import 'facts.dart';
 import 'note.dart';
+import 'share.dart';
 
 /// A calendar event, mirroring the Time Tracker MCP server's `PublicEvent`.
 ///
@@ -31,10 +32,29 @@ class Event {
       properties['effective_priority'] as int? ??
       properties['priority'] as int?;
 
-  /// The ids of its actions, the first setting its color.
-  List<String> get actionIds => [
-    for (final id in properties['action_ids'] as List? ?? const []) '$id',
+  /// Its actions, the first setting its color, and how much of it each
+  /// takes.
+  List<ActionShare> get actionShares => [
+    for (final a in properties['action_ids'] as List? ?? const [])
+      ?ActionShare.fromJson(a),
   ];
+
+  /// The ids of its actions, the first setting its color.
+  List<String> get actionIds => [for (final a in actionShares) a.actionId];
+
+  /// The fraction of it each of its actions takes ([shareFractions]), by
+  /// id -- as the summaries and traits' durations count its time -- with
+  /// only those [counted] (all, without it) as its actions. What they
+  /// leave is no action's.
+  Map<String, double> actionFractions([bool Function(String id)? counted]) =>
+      shareFractions(
+        [
+          for (final a in actionShares)
+            if (counted == null || counted(a.actionId)) a,
+        ],
+        end.difference(start),
+        split: RemainingSplit.even,
+      );
 
   /// The names of [actionIds], in the same order, if the server sent them.
   List<String?> get actionNames => [

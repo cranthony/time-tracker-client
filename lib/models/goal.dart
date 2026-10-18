@@ -1,6 +1,8 @@
 import 'event.dart';
 import 'note.dart';
-import '../widgets/durations.dart';
+import 'share.dart';
+
+export 'share.dart';
 
 /// A goal of the user's, mirroring the Time Tracker MCP server's
 /// `ListedGoal`: an outcome they mean to reach and can mark done --
@@ -279,24 +281,20 @@ List<Goal> byDeadline(Iterable<Goal> goals) => [...goals]
 
 // -- Events' goal shares ----------------------------------------------------
 
-/// One goal an event is tagged with, and how much of the event it takes:
-/// [minutes] (a fixed share), [percent] (of what the fixed shares leave),
-/// or neither -- the whole event.
-class GoalShare {
-  const GoalShare(this.goalId, {this.minutes, this.percent});
+/// One goal an event is tagged with, and how much of the event it takes
+/// (see [Share]): with neither minutes nor percent, the remaining time --
+/// all of it, whatever other goals take of it too.
+class GoalShare extends Share {
+  const GoalShare(super.id, {super.minutes, super.percent, super.remaining});
 
-  final String goalId;
-  final int? minutes;
-  final int? percent;
-
-  /// Whether it takes the whole event.
-  bool get whole => minutes == null && percent == null;
+  String get goalId => id;
 
   static GoalShare? fromJson(Object? json) => switch (json) {
     {'goal_id': final String id} when id.isNotEmpty => GoalShare(
       id,
       minutes: ((json as Map)['minutes'] as num?)?.toInt(),
       percent: (json['percent'] as num?)?.toInt(),
+      remaining: json['remaining'] == true,
     ),
     _ => null,
   };
@@ -305,34 +303,19 @@ class GoalShare {
     'goal_id': goalId,
     'minutes': ?minutes,
     'percent': ?percent,
+    if (plusRemaining) 'remaining': true,
   };
 
-  /// What it takes, briefly: "45m", "30%", or "" for the whole event.
-  String get label => switch ((minutes, percent)) {
-    (final m?, _) => formatMinutes(m),
-    (null, final p?) => '$p%',
-    _ => '',
-  };
-
-  GoalShare copyWith({int? Function()? minutes, int? Function()? percent}) =>
-      GoalShare(
-        goalId,
-        minutes: minutes == null ? this.minutes : minutes(),
-        percent: percent == null ? this.percent : percent(),
-      );
-
-  @override
-  bool operator ==(Object other) =>
-      other is GoalShare &&
-      other.goalId == goalId &&
-      other.minutes == minutes &&
-      other.percent == percent;
-
-  @override
-  int get hashCode => Object.hash(goalId, minutes, percent);
-
-  @override
-  String toString() => 'GoalShare($goalId, $label)';
+  GoalShare copyWith({
+    int? Function()? minutes,
+    int? Function()? percent,
+    bool? remaining,
+  }) => GoalShare(
+    goalId,
+    minutes: minutes == null ? this.minutes : minutes(),
+    percent: percent == null ? this.percent : percent(),
+    remaining: remaining ?? plusRemaining,
+  );
 }
 
 extension EventGoals on Event {
@@ -343,90 +326,35 @@ extension EventGoals on Event {
   ];
 }
 
-/// What's wrong with [shares] on an event [eventMinutes] long, as the
-/// server checks them; empty if nothing is.
-List<String> shareProblems(List<GoalShare> shares, int eventMinutes) {
-  final problems = <String>[];
-  var (minutes, percent) = (0, 0);
-  final seen = <String>{};
-  for (final s in shares) {
-    if (!seen.add(s.goalId)) problems.add('A goal is given twice.');
-    if (s.minutes case final m?) {
-      if (m <= 0) problems.add('Minutes must be more than 0.');
-      minutes += m;
-    } else if (s.percent case final p?) {
-      if (p < 1 || p > 100) problems.add('A percent must be 1 to 100.');
-      percent += p;
-    }
-  }
-  if (minutes > eventMinutes) {
-    problems.add(
-      'The goals take ${formatMinutes(minutes)}, more than the event\'s '
-      '${formatMinutes(eventMinutes)}.',
-    );
-  }
-  if (percent > 100) {
-    problems.add('The goals\' percents add up to $percent%, more than 100%.');
-  }
-  return problems;
-}
-
-/// How much of an event [length] long each of [shares] takes, by goal:
-/// the fixed minutes first, in order (cut down to fit), then the percents
-/// of what's left, then the whole event for those with neither.
-Map<String, Duration> shareTimes(List<GoalShare> shares, Duration length) {
-  final out = <String, Duration>{};
-  var left = length;
-  for (final s in shares) {
-    if (s.minutes case final m? when !out.containsKey(s.goalId)) {
-      final take = Duration(minutes: m) > left ? left : Duration(minutes: m);
-      out[s.goalId] = take;
-      left -= take;
-    }
-  }
-  final rest = left;
-  var percentLeft = 100;
-  for (final s in shares) {
-    if (s.percent case final p? when !out.containsKey(s.goalId)) {
-      final take = p.clamp(0, percentLeft);
-      percentLeft -= take;
-      out[s.goalId] = rest * take ~/ 100;
-    }
-  }
-  for (final s in shares) {
-    if (s.whole) out.putIfAbsent(s.goalId, () => length);
-  }
-  return out;
-}
-
 /// The time an event [length] long gives each goal, with [shares]: its
 /// own, and a parent's, its own and its sub-goals' at any depth together
-/// -- never more than the event, and the whole event if it or any under
-/// it takes the whole event. Goals [tree] doesn't have are left out.
+/// -- each one's fixed part ([shareParts]), and the remaining time once
+/// if it or any under it takes it, never more than the event. Goals
+/// [tree] doesn't have are left out.
 Map<String, Duration> goalTimes(
   List<GoalShare> shares,
   Duration length,
   GoalTree tree,
 ) {
-  final own = shareTimes([
+  final (:fixed, :remaining, :takers) = shareParts([
     for (final s in shares)
       if (tree.byId.containsKey(s.goalId)) s,
   ], length);
-  final whole = {
-    for (final s in shares)
-      if (s.whole && tree.byId.containsKey(s.goalId)) s.goalId,
-  };
   final total = <String, Duration>{};
-  final full = <String>{};
-  for (final MapEntry(key: id, value: time) in own.entries) {
+  final taking = <String>{};
+  for (final id in {...fixed.keys, ...takers}) {
     for (final g in [tree[id]!, ...tree.ancestorsOf(id)]) {
-      total[g.id] = (total[g.id] ?? Duration.zero) + time;
-      if (whole.contains(id)) full.add(g.id);
+      total[g.id] =
+          (total[g.id] ?? Duration.zero) + (fixed[id] ?? Duration.zero);
+      if (takers.contains(id)) taking.add(g.id);
     }
   }
   return {
     for (final MapEntry(key: id, value: time) in total.entries)
-      id: full.contains(id) || time > length ? length : time,
+      id: switch (time + (taking.contains(id) ? remaining : Duration.zero)) {
+        final t when t > length => length,
+        final t => t,
+      },
   };
 }
 

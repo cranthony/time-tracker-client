@@ -536,8 +536,15 @@ PartScore _part(
         [?last, ?next],
       );
     case 'count' || 'duration':
-      engaged = _ofAction(engaged, part['action'] as String?, parentOf);
-      final (rating, said, behind) = _overInterval(part, kind, end, engaged);
+      final action = part['action'] as String?;
+      engaged = _ofAction(engaged, action, parentOf);
+      final (rating, said, behind) = _overInterval(
+        part,
+        kind,
+        end,
+        engaged,
+        (e) => _actionShare(e, action, parentOf),
+      );
       return score(rating, said, behind);
     case 'spacing':
       // The user was at every event of Self's, and a habit's, but its
@@ -694,12 +701,14 @@ double _days(Duration d) => d.inMicroseconds / Duration.microsecondsPerDay;
 }
 
 /// A count or duration part's score, how it was reached, and the events
-/// behind it.
+/// behind it. A duration counts [shareOf] each event: the part of it
+/// that's the part's action's.
 (int, String, List<Event>) _overInterval(
   Part part,
   String kind,
   DateTime end,
   List<Event> events,
+  double Function(Event) shareOf,
 ) {
   final intervalDays = _num(part['interval_days'], defaultWindowDays);
   final interval = Duration(minutes: (intervalDays * 24 * 60).round());
@@ -708,7 +717,7 @@ double _days(Duration d) => d.inMicroseconds / Duration.microsecondsPerDay;
   final String said;
   if (kind == 'duration') {
     target = part['target_min'] as num;
-    value = (at) => _minutesIn(events, at.subtract(interval), at);
+    value = (at) => _minutesIn(events, at.subtract(interval), at, shareOf);
     said = '${formatMinutes(value(end))} of ${formatMinutes(target)}';
   } else {
     target = _num(part['target'], 1);
@@ -806,12 +815,35 @@ DateTime? _lastMet(
   return null;
 }
 
-double _minutesIn(List<Event> events, DateTime start, DateTime end) =>
-    events.fold(0.0, (sum, e) {
-      final from = e.start.isAfter(start) ? e.start : start;
-      final to = e.end.isBefore(end) ? e.end : end;
-      return sum + math.max(0, to.difference(from).inSeconds / 60);
-    });
+/// The minutes of [events] between [start] and [end], each event's
+/// [shareOf] it.
+double _minutesIn(
+  List<Event> events,
+  DateTime start,
+  DateTime end,
+  double Function(Event) shareOf,
+) => events.fold(0.0, (sum, e) {
+  final from = e.start.isAfter(start) ? e.start : start;
+  final to = e.end.isBefore(end) ? e.end : end;
+  return sum + math.max(0, to.difference(from).inSeconds / 60) * shareOf(e);
+});
+
+/// The part of [event] that's of the action [actionId] -- or of any in
+/// the group it names -- as its actions' shares say
+/// ([Event.actionFractions], as the summaries count it); all of it
+/// without one.
+double _actionShare(
+  Event event,
+  String? actionId,
+  String? Function(String id)? parentOf,
+) {
+  if (actionId == null || actionId.isEmpty) return 1;
+  return event
+      .actionFractions()
+      .entries
+      .where((part) => _isOf([part.key], actionId, parentOf))
+      .fold(0.0, (sum, part) => sum + part.value);
+}
 
 int _capped(num value, num target) =>
     target > 0 ? math.min(100, (100 * value / target).round()) : 100;

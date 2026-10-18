@@ -30,7 +30,31 @@ void main() {
         GoalShare('d', minutes: 10),
       ], _hour);
 
-      expect(times, {'b': _m(20), 'd': _m(10), 'a': _m(15), 'c': _hour});
+      // c, with neither, takes the 15 minutes the others leave.
+      expect(times, {'b': _m(20), 'd': _m(10), 'a': _m(15), 'c': _m(15)});
+    });
+
+    test('with +r, takes the remaining time as well as its own', () {
+      final times = shareTimes(const [
+        GoalShare('a', minutes: 20, remaining: true),
+        GoalShare('b', percent: 50),
+        GoalShare('c'),
+      ], _hour);
+
+      // 20 fixed, 50% of the 40 left: 20 remaining, all of it to a and c.
+      expect(times, {'a': _m(40), 'b': _m(20), 'c': _m(20)});
+    });
+
+    test('says +r in its label and to the server', () {
+      const share = GoalShare('a', minutes: 20, remaining: true);
+      expect(share.label, '20m+r');
+      expect(share.toJson(), {
+        'goal_id': 'a',
+        'minutes': 20,
+        'remaining': true,
+      });
+      expect(GoalShare.fromJson(share.toJson()), share);
+      expect(const GoalShare('a', remaining: true), const GoalShare('a'));
     });
 
     test('is cut to fit an event shortened since', () {
@@ -104,13 +128,13 @@ void main() {
       expect(times['icon'], _m(6));
     });
 
-    test('gets the whole event when it or one under it takes it', () {
+    test('gets the remaining time once when it or one under it takes it', () {
       final whole = goalTimes(
         const [GoalShare('ship', minutes: 20), GoalShare('icon')],
         _hour,
         _tree,
       );
-      expect(whole, {'ship': _hour, 'pane': _hour, 'icon': _hour});
+      expect(whole, {'ship': _hour, 'pane': _m(40), 'icon': _m(40)});
 
       final both = goalTimes(
         const [GoalShare('ship'), GoalShare('pane')],
@@ -144,24 +168,29 @@ void main() {
       _event([]),
     ], _tree);
 
+    // Ship's 50 minutes and the 10 left, which Pane and Icon take.
     expect(spent, {
       'ship': _hour,
-      'pane': _hour,
-      'icon': _hour,
+      'pane': _m(10),
+      'icon': _m(10),
       'learn': _m(15),
     });
   });
 
   test('top-level fractions split an event no more than whole', () {
     final fractions = topLevelFractions(
-      const [GoalShare('icon', minutes: 30), GoalShare('learn')],
+      const [
+        GoalShare('icon', minutes: 30, remaining: true),
+        GoalShare('learn'),
+      ],
       _hour,
       _tree,
     );
 
-    // Ship's half and Learn's whole: scaled to a third and two thirds.
-    expect(fractions['ship'], closeTo(1 / 3, 1e-9));
-    expect(fractions['learn'], closeTo(2 / 3, 1e-9));
+    // Ship's whole hour (its 30 and the 30 left) and Learn's 30 left:
+    // scaled to two thirds and a third.
+    expect(fractions['ship'], closeTo(2 / 3, 1e-9));
+    expect(fractions['learn'], closeTo(1 / 3, 1e-9));
     expect(
       topLevelFractions(const [GoalShare('pane', minutes: 15)], _hour, _tree),
       {'ship': 0.25},

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/facts.dart';
 import '../models/person.dart';
 import '../models/scoring.dart';
+import '../models/share.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/plan_memory.dart';
@@ -646,8 +647,11 @@ Widget eventTile(
         when(event),
         if ((event['action_ids'] as List?)?.isNotEmpty ?? false)
           [
-            for (final id in event['action_ids'] as List)
-              actionNames['$id'] ?? '$id',
+            for (final share
+                in (event['action_ids'] as List)
+                    .map(ActionShare.fromJson)
+                    .nonNulls)
+              actionNames[share.actionId] ?? share.actionId,
           ].join(', '),
         if (Facts.fromJson(event['facts']) case final facts?
             when !facts.isEmpty) ...[

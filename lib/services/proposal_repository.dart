@@ -6,6 +6,7 @@ import '../models/event.dart';
 import '../models/note.dart';
 import '../models/person.dart';
 import '../models/proposal.dart';
+import '../models/share.dart';
 import '../widgets/other_events.dart';
 import 'actions_repository.dart';
 import 'events_repository.dart';
@@ -552,7 +553,7 @@ class InMemoryProposalRepository implements ProposalRepository {
   /// The events' actions and facts before each addition was settled, by
   /// ref, then event id: to put back when it's unsettled.
   final _beforeSettling =
-      <String, Map<String, (List<String>, Map<String, Object?>?)>>{};
+      <String, Map<String, (List<Object>, Map<String, Object?>?)>>{};
 
   /// The ids each revision changed, by revision.
   final Map<int, Set<String>> _changed;
@@ -639,7 +640,7 @@ class InMemoryProposalRepository implements ProposalRepository {
         'end': localIsoTimestamp(time('end', e.end)),
         'summary': fields['summary'] ?? e.summary,
         'description': field('description', e.description),
-        'action_ids': fields['action_ids'] ?? e.actionIds,
+        'action_ids': fields['action_ids'] ?? e.actionIdsJson,
         'goals': field('goals', e.properties['goals']),
         'facts': field('facts', e.facts),
         'status': (status ?? e.status).json,
@@ -837,13 +838,21 @@ class InMemoryProposalRepository implements ProposalRepository {
       for (final (i, e) in events.indexed) {
         final facts = _named(e.facts, edit.ref, id) as Map<String, Object?>?;
         final actions = [
-          for (final a in e.actionIds)
-            if (a != edit.ref) a else ?id,
+          for (final a in e.actionShares)
+            if (a.actionId != edit.ref)
+              a.toJson()
+            else if (id != null)
+              ActionShare(
+                id,
+                minutes: a.minutes,
+                percent: a.percent,
+                remaining: a.plusRemaining,
+              ).toJson(),
         ];
-        if (_sameJson(facts, e.facts) && _sameJson(actions, e.actionIds)) {
+        if (_sameJson(facts, e.facts) && _sameJson(actions, e.actionIdsJson)) {
           continue;
         }
-        before[e.id] = (e.actionIds, e.facts);
+        before[e.id] = (e.actionIdsJson, e.facts);
         events[i] = ProposalEvent.fromJson({
           ...e.properties,
           'action_ids': actions,
@@ -1011,7 +1020,7 @@ class InMemoryProposalRepository implements ProposalRepository {
         'description': e.description,
         'location': e.properties['location'],
         'priority': e.properties['priority'],
-        'action_ids': e.actionIds,
+        'action_ids': e.actionIdsJson,
         'facts': e.facts,
       };
       switch (e.status) {

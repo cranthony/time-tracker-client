@@ -21,6 +21,21 @@ Map<K?, Duration> _timeBy<K>(
   none,
 );
 
+/// [day]'s time, from its midnight to the next, by [partsOf]: see
+/// [timeByParts].
+Map<K?, Duration> _timeByParts<K>(
+  List<Event> events,
+  DateTime day,
+  Map<K, double> Function(Event) partsOf,
+  K none,
+) => timeByParts(
+  events,
+  day,
+  DateTime(day.year, day.month, day.day + 1),
+  partsOf,
+  none,
+);
+
 /// [day]'s time by priority, highest first, then the time with nothing
 /// scheduled. Events with none count as [defaultPriority], as the
 /// timeline shows them.
@@ -40,9 +55,11 @@ List<SummarySlice> priorityShares(List<Event> events, DateTime day) {
 }
 
 /// [day]'s time by action: the [top] actions with the most, then the rest
-/// together, then events with no actions, then the time with nothing
-/// scheduled. With [topLevel], an action's time counts toward the top-level
-/// action it's under, once per event however many of its actions are.
+/// together, then events with no actions (and what an event's actions'
+/// shares leave), then the time with nothing scheduled. Each event's time
+/// goes to its actions as their shares say ([Event.actionFractions]).
+/// With [topLevel], an action's time counts toward the top-level action
+/// it's under.
 List<SummarySlice> actionShares(
   List<Event> events,
   DateTime day,
@@ -69,12 +86,14 @@ List<SummarySlice> actionShares(
   }
 
   const none = '';
-  final time = _timeBy(
-    events,
-    day,
-    (event) => event.actionIds.map(topLevel ? topLevelOf : (id) => id),
-    none,
-  );
+  final time = _timeByParts(events, day, (event) {
+    final parts = <String, double>{};
+    for (final MapEntry(key: id, value: f) in event.actionFractions().entries) {
+      final key = topLevel ? topLevelOf(id) : id;
+      parts[key] = (parts[key] ?? 0) + f;
+    }
+    return parts;
+  }, none);
   final unscheduled = time.remove(null);
   final noAction = time.remove(none);
   return [

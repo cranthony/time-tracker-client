@@ -2902,16 +2902,16 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// Whether each of [updates] -- an event and its changes -- leaves room
-  /// for the minutes its goals take; if one doesn't, says which, and
-  /// that its goals' shares need changing first: the app never shortens
-  /// an event below what its goals take.
+  /// for the minutes its goals and actions take; if one doesn't, says
+  /// which, and that their shares need changing first: the app never
+  /// shortens an event below what its shares take.
   Future<bool> _goalsFit(
     Iterable<(Event, Map<String, Object?>)> updates,
   ) async {
     final problems = <String>[];
     for (final (event, changes) in updates) {
-      final shares = event.goals;
-      if (shares.isEmpty) continue;
+      final (goals, actions) = (event.goals, event.actionShares);
+      if (goals.isEmpty && actions.every((a) => a.whole)) continue;
       DateTime at(String key, DateTime was) => switch (changes[key]) {
         final String s => DateTime.parse(s),
         _ => was,
@@ -2920,10 +2920,16 @@ class _EventsScreenState extends State<EventsScreen> {
         'end',
         event.end,
       ).difference(at('start', event.start)).inMinutes;
-      if (shareProblems(shares, minutes).isNotEmpty) {
+      if (shareProblems(goals, minutes).isNotEmpty) {
         problems.add(
           '${_named(event)} would be ${formatMinutes(minutes)}, but its '
           'goals take more of it than that.',
+        );
+      }
+      if (shareProblems(actions, minutes, kind: 'action').isNotEmpty) {
+        problems.add(
+          '${_named(event)} would be ${formatMinutes(minutes)}, but its '
+          'actions take more of it than that.',
         );
       }
     }
@@ -2931,10 +2937,10 @@ class _EventsScreenState extends State<EventsScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Its goals don't fit"),
+        title: const Text("Its shares don't fit"),
         content: Text(
-          '${problems.join('\n')}\n\nChange how much of it its goals take '
-          'first, then shorten it.',
+          '${problems.join('\n')}\n\nChange how much of it its goals or '
+          'actions take first, then shorten it.',
         ),
         actions: [
           TextButton(

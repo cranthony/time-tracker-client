@@ -58,18 +58,43 @@ Map<K?, Duration> timeBy<K>(
   DateTime to,
   Iterable<K> Function(Event) keysOf,
   K none,
+) => timeByParts(events, from, to, (event) {
+  final keys = keysOf(event).toSet();
+  return {for (final key in keys) key: 1 / keys.length};
+}, none);
+
+/// [from] to [to]'s time by what each event counts toward, [partsOf]
+/// giving the fraction of the event each key takes (adding up to no more
+/// than 1): what they leave counts toward [none]. The time with no events
+/// is null's. Every key's time adds up to the whole span.
+Map<K?, Duration> timeByParts<K>(
+  List<Event> events,
+  DateTime from,
+  DateTime to,
+  Map<K, double> Function(Event) partsOf,
+  K none,
 ) {
   final time = <K?, Duration>{};
+  void add(K? key, Duration length) =>
+      time[key] = (time[key] ?? Duration.zero) + length;
   for (final MapEntry(key: event, value: length) in timeByEvent(
     events,
     from,
     to,
   ).entries) {
-    final keys = event == null ? {null} : keysOf(event).toSet();
-    if (keys.isEmpty) keys.add(none);
-    for (final key in keys) {
-      time[key] = (time[key] ?? Duration.zero) + length ~/ keys.length;
+    if (event == null) {
+      add(null, length);
+      continue;
     }
+    var (given, whole) = (Duration.zero, 0.0);
+    for (final MapEntry(key: key, value: fraction) in partsOf(event).entries) {
+      final part = length * fraction;
+      add(key, part);
+      given += part;
+      whole += fraction;
+    }
+    // Not for what rounding leaves of an event its keys take all of.
+    if (whole < 1 - 1e-9 && length > given) add(none, length - given);
   }
   return time;
 }
@@ -103,6 +128,20 @@ class SummaryWindow {
     return (
       timeBy(events, dayFrom, dayTo, keysOf, none),
       timeBy(events, weekFrom, weekTo, keysOf, none),
+    );
+  }
+
+  /// [day] and [week]'s time, by [partsOf], as [timeByParts] splits it.
+  (Map<K?, Duration>, Map<K?, Duration>) splitParts<K>(
+    List<Event> events,
+    Map<K, double> Function(Event) partsOf,
+    K none,
+  ) {
+    final (dayFrom, dayTo) = day;
+    final (weekFrom, weekTo) = week;
+    return (
+      timeByParts(events, dayFrom, dayTo, partsOf, none),
+      timeByParts(events, weekFrom, weekTo, partsOf, none),
     );
   }
 

@@ -70,7 +70,7 @@ class ProposalEvent {
     required this.status,
     this.summary,
     this.description,
-    this.actionIds = const [],
+    this.actionShares = const [],
     this.goals = const [],
     this.facts,
     this.plannedStart,
@@ -91,7 +91,15 @@ class ProposalEvent {
   final ProposalEventStatus status;
   final String? summary;
   final String? description;
-  final List<String> actionIds;
+
+  /// Its actions, and how much of it each takes.
+  final List<ActionShare> actionShares;
+
+  /// The ids of its actions.
+  List<String> get actionIds => [for (final a in actionShares) a.actionId];
+
+  /// Its actions as the server takes them.
+  List<Object> get actionIdsJson => [for (final a in actionShares) a.toJson()];
 
   /// The goals it's for, and how much of it each takes.
   final List<GoalShare> goals;
@@ -150,7 +158,10 @@ class ProposalEvent {
       status: ProposalEventStatus.parse(json['status']),
       summary: json['summary'] as String?,
       description: json['description'] as String?,
-      actionIds: [for (final id in json['action_ids'] as List? ?? []) '$id'],
+      actionShares: [
+        for (final a in json['action_ids'] as List? ?? [])
+          ?ActionShare.fromJson(a),
+      ],
       goals: [
         for (final g in json['goals'] as List? ?? []) ?GoalShare.fromJson(g),
       ],

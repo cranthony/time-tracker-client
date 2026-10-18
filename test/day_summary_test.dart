@@ -14,7 +14,7 @@ void main() {
     DateTime start,
     DateTime end, {
     int? priority,
-    List<String> actions = const [],
+    List<Object> actions = const [],
     bool cancelled = false,
   }) => Event(
     start: start,
@@ -96,6 +96,36 @@ void main() {
         '3 other actions': 2.5,
         'No action': 2,
         'Unscheduled': 12,
+      });
+    });
+
+    test('an event goes to its actions as their shares say', () {
+      final shared = [
+        // 30 minutes of work, then the 90 left split between work (+r)
+        // and reading.
+        event(
+          at(9),
+          at(11),
+          actions: [
+            {'action_id': 'work', 'minutes': 30, 'remaining': true},
+            'read',
+          ],
+        ),
+        // An hour of which half is running and the rest no action's.
+        event(
+          at(12),
+          at(13),
+          actions: [
+            {'action_id': 'run', 'percent': 50},
+          ],
+        ),
+      ];
+      expect(hours(actionShares(shared, day, actions)), {
+        'Work': 1.25,
+        'Read': 0.75,
+        'Run': 0.5,
+        'No action': 0.5,
+        'Unscheduled': 21,
       });
     });
 

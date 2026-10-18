@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/plan_action.dart';
+import '../models/share.dart';
 import '../models/note.dart';
 import '../services/mcp_client.dart';
 import '../services/server_errors.dart';
@@ -293,9 +294,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         PropertyKind.time => DateTime.parse(value as String).toLocal(),
         PropertyKind.flag => value == true,
         PropertyKind.color => parseColor(value as String?),
-        PropertyKind.actions => [
-          ...(value as List? ?? const []).cast<String>(),
-        ],
+        PropertyKind.actions => _shareIds(value),
         PropertyKind.date => switch (value) {
           final String iso => DateTime.tryParse(iso),
           _ => null,
@@ -307,7 +306,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
           final String iso => formatDuration(parseIsoDuration(iso)) ?? iso,
           _ => '',
         },
-        PropertyKind.actions => (value as List? ?? const []).join(', '),
+        PropertyKind.actions => _shareIds(value).join(', '),
         PropertyKind.lines => (value as List? ?? const []).join('\n'),
         _ => value == null ? '' : '$value',
       };
@@ -405,7 +404,12 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
           PropertyKind.choice:
         value = _draft;
       case PropertyKind.actions:
-        value = [...(_draft as List<String>)];
+        // Each kept with the share it had.
+        final had = {
+          for (final a in _value(key) as List? ?? const [])
+            if (ActionShare.fromJson(a) case final share?) share.actionId: a,
+        };
+        value = [for (final id in _draft as List<String>) had[id] ?? id];
       case PropertyKind.date:
         value = switch (_draft) {
           final DateTime day =>
@@ -464,8 +468,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       (b as List? ?? const []).cast<String>(),
     ),
     PropertyKind.actions => listEquals(
-      (a as List? ?? const []).cast<String>(),
-      (b as List? ?? const []).cast<String>(),
+      [for (final x in a as List? ?? const []) ActionShare.fromJson(x)],
+      [for (final x in b as List? ?? const []) ActionShare.fromJson(x)],
     ),
     _ => a == b,
   };
@@ -1176,7 +1180,13 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
         return value.join('\n');
       case PropertyKind.actions when value is List:
         if (value.isEmpty) return '(none)';
-        return [for (final id in value) _actionNames[id] ?? '$id'].join(', ');
+        return [
+          for (final share in value.map(ActionShare.fromJson).nonNulls)
+            [
+              _actionNames[share.actionId] ?? share.actionId,
+              if (share.label.isNotEmpty) '(${share.label})',
+            ].join(' '),
+        ].join(', ');
       case PropertyKind.choice:
         return widget.choices[key]?[value] ?? '$value';
       case PropertyKind.date when value is String:
@@ -1232,3 +1242,10 @@ class PropertyRow extends StatelessWidget {
     );
   }
 }
+
+/// The ids of an actions property's [value]: its actions, each an id or,
+/// with a share of the event, an object ([ActionShare]).
+List<String> _shareIds(Object? value) => [
+  for (final a in value as List? ?? const [])
+    ?ActionShare.fromJson(a)?.actionId,
+];
