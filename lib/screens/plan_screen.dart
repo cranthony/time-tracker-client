@@ -723,39 +723,10 @@ class _PlanScreenState extends State<PlanScreen> {
     ),
   );
 
-  /// J or K: the next of what can be tapped in the pane shown, [later]
-  /// down it or up, highlighted -- and Enter taps it -- scrolled into
-  /// view. Not its search: letters would go into it.
-  void _stepInPane(FocusNode pane, {required bool later}) {
-    final stops =
-        [
-          for (final node in pane.traversalDescendants)
-            if (node.canRequestFocus &&
-                !node.skipTraversal &&
-                node.context != null &&
-                node.context!.findAncestorWidgetOfExactType<EditableText>() ==
-                    null &&
-                node.context!.widget is! EditableText)
-              node,
-        ]..sort((a, b) {
-          final ra = a.rect, rb = b.rect;
-          final dy = ra.top.compareTo(rb.top);
-          return dy != 0 ? dy : ra.left.compareTo(rb.left);
-        });
-    if (stops.isEmpty) return;
-    final at = stops.indexOf(FocusManager.instance.primaryFocus!);
-    final next = at < 0
-        ? (later ? stops.first : stops.last)
-        : stops[(at + (later ? 1 : -1)).clamp(0, stops.length - 1)];
-    next.requestFocus();
-    Scrollable.ensureVisible(
-      next.context!,
-      alignmentPolicy: later
-          ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
-          : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
-      duration: const Duration(milliseconds: 120),
-    );
-  }
+  /// J or K: the next item in the pane shown, [later] down it or up
+  /// ([stepItems]); Enter taps it.
+  void _stepInPane(FocusNode pane, {required bool later}) =>
+      stepItems(pane, later: later);
 
   /// The Plan page's hotkeys, with the [panes] shown in [tabs]: J and K
   /// down and up the one shown, H and L to the one beside it.
@@ -965,10 +936,7 @@ class _PlanScreenState extends State<PlanScreen> {
       text: 'Sign in to see your plan.',
       action: widget.onSignIn == null
           ? null
-          : FilledButton(
-              onPressed: _signingIn ? null : _signIn,
-              child: Text(_signingIn ? 'Waiting for browser…' : 'Sign in'),
-            ),
+          : SignInButton(signingIn: _signingIn, onPressed: _signIn),
     ),
   );
 
@@ -1100,41 +1068,44 @@ class _PlanScreenState extends State<PlanScreen> {
     final time = _timeOnActions(tree);
     final searching = _query.trim().isNotEmpty;
     return [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-        child: Wrap(
-          spacing: 16,
-          runSpacing: 4,
-          children: [
-            Tooltip(
-              message:
-                  "Each active action takes one of the calendar's event "
-                  'labels, as do its own default colors.',
-              child: Text(
-                '${actions.labelSlotsUsed} of ${actions.labelSlotsTotal} labels '
-                'in use',
-                style: Theme.of(context).textTheme.bodySmall,
+      // Over the actions, not one: J and K pass it by.
+      NotAnItem(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Wrap(
+            spacing: 16,
+            runSpacing: 4,
+            children: [
+              Tooltip(
+                message:
+                    "Each active action takes one of the calendar's event "
+                    'labels, as do its own default colors.',
+                child: Text(
+                  '${actions.labelSlotsUsed} of ${actions.labelSlotsTotal} labels '
+                  'in use',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ),
-            ),
-            InkWell(
-              onTap: _editPriorityColors,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final p in priorities)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 2),
-                      child: ColorDot(color: priorityColor(p), size: 10),
+              InkWell(
+                onTap: _editPriorityColors,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final p in priorities)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 2),
+                        child: ColorDot(color: priorityColor(p), size: 10),
+                      ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Priority colors',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Priority colors',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       if (shown.isEmpty)

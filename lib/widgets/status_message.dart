@@ -1,6 +1,40 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/server_errors.dart';
+import 'hotkeys.dart';
+
+/// The button a page signs in with ([onPressed]), saying so while
+/// [signingIn]: S presses it while it's shown, and holding Ctrl shows S
+/// on it.
+class SignInButton extends StatelessWidget {
+  const SignInButton({
+    super.key,
+    required this.signingIn,
+    required this.onPressed,
+  });
+
+  final bool signingIn;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => HotkeyBindings(
+    bindings: [
+      HotkeyBinding(
+        const HotkeyTrigger.key(LogicalKeyboardKey.keyS),
+        onPressed,
+        when: () => !signingIn && isPainted(context),
+      ),
+    ],
+    child: HotkeyHint(
+      Hotkey.signIn,
+      child: FilledButton(
+        onPressed: signingIn ? null : onPressed,
+        child: Text(signingIn ? 'Waiting for browser…' : 'Sign in'),
+      ),
+    ),
+  );
+}
 
 /// Lets a lone message fill the screen and still support pull-to-refresh.
 class FillViewport extends StatelessWidget {

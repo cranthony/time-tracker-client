@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 /// Where a [Hotkey] works, as the list of them groups it.
@@ -91,10 +92,16 @@ class Hotkey {
     HotkeyPlace.anywhere,
   );
   static const help = Hotkey('?', 'Show this list', HotkeyPlace.anywhere);
+  static const signIn = Hotkey(
+    'S',
+    'Sign in, where a page asks you to',
+    HotkeyPlace.anywhere,
+  );
   static const stepAny = Hotkey(
     'J / K',
     'Elsewhere -- in a menu, say -- highlight the next (J) or previous (K) '
-        'thing to tap; Enter taps it',
+        "item, from the first (J) or last (K) in view; Enter taps it, and "
+        'Tab goes to the buttons in it',
     HotkeyPlace.anywhere,
   );
   static const scrollAny = Hotkey(
@@ -203,7 +210,9 @@ class Hotkey {
 
   static const planItems = Hotkey(
     'J / K',
-    "Go down (J) or up (K) the pane shown; Enter opens what's highlighted",
+    'Go down (J) or up (K) the items of the pane shown -- a goal, say -- '
+        "from the first (J) or last (K) in view; Enter opens what's "
+        'highlighted, and Tab goes to the buttons in it',
     HotkeyPlace.plan,
   );
   static const planPanes = Hotkey(
@@ -223,6 +232,7 @@ class Hotkey {
     discard,
     editText,
     help,
+    signIn,
     stepAny,
     scrollAny,
     leaveField,
@@ -518,33 +528,15 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
     return KeyEventResult.ignored;
   }
 
-  /// J or K where nothing else takes them: highlights the next of what
-  /// can be tapped in what's on top -- a menu's items, say -- [later], or
-  /// the one before, scrolled into view; Enter taps it. Whether there was
-  /// what's on top to.
+  /// J or K where nothing else takes them: highlights the next item in
+  /// what's on top -- a menu's, say -- [later], or the one before
+  /// ([stepItems]); Enter taps it. Whether there was one to.
   bool stepFocus({required bool later}) {
     final route = _routes.lastOrNull;
     if (route is! ModalRoute) return false;
-    final scope = route.subtreeContext == null
-        ? null
-        : FocusScope.of(route.subtreeContext!);
-    final focus = FocusManager.instance.primaryFocus;
-    if (scope == null || focus == null) return false;
-    // Not yet in what's on top: from its start, or its end.
-    final inTop = focus == scope || focus.ancestors.contains(scope);
-    final from = inTop ? focus : scope;
-    if (later ? !from.nextFocus() : !from.previousFocus()) return false;
-    final moved = FocusManager.instance.primaryFocus?.context;
-    if (moved != null && moved.mounted) {
-      Scrollable.ensureVisible(
-        moved,
-        alignmentPolicy: later
-            ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
-            : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
-        duration: const Duration(milliseconds: 120),
-      );
-    }
-    return true;
+    final context = route.subtreeContext;
+    if (context == null) return false;
+    return stepItems(FocusScope.of(context), later: later);
   }
 
   /// Scrolls what's on top -- a page, a dialog or a sheet, not a menu,
@@ -648,6 +640,145 @@ bool isPainted(BuildContext context) {
     if (!parent.paintsChild(child!)) return false;
     child = parent;
   }
+  return true;
+}
+
+/// Whether [node] is in view in the lists that scroll up and down around
+/// it: [wholly], or at all. Null if it's in none.
+bool? inScrolledView(FocusNode node, {bool wholly = true}) {
+  final context = node.context;
+  if (context == null || !context.mounted) return null;
+  final rect = node.rect;
+  bool? shown;
+  for (
+    var list = Scrollable.maybeOf(context);
+    list != null;
+    list = Scrollable.maybeOf(list.context)
+  ) {
+    if (list.position.axis != Axis.vertical) continue;
+    final view = list.context.findRenderObject();
+    if (view is! RenderBox || !view.attached || !view.hasSize) continue;
+    final bounds = view.localToGlobal(Offset.zero) & view.size;
+    // A little leeway, for a row a fraction of a pixel past the edge.
+    final inIt = wholly
+        ? rect.top >= bounds.top - 1 && rect.bottom <= bounds.bottom + 1
+        : rect.bottom > bounds.top && rect.top < bounds.bottom;
+    shown = (shown ?? true) && inIt;
+  }
+  return shown;
+}
+
+/// Scrolls [context], scrolled away, back into view: in a list that
+/// builds only what's near the view, kept only because it has focus, by
+/// where the list laid it out last.
+void _scrollBackTo(BuildContext context) {
+  final list = Scrollable.maybeOf(context);
+  var box = context.findRenderObject();
+  // Up to the list's own child, which knows where it was laid out.
+  while (box != null && box.parent is! RenderSliver) {
+    box = box.parent;
+  }
+  if (box?.parentData case SliverMultiBoxAdaptorParentData(:final layoutOffset?)
+      when list != null) {
+    final position = list.position;
+    position.jumpTo(
+      layoutOffset.clamp(position.minScrollExtent, position.maxScrollExtent),
+    );
+  } else {
+    Scrollable.ensureVisible(context);
+  }
+}
+
+/// Whether J and K can highlight [node]: something to tap, not a text
+/// field, nor [NotAnItem].
+bool _isStop(FocusNode node) {
+  final context = node.context;
+  return node.canRequestFocus &&
+      !node.skipTraversal &&
+      context != null &&
+      context.mounted &&
+      context.widget is! EditableText &&
+      context.findAncestorWidgetOfExactType<EditableText>() == null &&
+      context.findAncestorWidgetOfExactType<NotAnItem>() == null;
+}
+
+/// [child], at the head of a list but not one of its items -- a link
+/// over the rows, say: J and K pass it by, though Tab goes to it.
+class NotAnItem extends StatelessWidget {
+  const NotAnItem({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
+/// J ([later]) or K, in [within]: highlights the next item, or the one
+/// before, scrolled into view -- even from one scrolled away. An item is
+/// a row, highlighted by the first of what can be tapped in it -- a goal,
+/// not its edit button, which Tab goes to -- and, where some are in a
+/// list that scrolls, only those: not the buttons over it. With none
+/// highlighted yet, from the first in view, or the last. Not a text
+/// field, which letters would go into. Whether there was one to.
+bool stepItems(FocusNode within, {required bool later}) {
+  final stops =
+      [
+        for (final node in within.traversalDescendants)
+          if (_isStop(node)) node,
+      ]..sort((a, b) {
+        final ra = a.rect, rb = b.rect;
+        final dy = ra.top.compareTo(rb.top);
+        return dy != 0 ? dy : ra.left.compareTo(rb.left);
+      });
+  final listed = [
+    for (final node in stops)
+      if (inScrolledView(node, wholly: false) != null) node,
+  ];
+  // Each row's stops, the first of them -- its item -- first.
+  final rows = <List<FocusNode>>[];
+  for (final node in listed.isEmpty ? stops : listed) {
+    final y = node.rect.center.dy;
+    final lead = rows.lastOrNull?.first.rect;
+    if (lead != null && lead.top <= y && y <= lead.bottom) {
+      rows.last.add(node);
+    } else {
+      rows.add([node]);
+    }
+  }
+  if (rows.isEmpty) return false;
+  final focus = FocusManager.instance.primaryFocus;
+  if (focus != null &&
+      stops.contains(focus) &&
+      inScrolledView(focus, wholly: false) == false) {
+    // Scrolled away: the items beside it may not be built. Back to it
+    // first, then on, once they are.
+    _scrollBackTo(focus.context!);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (within.context?.mounted ?? false) stepItems(within, later: later);
+    });
+    return true;
+  }
+  final at = rows.indexWhere((row) => row.contains(focus));
+  final FocusNode next;
+  if (at >= 0) {
+    next = rows[(at + (later ? 1 : -1)).clamp(0, rows.length - 1)].first;
+  } else {
+    final shown = [
+      for (final row in rows)
+        if (inScrolledView(row.first) ?? false) row.first,
+    ];
+    next =
+        (later ? shown.firstOrNull : shown.lastOrNull) ??
+        (later ? rows.first : rows.last).first;
+  }
+  next.requestFocus();
+  Scrollable.ensureVisible(
+    next.context!,
+    alignmentPolicy: later
+        ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
+        : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+    duration: const Duration(milliseconds: 120),
+  );
   return true;
 }
 

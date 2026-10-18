@@ -482,10 +482,7 @@ class _NotesScreenState extends State<NotesScreen> {
             : 'Sign in to see your notes and save the ones below.',
         action: widget.onSignIn == null
             ? null
-            : FilledButton(
-                onPressed: _signingIn ? null : _signIn,
-                child: Text(_signingIn ? 'Waiting for browser…' : 'Sign in'),
-              ),
+            : SignInButton(signingIn: _signingIn, onPressed: _signIn),
       );
     } else if (_error != null && notes == null) {
       banner = LoadError(
