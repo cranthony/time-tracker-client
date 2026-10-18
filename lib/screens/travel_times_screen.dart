@@ -136,42 +136,44 @@ class _TravelTimesScreenState extends State<TravelTimesScreen> {
         autofocus: true,
         child: RefreshIndicator(
           onRefresh: () => _load(again: true),
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 24),
-            children: switch ((travel, _error)) {
-              (null, final error?) => [
-                LoadError(
-                  what: 'the travel times',
-                  error: error,
-                  onRetry: () => _load(again: true),
-                ),
-              ],
-              (null, _) => const [LinearProgressIndicator()],
-              (final travel?, _) => [
-                for (final t in travel)
-                  if (_matches(t, places, modes))
-                    TravelTimeTile(
-                      travel: t,
-                      places: places,
-                      modes: modes,
-                      onTap: () => _edit(t),
-                    ),
-                if (travel.isNotEmpty &&
-                    !travel.any((t) => _matches(t, places, modes)))
-                  NoMatches(query: _query),
-                if (travel.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      'No travel times yet. Tap + to say roughly how long it '
-                      'takes between two places -- or neighborhoods, or cities '
-                      '-- by each way of getting there.',
-                      style: theme.textTheme.bodySmall,
-                    ),
+          child: HotkeyItems(
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 24),
+              children: switch ((travel, _error)) {
+                (null, final error?) => [
+                  LoadError(
+                    what: 'the travel times',
+                    error: error,
+                    onRetry: () => _load(again: true),
                   ),
-              ],
-            },
+                ],
+                (null, _) => const [LinearProgressIndicator()],
+                (final travel?, _) => [
+                  for (final t in travel)
+                    if (_matches(t, places, modes))
+                      TravelTimeTile(
+                        travel: t,
+                        places: places,
+                        modes: modes,
+                        onTap: () => _edit(t),
+                      ),
+                  if (travel.isNotEmpty &&
+                      !travel.any((t) => _matches(t, places, modes)))
+                    NoMatches(query: _query),
+                  if (travel.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'No travel times yet. Tap + to say roughly how long it '
+                        'takes between two places -- or neighborhoods, or cities '
+                        '-- by each way of getting there.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                ],
+              },
+            ),
           ),
         ),
       ),

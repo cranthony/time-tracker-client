@@ -1,0 +1,152 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/outbox/action_writes.dart';
+import 'package:time_tracker_client/screens/goal_screen.dart';
+import 'package:time_tracker_client/screens/plan_screen.dart';
+import 'package:time_tracker_client/services/actions_repository.dart';
+import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/services/goals_repository.dart';
+import 'package:time_tracker_client/services/notes_repository.dart';
+import 'package:time_tracker_client/widgets/goal_editor.dart';
+import 'package:time_tracker_client/widgets/goal_tile.dart';
+import 'package:time_tracker_client/widgets/hotkeys.dart';
+
+void main() {
+  late Hotkeys hotkeys;
+
+  Widget withHotkeys(Widget home) {
+    hotkeys = Hotkeys();
+    return MaterialApp(
+      navigatorObservers: [hotkeys],
+      builder: (context, child) => HotkeyScope(hotkeys: hotkeys, child: child!),
+      home: home,
+    );
+  }
+
+  Future<void> press(WidgetTester tester, LogicalKeyboardKey key) async {
+    await tester.sendKeyEvent(key);
+    await tester.pumpAndSettle();
+  }
+
+  Goal goal(String id, String title, {String? parent}) => Goal.fromJson({
+    'id': id,
+    'title': title,
+    'parent_id': parent,
+    'status': 'active',
+    'deadline': '2026-12-01',
+    'history': [
+      {'status': 'active', 'at': '2026-10-01T09:00:00'},
+    ],
+  });
+
+  /// A goal's page, with two sub-goals.
+  Future<void> pumpGoal(WidgetTester tester) async {
+    final repo = InMemoryActionsRepository();
+    await tester.pumpWidget(
+      withHotkeys(
+        GoalsScope(
+          repository: InMemoryGoalsRepository([
+            goal('ship', 'Ship the app'),
+            goal('pane', 'Write the pane', parent: 'ship'),
+            goal('icon', 'Draw the icon', parent: 'ship'),
+          ], () => DateTime(2026, 10, 17, 9)),
+          child: PlanScreen(
+            repository: repo,
+            outbox: ActionWrites.local(repo)..start(),
+            serverLabel: 'offline demo',
+            eventsRepository: InMemoryEventsRepository(const []),
+            notesRepository: InMemoryNotesRepository(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ship the app'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GoalScreen), findsOneWidget);
+  }
+
+  /// The sub-goal highlighted: its row, not a button in it.
+  String? highlighted() {
+    final context = FocusManager.instance.primaryFocus?.context;
+    if (context?.findAncestorWidgetOfExactType<IconButton>() != null) {
+      return null;
+    }
+    return context?.findAncestorWidgetOfExactType<GoalTile>()?.goal.title;
+  }
+
+  testWidgets("J and K go from sub-goal to sub-goal on a goal's page, not "
+      'to the buttons over them or the history under them', (tester) async {
+    await pumpGoal(tester);
+    final titles = [
+      for (final tile in tester.widgetList<GoalTile>(
+        find.descendant(
+          of: find.byType(GoalScreen),
+          matching: find.byType(GoalTile),
+        ),
+      ))
+        tile.goal.title,
+    ];
+    expect(titles, hasLength(2));
+
+    await press(tester, LogicalKeyboardKey.keyJ);
+    expect(highlighted(), titles[0]);
+    await press(tester, LogicalKeyboardKey.keyJ);
+    expect(highlighted(), titles[1]);
+    await press(tester, LogicalKeyboardKey.keyJ);
+    expect(highlighted(), titles[1]);
+    await press(tester, LogicalKeyboardKey.keyK);
+    expect(highlighted(), titles[0]);
+  });
+
+  testWidgets("Home and End go to a goal's first and last sub-goal", (
+    tester,
+  ) async {
+    await pumpGoal(tester);
+    final titles = [
+      for (final tile in tester.widgetList<GoalTile>(
+        find.descendant(
+          of: find.byType(GoalScreen),
+          matching: find.byType(GoalTile),
+        ),
+      ))
+        tile.goal.title,
+    ];
+    await press(tester, LogicalKeyboardKey.end);
+    expect(highlighted(), titles.last);
+    await press(tester, LogicalKeyboardKey.home);
+    expect(highlighted(), titles.first);
+  });
+
+  testWidgets("E on a goal's page edits it", (tester) async {
+    await pumpGoal(tester);
+    await press(tester, LogicalKeyboardKey.keyE);
+    final editor = tester.widget<GoalEditorPage>(find.byType(GoalEditorPage));
+    expect(editor.goal?.id, 'ship');
+  });
+
+  testWidgets('J and K do nothing in a dialog with no list; Tab goes on', (
+    tester,
+  ) async {
+    await tester.pumpWidget(withHotkeys(const Scaffold()));
+    final context = tester.element(find.byType(Scaffold));
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        content: const Text('Sure?'),
+        actions: [
+          TextButton(onPressed: () {}, child: const Text('No')),
+          TextButton(onPressed: () {}, child: const Text('Yes')),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    final before = FocusManager.instance.primaryFocus;
+    await press(tester, LogicalKeyboardKey.keyJ);
+    expect(FocusManager.instance.primaryFocus, before);
+    await press(tester, LogicalKeyboardKey.tab);
+    expect(FocusManager.instance.primaryFocus, isNot(before));
+  });
+}

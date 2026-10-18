@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/hotkeys.dart';
+
 /// A page of events -- all of a person's, say, or all they cancelled --
 /// as [tiles] builds them, built again as [listenable] changes.
 class EventListScreen extends StatelessWidget {
@@ -21,9 +23,11 @@ class EventListScreen extends StatelessWidget {
     appBar: AppBar(title: Text(title)),
     body: ListenableBuilder(
       listenable: listenable ?? ValueNotifier(null),
-      builder: (context, _) => ListView(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        children: tiles(context),
+      builder: (context, _) => HotkeyItems(
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          children: tiles(context),
+        ),
       ),
     ),
   );

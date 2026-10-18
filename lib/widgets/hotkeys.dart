@@ -89,7 +89,8 @@ class Hotkey {
   );
   static const editText = Hotkey(
     'E',
-    'Edit the description being read',
+    "Edit what's being read: a description, or the goal, habit, person or "
+        'trait whose page is open, as its pencil does',
     HotkeyPlace.anywhere,
   );
   static const help = Hotkey('?', 'Show this list', HotkeyPlace.anywhere);
@@ -107,9 +108,16 @@ class Hotkey {
   );
   static const stepAny = Hotkey(
     'J / K',
-    'Elsewhere -- in a menu, say -- highlight the next (J) or previous (K) '
-        "item, from the first (J) or last (K) in view; Enter taps it, and "
-        'Tab goes to the buttons in it',
+    "Elsewhere, in a menu or a list -- a goal's sub-goals, say -- "
+        'highlight the next (J) or previous (K) item, from the first (J) or '
+        'last (K) in view; Enter taps it. Tab and Shift+Tab go from button '
+        "to button, in it and where there's no list",
+    HotkeyPlace.anywhere,
+  );
+  static const endsAny = Hotkey(
+    'Home / End',
+    'Where J and K go through a list, highlight its first (Home) or last '
+        '(End) item',
     HotkeyPlace.anywhere,
   );
   static const scrollAny = Hotkey(
@@ -139,6 +147,11 @@ class Hotkey {
     'J / K',
     'Highlight the next event (J) or the one before (K), from the one '
         'happening now; past the last of the day, onto the next',
+    HotkeyPlace.events,
+  );
+  static const endEvents = Hotkey(
+    'Home / End',
+    'Highlight the first (Home) or last (End) event of the day',
     HotkeyPlace.events,
   );
   static const openEvent = Hotkey(
@@ -183,11 +196,6 @@ class Hotkey {
     HotkeyPlace.creating,
   );
 
-  static const parts = Hotkey(
-    'J / K',
-    'Highlight its next part (J) or the one before (K); Enter opens it',
-    HotkeyPlace.event,
-  );
   static const who = Hotkey('W', 'Who it was with and for', HotkeyPlace.event);
   static const location = Hotkey('L', 'Where it was', HotkeyPlace.event);
   static const description = Hotkey('D', 'Its description', HotkeyPlace.event);
@@ -223,6 +231,11 @@ class Hotkey {
         'highlighted, and Tab goes to the buttons in it',
     HotkeyPlace.plan,
   );
+  static const planEnds = Hotkey(
+    'Home / End',
+    'Go to the first (Home) or last (End) item of the pane shown',
+    HotkeyPlace.plan,
+  );
   static const planPanes = Hotkey(
     'H / L',
     'Go to the pane on the left (H) or right (L)',
@@ -243,11 +256,13 @@ class Hotkey {
     newThing,
     signIn,
     stepAny,
+    endsAny,
     scrollAny,
     leaveField,
     search,
     fieldLetters,
     stepEvents,
+    endEvents,
     openEvent,
     days,
     scroll,
@@ -257,7 +272,6 @@ class Hotkey {
     setStart,
     setEnd,
     leaveMode,
-    parts,
     who,
     location,
     description,
@@ -270,6 +284,7 @@ class Hotkey {
     eventNotes,
     deleteEvent,
     planItems,
+    planEnds,
     planPanes,
   ];
 }
@@ -535,6 +550,11 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
           ? KeyEventResult.handled
           : KeyEventResult.ignored;
     }
+    if (key == LogicalKeyboardKey.home || key == LogicalKeyboardKey.end) {
+      return stepFocus(later: key == LogicalKeyboardKey.end, toEnd: true)
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
+    }
     if (key == LogicalKeyboardKey.arrowDown ||
         key == LogicalKeyboardKey.arrowUp) {
       return scrollTop(later: key == LogicalKeyboardKey.arrowDown)
@@ -547,12 +567,35 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
   /// J or K where nothing else takes them: highlights the next item in
   /// what's on top -- a menu's, say -- [later], or the one before
   /// ([stepItems]); Enter taps it. Whether there was one to.
-  bool stepFocus({required bool later}) {
+  bool stepFocus({required bool later, bool toEnd = false}) {
     final route = _routes.lastOrNull;
     if (route is! ModalRoute) return false;
     final context = route.subtreeContext;
     if (context == null) return false;
-    return stepItems(FocusScope.of(context), later: later);
+    final scope = FocusScope.of(context);
+    // A menu is all items; anything else, only the lists in it that say
+    // they are ([HotkeyItems]) -- with none, Tab goes from button to
+    // button.
+    if (route is PopupRoute &&
+        route is! RawDialogRoute &&
+        route is! ModalBottomSheetRoute) {
+      return stepItems(scope, later: later, toEnd: toEnd);
+    }
+    final lists = [
+      for (final node in scope.descendants)
+        if (node is _ItemsNode &&
+            node.context != null &&
+            isPainted(node.context!))
+          node,
+    ];
+    if (lists.isEmpty) return false;
+    // The one with an item highlighted, or else the first.
+    final focus = FocusManager.instance.primaryFocus;
+    final list = lists.firstWhere(
+      (list) => focus?.ancestors.contains(list) ?? false,
+      orElse: () => lists.first,
+    );
+    return stepItems(list, later: later, toEnd: toEnd);
   }
 
   /// Scrolls what's on top -- a page, a dialog or a sheet, not a menu,
@@ -705,6 +748,39 @@ void _scrollBackTo(BuildContext context) {
   }
 }
 
+/// [child], a list of items -- a goal's sub-goals, say -- for J and K to
+/// go down and up ([stepItems]) on a page, or in a dialog or sheet:
+/// without one, they do nothing there, and Tab goes from button to
+/// button.
+class HotkeyItems extends StatefulWidget {
+  const HotkeyItems({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<HotkeyItems> createState() => _HotkeyItemsState();
+}
+
+class _HotkeyItemsState extends State<HotkeyItems> {
+  final _node = _ItemsNode();
+
+  @override
+  void dispose() {
+    _node.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      Focus(focusNode: _node, child: widget.child);
+}
+
+/// [HotkeyItems]'s, to find it by.
+class _ItemsNode extends FocusNode {
+  _ItemsNode()
+    : super(debugLabel: 'Items', canRequestFocus: false, skipTraversal: true);
+}
+
 /// Whether J and K can highlight [node]: something to tap, not a text
 /// field, nor [NotAnItem].
 bool _isStop(FocusNode node) {
@@ -729,14 +805,10 @@ class NotAnItem extends StatelessWidget {
   Widget build(BuildContext context) => child;
 }
 
-/// J ([later]) or K, in [within]: highlights the next item, or the one
-/// before, scrolled into view -- even from one scrolled away. An item is
-/// a row, highlighted by the first of what can be tapped in it -- a goal,
-/// not its edit button, which Tab goes to -- and, where some are in a
-/// list that scrolls, only those: not the buttons over it. With none
-/// highlighted yet, from the first in view, or the last. Not a text
-/// field, which letters would go into. Whether there was one to.
-bool stepItems(FocusNode within, {required bool later}) {
+/// [within]'s items, as rows of what can be tapped in each: its stops,
+/// top to bottom, in the rows they make -- each row's first, its item,
+/// first -- and, where some are in a list that scrolls, only those.
+List<List<FocusNode>> _itemRows(FocusNode within) {
   final stops =
       [
         for (final node in within.traversalDescendants)
@@ -761,10 +833,24 @@ bool stepItems(FocusNode within, {required bool later}) {
       rows.add([node]);
     }
   }
+  return rows;
+}
+
+/// J ([later]) or K, in [within]: highlights the next item, or the one
+/// before, scrolled into view -- even from one scrolled away. An item is
+/// a row, highlighted by the first of what can be tapped in it -- a goal,
+/// not its edit button, which Tab goes to -- and, where some are in a
+/// list that scrolls, only those: not the buttons over it. With none
+/// highlighted yet, from the first in view, or the last. Not a text
+/// field, which letters would go into. With [toEnd] -- Home or End --
+/// the first item, or the last ([later]). Whether there was one to.
+bool stepItems(FocusNode within, {required bool later, bool toEnd = false}) {
+  final rows = _itemRows(within);
   if (rows.isEmpty) return false;
+  if (toEnd) return _toEnd(within, rows, last: later);
   final focus = FocusManager.instance.primaryFocus;
   if (focus != null &&
-      stops.contains(focus) &&
+      rows.any((row) => row.contains(focus)) &&
       inScrolledView(focus, wholly: false) == false) {
     // Scrolled away: the items beside it may not be built. Back to it
     // first, then on, once they are.
@@ -787,15 +873,47 @@ bool stepItems(FocusNode within, {required bool later}) {
         (later ? shown.firstOrNull : shown.lastOrNull) ??
         (later ? rows.first : rows.last).first;
   }
-  next.requestFocus();
+  _highlight(next, later: later);
+  return true;
+}
+
+/// Home or End ([last]): the first of [within]'s items, or the last --
+/// once the list it's in is scrolled to its start or end, where a list
+/// that builds only what's near the view hasn't built it yet.
+bool _toEnd(
+  FocusNode within,
+  List<List<FocusNode>> rows, {
+  required bool last,
+}) {
+  final position = Scrollable.maybeOf(rows.first.first.context!)?.position;
+  if (position != null && position.axis == Axis.vertical) {
+    final edge = last ? position.maxScrollExtent : position.minScrollExtent;
+    if (position.pixels != edge) {
+      position.jumpTo(edge);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!(within.context?.mounted ?? false)) return;
+        final now = _itemRows(within);
+        if (now.isEmpty) return;
+        _highlight((last ? now.last : now.first).first, later: last);
+      });
+      return true;
+    }
+  }
+  _highlight((last ? rows.last : rows.first).first, later: last);
+  return true;
+}
+
+/// Highlights [node], scrolled into view at the end of the view
+/// ([later]), or its start.
+void _highlight(FocusNode node, {required bool later}) {
+  node.requestFocus();
   Scrollable.ensureVisible(
-    next.context!,
+    node.context!,
     alignmentPolicy: later
         ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
         : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
     duration: const Duration(milliseconds: 120),
   );
-  return true;
 }
 
 /// [child], a search box focused by [focus]: "/" puts the cursor in it,
@@ -850,7 +968,7 @@ void focusField(FocusNode focus) {
 /// it while no text field has focus: a text field, focused, what's in it
 /// selected; anything else that can be tapped -- a switch, a picker --
 /// tapped, as Enter would -- or, with [focusOnly], for a field of many
-/// parts, only focused, for J, K and Enter to go on from; or, with
+/// parts, only focused, for Tab and Enter to go on from; or, with
 /// [onPressed], that. Holding Ctrl shows the letter on it. Only while
 /// it's shown, and not while [enabled] is false.
 class FieldHotkey extends StatefulWidget {
@@ -954,6 +1072,19 @@ class NewHotkey extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       FieldHotkey('+', hint: hint, child: child);
+}
+
+/// [child], the pencil of something being read -- a goal's page, say --
+/// that edits it: E presses it while it's shown, and holding Ctrl shows
+/// E on it.
+class EditHotkey extends StatelessWidget {
+  const EditHotkey({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      FieldHotkey('E', hint: Hotkey.editText, child: child);
 }
 
 /// A letter for each of [names] -- fields named by what they hold, in

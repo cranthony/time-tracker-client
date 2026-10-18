@@ -9,6 +9,23 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.134.0
+
+- On a goal's page, J and K go from sub-goal to sub-goal, not to the
+  buttons over them or the history under them.
+- J and K now work only where there are items to go through: the Plan
+  page's panes, a goal's sub-goals, a menu, and the lists of the People,
+  Travel times and Notes pages, of a page of events, and of a picker.
+  Elsewhere -- in a dialog, say -- they do nothing, and Tab and
+  Shift+Tab go from button to button.
+- E edits what's being read, as its pencil does: on a goal's, habit's,
+  person's or trait's page, as it already did a description.
+- Home and End highlight the first and last item, wherever J and K go
+  through items -- scrolling a long list to its start or end -- and on
+  the Events page, the day's first and last event.
+- In an event's dialog, J and K no longer go between its parts: Tab and
+  Shift+Tab do.
+
 ## 7.133.0
 
 - A strip across the top of every screen says when the metadata

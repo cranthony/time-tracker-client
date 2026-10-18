@@ -680,18 +680,10 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     }
   }
 
-  /// Its hotkeys: J and K between its parts, Enter opening the one
+  /// Its hotkeys: Tab and Shift+Tab between its parts, Enter opening the one
   /// highlighted; a letter for each part, and Delete for the trash can.
   /// Ctrl+Enter and Esc save and discard ([SaveOrDiscard]).
   List<HotkeyBinding> get _hotkeys => [
-    HotkeyBinding(
-      const HotkeyTrigger.key(LogicalKeyboardKey.keyJ),
-      () => FocusScope.of(context).nextFocus(),
-    ),
-    HotkeyBinding(
-      const HotkeyTrigger.key(LogicalKeyboardKey.keyK),
-      () => FocusScope.of(context).previousFocus(),
-    ),
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyW), () {
       if (widget.whoWhere && _canEdit('facts')) _pickWho();
     }),

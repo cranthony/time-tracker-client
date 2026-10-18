@@ -5,6 +5,7 @@ import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/plan_memory.dart';
 import '../widgets/health.dart';
+import '../widgets/hotkeys.dart';
 import 'event_list_screen.dart';
 import 'person_screen.dart';
 
@@ -20,11 +21,13 @@ Widget sectionPadded(Widget child) => Padding(
   child: child,
 );
 
-/// The app bar's pencil, editing [name].
-Widget editButton(String name, VoidCallback onPressed) => IconButton(
-  tooltip: 'Edit $name',
-  icon: const Icon(Icons.edit_outlined),
-  onPressed: onPressed,
+/// The app bar's pencil, editing [name]: E presses it.
+Widget editButton(String name, VoidCallback onPressed) => EditHotkey(
+  child: IconButton(
+    tooltip: 'Edit $name',
+    icon: const Icon(Icons.edit_outlined),
+    onPressed: onPressed,
+  ),
 );
 
 /// A page's state that shows the scores again as [memory] works them

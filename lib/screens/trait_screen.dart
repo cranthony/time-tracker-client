@@ -5,6 +5,7 @@ import '../models/scoring.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart' show partKeys;
 import '../widgets/health.dart';
+import '../widgets/hotkeys.dart';
 import 'trait_breakdown.dart';
 
 /// A trait on one page, to read: its definition and status, each of its
@@ -67,10 +68,12 @@ class _TraitScreenState extends State<TraitScreen> {
         title: Text(_trait.name),
         actions: [
           if (widget.onEdit != null)
-            IconButton(
-              tooltip: 'Edit ${_trait.name}',
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: _edit,
+            EditHotkey(
+              child: IconButton(
+                tooltip: 'Edit ${_trait.name}',
+                icon: const Icon(Icons.edit_outlined),
+                onPressed: _edit,
+              ),
             ),
         ],
       ),
