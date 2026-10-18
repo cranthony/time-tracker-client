@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.131.0
+
+- S presses the Sign in button, where a page asks you to sign in.
+- J and K start from what's in view: on the Plan page, J highlights the
+  first row of the pane's list that's in view -- the first goal on the
+  Goals pane, not a button over the list -- and K the last; the same
+  goes for a list that scrolls in a dialog or menu. And with what was
+  highlighted scrolled away, they start from what's in view again.
+
 ## 7.130.0
 
 - A goal can be marked missed: not reached, and no longer pursued.

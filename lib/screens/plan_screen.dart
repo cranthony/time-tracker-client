@@ -725,7 +725,9 @@ class _PlanScreenState extends State<PlanScreen> {
 
   /// J or K: the next of what can be tapped in the pane shown, [later]
   /// down it or up, highlighted -- and Enter taps it -- scrolled into
-  /// view. Not its search: letters would go into it.
+  /// view: with nothing highlighted, or what is scrolled away, the first
+  /// of its list in view, or the last. Not its search: letters would go
+  /// into it.
   void _stepInPane(FocusNode pane, {required bool later}) {
     final stops =
         [
@@ -743,9 +745,11 @@ class _PlanScreenState extends State<PlanScreen> {
           return dy != 0 ? dy : ra.left.compareTo(rb.left);
         });
     if (stops.isEmpty) return;
-    final at = stops.indexOf(FocusManager.instance.primaryFocus!);
+    var at = stops.indexOf(FocusManager.instance.primaryFocus!);
+    if (at >= 0 && inScrolledView(stops[at], wholly: false) == false) at = -1;
     final next = at < 0
-        ? (later ? stops.first : stops.last)
+        ? (startInView(stops, later: later) ??
+              (later ? stops.first : stops.last))
         : stops[(at + (later ? 1 : -1)).clamp(0, stops.length - 1)];
     next.requestFocus();
     Scrollable.ensureVisible(
@@ -965,10 +969,7 @@ class _PlanScreenState extends State<PlanScreen> {
       text: 'Sign in to see your plan.',
       action: widget.onSignIn == null
           ? null
-          : FilledButton(
-              onPressed: _signingIn ? null : _signIn,
-              child: Text(_signingIn ? 'Waiting for browser…' : 'Sign in'),
-            ),
+          : SignInButton(signingIn: _signingIn, onPressed: _signIn),
     ),
   );
 

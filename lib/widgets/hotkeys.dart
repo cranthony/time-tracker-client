@@ -91,10 +91,16 @@ class Hotkey {
     HotkeyPlace.anywhere,
   );
   static const help = Hotkey('?', 'Show this list', HotkeyPlace.anywhere);
+  static const signIn = Hotkey(
+    'S',
+    'Sign in, where a page asks you to',
+    HotkeyPlace.anywhere,
+  );
   static const stepAny = Hotkey(
     'J / K',
     'Elsewhere -- in a menu, say -- highlight the next (J) or previous (K) '
-        'thing to tap; Enter taps it',
+        "thing to tap, from the first (J) or last (K) of a list that's in "
+        'view; Enter taps it',
     HotkeyPlace.anywhere,
   );
   static const scrollAny = Hotkey(
@@ -203,7 +209,8 @@ class Hotkey {
 
   static const planItems = Hotkey(
     'J / K',
-    "Go down (J) or up (K) the pane shown; Enter opens what's highlighted",
+    'Go down (J) or up (K) the pane shown, from the first (J) or last (K) '
+        "of its list that's in view; Enter opens what's highlighted",
     HotkeyPlace.plan,
   );
   static const planPanes = Hotkey(
@@ -223,6 +230,7 @@ class Hotkey {
     discard,
     editText,
     help,
+    signIn,
     stepAny,
     scrollAny,
     leaveField,
@@ -530,10 +538,26 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
         : FocusScope.of(route.subtreeContext!);
     final focus = FocusManager.instance.primaryFocus;
     if (scope == null || focus == null) return false;
-    // Not yet in what's on top: from its start, or its end.
     final inTop = focus == scope || focus.ancestors.contains(scope);
-    final from = inTop ? focus : scope;
-    if (later ? !from.nextFocus() : !from.previousFocus()) return false;
+    final started =
+        focus != scope &&
+        inTop &&
+        inScrolledView(focus, wholly: false) != false;
+    // Not yet in what's on top, or scrolled away from: from the first of
+    // a list of it that's in view, or the last; without one, from its
+    // start, or its end.
+    final start = started
+        ? null
+        : startInView([
+            for (final node in scope.traversalDescendants)
+              if (node.canRequestFocus && !node.skipTraversal) node,
+          ], later: later);
+    if (start != null) {
+      start.requestFocus();
+    } else {
+      final from = inTop ? focus : scope;
+      if (later ? !from.nextFocus() : !from.previousFocus()) return false;
+    }
     final moved = FocusManager.instance.primaryFocus?.context;
     if (moved != null && moved.mounted) {
       Scrollable.ensureVisible(
@@ -649,6 +673,45 @@ bool isPainted(BuildContext context) {
     child = parent;
   }
   return true;
+}
+
+/// Whether [node] is in view in the lists that scroll up and down around
+/// it: [wholly], or at all. Null if it's in none.
+bool? inScrolledView(FocusNode node, {bool wholly = true}) {
+  final context = node.context;
+  if (context == null || !context.mounted) return null;
+  final rect = node.rect;
+  bool? shown;
+  for (
+    var list = Scrollable.maybeOf(context);
+    list != null;
+    list = Scrollable.maybeOf(list.context)
+  ) {
+    if (list.position.axis != Axis.vertical) continue;
+    final view = list.context.findRenderObject();
+    if (view is! RenderBox || !view.attached || !view.hasSize) continue;
+    final bounds = view.localToGlobal(Offset.zero) & view.size;
+    // A little leeway, for a row a fraction of a pixel past the edge.
+    final inIt = wholly
+        ? rect.top >= bounds.top - 1 && rect.bottom <= bounds.bottom + 1
+        : rect.bottom > bounds.top && rect.top < bounds.bottom;
+    shown = (shown ?? true) && inIt;
+  }
+  return shown;
+}
+
+/// Where J ([later]) or K starts, with nothing of [stops] -- in order --
+/// highlighted yet: the first of them in a list in view, or the first of
+/// the last row in view -- a goal, not its edit button -- and not one
+/// above or below it. Null if none is.
+FocusNode? startInView(List<FocusNode> stops, {required bool later}) {
+  final shown = [
+    for (final node in stops)
+      if (inScrolledView(node) ?? false) node,
+  ];
+  if (later || shown.isEmpty) return shown.firstOrNull;
+  final y = shown.last.rect.center.dy;
+  return shown.firstWhere((n) => n.rect.top <= y && y <= n.rect.bottom);
 }
 
 /// [child], a search box focused by [focus]: "/" puts the cursor in it,

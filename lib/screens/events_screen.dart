@@ -5062,10 +5062,7 @@ class _EventsScreenState extends State<EventsScreen> {
       text: 'Sign in to see your events.',
       action: widget.onSignIn == null
           ? null
-          : FilledButton(
-              onPressed: _signingIn ? null : _signIn,
-              child: Text(_signingIn ? 'Waiting for browser…' : 'Sign in'),
-            ),
+          : SignInButton(signingIn: _signingIn, onPressed: _signIn),
     ),
   );
 
