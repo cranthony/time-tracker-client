@@ -5,7 +5,7 @@ import '../widgets/durations.dart';
 /// share), [percent] (of what the fixed shares leave), or neither -- a
 /// part of the remaining time, what the minutes and percents leave. One
 /// with minutes or percent can take a part of the remaining time too
-/// ([plusRemaining], "+r").
+/// ([plusRemaining]; "+r" as the server keeps it).
 abstract class Share {
   const Share(this.id, {this.minutes, this.percent, bool remaining = false})
     : _alsoRemaining = remaining;
@@ -25,12 +25,15 @@ abstract class Share {
   /// always does.
   bool get remaining => whole || _alsoRemaining;
 
-  /// What it takes, briefly: "45m", "30%", "45m+r", or "" for neither.
+  /// What it takes, briefly: "45m", "30%", "45m + the rest", or "" for
+  /// neither.
   String get label => switch ((minutes, percent)) {
-    (final m?, _) => '${formatMinutes(m)}${plusRemaining ? '+r' : ''}',
-    (null, final p?) => '$p%${plusRemaining ? '+r' : ''}',
+    (final m?, _) => '${formatMinutes(m)}${plusRemaining ? _andRest : ''}',
+    (null, final p?) => '$p%${plusRemaining ? _andRest : ''}',
     _ => '',
   };
+
+  static const _andRest = ' + the rest';
 
   @override
   bool operator ==(Object other) =>
@@ -170,6 +173,52 @@ Map<String, double> shareFractions(
   };
 }
 
+/// [shares] read from a list the server sent, each its bare id -- as ids
+/// always were -- or an object with its id under [key] and its share;
+/// [make] makes each.
+List<S> sharesFromJson<S extends Share>(
+  Object? json,
+  String key,
+  S Function(String id, {int? minutes, int? percent, bool remaining}) make,
+) => [
+  for (final item in json as List? ?? const [])
+    if (item is Map)
+      if (item[key] case final String id when id.isNotEmpty)
+        make(
+          id,
+          minutes: (item['minutes'] as num?)?.toInt(),
+          percent: (item['percent'] as num?)?.toInt(),
+          remaining: item['remaining'] == true,
+        )
+      else
+        ...const []
+    else if (item != null)
+      make('$item'),
+];
+
+/// [share] as the server takes it, its id under [key]: its bare id with
+/// neither minutes nor percent, so a list without shares is sent as
+/// before.
+Object shareToJson(Share share, String key) => share.whole
+    ? share.id
+    : {
+        key: share.id,
+        'minutes': ?share.minutes,
+        'percent': ?share.percent,
+        if (share.plusRemaining) 'remaining': true,
+      };
+
+/// [fractions] scaled down together if they add up to more than 1, so
+/// they split an event no more than whole -- for a summary that adds up
+/// to its span.
+Map<String, double> scaledDown(Map<String, double> fractions) {
+  final sum = fractions.values.fold(0.0, (a, b) => a + b);
+  if (sum <= 1) return fractions;
+  return {
+    for (final MapEntry(key: id, value: f) in fractions.entries) id: f / sum,
+  };
+}
+
 /// One action an event is of, and how much of the event it takes (see
 /// [Share]): with neither minutes nor percent, an even part of the
 /// remaining time, with the others that take it. The server sends one
@@ -179,25 +228,36 @@ class ActionShare extends Share {
 
   String get actionId => id;
 
-  static ActionShare? fromJson(Object? json) => switch (json) {
-    {'action_id': final String id} when id.isNotEmpty => ActionShare(
-      id,
-      minutes: ((json as Map)['minutes'] as num?)?.toInt(),
-      percent: (json['percent'] as num?)?.toInt(),
-      remaining: json['remaining'] == true,
-    ),
-    Map() || null => null,
-    _ => ActionShare('$json'),
-  };
+  static ActionShare? fromJson(Object? json) =>
+      sharesFromJson([json], 'action_id', ActionShare.new).firstOrNull;
 
-  /// As the server takes it: its bare id with neither minutes nor
-  /// percent, so an event's actions without shares are sent as before.
-  Object toJson() => whole
-      ? actionId
-      : {
-          'action_id': actionId,
-          'minutes': ?minutes,
-          'percent': ?percent,
-          if (plusRemaining) 'remaining': true,
-        };
+  /// As the server takes it (see [shareToJson]).
+  Object toJson() => shareToJson(this, 'action_id');
+}
+
+/// A person an event was with or for, and how much of it they take (see
+/// [Share]): with neither minutes nor percent, the remaining time -- all
+/// of it, as everyone else given neither takes it too.
+class PersonShare extends Share {
+  const PersonShare(super.id, {super.minutes, super.percent, super.remaining});
+
+  String get personId => id;
+
+  Object toJson() => shareToJson(this, 'person_id');
+}
+
+/// A place an event was at, and how much of it it takes (see [Share]):
+/// with neither minutes nor percent, an even part of the remaining time,
+/// with the other places that take it.
+class LocationShare extends Share {
+  const LocationShare(
+    super.id, {
+    super.minutes,
+    super.percent,
+    super.remaining,
+  });
+
+  String get locationId => id;
+
+  Object toJson() => shareToJson(this, 'location_id');
 }

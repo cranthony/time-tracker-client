@@ -543,7 +543,9 @@ PartScore _part(
         kind,
         end,
         engaged,
-        (e) => _actionShare(e, action, parentOf),
+        (e) =>
+            _actionShare(e, action, parentOf) *
+            _personShare(e, subject, engagement),
       );
       return score(rating, said, behind);
     case 'spacing':
@@ -827,6 +829,17 @@ double _minutesIn(
   final to = e.end.isBefore(end) ? e.end : end;
   return sum + math.max(0, to.difference(from).inSeconds / 60) * shareOf(e);
 });
+
+/// The part of [event] that's [subject]'s, by [engagement], as its
+/// people's shares say ([Event.withFractions], [Event.forFractions]):
+/// all of it for the user, or a habit.
+double _personShare(Event event, Subject subject, String engagement) {
+  if (subject.scope != null || subject.id == selfPersonId) return 1;
+  final fractions = engagement == 'with'
+      ? event.withFractions
+      : event.forFractions;
+  return fractions[subject.id] ?? 1;
+}
 
 /// The part of [event] that's of the action [actionId] -- or of any in
 /// the group it names -- as its actions' shares say

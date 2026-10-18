@@ -38,7 +38,7 @@ void main() {
       );
       expect(
         const ActionShare('calls', percent: 25, remaining: true).label,
-        '25%+r',
+        '25% + the rest',
       );
     });
 

@@ -371,6 +371,27 @@ void main() {
     expect(score.parts.single.said, '2h 15m of 4h in the last 7 days');
   });
 
+  test("a duration with someone counts only their share of an event", () {
+    const part = {'kind': 'duration', 'target_min': 240, 'interval_days': 7};
+    final shared = _event('a', 1, hours: 2);
+    final score = _score(
+      [part],
+      [
+        Event.fromJson({
+          ...shared.properties,
+          'facts': {
+            'with_ids': [
+              {'person_id': 'sam', 'minutes': 30},
+              'kim',
+            ],
+          },
+        }),
+      ],
+    );
+
+    expect(score.parts.single.said, '30m of 4h in the last 7 days');
+  });
+
   test('parts being edited are scored as the trait would score them, '
       "leaving out those a habit doesn't read", () {
     final events = [

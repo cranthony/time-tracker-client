@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
-import '../models/facts.dart';
 import '../models/goal.dart';
 import '../models/habit.dart';
 import '../models/plan_action.dart';
@@ -141,17 +140,19 @@ SummarySlice actionSlice(PlanAction? action, String id, Duration time) =>
   return (shares(day), shares(week));
 }
 
-/// [window]'s time by who was there: each event's time split evenly
-/// among the people with you; those with no one, "With no one".
+/// [window]'s time by who was there: each event's time split among the
+/// people with you as their shares say ([Event.withFractions]), scaled
+/// down together if they'd take more than it; what they leave, and the
+/// time with no one, "With no one".
 (List<SummarySlice>, List<SummarySlice>) personTime(
   List<Event> events,
   SummaryWindow window,
   PeopleList people,
 ) {
   final byId = {for (final p in people.withSelf) p.id: p};
-  final (day, week) = window.split<String>(
+  final (day, week) = window.splitParts<String>(
     events,
-    (event) => Facts.fromJson(event.properties['facts'])?.withIds ?? const [],
+    (event) => scaledDown(event.withFractions),
     '',
   );
   List<SummarySlice> shares(Map<String?, Duration> time) => planShares(
@@ -174,9 +175,10 @@ SummarySlice actionSlice(PlanAction? action, String id, Duration time) =>
 /// The key for the people in no circle, in [circleTime].
 const individuals = '\u0000individuals';
 
-/// [window]'s time by the circles of who was there: each event's time
-/// split evenly among their circles, those in none together as
-/// "Individuals"; events with no one, "With no one".
+/// [window]'s time by the circles of who was there: each person's part
+/// of an event (as [personTime] splits it) split evenly among their
+/// circles, those in none together as "Individuals"; events with no
+/// one, "With no one".
 (List<SummarySlice>, List<SummarySlice>) circleTime(
   List<Event> events,
   SummaryWindow window,
@@ -184,18 +186,22 @@ const individuals = '\u0000individuals';
 ) {
   final byId = {for (final p in people.withSelf) p.id: p};
   final circles = {for (final c in people.circles) c.id: c};
-  final (day, week) = window.split<String>(events, (event) {
-    final there =
-        Facts.fromJson(event.properties['facts'])?.withIds ?? const [];
-    return {
-      for (final id in there)
-        ...switch (byId[id]?.circleIds) {
-          final ids? when ids.any(circles.containsKey) => ids.where(
-            circles.containsKey,
-          ),
-          _ => const [individuals],
-        },
-    };
+  final (day, week) = window.splitParts<String>(events, (event) {
+    final parts = <String, double>{};
+    for (final MapEntry(key: id, value: f) in scaledDown(
+      event.withFractions,
+    ).entries) {
+      final theirs = switch (byId[id]?.circleIds) {
+        final ids? when ids.any(circles.containsKey) => [
+          ...ids.where(circles.containsKey),
+        ],
+        _ => const [individuals],
+      };
+      for (final circle in theirs) {
+        parts[circle] = (parts[circle] ?? 0) + f / theirs.length;
+      }
+    }
+    return parts;
   }, '');
   List<SummarySlice> shares(Map<String?, Duration> time) => planShares(
     time,
@@ -209,17 +215,17 @@ const individuals = '\u0000individuals';
   return (shares(day), shares(week));
 }
 
-/// [window]'s time by where it was; events with no location, "No
-/// location".
+/// [window]'s time by where it was, each event's time split among its
+/// places as their shares say ([Event.locationFractions]); what they
+/// leave, and events with no location, "No location".
 (List<SummarySlice>, List<SummarySlice>) locationTime(
   List<Event> events,
   SummaryWindow window,
   Map<String?, String> locationNames,
 ) {
-  final (day, week) = window.split<String>(
+  final (day, week) = window.splitParts<String>(
     events,
-    (event) =>
-        Facts.fromJson(event.properties['facts'])?.locationIds ?? const [],
+    (event) => event.locationFractions,
     '',
   );
   List<SummarySlice> shares(Map<String?, Duration> time) => planShares(

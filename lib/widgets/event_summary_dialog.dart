@@ -1667,7 +1667,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   List<String> get _actionIds => [for (final a in _actionShares) a.actionId];
 
   /// [share], which says how much of the event an action or goal takes
-  /// ("45m", "30%+r"), or what it takes without one: a chip that sets it
+  /// ("45m", "30% + the rest"), or what it takes without one: a chip that sets it
   /// with [onTap].
   Widget _shareChip(
     BuildContext context,
@@ -2003,6 +2003,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       mapLocation: _value('location') as String?,
       query: _value('summary') as String?,
       additions: widget.additions,
+      eventMinutes: _time('end').difference(_time('start')).inMinutes,
     );
     if (!mounted) return;
     // Someone, or a location, may have been added, or renamed, from the

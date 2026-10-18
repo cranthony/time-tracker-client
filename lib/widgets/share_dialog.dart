@@ -7,7 +7,7 @@ import 'durations.dart';
 /// [kind] of thing ("goal"), called [title] -- takes: the rest (what the
 /// others' minutes and percents leave, as [rest] explains), a duration,
 /// or a percentage of what the durations leave; and with either of
-/// those, the rest as well ("+r"). [make] makes the share as set. Gives
+/// those, the rest as well. [make] makes the share as set. Gives
 /// it, or null if it's called off.
 Future<S?> showShareDialog<S extends Share>(
   BuildContext context, {
@@ -145,7 +145,7 @@ class _ShareDialogState<S extends Share> extends State<_ShareDialog<S>> {
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
               value: _plusRest,
-              title: const Text('And the rest too (+r)'),
+              title: const Text('And the rest too'),
               subtitle: Text(
                 'Also counts the time left over, as a ${widget.kind} given '
                 'neither does',
