@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../auth/sign_in_mode.dart';
 
 import 'client_health.dart';
+import 'sheet_warnings.dart';
 
 import 'server_errors.dart';
 
@@ -88,6 +89,7 @@ class McpClient {
     required this.endpoint,
     this.auth,
     this.serverSignInOff,
+    this.serverSheetWarnings,
     this.health,
     http.Client? httpClient,
     this.retryDelays = const [
@@ -104,6 +106,10 @@ class McpClient {
 
   /// Set, as it connects, to whether the server says it skips sign-in.
   final ValueNotifier<bool>? serverSignInOff;
+
+  /// Set, as it connects and with each tool result, to what the server
+  /// says of changes made behind its back lately (see [SheetWarningsFlag]).
+  final ValueNotifier<SheetWarningsFlag?>? serverSheetWarnings;
   final http.Client _http;
 
   /// Where each tool call is recorded -- how long it took, retries and
@@ -180,6 +186,7 @@ class McpClient {
       'name': name,
       'arguments': arguments,
     });
+    serverSheetWarnings?.value = SheetWarningsFlag.of(result);
     if (result['isError'] == true) {
       final said = _textContent(result);
       throw McpException(
@@ -216,6 +223,7 @@ class McpClient {
       'clientInfo': {'name': 'time-tracker-client', 'version': '1.0.0'},
     });
     serverSignInOff?.value = handshakeSaysSignInOff(result);
+    serverSheetWarnings?.value = SheetWarningsFlag.of(result);
     await _post({'jsonrpc': '2.0', 'method': 'notifications/initialized'});
     _initialized = true;
   }
