@@ -39,6 +39,7 @@ import 'plow_icon.dart';
 import 'properties_dialog.dart' show ConfirmOption, confirmationContent;
 import 'recurrence_dialog.dart';
 import 'repeat_editor.dart';
+import 'share_dialog.dart';
 
 /// What a summary dialog closed with, when it wasn't just closed.
 sealed class SummaryOutcome<T> {
@@ -570,10 +571,15 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       setState(() => _error = 'It would overlap ${_describe(other)}.');
       return;
     }
-    // A change shortening it is refused while its goals' minutes don't
-    // fit: the server would cut them down when it's read.
+    // A change shortening it is refused while its goals' or actions'
+    // minutes don't fit: the server would cut them down when it's read.
     final minutes = end.difference(start).inMinutes;
-    final problems = moved ? shareProblems(_goalShares, minutes) : const [];
+    final problems = [
+      if (moved || _changes.containsKey('goals'))
+        ...shareProblems(_goalShares, minutes),
+      if (moved || _changes.containsKey('action_ids'))
+        ...shareProblems(_actionShares, minutes, kind: 'action'),
+    ];
     if (problems.isNotEmpty) {
       setState(() => _error = problems.join(' '));
       return;
@@ -1652,15 +1658,67 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     );
   }
 
-  List<String> get _actionIds => [
-    for (final id in _value('action_ids') as List? ?? const []) '$id',
+  /// Its actions, and how much of it each takes.
+  List<ActionShare> get _actionShares => [
+    for (final a in _value('action_ids') as List? ?? const [])
+      ?ActionShare.fromJson(a),
   ];
+
+  List<String> get _actionIds => [for (final a in _actionShares) a.actionId];
+
+  /// [share], which says how much of the event an action or goal takes
+  /// ("45m", "30%+r"), or what it takes without one: a chip that sets it
+  /// with [onTap].
+  Widget _shareChip(
+    BuildContext context,
+    Share share,
+    String rest,
+    VoidCallback? onTap,
+  ) => Padding(
+    padding: const EdgeInsets.only(left: 8),
+    child: ActionChip(
+      visualDensity: VisualDensity.compact,
+      label: Text(share.label.isEmpty ? rest : share.label),
+      onPressed: onTap,
+    ),
+  );
+
+  /// Sets how much of it the action [id] takes ([showShareDialog]).
+  Future<void> _setActionShare(String id) async {
+    setState(() => _editing = null);
+    final shares = _actionShares;
+    final share = shares.firstWhere((s) => s.actionId == id);
+    final set = await showShareDialog(
+      context,
+      title: switch (_action(id)) {
+        final action? => actionName(action),
+        null => id,
+      },
+      share: share,
+      eventMinutes: _time('end').difference(_time('start')).inMinutes,
+      kind: 'action',
+      rest:
+          "It shares the time the other actions' minutes and percents "
+          'leave evenly with the others given neither.',
+      make: (minutes, percent, remaining) => ActionShare(
+        id,
+        minutes: minutes,
+        percent: percent,
+        remaining: remaining,
+      ),
+    );
+    if (set == null || !mounted) return;
+    _set('action_ids', [
+      for (final s in shares) (s.actionId == id ? set : s).toJson(),
+    ]);
+  }
 
   /// Its actions, each after a diamond in the action's color, as on the
   /// timeline; picked in a sheet up from the foot ([showActionsSheet]).
   Widget _actionsRow(BuildContext context) {
     final theme = Theme.of(context);
-    final ids = _actionIds;
+    final shares = _actionShares;
+    final ids = [for (final s in shares) s.actionId];
     final names = [
       if (!_changes.containsKey('action_ids'))
         for (final name in widget.values['action_names'] as List? ?? const [])
@@ -1701,6 +1759,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                       final action? => actionName(action),
                       null => (i < names.length ? names[i] : null) ?? id,
                     }, style: theme.textTheme.bodyLarge),
+                  ),
+                  _shareChip(
+                    context,
+                    shares[i],
+                    ids.length == 1 ? 'All of it' : 'Even share',
+                    _canEdit('action_ids') ? () => _setActionShare(id) : null,
                   ),
                 ],
               ),
@@ -1760,7 +1824,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                       ),
                     )
                   else
-                    Text('All of it', style: theme.textTheme.bodySmall),
+                    Text('The rest', style: theme.textTheme.bodySmall),
                 ],
               ),
             ),
@@ -1846,7 +1910,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       if (!mounted) return;
       // One may have been added, or edited, from the sheet.
       _actionList = _loadActions();
-      if (picked != null) _set('action_ids', picked);
+      if (picked == null) return;
+      // Each kept with the share it had.
+      final had = {for (final s in _actionShares) s.actionId: s};
+      _set('action_ids', [
+        for (final id in picked) (had[id] ?? ActionShare(id)).toJson(),
+      ]);
     },
     null => null,
   };

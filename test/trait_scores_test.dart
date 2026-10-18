@@ -21,7 +21,7 @@ Event _event(
   num daysAgo, {
   int hour = 12,
   int hours = 1,
-  List<String> actions = const [],
+  List<Object> actions = const [],
   List<String> withIds = const [],
   List<String> forIds = const [],
   Map<String, Object?>? judgments,
@@ -337,6 +337,38 @@ void main() {
 
     expect(score.score, 75);
     expect(score.parts.single.said, '3h of 4h in the last 7 days');
+  });
+
+  test("a duration of an action counts only that action's share of an "
+      'event, as the summaries do', () {
+    const part = {
+      'kind': 'duration',
+      'target_min': 240,
+      'interval_days': 7,
+      'action': 'work',
+    };
+    final score = _score(
+      [part],
+      [
+        // 30 minutes of work, and half of the 90 left: 75 minutes.
+        _event(
+          'a',
+          1,
+          hours: 2,
+          withIds: ['sam'],
+          actions: [
+            {'action_id': 'work', 'minutes': 30, 'remaining': true},
+            'mail',
+          ],
+        ),
+        // Work alone: all of it.
+        _event('b', 2, hours: 1, withIds: ['sam'], actions: ['work']),
+        // Not work at all.
+        _event('c', 3, hours: 1, withIds: ['sam'], actions: ['mail']),
+      ],
+    );
+
+    expect(score.parts.single.said, '2h 15m of 4h in the last 7 days');
   });
 
   test('parts being edited are scored as the trait would score them, '

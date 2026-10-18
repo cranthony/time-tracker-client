@@ -50,9 +50,10 @@ Color colorFor(String id) =>
     calendarColors[id.codeUnits.fold(7, (h, c) => (h * 31 + c) & 0x7fffffff) %
         calendarColors.length];
 
-/// Each action's time, by its id: an event's time split evenly among its
-/// actions with any of [statuses], as the summaries split it. Those
-/// with none of them count toward "".
+/// Each action's time, by its id: an event's time split among its
+/// actions with any of [statuses] as their shares say
+/// ([Event.actionFractions]), as the summaries split it. What those leave
+/// counts toward "".
 (Map<String?, Duration>, Map<String?, Duration>) actionTime(
   List<Event> events,
   SummaryWindow window,
@@ -60,12 +61,11 @@ Color colorFor(String id) =>
   Set<String> statuses,
 ) => timed(
   WorkKind.actionTime,
-  () => window.split<String>(
+  () => window.splitParts<String>(
     events,
-    (event) => [
-      for (final id in event.actionIds)
-        if (statuses.contains(byId[id]?.status ?? 'active')) id,
-    ],
+    (event) => event.actionFractions(
+      (id) => statuses.contains(byId[id]?.status ?? 'active'),
+    ),
     '',
   ),
 );

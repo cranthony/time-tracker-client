@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import 'durations.dart';
 import '../models/goal.dart';
 import 'goal_icon.dart';
 import 'picker_sheet.dart';
+import 'share_dialog.dart';
 import 'tree_picker.dart';
 
 /// Picks the goals an event is for in a [showPickerSheet]: a [TreePicker]
@@ -96,144 +96,27 @@ Future<List<GoalShare>?> showGoalsSheet(
   );
 }
 
-/// How much of an event, [eventMinutes] long, [goal] takes: the whole
-/// event, a duration, or a percentage of what the durations leave. Gives
-/// the share as set, or null if it's called off.
+/// How much of an event, [eventMinutes] long, [goal] takes
+/// ([showShareDialog]). Gives the share as set, or null if it's called
+/// off.
 Future<GoalShare?> showGoalShareDialog(
   BuildContext context, {
   required Goal? goal,
   required GoalShare share,
   required int eventMinutes,
-}) => showDialog<GoalShare>(
-  context: context,
-  builder: (context) => _ShareDialog(
-    title: goal == null ? share.goalId : goalTitle(goal),
-    share: share,
-    eventMinutes: eventMinutes,
+}) => showShareDialog(
+  context,
+  title: goal == null ? share.goalId : goalTitle(goal),
+  share: share,
+  eventMinutes: eventMinutes,
+  kind: 'goal',
+  rest:
+      "It counts the time the other goals' minutes and percents leave, "
+      'as every goal given neither does.',
+  make: (minutes, percent, remaining) => GoalShare(
+    share.goalId,
+    minutes: minutes,
+    percent: percent,
+    remaining: remaining,
   ),
 );
-
-enum _Kind { whole, minutes, percent }
-
-class _ShareDialog extends StatefulWidget {
-  const _ShareDialog({
-    required this.title,
-    required this.share,
-    required this.eventMinutes,
-  });
-
-  final String title;
-  final GoalShare share;
-  final int eventMinutes;
-
-  @override
-  State<_ShareDialog> createState() => _ShareDialogState();
-}
-
-class _ShareDialogState extends State<_ShareDialog> {
-  late var _kind = widget.share.minutes != null
-      ? _Kind.minutes
-      : widget.share.percent != null
-      ? _Kind.percent
-      : _Kind.whole;
-  late final _minutes = TextEditingController(
-    text: '${widget.share.minutes ?? widget.eventMinutes}',
-  );
-  late final _percent = TextEditingController(
-    text: '${widget.share.percent ?? 50}',
-  );
-
-  @override
-  void dispose() {
-    _minutes.dispose();
-    _percent.dispose();
-    super.dispose();
-  }
-
-  GoalShare? get _share => switch (_kind) {
-    _Kind.whole => GoalShare(widget.share.goalId),
-    _Kind.minutes => switch (int.tryParse(_minutes.text.trim())) {
-      final m? when m > 0 && m <= widget.eventMinutes => GoalShare(
-        widget.share.goalId,
-        minutes: m,
-      ),
-      _ => null,
-    },
-    _Kind.percent => switch (int.tryParse(_percent.text.trim())) {
-      final p? when p >= 1 && p <= 100 => GoalShare(
-        widget.share.goalId,
-        percent: p,
-      ),
-      _ => null,
-    },
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final share = _share;
-    return AlertDialog(
-      title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'How much of this ${formatMinutes(widget.eventMinutes)} event is '
-            'for it?',
-          ),
-          const SizedBox(height: 12),
-          SegmentedButton<_Kind>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: _Kind.whole, label: Text('All of it')),
-              ButtonSegment(value: _Kind.minutes, label: Text('Minutes')),
-              ButtonSegment(value: _Kind.percent, label: Text('Percent')),
-            ],
-            selected: {_kind},
-            onSelectionChanged: (picked) =>
-                setState(() => _kind = picked.single),
-          ),
-          const SizedBox(height: 12),
-          switch (_kind) {
-            _Kind.whole => const Text(
-              'It counts the whole event, whatever the other goals take.',
-            ),
-            _Kind.minutes => TextField(
-              controller: _minutes,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Minutes',
-                helperText: 'At most ${widget.eventMinutes}',
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-            _Kind.percent => TextField(
-              controller: _percent,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Percent',
-                suffixText: '%',
-                helperText: "Of what the goals given minutes don't take",
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-          },
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: share == null
-              ? null
-              : () => Navigator.of(context).pop(share),
-          child: const Text('Set'),
-        ),
-      ],
-    );
-  }
-}

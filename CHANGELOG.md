@@ -9,6 +9,24 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.135.0
+
+- An event's actions can each take a share of it, as its goals can:
+  minutes, or a percent of what the minutes leave. Tap the chip by an
+  action in the event's Actions row to set it. An action with neither
+  shares what's left evenly with the others given neither, so events
+  whose actions have no shares count as they always have.
+- A goal or action given minutes or a percent can take the rest too
+  ("+r"): the box under the minutes or percent.
+- A goal with neither now counts the rest of the event (what the other
+  goals' minutes and percents leave), not the whole of it.
+- The day's summary and the Plan page's time by action count each
+  action's share, and so does a trait's duration of an action, by the
+  same reckoning.
+- An event isn't shortened below what its actions' minutes take, as it
+  isn't below its goals'.
+- Needs the server that keeps action shares to set them.
+
 ## 7.134.0
 
 - On a goal's page, J and K go from sub-goal to sub-goal, not to the
