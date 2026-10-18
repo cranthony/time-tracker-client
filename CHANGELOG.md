@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.129.0
+
+- An event's goals can be added, changed and cleared while reviewing
+  what a compaction says happened, in its dialog's Goals row, as on the
+  calendar -- for a new event too. Before, a goals edit was refused until
+  the proposal was confirmed. Needs the server that takes goals on
+  amend_proposal's creates.
+
 ## 7.128.0
 
 - When several of the things one change touches were changed elsewhere

@@ -1,4 +1,5 @@
 import 'event.dart';
+import 'goal.dart';
 import 'note.dart';
 
 /// Where a [Proposal] is: awaiting the user's review, or Claude's
@@ -70,6 +71,7 @@ class ProposalEvent {
     this.summary,
     this.description,
     this.actionIds = const [],
+    this.goals = const [],
     this.facts,
     this.plannedStart,
     this.plannedEnd,
@@ -90,6 +92,9 @@ class ProposalEvent {
   final String? summary;
   final String? description;
   final List<String> actionIds;
+
+  /// The goals it's for, and how much of it each takes.
+  final List<GoalShare> goals;
 
   /// As the server sends them (see Facts).
   final Map<String, Object?>? facts;
@@ -146,6 +151,9 @@ class ProposalEvent {
       summary: json['summary'] as String?,
       description: json['description'] as String?,
       actionIds: [for (final id in json['action_ids'] as List? ?? []) '$id'],
+      goals: [
+        for (final g in json['goals'] as List? ?? []) ?GoalShare.fromJson(g),
+      ],
       facts: (json['facts'] as Map?)?.cast<String, Object?>(),
       plannedStart: time(json['planned_start']),
       plannedEnd: time(json['planned_end']),

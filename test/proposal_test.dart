@@ -12,12 +12,15 @@ import 'package:time_tracker_client/widgets/window_cursor.dart';
 import 'package:time_tracker_client/widgets/cursor_modes.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/proposal.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
+import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/services/response_cache.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
@@ -271,6 +274,38 @@ void main() {
     });
   });
 
+  group('ProposalEvent', () {
+    test("reads an event's goals, and shows them on it", () {
+      final email = ProposalEvent.fromJson({
+        'id': 'abc123def456c1',
+        'summary': 'Email',
+        'start': iso(11, 30),
+        'end': iso(11, 45),
+        'status': 'new',
+        'goals': [
+          {'goal_id': 'ship', 'minutes': 10, 'percent': null},
+          {'goal_id': 'read'},
+        ],
+      })!;
+
+      expect(email.goals, const [
+        GoalShare('ship', minutes: 10),
+        GoalShare('read'),
+      ]);
+      expect(email.toEvent().goals, email.goals);
+      // None, without them.
+      expect(
+        ProposalEvent.fromJson({
+          'id': 'tea',
+          'start': iso(9),
+          'end': iso(10),
+          'status': 'on_schedule',
+        })!.goals,
+        isEmpty,
+      );
+    });
+  });
+
   group('edits', () {
     final tea = Event.fromJson({
       'id': 'tea',
@@ -301,6 +336,31 @@ void main() {
           },
           'clear_fields': ['facts'],
         },
+      );
+    });
+
+    test('goals are set, and cleared, on an update or a create', () {
+      final shares = [
+        {'goal_id': 'ship', 'minutes': 20},
+      ];
+      expect(proposalUpdate(tea, {'goals': shares}), {
+        'event': {'id': 'tea', 'goals': shares},
+      });
+      expect(proposalUpdate(tea, {'goals': <Object?>[]}), {
+        'event': {'id': 'tea', 'goals': <Object?>[]},
+      });
+      expect(proposalUpdate(tea, {'goals': null}), {
+        'event': {'id': 'tea'},
+        'clear_fields': ['goals'],
+      });
+      expect(
+        proposalCreate({
+          'summary': 'Tea',
+          'start': iso(9),
+          'end': iso(10),
+          'goals': shares,
+        }),
+        {'summary': 'Tea', 'start': iso(9), 'end': iso(10), 'goals': shares},
       );
     });
 
@@ -683,6 +743,7 @@ void main() {
       bool queued = false,
       bool hidden = false,
       ProposalProblemStatus? problem,
+      List<Goal>? goals,
     }) async {
       // A phone's height: the bar and its details, and the morning, in
       // view.
@@ -704,23 +765,34 @@ void main() {
             )
           : null;
       if (outbox case final o?) addTearDown(o.dispose);
+      Widget withGoals(Widget child) => goals == null
+          ? child
+          : PlanMemoryScope(
+              memory: PlanMemory()..goals = goals,
+              child: GoalsScope(
+                repository: InMemoryGoalsRepository(goals),
+                child: child,
+              ),
+            );
       await tester.pumpWidget(
-        MaterialApp(
-          // An hour's grid and no other stops: each step an hour.
-          home: AppSettingsScope(
-            settings:
-                AppSettings(persist: false, grid: const Duration(hours: 1))
-                  ..setSnap(const {})
-                  ..setEndMode(EndMode.keep),
-            child: EventsScreen(
-              repository: events,
-              serverLabel: 'offline demo',
-              proposals: proposals,
-              proposalSeen: ProposalSeenStore(persist: false, seen: seen),
-              notesRepository: notes,
-              eventOutbox: outbox,
-              proposalProblem: problem,
-              clock: () => now,
+        withGoals(
+          MaterialApp(
+            // An hour's grid and no other stops: each step an hour.
+            home: AppSettingsScope(
+              settings:
+                  AppSettings(persist: false, grid: const Duration(hours: 1))
+                    ..setSnap(const {})
+                    ..setEndMode(EndMode.keep),
+              child: EventsScreen(
+                repository: events,
+                serverLabel: 'offline demo',
+                proposals: proposals,
+                proposalSeen: ProposalSeenStore(persist: false, seen: seen),
+                notesRepository: notes,
+                eventOutbox: outbox,
+                proposalProblem: problem,
+                clock: () => now,
+              ),
             ),
           ),
         ),
@@ -1288,6 +1360,69 @@ void main() {
           .events
           .firstWhere((e) => e.id == 'work');
       expect(drawn.effectivePriority, 1);
+    });
+
+    testWidgets("an event's goals are shown and edited in the proposal too", (
+      tester,
+    ) async {
+      final json = proposalJson();
+      final events = [
+        for (final e in json['events']! as List<Map<String, Object?>>)
+          e['id'] == 'work'
+              ? {
+                  ...e,
+                  'goals': [
+                    {'goal_id': 'ship', 'minutes': 45},
+                  ],
+                }
+              : e,
+      ];
+      await open(
+        tester,
+        json: {...json, 'events': events},
+        goals: [
+          Goal.fromJson({
+            'id': 'ship',
+            'title': 'Ship the app',
+            'status': 'active',
+            'deadline': '2026-12-01',
+          }),
+          Goal.fromJson({
+            'id': 'read',
+            'title': 'Read more',
+            'status': 'active',
+            'deadline': '2026-12-01',
+          }),
+        ],
+      );
+      await tap(tester, find.text('Work'));
+      expect(inDialog(find.text('Ship the app')), findsOneWidget);
+      expect(inDialog(find.text('45m')), findsOneWidget);
+
+      // And Read more.
+      await tap(tester, inDialog(find.text('Ship the app')));
+      await tap(tester, find.text('Read more').last);
+      await tap(tester, find.text('Done'));
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(proposals.amends.single.toJson(), {
+        'updates': [
+          {
+            'event': {
+              'id': 'work',
+              'goals': [
+                {'goal_id': 'ship', 'minutes': 45},
+                {'goal_id': 'read'},
+              ],
+            },
+          },
+        ],
+      });
+      expect(proposals.proposal!.event('work')!.goals, const [
+        GoalShare('ship', minutes: 45),
+        GoalShare('read'),
+      ]);
     });
 
     testWidgets('an edit the proposal refuses stays in the dialog, and the '

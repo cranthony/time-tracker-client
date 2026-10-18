@@ -199,11 +199,12 @@ const _proposalFields = {
   'location',
   'priority',
   'action_ids',
+  'goals',
   'facts',
 };
 
 /// What a proposal's events can have cleared, by `clear_fields`.
-const _clearable = {'description', 'location', 'facts'};
+const _clearable = {'description', 'location', 'facts', 'goals'};
 
 /// Why each field a proposal won't take, won't.
 const _refused = {
@@ -639,6 +640,7 @@ class InMemoryProposalRepository implements ProposalRepository {
         'summary': fields['summary'] ?? e.summary,
         'description': field('description', e.description),
         'action_ids': fields['action_ids'] ?? e.actionIds,
+        'goals': field('goals', e.properties['goals']),
         'facts': field('facts', e.facts),
         'status': (status ?? e.status).json,
         'planned_start': localIsoTimestamp(e.plannedStart ?? e.start),
