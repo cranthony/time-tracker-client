@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.131.1
+
+- An event added in the app and changed or cancelled from a dialog
+  opened while it was still saving is changed as saved. That change used
+  to be refused for good, offering only Retry, which failed again, or
+  Drop. A change still waiting from before, made this way, now says to
+  drop it and make it again, without retrying it.
+
 ## 7.131.0
 
 - S presses the Sign in button, where a page asks you to sign in.

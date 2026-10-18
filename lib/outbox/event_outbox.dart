@@ -262,10 +262,68 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
   );
 
   Future<List<Event>> _add(PendingEventWrite write) async {
+    write = _ofSaved(write);
     if (conflict(write) case final waiting?) throw waiting;
+    _refuseIfNeverMade(write);
     await change((items) => [...items, write]);
     schedule(immediately: true);
     return const [];
+  }
+
+  /// Each event made here and saved, by the pending id it was shown
+  /// under till then: a change made to it as it was shown -- from a
+  /// dialog opened before it was saved, say -- is made to it as saved,
+  /// by its id and version.
+  final _made = <String, Event>{};
+
+  /// Keeps, of [write], one that made events, each as saved ([_made]).
+  void _keepMade(PendingEventWrite write, Object? result) {
+    if (result is! List<Event>) return;
+    final made = switch (write.kind) {
+      EventWriteKind.create ||
+      EventWriteKind.createOver => [write.fields, ...write.over.creates],
+      EventWriteKind.makeRoom => write.over.creates,
+      _ => const <Map<String, Object?>>[],
+    };
+    for (final (i, fields) in made.indexed) {
+      final saved =
+          result.where((e) => e.id == fields['id']).firstOrNull ??
+          // Not named as asked: the event it made, if it made only one.
+          (made.length == 1 ? result.firstOrNull : null);
+      if (saved != null) _made[write.pendingId(i)] = saved;
+    }
+  }
+
+  /// [e] as saved, if it's one made here, saved since it was shown.
+  Event _asSaved(Event e) => _made[e.id] ?? e;
+
+  /// [write] made to each event it changes that was made here as it's
+  /// saved, not as it was shown before it was ([_made]).
+  PendingEventWrite _ofSaved(PendingEventWrite write) {
+    final over = write.over;
+    String? idOf(String? id) => _made[id]?.id ?? id;
+    return write.copyWith(
+      event: write.event == null ? null : () => _asSaved(write.event!),
+      over: Overwrite(
+        cancels: [for (final e in over.cancels) _asSaved(e)],
+        updates: [for (final (e, c) in over.updates) (_asSaved(e), c)],
+        creates: over.creates,
+        countsAgainst: {for (final id in over.countsAgainst) ?idOf(id)},
+      ),
+    );
+  }
+
+  /// Refuses [write] if it changes an event made here that won't be: its
+  /// write was dropped, or it was saved without the app hearing what it
+  /// made (by an earlier run of it, say).
+  void _refuseIfNeverMade(PendingEventWrite write) {
+    // A proposal's events are its own, named by the proposal.
+    if (write.kind.ofProposal) return;
+    for (final id in write.locks.keys) {
+      if (!PendingEventWrite.isPendingId(id) || write.makes(id)) continue;
+      if (items.any((w) => w.makes(id))) continue;
+      throw NeverMade(write);
+    }
   }
 
   static String _name(Event? e) => switch (e?.summary) {
@@ -621,6 +679,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
   /// afresh. False if it's being sent.
   Future<bool> edit(PendingEventWrite write, PendingEventWrite edited) async {
     if (isSending(write)) return false;
+    edited = _ofSaved(edited);
     if (conflict(edited, except: write.id) case final waiting?) throw waiting;
     final replaced = await replaceUnlessSending(
       write.id,
@@ -808,13 +867,17 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
   /// revision, something not there. Those aren't tried again by
   /// themselves.
   static bool _refusal(Object error) =>
-      error is McpException || error is ProposalEditException;
+      error is McpException ||
+      error is ProposalEditException ||
+      error is NeverMade;
 
   @override
   Future<Object?> send(
     PendingEventWrite item, {
     required bool maybeSaved,
   }) async {
+    item = _ofSaved(item);
+    _refuseIfNeverMade(item);
     final allow = item.allowHistory;
     Future<T> timed<T>(Future<T> f) => f.timeout(Outbox.requestTimeout);
     final Object? result = switch (item.kind) {
@@ -884,6 +947,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
         return null;
       }(),
     };
+    _keepMade(item, result);
     _saved.add((item, result));
     return result;
   }
@@ -1192,6 +1256,22 @@ class WaitingForWrite implements Exception {
       "Can't change $what yet: “${write.label}” is waiting to save. Once "
       "it's saved, change it again -- or change or cancel that write, from "
       'the changes waiting.';
+}
+
+/// A change refused because the event it changes was made here and
+/// won't be saved as it was shown: its write was dropped, or it was saved
+/// without the app hearing what it made.
+class NeverMade implements Exception {
+  NeverMade(this.write);
+
+  /// The write refused.
+  final PendingEventWrite write;
+
+  @override
+  String toString() =>
+      '“${write.label}” changes an event added here that was dropped, or '
+      'saved without this change seeing it. Drop this change, and make it '
+      'again on the event as it is now.';
 }
 
 /// The fields of an event as dialogs are told of them when all of it

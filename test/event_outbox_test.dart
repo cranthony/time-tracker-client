@@ -73,7 +73,11 @@ class _Server extends InMemoryEventsRepository {
   @override
   Future<List<Event>> createEvent(Map<String, Object?> fields) async {
     await _check('create ${fields['summary']}');
-    return super.createEvent(fields);
+    // Each made with its first version, as the server gives it.
+    return [
+      for (final e in await super.createEvent(fields))
+        Event.fromJson({...e.toJson(), 'etag': '"1"'}),
+    ];
   }
 
   @override
@@ -274,6 +278,114 @@ void main() {
       );
       final tea = outbox.pending.last.pendingId();
       expect(outbox.isWhollyLocked(tea), isTrue);
+    });
+
+    test('a new event, changed as shown once it has saved -- from a dialog '
+        'opened while it was saving -- is changed as saved', () async {
+      final server = _Server([]);
+      final outbox = _outbox(server);
+      await outbox.create({
+        'summary': 'Tea',
+        'start': localIsoTimestamp(_at(17)),
+        'end': localIsoTimestamp(_at(18)),
+      });
+      final shown = outbox.project([], _day, _at(24)).single;
+      expect(PendingEventWrite.isPendingId(shown.id), isTrue);
+      expect(shown.properties['etag'], isNull);
+      await outbox.flush(ignoreBackoff: true);
+
+      await outbox.update(shown, {'summary': 'Tea and cake'});
+
+      final change = outbox.pending.single;
+      expect(change.event!.id, 'new-1');
+      expect(change.event!.properties['etag'], '"1"');
+      expect(outbox.locked(shown.id!), isEmpty);
+      await outbox.flush(ignoreBackoff: true);
+      expect(server.calls, ['create Tea', 'update new-1 summary']);
+      expect(outbox.pending, isEmpty);
+    });
+
+    test('a new event, cancelled or made room over as shown once it has '
+        'saved, is cancelled or changed as saved', () async {
+      final server = _Server([]);
+      final outbox = _outbox(server);
+      Future<Event> made(String summary, int from) async {
+        await outbox.create({
+          'summary': summary,
+          'start': localIsoTimestamp(_at(from)),
+          'end': localIsoTimestamp(_at(from + 1)),
+        });
+        final shown = outbox.project([], _day, _at(24)).single;
+        await outbox.flush(ignoreBackoff: true);
+        return shown;
+      }
+
+      final tea = await made('Tea', 17);
+      await outbox.cancel(tea);
+      expect(outbox.pending.single.event!.id, 'new-1');
+      await outbox.flush(ignoreBackoff: true);
+
+      final walk = await made('Walk', 19);
+      await outbox.makeRoom(
+        Overwrite(
+          updates: [
+            (walk, {'end': localIsoTimestamp(_at(19, 30))}),
+          ],
+        ),
+      );
+      final (event, _) = outbox.pending.single.over.updates.single;
+      expect(event.id, 'new-2');
+      expect(event.properties['etag'], '"1"');
+      await outbox.flush(ignoreBackoff: true);
+      expect(server.calls, [
+        'create Tea',
+        'cancel new-1',
+        'create Walk',
+        'makeRoom 1',
+        'update new-2 end',
+      ]);
+    });
+
+    test("a new event, changed as shown after it's dropped, says so", () async {
+      final server = _Server([]);
+      final outbox = _outbox(server);
+      await outbox.create({
+        'summary': 'Tea',
+        'start': localIsoTimestamp(_at(17)),
+        'end': localIsoTimestamp(_at(18)),
+      });
+      final shown = outbox.project([], _day, _at(24)).single;
+      await outbox.drop(outbox.pending.single);
+
+      await expectLater(
+        outbox.update(shown, {'summary': 'Tea and cake'}),
+        throwsA(isA<NeverMade>()),
+      );
+      expect(outbox.pending, isEmpty);
+    });
+
+    test('a change kept naming a new event the app never heard was saved '
+        'is refused, without sending it', () async {
+      final store = InMemoryOutboxStore<PendingEventWrite>()
+        ..items = [
+          PendingEventWrite(
+            id: 'b',
+            kind: EventWriteKind.update,
+            label: 'Change “Tea”',
+            made: _at(9),
+            event: _event('pending:a:0', 'Tea', 17, 18),
+            changes: const {'summary': 'Tea and cake'},
+          ),
+        ];
+      final server = _Server([]);
+      final outbox = EventOutbox(store: store, events: server);
+
+      final result = await outbox.flush(ignoreBackoff: true);
+
+      expect(result.blocked, isTrue);
+      expect(server.calls, isEmpty);
+      expect(outbox.pending.single.refused, isTrue);
+      expect(outbox.pending.single.lastError, contains('Drop this change'));
     });
 
     test('a move locks the times of the events it makes room in', () async {
