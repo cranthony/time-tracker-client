@@ -175,6 +175,32 @@ void main() {
       expect(goalHighlighted(), titles[0]);
     });
 
+    testWidgets('J on the Actions pane highlights the first action, not '
+        'the Priority colors link over them', (tester) async {
+      final repo = InMemoryActionsRepository([
+        const PlanAction(id: 'cook', name: 'Cooking'),
+        const PlanAction(id: 'host', name: 'Hosting'),
+      ]);
+      await tester.pumpWidget(
+        withHotkeys(
+          PlanScreen(
+            repository: repo,
+            outbox: ActionWrites.local(repo)..start(),
+            serverLabel: 'offline demo',
+            eventsRepository: InMemoryEventsRepository(const []),
+            notesRepository: InMemoryNotesRepository(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Priority colors'), findsOneWidget);
+      await press(tester, LogicalKeyboardKey.keyJ);
+      final context = FocusManager.instance.primaryFocus!.context!;
+      final tile = context.findAncestorWidgetOfExactType<ListTile>();
+      final title = tile?.title as Text?;
+      expect(title?.data ?? (title?.textSpan as TextSpan?)?.text, 'Cooking');
+    });
+
     testWidgets('K highlights the last goal, not its edit button', (
       tester,
     ) async {

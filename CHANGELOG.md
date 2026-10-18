@@ -13,7 +13,8 @@ on. Add the new version's section here at the same time; CI checks both.
 
 - S presses the Sign in button, where a page asks you to sign in.
 - J and K go from item to item -- on the Plan page, from goal to goal,
-  not through each goal's edit button, nor the buttons over the list;
+  not through each goal's edit button, nor the buttons over the list
+  (nor, on the Actions pane, the Priority colors link);
   in a dialog or menu, from row to row. Tab still goes to every button.
   With nothing highlighted, J starts at the first item in view (on the
   Goals pane, the first goal) and K at the last. With the item

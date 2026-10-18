@@ -690,7 +690,7 @@ void _scrollBackTo(BuildContext context) {
 }
 
 /// Whether J and K can highlight [node]: something to tap, not a text
-/// field.
+/// field, nor [NotAnItem].
 bool _isStop(FocusNode node) {
   final context = node.context;
   return node.canRequestFocus &&
@@ -698,7 +698,19 @@ bool _isStop(FocusNode node) {
       context != null &&
       context.mounted &&
       context.widget is! EditableText &&
-      context.findAncestorWidgetOfExactType<EditableText>() == null;
+      context.findAncestorWidgetOfExactType<EditableText>() == null &&
+      context.findAncestorWidgetOfExactType<NotAnItem>() == null;
+}
+
+/// [child], at the head of a list but not one of its items -- a link
+/// over the rows, say: J and K pass it by, though Tab goes to it.
+class NotAnItem extends StatelessWidget {
+  const NotAnItem({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => child;
 }
 
 /// J ([later]) or K, in [within]: highlights the next item, or the one

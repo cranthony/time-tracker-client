@@ -1068,41 +1068,44 @@ class _PlanScreenState extends State<PlanScreen> {
     final time = _timeOnActions(tree);
     final searching = _query.trim().isNotEmpty;
     return [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-        child: Wrap(
-          spacing: 16,
-          runSpacing: 4,
-          children: [
-            Tooltip(
-              message:
-                  "Each active action takes one of the calendar's event "
-                  'labels, as do its own default colors.',
-              child: Text(
-                '${actions.labelSlotsUsed} of ${actions.labelSlotsTotal} labels '
-                'in use',
-                style: Theme.of(context).textTheme.bodySmall,
+      // Over the actions, not one: J and K pass it by.
+      NotAnItem(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Wrap(
+            spacing: 16,
+            runSpacing: 4,
+            children: [
+              Tooltip(
+                message:
+                    "Each active action takes one of the calendar's event "
+                    'labels, as do its own default colors.',
+                child: Text(
+                  '${actions.labelSlotsUsed} of ${actions.labelSlotsTotal} labels '
+                  'in use',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ),
-            ),
-            InkWell(
-              onTap: _editPriorityColors,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final p in priorities)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 2),
-                      child: ColorDot(color: priorityColor(p), size: 10),
+              InkWell(
+                onTap: _editPriorityColors,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final p in priorities)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 2),
+                        child: ColorDot(color: priorityColor(p), size: 10),
+                      ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Priority colors',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Priority colors',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       if (shown.isEmpty)
