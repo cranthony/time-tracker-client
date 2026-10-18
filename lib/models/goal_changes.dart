@@ -129,7 +129,7 @@ List<String> planned(
 // -- The changes the Goals pages make -------------------------------------
 
 /// What a sub-goal left open, as its parent's closed, comes to: done,
-/// obsolete, or moved under another goal (or the top level, with no
+/// missed, obsolete, or moved under another goal (or the top level, with no
 /// [to]).
 sealed class Leftover {
   const Leftover();
@@ -138,7 +138,7 @@ sealed class Leftover {
 class CloseLeftover extends Leftover {
   const CloseLeftover(this.status);
 
-  /// "done" or "obsolete".
+  /// "done", "missed" or "obsolete".
   final String status;
 }
 
@@ -176,7 +176,7 @@ List<GoalChange> closingAll(GoalTree tree, Goal goal, String status) => [
   if (goal.status != status) GoalUpdate(goal.id, {'status': status}),
 ];
 
-/// Closes [goal] as [status] ("done" or "obsolete"), with each of its
+/// Closes [goal] as [status] ("done", "missed" or "obsolete"), with each of its
 /// open sub-goals ending as [leftovers] says, by id -- and [made], a goal
 /// made for some of them to move under, made first. In the order the
 /// server takes them: what's made, then what's moved, then what's
@@ -208,7 +208,7 @@ List<GoalChange> closing(
 }
 
 /// The open sub-goals [goal] needs done before it can be: its required
-/// ones.
+/// ones. One that was missed or made obsolete doesn't hold it up.
 List<Goal> requiredOpen(GoalTree tree, Goal goal) => [
   for (final c in tree.childrenOf(goal.id))
     if (c.required && c.open) c,
