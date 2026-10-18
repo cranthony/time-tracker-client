@@ -172,6 +172,9 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
   static bool isPendingId(String? eventId) =>
       eventId?.startsWith('pending:') ?? false;
 
+  /// Whether it makes the event shown under [eventId] until it's saved.
+  bool makes(String eventId) => eventId.startsWith('pending:$id:');
+
   /// Whether it makes, changes or ends a series, by setting its event's
   /// repeat: the series' other events are the server's to work out, so
   /// the days after are asked for again once it's saved.
