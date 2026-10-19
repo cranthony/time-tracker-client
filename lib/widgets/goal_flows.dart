@@ -113,18 +113,30 @@ class GoalActions {
     memory.loadGoals(repository, again: true).ignore();
   }
 
-  /// Adds a goal under [parent] (the top level, if null).
-  Future<void> add({Goal? parent}) async {
+  /// Adds a goal under [parent] (the top level, if null), starting with
+  /// [title] and [deadline] if they're given. Whether it's saved.
+  Future<bool> add({Goal? parent, String? title, String? deadline}) async {
     final fields = await showGoalEditor(
       context,
       parent: parent,
       goals: goals,
+      title: title,
+      deadline: deadline,
       now: now,
     );
-    if (fields == null || !context.mounted) return;
-    await save("Couldn't add the goal", [
+    if (fields == null || !context.mounted) return false;
+    return save("Couldn't add the goal", [
       GoalCreate(Goal.fromJson({'id': '', ...fields})),
     ]);
+  }
+
+  /// Adds a goal made of [fields], from the New goal sheet: shown in
+  /// [memory] at once. Throws if it can't be.
+  Future<void> create(Map<String, Object?> fields) async {
+    final created = await repository.createGoal(
+      Goal.fromJson({'id': '', ...fields}),
+    );
+    _shown([GoalCreate(created)]);
   }
 
   /// Edits [goal].

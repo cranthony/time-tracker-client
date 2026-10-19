@@ -8,6 +8,8 @@ import '../outbox/action_writes.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/note_writes.dart';
 import '../outbox/write_queue.dart';
+import '../services/goal_drafts.dart';
+import '../services/goals_repository.dart';
 import '../services/note_drafts.dart';
 import '../platform/calendar_widget.dart';
 import '../services/actions_repository.dart';
@@ -21,6 +23,8 @@ import '../services/plan_memory.dart';
 import '../services/proposal_repository.dart';
 import '../services/traits_repository.dart';
 import '../widgets/event_outbox_status.dart';
+import '../widgets/goal_flows.dart';
+import '../widgets/goal_sheet.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/load_status.dart';
 import '../widgets/note_dialog.dart';
@@ -49,6 +53,7 @@ class HomeScreen extends StatefulWidget {
     this.onSignOut,
     this.addNoteRequests,
     this.noteDrafts,
+    this.goalDrafts,
     this.onAddNoteFieldFocused,
     this.calendarTaps,
     this.version,
@@ -65,6 +70,10 @@ class HomeScreen extends StatefulWidget {
   /// Notes being written, kept as they're typed: the app's, on the
   /// device, or else the screen's own, while it lasts.
   final NoteDrafts? noteDrafts;
+
+  /// The goal being set in the New goal sheet, kept as it's typed: the
+  /// app's, on the device, or else the screen's own, while it lasts.
+  final GoalDrafts? goalDrafts;
   final ActionWrites actionWrites;
 
   /// Changes to events, and the proposal, waiting to be saved: a line at
@@ -101,6 +110,8 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Kept across pages, so a draft outlasts the Notes page.
   late final NoteDrafts _noteDrafts =
       widget.noteDrafts ?? NoteDrafts.inMemory();
+  late final GoalDrafts _goalDrafts =
+      widget.goalDrafts ?? GoalDrafts.inMemory();
   StreamSubscription<DateTime>? _addNoteRequests;
   StreamSubscription<CalendarTap>? _calendarTaps;
 
@@ -126,6 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     unawaited(_noteDrafts.load());
+    unawaited(_goalDrafts.load());
     // Once the scopes can be read: the events around today, and what the
     // traits are scored by, for every page.
     WidgetsBinding.instance.addPostFrameCallback((_) => _warmScores());
@@ -177,6 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _calendarTaps?.cancel();
     _toNotes.close();
     if (widget.noteDrafts == null) _noteDrafts.dispose();
+    if (widget.goalDrafts == null) _goalDrafts.dispose();
     _toEvents.close();
     _toEventsTime.close();
     _notesLoads.dispose();
@@ -218,6 +231,11 @@ class _HomeScreenState extends State<HomeScreen> {
           _writeNote,
           whenCovered: WhenCovered.run,
         ),
+        HotkeyBinding(
+          const HotkeyTrigger.ctrl(LogicalKeyboardKey.semicolon),
+          _setGoal,
+          whenCovered: WhenCovered.run,
+        ),
         for (final (key, tab) in [
           (LogicalKeyboardKey.keyN, _Tab.notes),
           (LogicalKeyboardKey.keyE, _Tab.events),
@@ -240,6 +258,33 @@ class _HomeScreenState extends State<HomeScreen> {
     unawaited(
       showAddNoteDialog(context, keep: widget.outbox.add, drafts: _noteDrafts),
     );
+  }
+
+  /// Opens the New goal sheet over whatever's open, as [_writeNote] does
+  /// the New note sheet -- or, from its More, the full New goal page.
+  /// Nothing without goals to set.
+  Future<void> _setGoal() async {
+    final repository = GoalsScope.of(context);
+    if (repository == null || newGoalSheetOpen) return;
+    GoalActions actions() => GoalActions(
+      context: context,
+      repository: repository,
+      memory: _planMemory,
+    );
+    // What's there to check it against, if they've loaded.
+    unawaited(_planMemory.loadGoals(repository));
+    final result = await showAddGoalSheet(
+      context,
+      keep: (fields) => actions().create(fields),
+      goals: _planMemory.goals ?? const [],
+      drafts: _goalDrafts,
+    );
+    if (result is! MoreGoal || !mounted) return;
+    final saved = await actions().add(
+      title: result.title,
+      deadline: result.deadline,
+    );
+    if (saved) await _goalDrafts.remove();
   }
 
   /// Goes to [tab], from a hotkey: Events at now. Not while a dialog is

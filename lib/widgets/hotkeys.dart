@@ -48,6 +48,12 @@ class Hotkey {
         'the Notes page, + does too',
     HotkeyPlace.anywhere,
   );
+  static const newGoal = Hotkey(
+    'Ctrl+;',
+    'Set a goal, due by the end of a day, over whatever is open; closing '
+        'it goes back there, and its More goes on in the full New goal page',
+    HotkeyPlace.anywhere,
+  );
   static const notes = Hotkey(
     'Ctrl+B, then N',
     'Go to Notes',
@@ -269,6 +275,7 @@ class Hotkey {
   /// Every one, in the order the list shows them.
   static const all = [
     newNote,
+    newGoal,
     notes,
     events,
     plan,
