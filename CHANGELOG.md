@@ -12,8 +12,9 @@ on. Add the new version's section here at the same time; CI checks both.
 ## 7.148.0
 
 - An Add goal home screen widget: a one-cell round button with the app's
-  goal icon that opens the app straight into the New goal sheet, with the
-  keyboard up, as the Add note one does for a note.
+  goal icon, its bullseye centered on the button, that opens the app
+  straight into the New goal sheet, with the keyboard up, as the Add
+  note one does for a note.
 - The home screen calendar has a goal button next to its "+", opening the
   same sheet. Each is a 48dp tap target round its 32dp circle, so the two
   side by side are easy to hit apart.
@@ -21,6 +22,9 @@ on. Add the new version's section here at the same time; CI checks both.
   be pinned to the home screen.
 - The emulator check that the home screen "+" brings up the keyboard
   checks the goal button too, from the same four states.
+- On a phone, the New goal sheet puts More and Add on a line of their
+  own under the date, rather than squeezing the date's -, + and Today
+  onto three lines beside them.
 
 ## 7.147.0
 
