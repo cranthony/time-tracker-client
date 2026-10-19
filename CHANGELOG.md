@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.158.0
+
+- The Plan page's Goals pane has a round "+" in its lower right, like
+  the Notes page's, that opens the quick New goal sheet the home screen
+  widget opens. There's room under the goals to scroll the last one
+  clear of it.
+
 ## 7.157.0
 
 - Traits keep facts about each person. A trait's editor has a Facts
