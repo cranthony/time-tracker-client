@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/facts.dart';
+import '../models/goal.dart' show deadlineEnd, deadlineOf;
 import '../models/proposal.dart';
 import '../outbox/proposal_notices.dart';
 import 'hotkeys.dart';
@@ -1139,8 +1140,9 @@ class ProposalCancelStrip extends StatelessWidget {
   }
 }
 
-/// A person, action or location the proposal adds -- the [index]th of
-/// [count] -- what it's called, the events it's used at ([uses]), and,
+/// A person, action, location or goal the proposal adds -- the [index]th
+/// of [count] -- what it's called, the events it's used at ([uses]) -- or,
+/// a goal, when it's due and who it's with and for ([about]) -- and,
 /// once the user's [settled] it, how: made now, found among those there
 /// ([settledAs] names it), or dropped. Tapping it, or its button, calls
 /// [onSettle], to settle it, or say otherwise; with buttons to go to the
@@ -1154,7 +1156,9 @@ class ProposalAdditionStrip extends StatelessWidget {
     this.settled,
     this.settledAs,
     this.uses = const [],
+    this.about,
     this.onSettle,
+    this.onActivate,
     this.onPrevious,
     this.onNext,
   });
@@ -1165,7 +1169,11 @@ class ProposalAdditionStrip extends StatelessWidget {
   final AdditionSettled? settled;
   final String? settledAs;
   final List<String> uses;
+  final String? about;
   final VoidCallback? onSettle;
+
+  /// A new goal's: makes it now, active, asking when it's due.
+  final VoidCallback? onActivate;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
 
@@ -1173,6 +1181,7 @@ class ProposalAdditionStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final dropped = settled?.use == AdditionUse.drop;
+    final goal = addition.kind == AdditionKind.goal;
     return _DetailRow(
       badge: dropped ? Icons.block : additionIcon(addition.kind),
       what: 'addition',
@@ -1195,7 +1204,9 @@ class ProposalAdditionStrip extends StatelessWidget {
       says: [
         ?addition.detail,
         additionState(settled, settledAs),
-        if (!dropped)
+        if (goal)
+          ?about
+        else if (!dropped)
           if (uses.isEmpty)
             'Not used at any event'
           else
@@ -1203,6 +1214,13 @@ class ProposalAdditionStrip extends StatelessWidget {
       ].join(' · '),
       saysColor: settled == null ? colors.secondary : null,
       actions: [
+        if (onActivate != null)
+          IconButton(
+            tooltip: 'Make it an active goal',
+            visualDensity: VisualDensity.compact,
+            onPressed: onActivate,
+            icon: const Icon(Icons.play_arrow_outlined),
+          ),
         if (onSettle != null)
           IconButton(
             tooltip: settled == null ? 'Settle it' : 'Change how it’s settled',
@@ -1605,11 +1623,34 @@ sealed class AdditionChoice {
 }
 
 /// Make it now, called [name], with a person's context or a location's
-/// hint, [detail].
+/// hint, [detail]; a goal, active and due by [deadline], if given.
 final class CreateAddition extends AdditionChoice {
-  const CreateAddition(this.name, this.detail);
+  const CreateAddition(this.name, this.detail, {this.deadline});
   final String name;
   final String? detail;
+  final String? deadline;
+}
+
+/// Asks when the new goal [addition] is due -- its deadline, if Claude
+/// gave one, to start with -- to make it now, active: null if dismissed.
+Future<CreateAddition?> activateGoal(
+  BuildContext context,
+  ProposalAddition addition, {
+  DateTime Function() now = DateTime.now,
+}) async {
+  final today = now();
+  final given = deadlineEnd(addition.deadline);
+  final picked = await showDatePicker(
+    context: context,
+    helpText: 'Due by',
+    initialDate: given == null || given.isBefore(today)
+        ? today
+        : given.subtract(const Duration(days: 1)),
+    firstDate: DateTime(today.year, today.month, today.day),
+    lastDate: DateTime(today.year + 20),
+  );
+  if (picked == null) return null;
+  return CreateAddition(addition.name, null, deadline: deadlineOf(picked));
 }
 
 /// It's [id], already there.
@@ -1743,9 +1784,25 @@ class _AdditionSheetState extends State<_AdditionSheet> {
             ),
           ),
           if (settled == null) ...[
+            if (a.kind == AdditionKind.goal)
+              ListTile(
+                leading: const Icon(Icons.play_arrow_outlined),
+                title: const Text('Make it an active goal'),
+                subtitle: const Text('Now, due when you say'),
+                onTap: () async {
+                  final made = await activateGoal(context, a);
+                  if (made != null && context.mounted) {
+                    Navigator.of(context).pop(made);
+                  }
+                },
+              ),
             ListTile(
               leading: Icon(additionIcon(a.kind)),
-              title: const Text('Make it now'),
+              title: Text(
+                a.kind == AdditionKind.goal
+                    ? 'Make it now, inactive'
+                    : 'Make it now',
+              ),
               subtitle: Text(
                 'As Claude has it, or corrected. It stays, whatever becomes '
                 'of the proposal.',
@@ -1755,7 +1812,11 @@ class _AdditionSheetState extends State<_AdditionSheet> {
             ListTile(
               leading: const Icon(Icons.block),
               title: const Text('Drop it'),
-              subtitle: const Text('Not real: take it out of every event'),
+              subtitle: Text(
+                a.kind == AdditionKind.goal
+                    ? 'Not wanted: don’t make it'
+                    : 'Not real: take it out of every event',
+              ),
               onTap: () => Navigator.of(context).pop(const DropAddition()),
             ),
           ] else
@@ -1840,7 +1901,7 @@ class _CreateAdditionDialogState extends State<_CreateAdditionDialog> {
     final detail = switch (a.kind) {
       AdditionKind.person => 'Context: what tells them apart',
       AdditionKind.location => 'Hint: other names, an address',
-      AdditionKind.action => null,
+      AdditionKind.action || AdditionKind.goal => null,
     };
     return AlertDialog(
       title: Text('Make the ${a.kind.label.toLowerCase()} now'),
@@ -1854,7 +1915,9 @@ class _CreateAdditionDialogState extends State<_CreateAdditionDialog> {
               child: TextField(
                 controller: _name,
                 autofocus: true,
-                decoration: const InputDecoration(labelText: 'Name'),
+                decoration: InputDecoration(
+                  labelText: a.kind == AdditionKind.goal ? 'Title' : 'Name',
+                ),
                 onChanged: (_) => setState(() {}),
               ),
             ),
@@ -1898,6 +1961,7 @@ IconData additionIcon(AdditionKind kind) => switch (kind) {
   AdditionKind.person => Icons.person_add_alt,
   AdditionKind.action => Icons.add_task,
   AdditionKind.location => Icons.add_location_alt,
+  AdditionKind.goal => Icons.flag_outlined,
 };
 
 /// What there is to look at in a proposal, under its bar: Claude's

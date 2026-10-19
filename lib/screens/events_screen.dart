@@ -36,6 +36,8 @@ import '../models/google_calendar.dart';
 import '../services/google_calendars.dart';
 import '../widgets/event_description.dart';
 import '../widgets/google_all_day_strip.dart';
+import '../widgets/goal_editor.dart'
+    show deadlineLabel, goalPeopleLabel, goalPeopleNames;
 import '../widgets/goal_tile.dart';
 import '../widgets/goals_due_strip.dart';
 import 'goal_screen.dart';
@@ -776,7 +778,29 @@ class _EventsScreenState extends State<EventsScreen> {
         final a? => actionName(a),
         null => null,
       },
+      AdditionKind.goal => switch (_memory.goals
+          ?.where((g) => g.id == id)
+          .firstOrNull) {
+        final g? => goalTitle(g),
+        null => null,
+      },
     };
+  }
+
+  /// A new goal's [a]: when it's due, and who it's with and for -- the
+  /// people the proposal adds named as it has them, marked new.
+  String? _aboutGoal(ProposalAddition a) {
+    if (a.kind != AdditionKind.goal) return null;
+    final added = {
+      for (final p in _proposal?.additions ?? const <ProposalAddition>[])
+        if (p.kind == AdditionKind.person) p.ref: '${p.name} (new)',
+    };
+    final known = goalPeopleNames(_memory);
+    String name(String id) => added[id] ?? known(id);
+    return [
+      if (a.deadline case final d?) 'Due ${deadlineLabel(context, d)}',
+      ?goalPeopleLabel(a.withIds, a.forIds, name),
+    ].join(' · ');
   }
 
   /// Whether [json] -- facts, say -- names [ref] anywhere.
@@ -5055,7 +5079,14 @@ class _EventsScreenState extends State<EventsScreen> {
               uses: [
                 for (final e in _usesOf(addition)) _reviewedNames[e.id] ?? e.id,
               ],
+              about: _aboutGoal(addition.addition),
               onSettle: _proposalBusy ? null : () => _settle(addition),
+              onActivate:
+                  _proposalBusy ||
+                      addition.settled != null ||
+                      addition.addition.kind != AdditionKind.goal
+                  ? null
+                  : () => _settle(addition, activate: true),
               onPrevious: additionAt > 0
                   ? () => _goToAddition(additionAt - 1)
                   : null,
@@ -5073,7 +5104,10 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Asks what's to become of [added], and amends the proposal so: made
   /// now, one already there, dropped, or put back as Claude proposed it
   /// -- or leaves a note for Claude about it.
-  Future<void> _settle(_Added added) async {
+  ///
+  /// With [activate], a new goal is made at once, active, due when the
+  /// user picks.
+  Future<void> _settle(_Added added, {bool activate = false}) async {
     final a = added.addition;
     final existing = <({String id, String name, String? detail})>[
       ...switch (a.kind) {
@@ -5093,21 +5127,33 @@ class _EventsScreenState extends State<EventsScreen> {
                 action.status != 'deleted')
               (id: action.id!, name: actionName(action), detail: null),
         ],
+        AdditionKind.goal => [
+          for (final g in _memory.goals ?? const <Goal>[])
+            if (g.open)
+              (
+                id: g.id,
+                name: goalTitle(g),
+                detail: g.path.isEmpty ? null : g.path.join(' › '),
+              ),
+        ],
       },
     ];
-    final choice = await showAdditionSheet(
-      context,
-      a,
-      settled: added.settled,
-      settledAs: _settledName(added.settled, a.kind),
-      existing: existing,
-    );
+    final choice = activate
+        ? await activateGoal(context, a)
+        : await showAdditionSheet(
+            context,
+            a,
+            settled: added.settled,
+            settledAs: _settledName(added.settled, a.kind),
+            existing: existing,
+          );
     if (choice == null || !mounted) return;
     ProposalEdits settling(
       AdditionUse use, {
       String? id,
       String? name,
       String? detail,
+      String? deadline,
     }) => ProposalEdits(
       additions: [
         (
@@ -5117,14 +5163,22 @@ class _EventsScreenState extends State<EventsScreen> {
           name: name,
           detail: detail,
           kind: a.kind,
+          deadline: deadline,
         ),
       ],
     );
     final kind = a.kind.label.toLowerCase();
     final (edits, said) = switch (choice) {
-      CreateAddition(:final name, :final detail) => (
-        settling(AdditionUse.create, name: name, detail: detail),
-        'Made the $kind “$name”.',
+      CreateAddition(:final name, :final detail, :final deadline) => (
+        settling(
+          AdditionUse.create,
+          name: name,
+          detail: detail,
+          deadline: deadline,
+        ),
+        deadline == null
+            ? 'Made the $kind “$name”.'
+            : 'Made the $kind “$name”, active.',
       ),
       UseExisting(:final id) => (
         settling(AdditionUse.existing, id: id),

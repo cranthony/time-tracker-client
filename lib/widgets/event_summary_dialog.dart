@@ -506,6 +506,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         case AdditionKind.location:
           _locationNames = {..._locationNames, a.ref: named};
         case AdditionKind.action:
+        case AdditionKind.goal:
       }
     }
     if (traits != null) {

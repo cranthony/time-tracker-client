@@ -326,6 +326,9 @@ class _TextSheetFieldState extends State<_TextSheetField> {
 /// can be added from here, and picked at once; one long-pressed is
 /// edited.
 ///
+/// [withCaption] and [forCaption] say what each tab is -- an event's,
+/// by default; a goal's, say.
+///
 /// With a [query] -- the event's summary, say -- each search starts with
 /// it, matching any of its words. Each tab keeps its own search as it's
 /// swiped away and back, and takes the keyboard as it's swiped to, what's
@@ -343,6 +346,8 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
   String? query,
   List<ProposalAddition> additions = const [],
   int? eventMinutes,
+  String withCaption = 'Who was there',
+  String forCaption = "Who it was for, who wasn't there",
 }) {
   var map = mapLocation;
   final typed = query?.trim() ?? '';
@@ -633,14 +638,8 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
             matchAny: typed.isNotEmpty,
             focusFirst: true,
             pages: (searches) => [
-              pick(setState, searches[0], with_, for_, 'Who was there'),
-              pick(
-                setState,
-                searches[1],
-                for_,
-                with_,
-                "Who it was for, who wasn't there",
-              ),
+              pick(setState, searches[0], with_, for_, withCaption),
+              pick(setState, searches[1], for_, with_, forCaption),
             ],
           ),
   );

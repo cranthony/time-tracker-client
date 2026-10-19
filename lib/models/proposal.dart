@@ -493,7 +493,7 @@ class Proposal {
   /// The notes in its window, by time, and what became of each.
   final List<ProposalNote> notes;
 
-  /// The people, actions and locations its decisions add, made when it's
+  /// The people, actions, locations and goals its decisions add, made when it's
   /// applied: until then, named by their refs.
   final List<ProposalAddition> additions;
 
@@ -743,7 +743,8 @@ class ProposedSummary {
 enum AdditionKind {
   person('people', 'Person'),
   action('actions', 'Action'),
-  location('locations', 'Location');
+  location('locations', 'Location'),
+  goal('goals', 'Goal');
 
   const AdditionKind(this.json, this.label);
 
@@ -752,10 +753,11 @@ enum AdditionKind {
   final String label;
 }
 
-/// A person, action or location a [Proposal]'s decisions add, mirroring
-/// an item of `get_proposal`'s `additions`: named by its [ref] ("new:
-/// priya") wherever an id would go, until it's made, when the proposal's
-/// applied.
+/// A person, action, location or goal a [Proposal]'s decisions add,
+/// mirroring an item of `get_proposal`'s `additions`: named by its [ref]
+/// ("new: priya") wherever an id would go, until it's made, when the
+/// proposal's applied. A goal is one Claude proposes from what the notes
+/// say the user means to do, or told someone they would.
 class ProposalAddition {
   const ProposalAddition({
     required this.ref,
@@ -769,18 +771,28 @@ class ProposalAddition {
   final String name;
 
   /// As the server sent it: a person's context, a location's hint, an
-  /// action's group and priority...
+  /// action's group and priority, a goal's deadline and people...
   final Map<String, Object?> fields;
 
   /// What tells it apart: a person's context, or a location's hint.
   String? get detail => switch (kind) {
     AdditionKind.person => fields['context'] as String?,
     AdditionKind.location => fields['hint'] as String?,
-    AdditionKind.action => null,
+    AdditionKind.action || AdditionKind.goal => null,
   };
 
+  /// A goal's: when it's due, and who it's done with and for, by id or
+  /// ref.
+  String? get deadline => fields['deadline'] as String?;
+  List<String> get withIds => [
+    for (final id in fields['with_ids'] as List? ?? const []) '$id',
+  ];
+  List<String> get forIds => [
+    for (final id in fields['for_ids'] as List? ?? const []) '$id',
+  ];
+
   /// The proposal's `additions`, people first, then actions, then
-  /// locations.
+  /// locations, then goals.
   static List<ProposalAddition> allFrom(Object? additions) => [
     if (additions is Map)
       for (final kind in AdditionKind.values)
@@ -789,7 +801,8 @@ class ProposalAddition {
             ProposalAddition(
               ref: ref,
               kind: kind,
-              name: switch (item['name']) {
+              // A goal's is its title.
+              name: switch (item['name'] ?? item['title']) {
                 final String name when name.trim().isNotEmpty => name,
                 _ => ref,
               },

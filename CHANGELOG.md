@@ -9,6 +9,18 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.163.0
+
+- A goal can name the people it's done with and the people it's for.
+  Pick them under People on the goal's edit page; they show on the goal's
+  page. A person's page lists the open goals done with them or for them.
+- Compaction can propose a goal when your notes say you want to do
+  something longer term, or that you told someone you would. The goal
+  names who it's with or for, and shows under Added in review. It starts
+  inactive. The play button on its strip makes it an active goal now,
+  due on the day you pick. The sheet also lets you make it inactive, say
+  it's a goal you already have, or drop it.
+
 ## 7.162.0
 
 - A person can have their own prompts for a trait's fact. On their
