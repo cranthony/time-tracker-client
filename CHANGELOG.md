@@ -18,6 +18,8 @@ on. Add the new version's section here at the same time; CI checks both.
   same sheet.
 - Long-press the app icon for Add goal too, beside Add note; either can
   be pinned to the home screen.
+- The emulator check that the home screen "+" brings up the keyboard
+  checks the goal button too, from the same four states.
 
 ## 7.147.0
 
