@@ -16,6 +16,7 @@ import '../models/proposal.dart';
 import '../models/recurrence.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/note_writes.dart';
+import '../outbox/write_queue.dart';
 import '../services/keep_rules.dart';
 import '../services/app_settings.dart';
 import '../services/actions_repository.dart';
@@ -1290,26 +1291,72 @@ class _EventsScreenState extends State<EventsScreen> {
   }.toList();
 
   /// Shows the notes still to be saved as they change, and loads the
-  /// saved ones again once more are saved.
+  /// saved ones again once more are saved -- and the actions, people or
+  /// locations saved, which go through the same queue: one added from an
+  /// event's picker gets what the server fills in, an action's color, say,
+  /// or a location's group path.
   void _outboxChanged() {
     if (!mounted) return;
     setState(() {});
-    if (widget.outbox!.wantsFetch) _loadNotes();
+    final outbox = widget.outbox!;
+    if (!outbox.wantsFetch) return;
+    final saved = {for (final s in outbox.queue.justSaved) s.item.kind};
+    bool any(List<WriteKind> kinds) => kinds.any((k) => saved.contains(k.name));
+    final actions = any(const [WriteKind.action, WriteKind.actionGroup]);
+    final people = any(const [WriteKind.person, WriteKind.circle]);
+    final locations = any(const [WriteKind.location, WriteKind.locationGroup]);
+    _loadNotes(
+      notes: any(const [WriteKind.note]) || !(actions || people || locations),
+      actions: actions,
+      people: people,
+      locations: locations,
+    );
   }
 
   /// Loads the saved notes not yet compacted, after those kept from last
-  /// time if [cached], and when notes were last compacted. Best effort:
-  /// without them, they aren't marked.
-  Future<void> _loadNotes({bool cached = false}) async {
-    final repository = widget.notesRepository;
-    if (repository == null) return;
-    if (cached) await _memory.loadKept(notes: repository);
-    unawaited(
-      _memory.loadCompaction(repository, again: true).catchError((Object _) {}),
-    );
+  /// time if [cached], and when notes were last compacted -- unless not
+  /// [notes] -- and with [actions], [people] and [locations], those.
+  /// Best effort: without them, they aren't marked.
+  Future<void> _loadNotes({
+    bool cached = false,
+    bool notes = true,
+    bool actions = false,
+    bool people = false,
+    bool locations = false,
+  }) async {
+    final repository = notes ? widget.notesRepository : null;
+    final actionsRepository = actions ? widget.actionsRepository : null;
+    final peopleRepository = people || locations
+        ? PeopleScope.of(context)
+        : null;
+    if (repository == null &&
+        actionsRepository == null &&
+        peopleRepository == null) {
+      return;
+    }
+    if (cached && repository != null) {
+      await _memory.loadKept(notes: repository);
+    }
+    if (repository != null) {
+      unawaited(
+        _memory
+            .loadCompaction(repository, again: true)
+            .catchError((Object _) {}),
+      );
+    }
+    // What was saved is let go of once all are in, so none shows without
+    // it in the meantime.
     final fetched = widget.outbox?.fetching();
     try {
-      await _memory.loadNotes(repository, again: true);
+      await Future.wait([
+        if (repository != null) _memory.loadNotes(repository, again: true),
+        if (actionsRepository != null)
+          _memory.loadActions(actionsRepository, again: true),
+        if (peopleRepository != null && people)
+          _memory.loadPeople(peopleRepository, again: true),
+        if (peopleRepository != null && locations)
+          _memory.loadLocations(peopleRepository, again: true),
+      ]);
       fetched?.call();
     } catch (_) {
       // Shown as they were.
