@@ -19,7 +19,8 @@ import 'html_editor.dart';
 /// Saving is off while the change breaks a rule (see [planned]) against
 /// [goals], every goal there is, saying which -- a change of status
 /// checked with what it takes ([editing]). A new one starts with [title]
-/// and [deadline], if they're given -- from the New goal sheet, say.
+/// and [deadline], [description] and [definitionOfDone], if they're
+/// given -- from the New goal sheet, say.
 /// Gives a new goal's fields, or an edit's changes (a null clearing a
 /// field) -- null if nothing's saved.
 Future<Map<String, Object?>?> showGoalEditor(
@@ -29,6 +30,8 @@ Future<Map<String, Object?>?> showGoalEditor(
   required List<Goal> goals,
   String? title,
   String? deadline,
+  String? description,
+  String? definitionOfDone,
   DateTime Function() now = DateTime.now,
 }) => Navigator.of(context).push<Map<String, Object?>>(
   MaterialPageRoute(
@@ -39,6 +42,8 @@ Future<Map<String, Object?>?> showGoalEditor(
       goals: goals,
       title: title,
       deadline: deadline,
+      description: description,
+      definitionOfDone: definitionOfDone,
       now: now,
     ),
   ),
@@ -52,6 +57,8 @@ class GoalEditorPage extends StatefulWidget {
     required this.goals,
     this.title,
     this.deadline,
+    this.description,
+    this.definitionOfDone,
     this.now = DateTime.now,
   });
 
@@ -62,6 +69,8 @@ class GoalEditorPage extends StatefulWidget {
   /// A new goal's, to begin with.
   final String? title;
   final String? deadline;
+  final String? description;
+  final String? definitionOfDone;
   final DateTime Function() now;
 
   @override
@@ -91,8 +100,9 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   late String _status = _goal?.status ?? 'active';
   late bool _required = _goal?.required ?? false;
   late int? _priority = _goal?.priority;
-  late String? _description = _goal?.description;
-  late String? _definitionOfDone = _goal?.definitionOfDone;
+  late String? _description = _goal?.description ?? widget.description;
+  late String? _definitionOfDone =
+      _goal?.definitionOfDone ?? widget.definitionOfDone;
 
   @override
   void dispose() {
@@ -466,13 +476,13 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
             onChanged: (value) => setState(() => _required = value),
           ),
         const SizedBox(height: 8),
-        _HtmlField(
+        HtmlField(
           label: 'Description',
           text: _description,
           onTap: () =>
               _editHtml('Description', _description, (v) => _description = v),
         ),
-        _HtmlField(
+        HtmlField(
           label: 'Definition of done',
           text: _definitionOfDone,
           onTap: () => _editHtml(
@@ -497,9 +507,11 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   }
 }
 
-/// An HTML field, as it reads, tapped to edit.
-class _HtmlField extends StatelessWidget {
-  const _HtmlField({
+/// An HTML field, as it reads, tapped to edit: "Add [label]" while
+/// there's nothing in it.
+class HtmlField extends StatelessWidget {
+  const HtmlField({
+    super.key,
     required this.label,
     required this.text,
     required this.onTap,

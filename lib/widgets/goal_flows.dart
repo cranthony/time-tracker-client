@@ -129,14 +129,23 @@ class GoalActions {
   }
 
   /// Adds a goal under [parent] (the top level, if null), starting with
-  /// [title] and [deadline] if they're given. Whether it's saved.
-  Future<bool> add({Goal? parent, String? title, String? deadline}) async {
+  /// [title], [deadline], [description] and [definitionOfDone] if they're
+  /// given. Whether it's saved.
+  Future<bool> add({
+    Goal? parent,
+    String? title,
+    String? deadline,
+    String? description,
+    String? definitionOfDone,
+  }) async {
     final fields = await showGoalEditor(
       context,
       parent: parent,
       goals: goals,
       title: title,
       deadline: deadline,
+      description: description,
+      definitionOfDone: definitionOfDone,
       now: now,
     );
     if (fields == null || !context.mounted) return false;
