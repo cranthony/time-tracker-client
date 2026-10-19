@@ -15,6 +15,7 @@ import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/services/response_cache.dart';
 import 'package:time_tracker_client/services/schedule_hints_repository.dart';
+import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/widgets/app_menu.dart';
 
 const _morning = ScheduleHint(hour: 7, minute: 30, label: 'Morning compaction');
@@ -317,6 +318,23 @@ void main() {
       },
     );
 
+    test('fetches the traits and their scoring defaults', () async {
+      final cache = InMemoryResponseCache();
+      final client = _ToolsClient({
+        'get_traits': const <Object?>[],
+        'get_scoring_defaults': const <String, Object?>{},
+      });
+      final record = await refreshCaches(
+        traits: McpTraitsRepository(client, cache: cache),
+        clock: () => _now,
+      );
+      final kept = McpTraitsRepository(_Client(null), cache: cache);
+
+      expect(record.fetched, ['traits']);
+      expect(client.called, ['get_traits', 'get_scoring_defaults']);
+      expect(await kept.cachedScoringDefaults(), isNotNull);
+    });
+
     test('says when it could not fetch the goals', () async {
       final record = await refreshCaches(
         goals: _FailingGoals(McpException('down')),
@@ -617,6 +635,24 @@ class _Client extends McpClient {
   ]) async {
     called.add(name);
     return result;
+  }
+}
+
+/// Answers each tool with its own result.
+class _ToolsClient extends McpClient {
+  _ToolsClient(this.results) : super(endpoint: Uri.parse('http://test'));
+
+  final Map<String, Object?> results;
+  final called = <String>[];
+
+  @override
+  Future<Object?> callTool(
+    String name, [
+    Map<String, Object?> arguments = const {},
+    String? writeId,
+  ]) async {
+    called.add(name);
+    return results[name];
   }
 }
 

@@ -181,8 +181,8 @@ class RefreshRecord {
 /// What a background fetch reads, each into what the app keeps from run
 /// to run, for it to show at once when it opens: the routines' times
 /// (to plan the next), the notes not yet compacted and when notes were
-/// last compacted, the open proposal, every action, trait, person,
-/// location, habit and goal, and the week either side of today's events. Each
+/// last compacted, the open proposal, every action, trait (and the
+/// traits' scoring defaults), person, location, habit and goal, and the week either side of today's events. Each
 /// is fetched on its own, best effort; signed out, it stops. [clock]
 /// says when it ran.
 ///
@@ -238,7 +238,10 @@ Future<RefreshRecord> refreshCaches({
       'traits',
       traits == null
           ? null
-          : () => traits.traits(statuses: [...traitStatuses.keys]),
+          : () async {
+              await traits.traits(statuses: [...traitStatuses.keys]);
+              await traits.scoringDefaults();
+            },
     ),
     (
       'people',

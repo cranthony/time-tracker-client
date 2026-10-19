@@ -712,10 +712,10 @@ Service's, would be one more of them.
 
 On Android, the app fetches what it keeps while it's closed, so it's fresh
 when you open it: the notes and when they were last compacted, every
-action, trait, person, location, habit and goal, and the week either side
-of today's events -- and the home screen calendar's events and goals with
-them. It fetches 10 minutes after each time Claude's routines
-run -- compacting notes, answering the notes on a proposal -- and
+action, trait, person, location, habit and goal, the traits' scoring
+defaults, and the week either side of today's events -- and the home
+screen calendar's events and goals with them. It fetches 10 minutes
+after each time Claude's routines run -- compacting notes, answering the notes on a proposal -- and
 otherwise every 6 hours. Android's WorkManager runs each fetch around its
 time: usually within minutes, later while the phone's idle. Signed out,
 it stops till you sign in. What it keeps, the app reads afresh -- each
