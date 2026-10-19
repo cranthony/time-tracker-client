@@ -8,16 +8,32 @@ import 'goal_icon.dart';
 import 'priority_chip.dart';
 
 /// The time spent toward each goal in the events kept on the device
-/// ([timeSpent]), by id.
-Map<String, Duration> keptGoalTime(PlanMemory memory, GoalTree tree) {
+/// ([timeSpent]), by id: with [through], only those ended by then.
+Map<String, Duration> keptGoalTime(
+  PlanMemory memory,
+  GoalTree tree, {
+  DateTime? through,
+}) {
   final store = memory.eventStore;
   final span = store?.span;
   if (store == null || span == null) return const {};
   final (first, last) = span;
+  final events = store.between(first, last.add(const Duration(days: 1)));
   return timeSpent(
-    store.between(first, last.add(const Duration(days: 1))),
+    through == null ? events : events.where((e) => !e.end.isAfter(through)),
     tree,
   );
+}
+
+/// What's left of [goal]'s expected time after [spent]: "3h 40m left",
+/// or, past it, "1h over"; null if it has none.
+String? leftLabel(Goal goal, Duration? spent) {
+  final expected = goal.expectedMinutes;
+  if (expected == null) return null;
+  final left = expected - (spent?.inMinutes ?? 0);
+  return left < 0
+      ? '${formatMinutes(-left)} over'
+      : '${formatMinutes(left)} left';
 }
 
 /// [spent] against [goal]'s expected time: "6h 20m of 10h", or just the

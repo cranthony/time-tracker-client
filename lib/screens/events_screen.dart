@@ -36,6 +36,7 @@ import '../models/google_calendar.dart';
 import '../services/google_calendars.dart';
 import '../widgets/event_description.dart';
 import '../widgets/google_all_day_strip.dart';
+import '../widgets/goal_tile.dart';
 import '../widgets/goals_due_strip.dart';
 import 'goal_screen.dart';
 import '../models/weather.dart';
@@ -329,6 +330,34 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// When notes were last compacted; null until it's known.
   DateTime? get _lastCompaction => _memory.lastCompaction;
+
+  /// The time spent toward each goal in the events kept here that have
+  /// been compacted -- ended by [_lastCompaction] -- for the goals due
+  /// strip; null until when notes were last compacted is known, or if no
+  /// open goal due on the day shown has an expected time. Worked out
+  /// again only when the events, the goals or that change.
+  Map<String, Duration>? _compactedGoalTime(List<Goal> goals) {
+    final through = _lastCompaction;
+    if (through == null ||
+        !goalsDueOn(
+          goals,
+          _day,
+        ).any((g) => g.open && g.expectedMinutes != null)) {
+      return null;
+    }
+    final key = (_memory.eventStore?.version, goals, through);
+    if (_goalTimeKept case (final kept, final time)
+        when kept.$1 == key.$1 &&
+            identical(kept.$2, key.$2) &&
+            kept.$3 == key.$3) {
+      return time;
+    }
+    final time = keptGoalTime(_memory, GoalTree(goals), through: through);
+    _goalTimeKept = (key, time);
+    return time;
+  }
+
+  ((int?, List<Goal>, DateTime), Map<String, Duration>)? _goalTimeKept;
 
   /// When each saved note not yet compacted was taken; empty until
   /// they're loaded.
@@ -5250,6 +5279,7 @@ class _EventsScreenState extends State<EventsScreen> {
       GoalsDueStrip(
         goals: goalsDueOn(goals, _day),
         tree: GoalTree(goals),
+        spent: _compactedGoalTime(goals),
         collapsed: _goalsDueCollapsed,
         onCollapsed: _setGoalsDueCollapsed,
         onTap: GoalsScope.of(context) == null ? null : _openGoal,

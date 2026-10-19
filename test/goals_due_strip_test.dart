@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/widgets/goal_tile.dart';
 import 'package:time_tracker_client/widgets/goals_due_strip.dart';
 
 Goal _goal(String id, String title, String? deadline, {String? status}) =>
@@ -129,5 +130,56 @@ void main() {
       ),
     );
     expect(find.byType(InkWell), findsNothing);
+  });
+
+  test("leftLabel: what's left of the expected time, or how far over", () {
+    final goal = Goal.fromJson({
+      ..._goal('g', 'G', '2026-10-18').toJson(),
+      'expected_minutes': 600,
+    });
+    expect(leftLabel(goal, null), '10h left');
+    expect(
+      leftLabel(goal, const Duration(hours: 6, minutes: 20)),
+      '3h 40m left',
+    );
+    expect(leftLabel(goal, const Duration(hours: 10)), '0m left');
+    expect(leftLabel(goal, const Duration(hours: 11)), '1h over');
+    expect(leftLabel(_goal('n', 'N', '2026-10-18'), Duration.zero), isNull);
+  });
+
+  testWidgets("an open goal's pill says what's left of its expected time; "
+      "a closed one's doesn't", (tester) async {
+    Goal expecting(Goal g) =>
+        Goal.fromJson({...g.toJson(), 'expected_minutes': 120});
+    final due = [
+      expecting(_goal('o', 'Open', '2026-10-18')),
+      expecting(_goal('x', 'Over', '2026-10-18')),
+      expecting(_goal('d', 'Done', '2026-10-18', status: 'done')),
+      _goal('n', 'No estimate', '2026-10-18'),
+    ];
+    Future<void> show(Map<String, Duration>? spent) => tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalsDueStrip(
+            goals: due,
+            spent: spent,
+            collapsed: false,
+            onCollapsed: (_) {},
+          ),
+        ),
+      ),
+    );
+    await show(const {
+      'o': Duration(minutes: 45),
+      'x': Duration(hours: 3),
+      'd': Duration(minutes: 30),
+    });
+    expect(find.textContaining('1h 15m left'), findsOneWidget);
+    expect(find.textContaining('1h over'), findsOneWidget);
+    expect(find.textContaining('1h 30m left'), findsNothing);
+    expect(find.textContaining('left'), findsNWidgets(1));
+    await show(null);
+    expect(find.textContaining('left'), findsNothing);
+    expect(find.textContaining('over'), findsNothing);
   });
 }

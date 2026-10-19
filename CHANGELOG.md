@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.159.0
+
+- On the Events page, each open goal due that day with an expected
+  time says what's left of it in its pill: "3h 40m left", or "1h over"
+  once it's past. It counts the time in the events kept on the device
+  that have been compacted, ended by the last compaction.
+
 ## 7.158.0
 
 - The Plan page's Goals pane has a round "+" in its lower right, like
