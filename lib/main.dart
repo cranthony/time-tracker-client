@@ -578,6 +578,13 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     if (calendar == null || !calendar.enabled) return;
     _planMemory.addListener(_calendarChanged);
     _calendarChanged();
+    // The goals due each day, for it: what was kept, then afresh. Not
+    // otherwise loaded till a page that names them opens.
+    if (widget.goalsRepository case final goals?) {
+      unawaited(
+        _planMemory.prefetchNames(goals: goals, onLoaded: _calendarChanged),
+      );
+    }
     if (widget.weather case final weather?) {
       _calendarWeather = CalendarWeatherLink(
         widget: calendar,
