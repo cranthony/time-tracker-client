@@ -93,12 +93,19 @@ void main() {
       expect(await result, 'Cleaning');
     });
 
-    testWidgets('Esc, changed, warns, from the field; again, discards', (
-      tester,
-    ) async {
+    testWidgets('Esc in the field only leaves it; changed, Esc then warns; '
+        'again, discards', (tester) async {
       await open(tester, 'Checkup');
       await press(tester, LogicalKeyboardKey.keyE);
       await tester.enterText(find.byType(EditableText), 'Cleaning');
+
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(find.text('Description'), findsOneWidget);
+      expect(hotkeys.shakes.value, 0);
+      expect(
+        FocusManager.instance.primaryFocus?.context?.widget,
+        isNot(isA<EditableText>()),
+      );
 
       await press(tester, LogicalKeyboardKey.escape);
       expect(find.text('Description'), findsOneWidget);
@@ -124,6 +131,8 @@ void main() {
       await open(tester, 'Checkup');
       await press(tester, LogicalKeyboardKey.keyE);
       await tester.enterText(find.byType(EditableText), 'Cleaning');
+      // Out of the field, then the first warning.
+      await press(tester, LogicalKeyboardKey.escape);
       await press(tester, LogicalKeyboardKey.escape);
       await tester.pump(const Duration(seconds: 4));
       await press(tester, LogicalKeyboardKey.escape);

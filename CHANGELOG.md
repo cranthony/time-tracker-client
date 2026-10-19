@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.147.0
+
+- Esc does all U does, and more: where nothing else takes it, it goes up
+  a level -- from a goal's page back to the Plan page, say -- as U does.
+- In a text field, Esc only ever leaves the field, even in an editor: a
+  second Esc then closes it (warning first, with changes made).
+
 ## 7.146.0
 
 - The goals due on a day, above the Events timeline, go active first,

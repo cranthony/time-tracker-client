@@ -153,7 +153,6 @@ class _FactsDialogState extends State<_FactsDialog> {
     final theme = Theme.of(context);
     final problem = _facts.problem;
     return SaveOrDiscard(
-      escLeavesFields: true,
       changed: () => _facts != widget.facts,
       onSave: problem == null ? () => Navigator.of(context).pop(_facts) : null,
       child: AlertDialog(

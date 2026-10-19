@@ -146,6 +146,18 @@ void main() {
     expect(find.byType(PlanScreen), findsOneWidget);
   });
 
+  testWidgets('Esc goes up a level as U does', (tester) async {
+    await pumpGoal(tester);
+    await press(tester, LogicalKeyboardKey.keyE);
+    await press(tester, LogicalKeyboardKey.escape);
+    expect(find.byType(GoalEditorPage), findsNothing);
+    expect(find.byType(GoalScreen), findsOneWidget);
+
+    await press(tester, LogicalKeyboardKey.escape);
+    expect(find.byType(GoalScreen), findsNothing);
+    expect(find.byType(PlanScreen), findsOneWidget);
+  });
+
   testWidgets('Enter presses nothing in a pane swiped away from', (
     tester,
   ) async {

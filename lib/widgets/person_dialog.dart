@@ -576,7 +576,6 @@ class _NamedDialogState extends State<_NamedDialog> {
       if (widget.extra != null) 'travel',
     ]);
     return SaveOrDiscard(
-      escLeavesFields: true,
       changed: () =>
           _name.text.trim() != (widget.name ?? widget.typed ?? '').trim() ||
           _detail.text.trim() != (widget.detail ?? '').trim() ||

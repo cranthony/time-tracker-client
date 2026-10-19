@@ -41,7 +41,6 @@ class EditPage extends StatelessWidget {
     return SaveOrDiscard(
       changed: changed ?? () => true,
       onSave: saving || problem != null ? null : onSave,
-      escLeavesFields: true,
       child: Scaffold(
         appBar: AppBar(
           title: Text(title),

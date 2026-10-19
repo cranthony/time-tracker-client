@@ -736,7 +736,6 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       if (!_saving) Navigator.of(context).pop();
     },
     // Out of the summary's field first, for its letters.
-    escLeavesFields: true,
     more: _hotkeys,
     child: _dialog(context),
   );

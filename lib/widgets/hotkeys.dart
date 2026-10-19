@@ -91,7 +91,8 @@ class Hotkey {
   static const discard = Hotkey(
     'Esc',
     'Close what was being edited; with changes made, the first Esc shakes '
-        'it, saying so, and the second discards them',
+        'it, saying so, and the second discards them. Elsewhere, Esc does '
+        'all U does, and more: on the Events page, it leaves a mode',
     HotkeyPlace.anywhere,
   );
   static const editText = Hotkey(
@@ -141,7 +142,8 @@ class Hotkey {
   );
   static const leaveField = Hotkey(
     'Esc',
-    'Leave the text field, so letters are hotkeys again',
+    'Leave the text field, so letters are hotkeys again -- only that, '
+        'even in an editor',
     HotkeyPlace.anywhere,
   );
   static const search = Hotkey(
@@ -326,8 +328,7 @@ class Hotkey {
 
 /// What sets off a [HotkeyBinding]: Ctrl and a key, which works even in
 /// a text field; a letter after Ctrl+B, Ctrl let go first, which does
-/// too; or a key alone, which works only while no text field has focus
-/// -- unless it's [HotkeyTrigger.anyTime].
+/// too; or a key alone, which works only while no text field has focus.
 @immutable
 class HotkeyTrigger {
   /// Ctrl and [key].
@@ -339,15 +340,11 @@ class HotkeyTrigger {
   /// [key] alone; held, it repeats.
   const HotkeyTrigger.key(this.key) : _kind = _Kind.key;
 
-  /// [key] alone, even in a text field: Esc, say, where the field is all
-  /// there is to leave.
-  const HotkeyTrigger.anyTime(this.key) : _kind = _Kind.anyTime;
-
   final LogicalKeyboardKey key;
   final _Kind _kind;
 }
 
-enum _Kind { ctrl, afterCtrlB, key, anyTime }
+enum _Kind { ctrl, afterCtrlB, key }
 
 /// What a [HotkeyBinding] does while something -- a dialog, another
 /// page -- is over the page it's on.
@@ -552,11 +549,6 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
     }
     if (ctrl || others) return KeyEventResult.ignored;
     if (_typing) {
-      if (_find(_Kind.anyTime, key) case final binding?
-          when !keyboard.isShiftPressed) {
-        binding.onPressed();
-        return KeyEventResult.handled;
-      }
       if (down && key == LogicalKeyboardKey.escape) {
         FocusManager.instance.primaryFocus?.unfocus();
         return KeyEventResult.handled;
@@ -590,7 +582,7 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
       return KeyEventResult.handled;
     }
     if (keyboard.isShiftPressed) return KeyEventResult.ignored;
-    final binding = _find(_Kind.key, key) ?? _find(_Kind.anyTime, key);
+    final binding = _find(_Kind.key, key);
     if (binding != null) {
       binding.onPressed();
       return KeyEventResult.handled;
@@ -600,7 +592,9 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
           ? KeyEventResult.handled
           : KeyEventResult.ignored;
     }
-    if (key == LogicalKeyboardKey.keyU) {
+    // Esc, where nothing else takes it -- leaving a mode on the Events
+    // page, say -- does what U does.
+    if (key == LogicalKeyboardKey.keyU || key == LogicalKeyboardKey.escape) {
       if (!down) return KeyEventResult.handled;
       return goUp() ? KeyEventResult.handled : KeyEventResult.ignored;
     }
@@ -1324,16 +1318,14 @@ class _Chip extends StatelessWidget {
 /// saves ([onSave], once it can be: null while it can't), and Esc closes
 /// it ([onDiscard], or by default, pops its route) -- but with changes
 /// made (as [changed] says, asked as Esc is pressed), the first Esc only shakes the screen, saying so, and
-/// a second soon after discards them. Esc works in its text fields too,
-/// unless [escLeavesFields], when the first Esc in one leaves it, as it
-/// does anywhere else.
+/// a second soon after discards them. In one of its text fields, Esc
+/// only leaves it, as it does anywhere else.
 class SaveOrDiscard extends StatefulWidget {
   const SaveOrDiscard({
     super.key,
     required this.changed,
     required this.onSave,
     this.onDiscard,
-    this.escLeavesFields = false,
     this.more = const [],
     required this.child,
   });
@@ -1341,7 +1333,6 @@ class SaveOrDiscard extends StatefulWidget {
   final ValueGetter<bool> changed;
   final VoidCallback? onSave;
   final VoidCallback? onDiscard;
-  final bool escLeavesFields;
 
   /// Its other hotkeys.
   final List<HotkeyBinding> more;
@@ -1384,9 +1375,7 @@ class _SaveOrDiscardState extends State<SaveOrDiscard> {
     bindings: [
       ...widget.more,
       HotkeyBinding(
-        widget.escLeavesFields
-            ? const HotkeyTrigger.key(LogicalKeyboardKey.escape)
-            : const HotkeyTrigger.anyTime(LogicalKeyboardKey.escape),
+        const HotkeyTrigger.key(LogicalKeyboardKey.escape),
         _escape,
       ),
       HotkeyBinding(const HotkeyTrigger.ctrl(LogicalKeyboardKey.enter), () {

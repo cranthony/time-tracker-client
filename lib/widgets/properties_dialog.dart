@@ -580,7 +580,6 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     return SaveOrDiscard(
       changed: () => _changedHere,
       onSave: _saving || !(count > 0 || _editing != null) ? null : _save,
-      escLeavesFields: true,
       onDiscard: () {
         if (!_saving) Navigator.of(context).pop();
       },

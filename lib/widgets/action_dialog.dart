@@ -251,7 +251,6 @@ class _ActionDialogState extends State<_ActionDialog> {
     return SaveOrDiscard(
       changed: () => _changes.isNotEmpty || (widget.isNew && named),
       onSave: _saving || !named || !changed ? null : _save,
-      escLeavesFields: true,
       onDiscard: () {
         if (!_saving) Navigator.of(context).pop();
       },
