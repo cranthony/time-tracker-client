@@ -536,7 +536,7 @@ class GoalActions {
   static List<Goal> _inTreeOrder(GoalTree tree) {
     final out = <Goal>[];
     void walk(List<Goal> level) {
-      for (final g in byDeadline(level)) {
+      for (final g in byPriority(level, tree)) {
         out.add(g);
         walk(tree.childrenOf(g.id));
       }

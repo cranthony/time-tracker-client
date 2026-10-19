@@ -92,7 +92,7 @@ class GoalsPaneState extends State<GoalsPane> {
     final view = widget.summary;
     final tree = GoalTree(goals ?? const []);
     final spent = keptGoalTime(widget.memory, tree);
-    final shown = byDeadline([
+    final shown = byPriority([
       for (final g in tree.topLevel)
         if (_statuses.contains(g.status) &&
             matchesSearch(_query, [
@@ -102,7 +102,7 @@ class GoalsPaneState extends State<GoalsPane> {
               g.attributionHints,
             ]))
           g,
-    ]);
+    ], tree);
     return PlanPane(
       searchHint: 'Search goals',
       onSearch: (query) => setState(() => _query = query),
@@ -153,6 +153,7 @@ class GoalsPaneState extends State<GoalsPane> {
                   goal: goal,
                   spent: spent[goal.id],
                   subGoals: tree.childrenOf(goal.id).length,
+                  priority: tree.priorityOf(goal.id),
                   onTap: () => _open(goal),
                   onEdit: () => _actions.edit(goal),
                 ),

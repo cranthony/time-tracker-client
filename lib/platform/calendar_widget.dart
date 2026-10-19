@@ -193,13 +193,15 @@ Map<String, Object?>? calendarSnapshot(
   required DateTime now,
 }) {
   final byId = {for (final a in actions) ?a.id: a};
+  // Every goal, for the priorities the active ones inherit.
+  final tree = GoalTree(goals);
   final days = <Map<String, Object?>>[];
   for (var i = 0; i < CalendarWidget.days; i++) {
     final day = DateTime(now.year, now.month, now.day + i);
     final next = DateTime(now.year, now.month, now.day + i + 1);
     if (!store.has(day)) break;
     final from = i == 0 ? now : day;
-    final due = goalsDueOn(goals.where((g) => g.active), day);
+    final due = goalsDueOn(goals.where((g) => g.active), day, tree);
     days.add({
       'start': day.millisecondsSinceEpoch,
       'end': next.millisecondsSinceEpoch,

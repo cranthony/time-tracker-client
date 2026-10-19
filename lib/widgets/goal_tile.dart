@@ -5,6 +5,7 @@ import '../models/goal.dart';
 import '../services/plan_memory.dart';
 import 'goal_editor.dart';
 import 'goal_icon.dart';
+import 'priority_chip.dart';
 
 /// The time spent toward each goal in the events kept on the device
 /// ([timeSpent]), by id.
@@ -42,8 +43,10 @@ Color goalColor(BuildContext context, Goal goal) {
   };
 }
 
-/// One goal in a list: its icon, title, when it's due and the time spent
-/// toward it -- and, if it's not active, its status. Tapped, it opens
+/// One goal in a list: its icon, title -- with [priority], the one that
+/// applies, after it as a chip, filled when it's the goal's own and
+/// outlined when it's inherited or the default -- when it's due and the
+/// time spent toward it -- and, if it's not active, its status. Tapped, it opens
 /// ([onTap]); its button at the right edits it ([onEdit]). While
 /// [selecting], it has a box to tick instead of its icon.
 class GoalTile extends StatelessWidget {
@@ -52,6 +55,7 @@ class GoalTile extends StatelessWidget {
     required this.goal,
     this.spent,
     this.subGoals = 0,
+    this.priority,
     this.onTap,
     this.onEdit,
     this.onLongPress,
@@ -64,6 +68,10 @@ class GoalTile extends StatelessWidget {
 
   /// How many goals are directly under it.
   final int subGoals;
+
+  /// The priority that applies to it ([GoalTree.priorityOf]); none shown,
+  /// if null.
+  final int? priority;
   final VoidCallback? onTap;
   final VoidCallback? onEdit;
   final VoidCallback? onLongPress;
@@ -89,11 +97,21 @@ class GoalTile extends StatelessWidget {
         leading: selecting
             ? Checkbox(value: selected, onChanged: (_) => onTap?.call())
             : GoalIcon(color: goalColor(context, goal)),
-        title: Text(
-          goalTitle(goal),
-          style: goal.closed
-              ? const TextStyle(decoration: TextDecoration.lineThrough)
-              : null,
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(
+                goalTitle(goal),
+                style: goal.closed
+                    ? const TextStyle(decoration: TextDecoration.lineThrough)
+                    : null,
+              ),
+            ),
+            if (priority case final p?) ...[
+              const SizedBox(width: 6),
+              PriorityChip(priority: p, own: goal.priority != null),
+            ],
+          ],
         ),
         subtitle: details.isEmpty
             ? null

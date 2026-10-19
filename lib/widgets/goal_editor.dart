@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
 import '../models/goal_changes.dart';
+import 'color_picker.dart' show priorityColor;
 import 'duration_field.dart';
 import 'edit_page.dart';
 import 'event_description.dart';
@@ -10,7 +11,8 @@ import 'html_editor.dart';
 /// Adds a goal (with no [goal]) under [parent] (the top level, if null),
 /// or edits [goal], on a page of its own: its title, status, deadline (a
 /// date, and a time if wanted -- or, for a sub-goal, its parent's, or
-/// some days or weeks before it, following it), expected time, whether
+/// some days or weeks before it, following it), priority (its own, or
+/// its parent's, inherited), expected time, whether
 /// its parent needs it, its description and definition of done (HTML, in
 /// [showHtmlEditor]) and the hints for telling its events. A new one
 /// starts active, or inactive if chosen; an active one needs a deadline.
@@ -88,6 +90,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   late bool _follows = widget.parent != null && (_goal?.followsParent ?? false);
   late String _status = _goal?.status ?? 'active';
   late bool _required = _goal?.required ?? false;
+  late int? _priority = _goal?.priority;
   late String? _description = _goal?.description;
   late String? _definitionOfDone = _goal?.definitionOfDone;
 
@@ -130,6 +133,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     'title': _title.text.trim(),
     'deadline': _shownDeadline,
     'deadline_offset_minutes': _offsetMinutes,
+    'priority': _priority,
     'expected_minutes': _expected,
     'required': widget.parent == null ? null : _required,
     'description': _description,
@@ -149,6 +153,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
       'title': goal.title,
       'deadline': goal.deadline,
       'deadline_offset_minutes': goal.deadlineOffsetMinutes,
+      'priority': goal.priority,
       'expected_minutes': goal.expectedMinutes,
       'required': goal.parentId == null ? null : goal.required,
       'description': goal.description,
@@ -419,6 +424,33 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
             ],
           ),
         ],
+        const SizedBox(height: 16),
+        Text('Priority', style: theme.textTheme.labelLarge),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            ChoiceChip(
+              showCheckmark: false,
+              label: Text(
+                parent == null
+                    ? 'None (P$defaultGoalPriority)'
+                    : 'Inherit (P${GoalTree(widget.goals).priorityOf(parent.id)})',
+              ),
+              selected: _priority == null,
+              onSelected: (_) => setState(() => _priority = null),
+            ),
+            for (final p in const [0, 1, 2, 3])
+              ChoiceChip(
+                showCheckmark: false,
+                avatar: CircleAvatar(backgroundColor: priorityColor(p)),
+                label: Text('P$p'),
+                selected: _priority == p,
+                onSelected: (_) => setState(() => _priority = p),
+              ),
+          ],
+        ),
         const SizedBox(height: 16),
         DurationField(
           controller: _minutes,

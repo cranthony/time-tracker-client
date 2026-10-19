@@ -9,6 +9,18 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.151.0
+
+- Goals have a priority, P0 the highest, set on a goal's edit page. A
+  goal without one inherits its nearest parent's, and with none up its
+  tree it's P3.
+- Goals are listed by priority, highest first, then soonest due: on the
+  Goals pane, a goal's page, the goal pickers, the goals due above the
+  Events timeline (after status) and the calendar widget.
+- The Goals pane and a goal's page show each goal's priority as a chip,
+  as actions have: filled when it's the goal's own, outlined when it's
+  inherited or P3 by default.
+
 ## 7.150.0
 
 - A goal's page refreshes: pull it down, or tap the refresh button in

@@ -4,17 +4,19 @@ import '../models/goal.dart';
 import 'goal_icon.dart';
 
 /// The goals due on [day], from [goals]: by status -- active, inactive,
-/// done, missed, then obsolete -- then each status's as [byDeadline] has
-/// them, those due at a time first, by time, then those due by its end,
+/// done, missed, then obsolete -- then each status's as [byPriority] has
+/// them in [tree] (by default, [goals] themselves): the highest priority
+/// first, then those due at a time, by time, then those due by its end,
 /// by title.
-List<Goal> goalsDueOn(Iterable<Goal> goals, DateTime day) {
+List<Goal> goalsDueOn(Iterable<Goal> goals, DateTime day, [GoalTree? tree]) {
   final date = deadlineOf(day);
+  final order = tree ?? GoalTree(goals);
   return [
     for (final g in goals)
       if (g.deadline?.trim().split('T').first == date && g.due != null) g,
   ]..sort((a, b) {
     final byStatus = _rank(a).compareTo(_rank(b));
-    return byStatus != 0 ? byStatus : compareByDeadline(a, b);
+    return byStatus != 0 ? byStatus : order.compare(a, b);
   });
 }
 

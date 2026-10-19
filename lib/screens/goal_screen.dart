@@ -123,10 +123,10 @@ class _GoalScreenState extends State<GoalScreen> {
     }
     final spent = keptGoalTime(widget.memory, tree);
     final children = tree.childrenOf(goal.id);
-    final shown = byDeadline([
+    final shown = byPriority([
       for (final c in children)
         if (_statuses.contains(c.status)) c,
-    ]);
+    ], tree);
     final selecting = _selected.isNotEmpty;
     final path = tree.pathOf(goal.id);
     return Scaffold(
@@ -275,6 +275,7 @@ class _GoalScreenState extends State<GoalScreen> {
                       goal: child,
                       spent: spent[child.id],
                       subGoals: tree.childrenOf(child.id).length,
+                      priority: tree.priorityOf(child.id),
                       selecting: selecting,
                       selected: _selected.contains(child.id),
                       onTap: selecting

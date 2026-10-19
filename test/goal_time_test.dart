@@ -238,12 +238,53 @@ void main() {
     });
 
     test('lists soonest due first, undated last', () {
-      final listed = byDeadline(const [
+      final listed = byPriority(const [
         Goal(id: 'c', title: 'C'),
         Goal(id: 'b', title: 'B', deadline: '2026-11-02'),
         Goal(id: 'a', title: 'A', deadline: '2026-11-01T17:00'),
       ]);
       expect(listed.map((g) => g.id), ['a', 'b', 'c']);
+    });
+
+    test('a goal takes its nearest priority up its tree, or P3', () {
+      final tree = GoalTree(const [
+        Goal(id: 'top', title: 'Top', priority: 1),
+        Goal(id: 'mid', title: 'Mid', parentId: 'top'),
+        Goal(id: 'leaf', title: 'Leaf', parentId: 'mid'),
+        Goal(id: 'own', title: 'Own', parentId: 'mid', priority: 0),
+        Goal(id: 'alone', title: 'Alone'),
+      ]);
+      expect(
+        [
+          for (final id in ['top', 'mid', 'leaf', 'own', 'alone'])
+            tree.priorityOf(id),
+        ],
+        [1, 1, 1, 0, defaultGoalPriority],
+      );
+      expect(defaultGoalPriority, 3);
+    });
+
+    test('lists the highest priority first, then soonest due', () {
+      const goals = [
+        Goal(id: 'p3 soon', title: 'A', deadline: '2026-11-01'),
+        Goal(id: 'p1 late', title: 'B', deadline: '2026-12-01', priority: 1),
+        Goal(id: 'p0 none', title: 'C', priority: 0),
+        Goal(id: 'p1 soon', title: 'D', deadline: '2026-11-01', priority: 1),
+        Goal(id: 'under p0', title: 'E', parentId: 'p0 none'),
+      ];
+      final tree = GoalTree(goals);
+      expect(byPriority(goals, tree).map((g) => g.id), [
+        'p0 none',
+        'under p0',
+        'p1 soon',
+        'p1 late',
+        'p3 soon',
+      ]);
+      // Without its parent there, a goal is P3.
+      expect(
+        byPriority(goals.where((g) => g.id != 'p0 none')).last.id,
+        'under p0',
+      );
     });
   });
 
