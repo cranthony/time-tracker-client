@@ -293,9 +293,13 @@ class _HomeScreenState extends State<HomeScreen> {
       onFieldFocused: onFieldFocused,
     );
     if (result is! MoreGoal || !mounted) return;
-    final saved = await actions().add(
+    final goalActions = actions();
+    final saved = await goalActions.add(
+      parent: goalActions.tree[result.parentId],
       title: result.title,
       deadline: result.deadline,
+      description: result.description,
+      definitionOfDone: result.definitionOfDone,
     );
     if (saved) await _goalDrafts.remove();
   }

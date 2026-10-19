@@ -8,11 +8,18 @@ import 'package:flutter/services.dart';
 import '../models/goal.dart';
 import '../models/goal_changes.dart';
 import '../services/goal_drafts.dart';
+import 'goal_editor.dart' show HtmlField;
+import 'goal_icon.dart';
 import 'hotkeys.dart';
+import 'html_editor.dart';
+import 'picker_sheet.dart';
+import 'tree_picker.dart';
 
 /// Asks for a new goal's title and the day it's due (today, to begin
-/// with), in a sheet over the bottom of the screen, and hands its fields
-/// -- an active, top-level goal's, keyed as the server takes them -- to
+/// with), the goal it goes under (the top level, to begin with), its
+/// description and its definition of done, in a sheet over the bottom of
+/// the screen, and hands its fields -- an active goal's, keyed as the
+/// server takes them -- to
 /// [keep] itself, before it closes; if [keep] fails, it stays open,
 /// saying so, to try again. Adding is off while the goal would break a
 /// rule against [goals], every goal there is, saying which.
@@ -65,12 +72,23 @@ final class AddedGoal extends GoalSheetResult {
   final Map<String, Object?> fields;
 }
 
-/// Go on in the full New goal page, with [title] and [deadline] as
-/// typed. The draft is kept till it's saved there.
+/// Go on in the full New goal page, with what's set as it was. The draft
+/// is kept till it's saved there.
 final class MoreGoal extends GoalSheetResult {
-  MoreGoal({required this.title, required this.deadline});
+  MoreGoal({
+    required this.title,
+    required this.deadline,
+    this.description,
+    this.definitionOfDone,
+    this.parentId,
+  });
   final String title;
   final String deadline;
+  final String? description;
+  final String? definitionOfDone;
+
+  /// The goal it goes under; null for the top level.
+  final String? parentId;
 }
 
 class _GoalSheet extends StatefulWidget {
@@ -102,6 +120,24 @@ class _GoalSheetState extends State<_GoalSheet> {
     final day? when !day.isBefore(_today) => _dayOf(day),
     _ => _today,
   };
+
+  late String? _description = widget.drafts?.draft?.description;
+  late String? _definitionOfDone = widget.drafts?.draft?.definitionOfDone;
+
+  /// The goal it goes under, if it's still one it can: null for the top
+  /// level.
+  late String? _parentId = switch (widget.drafts?.draft?.parentId) {
+    final id? when _parents.any((g) => g.id == id) => id,
+    _ => null,
+  };
+
+  late final _tree = GoalTree(widget.goals);
+
+  /// What it can go under: the active goals -- it's active itself.
+  List<Goal> get _parents => [
+    for (final g in widget.goals)
+      if (g.active) g,
+  ];
 
   /// Whether it's being kept, and hasn't been yet: no draft is kept
   /// meanwhile.
@@ -150,7 +186,15 @@ class _GoalSheetState extends State<_GoalSheet> {
     if (_title.text.trim().isEmpty) {
       drafts.remove();
     } else {
-      drafts.put(GoalDraft(title: _title.text, day: _day));
+      drafts.put(
+        GoalDraft(
+          title: _title.text,
+          day: _day,
+          description: _description,
+          definitionOfDone: _definitionOfDone,
+          parentId: _parentId,
+        ),
+      );
     }
   }
 
@@ -176,11 +220,54 @@ class _GoalSheetState extends State<_GoalSheet> {
     _setDay(picked);
   }
 
+  /// Picks the goal it goes under, searching for what's typed as its
+  /// title, by any word, selected to type over.
+  Future<void> _pickParent() async {
+    final parents = _parents;
+    final picked = await pickNode(
+      context,
+      title: 'Under',
+      nodes: [
+        for (final g in byPriority(parents, _tree))
+          PickerNode(
+            id: g.id,
+            label: goalTitle(g),
+            parentId: g.parentId,
+            path: [..._tree.pathOf(g.id), goalTitle(g)].join(' › '),
+            group: parents.any((c) => c.parentId == g.id),
+          ),
+      ],
+      value: _parentId,
+      none: 'Top level',
+      groupsPickable: true,
+      marker: (_) => const GoalIcon(size: 18),
+      searchHint: 'Search goals',
+      query: _title.text,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _parentId = picked.id);
+    _keepDraft();
+  }
+
+  Future<void> _editHtml(
+    String title,
+    String? text,
+    ValueChanged<String?> set,
+  ) async {
+    final edited = await showHtmlEditor(context, title: title, text: text);
+    if (edited == null || !mounted) return;
+    setState(() => set(edited.isEmpty ? null : edited));
+    _keepDraft();
+  }
+
   /// The new goal's fields, keyed as the server takes them.
   Map<String, Object?> get _fields => {
     'title': _title.text.trim(),
     'deadline': deadlineOf(_day),
     'status': 'active',
+    'parent_id': ?_parentId,
+    'description': ?_description,
+    'definition_of_done': ?_definitionOfDone,
   };
 
   /// Why it can't be added, besides having no title; null if it can.
@@ -219,9 +306,15 @@ class _GoalSheetState extends State<_GoalSheet> {
     Navigator.of(context).pop(AddedGoal(fields));
   }
 
-  void _more() =>
-      Navigator.of(context)
-          .pop(MoreGoal(title: _title.text.trim(), deadline: deadlineOf(_day)));
+  void _more() => Navigator.of(context).pop(
+    MoreGoal(
+      title: _title.text.trim(),
+      deadline: deadlineOf(_day),
+      description: _description,
+      definitionOfDone: _definitionOfDone,
+      parentId: _parentId,
+    ),
+  );
 
   /// Throws the draft away, and closes.
   Future<void> _discard() async {
@@ -237,6 +330,7 @@ class _GoalSheetState extends State<_GoalSheet> {
     final media = MediaQuery.of(context);
     final problem = _problem;
     final day = MaterialLocalizations.of(context).formatMediumDate(_day);
+    final parent = _tree[_parentId];
     return HotkeyBindings(
       bindings: [
         HotkeyBinding(
@@ -284,6 +378,45 @@ class _GoalSheetState extends State<_GoalSheet> {
                   border: OutlineInputBorder(borderSide: BorderSide.none),
                 ),
                 onSubmitted: (_) => _submit(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            FieldHotkey(
+              'U',
+              child: ActionChip(
+                avatar: const GoalIcon(size: 18),
+                label: Text(
+                  parent == null
+                      ? 'Top level'
+                      : 'Under ${[..._tree.pathOf(parent.id), goalTitle(parent)].join(' › ')}',
+                  overflow: TextOverflow.ellipsis,
+                ),
+                tooltip: 'The goal it goes under',
+                onPressed: _keeping ? null : _pickParent,
+              ),
+            ),
+            FieldHotkey(
+              'S',
+              child: HtmlField(
+                label: 'Description',
+                text: _description,
+                onTap: () => _editHtml(
+                  'Description',
+                  _description,
+                  (v) => _description = v,
+                ),
+              ),
+            ),
+            FieldHotkey(
+              'F',
+              child: HtmlField(
+                label: 'Definition of done',
+                text: _definitionOfDone,
+                onTap: () => _editHtml(
+                  'Definition of done',
+                  _definitionOfDone,
+                  (v) => _definitionOfDone = v,
+                ),
               ),
             ),
             for (final error in [?problem, ?_keepError])

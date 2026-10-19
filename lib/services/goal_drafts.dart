@@ -8,7 +8,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// typed, and never sent: until it's added, or thrown away.
 @immutable
 class GoalDraft {
-  const GoalDraft({required this.title, required this.day});
+  const GoalDraft({
+    required this.title,
+    required this.day,
+    this.description,
+    this.definitionOfDone,
+    this.parentId,
+  });
 
   /// As typed, untrimmed.
   final String title;
@@ -16,14 +22,27 @@ class GoalDraft {
   /// The day it's due, at its end: midnight starting it, local.
   final DateTime day;
 
+  /// HTML, as the goal's; null for none.
+  final String? description;
+  final String? definitionOfDone;
+
+  /// The goal it goes under; null for the top level.
+  final String? parentId;
+
   factory GoalDraft.fromJson(Map<String, dynamic> json) => GoalDraft(
     title: json['title'] as String? ?? '',
     day: DateTime.parse(json['day'] as String),
+    description: json['description'] as String?,
+    definitionOfDone: json['definition_of_done'] as String?,
+    parentId: json['parent_id'] as String?,
   );
 
   Map<String, dynamic> toJson() => {
     'title': title,
     'day': DateTime(day.year, day.month, day.day).toIso8601String(),
+    'description': ?description,
+    'definition_of_done': ?definitionOfDone,
+    'parent_id': ?parentId,
   };
 }
 

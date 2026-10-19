@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.160.0
+
+- The quick New goal sheet sets the goal it goes under, its description
+  and its definition of done. Its "Top level" chip opens a goal picker
+  that starts searching for the title typed so far, selected to type
+  over, matching any of its words. More carries all of it on to the full
+  New goal page, and the draft keeps it.
+
 ## 7.159.0
 
 - On the Events page, each open goal due that day with an expected
