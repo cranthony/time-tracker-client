@@ -9,6 +9,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.161.1
+
+- Opening a note to edit it puts the cursor at the end of its
+  description, ready to type.
+
 ## 7.161.0
 
 - The Diagnostics page's Server pane ends with what the server found
