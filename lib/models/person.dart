@@ -104,10 +104,11 @@ class Person {
   final Map<String, Map<String, String>> facts;
 
   /// Their summary of [trait]'s fact [factId], if they have one.
-  String? summary(String trait, String factId) => switch (facts[trait]?[factId]) {
-    final text? when text.trim().isNotEmpty => text,
-    _ => null,
-  };
+  String? summary(String trait, String factId) =>
+      switch (facts[trait]?[factId]) {
+        final text? when text.trim().isNotEmpty => text,
+        _ => null,
+      };
 
   /// Which traits apply to them, and their own parts for any.
   final PersonTraits traits;
@@ -254,14 +255,51 @@ class CancelledEvent {
 
 /// Which traits apply to a person, and their own parts for any, as the
 /// server's `traits` field has it: {"select": "all" or [trait ids],
-/// "parts": {trait id: [parts]}}.
+/// "parts": {trait id: [parts]}, "facts": {trait id: {fact id:
+/// prompts}}}.
 class PersonTraits {
   const PersonTraits({
     this.select,
     this.parts = const {},
     this.partScoring = const {},
     this.scoring,
+    this.facts = const {},
   });
+
+  /// Their own prompts for a trait's facts, by trait id and then fact
+  /// id: kept for a trait that doesn't apply to them too. Only a
+  /// person's, not a habit's.
+  final Map<String, Map<String, FactPromptOverride>> facts;
+
+  /// Their own prompts for [traitId]'s fact [factId], if they have any.
+  FactPromptOverride? factPrompts(String traitId, String factId) =>
+      facts[traitId]?[factId];
+
+  /// These, with their own prompts for [traitId]'s fact [factId] as
+  /// [prompts] -- none, with null or empty ones.
+  PersonTraits withFactPrompts(
+    String traitId,
+    String factId,
+    FactPromptOverride? prompts,
+  ) {
+    final byFact = {...?facts[traitId]};
+    if (prompts == null || prompts.isEmpty) {
+      byFact.remove(factId);
+    } else {
+      byFact[factId] = prompts;
+    }
+    return PersonTraits(
+      select: select,
+      parts: parts,
+      partScoring: partScoring,
+      scoring: scoring,
+      facts: {
+        for (final MapEntry(:key, :value) in facts.entries)
+          if (key != traitId) key: value,
+        if (byFact.isNotEmpty) traitId: byFact,
+      },
+    );
+  }
 
   /// The traits that apply to them, by id; null for every active one.
   final List<String>? select;
@@ -282,7 +320,11 @@ class PersonTraits {
   /// Whether it's as for everyone: every active trait, with its parts,
   /// combined as everyone's are.
   bool get isDefault =>
-      select == null && parts.isEmpty && partScoring.isEmpty && scoring == null;
+      select == null &&
+      parts.isEmpty &&
+      partScoring.isEmpty &&
+      scoring == null &&
+      facts.isEmpty;
 
   /// Whether [traitId] applies to them, if it's active.
   bool applies(String traitId) => select?.contains(traitId) ?? true;
@@ -309,6 +351,20 @@ class PersonTraits {
           '$key': ?Aggregation.fromJson(value),
       },
       scoring: Aggregation.fromJson(json['scoring']),
+      facts: {
+        for (final MapEntry(:key, :value)
+            in (json['facts'] as Map? ?? const {}).entries)
+          if (value is Map)
+            if ({
+                  for (final MapEntry(key: fact, value: prompts)
+                      in value.entries)
+                    if (FactPromptOverride.fromJson(prompts) case final o?
+                        when !o.isEmpty)
+                      '$fact': o,
+                }
+                case final byFact when byFact.isNotEmpty)
+              '$key': byFact,
+      },
     );
   }
 
@@ -321,7 +377,83 @@ class PersonTraits {
           key: value.toJson(),
       },
     'scoring': ?scoring?.toJson(),
+    if (facts.isNotEmpty)
+      'facts': {
+        for (final MapEntry(:key, :value) in facts.entries)
+          key: {
+            for (final MapEntry(key: fact, value: prompts) in value.entries)
+              fact: prompts.toJson(),
+          },
+      },
   };
+}
+
+/// One of a person's own prompts for a trait fact: its [text], in place
+/// of the trait's prompt, or -- [append] -- after it.
+class PromptOverride {
+  const PromptOverride(this.text, {this.append = false});
+
+  final String text;
+  final bool append;
+
+  static PromptOverride? fromJson(Object? json) => switch (json) {
+    {'text': final String text} when text.trim().isNotEmpty => PromptOverride(
+      text,
+      append: json['how'] == 'append',
+    ),
+    _ => null,
+  };
+
+  Map<String, Object?> toJson() => {
+    'text': text,
+    'how': append ? 'append' : 'replace',
+  };
+
+  /// The prompt it makes of the trait's [prompt]: its text in place of
+  /// it, or after it (alone when the trait has none).
+  String applied(String? prompt) =>
+      append && prompt != null && prompt.trim().isNotEmpty
+      ? '$prompt\n\n$text'
+      : text;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PromptOverride && other.text == text && other.append == append;
+
+  @override
+  int get hashCode => Object.hash(text, append);
+}
+
+/// A person's own prompts for one trait fact, as their traits' `facts`
+/// keep them: each optional, null for the trait's.
+class FactPromptOverride {
+  const FactPromptOverride({this.summaryPrompt, this.logPrompt});
+
+  final PromptOverride? summaryPrompt;
+  final PromptOverride? logPrompt;
+
+  bool get isEmpty => summaryPrompt == null && logPrompt == null;
+
+  static FactPromptOverride? fromJson(Object? json) => json is Map
+      ? FactPromptOverride(
+          summaryPrompt: PromptOverride.fromJson(json['summary_prompt']),
+          logPrompt: PromptOverride.fromJson(json['log_prompt']),
+        )
+      : null;
+
+  Map<String, Object?> toJson() => {
+    'summary_prompt': ?summaryPrompt?.toJson(),
+    'log_prompt': ?logPrompt?.toJson(),
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is FactPromptOverride &&
+      other.summaryPrompt == summaryPrompt &&
+      other.logPrompt == logPrompt;
+
+  @override
+  int get hashCode => Object.hash(summaryPrompt, logPrompt);
 }
 
 /// A named group of people -- family, dance friends, work -- mirroring
