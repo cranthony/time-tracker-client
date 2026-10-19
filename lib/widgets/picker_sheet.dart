@@ -448,7 +448,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
                     null => id,
                   },
                   'person',
-                  "They take the time the others' minutes and percents "
+                  "They take the time the others' durations and percents "
                       'leave, as everyone given neither does.',
                   (minutes, percent, remaining) => PersonShare(
                     id,
@@ -524,7 +524,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
                   whereSplits[id] ?? LocationShare(id),
                   byId[id]?.name ?? id,
                   'location',
-                  "It shares the time the other places' minutes and "
+                  "It shares the time the other places' durations and "
                       'percents leave evenly with the others given neither.',
                   (minutes, percent, remaining) => LocationShare(
                     id,

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../models/share.dart';
+import 'duration_field.dart';
 import 'durations.dart';
 import 'hotkeys.dart';
 
 /// How much of an event, [eventMinutes] long, what [share] is of -- a
 /// [kind] of thing ("goal"), called [title] -- takes: the rest (what the
-/// others' minutes and percents leave, as [rest] explains), a duration,
+/// others' durations and percents leave, as [rest] explains), a duration
+/// ([DurationField]),
 /// or a percentage of what the durations leave; and with either of
 /// those, the rest as well. [make] makes the share as set. Gives
 /// it, or null if it's called off.
@@ -30,7 +32,7 @@ Future<S?> showShareDialog<S extends Share>(
   ),
 );
 
-enum _Kind { rest, minutes, percent }
+enum _Kind { rest, duration, percent }
 
 class _ShareDialog<S extends Share> extends StatefulWidget {
   const _ShareDialog({
@@ -55,7 +57,7 @@ class _ShareDialog<S extends Share> extends StatefulWidget {
 
 class _ShareDialogState<S extends Share> extends State<_ShareDialog<S>> {
   late var _kind = widget.share.minutes != null
-      ? _Kind.minutes
+      ? _Kind.duration
       : widget.share.percent != null
       ? _Kind.percent
       : _Kind.rest;
@@ -76,7 +78,7 @@ class _ShareDialogState<S extends Share> extends State<_ShareDialog<S>> {
 
   S? get _share => switch (_kind) {
     _Kind.rest => widget.make(null, null, false),
-    _Kind.minutes => switch (int.tryParse(_minutes.text.trim())) {
+    _Kind.duration => switch (int.tryParse(_minutes.text.trim())) {
       final m? when m > 0 && m <= widget.eventMinutes => widget.make(
         m,
         null,
@@ -111,7 +113,7 @@ class _ShareDialogState<S extends Share> extends State<_ShareDialog<S>> {
               showSelectedIcon: false,
               segments: const [
                 ButtonSegment(value: _Kind.rest, label: Text('The rest')),
-                ButtonSegment(value: _Kind.minutes, label: Text('Minutes')),
+                ButtonSegment(value: _Kind.duration, label: Text('Duration')),
                 ButtonSegment(value: _Kind.percent, label: Text('Percent')),
               ],
               selected: {_kind},
@@ -121,15 +123,28 @@ class _ShareDialogState<S extends Share> extends State<_ShareDialog<S>> {
             const SizedBox(height: 12),
             switch (_kind) {
               _Kind.rest => Text(widget.rest),
-              _Kind.minutes => TextField(
-                controller: _minutes,
-                autofocus: true,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: 'Minutes',
-                  helperText: 'At most ${widget.eventMinutes}',
-                ),
-                onChanged: (_) => setState(() {}),
+              _Kind.duration => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DurationField(
+                    controller: _minutes,
+                    label: 'Duration',
+                    step: 5,
+                    onChanged: () => setState(() {}),
+                  ),
+                  Text(
+                    'At most ${formatMinutes(widget.eventMinutes)}',
+                    style: TextStyle(
+                      color: switch (int.tryParse(_minutes.text.trim())) {
+                        final m? when m > widget.eventMinutes => Theme.of(
+                          context,
+                        ).colorScheme.error,
+                        _ => null,
+                      },
+                    ),
+                  ),
+                ],
               ),
               _Kind.percent => TextField(
                 controller: _percent,
@@ -139,7 +154,7 @@ class _ShareDialogState<S extends Share> extends State<_ShareDialog<S>> {
                   labelText: 'Percent',
                   suffixText: '%',
                   helperText:
-                      "Of what the ${widget.kind}s given minutes don't take",
+                      "Of what the ${widget.kind}s given durations don't take",
                 ),
                 onChanged: (_) => setState(() {}),
               ),

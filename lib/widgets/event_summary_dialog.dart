@@ -1666,22 +1666,60 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
 
   List<String> get _actionIds => [for (final a in _actionShares) a.actionId];
 
-  /// [share], which says how much of the event an action or goal takes
-  /// ("45m", "30% + the rest"), or what it takes without one: a chip that sets it
-  /// with [onTap].
-  Widget _shareChip(
+  /// The split chip: [share], which says how much of the event an action
+  /// or goal takes ("45m", "30% + the rest"), or what it takes without
+  /// one, that sets it with [onTap]. It's no taller than a line of text
+  /// -- a material chip can't be -- so the line's text stays level with
+  /// the row's icon; it's tapped anywhere in [height], and 8 either side,
+  /// a finger's more room than it shows.
+  Widget _splitChip(
     BuildContext context,
     Share share,
     String rest,
-    VoidCallback? onTap,
-  ) => Padding(
-    padding: const EdgeInsets.only(left: 8),
-    child: ActionChip(
-      visualDensity: VisualDensity.compact,
-      label: Text(share.label.isEmpty ? rest : share.label),
-      onPressed: onTap,
-    ),
-  );
+    VoidCallback? onTap, {
+    double height = 28,
+  }) {
+    final theme = Theme.of(context);
+    const shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(8)),
+    );
+    final chip = Material(
+      type: MaterialType.transparency,
+      shape: shape.copyWith(
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: shape,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          child: Text(
+            share.label.isEmpty ? rest : share.label,
+            style: theme.textTheme.labelMedium,
+          ),
+        ),
+      ),
+    );
+    final box = SizedBox(
+      height: height,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Center(child: chip),
+      ),
+    );
+    // The room around it taps it too; the chip's own ink, in it, wins.
+    return onTap == null
+        ? box
+        : MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              excludeFromSemantics: true,
+              onTap: onTap,
+              child: box,
+            ),
+          );
+  }
 
   /// Sets how much of it the action [id] takes ([showShareDialog]).
   Future<void> _setActionShare(String id) async {
@@ -1698,7 +1736,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       eventMinutes: _time('end').difference(_time('start')).inMinutes,
       kind: 'action',
       rest:
-          "It shares the time the other actions' minutes and percents "
+          "It shares the time the other actions' durations and percents "
           'leave evenly with the others given neither.',
       make: (minutes, percent, remaining) => ActionShare(
         id,
@@ -1724,12 +1762,23 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         for (final name in widget.values['action_names'] as List? ?? const [])
           name as String?,
     ];
+    Widget chip(int i, {double height = 28}) => _splitChip(
+      context,
+      shares[i],
+      ids.length == 1 ? 'All of it' : 'The rest',
+      _canEdit('action_ids') ? () => _setActionShare(ids[i]) : null,
+      height: height,
+    );
+    // A lone action's chip is at the row's end, as a location's map
+    // button is: the row's padding to tap in, so it's no taller for it.
+    final lone = ids.length == 1;
     return _row(
       context,
       glyph: const PlowIcon(),
       changedKey: 'action_ids',
       hotkey: Hotkey.actions,
       onTap: _pickActions,
+      trailing: lone ? chip(0, height: 48) : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1740,9 +1789,11 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 color: theme.hintColor,
               ),
             ),
+          // Each line as tall as its chip, which takes the 2 above and
+          // below a line of text; a lone one's, without it, has them.
           for (final (i, id) in ids.indexed)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
+              padding: EdgeInsets.symmetric(vertical: lone ? 2 : 0),
               child: Row(
                 children: [
                   ActionDiamond(
@@ -1760,12 +1811,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                       null => (i < names.length ? names[i] : null) ?? id,
                     }, style: theme.textTheme.bodyLarge),
                   ),
-                  _shareChip(
-                    context,
-                    shares[i],
-                    ids.length == 1 ? 'All of it' : 'Even share',
-                    _canEdit('action_ids') ? () => _setActionShare(id) : null,
-                  ),
+                  if (!lone) chip(i),
                 ],
               ),
             ),
@@ -1816,13 +1862,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                     }, style: theme.textTheme.bodyLarge),
                   ),
                   if (share.label.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: Chip(
-                        visualDensity: VisualDensity.compact,
-                        label: Text(share.label),
-                      ),
-                    )
+                    _splitChip(context, share, '', null, height: 24)
                   else
                     Text('The rest', style: theme.textTheme.bodySmall),
                 ],
