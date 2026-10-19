@@ -369,6 +369,31 @@ bool changesHistory(ProposalEdits edits, Proposal proposal) {
   return edits.cancels.any((c) => settled(c.eventId) != null);
 }
 
+/// The first event [edits] would move or cancel of those [proposal]
+/// revisits for late notes, which keep their times -- the server refuses
+/// that, whatever the user approves -- or null.
+ProposalEvent? movesRevisited(ProposalEdits edits, Proposal proposal) {
+  ProposalEvent? revisited(String id) => switch (proposal.event(id)) {
+    final e? when e.revisited => e,
+    _ => null,
+  };
+  for (final update in edits.updates) {
+    final (id, fields) = updateFields(update);
+    final e = revisited(id);
+    if (e == null) continue;
+    final start = DateTime.tryParse('${fields['start']}');
+    final end = DateTime.tryParse('${fields['end']}');
+    if ((start != null && !start.isAtSameMomentAs(e.start)) ||
+        (end != null && !end.isAtSameMomentAs(e.end))) {
+      return e;
+    }
+  }
+  for (final c in edits.cancels) {
+    if (revisited(c.eventId) case final e?) return e;
+  }
+  return null;
+}
+
 /// Whether [id] is a time note's (`<timestamp>#<row>`), not an event's or
 /// a key.
 bool isNoteId(String id) => id.contains('#');

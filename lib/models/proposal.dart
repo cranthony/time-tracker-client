@@ -80,6 +80,7 @@ class ProposalEvent {
     this.isEndOfDaySleep = false,
     this.countsAgainstFollowThrough,
     this.followThrough = const [],
+    this.revisited = false,
     this.properties = const {},
   });
 
@@ -125,6 +126,11 @@ class ProposalEvent {
   /// For a cancelled one that counts, who it counts against, with the
   /// trait: "Sam (Reliable)".
   final List<String> followThrough;
+
+  /// Whether it's an event an earlier compaction settled, revisited for a
+  /// late note -- one written for a time it covers: what happened at it
+  /// can change, but not when.
+  final bool revisited;
 
   /// As the server sent it.
   final Map<String, Object?> properties;
@@ -180,6 +186,7 @@ class ProposalEvent {
       followThrough: [
         for (final f in json['follow_through'] as List? ?? []) '$f',
       ],
+      revisited: json['revisited'] == true,
       properties: Map.unmodifiable(json),
     );
   }
@@ -193,6 +200,7 @@ class ProposalEvent {
     'history_until',
     'counts_against_follow_through',
     'follow_through',
+    'revisited',
   };
 
   /// It as an [Event], to show and edit like the calendar's: over
@@ -579,6 +587,12 @@ class Proposal {
   /// no longer plans can be too: that hands it to Claude.
   bool get confirmable =>
       state == ProposalState.awaitingReview && openFeedback.isEmpty;
+
+  /// The settled events it revisits for late notes, in time order.
+  List<ProposalEvent> get revisited => [
+    for (final e in events ?? const <ProposalEvent>[])
+      if (e.revisited) e,
+  ];
 
   /// The events of what happened, to confirm.
   List<ProposalEvent> get reviewed => [

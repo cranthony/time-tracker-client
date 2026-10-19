@@ -126,6 +126,39 @@ void main() {
     expect(tester.getTopLeft(find.text('Started')).dy, greaterThan(line.dy));
   });
 
+  screenTest('says a note for a time already compacted is late: the next '
+      'compaction revisits it', (tester) async {
+    await tester.pumpWidget(
+      app(
+        InMemoryNotesRepository([
+          Note(
+            id: 'late',
+            timestamp: DateTime(2026, 10, 2, 19, 10),
+            description: 'Sam was worried about his move',
+          ),
+          Note(id: 'since', timestamp: today(9, 0), description: 'Started'),
+        ], CompactionStatus(lastCompaction: DateTime(2026, 10, 2, 21, 5))),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final late = find.text(
+      'Late · compacting it revisits the event it was written for',
+    );
+    expect(late, findsOneWidget);
+    expect(
+      find.ancestor(of: late, matching: find.byType(ListTile)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.ancestor(of: late, matching: find.byType(ListTile)),
+        matching: find.text('Sam was worried about his move'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   screenTest('can\'t change the latest compacted note', (tester) async {
     await tester.pumpWidget(
       app(
