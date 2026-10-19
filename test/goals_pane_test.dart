@@ -58,6 +58,7 @@ void main() {
   Future<void> pump(
     WidgetTester tester, {
     List<Event> events = const [],
+    VoidCallback? onQuickAdd,
   }) async {
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1;
@@ -73,7 +74,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: GoalsPane(repository: repository, memory: memory),
+          body: GoalsPane(
+            repository: repository,
+            memory: memory,
+            onQuickAdd: onQuickAdd,
+          ),
         ),
       ),
     );
@@ -91,6 +96,35 @@ void main() {
     ];
     expect(titles, ['Learn Rust', 'Ship the app']);
     expect(find.text('Write the pane'), findsNothing);
+  });
+
+  testWidgets('has no round "+" without a quick New goal sheet', (
+    tester,
+  ) async {
+    await pump(tester);
+    expect(find.byType(FloatingActionButton), findsNothing);
+  });
+
+  testWidgets('the round "+" opens the quick New goal sheet, given one', (
+    tester,
+  ) async {
+    var opened = 0;
+    await pump(tester, onQuickAdd: () => opened++);
+    await tester.tap(find.byTooltip('Add goal'));
+    expect(opened, 1);
+  });
+
+  testWidgets('the last goal scrolls clear of the round "+"', (tester) async {
+    await pump(tester, onQuickAdd: () {});
+    // Too short for every goal: the list scrolls.
+    tester.view.physicalSize = const Size(400, 260);
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ReorderableListView), const Offset(0, -2000));
+    await tester.pumpAndSettle();
+
+    final last = tester.getRect(find.byType(GoalTile).last);
+    final plus = tester.getRect(find.byType(FloatingActionButton));
+    expect(last.bottom, lessThanOrEqualTo(plus.top));
   });
 
   testWidgets('shows the time spent toward a goal against what it expects', (

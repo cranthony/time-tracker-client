@@ -92,6 +92,7 @@ class PlanScreen extends StatefulWidget {
     this.onSignOut,
     this.version,
     this.loads,
+    this.onQuickAddGoal,
   });
 
   final ActionsRepository repository;
@@ -124,6 +125,9 @@ class PlanScreen extends StatefulWidget {
   /// How loading the actions is going, for the status bar: the app's,
   /// or else one of the page's own.
   final LoadStatus? loads;
+
+  /// Opens the quick New goal sheet, from the Goals pane's round "+".
+  final VoidCallback? onQuickAddGoal;
 
   @override
   State<PlanScreen> createState() => _PlanScreenState();
@@ -785,6 +789,7 @@ class _PlanScreenState extends State<PlanScreen> {
             repository: goals,
             memory: _memory,
             summary: _summaryView,
+            onQuickAdd: widget.onQuickAddGoal,
           ),
         ),
       // Built only while it's shown: what it works out is costly.
