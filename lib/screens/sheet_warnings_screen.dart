@@ -104,6 +104,32 @@ class _WarningCard extends StatelessWidget {
   final DateTime now;
 
   @override
+  Widget build(BuildContext context) => Card(
+    margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: SheetWarningSummary(warning: warning, now: now),
+    ),
+  );
+}
+
+/// What [warning] says: what was changed, when, and what the server did
+/// about it -- and, but [compact], each cell or event it found changed.
+class SheetWarningSummary extends StatelessWidget {
+  const SheetWarningSummary({
+    super.key,
+    required this.warning,
+    required this.now,
+    this.compact = false,
+  });
+
+  final SheetWarning warning;
+  final DateTime now;
+
+  /// Without the cells or events, as the Diagnostics page lists it.
+  final bool compact;
+
+  @override
   Widget build(BuildContext context) {
     final w = warning;
     final theme = Theme.of(context);
@@ -126,56 +152,51 @@ class _WarningCard extends StatelessWidget {
       else
         'not put back',
     ].join(' · ');
-    final more = w.cellCount - w.cells.length;
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final cells = compact ? const <WarnedCell>[] : w.cells;
+    final more = compact ? 0 : w.cellCount - w.cells.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Icon(switch (w.kind) {
-                  SheetWarningKind.edited => Icons.edit_note,
-                  SheetWarningKind.deleted => Icons.delete_outline,
-                  SheetWarningKind.calendar => Icons.event_note,
-                }, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(switch (w.kind) {
-                    SheetWarningKind.edited => 'Cells edited by hand',
-                    SheetWarningKind.deleted => 'Tab deleted by hand',
-                    SheetWarningKind.calendar =>
-                      'Events changed outside the server',
-                  }, style: theme.textTheme.titleSmall),
-                ),
-              ],
+            Icon(switch (w.kind) {
+              SheetWarningKind.edited => Icons.edit_note,
+              SheetWarningKind.deleted => Icons.delete_outline,
+              SheetWarningKind.calendar => Icons.event_note,
+            }, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(switch (w.kind) {
+                SheetWarningKind.edited => 'Cells edited by hand',
+                SheetWarningKind.deleted => 'Tab deleted by hand',
+                SheetWarningKind.calendar =>
+                  'Events changed outside the server',
+              }, style: theme.textTheme.titleSmall),
             ),
-            const SizedBox(height: 4),
-            Text(when, style: theme.textTheme.bodySmall),
-            Text(details, style: theme.textTheme.bodySmall),
-            if (w.cells.isNotEmpty) const SizedBox(height: 8),
-            for (final c in w.cells)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  calendar
-                      ? '${c.found} -- ${c.cell}'
-                      : '${c.cell}: ${_shown(c.found)} → ${_shown(c.kept)}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontFamily: 'monospace',
-                  ),
-                ),
-              ),
-            if (more > 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text('and $more more', style: theme.textTheme.bodySmall),
-              ),
           ],
         ),
-      ),
+        const SizedBox(height: 4),
+        Text(when, style: theme.textTheme.bodySmall),
+        Text(details, style: theme.textTheme.bodySmall),
+        if (cells.isNotEmpty) const SizedBox(height: 8),
+        for (final c in cells)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              calendar
+                  ? '${c.found} -- ${c.cell}'
+                  : '${c.cell}: ${_shown(c.found)} → ${_shown(c.kept)}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+        if (more > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text('and $more more', style: theme.textTheme.bodySmall),
+          ),
+      ],
     );
   }
 

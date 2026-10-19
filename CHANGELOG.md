@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.161.0
+
+- The Diagnostics page's Server pane ends with what the server found
+  changed outside it lately: the newest three, each in brief (what
+  changed, when, and whether it was put back), and a button to the
+  usual "Changes outside the server" page of them all.
+
 ## 7.160.0
 
 - The quick New goal sheet sets the goal it goes under, its description

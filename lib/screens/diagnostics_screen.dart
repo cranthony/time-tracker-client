@@ -13,6 +13,7 @@ import '../services/work_timing.dart';
 import '../widgets/app_menu.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/status_message.dart';
+import 'sheet_warnings_screen.dart';
 
 /// How the app and the server are doing: the server's health metrics
 /// ([DiagnosticsRepository]) on its **Server** pane, and the app's own
@@ -22,7 +23,8 @@ import '../widgets/status_message.dart';
 /// Each is graphs of one time range, the latest on the right. The
 /// server's: its tool calls' latencies -- each tool's own work, stacked
 /// under the rest of its request, to the whole request's time -- its
-/// memory, and its restarts, ticked. The app's: its tool calls' latencies,
+/// memory, and its restarts, ticked; under them, the newest of what it
+/// found changed outside it, with a button to them all. The app's: its tool calls' latencies,
 /// the app's and the background task's, and how many changes waited to
 /// save, in each outbox, stacked; and its last errors, in full. Calls are
 /// dots, not joined -- they come in bursts, with long gaps between -- and
@@ -510,6 +512,11 @@ class _ServerPaneState extends State<_ServerPane>
                   _RestartsCard(restarts: restarts, from: from, to: to),
                 ],
               ),
+            ),
+            _SheetWarningsCard(
+              warnings: health.sheetWarnings,
+              repository: widget.repository,
+              clock: widget.clock,
             ),
           ],
         ),
@@ -2090,6 +2097,79 @@ class _ErrorsCard extends StatelessWidget {
                 ),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// What the server found changed behind its back -- the newest
+/// [_SheetWarningsCard.shown] of [warnings], each in brief -- and a button
+/// to the page of them all, as the warnings banner opens.
+class _SheetWarningsCard extends StatelessWidget {
+  const _SheetWarningsCard({
+    required this.warnings,
+    required this.repository,
+    required this.clock,
+  });
+
+  /// As `get_health` gives them, oldest first.
+  final List<SheetWarning> warnings;
+  final DiagnosticsRepository repository;
+  final DateTime Function() clock;
+
+  /// How many are listed here.
+  static const shown = 3;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final newest = warnings.reversed.take(shown).toList();
+    final now = clock();
+    return _ItemCard(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Changes outside the server',
+              style: theme.textTheme.titleMedium,
+            ),
+            Text(
+              warnings.isEmpty
+                  ? 'Nothing has been changed outside the server lately.'
+                  : warnings.length > shown
+                  ? '${warnings.length} lately. The newest $shown:'
+                  : warnings.length == 1
+                  ? '1 lately:'
+                  : '${warnings.length} lately, newest first:',
+              style: theme.textTheme.bodySmall,
+            ),
+            for (final w in newest)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SheetWarningSummary(warning: w, now: now, compact: true),
+              ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                icon: const Icon(Icons.chevron_right),
+                iconAlignment: IconAlignment.end,
+                label: Text(
+                  warnings.length > 1 ? 'See all ${warnings.length}' : 'Open',
+                ),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => SheetWarningsScreen(
+                      repository: repository,
+                      clock: clock,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),

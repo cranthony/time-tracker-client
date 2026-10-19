@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/server_health.dart';
 import 'package:time_tracker_client/screens/diagnostics_screen.dart';
+import 'package:time_tracker_client/screens/sheet_warnings_screen.dart';
 import 'package:time_tracker_client/services/diagnostics.dart';
 import 'package:time_tracker_client/services/diagnostics_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
@@ -1121,6 +1122,62 @@ void main() {
       expect(find.byType(InputChip), findsNothing);
       expect(find.text('Not broken down by the server'), findsOneWidget);
       expect(find.text('210 MiB'), findsWidgets); // Max, and latest.
+    });
+
+    /// [_health], with [count] warnings, an hour apart, the newest an
+    /// hour ago: each edited cells of tab "Tab <i>", the oldest i = 0.
+    ServerHealth warned(int count) => ServerHealth(
+      tools: _health().tools,
+      memory: _health().memory,
+      restarts: _health().restarts,
+      sheetWarnings: [
+        for (var i = 0; i < count; i++)
+          SheetWarning(
+            at: _ago(Duration(hours: count - i)),
+            kind: SheetWarningKind.edited,
+            tab: 'Tab $i',
+            cells: const [WarnedCell(cell: 'B2', found: 'x', kept: 'y')],
+            cellCount: 1,
+            restored: true,
+          ),
+      ],
+    );
+
+    testWidgets('lists the newest changes outside the server at the bottom, '
+        'briefly, and opens them all', (tester) async {
+      await open(tester, InMemoryDiagnosticsRepository(warned(5)));
+      await tester.ensureVisible(find.text('See all 5'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Changes outside the server'), findsOneWidget);
+      expect(find.text('5 lately. The newest 3:'), findsOneWidget);
+      for (final i in [4, 3, 2]) {
+        expect(find.text('Tab "Tab $i" · 1 cell · put back'), findsOneWidget);
+      }
+      expect(find.text('Tab "Tab 1" · 1 cell · put back'), findsNothing);
+      // In brief: not each cell.
+      expect(find.textContaining('B2:'), findsNothing);
+
+      await tester.tap(find.text('See all 5'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SheetWarningsScreen), findsOneWidget);
+      expect(find.text(SheetWarningsScreen.explanation), findsOneWidget);
+    });
+
+    testWidgets('says when nothing has been changed outside the server', (
+      tester,
+    ) async {
+      await open(tester, InMemoryDiagnosticsRepository(warned(0)));
+      await tester.ensureVisible(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Nothing has been changed outside the server lately.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SheetWarningsScreen), findsOneWidget);
     });
 
     testWidgets('says when the server has no get_health', (tester) async {

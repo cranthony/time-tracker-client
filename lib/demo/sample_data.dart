@@ -330,6 +330,24 @@ class SampleData {
       memory: memory,
       memoryInterval: const Duration(minutes: 1),
       restarts: restarts,
+      // A cell edited by hand yesterday, put back; an event renamed in
+      // Google Calendar this morning.
+      sheetWarnings: [
+        SheetWarning(
+          at: end.subtract(const Duration(hours: 26)),
+          kind: SheetWarningKind.edited,
+          tab: 'People',
+          cells: const [WarnedCell(cell: 'C4', found: 'Sam', kept: 'Samira')],
+          cellCount: 1,
+          restored: true,
+        ),
+        SheetWarning(
+          at: end.subtract(const Duration(hours: 3)),
+          kind: SheetWarningKind.calendar,
+          cells: const [WarnedCell(cell: 'ev42', found: 'Lunch with Ana')],
+          cellCount: 1,
+        ),
+      ],
     );
   }
 
