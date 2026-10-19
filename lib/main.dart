@@ -34,6 +34,7 @@ import 'services/focus_store.dart';
 import 'services/goals_repository.dart';
 import 'services/habits_repository.dart';
 import 'services/mcp_client.dart';
+import 'services/goal_drafts.dart';
 import 'services/note_drafts.dart';
 import 'services/notes_repository.dart';
 import 'services/people_repository.dart';
@@ -511,6 +512,10 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
   /// Notes being written, kept on the device as they're typed.
   final _noteDrafts = NoteDrafts.device();
 
+  /// The goal being set in the New goal sheet, kept on the device as it's
+  /// typed.
+  final _goalDrafts = GoalDrafts.device();
+
   late final AppLifecycleListener _lifecycle;
   final _addNoteShortcut = AddNoteShortcut();
 
@@ -767,6 +772,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         onSignOut: widget.auth == null ? null : _signOut,
         addNoteRequests: _addNoteShortcut.taps,
         noteDrafts: _noteDrafts,
+        goalDrafts: _goalDrafts,
         calendarTaps: widget.calendarWidget?.taps,
         onAddNoteFieldFocused: _addNoteShortcut.fieldReady,
         version: _version,

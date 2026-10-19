@@ -8,7 +8,10 @@ import 'package:time_tracker_client/screens/home_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
 import 'package:time_tracker_client/screens/plan_screen.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
+import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/services/goal_drafts.dart';
+import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/widgets/hotkeys.dart';
 
@@ -16,20 +19,28 @@ void main() {
   late Hotkeys hotkeys;
   late InMemoryNotesRepository notes;
   late NoteWrites outbox;
+  late InMemoryGoalsRepository goals;
+  late GoalDrafts goalDrafts;
 
   Widget app() {
     hotkeys = Hotkeys();
     notes = InMemoryNotesRepository();
     outbox = NoteWrites.local(notes);
+    goals = InMemoryGoalsRepository();
+    goalDrafts = GoalDrafts.inMemory();
     return MaterialApp(
       navigatorObservers: [hotkeys],
-      builder: (context, child) => HotkeyScope(hotkeys: hotkeys, child: child!),
+      builder: (context, child) => GoalsScope(
+        repository: goals,
+        child: HotkeyScope(hotkeys: hotkeys, child: child!),
+      ),
       home: HomeScreen(
         notesRepository: notes,
         eventsRepository: InMemoryEventsRepository(const []),
         actionsRepository: InMemoryActionsRepository(),
         outbox: outbox,
         actionWrites: ActionWrites.local(InMemoryActionsRepository()),
+        goalDrafts: goalDrafts,
       ),
     );
   }
@@ -126,6 +137,49 @@ void main() {
     expect(find.text('New note'), findsNothing);
     expect(find.byType(EventsScreen), findsOneWidget);
     expect(outbox.pending.single.note.description, 'Tea');
+  });
+
+  testWidgets('Ctrl+; sets a goal over the page, and goes back to it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    await afterCtrlB(tester, LogicalKeyboardKey.keyE);
+
+    await ctrl(tester, LogicalKeyboardKey.semicolon);
+    expect(find.text('New goal'), findsOneWidget);
+    expect(find.byType(EventsScreen), findsOneWidget);
+    // Not a second one over it.
+    await ctrl(tester, LogicalKeyboardKey.semicolon);
+    expect(find.text('New goal'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).last, 'Ship it');
+    await ctrl(tester, LogicalKeyboardKey.enter);
+    expect(find.text('New goal'), findsNothing);
+    expect(find.byType(EventsScreen), findsOneWidget);
+    final made = (await goals.goals()).single;
+    expect(made.title, 'Ship it');
+    expect(made.status, 'active');
+    expect(made.deadline, deadlineOf(DateTime.now()));
+    expect(goalDrafts.draft, isNull);
+  });
+
+  testWidgets("the goal sheet's More goes on in the full page, with what's "
+      'typed', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    await ctrl(tester, LogicalKeyboardKey.semicolon);
+    await tester.enterText(find.byType(TextField).last, 'Ship it');
+    await tester.tap(find.text('More'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('New goal'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Ship it'), findsOneWidget);
+    // Kept, till it's saved there.
+    expect(goalDrafts.draft?.title, 'Ship it');
+    await ctrl(tester, LogicalKeyboardKey.enter);
+    expect((await goals.goals()).single.title, 'Ship it');
+    expect(goalDrafts.draft, isNull);
   });
 
   testWidgets('Esc leaves a text field; a letter then is a hotkey again', (

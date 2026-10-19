@@ -14,13 +14,17 @@ import 'html_editor.dart';
 /// the hints for telling its events. A new one starts active, or
 /// inactive if chosen; an active one needs a deadline. Saving is off
 /// while the change breaks a rule (see [planned]) against [goals], every
-/// goal there is, saying which. Gives a new goal's fields, or an edit's
-/// changes (a null clearing a field) -- null if nothing's saved.
+/// goal there is, saying which. A new one starts with [title] and
+/// [deadline], if they're given -- from the New goal sheet, say. Gives a
+/// new goal's fields, or an edit's changes (a null clearing a field) --
+/// null if nothing's saved.
 Future<Map<String, Object?>?> showGoalEditor(
   BuildContext context, {
   Goal? goal,
   Goal? parent,
   required List<Goal> goals,
+  String? title,
+  String? deadline,
   DateTime Function() now = DateTime.now,
 }) => Navigator.of(context).push<Map<String, Object?>>(
   MaterialPageRoute(
@@ -29,6 +33,8 @@ Future<Map<String, Object?>?> showGoalEditor(
       goal: goal,
       parent: parent ?? GoalTree(goals)[goal?.parentId],
       goals: goals,
+      title: title,
+      deadline: deadline,
       now: now,
     ),
   ),
@@ -40,12 +46,18 @@ class GoalEditorPage extends StatefulWidget {
     this.goal,
     this.parent,
     required this.goals,
+    this.title,
+    this.deadline,
     this.now = DateTime.now,
   });
 
   final Goal? goal;
   final Goal? parent;
   final List<Goal> goals;
+
+  /// A new goal's, to begin with.
+  final String? title;
+  final String? deadline;
   final DateTime Function() now;
 
   @override
@@ -55,14 +67,16 @@ class GoalEditorPage extends StatefulWidget {
 class _GoalEditorPageState extends State<GoalEditorPage> {
   Goal? get _goal => widget.goal;
 
-  late final _title = TextEditingController(text: _goal?.title ?? '');
+  late final _title = TextEditingController(
+    text: _goal?.title ?? widget.title ?? '',
+  );
   late final _hints = TextEditingController(
     text: _goal?.attributionHints ?? '',
   );
   late final _minutes = TextEditingController(
     text: _goal?.expectedMinutes?.toString() ?? '',
   );
-  late String? _deadline = _goal?.deadline;
+  late String? _deadline = _goal?.deadline ?? widget.deadline;
   late String _status = _goal?.status ?? 'active';
   late bool _required = _goal?.required ?? false;
   late String? _description = _goal?.description;

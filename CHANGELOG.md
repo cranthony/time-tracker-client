@@ -9,6 +9,17 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.145.0
+
+- Ctrl+; sets a goal from anywhere, in a sheet like the New note one:
+  its title, and the day it's due, today to begin with, shown with its
+  day of the week ("Thu, Oct 22"). - and + move the day (not before
+  today), Today goes back to today, and tapping the date picks one. It's
+  added active, at the top level, due by the end of that day. More goes
+  on in the full New goal page, with the title and day as typed.
+- What's typed is kept as a draft, on the device, until the goal's added:
+  the next sheet carries on with it, and its trash can throws it away.
+
 ## 7.144.0
 
 - J and K go down and up a person's or a habit's trait scores, as they
