@@ -321,13 +321,19 @@ class LatencyPoint {
   double get overhead => total - work;
 }
 
-/// A point of the memory graph, in MiB, and what it's made of when the
-/// server said.
+/// A point of the memory graph, in MiB, what it's made of and how many
+/// threads the server ran, when it said.
 class MemoryPoint {
-  const MemoryPoint({required this.at, required this.mib, this.parts});
+  const MemoryPoint({
+    required this.at,
+    required this.mib,
+    this.parts,
+    this.threads,
+  });
   final DateTime at;
   final double mib;
   final List<MemoryPart>? parts;
+  final int? threads;
 
   /// [parts], or with none, the whole of it as the rest of the server.
   List<MemoryPart> get partsOrWhole =>
@@ -436,28 +442,34 @@ List<MemoryPoint> memoryPoints(
   if (statistic == null) {
     return [
       for (final s in samples)
-        MemoryPoint(at: s.at, mib: s.mib, parts: s.parts),
+        MemoryPoint(at: s.at, mib: s.mib, parts: s.parts, threads: s.threads),
     ];
   }
   return [
     for (final (at, group) in _buckets(samples, (s) => s.at, bucket))
       () {
         final mib = statisticOf(statistic, [for (final s in group) s.mib]);
+        // The sample it falls on, or nearest it.
+        final nearest = group.reduce(
+          (a, b) => (b.mib - mib).abs() < (a.mib - mib).abs() ? b : a,
+        );
+        final mean = statistic == Statistic.mean;
         return MemoryPoint(
           at: at,
           mib: mib,
-          parts: statistic == Statistic.mean
-              ? _meanParts(group)
-              // The parts of the sample it falls on, or nearest it.
-              : group
-                    .reduce(
-                      (a, b) =>
-                          (b.mib - mib).abs() < (a.mib - mib).abs() ? b : a,
-                    )
-                    .parts,
+          parts: mean ? _meanParts(group) : nearest.parts,
+          threads: mean ? _meanThreads(group) : nearest.threads,
         );
       }(),
   ];
+}
+
+/// The mean of [samples]' thread counts, rounded, over those that have
+/// one. None, if none has.
+int? _meanThreads(List<MemorySample> samples) {
+  final counts = [for (final s in samples) ?s.threads];
+  if (counts.isEmpty) return null;
+  return (counts.reduce((a, b) => a + b) / counts.length).round();
 }
 
 /// Each part's mean over [samples], counting none of it where a sample

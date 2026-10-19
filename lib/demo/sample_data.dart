@@ -269,11 +269,21 @@ class SampleData {
               name: MemoryPart.calendar,
               mib: _tenth(3.5 + hours * 0.9),
             ),
+            MemoryPart(
+              name: MemoryPart.heapUntracked,
+              mib: _tenth(6 + random.nextDouble() * 3),
+            ),
+            // Most of the growth: freed, but not given back.
+            MemoryPart(
+              name: MemoryPart.allocatorFree,
+              mib: _tenth(30 + hours * 1.2 + random.nextDouble() * 4),
+            ),
           ];
           final total = _tenth(176 + hours * 2.4 + random.nextDouble() * 6);
           return MemorySample(
             at: at,
             mib: total,
+            threads: 6 + random.nextInt(12),
             parts: [
               ...parts,
               MemoryPart(
