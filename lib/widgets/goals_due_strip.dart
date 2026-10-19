@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
 import 'goal_icon.dart';
+import 'goal_tile.dart';
 
 /// The goals due on [day], from [goals]: by status -- active, inactive,
 /// done, missed, then obsolete -- then each status's as [byPriority] has
@@ -31,7 +32,8 @@ int _rank(Goal goal) => switch (_statusOrder.indexOf(goal.status)) {
 
 /// The goals due on the day shown, above its timeline, so they're in
 /// sight wherever it's scrolled to: a pill each, or, [collapsed], one
-/// line naming them. One that's closed says so: done, missed or
+/// line naming them. An open one with an expected time says what's left
+/// of it ([leftLabel]); one that's closed says so: done, missed or
 /// obsolete. Tapping a pill calls [onTap].
 class GoalsDueStrip extends StatelessWidget {
   const GoalsDueStrip({
@@ -40,6 +42,7 @@ class GoalsDueStrip extends StatelessWidget {
     required this.collapsed,
     required this.onCollapsed,
     this.tree,
+    this.spent,
     this.onTap,
   });
 
@@ -50,6 +53,10 @@ class GoalsDueStrip extends StatelessWidget {
 
   /// Every goal, for each one's parents; none, if null.
   final GoalTree? tree;
+
+  /// The time spent toward each goal, by id, for what's left of each
+  /// one's expected time; none is said, if null.
+  final Map<String, Duration>? spent;
   final ValueChanged<Goal>? onTap;
 
   @override
@@ -110,6 +117,9 @@ class GoalsDueStrip extends StatelessWidget {
                               _Pill(
                                 goal: g,
                                 path: tree?.pathOf(g.id) ?? g.path,
+                                left: g.closed || spent == null
+                                    ? null
+                                    : leftLabel(g, spent![g.id]),
                                 onTap: onTap == null ? null : () => onTap!(g),
                               ),
                           ],
@@ -127,14 +137,15 @@ class GoalsDueStrip extends StatelessWidget {
   static String _count(int n) => '$n goal${n == 1 ? '' : 's'}';
 }
 
-/// [goal] as a pill: its title, and its time if it's due at one, or,
-/// closed, struck through with what it came to. Its parents are in its
-/// tooltip.
+/// [goal] as a pill: its title, its time if it's due at one, and what's
+/// [left] of its expected time, or, closed, struck through with what it
+/// came to. Its parents are in its tooltip.
 class _Pill extends StatelessWidget {
-  const _Pill({required this.goal, required this.path, this.onTap});
+  const _Pill({required this.goal, required this.path, this.left, this.onTap});
 
   final Goal goal;
   final List<String> path;
+  final String? left;
   final VoidCallback? onTap;
 
   @override
@@ -153,6 +164,7 @@ class _Pill extends StatelessWidget {
     final label = [
       title,
       if (time != null) 'due at $time' else 'due by the end of the day',
+      ?left,
       ?status,
     ].join(', ');
     final pill = Semantics(
@@ -192,6 +204,7 @@ class _Pill extends StatelessWidget {
                                 : null,
                           ),
                         ),
+                        if (left != null) TextSpan(text: '  ·  $left'),
                       ],
                     ),
                     maxLines: 1,
