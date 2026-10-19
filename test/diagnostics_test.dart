@@ -226,6 +226,33 @@ void main() {
       expect(broken.parts!.last.isSheet, isFalse);
     });
 
+    test('reads how many threads the server ran, when it says', () {
+      final health = ServerHealth.fromJson({
+        'memory': [
+          {'at': '2026-10-09T10:00:00.000Z', 'rss_mib': 180.0},
+          {'at': '2026-10-09T10:01:00.000Z', 'rss_mib': 181.0, 'threads': null},
+          {
+            'at': '2026-10-09T10:02:00.000Z',
+            'rss_mib': 220.8,
+            'parts': [
+              {'name': 'Heap in use (untracked)', 'mib': 7.0},
+              {'name': 'Allocator: free but held', 'mib': 185.3},
+              {'name': 'Rest of server', 'mib': 28.5},
+            ],
+            'threads': 14,
+          },
+        ],
+        'memory_latest_mib': 220.8,
+      });
+
+      expect([for (final m in health.memory) m.threads], [null, null, 14]);
+      expect(health.memory.last.parts!.map((p) => p.name), [
+        MemoryPart.heapUntracked,
+        MemoryPart.allocatorFree,
+        MemoryPart.rest,
+      ]);
+    });
+
     test('is fetched with get_health, and kept for next time', () async {
       final cache = InMemoryResponseCache();
       final client = _Client(_json);
@@ -456,6 +483,35 @@ void main() {
       expect(median.parts, isNull);
       expect(
         memoryPoints([memory.last], statistic: Statistic.mean).single.parts,
+        isNull,
+      );
+    });
+
+    test("of each bucket's threads: the mean of those counted, or the "
+        'count of the sample the statistic falls on', () {
+      final memory = [
+        MemorySample(
+          at: _ago(const Duration(minutes: 50)),
+          mib: 100,
+          threads: 7,
+        ),
+        MemorySample(
+          at: _ago(const Duration(minutes: 45)),
+          mib: 200,
+          threads: 14,
+        ),
+        // From before the server counted them.
+        MemorySample(at: _ago(const Duration(minutes: 40)), mib: 120),
+      ];
+
+      expect(memoryPoints(memory).map((p) => p.threads), [7, 14, null]);
+      expect(
+        memoryPoints(memory, statistic: Statistic.mean).single.threads,
+        11, // 10.5, rounded.
+      );
+      expect(memoryPoints(memory, statistic: Statistic.max).single.threads, 14);
+      expect(
+        memoryPoints(memory, statistic: Statistic.median).single.threads,
         isNull,
       );
     });
@@ -934,6 +990,49 @@ void main() {
         .data!;
 
     final toTheSecond = RegExp(r'\d:\d\d:\d\d');
+
+    testWidgets("colors the allocator's parts apart, and says how many "
+        'threads the server ran', (tester) async {
+      final health = _brokenDown();
+      await open(
+        tester,
+        InMemoryDiagnosticsRepository(
+          ServerHealth(
+            tools: health.tools,
+            memory: [
+              for (final (i, m) in health.memory.indexed)
+                MemorySample(
+                  at: m.at,
+                  mib: m.mib + 30,
+                  parts: [
+                    ...m.parts!.take(m.parts!.length - 1),
+                    const MemoryPart(name: MemoryPart.heapUntracked, mib: 6),
+                    const MemoryPart(name: MemoryPart.allocatorFree, mib: 20),
+                    const MemoryPart(name: 'Something new', mib: 4),
+                    m.parts!.last,
+                  ],
+                  threads: 7 + i,
+                ),
+            ],
+            restarts: health.restarts,
+          ),
+        ),
+      );
+
+      expect(memoryChart(tester).betweenBarsData, hasLength(7));
+      expect(
+        memoryChart(tester).betweenBarsData.map((b) => b.color).toSet(),
+        hasLength(7),
+      );
+      expect(pointSaid(tester), endsWith(' · 240 MiB · 9 threads'));
+    });
+
+    testWidgets("says nothing of threads from a server that doesn't count "
+        'them', (tester) async {
+      await open(tester, InMemoryDiagnosticsRepository(_brokenDown()));
+
+      expect(pointSaid(tester), endsWith(' · 210 MiB'));
+    });
 
     testWidgets("says an older server's memory is the most of each second, "
         'and its points to the second', (tester) async {

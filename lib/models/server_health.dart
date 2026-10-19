@@ -118,9 +118,14 @@ class ToolCall {
 /// [ServerHealth.memoryInterval]s, after a call -- any tool's -- or its
 /// own work in the background. With [parts],
 /// what it's made of, as the server reckons it: none from a server that
-/// doesn't break it down.
+/// doesn't break it down. With [threads], how many threads it ran then.
 class MemorySample {
-  const MemorySample({required this.at, required this.mib, this.parts});
+  const MemorySample({
+    required this.at,
+    required this.mib,
+    this.parts,
+    this.threads,
+  });
 
   final DateTime at;
   final double mib;
@@ -130,14 +135,20 @@ class MemorySample {
   /// summing to [mib], give or take rounding.
   final List<MemoryPart>? parts;
 
+  /// How many threads the server ran then: none from a server that
+  /// doesn't count them.
+  final int? threads;
+
   static MemorySample? fromJson(Map<String, dynamic> json) {
     final at = DateTime.tryParse('${json['at']}');
     final mib = json['rss_mib'];
     if (at == null || mib is! num) return null;
     final parts = json['parts'];
+    final threads = json['threads'];
     return MemorySample(
       at: at,
       mib: mib.toDouble(),
+      threads: threads is num ? threads.toInt() : null,
       parts: parts is List
           ? [
               for (final p in parts)
@@ -156,11 +167,18 @@ class MemorySample {
 class MemoryPart {
   const MemoryPart({required this.name, required this.mib});
 
-  /// "Sheet: " and a tab's title, [calendar] or [rest].
+  /// "Sheet: " and a tab's title, [calendar], [heapUntracked],
+  /// [allocatorFree] or [rest].
   final String name;
   final double mib;
 
   static const calendar = 'Calendar';
+
+  /// The heap in use that no other part accounts for.
+  static const heapUntracked = 'Heap in use (untracked)';
+
+  /// What the allocator holds free but hasn't given back.
+  static const allocatorFree = 'Allocator: free but held';
   static const rest = 'Rest of server';
   static const sheetPrefix = 'Sheet: ';
 

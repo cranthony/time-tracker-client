@@ -1366,9 +1366,12 @@ class _MemoryCardState extends State<_MemoryCard> {
     Color colorOf(String name) {
       if (name == MemoryPart.rest) return colors.outlineVariant;
       if (name == MemoryPart.calendar) return colors.tertiary;
+      if (name == MemoryPart.heapUntracked) return colors.secondary;
+      // What the allocator holds and hasn't given back: the one to watch.
+      if (name == MemoryPart.allocatorFree) return colors.error;
       if (name == MemoryLayer.sheets) return colors.primary;
       final i = tabs.indexOf(name);
-      if (i < 0) return colors.secondary;
+      if (i < 0) return colors.tertiaryContainer;
       // A family of the primary's, muted: darker to lighter, a little
       // apart in hue.
       final t = tabs.length < 2 ? 0.5 : i / (tabs.length - 1);
@@ -1652,7 +1655,8 @@ class _MemoryBreakdown extends StatelessWidget {
         children: [
           Text(
             '${latest ? 'Latest · ' : ''}'
-            '${strings.formatShortMonthDay(t)}, $clock · ${_mib(point.mib)}',
+            '${strings.formatShortMonthDay(t)}, $clock · ${_mib(point.mib)}'
+            '${point.threads == null ? '' : ' · ${_threads(point.threads!)}'}',
             style: style?.copyWith(fontWeight: FontWeight.w600),
           ),
           if (parts == null)
@@ -1681,6 +1685,9 @@ class _MemoryBreakdown extends StatelessWidget {
     );
   }
 }
+
+/// [n] threads, as the memory breakdown says them.
+String _threads(int n) => n == 1 ? '1 thread' : '$n threads';
 
 /// When the server started, each a tick: there's one server, so each is
 /// a restart -- a crash or a deploy.
