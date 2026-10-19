@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../models/goal.dart';
@@ -296,67 +297,190 @@ class _GoalSheetState extends State<_GoalSheet> {
                 ),
               ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                // Wraps "Today" under the date on a narrow screen.
-                Expanded(
-                  child: Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove),
-                        tooltip: 'A day earlier',
-                        visualDensity: _dense,
-                        onPressed: _day.isAfter(_today)
-                            ? () => _shift(-1)
-                            : null,
+            Builder(
+              builder: (context) {
+                // Wraps only where even it alone is too wide for a line.
+                final date = Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.remove),
+                      tooltip: 'A day earlier',
+                      visualDensity: _dense,
+                      onPressed: _day.isAfter(_today) ? () => _shift(-1) : null,
+                    ),
+                    FieldHotkey(
+                      'D',
+                      child: ActionChip(
+                        avatar: const Icon(Icons.event),
+                        label: Text(day),
+                        tooltip: 'Due by the end of the day',
+                        onPressed: _pickDay,
                       ),
-                      FieldHotkey(
-                        'D',
-                        child: ActionChip(
-                          avatar: const Icon(Icons.event),
-                          label: Text(day),
-                          tooltip: 'Due by the end of the day',
-                          onPressed: _pickDay,
-                        ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add),
+                      tooltip: 'A day later',
+                      visualDensity: _dense,
+                      onPressed: () => _shift(1),
+                    ),
+                    FieldHotkey(
+                      'O',
+                      child: TextButton(
+                        style: TextButton.styleFrom(visualDensity: _dense),
+                        onPressed: () => _setDay(_today),
+                        child: const Text('Today'),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.add),
-                        tooltip: 'A day later',
-                        visualDensity: _dense,
-                        onPressed: () => _shift(1),
+                    ),
+                  ],
+                );
+                final buttons = Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FieldHotkey(
+                      'M',
+                      child: TextButton(
+                        onPressed: _keeping ? null : _more,
+                        child: const Text('More'),
                       ),
-                      FieldHotkey(
-                        'O',
-                        child: TextButton(
-                          style: TextButton.styleFrom(visualDensity: _dense),
-                          onPressed: () => _setDay(_today),
-                          child: const Text('Today'),
-                        ),
+                    ),
+                    const SizedBox(width: 4),
+                    HotkeyHint(
+                      Hotkey.save,
+                      child: FilledButton(
+                        onPressed: _addable ? _submit : null,
+                        child: Text(_keepError == null ? 'Add' : 'Try again'),
                       ),
-                    ],
-                  ),
-                ),
-                FieldHotkey(
-                  'M',
-                  child: TextButton(
-                    onPressed: _keeping ? null : _more,
-                    child: const Text('More'),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                HotkeyHint(
-                  Hotkey.save,
-                  child: FilledButton(
-                    onPressed: _addable ? _submit : null,
-                    child: Text(_keepError == null ? 'Add' : 'Try again'),
-                  ),
-                ),
-              ],
+                    ),
+                  ],
+                );
+                return _LineOrTwo(start: date, end: buttons);
+              },
             ),
           ],
         ),
       ),
     );
+  }
+}
+
+/// [start] at the left and [end] at the right of one line, where they fit
+/// side by side; where they don't -- on a phone -- [start] on a line of
+/// its own, kept together, and [end] under it at the right.
+class _LineOrTwo extends SlottedMultiChildRenderObjectWidget<_Slot, RenderBox> {
+  const _LineOrTwo({required this.start, required this.end});
+
+  final Widget start;
+  final Widget end;
+
+  @override
+  Iterable<_Slot> get slots => _Slot.values;
+
+  @override
+  Widget? childForSlot(_Slot slot) => switch (slot) {
+    _Slot.start => start,
+    _Slot.end => end,
+  };
+
+  @override
+  _RenderLineOrTwo createRenderObject(BuildContext context) =>
+      _RenderLineOrTwo();
+}
+
+enum _Slot { start, end }
+
+class _RenderLineOrTwo extends RenderBox
+    with SlottedContainerRenderObjectMixin<_Slot, RenderBox> {
+  /// Between the lines, when it takes two.
+  static const _gap = 4.0;
+
+  RenderBox get _start => childForSlot(_Slot.start)!;
+  RenderBox get _end => childForSlot(_Slot.end)!;
+
+  @override
+  void performLayout() {
+    final loose = BoxConstraints(maxWidth: constraints.maxWidth);
+    final start = _start..layout(loose, parentUsesSize: true);
+    final end = _end..layout(loose, parentUsesSize: true);
+    final width = constraints.maxWidth;
+    final startData = start.parentData! as BoxParentData;
+    final endData = end.parentData! as BoxParentData;
+    if (start.size.width + end.size.width <= width) {
+      final height = max(start.size.height, end.size.height);
+      startData.offset = Offset(0, (height - start.size.height) / 2);
+      endData.offset = Offset(
+        width - end.size.width,
+        (height - end.size.height) / 2,
+      );
+      size = constraints.constrain(Size(width, height));
+    } else {
+      startData.offset = Offset.zero;
+      endData.offset = Offset(
+        max(0, width - end.size.width),
+        start.size.height + _gap,
+      );
+      size = constraints.constrain(
+        Size(width, start.size.height + _gap + end.size.height),
+      );
+    }
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) => max(
+    _start.getMinIntrinsicWidth(height),
+    _end.getMinIntrinsicWidth(height),
+  );
+
+  @override
+  double computeMaxIntrinsicWidth(double height) =>
+      _start.getMaxIntrinsicWidth(height) + _end.getMaxIntrinsicWidth(height);
+
+  @override
+  double computeMinIntrinsicHeight(double width) => max(
+    _start.getMinIntrinsicHeight(width),
+    _end.getMinIntrinsicHeight(width),
+  );
+
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      _start.getMaxIntrinsicHeight(width) +
+      _gap +
+      _end.getMaxIntrinsicHeight(width);
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    final loose = BoxConstraints(maxWidth: constraints.maxWidth);
+    final start = _start.getDryLayout(loose);
+    final end = _end.getDryLayout(loose);
+    return constraints.constrain(
+      start.width + end.width <= constraints.maxWidth
+          ? Size(constraints.maxWidth, max(start.height, end.height))
+          : Size(constraints.maxWidth, start.height + _gap + end.height),
+    );
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    for (final child in [_start, _end]) {
+      context.paintChild(
+        child,
+        offset + (child.parentData! as BoxParentData).offset,
+      );
+    }
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    for (final child in [_end, _start]) {
+      final offset = (child.parentData! as BoxParentData).offset;
+      if (result.addWithPaintOffset(
+        offset: offset,
+        position: position,
+        hitTest: (result, at) => child.hitTest(result, position: at),
+      )) {
+        return true;
+      }
+    }
+    return false;
   }
 }

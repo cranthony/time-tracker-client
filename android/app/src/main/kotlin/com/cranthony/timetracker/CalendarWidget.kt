@@ -49,6 +49,8 @@ import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import androidx.glance.semantics.contentDescription
+import androidx.glance.semantics.semantics
 import androidx.glance.unit.ColorProvider
 import es.antonborri.home_widget.HomeWidgetGlanceState
 import es.antonborri.home_widget.HomeWidgetGlanceStateDefinition
@@ -280,7 +282,7 @@ private fun Content(
             .cornerRadius(16.dp)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
-        if (!titleAtBottom) Header(context, atBottom = false)
+        if (!titleAtBottom) Header(context)
         if (shown.isEmpty()) {
             Text(
                 text = if (days.isEmpty()) {
@@ -324,20 +326,21 @@ private fun Content(
                 }
             }
         }
-        if (titleAtBottom) Header(context, atBottom = true)
+        if (titleAtBottom) Header(context)
     }
 }
 
 /**
- * "Calendar", which opens Events at now, and the "+" for a new note:
- * above the days, or, [atBottom], below them.
+ * "Calendar", which opens Events at now, then the buttons for a new goal
+ * and a new note: above the days, or below them.
  */
 @Composable
-private fun Header(context: Context, atBottom: Boolean) {
+private fun Header(context: Context) {
     Row(
         modifier = GlanceModifier
-            .fillMaxWidth()
-            .padding(top = if (atBottom) 4.dp else 0.dp, bottom = if (atBottom) 0.dp else 4.dp),
+            // No gap from the days: the buttons' tap targets leave 8dp
+            // round their circles.
+            .fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -350,17 +353,43 @@ private fun Header(context: Context, atBottom: Boolean) {
             ),
             maxLines = 1,
         )
+        HeaderButton(
+            R.drawable.ic_add_goal,
+            context.getString(R.string.add_goal_widget_label),
+            AddGoalWidget.addGoal(context),
+        )
+        HeaderButton(
+            R.drawable.ic_add_note,
+            context.getString(R.string.add_note_widget_label),
+            AddNoteWidget.addNote(context),
+        )
+    }
+}
+
+/**
+ * A round button in the [Header], [icon] on it, doing [action]: a 32dp
+ * circle in a 48dp tap target, as Android asks for, so the two side by
+ * side are each easy to hit.
+ */
+@Composable
+private fun HeaderButton(icon: Int, label: String, action: Action) {
+    Box(
+        modifier = GlanceModifier
+            .size(48.dp)
+            .clickable(action)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
         Box(
             modifier = GlanceModifier
                 .size(32.dp)
                 .cornerRadius(16.dp)
-                .background(GlanceTheme.colors.primary)
-                .clickable(AddNoteWidget.addNote(context)),
+                .background(GlanceTheme.colors.primary),
             contentAlignment = Alignment.Center,
         ) {
             Image(
-                provider = ImageProvider(R.drawable.ic_add_note),
-                contentDescription = context.getString(R.string.add_note_widget_label),
+                provider = ImageProvider(icon),
+                contentDescription = null,
                 modifier = GlanceModifier.size(20.dp),
                 colorFilter = ColorFilter.tint(GlanceTheme.colors.onPrimary),
             )

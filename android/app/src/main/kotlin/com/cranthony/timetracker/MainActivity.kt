@@ -31,14 +31,17 @@ class MainActivity : FlutterActivity() {
      */
     private var launchAddNoteAt: Long? = null
 
+    /** When the home screen goal button launched the app from scratch, as for the "+". */
+    private var launchAddGoalAt: Long? = null
+
     /**
-     * An add-note request waiting to show the keyboard, until the window
-     * has focus and the dialog's field is ready, in either order; see
-     * awaitKeyboard.
+     * An add-note or add-goal request waiting to show the keyboard, until
+     * the window has focus and the sheet's field is ready, in either order;
+     * see awaitKeyboard.
      */
     private var keyboardWanted = false
 
-    /** Whether the New note dialog's field has focus; see "fieldReady". */
+    /** Whether the New note or New goal sheet's field has focus; see "fieldReady". */
     private var fieldReady = false
 
     /** Gives up on a keyboard that never got both; see awaitKeyboard. */
@@ -57,6 +60,11 @@ class MainActivity : FlutterActivity() {
             launchAddNoteAt = System.currentTimeMillis()
             awaitKeyboard()
         }
+        if (savedInstanceState == null && isAddGoal(intent)) {
+            Log.d(TAG, "onCreate: add goal")
+            launchAddGoalAt = System.currentTimeMillis()
+            awaitKeyboard()
+        }
         if (savedInstanceState == null && isShowEvents(intent)) {
             Log.d(TAG, "onCreate: show events")
             launchCalendarTap = CalendarWidget.tapOf(intent)
@@ -73,6 +81,9 @@ class MainActivity : FlutterActivity() {
                 if (call.method == "takeLaunchRequest") {
                     result.success(launchAddNoteAt)
                     launchAddNoteAt = null
+                } else if (call.method == "takeGoalLaunchRequest") {
+                    result.success(launchAddGoalAt)
+                    launchAddGoalAt = null
                 } else if (call.method == "fieldReady") {
                     Log.d(TAG, "fieldReady")
                     fieldReady = true
@@ -113,6 +124,13 @@ class MainActivity : FlutterActivity() {
             // In front already, the dialog's field can show it by itself.
             if (!hasWindowFocus()) awaitKeyboard()
             addNoteChannel?.invokeMethod("addNote", System.currentTimeMillis())
+            return
+        }
+        // The home screen goal button, likewise.
+        if (isAddGoal(intent)) {
+            Log.d(TAG, "onNewIntent: add goal")
+            if (!hasWindowFocus()) awaitKeyboard()
+            addNoteChannel?.invokeMethod("addGoal", System.currentTimeMillis())
             return
         }
         // A tap on the home screen calendar while the app was running.
@@ -192,6 +210,11 @@ class MainActivity : FlutterActivity() {
     /** Ignores relaunching from Recents, which replays the original intent. */
     private fun isAddNote(intent: Intent?): Boolean =
         intent?.action == AddNoteWidget.ACTION_ADD_NOTE &&
+            (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+
+    /** Ignores relaunching from Recents, as [isAddNote] does. */
+    private fun isAddGoal(intent: Intent?): Boolean =
+        intent?.action == AddGoalWidget.ACTION_ADD_GOAL &&
             (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
 
     /** Ignores relaunching from Recents, as [isAddNote] does. */

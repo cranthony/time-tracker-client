@@ -2,6 +2,8 @@ package com.cranthony.timetracker
 
 import android.content.Context
 import android.content.Intent
+import androidx.annotation.DrawableRes
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
@@ -47,34 +49,43 @@ class AddNoteWidget : GlanceAppWidgetReceiver() {
     }
 }
 
-/** The whole cell is the tap target; the round button sits in its middle. */
 private class AddNoteButton : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val label = context.getString(R.string.add_note_widget_label)
         provideContent {
-            Box(
-                modifier = GlanceModifier
-                    .fillMaxSize()
-                    .clickable(AddNoteWidget.addNote(context))
-                    .semantics { contentDescription = label },
-                contentAlignment = Alignment.Center,
-            ) {
-                // Teal, like the app's colour scheme; round on every
-                // Android version, as cornerRadius is only from 12 on.
-                Box(
-                    modifier = GlanceModifier
-                        .size(56.dp)
-                        .background(ImageProvider(R.drawable.add_note_widget_background))
-                        .padding(14.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(
-                        provider = ImageProvider(R.drawable.ic_add_note),
-                        contentDescription = null,
-                        modifier = GlanceModifier.fillMaxSize(),
-                    )
-                }
-            }
+            RoundButtonCell(R.drawable.ic_add_note, label, AddNoteWidget.addNote(context))
+        }
+    }
+}
+
+/**
+ * A one-cell button: [icon] in a round teal button in its middle, the
+ * whole cell the tap target, doing [action]. The Add note and Add goal
+ * widgets' both.
+ */
+@Composable
+fun RoundButtonCell(@DrawableRes icon: Int, label: String, action: Action) {
+    Box(
+        modifier = GlanceModifier
+            .fillMaxSize()
+            .clickable(action)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        // Teal, like the app's colour scheme; round on every Android
+        // version, as cornerRadius is only from 12 on.
+        Box(
+            modifier = GlanceModifier
+                .size(56.dp)
+                .background(ImageProvider(R.drawable.add_note_widget_background))
+                .padding(14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                provider = ImageProvider(icon),
+                contentDescription = null,
+                modifier = GlanceModifier.fillMaxSize(),
+            )
         }
     }
 }

@@ -3,6 +3,9 @@
     <string name="add_note_widget_label">Add note</string>
     <string name="add_note_shortcut_long_label">Add a note</string>
     <string name="add_note_widget_description">Opens Time Tracker ready to add a new note</string>
+    <string name="add_goal_widget_label">Add goal</string>
+    <string name="add_goal_shortcut_long_label">Add a goal</string>
+    <string name="add_goal_widget_description">Opens Time Tracker ready to set a new goal</string>
     <string name="calendar_widget_label">Calendar</string>
     <string name="calendar_widget_description">Your events from now to the next few days</string>
     <string name="calendar_widget_settings_title">Calendar widget</string>

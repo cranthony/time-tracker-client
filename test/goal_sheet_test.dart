@@ -192,4 +192,34 @@ void main() {
     await tester.pumpAndSettle();
     expect(focused, 1);
   });
+
+  testWidgets('on a phone, the buttons go under the date, at the right', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await open(tester);
+    await tester.enterText(find.byType(TextField), 'Ship it');
+    await tester.pump();
+
+    // The test font is wider than any real one, so the date's controls
+    // themselves wrap here; on a phone they keep to one line.
+    final later = find.byTooltip('A day later');
+    // The buttons under the date, at the right.
+    final add = find.widgetWithText(FilledButton, 'Add');
+    expect(
+      tester.getTopLeft(add).dy,
+      greaterThan(tester.getBottomLeft(later).dy),
+    );
+    expect(tester.getTopRight(add).dx, closeTo(320 - 16, 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('on a wide screen, it is all one line', (tester) async {
+    await open(tester);
+    final add = tester.getCenter(find.text('Add')).dy;
+    expect(tester.getCenter(find.text('Today')).dy, closeTo(add, 4));
+    expect(tester.takeException(), isNull);
+  });
 }

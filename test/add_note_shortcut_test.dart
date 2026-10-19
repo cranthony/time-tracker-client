@@ -23,10 +23,13 @@ void main() {
       );
 
   test('reports the tap that launched the app, then later taps', () async {
-    messenger.setMockMethodCallHandler(channel, (call) async {
-      expect(call.method, 'takeLaunchRequest');
-      return launchedAt.millisecondsSinceEpoch;
-    });
+    messenger.setMockMethodCallHandler(
+      channel,
+      (call) async => switch (call.method) {
+        'takeLaunchRequest' => launchedAt.millisecondsSinceEpoch,
+        _ => null,
+      },
+    );
     final shortcut = AddNoteShortcut(channel: channel, enabled: true);
     final taps = <DateTime>[];
     await shortcut.start();
@@ -37,6 +40,30 @@ void main() {
     await pumpEventQueue();
 
     expect(taps, [launchedAt, tappedAt]);
+    shortcut.dispose();
+  });
+
+  test('reports the goal tap that launched the app, then later ones, apart '
+      'from the note taps', () async {
+    messenger.setMockMethodCallHandler(
+      channel,
+      (call) async => switch (call.method) {
+        'takeGoalLaunchRequest' => launchedAt.millisecondsSinceEpoch,
+        _ => null,
+      },
+    );
+    final shortcut = AddNoteShortcut(channel: channel, enabled: true);
+    final notes = <DateTime>[];
+    final goals = <DateTime>[];
+    await shortcut.start();
+    shortcut.taps.listen(notes.add);
+    shortcut.goalTaps.listen(goals.add);
+
+    await fromAndroid('addGoal', tappedAt.millisecondsSinceEpoch);
+    await pumpEventQueue();
+
+    expect(goals, [launchedAt, tappedAt]);
+    expect(notes, isEmpty);
     shortcut.dispose();
   });
 

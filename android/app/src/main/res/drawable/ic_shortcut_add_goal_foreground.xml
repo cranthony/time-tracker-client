@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The white goal icon, centered in an adaptive icon's 108dp canvas and
+     well inside its 66dp safe zone, as for Add note. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="2.25"
+        android:scaleY="2.25"
+        android:translateX="27"
+        android:translateY="27">
+        <!-- The bullseye's middle, (10, 14), moved to the icon's, (12, 12),
+             so it's centered on a round button; a little smaller, so the
+             arrow's vanes still fit. -->
+        <group
+            android:pivotX="10"
+            android:pivotY="14"
+            android:scaleX="0.94"
+            android:scaleY="0.94"
+            android:translateX="2"
+            android:translateY="-2">
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M18.213,8.121 A10.1,10.1 0 1,1 15.879,5.787 L14.296,7.37 A7.9,7.9 0 1,0 16.63,9.704 Z" />
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M15.393,10.941 A6.2,6.2 0 1,1 13.059,8.607 L11.41,10.257 A4,4 0 1,0 13.743,12.59 Z" />
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M10,14 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0 Z" />
+            <path
+                android:pathData="M10,14 L21.6,2.4"
+                android:strokeColor="#FFFFFFFF"
+                android:strokeLineCap="round"
+                android:strokeWidth="1.5" />
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:pathData="M17.569,6.431 L20.186,6.501 L22.661,4.026 L20.964,3.036 Z M17.569,6.431 L17.499,3.814 L19.974,1.339 L20.964,3.036 Z" />
+        </group>
+    </group>
+</vector>

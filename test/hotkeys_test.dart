@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,7 +24,7 @@ void main() {
   late InMemoryGoalsRepository goals;
   late GoalDrafts goalDrafts;
 
-  Widget app() {
+  Widget app({Stream<DateTime>? addGoalRequests, VoidCallback? focused}) {
     hotkeys = Hotkeys();
     notes = InMemoryNotesRepository();
     outbox = NoteWrites.local(notes);
@@ -41,6 +43,8 @@ void main() {
         outbox: outbox,
         actionWrites: ActionWrites.local(InMemoryActionsRepository()),
         goalDrafts: goalDrafts,
+        addGoalRequests: addGoalRequests,
+        onAddNoteFieldFocused: focused,
       ),
     );
   }
@@ -162,6 +166,24 @@ void main() {
     expect(made.status, 'active');
     expect(made.deadline, deadlineOf(DateTime.now()));
     expect(goalDrafts.draft, isNull);
+  });
+
+  testWidgets('a tap on the home screen goal button sets a goal, saying '
+      'when its field is ready', (tester) async {
+    final taps = StreamController<DateTime>();
+    var focused = 0;
+    await tester.pumpWidget(
+      app(addGoalRequests: taps.stream, focused: () => focused++),
+    );
+    await tester.pumpAndSettle();
+    taps.add(DateTime.now());
+    await tester.pumpAndSettle();
+    expect(find.text('New goal'), findsOneWidget);
+    expect(focused, 1);
+    // Closed, so the next test can open one.
+    Navigator.of(tester.element(find.text('New goal'))).pop();
+    await tester.pumpAndSettle();
+    await taps.close();
   });
 
   testWidgets("the goal sheet's More goes on in the full page, with what's "

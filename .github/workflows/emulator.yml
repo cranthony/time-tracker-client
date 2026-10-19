@@ -17,7 +17,8 @@
 #
 # Now:
 #   tool/emulator/keyboard_test.sh  the home screen "+" opens the New note
-#                                   dialog with the keyboard up.
+#                                   dialog with the keyboard up, and the
+#                                   goal button the New goal sheet.
 #   tool/emulator/handoff_test.sh   changes waiting to save are handed off
 #                                   between the app and its WorkManager
 #                                   background task, each sent once.
@@ -105,7 +106,7 @@ jobs:
           yes | "$sdkmanager" --licenses > /dev/null || true
           tool/emulator/sdk_retry.sh "$sdkmanager" --install emulator \
             'system-images;android-36;google_apis;x86_64'
-      - name: Home screen "+" brings up the keyboard
+      - name: Home screen "+" and goal button bring up the keyboard
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36

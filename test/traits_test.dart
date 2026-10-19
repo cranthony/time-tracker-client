@@ -780,9 +780,7 @@ void main() {
       }
     });
 
-    testWidgets('J and K go from trait score to trait score', (
-      tester,
-    ) async {
+    testWidgets('J and K go from trait score to trait score', (tester) async {
       await pump(tester, memory: await _scoredMemory([jazz], people: [sam]));
       String? highlighted() {
         final tile = FocusManager.instance.primaryFocus?.context

@@ -67,6 +67,18 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/add_note_widget_info" />
         </receiver>
+        <!-- The home screen goal button; see AddGoalWidget. -->
+        <receiver
+            android:name=".AddGoalWidget"
+            android:exported="false"
+            android:label="@string/add_goal_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/add_goal_widget_info" />
+        </receiver>
         <!-- A home screen calendar's settings, which the launcher opens; see
              CalendarWidgetConfigureActivity. Its own task, so it doesn't
              bring the app up behind it. -->
