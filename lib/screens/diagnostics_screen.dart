@@ -10,6 +10,7 @@ import '../services/client_health.dart';
 import '../services/diagnostics.dart';
 import '../services/diagnostics_repository.dart';
 import '../services/work_timing.dart';
+import '../widgets/app_menu.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/status_message.dart';
 
@@ -34,7 +35,9 @@ import '../widgets/status_message.dart';
 /// wheel -- zooms all of a pane's graphs in on a stretch of time, two
 /// fingers drag it along, and a double tap goes back to the whole range;
 /// the buttons zoom keeping the latest in view. Scrolling scrolls the page.
-class DiagnosticsScreen extends StatelessWidget {
+/// The app bar's refresh button refreshes the pane shown, as pulling it
+/// down does.
+class DiagnosticsScreen extends StatefulWidget {
   const DiagnosticsScreen({
     super.key,
     required this.repository,
@@ -49,13 +52,35 @@ class DiagnosticsScreen extends StatelessWidget {
   final DateTime Function() clock;
 
   @override
+  State<DiagnosticsScreen> createState() => _DiagnosticsScreenState();
+}
+
+class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
+  /// Each pane's pull-to-refresh, in the tabs' order: the refresh button
+  /// pulls the one shown down.
+  final _refreshers = [
+    GlobalKey<RefreshIndicatorState>(),
+    GlobalKey<RefreshIndicatorState>(),
+  ];
+
+  @override
   Widget build(BuildContext context) {
-    final client = this.client;
+    final client = widget.client;
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Diagnostics'),
+          actions: [
+            Builder(
+              builder: (context) => RefreshButton(
+                onRefresh: () async =>
+                    _refreshers[DefaultTabController.of(context).index]
+                        .currentState
+                        ?.show(),
+              ),
+            ),
+          ],
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Server'),
@@ -82,9 +107,17 @@ class DiagnosticsScreen extends StatelessWidget {
                 ],
                 child: TabBarView(
                   children: [
-                    _ServerPane(repository: repository, clock: clock),
+                    _ServerPane(
+                      repository: widget.repository,
+                      clock: widget.clock,
+                      refresher: _refreshers[0],
+                    ),
                     if (client != null)
-                      _ClientPane(client: client, clock: clock)
+                      _ClientPane(
+                        client: client,
+                        clock: widget.clock,
+                        refresher: _refreshers[1],
+                      )
                     else
                       const _AppPane(),
                   ],
@@ -216,9 +249,13 @@ mixin _Timeline<T extends StatefulWidget> on State<T> {
     child: child,
   );
 
-  /// The menus, for [tools], and the stretch shown, with the buttons to
-  /// zoom and move along it.
-  Widget controls(BuildContext context, Iterable<String> tools) {
+  /// The menus, for [tools] and [buckets], and the stretch shown, with the
+  /// buttons to zoom and move along it.
+  Widget controls(
+    BuildContext context,
+    Iterable<String> tools, {
+    List<BucketSize> buckets = BucketSize.values,
+  }) {
     final filters = toolFilters(tools);
     if (!filters.contains(filter)) filter = const AllTools();
     final strings = MaterialLocalizations.of(context);
@@ -266,7 +303,7 @@ mixin _Timeline<T extends StatefulWidget> on State<T> {
                   _Picker<BucketSize>(
                     label: 'Per',
                     value: bucket,
-                    items: {for (final b in BucketSize.values) b: b.label},
+                    items: {for (final b in buckets) b: b.label},
                     onChanged: (b) => setState(() => bucket = b),
                   ),
               ],
@@ -310,10 +347,17 @@ mixin _Timeline<T extends StatefulWidget> on State<T> {
 
 /// The server's health, from its `get_health`.
 class _ServerPane extends StatefulWidget {
-  const _ServerPane({required this.repository, required this.clock});
+  const _ServerPane({
+    required this.repository,
+    required this.clock,
+    required this.refresher,
+  });
 
   final DiagnosticsRepository repository;
   final DateTime Function() clock;
+
+  /// Its pull-to-refresh's.
+  final GlobalKey<RefreshIndicatorState> refresher;
 
   @override
   State<_ServerPane> createState() => _ServerPaneState();
@@ -377,6 +421,7 @@ class _ServerPaneState extends State<_ServerPane>
     if (health == null) {
       if (_loading) return const Center(child: CircularProgressIndicator());
       return RefreshIndicator(
+        key: widget.refresher,
         onRefresh: _load,
         child: ListView(
           children: [
@@ -409,7 +454,12 @@ class _ServerPaneState extends State<_ServerPane>
     );
     final memory = within(health.memory, (m) => m.at, from, to);
     final restarts = within(health.restarts, (r) => r, from, to);
+    // Samples are this far apart at the closest: no bucket's finer.
+    final interval = health.memoryInterval;
+    final buckets = BucketSize.atLeast(interval);
+    if (!buckets.contains(bucket)) bucket = buckets.first;
     return RefreshIndicator(
+      key: widget.refresher,
       onRefresh: _load,
       child: withKeys(
         ListView(
@@ -424,7 +474,9 @@ class _ServerPaneState extends State<_ServerPane>
                   onRetry: _load,
                 ),
               ),
-            controls(context, [for (final t in health.tools) t.tool]),
+            controls(context, [
+              for (final t in health.tools) t.tool,
+            ], buckets: buckets),
             zoomable(
               Column(
                 children: [
@@ -448,12 +500,12 @@ class _ServerPaneState extends State<_ServerPane>
                     ),
                     from: from,
                     to: to,
-                    // The server refreshes what it keeps every 5 minutes,
-                    // by default, sampling as it does; buckets come one
-                    // after another.
-                    joinWithin: statistic == null
-                        ? const Duration(minutes: 15)
-                        : bucket.span * 1.5,
+                    interval: interval,
+                    joinWithin: memoryJoinWithin(
+                      interval,
+                      statistic: statistic,
+                      bucket: bucket,
+                    ),
                   ),
                   _RestartsCard(restarts: restarts, from: from, to: to),
                 ],
@@ -470,10 +522,17 @@ class _ServerPaneState extends State<_ServerPane>
 /// last errors -- as [client] has recorded them, here and in the
 /// background, read again as it records more.
 class _ClientPane extends StatefulWidget {
-  const _ClientPane({required this.client, required this.clock});
+  const _ClientPane({
+    required this.client,
+    required this.clock,
+    required this.refresher,
+  });
 
   final ClientHealthRecorder client;
   final DateTime Function() clock;
+
+  /// Its pull-to-refresh's.
+  final GlobalKey<RefreshIndicatorState> refresher;
 
   @override
   State<_ClientPane> createState() => _ClientPaneState();
@@ -558,6 +617,7 @@ class _ClientPaneState extends State<_ClientPane>
         if (e.tool == null ? filter is AllTools : filter.includes(e.tool!)) e,
     ];
     return RefreshIndicator(
+      key: widget.refresher,
       onRefresh: () async {
         await widget.client.flush();
         await _load();
@@ -1228,8 +1288,8 @@ class _LatencyCard extends StatelessWidget {
   }
 }
 
-/// The server's memory, the most of each second after a call or its own
-/// work in the background, stacked by what it's made of as the server
+/// The server's memory, the most of each [interval] after a call or its
+/// own work in the background, stacked by what it's made of as the server
 /// reckons it -- the rest of the server at the foot, then the calendar it
 /// keeps, then its sheet tabs, as one layer while they're many, until
 /// opened out -- with the total's mean, median, p95 and max marked
@@ -1246,6 +1306,7 @@ class _MemoryCard extends StatefulWidget {
     required this.points,
     required this.from,
     required this.to,
+    required this.interval,
     required this.joinWithin,
   });
 
@@ -1253,6 +1314,9 @@ class _MemoryCard extends StatefulWidget {
   final List<MemoryPoint> points;
   final DateTime from;
   final DateTime to;
+
+  /// The server's [ServerHealth.memoryInterval].
+  final Duration interval;
   final Duration joinWithin;
 
   @override
@@ -1421,9 +1485,9 @@ class _MemoryCardState extends State<_MemoryCard> {
     return _GraphCard(
       title: 'Memory',
       subtitle:
-          "The server's resident memory, the most of each second after a "
-          'call or its work in the background${broken ? ', stacked by what '
-                    'holds it' : ''}',
+          "The server's resident memory, the most of "
+          '${eachInterval(widget.interval)} after a call or its work in the '
+          "background${broken ? ', stacked by what holds it' : ''}",
       graph: points.isEmpty
           ? _empty(context, 'No memory samples in view.')
           : Column(
@@ -1534,6 +1598,7 @@ class _MemoryCardState extends State<_MemoryCard> {
                   _MemoryBreakdown(
                     point: picked,
                     latest: picked == points.last,
+                    interval: widget.interval,
                     colorOf: colorOf,
                   ),
               ],
@@ -1553,11 +1618,15 @@ class _MemoryBreakdown extends StatelessWidget {
   const _MemoryBreakdown({
     required this.point,
     required this.latest,
+    required this.interval,
     required this.colorOf,
   });
 
   final MemoryPoint point;
   final bool latest;
+
+  /// The server's [ServerHealth.memoryInterval].
+  final Duration interval;
   final Color Function(String) colorOf;
 
   @override
@@ -1566,10 +1635,14 @@ class _MemoryBreakdown extends StatelessWidget {
     final strings = MaterialLocalizations.of(context);
     final t = point.at.toLocal();
     final seconds = t.second.toString().padLeft(2, '0');
-    // To the second: samples are a second apart at the closest.
-    final clock = strings
-        .formatTimeOfDay(TimeOfDay.fromDateTime(t))
-        .replaceFirstMapped(RegExp(r':(\d\d)'), (m) => ':${m[1]}:$seconds');
+    // To the second while samples can be under a minute apart.
+    final minutes = strings.formatTimeOfDay(TimeOfDay.fromDateTime(t));
+    final clock = interval < const Duration(minutes: 1)
+        ? minutes.replaceFirstMapped(
+            RegExp(r':(\d\d)'),
+            (m) => ':${m[1]}:$seconds',
+          )
+        : minutes;
     final parts = point.parts?.toList()
       ?..sort((a, b) => b.mib.compareTo(a.mib));
     return Padding(

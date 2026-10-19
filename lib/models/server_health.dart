@@ -1,17 +1,24 @@
 /// The server's health metrics, as its `get_health` gives them: each tool's
-/// last calls, its memory -- up to its last 500 seconds' most -- after its
-/// calls and its own work, its restarts, and its warnings of changes made
-/// behind its back. Times are UTC, oldest first.
+/// last calls, its memory -- the most of each of its last 500
+/// [memoryInterval]s -- after its calls and its own work, its restarts,
+/// and its warnings of changes made behind its back. Times are UTC,
+/// oldest first.
 class ServerHealth {
   const ServerHealth({
     this.tools = const [],
     this.memory = const [],
+    this.memoryInterval = const Duration(seconds: 1),
     this.restarts = const [],
     this.sheetWarnings = const [],
   });
 
   final List<ToolCalls> tools;
   final List<MemorySample> memory;
+
+  /// How long each of the server's [memory] samples is the most of, as
+  /// `memory_interval_seconds` says: a second, from a server too old to
+  /// say. The closest two samples can be.
+  final Duration memoryInterval;
 
   /// When the server last started, up to 100 times: there's one server,
   /// so each after the first is a restart -- a crash, or a deploy.
@@ -33,6 +40,10 @@ class ServerHealth {
       for (final m in json['memory'] as List? ?? const [])
         ?MemorySample.fromJson((m as Map).cast<String, dynamic>()),
     ],
+    memoryInterval: switch (json['memory_interval_seconds']) {
+      final num seconds when seconds >= 1 => Duration(seconds: seconds.toInt()),
+      _ => const Duration(seconds: 1),
+    },
     restarts: [
       for (final r in json['restarts'] as List? ?? const [])
         ?DateTime.tryParse('$r'),
@@ -103,8 +114,9 @@ class ToolCall {
   }
 }
 
-/// The server's resident memory, in MiB: the most of each second, after a
-/// call -- any tool's -- or its own work in the background. With [parts],
+/// The server's resident memory, in MiB: the most of each of its
+/// [ServerHealth.memoryInterval]s, after a call -- any tool's -- or its
+/// own work in the background. With [parts],
 /// what it's made of, as the server reckons it: none from a server that
 /// doesn't break it down.
 class MemorySample {

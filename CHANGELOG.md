@@ -9,6 +9,17 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.139.0
+
+- Diagnostics has a refresh button in its app bar, for desktop and the
+  web: it refreshes the pane shown just as pulling it down does, with
+  the same indicator.
+- The memory graph follows how far apart the server says its samples
+  are (`memory_interval_seconds`; a second, from an older server): it
+  says "the most of each minute" for the new server's, gives a point's
+  time to the second only when samples can be under a minute apart,
+  and offers no bucket finer than the samples.
+
 ## 7.138.0
 
 - An event's people and places can each take a share of it too, as its
