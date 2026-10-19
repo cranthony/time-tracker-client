@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.156.0
+
+- The server's memory graph gives "Heap in use (untracked)" and
+  "Allocator: free but held" colors of their own, so the heap the server
+  uses can be told apart from what the allocator holds and hasn't given
+  back.
+- How many threads the server ran shows with each memory point, after its
+  total ("· 14 threads"), when the server counts them.
+
 ## 7.155.0
 
 - A person's "All events" page has a "Load all" button: it asks the
