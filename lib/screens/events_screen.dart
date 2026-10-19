@@ -34,6 +34,8 @@ import '../models/google_calendar.dart';
 import '../services/google_calendars.dart';
 import '../widgets/event_description.dart';
 import '../widgets/google_all_day_strip.dart';
+import '../widgets/goals_due_strip.dart';
+import 'goal_screen.dart';
 import '../models/weather.dart';
 import '../services/weather.dart';
 import '../widgets/weather_strip.dart';
@@ -341,6 +343,9 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Whether the weather strip is folded to its first line.
   bool _weatherCollapsed = false;
+
+  /// Whether the strip of goals due on the day is folded to a line.
+  bool _goalsDueCollapsed = false;
 
   /// Whether Google Calendar's events are drawn over the user's own,
   /// rather than behind them.
@@ -1217,6 +1222,7 @@ class _EventsScreenState extends State<EventsScreen> {
     _loadProposal();
     _loadSummaryCollapsed();
     _loadAllDayCollapsed();
+    _loadGoalsDueCollapsed();
     _loadWeatherCollapsed();
     // Once the scopes above can be read: if it's old by now.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1571,6 +1577,46 @@ class _EventsScreenState extends State<EventsScreen> {
       // What's on top, as it is: the user's, solid, over the calendar's,
       // dotted -- or the other way round.
       child: Icon(_googleOnTop ? Icons.flip_to_back : Icons.flip_to_front),
+    );
+  }
+
+  /// Whether the goals-due strip was folded last time. Best effort:
+  /// without it, it's open.
+  Future<void> _loadGoalsDueCollapsed() async {
+    try {
+      final collapsed = await SharedPreferencesAsync().getBool(
+        _goalsDueCollapsedKey,
+      );
+      if (!mounted || collapsed == null) return;
+      setState(() => _goalsDueCollapsed = collapsed);
+    } catch (_) {
+      // Nowhere to keep it: it's open.
+    }
+  }
+
+  void _setGoalsDueCollapsed(bool collapsed) {
+    setState(() => _goalsDueCollapsed = collapsed);
+    try {
+      SharedPreferencesAsync()
+          .setBool(_goalsDueCollapsedKey, collapsed)
+          .catchError((_) {});
+    } catch (_) {
+      // Nowhere to keep it: it lasts until the app closes.
+    }
+  }
+
+  /// [goal]'s page, if there are goals to show it from.
+  void _openGoal(Goal goal) {
+    final repository = GoalsScope.of(context);
+    if (repository == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => GoalScreen(
+          goalId: goal.id,
+          repository: repository,
+          memory: _memory,
+        ),
+      ),
     );
   }
 
@@ -5092,7 +5138,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// The days side by side over the [TimelineAxis], all scrolled up and
   /// down at once; above them, the day's panels -- its summary, weather,
-  /// all-day events and proposal -- in at most half the page, scrolled
+  /// all-day events, goals due and proposal -- in at most half the page, scrolled
   /// within it past that, so on a small phone the timeline, and an event
   /// shown on it, isn't squeezed out of view.
   Widget _buildTimeline() {
@@ -5119,8 +5165,9 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  /// The panels above the timeline: the day's summary, its weather and
-  /// all-day events, and the open proposal's bar and details.
+  /// The panels above the timeline: the day's summary, its weather,
+  /// all-day events and goals due, and the open proposal's bar and
+  /// details.
   List<Widget> _buildPanels(List<Event>? events) => [
     if (events != null)
       DaySummary(
@@ -5150,6 +5197,14 @@ class _EventsScreenState extends State<EventsScreen> {
         collapsed: _allDayCollapsed,
         onCollapsed: _setAllDayCollapsed,
         onTap: _openGoogleEvent,
+      ),
+    if (_memory.goals case final goals?)
+      GoalsDueStrip(
+        goals: goalsDueOn(goals, _day),
+        tree: GoalTree(goals),
+        collapsed: _goalsDueCollapsed,
+        onCollapsed: _setGoalsDueCollapsed,
+        onTap: GoalsScope.of(context) == null ? null : _openGoal,
       ),
     if (_notices.isNotEmpty)
       ProposalNoticesBanner(
@@ -5596,6 +5651,7 @@ const _detailsCollapsedKey = 'proposal_details_collapsed';
 /// Where whether the day's summary is folded away is kept.
 const _summaryCollapsedKey = 'day_summary_collapsed';
 const _allDayCollapsedKey = 'google_all_day_collapsed';
+const _goalsDueCollapsedKey = 'goals_due_collapsed';
 const _weatherCollapsedKey = 'weather_strip_collapsed';
 const _googleOnTopKey = 'google_on_top';
 

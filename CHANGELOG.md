@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.140.0
+
+- The goals due on the day shown are in a strip above its timeline,
+  under the all-day events: a pill each, with its time if it's due at
+  one, those done, missed or obsolete struck through. Tap one to open
+  it; fold the strip to a line with its arrow, and it stays folded.
+- The sample data has goals due today.
+
 ## 7.139.0
 
 - Diagnostics has a refresh button in its app bar, for desktop and the
