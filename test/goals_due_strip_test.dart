@@ -17,9 +17,37 @@ void main() {
     _goal('f', 'None', null),
   ];
 
-  test('goalsDueOn takes the day\'s, timed ones first', () {
-    expect(goalsDueOn(goals, day).map((g) => g.id), ['d', 'c', 'b', 'a']);
+  test('goalsDueOn takes the day\'s, open ones first, timed ones first', () {
+    expect(goalsDueOn(goals, day).map((g) => g.id), ['c', 'b', 'a', 'd']);
     expect(goalsDueOn(goals, DateTime(2026, 10, 17)), isEmpty);
+  });
+
+  test('goalsDueOn: by status, then as byDeadline has each', () {
+    final mixed = [
+      _goal('obsolete', 'A', '2026-10-18T08:00', status: 'obsolete'),
+      _goal('missed', 'A', '2026-10-18T08:00', status: 'missed'),
+      _goal('done late', 'B', '2026-10-18T20:00', status: 'done'),
+      _goal('done', 'A', '2026-10-18', status: 'done'),
+      _goal('done early', 'C', '2026-10-18T08:00', status: 'done'),
+      _goal('inactive', 'A', '2026-10-18T08:00', status: 'inactive'),
+      _goal('active', 'Z', '2026-10-18'),
+      _goal('active early', 'Z', '2026-10-18T23:00'),
+    ];
+    expect(goalsDueOn(mixed, day).map((g) => g.id), [
+      'active early',
+      'active',
+      'inactive',
+      'done early',
+      'done late',
+      'done',
+      'missed',
+      'obsolete',
+    ]);
+    final active = mixed.where((g) => g.active);
+    expect(
+      goalsDueOn(active, day).map((g) => g.id),
+      byDeadline(active).map((g) => g.id),
+    );
   });
 
   Future<void> pump(

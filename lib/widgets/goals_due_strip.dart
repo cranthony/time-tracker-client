@@ -3,20 +3,29 @@ import 'package:flutter/material.dart';
 import '../models/goal.dart';
 import 'goal_icon.dart';
 
-/// The goals due on [day], from [goals], those due at a time first, by
-/// time, then those due by its end, by title.
+/// The goals due on [day], from [goals]: by status -- active, inactive,
+/// done, missed, then obsolete -- then each status's as [byDeadline] has
+/// them, those due at a time first, by time, then those due by its end,
+/// by title.
 List<Goal> goalsDueOn(Iterable<Goal> goals, DateTime day) {
   final date = deadlineOf(day);
   return [
     for (final g in goals)
       if (g.deadline?.trim().split('T').first == date && g.due != null) g,
   ]..sort((a, b) {
-    final (x, y) = (deadlineHasTime(a.deadline), deadlineHasTime(b.deadline));
-    if (x != y) return x ? -1 : 1;
-    if (x && a.due != b.due) return a.due!.compareTo(b.due!);
-    return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+    final byStatus = _rank(a).compareTo(_rank(b));
+    return byStatus != 0 ? byStatus : compareByDeadline(a, b);
   });
 }
+
+const _statusOrder = ['active', 'inactive', 'done', 'missed', 'obsolete'];
+
+/// Where [goal]'s status falls in [_statusOrder]; one it doesn't know,
+/// after them.
+int _rank(Goal goal) => switch (_statusOrder.indexOf(goal.status)) {
+  -1 => _statusOrder.length,
+  final i => i,
+};
 
 /// The goals due on the day shown, above its timeline, so they're in
 /// sight wherever it's scrolled to: a pill each, or, [collapsed], one

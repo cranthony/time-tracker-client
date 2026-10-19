@@ -270,14 +270,19 @@ class GoalTree {
 
 /// [goals] as the Goals pane lists them: soonest due first, those with
 /// no deadline last, then by title.
-List<Goal> byDeadline(Iterable<Goal> goals) => [...goals]
-  ..sort((a, b) {
-    final (x, y) = (a.due, b.due);
-    if (x != null && y != null && x != y) return x.compareTo(y);
-    if (x != null && y == null) return -1;
-    if (x == null && y != null) return 1;
-    return a.title.toLowerCase().compareTo(b.title.toLowerCase());
-  });
+List<Goal> byDeadline(Iterable<Goal> goals) =>
+    [...goals]..sort(compareByDeadline);
+
+/// [byDeadline]'s order: soonest due first -- on one day, those due at a
+/// time, by time, then those due by its end -- those with no deadline
+/// last, then by title.
+int compareByDeadline(Goal a, Goal b) {
+  final (x, y) = (a.due, b.due);
+  if (x != null && y != null && x != y) return x.compareTo(y);
+  if (x != null && y == null) return -1;
+  if (x == null && y != null) return 1;
+  return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+}
 
 // -- Events' goal shares ----------------------------------------------------
 
