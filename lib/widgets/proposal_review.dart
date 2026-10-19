@@ -42,33 +42,38 @@ EventMark proposalMark(
     DecidedBy.user => 'you',
     null => null,
   };
-  final what = switch (event.status) {
-    ProposalEventStatus.created => ['New'],
-    ProposalEventStatus.cancelled => [
-      if (!(event.countsAgainstFollowThrough ?? true))
-        'Cancelled, a change of plan'
-      else if (event.followThrough.isEmpty)
-        'Cancelled, counts against follow-through'
-      else
-        'Cancelled, counts against ${event.followThrough.join(', ')}',
-    ],
-    ProposalEventStatus.merged => ['Merged'],
-    ProposalEventStatus.adjusted => [
-      if (event.moved)
-        'Moved, was ${time(event.plannedStart ?? event.start)}–'
-            '${time(event.plannedEnd ?? event.end)}',
-      if (calendar != null && calendar.summary != event.summary) 'Renamed',
-      if (calendar != null && !_same(calendar.actionIds, event.actionIds))
-        'New actions',
-      if (calendar != null &&
-          Facts.fromJson(calendar.properties['facts']) !=
-              Facts.fromJson(event.facts))
-        'New facts',
-      if (calendar == null && !event.moved) 'Changed',
-    ],
-    ProposalEventStatus.onSchedule ||
-    ProposalEventStatus.planned => [if (changed) 'As planned'],
-  };
+  final what = [
+    // A historical note revisits it: its times stay as they are.
+    if (event.revisited) 'Revisited',
+    ...switch (event.status) {
+      ProposalEventStatus.created => ['New'],
+      ProposalEventStatus.cancelled => [
+        if (!(event.countsAgainstFollowThrough ?? true))
+          'Cancelled, a change of plan'
+        else if (event.followThrough.isEmpty)
+          'Cancelled, counts against follow-through'
+        else
+          'Cancelled, counts against ${event.followThrough.join(', ')}',
+      ],
+      ProposalEventStatus.merged => ['Merged'],
+      ProposalEventStatus.adjusted => [
+        if (event.moved)
+          'Moved, was ${time(event.plannedStart ?? event.start)}–'
+              '${time(event.plannedEnd ?? event.end)}',
+        if (calendar != null && calendar.summary != event.summary) 'Renamed',
+        if (calendar != null && !_same(calendar.actionIds, event.actionIds))
+          'New actions',
+        if (calendar != null &&
+            Facts.fromJson(calendar.properties['facts']) !=
+                Facts.fromJson(event.facts))
+          'New facts',
+        if (calendar == null && !event.moved) 'Changed',
+      ],
+      ProposalEventStatus.onSchedule || ProposalEventStatus.planned => [
+        if (changed && !event.revisited) 'As planned',
+      ],
+    },
+  ];
   if (what.isEmpty) return EventMark(changed: changed, selected: selected);
   return EventMark(
     label: [what.join(' · '), ?by].join(' · '),
@@ -76,6 +81,7 @@ EventMark proposalMark(
       ProposalEventStatus.cancelled ||
       ProposalEventStatus.merged => Icons.close,
       ProposalEventStatus.created => Icons.add,
+      _ when event.revisited => Icons.update,
       _ => null,
     },
     changed: changed,
@@ -121,10 +127,15 @@ class ProposalBar extends StatelessWidget {
     this.hidden = false,
     this.onHide,
     this.onFacts,
+    this.onRevisited,
   });
 
   final Proposal proposal;
   final VoidCallback? onFacts;
+
+  /// Goes to the first of the settled events it revisits for historical notes,
+  /// which a line under it names.
+  final VoidCallback? onRevisited;
   final bool busy;
 
   /// What's waiting to save that confirms, finishes or abandons it: "Confirm
@@ -160,6 +171,16 @@ class ProposalBar extends StatelessWidget {
     ].length;
     final stopped = proposal.state == ProposalState.applying;
     final muted = colors.onSurfaceVariant;
+    final strings = MaterialLocalizations.of(context);
+    final revisited = hidden ? const <ProposalEvent>[] : proposal.revisited;
+    final revisits = [
+      for (final e in revisited)
+        '${e.summary ?? '(no summary)'}, '
+            '${strings.formatMediumDate(e.start.toLocal())}',
+    ];
+    final revisiting =
+        'Historical notes revisit ${revisits.join('; ')}: what happened '
+        'changes, not when.';
     // What's out of the ordinary, a line each, under the row.
     final status = <(IconData, String, Color)>[
       if (closing case final closing?)
@@ -207,6 +228,7 @@ class ProposalBar extends StatelessWidget {
               : 'Hide it to see and fix the calendar under it.',
           colors.error,
         ),
+      if (revisited.isNotEmpty) (Icons.update, revisiting, colors.secondary),
     ];
     return Material(
       color: Color.alphaBlend(band.tint, colors.surfaceContainerLow),
@@ -342,25 +364,31 @@ class ProposalBar extends StatelessWidget {
               ],
             ),
             for (final (icon, text, color) in status)
-              Padding(
-                padding: const EdgeInsets.only(right: 12, bottom: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: Icon(icon, size: 16, color: color),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        text,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: color,
+              InkWell(
+                // The line naming what historical notes revisit goes there.
+                onTap: revisited.isNotEmpty && text == revisiting
+                    ? onRevisited
+                    : null,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 12, bottom: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 1),
+                        child: Icon(icon, size: 16, color: color),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          text,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: color,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
           ],

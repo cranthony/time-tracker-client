@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.164.0
+
+- A note you add for a time that's already been compacted is marked
+  historical in the notes list. The next proposal revisits the event it was written
+  for: its bar names each event it revisits, with the date, and tapping
+  that goes to it, marked "Revisited". What happened at it can change in
+  the proposal, and it's judged again once you confirm; its times can't,
+  and moving or cancelling it says so. Needs the server to revisit
+  historical notes; with an older one, nothing changes.
+
 ## 7.163.1
 
 - The home screen calendar's goals stay up to date while the app's
