@@ -729,12 +729,10 @@ class _PlanScreenState extends State<PlanScreen> {
       stepItems(pane, later: later, toEnd: toEnd);
 
   /// The Plan page's hotkeys, with the [panes] shown in [tabs]: J and K
-  /// down and up the one shown, H and L to the one beside it.
+  /// down and up the one shown, and each pane's first letter to it.
   List<HotkeyBinding> _paneKeys(TabController tabs, List<String> panes) {
     void step(bool later, {bool toEnd = false}) =>
         _stepInPane(_paneNode(panes[tabs.index]), later: later, toEnd: toEnd);
-    void go(int by) =>
-        tabs.animateTo((tabs.index + by).clamp(0, tabs.length - 1));
     return [
       HotkeyBinding(
         const HotkeyTrigger.key(LogicalKeyboardKey.keyJ),
@@ -752,16 +750,17 @@ class _PlanScreenState extends State<PlanScreen> {
         const HotkeyTrigger.key(LogicalKeyboardKey.end),
         () => step(true, toEnd: true),
       ),
-      HotkeyBinding(
-        const HotkeyTrigger.key(LogicalKeyboardKey.keyH),
-        () => go(-1),
-      ),
-      HotkeyBinding(
-        const HotkeyTrigger.key(LogicalKeyboardKey.keyL),
-        () => go(1),
-      ),
+      for (final (i, title) in panes.indexed)
+        HotkeyBinding(
+          HotkeyTrigger.key(_paneLetter(title)),
+          () => tabs.animateTo(i),
+        ),
     ];
   }
+
+  /// The key that goes to the pane titled [title]: its first letter.
+  static LogicalKeyboardKey _paneLetter(String title) =>
+      LogicalKeyboardKey.findKeyByKeyId(title.toLowerCase().codeUnitAt(0))!;
 
   Widget _build(BuildContext context) {
     final actions = _actions;
@@ -881,7 +880,14 @@ class _PlanScreenState extends State<PlanScreen> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(title),
+                              HotkeyHint(
+                                Hotkey(
+                                  title[0],
+                                  'Go to $title',
+                                  HotkeyPlace.plan,
+                                ),
+                                child: Text(title),
+                              ),
                               Text(
                                 annotation,
                                 style: theme.textTheme.labelSmall?.copyWith(

@@ -234,8 +234,8 @@ void main() {
     expect(list.position.pixels, 0);
   });
 
-  testWidgets('on the Plan page, H and L go between panes; J highlights '
-      'down the one shown', (tester) async {
+  testWidgets("on the Plan page, a pane's first letter goes to it; J "
+      'highlights down the one shown', (tester) async {
     await tester.pumpWidget(app(homeScreen()));
     await tester.pumpAndSettle();
     await afterCtrlB(tester, LogicalKeyboardKey.keyP);
@@ -243,14 +243,22 @@ void main() {
         DefaultTabController.of(tester.element(find.byType(TabBarView)));
     expect(tabs().index, 0);
 
-    await press(tester, LogicalKeyboardKey.keyL);
-    expect(tabs().index, 1);
-    await press(tester, LogicalKeyboardKey.keyL);
-    await press(tester, LogicalKeyboardKey.keyH);
-    expect(tabs().index, 1);
-    await press(tester, LogicalKeyboardKey.keyH);
-    await press(tester, LogicalKeyboardKey.keyH);
-    expect(tabs().index, 0);
+    final titles = [
+      for (final title in ['Goals', 'Actions', 'Habits', 'People', 'Locations'])
+        if (find
+            .descendant(of: find.byType(TabBar), matching: find.text(title))
+            .evaluate()
+            .isNotEmpty)
+          title,
+    ];
+    expect(titles.length, greaterThan(2));
+    for (final title in titles.reversed) {
+      await press(
+        tester,
+        LogicalKeyboardKey.findKeyByKeyId(title.toLowerCase().codeUnitAt(0))!,
+      );
+      expect(tabs().index, titles.indexOf(title), reason: title);
+    }
 
     final before = FocusManager.instance.primaryFocus;
     await press(tester, LogicalKeyboardKey.keyJ);

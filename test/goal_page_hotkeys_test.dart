@@ -170,7 +170,7 @@ void main() {
           ?.findAncestorWidgetOfExactType<GoalTile>(),
       isNotNull,
     );
-    await press(tester, LogicalKeyboardKey.keyL);
+    await press(tester, LogicalKeyboardKey.keyA);
     await press(tester, LogicalKeyboardKey.enter);
     expect(find.byType(GoalScreen), findsNothing);
   });
