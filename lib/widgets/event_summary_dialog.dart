@@ -1764,7 +1764,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     Widget chip(int i, {double height = 28}) => _splitChip(
       context,
       shares[i],
-      ids.length == 1 ? 'All of it' : 'The rest',
+      ids.length == 1 ? 'All of it' : 'Split the rest',
       _canEdit('action_ids') ? () => _setActionShare(ids[i]) : null,
       height: height,
     );
