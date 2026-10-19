@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../models/facts.dart';
 import '../models/person.dart';
+import '../models/plan_action.dart';
 import '../models/scoring.dart';
 import '../models/share.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
+import '../services/events_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import '../widgets/durations.dart';
 import '../widgets/focus_buttons.dart';
 import '../widgets/health.dart';
+import 'person_history.dart';
 import 'subject_sections.dart';
 import 'trait_breakdown.dart';
 
@@ -23,8 +26,11 @@ import 'trait_breakdown.dart';
 /// (the actions done and locations of their events, with how often and
 /// when), and a timeline of those events with what happened at each.
 /// Always, the events the user cancelled that count against their
-/// follow-through ([Person.cancelledEvents]). Self's habits are on the
-/// Plan page's Habits pane. [onEdit] edits them, returning them as saved.
+/// follow-through ([Person.cancelledEvents]). The page of all their events
+/// can load every event whose facts name them over the last
+/// [historyYears] years, asked of [events] (or else [memory]'s EventStore's
+/// repository). Self's habits are on the Plan page's Habits pane. [onEdit]
+/// edits them, returning them as saved.
 class PersonScreen extends StatefulWidget {
   const PersonScreen({
     super.key,
@@ -35,6 +41,7 @@ class PersonScreen extends StatefulWidget {
     this.personNames = const {},
     this.actionNames = const {},
     this.locationNames = const {},
+    this.events,
     this.onEdit,
   });
 
@@ -53,6 +60,9 @@ class PersonScreen extends StatefulWidget {
 
   /// Names locations by id, for where their events were.
   final Map<String?, String> locationNames;
+
+  /// Where all their events, over the years, are asked for.
+  final EventsRepository? events;
 
   final Future<Person?> Function()? onEdit;
 
@@ -105,6 +115,27 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
     }
   }
 
+  EventsRepository? get _events =>
+      widget.events ?? widget.memory?.eventStore?.repository;
+
+  /// The actions known, by id, to show an event's by name and color.
+  Map<String, PlanAction> get _actions => {
+    for (final a in widget.memory?.actions?.actions ?? const <PlanAction>[])
+      ?a.id: a,
+  };
+
+  /// Their events over the last [historyYears] years, from [events], as
+  /// what builds their tiles.
+  Future<List<Widget> Function(BuildContext)> _loadAllEvents(
+    EventsRepository events,
+  ) async {
+    final id = _person.id;
+    final history = await loadPersonHistory(events, id);
+    final actions = _actions;
+    return (context) =>
+        personHistoryTiles(context, history, personId: id, actions: actions);
+  }
+
   Future<void> _edit() async {
     final saved = await widget.onEdit!();
     if (saved == null || !mounted) return;
@@ -137,6 +168,10 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
       actionNames: widget.actionNames,
       personNames: widget.personNames,
       locationNames: widget.locationNames,
+      loadAllEvents: switch (_events) {
+        final events? => () => _loadAllEvents(events),
+        null => null,
+      },
     );
     return Scaffold(
       appBar: AppBar(

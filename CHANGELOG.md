@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.155.0
+
+- A person's "All events" page has a "Load all" button: it asks the
+  server for every event that names them -- with them, for them, or with
+  a note on them -- over the last 10 years, and shows those instead,
+  newest first, each with its date and their note. Tapping one opens it,
+  to see. They're asked for when wanted, not kept on the phone.
+
 ## 7.154.0
 
 - Goals can be put in your own order: hold a goal on the Goals pane or a

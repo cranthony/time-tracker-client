@@ -645,6 +645,7 @@ void main() {
       WidgetTester tester, {
       PlanMemory? memory,
       Person? person,
+      EventsRepository? events,
     }) async {
       // Tall enough to show the whole page at once.
       tester.view.physicalSize = const Size(800, 2400);
@@ -667,6 +668,7 @@ void main() {
               'call': 'Call',
             },
             locationNames: const {'cellar': 'The Cellar'},
+            events: events,
           ),
         ),
       );
@@ -778,6 +780,71 @@ void main() {
       ]) {
         expect(find.text(title), findsOneWidget);
       }
+    });
+
+    testWidgets('the page of their events loads all of them, years back, '
+        'with their notes, each opening', (tester) async {
+      final now = DateTime.now();
+      Event old(String id, String summary, int yearsAgo, Facts facts) =>
+          Event.fromJson({
+            'id': id,
+            'summary': summary,
+            'start': localIsoTimestamp(DateTime(now.year - yearsAgo, 3, 4, 18)),
+            'end': localIsoTimestamp(DateTime(now.year - yearsAgo, 3, 4, 20)),
+            'facts': facts.toJson(),
+          });
+      final server = InMemoryEventsRepository([
+        jazz,
+        old('reunion', 'Reunion', 3, const Facts(notes: {'sam': 'First met'})),
+        old('gift', 'Wrapping a gift', 5, const Facts(forIds: ['sam'])),
+        old('ages', 'Long ago', 12, const Facts(withIds: ['sam'])),
+        old('alex', 'Lunch with Alex', 2, const Facts(withIds: ['alex'])),
+      ]);
+      await pump(
+        tester,
+        memory: await _scoredMemory([jazz], people: [sam]),
+        events: server,
+      );
+
+      await tester.tap(find.text('All events'));
+      await tester.pumpAndSettle();
+      expect(find.text('Reunion'), findsNothing);
+
+      await tester.tap(find.text('Load all'));
+      await tester.pumpAndSettle();
+      expect(find.text('Load all'), findsNothing);
+      expect(find.textContaining(RegExp(r'^3 events since ')), findsOneWidget);
+      // Newest first; not those over 10 years ago, nor not naming them.
+      final titles = [
+        for (final tile in tester.widgetList<ListTile>(find.byType(ListTile)))
+          (tile.title as Text).data,
+      ];
+      expect(titles, ['Jazz night', 'Reunion', 'Wrapping a gift']);
+      expect(find.textContaining('“First met”'), findsOneWidget);
+
+      await tester.tap(find.text('Reunion'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Details'));
+      await tester.pumpAndSettle();
+      expect(find.text('reunion'), findsOneWidget);
+    });
+
+    testWidgets("says when all their events couldn't be loaded", (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        memory: await _scoredMemory([jazz], people: [sam]),
+        events: _FailingEvents(),
+      );
+      await tester.tap(find.text('All events'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Load all'));
+      await tester.pumpAndSettle();
+
+      expect(find.text("Couldn't load them all."), findsOneWidget);
+      expect(find.text('Load all'), findsOneWidget);
+      expect(find.text('Jazz night'), findsOneWidget);
     });
 
     testWidgets('J and K go from trait score to trait score', (tester) async {
@@ -1274,4 +1341,14 @@ Future<PlanMemory> _scoredMemory(
         ..people = PeopleList(people: people);
   await memory.eventStore!.warm();
   return memory;
+}
+
+/// Fails to give anyone's events over the years.
+class _FailingEvents extends InMemoryEventsRepository {
+  @override
+  Future<List<Event>> personEvents(
+    String personId,
+    DateTime from,
+    DateTime to,
+  ) async => throw McpException('down');
 }

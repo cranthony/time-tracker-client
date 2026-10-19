@@ -85,6 +85,7 @@ class SubjectSections {
     this.actionNames = const {},
     this.personNames = const {},
     this.locationNames = const {},
+    this.loadAllEvents,
   });
 
   final BuildContext context;
@@ -111,6 +112,10 @@ class SubjectSections {
   final Map<String?, String> actionNames;
   final Map<String?, String> personNames;
   final Map<String?, String> locationNames;
+
+  /// Asks for all its events, not just those scored, for "Load all" on
+  /// the page of them; returns what builds their tiles.
+  final Future<List<Widget> Function(BuildContext)> Function()? loadAllEvents;
 
   /// Everyone's scores, its among them, if they're worked out yet.
   TraitScores? get _scores => memory?.scores;
@@ -178,7 +183,8 @@ class SubjectSections {
   ];
 
   /// Its events in brief -- how many, their time, the most recent and the
-  /// oldest -- with "All events" opening the lot on a page of its own.
+  /// oldest -- with "All events" opening the lot on a page of its own,
+  /// where [loadAllEvents], if given, can load all of them.
   List<Widget> events() => [
     if (scored) ...[
       sectionHeading(_theme, 'Events'),
@@ -199,6 +205,7 @@ class SubjectSections {
             personNames: personNames,
             locationNames: locationNames,
           ),
+          loadAll: loadAllEvents,
         ),
       ),
     ],
@@ -232,15 +239,19 @@ class SubjectSections {
   ];
 
   /// A page of [title] listing what [tiles] builds, built again as
-  /// they're scored again.
-  void _openList(String title, List<Widget> Function(BuildContext) tiles) =>
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => EventListScreen(
-            title: '$title · $name',
-            listenable: memory,
-            tiles: tiles,
-          ),
-        ),
-      );
+  /// they're scored again; with [loadAll], its "Load all" button.
+  void _openList(
+    String title,
+    List<Widget> Function(BuildContext) tiles, {
+    Future<List<Widget> Function(BuildContext)> Function()? loadAll,
+  }) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => EventListScreen(
+        title: '$title · $name',
+        listenable: memory,
+        tiles: tiles,
+        loadAll: loadAll,
+      ),
+    ),
+  );
 }
