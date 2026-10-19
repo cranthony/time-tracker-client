@@ -224,13 +224,14 @@ else
   if poll 20 weather_shown; then weather=yes; else weather=no; fi
   adb exec-out screencap -p > "$OUT/calendar_weather.png"
   # Under "Today", the goals due today, once the app's loaded them, from
-  # the sample data's (lib/demo/sample_data.dart): "Sign up for the race"
-  # (12:30) and "Show the goals due above the timeline" (5 PM), each after
-  # its icon ("Goal"), then "+1" for "Draw the goal icon" (by the day's
-  # end); not "Sketch the Goals pane", which is done. The widget's texts,
-  # in order, kept to those. Should the list have moved past "Today" as
-  # the widget's drawn again, it's scrolled back up to it.
-  GOALS_EXPECTED='Goal|Sign up for the race|Goal|Show the goals due above the timeline|+1'
+  # the sample data's (lib/demo/sample_data.dart), highest priority first:
+  # "Draw the goal icon" (its own P0) and "Show the goals due above the
+  # timeline" (P1, from "Ship the time tracker app"), each after its icon
+  # ("Goal"), then "+1" for "Sign up for the race" (P2, from "Run a half
+  # marathon"); not "Sketch the Goals pane", which is done. The widget's
+  # texts, in order, kept to those. Should the list have moved past
+  # "Today" as the widget's drawn again, it's scrolled back up to it.
+  GOALS_EXPECTED='Goal|Draw the goal icon|Goal|Show the goals due above the timeline|+1'
   goals_shown() {
     ui_nodes > "$OUT/calendar_goals.txt" || return 1
     shown_goals=$(grep "$WIDGET" "$OUT/calendar_goals.txt" |
