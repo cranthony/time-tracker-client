@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.142.1
+
+- An event's action, with its split chip, is level with the plow beside
+  it again, as a location is with its pin: the chip is no taller than
+  the line. A goal's split chip is the same.
+- A split chip is still easy to tap: a lone action's sits at the row's
+  end and is tapped anywhere in the row's height, as the map button is;
+  with several, each is tapped anywhere in its line's height, and a
+  little either side.
+
 ## 7.142.0
 
 - The home screen calendar shows the active goals due each day at the
