@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.152.0
+
+- On the Plan page, each pane has a hotkey: its title's first letter.
+  G goes to Goals, A to Actions, H to Habits, P to People and L to
+  Locations; holding Ctrl shows each on its tab. H and L no longer step
+  to the pane beside the one shown.
+
 ## 7.151.0
 
 - Goals have a priority, P0 the highest, set on a goal's edit page. A
