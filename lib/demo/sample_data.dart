@@ -246,7 +246,12 @@ class SampleData {
           );
         }(),
     ];
-    return ServerHealth(tools: health, memory: memory, restarts: restarts);
+    return ServerHealth(
+      tools: health,
+      memory: memory,
+      memoryInterval: const Duration(minutes: 1),
+      restarts: restarts,
+    );
   }
 
   /// The app's own health, up to [now]: a few days of its tool calls --

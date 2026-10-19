@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +13,7 @@ import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/response_cache.dart';
 import 'package:time_tracker_client/widgets/app_menu.dart';
 import 'package:time_tracker_client/widgets/hotkeys.dart';
+import 'package:time_tracker_client/widgets/status_message.dart';
 
 final _now = DateTime.utc(2026, 10, 9, 12);
 
@@ -98,6 +101,32 @@ ServerHealth _health() => ServerHealth(
   restarts: [_ago(const Duration(hours: 5))],
 );
 
+/// [health], its memory sampled every [interval].
+ServerHealth _every(Duration interval, ServerHealth health) => ServerHealth(
+  tools: health.tools,
+  memory: health.memory,
+  memoryInterval: interval,
+  restarts: health.restarts,
+);
+
+/// Gives its health, counting each time it's fetched; while [hold] is
+/// set, not until it completes, and with [failing], fails.
+class _Counting extends InMemoryDiagnosticsRepository {
+  _Counting(super.health);
+
+  var fetched = 0;
+  Completer<void>? hold;
+  bool failing = false;
+
+  @override
+  Future<ServerHealth> serverHealth() async {
+    fetched++;
+    await hold?.future;
+    if (failing) throw Exception('offline');
+    return health;
+  }
+}
+
 /// [_health], with its memory broken down, and [tabs] sheet tabs kept.
 ServerHealth _brokenDown({int tabs = 2}) {
   List<MemoryPart> parts(double total, double sheets, double calendar) => [
@@ -145,6 +174,24 @@ void main() {
       expect(calls.last.wholeMs, 20);
       expect(health.memory.single.mib, 201.5);
       expect(health.restarts.single, DateTime.utc(2026, 10, 9, 9));
+    });
+
+    test('reads how far apart its memory samples are, a second from a '
+        'server too old to say', () {
+      expect(
+        ServerHealth.fromJson({..._json, 'memory_interval_seconds': 60})
+            .memoryInterval,
+        const Duration(minutes: 1),
+      );
+      expect(
+        ServerHealth.fromJson(_json).memoryInterval,
+        const Duration(seconds: 1),
+      );
+      expect(
+        ServerHealth.fromJson({..._json, 'memory_interval_seconds': 0})
+            .memoryInterval,
+        const Duration(seconds: 1),
+      );
     });
 
     test("reads what the server's memory is made of, when it says", () {
@@ -235,6 +282,50 @@ void main() {
           'list_events',
           'note',
         ],
+      );
+    });
+  });
+
+  group("The server's memory interval", () {
+    test('is said in words', () {
+      expect(eachInterval(const Duration(seconds: 1)), 'each second');
+      expect(eachInterval(const Duration(minutes: 1)), 'each minute');
+      expect(eachInterval(const Duration(minutes: 5)), 'every 5 minutes');
+      expect(eachInterval(const Duration(seconds: 90)), 'every 90 seconds');
+      expect(eachInterval(const Duration(hours: 1)), 'each hour');
+    });
+
+    test('leaves out buckets finer than it', () {
+      expect(BucketSize.atLeast(const Duration(seconds: 1)), BucketSize.values);
+      expect(BucketSize.atLeast(const Duration(minutes: 1)), BucketSize.values);
+      expect(BucketSize.atLeast(const Duration(minutes: 30)), [
+        BucketSize.hour,
+        BucketSize.sixHours,
+        BucketSize.day,
+      ]);
+      expect(BucketSize.atLeast(const Duration(days: 2)), [BucketSize.day]);
+    });
+
+    test('joins samples one after another, however far apart', () {
+      expect(
+        memoryJoinWithin(const Duration(seconds: 1)),
+        const Duration(minutes: 15),
+      );
+      expect(
+        memoryJoinWithin(const Duration(minutes: 1)),
+        const Duration(minutes: 15),
+      );
+      expect(
+        memoryJoinWithin(const Duration(hours: 1)),
+        const Duration(minutes: 90),
+      );
+      expect(
+        memoryJoinWithin(
+          const Duration(minutes: 1),
+          statistic: Statistic.median,
+          bucket: BucketSize.quarterHour,
+        ),
+        const Duration(minutes: 22, seconds: 30),
       );
     });
   });
@@ -613,6 +704,44 @@ void main() {
       expect(find.text('Day'), findsOneWidget);
     });
 
+    testWidgets('offers no bucket finer than the server samples its memory', (
+      tester,
+    ) async {
+      await open(
+        tester,
+        InMemoryDiagnosticsRepository(
+          _every(const Duration(minutes: 30), _health()),
+        ),
+      );
+      await tester.tap(find.text('Each call'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Median').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Hour'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('15 minutes'), findsNothing);
+      expect(find.text('6 hours'), findsWidgets);
+    });
+
+    testWidgets('offers every bucket when the server samples its memory '
+        'each minute', (tester) async {
+      await open(
+        tester,
+        InMemoryDiagnosticsRepository(
+          _every(const Duration(minutes: 1), _health()),
+        ),
+      );
+      await tester.tap(find.text('Each call'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Median').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Hour'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('15 minutes'), findsWidgets);
+    });
+
     testWidgets('zooms in keeping the latest in view, and back out', (
       tester,
     ) async {
@@ -789,6 +918,98 @@ void main() {
         memoryChart(tester).extraLinesData.verticalLines.single.x,
         _ago(const Duration(hours: 2)).millisecondsSinceEpoch.toDouble(),
       );
+    });
+
+    /// What the memory graph's point says first: when it is, and its total.
+    String pointSaid(WidgetTester tester) => tester
+        .widgetList<Text>(
+          find.descendant(
+            of: find.byWidgetPredicate(
+              (w) => w.runtimeType.toString() == '_MemoryBreakdown',
+            ),
+            matching: find.byType(Text),
+          ),
+        )
+        .first
+        .data!;
+
+    final toTheSecond = RegExp(r'\d:\d\d:\d\d');
+
+    testWidgets("says an older server's memory is the most of each second, "
+        'and its points to the second', (tester) async {
+      await open(tester, InMemoryDiagnosticsRepository(_brokenDown()));
+
+      expect(
+        find.textContaining('the most of each second after a call'),
+        findsOneWidget,
+      );
+      expect(pointSaid(tester), contains(toTheSecond));
+    });
+
+    testWidgets('says memory sampled each minute is the most of each minute, '
+        'and its points to the minute', (tester) async {
+      await open(
+        tester,
+        InMemoryDiagnosticsRepository(
+          _every(const Duration(minutes: 1), _brokenDown()),
+        ),
+      );
+
+      expect(
+        find.textContaining('the most of each minute after a call'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('each second'), findsNothing);
+      expect(pointSaid(tester), isNot(contains(toTheSecond)));
+      expect(pointSaid(tester), endsWith(' · 210 MiB'));
+    });
+
+    testWidgets('the refresh button refreshes as pulling the page down '
+        'does, with its indicator', (tester) async {
+      final repository = _Counting(_health());
+      await open(tester, repository);
+      expect(repository.fetched, 1);
+
+      // Pulled down, far enough on a page this tall.
+      await tester.fling(find.text('Tools: '), const Offset(0, 1200), 1000);
+      await tester.pumpAndSettle();
+      expect(repository.fetched, 2);
+
+      // The button: the same indicator, until it's done.
+      repository.hold = Completer();
+      await tester.tap(find.byTooltip('Refresh'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(repository.fetched, 3);
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+      repository.hold!.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(RefreshProgressIndicator), findsNothing);
+      expect(find.byType(LoadError), findsNothing);
+
+      // And its error, as pulling down's.
+      repository.hold = null;
+      repository.failing = true;
+      await tester.tap(find.byTooltip('Refresh'));
+      await tester.pumpAndSettle();
+      expect(repository.fetched, 4);
+      expect(find.byType(LoadError), findsOneWidget);
+      expect(find.text('Memory'), findsWidgets); // What it had, still.
+    });
+
+    testWidgets("the refresh button leaves the server be on the app's pane", (
+      tester,
+    ) async {
+      final repository = _Counting(_health());
+      await open(tester, repository);
+      await tester.tap(find.text('App'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Refresh'));
+      await tester.pumpAndSettle();
+
+      expect(repository.fetched, 1);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets("draws an older server's memory, not broken down, as one "

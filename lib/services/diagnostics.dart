@@ -177,6 +177,44 @@ enum BucketSize {
   const BucketSize(this.label, this.span);
   final String label;
   final Duration span;
+
+  /// The sizes no finer than [interval], samples' closest: the largest
+  /// alone, if every one is.
+  static List<BucketSize> atLeast(Duration interval) {
+    final sizes = [
+      for (final b in values)
+        if (b.span >= interval) b,
+    ];
+    return sizes.isEmpty ? [values.last] : sizes;
+  }
+}
+
+/// [interval] in words, after "the most of": "each second", "each
+/// minute", "every 5 minutes", "every 90 seconds".
+String eachInterval(Duration interval) {
+  final seconds = max(1, interval.inSeconds);
+  final (n, unit) = switch (seconds) {
+    _ when seconds % 3600 == 0 => (seconds ~/ 3600, 'hour'),
+    _ when seconds % 60 == 0 => (seconds ~/ 60, 'minute'),
+    _ => (seconds, 'second'),
+  };
+  return n == 1 ? 'each $unit' : 'every $n ${unit}s';
+}
+
+/// How far apart memory points can be and still be joined: those of
+/// the server refreshing what it keeps -- every 5 minutes, by default,
+/// sampling as it does -- or, with a [statistic], buckets one after
+/// another; and, however long [interval] is, samples one after another.
+Duration memoryJoinWithin(
+  Duration interval, {
+  Statistic? statistic,
+  BucketSize bucket = BucketSize.hour,
+}) {
+  final apart = statistic == null
+      ? const Duration(minutes: 15)
+      : bucket.span * 1.5;
+  final next = interval * 1.5;
+  return apart > next ? apart : next;
 }
 
 /// [statistic] of [values], none empty: a percentile is the nearest
