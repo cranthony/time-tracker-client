@@ -33,6 +33,12 @@ abstract class EventsRepository {
   /// them, day by day, in its EventStore.
   Future<List<Event>> events(DateTime from, DateTime to);
 
+  /// The events from [from] to [to], by start, whose facts name
+  /// [personId]: with them, for them, or with a note on them. Asked for
+  /// when they're wanted, over any span -- years, say -- and not kept in
+  /// the EventStore, which is day by day.
+  Future<List<Event>> personEvents(String personId, DateTime from, DateTime to);
+
   /// Saves [changes], keyed and encoded as `update_event` takes them, to
   /// [event]. Returns the events the server changed: [event]. The server
   /// moves nothing else to make room, and refuses a change that would
@@ -128,6 +134,19 @@ class McpEventsRepository implements EventsRepository {
     await _client.callTool('list_events', {
       'min_time': localIsoTimestamp(from),
       'max_time': localIsoTimestamp(to),
+    }),
+  );
+
+  @override
+  Future<List<Event>> personEvents(
+    String personId,
+    DateTime from,
+    DateTime to,
+  ) async => _sorted(
+    await _client.callTool('list_events', {
+      'min_time': localIsoTimestamp(from),
+      'max_time': localIsoTimestamp(to),
+      'person_id': personId,
     }),
   );
 
@@ -380,6 +399,21 @@ class InMemoryEventsRepository implements EventsRepository {
           )
           .toList()
         ..sort((a, b) => a.start.compareTo(b.start));
+
+  /// Like the server, those of [events] whose facts name [personId].
+  @override
+  Future<List<Event>> personEvents(
+    String personId,
+    DateTime from,
+    DateTime to,
+  ) async => [
+    for (final e in await events(from, to))
+      if (e.facts case final facts?
+          when facts.withIds.contains(personId) ||
+              facts.forIds.contains(personId) ||
+              facts.notes.containsKey(personId))
+        e,
+  ];
 
   /// The ids [createEvent] has given, to give the next a new one.
   int _created = 0;
