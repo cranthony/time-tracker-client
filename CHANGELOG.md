@@ -9,6 +9,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.150.0
+
+- A goal's page refreshes: pull it down, or tap the refresh button in
+  its bar, to load every goal again from the server.
+
 ## 7.149.0
 
 - A sub-goal's deadline can follow its parent's: on its edit page, turn on

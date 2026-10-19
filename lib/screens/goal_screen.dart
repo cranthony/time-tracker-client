@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/goal.dart';
 import '../services/goals_repository.dart';
 import '../services/plan_memory.dart';
+import '../widgets/app_menu.dart' show RefreshButton;
 import '../widgets/event_description.dart';
 import '../widgets/goal_editor.dart';
 import '../widgets/goal_flows.dart';
@@ -40,6 +41,9 @@ class _GoalScreenState extends State<GoalScreen> {
   var _statuses = const {'inactive', 'active'};
   final _selected = <String>{};
 
+  /// The pull-to-refresh, which the refresh button pulls down.
+  final _refresher = GlobalKey<RefreshIndicatorState>();
+
   GoalActions get _actions => GoalActions(
     context: context,
     repository: widget.repository,
@@ -61,6 +65,10 @@ class _GoalScreenState extends State<GoalScreen> {
   void _changed() {
     if (mounted) setState(() {});
   }
+
+  /// Every goal again, from the server.
+  Future<void> _reload() =>
+      widget.memory.loadGoals(widget.repository, again: true);
 
   void _open(Goal goal) => Navigator.of(context).push(
     MaterialPageRoute<void>(
@@ -164,6 +172,9 @@ class _GoalScreenState extends State<GoalScreen> {
                 ),
               ]
             : [
+                RefreshButton(
+                  onRefresh: () async => _refresher.currentState?.show(),
+                ),
                 EditHotkey(
                   child: IconButton(
                     tooltip: 'Edit',
@@ -186,109 +197,117 @@ class _GoalScreenState extends State<GoalScreen> {
                 ),
               ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
-        children: [
-          _statusRow(context, goal),
-          _facts(context, goal, spent[goal.id]),
-          if (goal.description case final text?)
-            _section(
-              context,
-              'Description',
-              EventDescription(text, maxLines: null, selectable: true),
-            ),
-          if (goal.definitionOfDone case final text?)
-            _section(
-              context,
-              'Definition of done',
-              EventDescription(text, maxLines: null, selectable: true),
-            ),
-          if (goal.attributionHints case final text?)
-            _section(context, 'Attribution hints', SelectableText(text)),
-          const Divider(height: 24),
-          Padding(
-            padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 4, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text('Sub-goals', style: theme.textTheme.titleMedium),
-                ),
-                GoalStatusFilter(
-                  statuses: _statuses,
-                  onChanged: (picked) => setState(() => _statuses = picked),
-                ),
-                NewHotkey(
-                  child: IconButton(
-                    tooltip: 'New sub-goal',
-                    icon: const Icon(Icons.add),
-                    onPressed: goal.closed
-                        ? null
-                        : () => _actions.add(parent: goal),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (children.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Text(
-                goal.closed
-                    ? 'Nothing under it.'
-                    : 'Nothing under it yet. Tap + to add a piece of it.',
-                style: TextStyle(color: theme.hintColor),
+      body: RefreshIndicator(
+        key: _refresher,
+        onRefresh: _reload,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            _statusRow(context, goal),
+            _facts(context, goal, spent[goal.id]),
+            if (goal.description case final text?)
+              _section(
+                context,
+                'Description',
+                EventDescription(text, maxLines: null, selectable: true),
               ),
-            )
-          else if (shown.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Text(
-                'None with the statuses shown.',
-                style: TextStyle(color: theme.hintColor),
+            if (goal.definitionOfDone case final text?)
+              _section(
+                context,
+                'Definition of done',
+                EventDescription(text, maxLines: null, selectable: true),
               ),
-            ),
-          // What J and K go down and up: not the buttons over them, nor
-          // the history under them.
-          HotkeyItems(
-            child: Column(
-              children: [
-                for (final child in shown)
-                  GoalTile(
-                    goal: child,
-                    spent: spent[child.id],
-                    subGoals: tree.childrenOf(child.id).length,
-                    selecting: selecting,
-                    selected: _selected.contains(child.id),
-                    onTap: selecting
-                        ? () => _toggle(child)
-                        : () => _open(child),
-                    onLongPress: () => _toggle(child),
-                    onEdit: () => _actions.edit(child),
-                  ),
-              ],
-            ),
-          ),
-          const Divider(height: 24),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text('History', style: theme.textTheme.titleMedium),
-          ),
-          for (final (i, change) in goal.history.indexed.toList().reversed)
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.history, size: 20),
-              title: Text(goalStatuses[change.status] ?? change.status),
-              subtitle: Text(_when(context, change.at)),
-              onTap: () => _actions.retime(goal, i),
-              trailing: goal.history.length < 2
-                  ? null
-                  : IconButton(
-                      tooltip: 'Delete this change',
-                      icon: const Icon(Icons.delete_outline, size: 20),
-                      onPressed: () => _actions.forget(goal, i),
+            if (goal.attributionHints case final text?)
+              _section(context, 'Attribution hints', SelectableText(text)),
+            const Divider(height: 24),
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 4, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Sub-goals',
+                      style: theme.textTheme.titleMedium,
                     ),
+                  ),
+                  GoalStatusFilter(
+                    statuses: _statuses,
+                    onChanged: (picked) => setState(() => _statuses = picked),
+                  ),
+                  NewHotkey(
+                    child: IconButton(
+                      tooltip: 'New sub-goal',
+                      icon: const Icon(Icons.add),
+                      onPressed: goal.closed
+                          ? null
+                          : () => _actions.add(parent: goal),
+                    ),
+                  ),
+                ],
+              ),
             ),
-        ],
+            if (children.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Text(
+                  goal.closed
+                      ? 'Nothing under it.'
+                      : 'Nothing under it yet. Tap + to add a piece of it.',
+                  style: TextStyle(color: theme.hintColor),
+                ),
+              )
+            else if (shown.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Text(
+                  'None with the statuses shown.',
+                  style: TextStyle(color: theme.hintColor),
+                ),
+              ),
+            // What J and K go down and up: not the buttons over them, nor
+            // the history under them.
+            HotkeyItems(
+              child: Column(
+                children: [
+                  for (final child in shown)
+                    GoalTile(
+                      goal: child,
+                      spent: spent[child.id],
+                      subGoals: tree.childrenOf(child.id).length,
+                      selecting: selecting,
+                      selected: _selected.contains(child.id),
+                      onTap: selecting
+                          ? () => _toggle(child)
+                          : () => _open(child),
+                      onLongPress: () => _toggle(child),
+                      onEdit: () => _actions.edit(child),
+                    ),
+                ],
+              ),
+            ),
+            const Divider(height: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text('History', style: theme.textTheme.titleMedium),
+            ),
+            for (final (i, change) in goal.history.indexed.toList().reversed)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.history, size: 20),
+                title: Text(goalStatuses[change.status] ?? change.status),
+                subtitle: Text(_when(context, change.at)),
+                onTap: () => _actions.retime(goal, i),
+                trailing: goal.history.length < 2
+                    ? null
+                    : IconButton(
+                        tooltip: 'Delete this change',
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                        onPressed: () => _actions.forget(goal, i),
+                      ),
+              ),
+          ],
+        ),
       ),
     );
   }
