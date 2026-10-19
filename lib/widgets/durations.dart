@@ -40,8 +40,22 @@ String? formatDuration(Duration? duration) {
   return parts.isEmpty ? '0m' : parts.join(' ');
 }
 
+/// [duration] in weeks, days, hours and minutes, as one would write it:
+/// "1w 2d", "1d 3h"; "0d" for none.
+String formatDays(Duration duration) {
+  final minutes = duration.inMinutes;
+  final parts = [
+    if (minutes ~/ Duration.minutesPerDay ~/ 7 case final w when w > 0) '${w}w',
+    if (minutes ~/ Duration.minutesPerDay % 7 case final d when d > 0) '${d}d',
+    if (minutes ~/ 60 % 24 case final h when h > 0) '${h}h',
+    if (minutes % 60 case final m when m > 0) '${m}m',
+  ];
+  return parts.isEmpty ? '0d' : parts.join(' ');
+}
+
 /// A duration as one would type it: "1h 30m", "1h", "90m", "90" (minutes),
-/// "1:30", or ISO 8601 ("PT1H30M"). Null if [text] is none of those.
+/// "1:30", with weeks and days too ("1w 2d", "1d 3h"), or ISO 8601
+/// ("PT1H30M"). Null if [text] is none of those.
 Duration? parseDuration(String text) {
   final t = text.trim().toLowerCase();
   if (t.startsWith('p')) return parseIsoDuration(t.toUpperCase());
@@ -52,12 +66,17 @@ Duration? parseDuration(String text) {
   final minutes = int.tryParse(t);
   if (minutes != null) return Duration(minutes: minutes);
   final match = RegExp(
-    r'^(?:(\d+)\s*h(?:ours?|rs?)?)?\s*(?:(\d+)\s*m(?:in(?:ute)?s?)?)?$',
+    r'^(?:(\d+)\s*w(?:eeks?|ks?)?)?\s*(?:(\d+)\s*d(?:ays?)?)?\s*'
+    r'(?:(\d+)\s*h(?:ours?|rs?)?)?\s*(?:(\d+)\s*m(?:in(?:ute)?s?)?)?$',
   ).firstMatch(t);
-  if (match == null || (match[1] == null && match[2] == null)) return null;
+  if (match == null || [1, 2, 3, 4].every((i) => match[i] == null)) {
+    return null;
+  }
+  int part(int i) => int.parse(match[i] ?? '0');
   return Duration(
-    hours: int.parse(match[1] ?? '0'),
-    minutes: int.parse(match[2] ?? '0'),
+    days: part(1) * 7 + part(2),
+    hours: part(3),
+    minutes: part(4),
   );
 }
 

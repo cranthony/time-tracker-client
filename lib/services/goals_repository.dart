@@ -262,9 +262,12 @@ class InMemoryGoalsRepository implements GoalsRepository {
         'history': [StatusChange(goal.status, _now).toJson()],
       'version': 1,
     });
-    _check([..._goals, created]);
-    _goals.add(created);
-    return _withPath(created);
+    final all = followingParents([..._goals, created]);
+    _check(all);
+    _goals
+      ..clear()
+      ..addAll(all);
+    return _withPath(all.last);
   }
 
   @override
@@ -278,6 +281,11 @@ class InMemoryGoalsRepository implements GoalsRepository {
     final before = _goals[i];
     final json = {...before.toJson(), ...changes}
       ..removeWhere((_, v) => v == null);
+    // A deadline of its own unties it from its parent's.
+    if (changes.containsKey('deadline') &&
+        !changes.containsKey('deadline_offset_minutes')) {
+      json.remove('deadline_offset_minutes');
+    }
     if (!changes.containsKey('history') && json['status'] != before.status) {
       json['history'] = [
         for (final c in before.history) c.toJson(),
@@ -285,11 +293,12 @@ class InMemoryGoalsRepository implements GoalsRepository {
       ];
     }
     json['version'] = (before.version ?? 0) + 1;
-    final updated = Goal.fromJson(json);
-    final all = [..._goals]..[i] = updated;
+    final all = followingParents([..._goals]..[i] = Goal.fromJson(json));
     _check(all);
-    _goals[i] = updated;
-    return _withPath(updated);
+    _goals
+      ..clear()
+      ..addAll(all);
+    return _withPath(all[i]);
   }
 
   @override

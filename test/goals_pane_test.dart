@@ -272,4 +272,56 @@ void main() {
     await tester.pumpAndSettle();
     expect(result, '<p>Hello <b>there</b></p>');
   });
+
+  testWidgets("a sub-goal's deadline can follow its parent's, a week before "
+      'it', (tester) async {
+    await pump(tester);
+    await tester.tap(find.text('Ship the app'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Write the pane'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Edit').first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text("Follow its parent's deadline"));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1 week before'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Due Tue, Nov 24'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    var saved = {for (final g in await repository.goals()) g.id: g};
+    expect(saved['pane']!.deadline, '2026-11-24');
+    expect(saved['pane']!.deadlineOffsetMinutes, 7 * 24 * 60);
+    await repository.updateGoal('ship', {'deadline': '2026-12-10'});
+    saved = {for (final g in await repository.goals()) g.id: g};
+    expect(saved['pane']!.deadline, '2026-12-03');
+  });
+
+  testWidgets("a goal's status is changed on its edit page, with what that "
+      'takes', (tester) async {
+    await pump(tester);
+    await tester.tap(find.text('Ship the app'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Edit').first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Active').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Obsolete').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text("What becomes of what's still open under it?"),
+      findsOneWidget,
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Mark obsolete'));
+    await tester.pumpAndSettle();
+
+    final saved = {for (final g in await repository.goals()) g.id: g.status};
+    expect(saved, containsPair('ship', 'obsolete'));
+    expect(saved, containsPair('pane', 'obsolete'));
+  });
 }

@@ -18,6 +18,7 @@ class Goal {
     this.required = false,
     this.expectedMinutes,
     this.deadline,
+    this.deadlineOffsetMinutes,
     this.status = 'active',
     this.history = const [],
     this.description,
@@ -44,6 +45,12 @@ class Goal {
   /// the end of that day) or a date and time ("2026-11-01T17:00"), local.
   /// Needed while it's active.
   final String? deadline;
+
+  /// Set, [deadline] follows its parent's: this many minutes before it
+  /// (0, the same), kept so by the server whenever the parent's changes,
+  /// while it's open. A deadline set without it unties it; so does a move
+  /// to the top level.
+  final int? deadlineOffsetMinutes;
 
   /// One of [goalStatuses]' keys.
   final String status;
@@ -86,6 +93,9 @@ class Goal {
   /// When it falls due, local: a date's at the midnight after it.
   DateTime? get due => deadlineEnd(deadline);
 
+  /// Whether its deadline follows its parent's.
+  bool get followsParent => deadlineOffsetMinutes != null;
+
   factory Goal.fromJson(Map<String, dynamic> json) => Goal(
     id: json['id'] as String,
     title: json['title'] as String? ?? '',
@@ -93,6 +103,7 @@ class Goal {
     required: json['required'] == true,
     expectedMinutes: (json['expected_minutes'] as num?)?.toInt(),
     deadline: _text(json['deadline']),
+    deadlineOffsetMinutes: (json['deadline_offset_minutes'] as num?)?.toInt(),
     status: json['status'] as String? ?? 'active',
     history: [
       for (final c in json['history'] as List? ?? const [])
@@ -114,6 +125,7 @@ class Goal {
     if (required) 'required': true,
     'expected_minutes': ?expectedMinutes,
     'deadline': ?deadline,
+    'deadline_offset_minutes': ?deadlineOffsetMinutes,
     'status': status,
     if (history.isNotEmpty) 'history': [for (final c in history) c.toJson()],
     'description': ?description,
@@ -196,6 +208,56 @@ String deadlineOf(DateTime date, {bool time = false}) {
 
 /// Whether [deadline] has a time of day, not just a date.
 bool deadlineHasTime(String? deadline) => deadline?.contains('T') ?? false;
+
+/// The deadline [minutes] before [parent], as the server works it out: a
+/// date, if [parent] is one and it's whole days before; else a date and
+/// time. Null if [parent] isn't a deadline.
+String? deadlineBefore(String? parent, int minutes) {
+  final text = parent?.trim();
+  final end = deadlineEnd(text);
+  if (text == null || end == null) return null;
+  if (minutes == 0) return text;
+  if (!deadlineHasTime(text) && minutes % Duration.minutesPerDay == 0) {
+    return deadlineOf(
+      DateTime(
+        end.year,
+        end.month,
+        end.day - 1 - minutes ~/ Duration.minutesPerDay,
+      ),
+    );
+  }
+  return deadlineOf(end.subtract(Duration(minutes: minutes)), time: true);
+}
+
+/// [goals] with each open one whose deadline follows its parent's given
+/// the deadline that follows from it, parents first -- and one at the
+/// top level untied -- as the server keeps them.
+List<Goal> followingParents(List<Goal> goals) {
+  final out = [...goals];
+  final at = {for (final (i, g) in out.indexed) g.id: i};
+  // A pass for each level, at most.
+  for (var pass = 0; pass < out.length; pass++) {
+    var again = false;
+    for (final (i, goal) in out.indexed) {
+      final minutes = goal.deadlineOffsetMinutes;
+      if (minutes == null || goal.closed || minutes < 0) continue;
+      final json = goal.toJson();
+      if (goal.parentId == null) {
+        json.remove('deadline_offset_minutes');
+      } else {
+        final parent = at[goal.parentId];
+        if (parent == null) continue;
+        final deadline = deadlineBefore(out[parent].deadline, minutes);
+        if (deadline == null || deadline == goal.deadline) continue;
+        json['deadline'] = deadline;
+        again = true;
+      }
+      out[i] = Goal.fromJson({...json, 'path': goal.path});
+    }
+    if (!again) break;
+  }
+  return out;
+}
 
 // -- Goals together --------------------------------------------------------
 
@@ -420,6 +482,9 @@ List<String> goalProblems(List<Goal> goals) {
     }
     if (goal.deadline != null && goal.due == null) {
       problems.add("${name(goal)}'s deadline isn't a date.");
+    }
+    if (goal.deadlineOffsetMinutes case final m? when m < 0) {
+      problems.add("${name(goal)}'s deadline can't follow its parent's.");
     }
     if (goal.active && goal.deadline == null) {
       problems.add('${name(goal)} is active, so it needs a deadline.');

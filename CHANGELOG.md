@@ -9,6 +9,20 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.149.0
+
+- A sub-goal's deadline can follow its parent's: on its edit page, turn on
+  "Follow its parent's deadline" and pick the same, 1 day before, 1 week
+  before, or any length typed ("2d", "1d 3h"). It moves whenever the
+  parent's does. Setting a deadline of its own, or moving it to the top
+  level, unties it. Once done, missed or obsolete, it keeps the deadline
+  it had.
+- The duration picker can count in weeks and days, with a stepper for
+  each.
+- A goal's status can be changed on its edit page. Saving does what the
+  status buttons do: activating its parents, deactivating its sub-goals,
+  or asking what becomes of those left open.
+
 ## 7.148.0
 
 - An Add goal home screen widget: a one-cell round button with the app's

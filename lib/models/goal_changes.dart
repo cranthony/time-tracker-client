@@ -82,12 +82,21 @@ List<Goal> applied(
                 })
               : goal,
         );
+        final followed = followingParents(out);
+        out
+          ..clear()
+          ..addAll(followed);
       case GoalUpdate(:final id, :final changes):
         final i = out.indexWhere((g) => g.id == id);
         if (i < 0) continue;
         final before = out[i];
         final json = {...before.toJson(), ...changes}
           ..removeWhere((_, v) => v == null);
+        // A deadline of its own unties it from its parent's.
+        if (changes.containsKey('deadline') &&
+            !changes.containsKey('deadline_offset_minutes')) {
+          json.remove('deadline_offset_minutes');
+        }
         if (!changes.containsKey('history') &&
             json['status'] != before.status) {
           json['history'] = [
@@ -96,6 +105,10 @@ List<Goal> applied(
           ];
         }
         out[i] = Goal.fromJson(json);
+        final followed = followingParents(out);
+        out
+          ..clear()
+          ..addAll(followed);
       case GoalDelete(:final id):
         out.removeWhere((g) => g.id == id);
       case GoalBatch(changes: final several):
@@ -158,8 +171,9 @@ class MoveLeftover extends Leftover {
 Map<String, Object?> fitUnder(Goal goal, Goal? parent) {
   if (parent == null || goal.closed) return const {};
   return {
+    // One that follows its parent's deadline moves with it.
     if ((goal.due, parent.due) case (final due?, final parentDue?)
-        when due.isAfter(parentDue))
+        when due.isAfter(parentDue) && !goal.followsParent)
       'deadline': parent.deadline,
     if ((goal.expectedMinutes, parent.expectedMinutes)
         case (final m?, final pm?) when m > pm)
@@ -289,6 +303,49 @@ List<GoalChange> deleting(
     GoalDelete(goal.id),
   ];
 }
+
+/// [changes] with [fields] changed in goal [id] too: in its own update,
+/// if there's one, or else first.
+List<GoalChange> withFields(
+  List<GoalChange> changes,
+  String id,
+  Map<String, Object?> fields,
+) {
+  if (fields.isEmpty) return changes;
+  final i = changes.indexWhere((c) => c is GoalUpdate && c.id == id);
+  if (i < 0) return [GoalUpdate(id, fields), ...changes];
+  return [
+    for (final (j, c) in changes.indexed)
+      if (j == i)
+        GoalUpdate(id, {...fields, ...(c as GoalUpdate).changes})
+      else
+        c,
+  ];
+}
+
+/// [goal] edited: [fields] changed, and its status set to [status], with
+/// what that takes ([activating], [deactivating] or [closing]) -- each
+/// inactive parent given the deadline [deadlines] says, and each open
+/// sub-goal ending as [leftovers] says (closed as it is, by default).
+List<GoalChange> editing(
+  GoalTree tree,
+  Goal goal,
+  Map<String, Object?> fields, {
+  String? status,
+  Map<String, String> deadlines = const {},
+  Map<String, Leftover> leftovers = const {},
+  Goal? made,
+}) => withFields(
+  switch (status) {
+    null => const [],
+    final s when s == goal.status => const [],
+    'active' => activating(tree, [goal], deadlines: deadlines),
+    'inactive' => deactivating(tree, goal),
+    final s => closing(tree, goal, s, leftovers: leftovers, made: made),
+  },
+  goal.id,
+  fields,
+);
 
 /// The end of [now]'s day, as a deadline: "End of today".
 String endOfToday(DateTime now) => deadlineOf(now);

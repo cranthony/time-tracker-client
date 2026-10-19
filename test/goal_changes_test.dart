@@ -182,4 +182,64 @@ void main() {
     expect(endOfWeek(DateTime(2026, 10, 17, 9)), '2026-10-18');
     expect(endOfWeek(DateTime(2026, 10, 18, 9)), '2026-10-18');
   });
+
+  test("a deadline before its parent's is a date while it's whole days", () {
+    expect(deadlineBefore('2026-11-20', 0), '2026-11-20');
+    expect(deadlineBefore('2026-11-20', 7 * 24 * 60), '2026-11-13');
+    expect(deadlineBefore('2026-11-01', 60), '2026-11-01T23:00');
+    expect(deadlineBefore('2026-11-20T17:00', 24 * 60), '2026-11-19T17:00');
+    expect(deadlineBefore(null, 0), isNull);
+  });
+
+  test("a tied sub-goal follows its parent's deadline at any depth, until "
+      'given one of its own or moved to the top', () {
+    final tied = [
+      _goal('top', deadline: '2026-11-20'),
+      Goal.fromJson({
+        ..._goal('mid', parent: 'top').toJson(),
+        'deadline_offset_minutes': 24 * 60,
+      }),
+      Goal.fromJson({
+        ..._goal('low', parent: 'mid').toJson(),
+        'deadline_offset_minutes': 0,
+      }),
+    ];
+    Map<String, (String?, int?)> deadlines(List<Goal> goals) => {
+      for (final g in goals) g.id: (g.deadline, g.deadlineOffsetMinutes),
+    };
+
+    var after = applied(tied, [
+      const GoalUpdate('top', {'deadline': '2026-11-10'}),
+    ], now: _now);
+    expect(deadlines(after), {
+      'top': ('2026-11-10', null),
+      'mid': ('2026-11-09', 24 * 60),
+      'low': ('2026-11-09', 0),
+    });
+
+    after = applied(after, [
+      const GoalUpdate('mid', {'deadline': '2026-11-01'}),
+      const GoalUpdate('low', {'parent_id': null}),
+      const GoalUpdate('top', {'deadline': '2026-11-05'}),
+    ], now: _now);
+    expect(deadlines(after), {
+      'top': ('2026-11-05', null),
+      'mid': ('2026-11-01', null),
+      'low': ('2026-11-01', null),
+    });
+  });
+
+  test("a goal's edit comes with what its new status takes", () {
+    expect(
+      _described(editing(tree, tree['b']!, {'title': 'B!'}, status: 'active')),
+      ["update b {title: B!, status: active}"],
+    );
+    expect(
+      _described(editing(tree, tree['a']!, {'title': 'A!'}, status: 'done')),
+      ['update a1 {status: done}', 'update a {title: A!, status: done}'],
+    );
+    expect(_described(editing(tree, tree['a']!, {'title': 'A!'})), [
+      'update a {title: A!}',
+    ]);
+  });
 }

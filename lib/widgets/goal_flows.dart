@@ -139,7 +139,8 @@ class GoalActions {
     _shown([GoalCreate(created)]);
   }
 
-  /// Edits [goal].
+  /// Edits [goal] -- a change of its status made as [setStatus] makes it,
+  /// with the rest of the edit.
   Future<void> edit(Goal goal) async {
     final changes = await showGoalEditor(
       context,
@@ -148,35 +149,62 @@ class GoalActions {
       now: now,
     );
     if (changes == null || changes.isEmpty || !context.mounted) return;
+    final fields = {...changes};
+    if (fields.remove('status') case final String status) {
+      await setStatus(goal, status, also: fields);
+      return;
+    }
     await save("Couldn't save ${goalTitle(goal)}", [
-      GoalUpdate(goal.id, changes),
+      GoalUpdate(goal.id, fields),
     ]);
   }
 
   /// Sets [goal]'s status to [status], with what that takes: activating
   /// its parents, deactivating its sub-goals, or deciding what becomes
-  /// of those left open.
-  Future<void> setStatus(Goal goal, String status) async {
+  /// of those left open -- and [also] changed in it too, if given.
+  Future<void> setStatus(
+    Goal goal,
+    String status, {
+    Map<String, Object?> also = const {},
+  }) async {
     switch (status) {
       case 'active':
-        await activate([goal]);
+        await activate([goal], also: also);
       case 'inactive':
-        await deactivate(goal);
+        await deactivate(goal, also: also);
       case 'done' || 'missed' || 'obsolete':
-        await close(goal, status);
+        await close(goal, status, also: also);
     }
   }
 
   /// Activates [picked], and the inactive parents they're under, asking
   /// for each one's deadline that has none -- from [at], if it's given (an
   /// event's start, say): then each is backdated to it, or to its last
-  /// change, if that's later.
-  Future<void> activate(List<Goal> picked, {DateTime? at}) async {
-    final tree = this.tree;
+  /// change, if that's later. With [also], the one picked has that
+  /// changed in it too.
+  Future<void> activate(
+    List<Goal> picked, {
+    DateTime? at,
+    Map<String, Object?> also = const {},
+  }) async {
+    final tree = also.isEmpty
+        ? this.tree
+        : GoalTree(
+            applied(goals, [GoalUpdate(picked.single.id, also)], now: now()),
+          );
+    picked = [for (final g in picked) tree[g.id] ?? g];
     final all = [...inactiveParents(tree, picked), ...picked];
     final deadlines = await _askDeadlines(all, tree);
     if (deadlines == null || !context.mounted) return;
-    final changes = activating(tree, picked, deadlines: deadlines);
+    final changes = also.isEmpty
+        ? activating(tree, picked, deadlines: deadlines)
+        : editing(
+            tree,
+            picked.single,
+            also,
+            status: 'active',
+            deadlines: deadlines,
+          );
     await save(
       picked.length == 1
           ? "Couldn't activate ${goalTitle(picked.single)}"
@@ -202,8 +230,12 @@ class GoalActions {
     });
   }
 
-  /// Deactivates [goal] -- its active sub-goals too, if the user agrees.
-  Future<void> deactivate(Goal goal) async {
+  /// Deactivates [goal] -- its active sub-goals too, if the user agrees --
+  /// with [also] changed in it too.
+  Future<void> deactivate(
+    Goal goal, {
+    Map<String, Object?> also = const {},
+  }) async {
     final tree = this.tree;
     final active = [
       for (final g in tree.descendantsOf(goal.id))
@@ -222,14 +254,19 @@ class GoalActions {
     }
     await save(
       "Couldn't deactivate ${goalTitle(goal)}",
-      deactivating(tree, goal),
+      editing(tree, goal, also, status: 'inactive'),
     );
   }
 
   /// Marks [goal] [status] ("done", "missed" or "obsolete"), asking what
   /// becomes of each sub-goal left open: done, missed, obsolete, or moved
-  /// elsewhere. Done waits for its required sub-goals.
-  Future<void> close(Goal goal, String status) async {
+  /// elsewhere. Done waits for its required sub-goals. With [also]
+  /// changed in it too.
+  Future<void> close(
+    Goal goal,
+    String status, {
+    Map<String, Object?> also = const {},
+  }) async {
     final tree = this.tree;
     if (status == 'done') {
       final needed = requiredOpen(tree, goal);
@@ -257,7 +294,14 @@ class GoalActions {
     }
     await save(
       "Couldn't mark ${goalTitle(goal)} $status",
-      closing(tree, goal, status, leftovers: leftovers, made: made),
+      editing(
+        tree,
+        goal,
+        also,
+        status: status,
+        leftovers: leftovers,
+        made: made,
+      ),
     );
   }
 
