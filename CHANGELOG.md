@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.162.0
+
+- A person can have their own prompts for a trait's fact. On their
+  page, the tune button beside each fact's summary edits them. Each
+  prompt can use the trait's, replace it, or add to it, and the undo
+  button goes back to the trait's.
+- A fact whose prompts are their own says so above its summary.
+  Compaction rewrites the summary to fit the next time an event is with
+  or for them.
+
 ## 7.161.1
 
 - Opening a note to edit it puts the cursor at the end of its

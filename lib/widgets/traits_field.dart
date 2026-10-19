@@ -83,6 +83,8 @@ class _TraitsFieldState extends State<TraitsField> {
             if (picked(key)) key: value,
         },
         scoring: _scoring,
+        // Edited beside their summaries, and kept here as they are.
+        facts: widget.value.facts,
       ),
     );
   }

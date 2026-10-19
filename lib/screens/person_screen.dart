@@ -12,6 +12,8 @@ import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import '../widgets/durations.dart';
+import '../widgets/error_sheet.dart';
+import '../widgets/fact_prompts_dialog.dart';
 import '../widgets/focus_buttons.dart';
 import '../widgets/health.dart';
 import 'person_history.dart';
@@ -139,6 +141,39 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
         personHistoryTiles(context, history, personId: id, actions: actions);
   }
 
+  /// Edits their own prompts for [trait]'s [fact] -- or, with [reset],
+  /// lets go of them, to use the trait's -- and saves them to [people].
+  Future<void> _editFactPrompts(
+    PeopleRepository people,
+    Trait trait,
+    TraitFact fact, {
+    bool reset = false,
+  }) async {
+    final traitId = trait.id;
+    if (traitId == null) return;
+    final prompts = reset
+        ? const FactPromptOverride()
+        : await showFactPromptsDialog(
+            context,
+            trait: trait,
+            fact: fact,
+            current: _person.traits.factPrompts(traitId, fact.id),
+            whose: _person.isSelf ? 'your' : 'their',
+          );
+    if (prompts == null || !mounted) return;
+    final traits = _person.traits.withFactPrompts(traitId, fact.id, prompts);
+    await runOrShowError(
+      context,
+      title: "Couldn't save the prompts",
+      action: () async {
+        final saved = await people.updatePerson(_person.id, {
+          'traits': traits.isDefault ? null : traits.toJson(),
+        });
+        if (mounted) setState(() => _person = saved);
+      },
+    );
+  }
+
   Future<void> _edit() async {
     final saved = await widget.onEdit!();
     if (saved == null || !mounted) return;
@@ -173,6 +208,15 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
         final people? => (traitId) => people.factLogs(
           _person.id,
           traitId: traitId,
+        ),
+        null => null,
+      },
+      onFactPrompts: switch (PeopleScope.of(context)) {
+        final people? => (trait, fact, {reset = false}) => _editFactPrompts(
+          people,
+          trait,
+          fact,
+          reset: reset,
         ),
         null => null,
       },
@@ -501,6 +545,8 @@ List<Widget> traitScoreTiles(
   Person? person,
   Map<String, Trait> traitList = const {},
   Future<List<FactLog>> Function(String traitId)? factLogs,
+  Future<void> Function(Trait trait, TraitFact fact, {bool reset})?
+  onFactPrompts,
 }) {
   final theme = Theme.of(context);
   // A person's summary of each of a trait's facts, null for none yet.
@@ -585,22 +631,59 @@ List<Widget> traitScoreTiles(
           },
         ),
       ),
-      // Under it, what it keeps about them.
+      // Under it, what it keeps about them, and by whose prompts.
       for (final (fact, summary) in factsOf(score.traitId))
         Padding(
-          padding: const EdgeInsets.fromLTRB(32, 0, 16, 8),
-          child: Column(
+          padding: EdgeInsets.fromLTRB(
+            32,
+            0,
+            onFactPrompts == null ? 16 : 4,
+            8,
+          ),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(fact.name, style: theme.textTheme.labelLarge),
-              Text(
-                summary ?? 'Nothing yet.',
-                style: summary == null
-                    ? theme.textTheme.bodySmall?.copyWith(
-                        color: theme.hintColor,
-                      )
-                    : theme.textTheme.bodySmall,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      person?.traits.factPrompts(score.traitId, fact.id) == null
+                          ? fact.name
+                          : '${fact.name} · ${whom == 'you' ? 'your' : 'their'} own prompts',
+                      style: theme.textTheme.labelLarge,
+                    ),
+                    Text(
+                      summary ?? 'Nothing yet.',
+                      style: summary == null
+                          ? theme.textTheme.bodySmall?.copyWith(
+                              color: theme.hintColor,
+                            )
+                          : theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
               ),
+              if ((onFactPrompts, traitList[score.traitId]) case (
+                final edit?,
+                final trait?,
+              )) ...[
+                IconButton(
+                  tooltip: whom == 'you'
+                      ? 'Your own prompts'
+                      : 'Their own prompts',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.tune),
+                  onPressed: () => edit(trait, fact),
+                ),
+                if (person?.traits.factPrompts(score.traitId, fact.id) != null)
+                  IconButton(
+                    tooltip: "Use ${trait.name}'s prompts",
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.undo),
+                    onPressed: () => edit(trait, fact, reset: true),
+                  ),
+              ],
             ],
           ),
         ),

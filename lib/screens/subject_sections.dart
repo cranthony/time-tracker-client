@@ -84,6 +84,7 @@ class SubjectSections {
     this.noteOf,
     this.person,
     this.factLogs,
+    this.onFactPrompts,
     this.actionNames = const {},
     this.personNames = const {},
     this.locationNames = const {},
@@ -116,6 +117,11 @@ class SubjectSections {
   /// keeps about them, and [factLogs] (by trait id) what changed in it.
   final Person? person;
   final Future<List<FactLog>> Function(String traitId)? factLogs;
+
+  /// Edits their own prompts for a trait's fact -- or, with reset, lets
+  /// go of them -- beside its summary.
+  final Future<void> Function(Trait trait, TraitFact fact, {bool reset})?
+  onFactPrompts;
   final Map<String?, String> actionNames;
   final Map<String?, String> personNames;
   final Map<String?, String> locationNames;
@@ -187,6 +193,7 @@ class SubjectSections {
             person: person,
             traitList: traitList,
             factLogs: factLogs,
+            onFactPrompts: onFactPrompts,
           ),
         ),
       ),

@@ -157,6 +157,7 @@ PersonTraits traitsWithPartIds(PersonTraits traits, {bool fresh = false}) =>
       },
       partScoring: traits.partScoring,
       scoring: traits.scoring,
+      facts: traits.facts,
     );
 
 /// How [trait]'s parts combine for [subject]: their own scoring for it,
