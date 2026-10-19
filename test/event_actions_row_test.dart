@@ -109,13 +109,13 @@ void main() {
           tester.getTopLeft(find.text('Floss')).dy,
       28,
     );
-    expect(tester.getSize(room('The rest')).height, greaterThanOrEqualTo(28));
+    expect(tester.getSize(room('Split the rest')).height, greaterThanOrEqualTo(28));
     expect(
-      tester.getSize(pill('The rest')).height,
+      tester.getSize(pill('Split the rest')).height,
       lessThanOrEqualTo(tester.getSize(find.text('Floss')).height),
     );
 
-    await tapRoom(tester, 'The rest', 1);
+    await tapRoom(tester, 'Split the rest', 1);
     expect(find.text('Duration'), findsOneWidget);
   });
 }

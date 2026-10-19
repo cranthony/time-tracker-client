@@ -9,6 +9,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.156.2
+
+- An action's split chip says "Split the rest", not "The rest", when
+  it shares what the others leave.
+
 ## 7.156.1
 
 - The Habits pane, and the health of habits and people wherever it
