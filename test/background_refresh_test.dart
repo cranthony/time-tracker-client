@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/proposal.dart';
@@ -8,11 +9,13 @@ import 'package:time_tracker_client/screens/background_updates_screen.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/services/background_refresh.dart';
+import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/services/response_cache.dart';
 import 'package:time_tracker_client/services/schedule_hints_repository.dart';
+import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/widgets/app_menu.dart';
 
 const _morning = ScheduleHint(hour: 7, minute: 30, label: 'Morning compaction');
@@ -291,6 +294,54 @@ void main() {
       expect(record.fetched, ['routine times']);
       expect(record.failed, ['actions']);
       expect(record.ok, isFalse);
+    });
+
+    test(
+      'fetches the goals, keeping them for the app and its widget',
+      () async {
+        final cache = InMemoryResponseCache();
+        final client = _Client([
+          {'id': 'g1', 'title': 'Run 5k', 'status': 'active'},
+        ]);
+        final record = await refreshCaches(
+          goals: McpGoalsRepository(client, cache: cache),
+          clock: () => _now,
+        );
+        final kept = await McpGoalsRepository(
+          _Client(null),
+          cache: cache,
+        ).cachedGoals();
+
+        expect(record.fetched, ['goals']);
+        expect(client.called, ['get_goals']);
+        expect(kept!.single.title, 'Run 5k');
+      },
+    );
+
+    test('fetches the traits and their scoring defaults', () async {
+      final cache = InMemoryResponseCache();
+      final client = _ToolsClient({
+        'get_traits': const <Object?>[],
+        'get_scoring_defaults': const <String, Object?>{},
+      });
+      final record = await refreshCaches(
+        traits: McpTraitsRepository(client, cache: cache),
+        clock: () => _now,
+      );
+      final kept = McpTraitsRepository(_Client(null), cache: cache);
+
+      expect(record.fetched, ['traits']);
+      expect(client.called, ['get_traits', 'get_scoring_defaults']);
+      expect(await kept.cachedScoringDefaults(), isNotNull);
+    });
+
+    test('says when it could not fetch the goals', () async {
+      final record = await refreshCaches(
+        goals: _FailingGoals(McpException('down')),
+        clock: () => _now,
+      );
+
+      expect(record.failed, ['goals']);
     });
 
     test('stops, signed out', () async {
@@ -587,6 +638,24 @@ class _Client extends McpClient {
   }
 }
 
+/// Answers each tool with its own result.
+class _ToolsClient extends McpClient {
+  _ToolsClient(this.results) : super(endpoint: Uri.parse('http://test'));
+
+  final Map<String, Object?> results;
+  final called = <String>[];
+
+  @override
+  Future<Object?> callTool(
+    String name, [
+    Map<String, Object?> arguments = const {},
+    String? writeId,
+  ]) async {
+    called.add(name);
+    return results[name];
+  }
+}
+
 Proposal _proposal({required DateTime through, DateTime? claudeThrough}) =>
     Proposal(
       id: 'abc123def456',
@@ -641,4 +710,13 @@ class _FailingActions extends InMemoryActionsRepository {
 
   @override
   Future<ActionList> actions() async => throw error;
+}
+
+class _FailingGoals extends InMemoryGoalsRepository {
+  _FailingGoals(this.error);
+
+  final Object error;
+
+  @override
+  Future<List<Goal>> goals() async => throw error;
 }

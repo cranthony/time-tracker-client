@@ -11,6 +11,7 @@ import '../models/trait.dart' show traitStatuses;
 import 'actions_repository.dart';
 import 'app_settings.dart';
 import 'event_store.dart';
+import 'goals_repository.dart';
 import 'habits_repository.dart';
 import 'mcp_client.dart';
 import 'notes_repository.dart';
@@ -180,8 +181,8 @@ class RefreshRecord {
 /// What a background fetch reads, each into what the app keeps from run
 /// to run, for it to show at once when it opens: the routines' times
 /// (to plan the next), the notes not yet compacted and when notes were
-/// last compacted, the open proposal, every action, trait, person,
-/// location and habit, and the week either side of today's events. Each
+/// last compacted, the open proposal, every action, trait (and the
+/// traits' scoring defaults), person, location, habit and goal, and the week either side of today's events. Each
 /// is fetched on its own, best effort; signed out, it stops. [clock]
 /// says when it ran.
 ///
@@ -198,6 +199,7 @@ Future<RefreshRecord> refreshCaches({
   TraitsRepository? traits,
   PeopleRepository? people,
   HabitsRepository? habits,
+  GoalsRepository? goals,
   EventStore? events,
   bool Function(ScheduleHint hint)? expects,
   DateTime Function() clock = DateTime.now,
@@ -236,7 +238,10 @@ Future<RefreshRecord> refreshCaches({
       'traits',
       traits == null
           ? null
-          : () => traits.traits(statuses: [...traitStatuses.keys]),
+          : () async {
+              await traits.traits(statuses: [...traitStatuses.keys]);
+              await traits.scoringDefaults();
+            },
     ),
     (
       'people',
@@ -248,6 +253,7 @@ Future<RefreshRecord> refreshCaches({
             },
     ),
     ('habits', habits == null ? null : () => habits.habits()),
+    ('goals', goals == null ? null : () => goals.goals()),
     (
       'events',
       events == null

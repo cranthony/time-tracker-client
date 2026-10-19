@@ -9,6 +9,17 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.163.1
+
+- The home screen calendar's goals stay up to date while the app's
+  closed: the background fetch gets the goals along with everything
+  else, rather than showing the ones from the app's last run.
+- Coming back to the app asks for the goals again, so the goals due
+  above the timeline, and on the home screen calendar, show changes
+  made elsewhere -- by Claude, say -- without opening another page.
+- The background fetch gets the traits' scoring defaults too, so the
+  scores shown as the app opens use the latest.
+
 ## 7.163.0
 
 - A goal can name the people it's done with and the people it's for.
