@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/widgets/actions_picker.dart';
@@ -71,17 +72,16 @@ void main() {
     expect(find.text('Dal'), findsNothing);
     expect(find.text('Running'), findsNothing);
 
-    // Enter picks the top match, and clears the search.
+    // Enter goes to the top match; Enter again picks it.
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pumpAndSettle();
+    expect(picked, isEmpty);
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'Top result');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
     expect(picked, ['tofu']);
-    expect(find.text('Running'), findsOneWidget);
-    // Shown where it sits in the tree, and the search kept for the next.
+    // A chip, and still in what's found.
     expect(find.text('Tofu'), findsNWidgets(2));
-    expect(
-      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
-      isTrue,
-    );
 
     await tester.enterText(find.byType(TextField), 'nothing like it');
     await tester.pumpAndSettle();
@@ -153,11 +153,14 @@ void main() {
     expect(find.byType(ActionsPicker), findsNothing);
     expect(find.text('Cooking › Dal'), findsOneWidget);
 
-    // Searched, and picked with Enter.
+    // Searched, and picked with Enter, then Enter on the top match.
     await tester.tap(find.byType(ActionField));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'old');
     await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(value, 'dal');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(value, 'old');
 

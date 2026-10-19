@@ -16,8 +16,9 @@ import 'tree_picker.dart';
 /// action; never those in [exclude]. Calls [onChanged] with the new ids, in
 /// the order they were picked, so the first stays the primary action.
 ///
-/// With [single], it picks one action, with no chips: tapping an action (or
-/// Enter, for the top match) calls [onChanged] with just that one. With
+/// With [single], it picks one action, with no chips: tapping an action
+/// calls [onChanged] with just that one. Enter in the search moves the
+/// keyboard to the top match, for Enter again to pick it. With
 /// [leavesOnly], groups are shown, to find what's in them, but can't be
 /// picked: only actions can be given to an event -- tapping one opens or
 /// closes it. With [none], a row by that name, over the list, picks no

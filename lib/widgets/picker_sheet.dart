@@ -20,8 +20,8 @@ import 'tree_picker.dart';
 
 /// A sheet up from the foot of the screen, as a note's is, with room to
 /// pick from a long list: [title] and Done across its top, and [body]
-/// filling the rest. Done returns what [result] gives; swiping it down,
-/// tapping above it, or Back, null.
+/// filling the rest. Done -- or Ctrl+Enter -- returns what [result] gives;
+/// swiping it down, tapping above it, or Back, null.
 Future<T?> showPickerSheet<T>(
   BuildContext context, {
   required String title,
@@ -36,34 +36,37 @@ Future<T?> showPickerSheet<T>(
     heightFactor: 0.9,
     child: Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: StatefulBuilder(
-        builder: (context, setState) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 12, 4),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleLarge,
+      child: SaveHotkey(
+        onSave: () => Navigator.of(context).pop(result()),
+        child: StatefulBuilder(
+          builder: (context, setState) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 12, 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
                     ),
-                  ),
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).pop(result()),
-                    child: const Text('Done'),
-                  ),
-                ],
+                    FilledButton(
+                      onPressed: () => Navigator.of(context).pop(result()),
+                      child: const Text('Done'),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: body(context, setState),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: body(context, setState),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     ),

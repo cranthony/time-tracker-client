@@ -52,8 +52,11 @@ typedef PickerAdd = ({String noun, IconData icon, ValueChanged<String> onAdd});
 /// each with its path. Calls [onChanged] with the ids, in the order they
 /// were picked.
 ///
+/// Enter in the search moves the keyboard to the top result, to pick it
+/// (or unpick it) with Enter or Space, or go on down with J.
+///
 /// With [single], it picks one, with no chips: tapping one picks it (a
-/// radio button marks it), and Enter picks the top match. A group can be
+/// radio button marks it). A group can be
 /// picked only with [groupsPickable]: then tapping it picks it, and its
 /// arrow opens it; otherwise tapping it opens or closes it. With [none],
 /// a row by that name, over the list, picks nothing.
@@ -135,6 +138,13 @@ class _TreePickerState extends State<TreePicker> {
   /// so everything is to hand -- even what's added while it's open.
   final Set<String> _closed = {};
 
+  /// The top result's, to move the keyboard to from the search.
+  final _top = FocusNode(debugLabel: 'Top result');
+
+  /// The top result's id: what can be picked first, as shown -- or, with
+  /// nothing to pick, the first row.
+  String? _topId;
+
   @override
   void initState() {
     super.initState();
@@ -162,6 +172,7 @@ class _TreePickerState extends State<TreePicker> {
   void dispose() {
     _search.removeListener(_searched);
     _own?.dispose();
+    _top.dispose();
     super.dispose();
   }
 
@@ -206,12 +217,30 @@ class _TreePickerState extends State<TreePicker> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final query = _search.query;
-    final rows = query.isEmpty
-        ? _tree()
+    final shown = query.isEmpty
+        ? _visible()
         : [
             for (final node in query.filter(widget.nodes, _text))
-              _row(node, subtitle: node.above ?? node.detail),
+              (node: node, depth: 0, inside: 0, open: false),
           ];
+    _topId =
+        (shown.where((r) => _pickable(r.node)).firstOrNull ?? shown.firstOrNull)
+            ?.node
+            .id;
+    final rows = [
+      for (final r in shown)
+        query.isEmpty
+            ? _row(
+                r.node,
+                depth: r.depth,
+                subtitle: r.depth == 0
+                    ? r.node.above ?? r.node.detail
+                    : r.node.detail,
+                inside: r.inside,
+                open: r.open,
+              )
+            : _row(r.node, subtitle: r.node.above ?? r.node.detail),
+    ];
     final list = [
       if (widget.none case final none?) _noneRow(none),
       if (widget.nodes.isEmpty)
@@ -243,18 +272,7 @@ class _TreePickerState extends State<TreePicker> {
           child: PickerSearchField(
             search: _search,
             hint: widget.searchHint,
-            // The top match, picked (or unpicked) from the keyboard.
-            // What's typed now, which may not have been built yet.
-            onSubmitted: (text) {
-              final query = PickerQuery(text, any: _search.matchAny);
-              if (query.isEmpty) return;
-              final top = query
-                  .filter(widget.nodes.where(_pickable), _text)
-                  .firstOrNull;
-              if (top == null) return;
-              _toggle(top, !widget.picked.contains(top.id));
-              _search.controller.clear();
-            },
+            onSubmitted: (_) => _focusTop(),
           ),
         ),
         // Above the list, not in it: always to hand.
@@ -315,28 +333,33 @@ class _TreePickerState extends State<TreePicker> {
     );
   }
 
-  /// The tree, each branch shown only while it's open. One whose group
-  /// isn't among [TreePicker.nodes] sits at the top, its path under it.
-  List<Widget> _tree() {
+  /// The keyboard, to the top result -- once what's typed now is shown,
+  /// which it may not have been yet -- scrolled into view.
+  void _focusTop() {
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _top.context;
+      if (!mounted || context == null) return;
+      _top.requestFocus();
+      Scrollable.ensureVisible(context);
+    });
+  }
+
+  /// The tree's rows, each branch shown only while it's open: each node,
+  /// how many groups in, how many are in it, and whether it's open. One
+  /// whose group isn't among [TreePicker.nodes] sits at the top.
+  List<({PickerNode node, int depth, int inside, bool open})> _visible() {
     final ids = {for (final node in widget.nodes) node.id};
     final children = <String?, List<PickerNode>>{};
     for (final node in widget.nodes) {
       final parent = ids.contains(node.parentId) ? node.parentId : null;
       children.putIfAbsent(parent, () => []).add(node);
     }
-    final rows = <Widget>[];
+    final rows = <({PickerNode node, int depth, int inside, bool open})>[];
     void visit(PickerNode node, int depth) {
       final inside = children[node.id] ?? const <PickerNode>[];
       final open = !_closed.contains(node.id);
-      rows.add(
-        _row(
-          node,
-          depth: depth,
-          subtitle: depth == 0 ? node.above ?? node.detail : node.detail,
-          inside: inside.length,
-          open: open,
-        ),
-      );
+      rows.add((node: node, depth: depth, inside: inside.length, open: open));
       if (open) {
         for (final child in inside) {
           visit(child, depth + 1);
@@ -392,6 +415,7 @@ class _TreePickerState extends State<TreePicker> {
   }) {
     final hint = Theme.of(context).hintColor;
     final picked = widget.picked.contains(node.id);
+    final focus = node.id == _topId ? _top : null;
     final title = Row(
       children: [
         if (widget.marker case final marker?) ...[
@@ -414,6 +438,7 @@ class _TreePickerState extends State<TreePicker> {
       return ListTile(
         dense: true,
         contentPadding: indent,
+        focusNode: focus,
         leading: Icon(Icons.folder_outlined, color: hint),
         trailing: arrow,
         title: title,
@@ -426,6 +451,7 @@ class _TreePickerState extends State<TreePicker> {
         dense: true,
         contentPadding: indent,
         selected: picked,
+        focusNode: focus,
         leading: Icon(
           picked ? Icons.radio_button_checked : Icons.radio_button_unchecked,
         ),
@@ -440,6 +466,7 @@ class _TreePickerState extends State<TreePicker> {
       contentPadding: EdgeInsetsDirectional.only(start: 16.0 * depth),
       controlAffinity: ListTileControlAffinity.leading,
       value: picked,
+      focusNode: focus,
       // With the box leading, this sits at the end.
       secondary: arrow,
       title: title,

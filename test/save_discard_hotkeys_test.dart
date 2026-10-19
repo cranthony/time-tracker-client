@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/widgets/tree_picker.dart';
+import 'package:time_tracker_client/widgets/share_dialog.dart';
+import 'package:time_tracker_client/models/share.dart';
 import 'package:time_tracker_client/outbox/action_writes.dart';
 import 'package:time_tracker_client/outbox/note_writes.dart';
 import 'package:time_tracker_client/screens/home_screen.dart';
@@ -248,5 +251,80 @@ void main() {
       first?.context?.findAncestorWidgetOfExactType<TabBarView>(),
       isNotNull,
     );
+  });
+
+  group('Ctrl+Enter presses Done, or Save', () {
+    Future<void> open(
+      WidgetTester tester,
+      VoidCallback Function(BuildContext) opens,
+    ) async {
+      await tester.pumpWidget(
+        app(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: opens(context),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('in a picker sheet, from its search', (tester) async {
+      List<String>? result;
+      await open(
+        tester,
+        (context) =>
+            () async => result = await pickNodes(
+              context,
+              title: 'Who',
+              nodes: const [PickerNode(id: 'sam', label: 'Sam')],
+              picked: const ['sam'],
+            ),
+      );
+      await tester.enterText(find.byType(TextField), 'sam');
+      await ctrl(tester, LogicalKeyboardKey.enter);
+      expect(result, ['sam']);
+      expect(find.text('Who'), findsNothing);
+    });
+
+    testWidgets("in a share's dialog, once it can be set", (tester) async {
+      LocationShare? result;
+      var closed = false;
+      await open(
+        tester,
+        (context) => () async {
+          result = await showShareDialog(
+            context,
+            title: 'Home',
+            share: const LocationShare('home'),
+            eventMinutes: 60,
+            kind: 'location',
+            rest: 'The rest',
+            make: (minutes, percent, remaining) => LocationShare(
+              'home',
+              minutes: minutes,
+              percent: percent,
+              remaining: remaining,
+            ),
+          );
+          closed = true;
+        },
+      );
+      await tester.tap(find.text('Minutes'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '0');
+      await tester.pump();
+      // Nothing to set: Save can't be pressed, nor Ctrl+Enter save.
+      await ctrl(tester, LogicalKeyboardKey.enter);
+      expect(closed, isFalse);
+      await tester.enterText(find.byType(TextField), '45');
+      await tester.pump();
+      await ctrl(tester, LogicalKeyboardKey.enter);
+      expect(closed, isTrue);
+      expect(result?.minutes, 45);
+    });
   });
 }

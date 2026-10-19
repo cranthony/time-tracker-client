@@ -9,6 +9,7 @@ import '../services/plan_memory.dart';
 import 'event_names.dart';
 import 'event_summary_dialog.dart';
 import 'status_bar.dart';
+import 'hotkeys.dart';
 
 /// The [EventOutbox]'s part of the [StatusBar]: how many changes to
 /// events wait to be saved, and whether they're being sent, paused,
@@ -421,27 +422,30 @@ class _WriteTile extends StatelessWidget {
     final save = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text(write.label),
-          content: SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Count against follow-through'),
-            subtitle: const Text(
-              'A commitment dropped, not just a change of plan.',
+        builder: (context, setState) => SaveHotkey(
+          onSave: () => Navigator.of(context).pop(true),
+          child: AlertDialog(
+            title: Text(write.label),
+            content: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Count against follow-through'),
+              subtitle: const Text(
+                'A commitment dropped, not just a change of plan.',
+              ),
+              value: counts,
+              onChanged: (on) => setState(() => counts = on),
             ),
-            value: counts,
-            onChanged: (on) => setState(() => counts = on),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Save'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Save'),
-            ),
-          ],
         ),
       ),
     );

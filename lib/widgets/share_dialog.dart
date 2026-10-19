@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/share.dart';
 import 'durations.dart';
+import 'hotkeys.dart';
 
 /// How much of an event, [eventMinutes] long, what [share] is of -- a
 /// [kind] of thing ("goal"), called [title] -- takes: the rest (what the
@@ -92,80 +93,79 @@ class _ShareDialogState<S extends Share> extends State<_ShareDialog<S>> {
   @override
   Widget build(BuildContext context) {
     final share = _share;
-    return AlertDialog(
-      title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'How much of this ${formatMinutes(widget.eventMinutes)} event is '
-            'for it?',
+    final save = share == null ? null : () => Navigator.of(context).pop(share);
+    return SaveHotkey(
+      onSave: save,
+      child: AlertDialog(
+        title: Text(widget.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'How much of this ${formatMinutes(widget.eventMinutes)} event is '
+              'for it?',
+            ),
+            const SizedBox(height: 12),
+            SegmentedButton<_Kind>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: _Kind.rest, label: Text('The rest')),
+                ButtonSegment(value: _Kind.minutes, label: Text('Minutes')),
+                ButtonSegment(value: _Kind.percent, label: Text('Percent')),
+              ],
+              selected: {_kind},
+              onSelectionChanged: (picked) =>
+                  setState(() => _kind = picked.single),
+            ),
+            const SizedBox(height: 12),
+            switch (_kind) {
+              _Kind.rest => Text(widget.rest),
+              _Kind.minutes => TextField(
+                controller: _minutes,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Minutes',
+                  helperText: 'At most ${widget.eventMinutes}',
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              _Kind.percent => TextField(
+                controller: _percent,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Percent',
+                  suffixText: '%',
+                  helperText:
+                      "Of what the ${widget.kind}s given minutes don't take",
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            },
+            if (_kind != _Kind.rest)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: _plusRest,
+                title: const Text('And the rest too'),
+                subtitle: Text(
+                  'Also counts the time left over, as a ${widget.kind} given '
+                  'neither does',
+                ),
+                onChanged: (on) => setState(() => _plusRest = on ?? false),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
           ),
-          const SizedBox(height: 12),
-          SegmentedButton<_Kind>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: _Kind.rest, label: Text('The rest')),
-              ButtonSegment(value: _Kind.minutes, label: Text('Minutes')),
-              ButtonSegment(value: _Kind.percent, label: Text('Percent')),
-            ],
-            selected: {_kind},
-            onSelectionChanged: (picked) =>
-                setState(() => _kind = picked.single),
-          ),
-          const SizedBox(height: 12),
-          switch (_kind) {
-            _Kind.rest => Text(widget.rest),
-            _Kind.minutes => TextField(
-              controller: _minutes,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Minutes',
-                helperText: 'At most ${widget.eventMinutes}',
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-            _Kind.percent => TextField(
-              controller: _percent,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Percent',
-                suffixText: '%',
-                helperText:
-                    "Of what the ${widget.kind}s given minutes don't take",
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-          },
-          if (_kind != _Kind.rest)
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              value: _plusRest,
-              title: const Text('And the rest too'),
-              subtitle: Text(
-                'Also counts the time left over, as a ${widget.kind} given '
-                'neither does',
-              ),
-              onChanged: (on) => setState(() => _plusRest = on ?? false),
-            ),
+          FilledButton(onPressed: save, child: const Text('Set')),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: share == null
-              ? null
-              : () => Navigator.of(context).pop(share),
-          child: const Text('Set'),
-        ),
-      ],
     );
   }
 }
