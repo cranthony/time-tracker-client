@@ -4,6 +4,7 @@ import '../models/goal.dart';
 import '../services/goals_repository.dart';
 import '../services/plan_memory.dart';
 import '../widgets/goal_flows.dart';
+import '../widgets/goal_reorder_list.dart';
 import '../widgets/goal_tile.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/plan_pane.dart';
@@ -145,23 +146,23 @@ class GoalsPaneState extends State<GoalsPane> {
               ),
             ],
           ),
-          _ => ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            children: [
-              for (final goal in shown)
-                GoalTile(
-                  goal: goal,
-                  spent: spent[goal.id],
-                  subGoals: tree.childrenOf(goal.id).length,
-                  priority: tree.priorityOf(goal.id),
-                  onTap: () => _open(goal),
-                  onEdit: () => _actions.edit(goal),
-                ),
-              if (shown.isEmpty)
-                _query.trim().isEmpty
-                    ? _message('No goals with the statuses shown.')
-                    : NoMatches(query: _query),
-            ],
+          _ => GoalReorderList(
+            goals: shown,
+            tree: tree,
+            onMove: _actions.reorder,
+            tile: (goal) => GoalTile(
+              goal: goal,
+              spent: spent[goal.id],
+              subGoals: tree.childrenOf(goal.id).length,
+              priority: tree.priorityOf(goal.id),
+              onTap: () => _open(goal),
+              onEdit: () => _actions.edit(goal),
+            ),
+            footer: shown.isNotEmpty
+                ? null
+                : _query.trim().isEmpty
+                ? _message('No goals with the statuses shown.')
+                : NoMatches(query: _query),
           ),
         },
       ),

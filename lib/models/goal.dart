@@ -17,6 +17,7 @@ class Goal {
     this.parentId,
     this.required = false,
     this.priority,
+    this.sortOrder,
     this.expectedMinutes,
     this.deadline,
     this.deadlineOffsetMinutes,
@@ -41,6 +42,11 @@ class Goal {
   /// How much it matters, 0 the most, as actions' priorities; null, it
   /// takes its nearest parent's ([GoalTree.priorityOf]).
   final int? priority;
+
+  /// Where it's listed among goals that otherwise list alike -- the same
+  /// priority, due the same day ([GoalTree.listAlike]): the lowest first,
+  /// those with none after them. Set by dragging it.
+  final int? sortOrder;
 
   /// How long it's expected to take: a guide for estimating, compared
   /// with the time spent, never enforced.
@@ -107,6 +113,7 @@ class Goal {
     parentId: _text(json['parent_id']),
     required: json['required'] == true,
     priority: (json['priority'] as num?)?.toInt(),
+    sortOrder: (json['sort_order'] as num?)?.toInt(),
     expectedMinutes: (json['expected_minutes'] as num?)?.toInt(),
     deadline: _text(json['deadline']),
     deadlineOffsetMinutes: (json['deadline_offset_minutes'] as num?)?.toInt(),
@@ -130,6 +137,7 @@ class Goal {
     'parent_id': ?parentId,
     if (required) 'required': true,
     'priority': ?priority,
+    'sort_order': ?sortOrder,
     'expected_minutes': ?expectedMinutes,
     'deadline': ?deadline,
     'deadline_offset_minutes': ?deadlineOffsetMinutes,
@@ -343,20 +351,48 @@ class GoalTree {
       ancestorsOf(id).reversed.map((g) => g.priority).nonNulls.firstOrNull ??
       defaultGoalPriority;
 
-  /// [byPriority]'s order, with each goal's priority as [priorityOf] has
-  /// it.
+  /// [byPriority]'s order: the highest priority (the lowest number) first,
+  /// each one's as [priorityOf] has it; then by the day it's due, soonest
+  /// first, those with no deadline last; then by [Goal.sortOrder], the
+  /// lowest first, those with none after; then as [compareByDeadline] has
+  /// them.
   int compare(Goal a, Goal b) {
     final byPriority = priorityOf(a.id).compareTo(priorityOf(b.id));
-    return byPriority != 0 ? byPriority : compareByDeadline(a, b);
+    if (byPriority != 0) return byPriority;
+    final byDay = switch ((dueDay(a), dueDay(b))) {
+      (final x?, final y?) => x.compareTo(y),
+      (_?, null) => -1,
+      (null, _?) => 1,
+      (null, null) => 0,
+    };
+    if (byDay != 0) return byDay;
+    final byOrder = switch ((a.sortOrder, b.sortOrder)) {
+      (final x?, final y?) => x.compareTo(y),
+      (_?, null) => -1,
+      (null, _?) => 1,
+      (null, null) => 0,
+    };
+    return byOrder != 0 ? byOrder : compareByDeadline(a, b);
   }
+
+  /// Whether [a] and [b] list alike but for their [Goal.sortOrder]: the
+  /// same priority, due the same day (or neither due). Only such goals can
+  /// be dragged past each other.
+  bool listAlike(Goal a, Goal b) =>
+      priorityOf(a.id) == priorityOf(b.id) && dueDay(a) == dueDay(b);
 }
+
+/// The day [goal] is due ("2026-11-01"), whatever the time; null if it has
+/// no deadline.
+String? dueDay(Goal goal) =>
+    goal.due == null ? null : goal.deadline!.trim().split('T').first;
 
 /// The priority a goal with none, anywhere up its tree, is treated as.
 const defaultGoalPriority = 3;
 
-/// [goals] as the app lists them: the highest priority (the lowest
-/// number) first, each one's as [GoalTree.priorityOf] has it in [tree] --
-/// by default, [goals] themselves -- then as [compareByDeadline] has them.
+/// [goals] as the app lists them, as [GoalTree.compare] has them in
+/// [tree] -- by default, [goals] themselves: by priority, then the day
+/// due, then the user's own order, then the time due and title.
 List<Goal> byPriority(Iterable<Goal> goals, [GoalTree? tree]) {
   final listed = [...goals];
   return listed..sort((tree ?? GoalTree(listed)).compare);

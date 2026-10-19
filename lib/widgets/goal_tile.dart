@@ -46,9 +46,8 @@ Color goalColor(BuildContext context, Goal goal) {
 /// One goal in a list: its icon, title -- with [priority], the one that
 /// applies, after it as a chip, filled when it's the goal's own and
 /// outlined when it's inherited or the default -- when it's due and the
-/// time spent toward it -- and, if it's not active, its status. Tapped, it opens
-/// ([onTap]); its button at the right edits it ([onEdit]). While
-/// [selecting], it has a box to tick instead of its icon.
+/// time spent toward it -- and, if it's not active, its status. Tapped, it
+/// opens ([onTap]); its button at the right edits it ([onEdit]).
 class GoalTile extends StatelessWidget {
   const GoalTile({
     super.key,
@@ -58,9 +57,6 @@ class GoalTile extends StatelessWidget {
     this.priority,
     this.onTap,
     this.onEdit,
-    this.onLongPress,
-    this.selecting = false,
-    this.selected = false,
   });
 
   final Goal goal;
@@ -74,9 +70,6 @@ class GoalTile extends StatelessWidget {
   final int? priority;
   final VoidCallback? onTap;
   final VoidCallback? onEdit;
-  final VoidCallback? onLongPress;
-  final bool selecting;
-  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -93,10 +86,7 @@ class GoalTile extends StatelessWidget {
     return Opacity(
       opacity: goal.closed ? 0.6 : 1,
       child: ListTile(
-        selected: selected,
-        leading: selecting
-            ? Checkbox(value: selected, onChanged: (_) => onTap?.call())
-            : GoalIcon(color: goalColor(context, goal)),
+        leading: GoalIcon(color: goalColor(context, goal)),
         title: Row(
           children: [
             Flexible(
@@ -121,7 +111,7 @@ class GoalTile extends StatelessWidget {
                     ? TextStyle(color: theme.colorScheme.error)
                     : null,
               ),
-        trailing: onEdit == null || selecting
+        trailing: onEdit == null
             ? null
             : IconButton(
                 tooltip: 'Edit ${goalTitle(goal)}',
@@ -129,7 +119,6 @@ class GoalTile extends StatelessWidget {
                 onPressed: onEdit,
               ),
         onTap: onTap,
-        onLongPress: onLongPress,
       ),
     );
   }

@@ -9,6 +9,17 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.154.0
+
+- Goals can be put in your own order: hold a goal on the Goals pane or a
+  goal's page and drag it. It moves only among goals of the same
+  priority due the same day; dragged past one it can't pass, it says
+  why ("It can't go above a higher-priority goal.") and drops at the
+  nearest place it can go. The order replaces sorting by title, and
+  within a day it comes before the time due, wherever goals are listed.
+- Selecting sub-goals on a goal's page, and activating them together, is
+  gone: holding a sub-goal now drags it.
+
 ## 7.153.0
 
 - The strip saying the metadata spreadsheet or calendar was changed
