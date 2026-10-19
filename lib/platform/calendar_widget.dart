@@ -6,12 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:home_widget/home_widget.dart';
 
 import '../models/event.dart';
+import '../models/goal.dart';
 import '../models/plan_action.dart';
 import '../models/weather.dart';
 import '../services/app_settings.dart';
 import '../services/weather.dart';
 import '../services/event_store.dart';
 import '../widgets/day_timeline.dart' show eventColor;
+import '../widgets/goals_due_strip.dart' show goalsDueOn;
 
 /// A tap on the Android home screen calendar: on an event, its time and
 /// id; on a day's header, that day's start; on the widget's own header,
@@ -26,6 +28,9 @@ typedef CalendarTap = ({DateTime? at, String? eventId});
 /// [EventStore] -- and has it drawn again. The widget leaves out what's
 /// over as it's drawn, and [publish] has it drawn again as each event
 /// starts or ends, and as each day does, so it always starts at now.
+///
+/// Above each day's events are the active goals due that day: the two
+/// due soonest, and how many more there are.
 ///
 /// Each day's header also gives its weather, if it's on: its sky's icon,
 /// its chance of rain -- today's from now -- and its high and low, the
@@ -91,11 +96,12 @@ class CalendarWidget {
   Stream<CalendarTap> get taps => _taps.stream;
 
   /// Keeps [store]'s events from [now] to [days] days ahead -- the
-  /// colors from [actions] -- for the widget, and has it drawn again,
-  /// unless they're as they were.
+  /// colors from [actions] -- and the [goals] due those days for the
+  /// widget, and has it drawn again, unless they're as they were.
   Future<void> publish(
     EventStore store, {
     Iterable<PlanAction> actions = const [],
+    Iterable<Goal> goals = const [],
     DateTime? now,
   }) async {
     if (!enabled) return;
@@ -103,6 +109,7 @@ class CalendarWidget {
     final snapshot = calendarSnapshot(
       store,
       actions: actions,
+      goals: goals,
       now: now ?? DateTime.now(),
     );
     final json = snapshot == null ? null : jsonEncode(snapshot);
@@ -177,10 +184,12 @@ class CalendarWidget {
 /// that it has, up to [CalendarWidget.days]: each day's start and end
 /// (milliseconds since the epoch), and the events in it, by start --
 /// one across midnight in each day it's in -- each with its [eventColor]
-/// from [actions]. Null if it hasn't today's: there's nothing to show.
+/// from [actions] -- and the active [goals] due in it, as [goalsDueOn] has them. Null
+/// if it hasn't today's: there's nothing to show.
 Map<String, Object?>? calendarSnapshot(
   EventStore store, {
   Iterable<PlanAction> actions = const [],
+  Iterable<Goal> goals = const [],
   required DateTime now,
 }) {
   final byId = {for (final a in actions) ?a.id: a};
@@ -190,9 +199,15 @@ Map<String, Object?>? calendarSnapshot(
     final next = DateTime(now.year, now.month, now.day + i + 1);
     if (!store.has(day)) break;
     final from = i == 0 ? now : day;
+    final due = goalsDueOn(goals.where((g) => g.active), day);
     days.add({
       'start': day.millisecondsSinceEpoch,
       'end': next.millisecondsSinceEpoch,
+      if (due.isNotEmpty)
+        'goals': [
+          for (final g in due.take(2)) {'id': g.id, 'title': g.title},
+        ],
+      if (due.length > 2) 'more_goals': due.length - 2,
       'events': [
         for (final e in store.between(from, next))
           if (!e.isCancelled) _event(e, byId),

@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.142.0
+
+- The home screen calendar shows the active goals due each day at the
+  top of that day: the two due soonest, each a line with the goal icon
+  and its title (cut off with "..." if it's too long), so together
+  they're one event's height, and "+N" for any more.
+
 ## 7.141.0
 
 - Ctrl+Enter presses Done in every picker sheet -- actions, goals, who,

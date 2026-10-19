@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/demo/weather_sample.dart';
 import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/weather.dart';
@@ -118,6 +119,37 @@ void main() {
     test('leaves out cancelled events', () {
       final store = _store([_event('off', 0, hour: 15, cancelled: true)]);
       expect(_ids(calendarSnapshot(store, now: _now)).first, isEmpty);
+    });
+
+    test('gives each day the two active goals due soonest in it', () {
+      final goals = [
+        const Goal(id: 'late', title: 'Late', deadline: '2026-10-08'),
+        const Goal(id: 'b', title: 'B', deadline: '2026-10-08T09:00'),
+        const Goal(id: 'a', title: 'A', deadline: '2026-10-08T09:00'),
+        const Goal(id: 'third', title: 'Third', deadline: '2026-10-08T17:00'),
+        const Goal(
+          id: 'done',
+          title: 'Done',
+          deadline: '2026-10-08T08:00',
+          status: 'done',
+        ),
+        const Goal(id: 'tomorrow', title: 'Tomorrow', deadline: '2026-10-09'),
+        const Goal(id: 'overdue', title: 'Overdue', deadline: '2026-10-07'),
+        const Goal(id: 'none', title: 'None', status: 'inactive'),
+      ];
+      final days =
+          calendarSnapshot(_store([]), goals: goals, now: _now)!['days']
+              as List;
+      expect((days[0] as Map)['goals'], [
+        {'id': 'a', 'title': 'A'},
+        {'id': 'b', 'title': 'B'},
+      ]);
+      expect((days[0] as Map)['more_goals'], 2);
+      expect((days[1] as Map)['goals'], [
+        {'id': 'tomorrow', 'title': 'Tomorrow'},
+      ]);
+      expect((days[1] as Map).containsKey('more_goals'), isFalse);
+      expect((days[2] as Map).containsKey('goals'), isFalse);
     });
 
     test('shows only the days kept, from today, in a row', () {

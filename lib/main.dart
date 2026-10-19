@@ -374,6 +374,9 @@ Future<void> _refreshInBackground() async {
   await CalendarWidget().publish(
     events,
     actions: (await actions.cachedActions())?.actions ?? const [],
+    goals:
+        await McpGoalsRepository(client, cache: cache).cachedGoals() ??
+        const [],
   );
   final now = DateTime.now();
   final next = nextRefresh(
@@ -575,6 +578,13 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     if (calendar == null || !calendar.enabled) return;
     _planMemory.addListener(_calendarChanged);
     _calendarChanged();
+    // The goals due each day, for it: what was kept, then afresh. Not
+    // otherwise loaded till a page that names them opens.
+    if (widget.goalsRepository case final goals?) {
+      unawaited(
+        _planMemory.prefetchNames(goals: goals, onLoaded: _calendarChanged),
+      );
+    }
     if (widget.weather case final weather?) {
       _calendarWeather = CalendarWeatherLink(
         widget: calendar,
@@ -599,6 +609,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         widget.calendarWidget?.publish(
           store,
           actions: _planMemory.shownActions?.actions ?? const [],
+          goals: _planMemory.goals ?? const [],
         ),
       );
     });

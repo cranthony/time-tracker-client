@@ -23,8 +23,8 @@
 #                                   background task, each sent once.
 #   tool/emulator/calendar_widget_test.sh
 #                                   the home screen calendar shows the
-#                                   sample events, and its taps open
-#                                   Events, and the New note dialog.
+#                                   sample events and goals, and its taps
+#                                   open Events, and the New note dialog.
 name: Emulator tests
 
 on:

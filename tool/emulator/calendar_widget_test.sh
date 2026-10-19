@@ -15,7 +15,10 @@
 #              events from the sample data, and today's weather in its
 #              header, in order: the sample forecast's chance of rain
 #              (70%), its high and low (61/50°, or 61° / 50°) and its
-#              sky (cloudy) -- all of it at the widget's 3 cells
+#              sky (cloudy) -- all of it at the widget's 3 cells; and under
+#              "Today", the sample's goals due today: the two active ones
+#              due soonest, in order, each with the goal icon, the second
+#              with "+1" for the third, and not the done one
 #   event_cold an event tapped, the app's process gone: Events, showing it
 #   day_warm   a day's header tapped, the app in the background: Events
 #   add_note   its "+" tapped: the New note dialog
@@ -220,6 +223,34 @@ else
   }
   if poll 20 weather_shown; then weather=yes; else weather=no; fi
   adb exec-out screencap -p > "$OUT/calendar_weather.png"
+  # Under "Today", the goals due today, once the app's loaded them, from
+  # the sample data's (lib/demo/sample_data.dart): "Sign up for the race"
+  # (12:30) and "Show the goals due above the timeline" (5 PM), each after
+  # its icon ("Goal"), then "+1" for "Draw the goal icon" (by the day's
+  # end); not "Sketch the Goals pane", which is done. The widget's texts,
+  # in order, kept to those. Should the list have moved past "Today" as
+  # the widget's drawn again, it's scrolled back up to it.
+  GOALS_EXPECTED='Goal|Sign up for the race|Goal|Show the goals due above the timeline|+1'
+  goals_shown() {
+    ui_nodes > "$OUT/calendar_goals.txt" || return 1
+    shown_goals=$(grep "$WIDGET" "$OUT/calendar_goals.txt" |
+      grep -oE '(text|content-desc)="[^"]*"' | sed 's/^[a-z-]*="\(.*\)"$/\1/' |
+      grep -xE 'Goal|Sign up for the race|Show the goals due above the timeline|Draw the goal icon|Sketch the Goals pane|\+[0-9]+' |
+      paste -sd '|')
+    [ "$shown_goals" = "$GOALS_EXPECTED" ] && return 0
+    if ! grep "$WIDGET" "$OUT/calendar_goals.txt" | grep -q 'text="Today"'; then
+      local b
+      b=$(list_bounds)
+      if [ -n "$b" ]; then
+        set -- $b
+        adb shell input swipe $((($1 + $3) / 2)) $(($2 + 10)) $((($1 + $3) / 2)) $(($4 - 10)) 300
+        sleep 1
+      fi
+    fi
+    return 1
+  }
+  if poll 30 goals_shown; then goals=yes; else goals=no; fi
+  adb exec-out screencap -p > "$OUT/calendar_goals.png"
   # The list may start with today's events, or with nothing planned:
   # scroll it until an event to tap (pick_event, below) shows, a dozen
   # times at most -- after 7:45 AM, today's other events (Breakfast to Get
@@ -252,6 +283,8 @@ else
   grep -qE "text=\"$SAMPLE_EVENTS\"" "$OUT/calendar_shown.txt" || missing+=(events)
   [ "$weather" = yes ] ||
     missing+=("today's weather (\"💧70% 61/50° ☁️\"; got \"$today_weather\")")
+  [ "$goals" = yes ] ||
+    missing+=("today's goals (\"$GOALS_EXPECTED\"; got \"${shown_goals:-}\")")
   if [ ${#missing[@]} -eq 0 ]; then
     pass shown
   else

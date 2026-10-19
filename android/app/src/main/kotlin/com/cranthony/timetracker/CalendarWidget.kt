@@ -2,6 +2,13 @@ package com.cranthony.timetracker
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.PointF
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.net.Uri
 import android.text.format.DateFormat
 import android.text.format.DateUtils
@@ -59,6 +66,10 @@ import org.json.JSONObject
  * of rain, its high and low, and its sky -- today's, what's left of it --
  * as the app keeps them apart (calendar_weather), redrawing it with each
  * forecast. Too narrow for all of it, the high and low go first.
+ *
+ * Under each day's header are the active goals due that day: the two
+ * due soonest, a line each, so together they're an event's height --
+ * and how many more there are.
  *
  * Tapping an event, a day, or the header opens the app on Events there
  * (see MainActivity); the "+" opens the New note dialog, as AddNoteWidget
@@ -154,8 +165,17 @@ class CalendarWidgetReceiver : HomeWidgetGlanceWidgetReceiver<CalendarWidget>() 
     }
 }
 
-/** One day of the snapshot: from [start] to [end], and its events. */
-private class CalendarDay(val start: Long, val end: Long, val events: List<CalendarEvent>) {
+/**
+ * One day of the snapshot: from [start] to [end], its events, and the
+ * first of the goals due in it and how many more there are.
+ */
+private class CalendarDay(
+    val start: Long,
+    val end: Long,
+    val events: List<CalendarEvent>,
+    val goals: List<CalendarGoal> = emptyList(),
+    val moreGoals: Int = 0,
+) {
     companion object {
         /** The snapshot's days; none if there isn't one, or it won't read. */
         fun parse(json: String?): List<CalendarDay> {
@@ -165,6 +185,7 @@ private class CalendarDay(val start: Long, val end: Long, val events: List<Calen
                 List(days.length()) { i ->
                     val day = days.getJSONObject(i)
                     val events = day.getJSONArray("events")
+                    val goals = day.optJSONArray("goals")
                     CalendarDay(
                         start = day.getLong("start"),
                         end = day.getLong("end"),
@@ -178,6 +199,14 @@ private class CalendarDay(val start: Long, val end: Long, val events: List<Calen
                                 color = e.getLong("color").toInt(),
                             )
                         },
+                        goals = List(goals?.length() ?: 0) { j ->
+                            val g = goals!!.getJSONObject(j)
+                            CalendarGoal(
+                                id = g.optString("id", ""),
+                                title = g.optString("title", ""),
+                            )
+                        },
+                        moreGoals = day.optInt("more_goals", 0),
                     )
                 }
             } catch (e: org.json.JSONException) {
@@ -221,6 +250,8 @@ private class DayWeather(
     }
 }
 
+private class CalendarGoal(val id: String, val title: String)
+
 private class CalendarEvent(
     val id: String?,
     val summary: String?,
@@ -239,7 +270,7 @@ private fun Content(
 ) {
     // What's over is left out: the days that have ended, and their events.
     val shown = days.filter { it.end > now }.map { day ->
-        CalendarDay(day.start, day.end, day.events.filter { it.end > now })
+        CalendarDay(day.start, day.end, day.events.filter { it.end > now }, day.goals, day.moreGoals)
     }
     Column(
         modifier = GlanceModifier
@@ -267,6 +298,12 @@ private fun Content(
         } else LazyColumn(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
             for (day in shown) {
                 item(itemId = day.start) { DayHeader(context, day, weather[day.start], now) }
+                day.goals.forEachIndexed { i, goal ->
+                    item(itemId = ("goal:" + goal.id).hashCode().toLong() * 31 + day.start) {
+                        val more = if (i == day.goals.lastIndex) day.moreGoals else 0
+                        GoalRow(context, day, goal, more, now)
+                    }
+                }
                 if (day.events.isEmpty()) {
                     item(itemId = day.start + 1) {
                         Text(
@@ -453,6 +490,110 @@ private fun textWidth(text: String, sp: Float): Float {
         i += Character.charCount(point)
     }
     return width
+}
+
+/**
+ * A goal due that [day]: the goal icon and its title, on one line, half
+ * an event's height; and, if [more] isn't zero, "+[more]" at its end for
+ * the goals not shown. Opens Events on that day.
+ */
+@Composable
+private fun GoalRow(context: Context, day: CalendarDay, goal: CalendarGoal, more: Int, now: Long) {
+    Row(
+        modifier = GlanceModifier
+            .fillMaxWidth()
+            .height(GOAL_ROW_DP.dp)
+            .clickable(open(context, at = if (day.start <= now) null else day.start)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Image(
+            provider = ImageProvider(goalIcon),
+            contentDescription = "Goal",
+            modifier = GlanceModifier.size(14.dp),
+            colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurface),
+        )
+        Spacer(modifier = GlanceModifier.width(6.dp))
+        Text(
+            text = goal.title.ifBlank { "(no title)" },
+            modifier = GlanceModifier.defaultWeight(),
+            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 12.sp),
+            maxLines = 1,
+        )
+        if (more > 0) {
+            Spacer(modifier = GlanceModifier.width(4.dp))
+            Text(
+                text = "+$more",
+                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** A goal's row's height: half an event's, its 32dp bar and padding. */
+private const val GOAL_ROW_DP = 19
+
+/**
+ * The app's goal icon (GoalPainter, lib/widgets/goal_icon.dart), in white
+ * to be tinted: a bullseye with an arrow stuck in the middle, come in
+ * from the upper right, a gap cut round the arrow where it crosses the
+ * rings. Drawn once, on a 24-unit square as the app's is.
+ */
+private val goalIcon: Bitmap by lazy { drawGoalIcon() }
+
+private fun drawGoalIcon(): Bitmap {
+    val px = 64
+    val bitmap = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    canvas.scale(px / 24f, px / 24f)
+    val center = PointF(10f, 14f)
+    val tail = PointF(21.6f, 2.4f)
+    val length = Math.hypot((tail.x - center.x).toDouble(), (tail.y - center.y).toDouble()).toFloat()
+    val along = PointF((tail.x - center.x) / length, (tail.y - center.y) / length)
+    val across = PointF(-along.y, along.x)
+    // [a] along the arrow from [from], and [b] across it.
+    fun at(from: PointF, a: Float, b: Float = 0f) =
+        PointF(from.x + along.x * a + across.x * b, from.y + along.y * a + across.y * b)
+    val shaft = 1.5f
+    val halo = 0.9f
+    val vaneLength = 4.8f
+    val vaneReach = 1.9f
+    val back = at(tail, -0.9f)
+    val front = at(back, -vaneLength)
+    val vanes = listOf(1f, -1f).map { side ->
+        val outerFront = at(back, -(vaneLength - 1.8f), side * vaneReach)
+        val outerBack = at(back, 0.5f, side * vaneReach)
+        Path().apply {
+            moveTo(front.x, front.y)
+            lineTo(outerFront.x, outerFront.y)
+            lineTo(outerBack.x, outerBack.y)
+            lineTo(back.x, back.y)
+            close()
+        }
+    }
+    fun paint(clear: Boolean = false, stroke: Float? = null) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        if (clear) xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+        if (stroke != null) {
+            style = Paint.Style.STROKE
+            strokeWidth = stroke
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+    }
+    canvas.drawCircle(center.x, center.y, 9f, paint(stroke = 2.2f))
+    canvas.drawCircle(center.x, center.y, 5.1f, paint(stroke = 2.2f))
+    canvas.drawCircle(center.x, center.y, 2.2f, paint())
+    // A gap round the arrow where it crosses the rings, then the arrow.
+    val haloFrom = at(center, 2.6f)
+    canvas.drawLine(haloFrom.x, haloFrom.y, tail.x, tail.y, paint(clear = true, stroke = shaft + halo * 2))
+    for (vane in vanes) {
+        canvas.drawPath(vane, paint(clear = true, stroke = halo * 2))
+        canvas.drawPath(vane, paint(clear = true))
+    }
+    canvas.drawLine(center.x, center.y, tail.x, tail.y, paint(stroke = shaft))
+    for (vane in vanes) canvas.drawPath(vane, paint())
+    return bitmap
 }
 
 /** Its color, times and summary; opens Events on it. */
