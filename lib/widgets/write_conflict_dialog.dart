@@ -163,7 +163,6 @@ class _ConflictDialogState extends State<_ConflictDialog> {
       ),
     };
     return SaveOrDiscard(
-      escLeavesFields: true,
       // Called off, it waits as it was: nothing's lost.
       changed: () => false,
       onSave: _write.op == WriteOp.update && _write.current != null

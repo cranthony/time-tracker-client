@@ -84,7 +84,6 @@ class _HtmlEditorPageState extends State<HtmlEditorPage> {
     return SaveOrDiscard(
       changed: () => _changed,
       onSave: _save,
-      escLeavesFields: true,
       child: Scaffold(
         appBar: AppBar(
           leading: IconButton(

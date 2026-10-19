@@ -669,7 +669,6 @@ class _NoteDialogState extends State<_NoteDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return SaveOrDiscard(
-      escLeavesFields: true,
       changed: () => _text.text.trim().isNotEmpty,
       onSave: _leave,
       child: AlertDialog(

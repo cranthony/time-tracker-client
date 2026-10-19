@@ -165,9 +165,9 @@ Future<List<String>?> showActionsSheet(
 /// it ([EventDescription]); the pencil at its foot -- or E -- edits it,
 /// as typed. Blank, it's edited at once. Returns it as edited, or null if
 /// it wasn't, or the sheet was dismissed. Blank is no description.
-/// Ctrl+Enter saves it and closes; Esc closes, but once it's been changed,
-/// the first Esc only warns, and the second discards it
-/// ([SaveOrDiscard]).
+/// Ctrl+Enter saves it and closes; Esc, in the field, leaves it; out of
+/// it, Esc closes, but once it's been changed, the first Esc only warns,
+/// and the second discards it ([SaveOrDiscard]).
 Future<String?> showTextSheet(
   BuildContext context, {
   required String title,
