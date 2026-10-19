@@ -128,7 +128,7 @@ class ProposalEvent {
   final List<String> followThrough;
 
   /// Whether it's an event an earlier compaction settled, revisited for a
-  /// late note -- one written for a time it covers: what happened at it
+  /// historical note -- one written for a time it covers: what happened at it
   /// can change, but not when.
   final bool revisited;
 
@@ -588,7 +588,7 @@ class Proposal {
   bool get confirmable =>
       state == ProposalState.awaitingReview && openFeedback.isEmpty;
 
-  /// The settled events it revisits for late notes, in time order.
+  /// The settled events it revisits for historical notes, in time order.
   List<ProposalEvent> get revisited => [
     for (final e in events ?? const <ProposalEvent>[])
       if (e.revisited) e,

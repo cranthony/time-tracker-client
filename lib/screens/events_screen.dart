@@ -2238,7 +2238,7 @@ class _EventsScreenState extends State<EventsScreen> {
     }
     if (movesRevisited(edits, proposal) case final e?) {
       throw McpException(
-        '“${e.summary ?? '(no summary)'}” is an earlier event a late note '
+        '“${e.summary ?? '(no summary)'}” is an earlier event a historical note '
         'revisits: what happened at it can change here, but not when. '
         'Change its times on the calendar once this is confirmed.',
       );

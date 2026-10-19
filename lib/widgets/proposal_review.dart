@@ -43,7 +43,7 @@ EventMark proposalMark(
     null => null,
   };
   final what = [
-    // A late note revisits it: its times stay as they are.
+    // A historical note revisits it: its times stay as they are.
     if (event.revisited) 'Revisited',
     ...switch (event.status) {
       ProposalEventStatus.created => ['New'],
@@ -133,7 +133,7 @@ class ProposalBar extends StatelessWidget {
   final Proposal proposal;
   final VoidCallback? onFacts;
 
-  /// Goes to the first of the settled events it revisits for late notes,
+  /// Goes to the first of the settled events it revisits for historical notes,
   /// which a line under it names.
   final VoidCallback? onRevisited;
   final bool busy;
@@ -179,7 +179,7 @@ class ProposalBar extends StatelessWidget {
             '${strings.formatMediumDate(e.start.toLocal())}',
     ];
     final revisiting =
-        'Late notes revisit ${revisits.join('; ')}: what happened '
+        'Historical notes revisit ${revisits.join('; ')}: what happened '
         'changes, not when.';
     // What's out of the ordinary, a line each, under the row.
     final status = <(IconData, String, Color)>[
@@ -365,7 +365,7 @@ class ProposalBar extends StatelessWidget {
             ),
             for (final (icon, text, color) in status)
               InkWell(
-                // The line naming what late notes revisit goes there.
+                // The line naming what historical notes revisit goes there.
                 onTap: revisited.isNotEmpty && text == revisiting
                     ? onRevisited
                     : null,

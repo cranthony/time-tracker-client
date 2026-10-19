@@ -370,7 +370,7 @@ bool changesHistory(ProposalEdits edits, Proposal proposal) {
 }
 
 /// The first event [edits] would move or cancel of those [proposal]
-/// revisits for late notes, which keep their times -- the server refuses
+/// revisits for historical notes, which keep their times -- the server refuses
 /// that, whatever the user approves -- or null.
 ProposalEvent? movesRevisited(ProposalEdits edits, Proposal proposal) {
   ProposalEvent? revisited(String id) => switch (proposal.event(id)) {

@@ -126,13 +126,13 @@ void main() {
     expect(tester.getTopLeft(find.text('Started')).dy, greaterThan(line.dy));
   });
 
-  screenTest('says a note for a time already compacted is late: the next '
+  screenTest('says a note for a time already compacted is historical: the next '
       'compaction revisits it', (tester) async {
     await tester.pumpWidget(
       app(
         InMemoryNotesRepository([
           Note(
-            id: 'late',
+            id: 'historical',
             timestamp: DateTime(2026, 10, 2, 19, 10),
             description: 'Sam was worried about his move',
           ),
@@ -142,17 +142,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final late = find.text(
-      'Late · compacting it revisits the event it was written for',
+    final historical = find.text(
+      'Historical · compacting it revisits the event it was written for',
     );
-    expect(late, findsOneWidget);
+    expect(historical, findsOneWidget);
     expect(
-      find.ancestor(of: late, matching: find.byType(ListTile)),
+      find.ancestor(of: historical, matching: find.byType(ListTile)),
       findsOneWidget,
     );
     expect(
       find.descendant(
-        of: find.ancestor(of: late, matching: find.byType(ListTile)),
+        of: find.ancestor(of: historical, matching: find.byType(ListTile)),
         matching: find.text('Sam was worried about his move'),
       ),
       findsOneWidget,

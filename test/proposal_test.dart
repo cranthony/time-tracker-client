@@ -275,7 +275,7 @@ void main() {
   });
 
   group('ProposalEvent', () {
-    test('reads whether a late note revisits it, and marks it so', () {
+    test('reads whether a historical note revisits it, and marks it so', () {
       final breakfast = ProposalEvent.fromJson({
         'id': 'breakfast',
         'summary': 'Breakfast',
@@ -847,41 +847,46 @@ void main() {
 
     final confirmButton = find.widgetWithText(FilledButton, 'Confirm');
 
-    testWidgets('its bar names the earlier events late notes revisit, and '
-        'goes to them', (tester) async {
-      await open(
-        tester,
-        json: {
-          ...proposalJson(),
-          'events': [
-            {
-              'id': 'breakfast',
-              'summary': 'Breakfast',
-              'start': localIsoTimestamp(DateTime(2026, 9, 28, 7)),
-              'end': localIsoTimestamp(DateTime(2026, 9, 28, 7, 30)),
-              'status': 'on_schedule',
-              'decided_by': 'claude',
-              'revisited': true,
-            },
-            ...proposalJson()['events'] as List,
-          ],
-        },
-      );
+    testWidgets(
+      'its bar names the earlier events historical notes revisit, and '
+      'goes to them',
+      (tester) async {
+        await open(
+          tester,
+          json: {
+            ...proposalJson(),
+            'events': [
+              {
+                'id': 'breakfast',
+                'summary': 'Breakfast',
+                'start': localIsoTimestamp(DateTime(2026, 9, 28, 7)),
+                'end': localIsoTimestamp(DateTime(2026, 9, 28, 7, 30)),
+                'status': 'on_schedule',
+                'decided_by': 'claude',
+                'revisited': true,
+              },
+              ...proposalJson()['events'] as List,
+            ],
+          },
+        );
 
-      final line = find.textContaining('Late notes revisit Breakfast, ');
-      expect(line, findsOneWidget);
-      expect(
-        tester.widget<Text>(line).data,
-        endsWith('what happened changes, not when.'),
-      );
-      expect(find.text('Breakfast'), findsNothing);
+        final line = find.textContaining(
+          'Historical notes revisit Breakfast, ',
+        );
+        expect(line, findsOneWidget);
+        expect(
+          tester.widget<Text>(line).data,
+          endsWith('what happened changes, not when.'),
+        );
+        expect(find.text('Breakfast'), findsNothing);
 
-      await tester.tap(line);
-      await tester.pumpAndSettle();
+        await tester.tap(line);
+        await tester.pumpAndSettle();
 
-      expect(find.text('Breakfast'), findsOneWidget);
-      expect(find.textContaining('Revisited · Claude'), findsOneWidget);
-    });
+        expect(find.text('Breakfast'), findsOneWidget);
+        expect(find.textContaining('Revisited · Claude'), findsOneWidget);
+      },
+    );
 
     testWidgets('one that no longer plans says why at the foot of the page, '
         'not in its bar over the calendar', (tester) async {
@@ -1688,38 +1693,41 @@ void main() {
       expect(proposals.allowed.single, isTrue);
     });
 
-    testWidgets("an event a late note revisits can't be moved, nor is history "
-        'asked about', (tester) async {
-      // The last compaction ran at 10:30; a late note at 9:30 revisits tea.
-      final json = proposalJson();
-      await open(
-        tester,
-        json: {
-          ...json,
-          'window_start': iso(10, 30),
-          'events': [
-            for (final e in json['events'] as List)
-              if ((e as Map)['id'] == 'tea')
-                {...e, 'start': iso(9), 'revisited': true}
-              else
-                e,
-          ],
-        },
-      );
-      await toBand(tester);
-      await tester.longPress(find.text('Tea'));
-      await tester.pumpAndSettle();
-      await dragBox(tester, const Duration(minutes: -60));
-      await tester.tap(find.byTooltip('Move it here'));
-      await tester.pumpAndSettle();
+    testWidgets(
+      "an event a historical note revisits can't be moved, nor is history "
+      'asked about',
+      (tester) async {
+        // The last compaction ran at 10:30; a historical note at 9:30 revisits tea.
+        final json = proposalJson();
+        await open(
+          tester,
+          json: {
+            ...json,
+            'window_start': iso(10, 30),
+            'events': [
+              for (final e in json['events'] as List)
+                if ((e as Map)['id'] == 'tea')
+                  {...e, 'start': iso(9), 'revisited': true}
+                else
+                  e,
+            ],
+          },
+        );
+        await toBand(tester);
+        await tester.longPress(find.text('Tea'));
+        await tester.pumpAndSettle();
+        await dragBox(tester, const Duration(minutes: -60));
+        await tester.tap(find.byTooltip('Move it here'));
+        await tester.pumpAndSettle();
 
-      expect(find.text('Change history?'), findsNothing);
-      expect(proposals.amends, isEmpty);
-      expect(
-        find.textContaining('is an earlier event a late note revisits'),
-        findsOneWidget,
-      );
-    });
+        expect(find.text('Change history?'), findsNothing);
+        expect(proposals.amends, isEmpty);
+        expect(
+          find.textContaining('is an earlier event a historical note revisits'),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets('a new event in the band is made in the proposal', (
       tester,

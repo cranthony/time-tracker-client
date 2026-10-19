@@ -909,9 +909,9 @@ Claude can't apply one; only confirming it in the app does.
   "Change history?" first, and approved, the server keeps to it in every
   revision after. One it couldn't tell, refused, offers **Change
   history** from the changes waiting.
-- **Late notes.** A note written for a time an earlier compaction
-  already settled -- added at a past time, say -- is marked late in the
-  notes list ("Late · compacting it revisits the event it was written
+- **Historical notes.** A note written for a time an earlier compaction
+  already settled -- added at a past time, say -- is marked historical in the
+  notes list ("Historical · compacting it revisits the event it was written
   for"). The next proposal *revisits* the event it falls within: the
   bar names each one it revisits, with its date, and tapping that line
   goes to it, on its own day, marked "Revisited". What happened at it --

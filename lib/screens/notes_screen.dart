@@ -417,7 +417,7 @@ class _NotesScreenState extends State<NotesScreen> {
     // Written for a time the last compaction already settled: the next
     // revisits the event it falls within.
     final settledUntil = needsSignIn ? null : _status?.lastCompaction;
-    bool late(Note note) =>
+    bool historical(Note note) =>
         settledUntil != null && note.timestamp.isBefore(settledUntil);
 
     final rows = <({DateTime at, Widget tile})>[
@@ -452,7 +452,7 @@ class _NotesScreenState extends State<NotesScreen> {
               at: shown.timestamp,
               tile: _NoteTile(
                 note: shown,
-                late: late(shown),
+                historical: historical(shown),
                 // Without an id (from an older server) it can't be changed.
                 onTap: note.id == null ? null : () => _editNote(shown, note),
               ),
@@ -670,13 +670,13 @@ class _DashPainter extends CustomPainter {
 }
 
 class _NoteTile extends StatelessWidget {
-  const _NoteTile({required this.note, this.late = false, this.onTap});
+  const _NoteTile({required this.note, this.historical = false, this.onTap});
 
   final Note note;
 
   /// Whether it's for a time the last compaction settled: the next one
   /// revisits the event it falls within, which says so.
-  final bool late;
+  final bool historical;
   final VoidCallback? onTap;
 
   @override
@@ -688,14 +688,14 @@ class _NoteTile extends StatelessWidget {
       title: note.description == null
           ? Text('(no description)', style: TextStyle(color: theme.hintColor))
           : Text(note.description!),
-      subtitle: late
+      subtitle: historical
           ? Row(
               children: [
                 Icon(Icons.update, size: 14, color: scheme.secondary),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'Late · compacting it revisits the event it was '
+                    'Historical · compacting it revisits the event it was '
                     'written for',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: scheme.secondary,
