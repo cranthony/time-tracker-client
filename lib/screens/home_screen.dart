@@ -363,6 +363,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onSignOut: widget.onSignOut,
           version: widget.version,
           loads: _actionsLoads,
+          onQuickAddGoal: _setGoal,
         ),
       },
       bottomNavigationBar: Column(

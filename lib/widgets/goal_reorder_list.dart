@@ -19,6 +19,7 @@ class GoalReorderList extends StatefulWidget {
     required this.onMove,
     this.scrolls = true,
     this.footer,
+    this.padding,
   });
 
   final List<Goal> goals;
@@ -29,6 +30,9 @@ class GoalReorderList extends StatefulWidget {
 
   /// After the goals, in the same list.
   final Widget? footer;
+
+  /// Around the list: room under it for a button over it, say.
+  final EdgeInsets? padding;
 
   @override
   State<GoalReorderList> createState() => _GoalReorderListState();
@@ -121,6 +125,7 @@ class _GoalReorderListState extends State<GoalReorderList> {
         buildDefaultDragHandles: false,
         itemCount: goals.length,
         footer: widget.footer,
+        padding: widget.padding,
         proxyDecorator: _proxy,
         onReorderStart: (index) => setState(() {
           _dragged = goals[index].id;
