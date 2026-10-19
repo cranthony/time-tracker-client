@@ -21,6 +21,33 @@ void main() {
   }
 
   group('DurationField', () {
+    testWidgets('in days, steps a week or a day; anything shorter is typed', (
+      tester,
+    ) async {
+      final controller = TextEditingController(text: '${8 * 24 * 60}');
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DurationField(
+              controller: controller,
+              label: 'Before',
+              days: true,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('1w 1d'), findsOneWidget);
+      expect(find.text('1 w'), findsOneWidget);
+      expect(find.text('1 d'), findsOneWidget);
+      await tester.tap(find.byTooltip('A week less'));
+      await tester.pump();
+      expect(controller.text, '${24 * 60}');
+      await tester.enterText(find.byType(TextField), '1d 3h');
+      expect(controller.text, '${27 * 60}');
+    });
+
     testWidgets('shows minutes as hours and minutes', (tester) async {
       await pump(tester, '90');
 
