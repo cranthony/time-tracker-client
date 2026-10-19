@@ -374,6 +374,9 @@ Future<void> _refreshInBackground() async {
   await CalendarWidget().publish(
     events,
     actions: (await actions.cachedActions())?.actions ?? const [],
+    goals:
+        await McpGoalsRepository(client, cache: cache).cachedGoals() ??
+        const [],
   );
   final now = DateTime.now();
   final next = nextRefresh(
@@ -599,6 +602,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         widget.calendarWidget?.publish(
           store,
           actions: _planMemory.shownActions?.actions ?? const [],
+          goals: _planMemory.goals ?? const [],
         ),
       );
     });
