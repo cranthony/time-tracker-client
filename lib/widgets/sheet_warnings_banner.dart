@@ -7,13 +7,15 @@ import '../services/sheet_warnings.dart';
 /// server says it found changes made behind its back in the last 7 days
 /// ([serverSheetWarnings]): quieter than the sign-in one, and tapped to
 /// see what they were ([onOpen]). It goes when a later result says there
-/// were none. Otherwise, just [child].
+/// were none, or once dismissed with its close button ([dismissal]) until
+/// the server says of a later one. Otherwise, just [child].
 class SheetWarningsBanner extends StatelessWidget {
   const SheetWarningsBanner({
     super.key,
     required this.child,
     this.warnings,
     this.onOpen,
+    this.dismissal,
     this.clock = DateTime.now,
   });
 
@@ -24,6 +26,9 @@ class SheetWarningsBanner extends StatelessWidget {
 
   /// Opens what they were; without it, the strip only says so.
   final VoidCallback? onOpen;
+
+  /// What's been dismissed; by default [sheetWarningsDismissal].
+  final SheetWarningsDismissal? dismissal;
 
   final DateTime Function() clock;
 
@@ -46,11 +51,14 @@ class SheetWarningsBanner extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      ValueListenableBuilder<SheetWarningsFlag?>(
+  Widget build(BuildContext context) {
+    final dismissed = dismissal ?? sheetWarningsDismissal;
+    return ListenableBuilder(
+      listenable: dismissed,
+      builder: (context, _) => ValueListenableBuilder<SheetWarningsFlag?>(
         valueListenable: warnings ?? serverSheetWarnings,
         builder: (context, flag, _) {
-          if (flag == null) return child;
+          if (flag == null || dismissed.hides(flag)) return child;
           final colors = Theme.of(context).colorScheme;
           final said = text(flag, clock());
           return Column(
@@ -93,6 +101,23 @@ class SheetWarningsBanner extends StatelessWidget {
                                 size: 16,
                                 color: colors.onSecondaryContainer,
                               ),
+                            // No tooltip: the strip is above the
+                            // navigator's overlay.
+                            IconButton(
+                              onPressed: () => dismissed.dismiss(flag),
+                              icon: const Icon(
+                                Icons.close,
+                                semanticLabel: 'Dismiss',
+                              ),
+                              iconSize: 16,
+                              color: colors.onSecondaryContainer,
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -111,5 +136,7 @@ class SheetWarningsBanner extends StatelessWidget {
             ],
           );
         },
-      );
+      ),
+    );
+  }
 }
