@@ -26,6 +26,8 @@ class Goal {
     this.description,
     this.definitionOfDone,
     this.attributionHints,
+    this.withIds = const [],
+    this.forIds = const [],
     this.path = const [],
     this.version,
   });
@@ -78,6 +80,17 @@ class Goal {
   /// A guide, for Claude, to telling which events are for it.
   final String? attributionHints;
 
+  /// The people the user does it with, by id.
+  final List<String> withIds;
+
+  /// The people it's done for, who aren't part of doing it -- a promise
+  /// to them, a favor -- by id. No one is in both [withIds] and this.
+  final List<String> forIds;
+
+  /// Whether it's done with or for [personId].
+  bool involves(String personId) =>
+      withIds.contains(personId) || forIds.contains(personId);
+
   /// Its parents' titles, outermost first, as the server last said. Not
   /// sent back.
   final List<String> path;
@@ -125,6 +138,8 @@ class Goal {
     description: _text(json['description']),
     definitionOfDone: _text(json['definition_of_done']),
     attributionHints: _text(json['attribution_hints']),
+    withIds: [for (final id in json['with_ids'] as List? ?? const []) '$id'],
+    forIds: [for (final id in json['for_ids'] as List? ?? const []) '$id'],
     path: [for (final p in json['path'] as List? ?? const []) '$p'],
     version: (json['version'] as num?)?.toInt(),
   );
@@ -146,6 +161,10 @@ class Goal {
     'description': ?description,
     'definition_of_done': ?definitionOfDone,
     'attribution_hints': ?attributionHints,
+    // Only when there are some: a server from before goals named people
+    // still saves the rest.
+    if (withIds.isNotEmpty) 'with_ids': withIds,
+    if (forIds.isNotEmpty) 'for_ids': forIds,
     'version': ?version,
   };
 

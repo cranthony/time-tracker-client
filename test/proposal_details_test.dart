@@ -210,6 +210,7 @@ void main() {
           name: 'Jo B.',
           detail: 'from work',
           kind: AdditionKind.person,
+          deadline: null,
         ),
         (
           ref: 'new:teahouse',
@@ -218,6 +219,7 @@ void main() {
           name: null,
           detail: null,
           kind: AdditionKind.location,
+          deadline: null,
         ),
         (
           ref: 'new:matcha',
@@ -226,6 +228,7 @@ void main() {
           name: null,
           detail: null,
           kind: AdditionKind.action,
+          deadline: null,
         ),
       ],
       asPlanned: ['new:old'],
@@ -590,6 +593,7 @@ void main() {
               name: null,
               detail: null,
               kind: AdditionKind.location,
+              deadline: null,
             ),
           ],
         ),
