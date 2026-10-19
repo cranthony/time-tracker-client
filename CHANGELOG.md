@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.146.0
+
+- The goals due on a day, above the Events timeline, go active first,
+  then inactive, done, missed and obsolete; within each, those due at a
+  time by time, then those due by the day's end, by title -- the Goals
+  pane's order. The calendar widget, showing only active ones, has them
+  in that order too.
+
 ## 7.145.0
 
 - Ctrl+; sets a goal from anywhere, in a sheet like the New note one:
