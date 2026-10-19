@@ -203,35 +203,6 @@ void main() {
     expect(memory.goals!.firstWhere((g) => g.id == 'ship').closed, isTrue);
   });
 
-  testWidgets('selected sub-goals are activated together, each given a '
-      'deadline', (tester) async {
-    await pump(tester);
-    await tester.tap(find.text('Ship the app'));
-    await tester.pumpAndSettle();
-
-    await tester.longPress(find.text('Polish'));
-    await tester.pump();
-    await tester.tap(find.text('Write docs'));
-    await tester.pump();
-    expect(find.text('2 selected'), findsOneWidget);
-    await tester.tap(find.widgetWithText(TextButton, 'Activate'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('When are they due?'), findsOneWidget);
-    final activate = find.widgetWithText(FilledButton, 'Activate');
-    expect(tester.widget<FilledButton>(activate).onPressed, isNull);
-    await tester.tap(find.text('End of today').first);
-    await tester.tap(find.text("Parent's").last);
-    await tester.pump();
-    await tester.tap(activate);
-    await tester.pumpAndSettle();
-
-    final saved = {for (final g in await repository.goals()) g.id: g};
-    expect(saved['polish']!.active, isTrue);
-    expect(saved['docs']!.active, isTrue);
-    expect(saved['docs']!.deadline, '2026-12-01');
-  });
-
   testWidgets('the HTML editor previews to the right, and keeps the cursor '
       'for coming back', (tester) async {
     String? result;

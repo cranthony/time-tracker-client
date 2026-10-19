@@ -113,6 +113,21 @@ class GoalActions {
     memory.loadGoals(repository, again: true).ignore();
   }
 
+  /// Saves [sortOrders], by goal id, as a goal's dragged into place
+  /// ([GoalReorderList]): shown at once, so it stays where it's dropped,
+  /// and put back if they can't be saved.
+  Future<void> reorder(Map<String, int> sortOrders) async {
+    final changes = [
+      for (final MapEntry(:key, :value) in sortOrders.entries)
+        GoalUpdate(key, {'sort_order': value}),
+    ];
+    final before = goals;
+    memory.showGoals(applied(before, changes, now: now()));
+    if (!await save("Couldn't reorder the goals", changes)) {
+      memory.showGoals(before);
+    }
+  }
+
   /// Adds a goal under [parent] (the top level, if null), starting with
   /// [title] and [deadline] if they're given. Whether it's saved.
   Future<bool> add({Goal? parent, String? title, String? deadline}) async {

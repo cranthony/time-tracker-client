@@ -7,6 +7,7 @@ import '../widgets/app_menu.dart' show RefreshButton;
 import '../widgets/event_description.dart';
 import '../widgets/goal_editor.dart';
 import '../widgets/goal_flows.dart';
+import '../widgets/goal_reorder_list.dart';
 import '../widgets/goal_tile.dart';
 import '../widgets/hotkeys.dart';
 
@@ -16,11 +17,10 @@ import '../widgets/hotkeys.dart';
 /// is. Below: its status, with what can change it; when it's due, its
 /// expected time against the time spent; when it started and closed;
 /// its description, definition of done and attribution hints; the goals
-/// directly under it (soonest due first, filtered by status), each opening
-/// its own page, with "+" to add one; and its history, each change's time
-/// tapped to change it, or deleted. Holding a sub-goal selects it: then
-/// the inactive ones selected can be activated together, each given a
-/// deadline at once.
+/// directly under it (as [byPriority] lists them, filtered by status),
+/// each opening its own page, held and dragged to reorder it
+/// ([GoalReorderList]), with "+" to add one; and its history, each
+/// change's time tapped to change it, or deleted.
 class GoalScreen extends StatefulWidget {
   const GoalScreen({
     super.key,
@@ -39,7 +39,6 @@ class GoalScreen extends StatefulWidget {
 
 class _GoalScreenState extends State<GoalScreen> {
   var _statuses = const {'inactive', 'active'};
-  final _selected = <String>{};
 
   /// The pull-to-refresh, which the refresh button pulls down.
   final _refresher = GlobalKey<RefreshIndicatorState>();
@@ -80,20 +79,6 @@ class _GoalScreenState extends State<GoalScreen> {
     ),
   );
 
-  void _toggle(Goal goal) => setState(() {
-    if (!_selected.remove(goal.id)) _selected.add(goal.id);
-  });
-
-  Future<void> _activateSelected(GoalTree tree) async {
-    final picked = [
-      for (final id in _selected)
-        if (tree[id] case final g? when g.inactive) g,
-    ];
-    if (picked.isEmpty) return;
-    await _actions.activate(picked);
-    if (mounted) setState(_selected.clear);
-  }
-
   Future<void> _menu(String action, Goal goal) async {
     final actions = _actions;
     switch (action) {
@@ -127,75 +112,50 @@ class _GoalScreenState extends State<GoalScreen> {
       for (final c in children)
         if (_statuses.contains(c.status)) c,
     ], tree);
-    final selecting = _selected.isNotEmpty;
     final path = tree.pathOf(goal.id);
     return Scaffold(
       appBar: AppBar(
-        leading: selecting
-            ? IconButton(
-                tooltip: 'Stop selecting',
-                icon: const Icon(Icons.close),
-                onPressed: () => setState(_selected.clear),
-              )
-            : null,
-        titleSpacing: selecting ? null : 0,
-        title: selecting
-            ? Text('${_selected.length} selected')
-            : Row(
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            DepthBars(depth: tree.depthOf(goal.id), height: 36),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  DepthBars(depth: tree.depthOf(goal.id), height: 36),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(goalTitle(goal), overflow: TextOverflow.ellipsis),
-                        if (path.isNotEmpty)
-                          Text(
-                            path.join(' › '),
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall,
-                          ),
-                      ],
+                  Text(goalTitle(goal), overflow: TextOverflow.ellipsis),
+                  if (path.isNotEmpty)
+                    Text(
+                      path.join(' › '),
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall,
                     ),
-                  ),
                 ],
               ),
-        actions: selecting
-            ? [
-                TextButton.icon(
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Activate'),
-                  onPressed: _selected.any((id) => tree[id]?.inactive ?? false)
-                      ? () => _activateSelected(tree)
-                      : null,
-                ),
-              ]
-            : [
-                RefreshButton(
-                  onRefresh: () async => _refresher.currentState?.show(),
-                ),
-                EditHotkey(
-                  child: IconButton(
-                    tooltip: 'Edit',
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: () => _actions.edit(goal),
-                  ),
-                ),
-                PopupMenuButton<String>(
-                  onSelected: (action) => _menu(action, goal),
-                  itemBuilder: (context) => [
-                    for (final (status, label) in _statusMoves(goal))
-                      PopupMenuItem(value: status, child: Text(label)),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem(value: 'move', child: Text('Move…')),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Text('Delete…'),
-                    ),
-                  ],
-                ),
-              ],
+            ),
+          ],
+        ),
+        actions: [
+          RefreshButton(onRefresh: () async => _refresher.currentState?.show()),
+          EditHotkey(
+            child: IconButton(
+              tooltip: 'Edit',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => _actions.edit(goal),
+            ),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (action) => _menu(action, goal),
+            itemBuilder: (context) => [
+              for (final (status, label) in _statusMoves(goal))
+                PopupMenuItem(value: status, child: Text(label)),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 'move', child: Text('Move…')),
+              const PopupMenuItem(value: 'delete', child: Text('Delete…')),
+            ],
+          ),
+        ],
       ),
       body: RefreshIndicator(
         key: _refresher,
@@ -268,23 +228,19 @@ class _GoalScreenState extends State<GoalScreen> {
             // What J and K go down and up: not the buttons over them, nor
             // the history under them.
             HotkeyItems(
-              child: Column(
-                children: [
-                  for (final child in shown)
-                    GoalTile(
-                      goal: child,
-                      spent: spent[child.id],
-                      subGoals: tree.childrenOf(child.id).length,
-                      priority: tree.priorityOf(child.id),
-                      selecting: selecting,
-                      selected: _selected.contains(child.id),
-                      onTap: selecting
-                          ? () => _toggle(child)
-                          : () => _open(child),
-                      onLongPress: () => _toggle(child),
-                      onEdit: () => _actions.edit(child),
-                    ),
-                ],
+              child: GoalReorderList(
+                goals: shown,
+                tree: tree,
+                scrolls: false,
+                onMove: _actions.reorder,
+                tile: (child) => GoalTile(
+                  goal: child,
+                  spent: spent[child.id],
+                  subGoals: tree.childrenOf(child.id).length,
+                  priority: tree.priorityOf(child.id),
+                  onTap: () => _open(child),
+                  onEdit: () => _actions.edit(child),
+                ),
               ),
             ),
             const Divider(height: 24),
