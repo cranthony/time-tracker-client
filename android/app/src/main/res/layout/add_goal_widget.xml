@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget gallery's preview of AddGoalWidget, as it's drawn: the
+     round button in the middle of its cell. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:contentDescription="@string/add_goal_widget_label">
+
+    <ImageView
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center"
+        android:background="@drawable/add_note_widget_background"
+        android:importantForAccessibility="no"
+        android:padding="14dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_add_goal" />
+</FrameLayout>

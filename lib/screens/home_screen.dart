@@ -52,6 +52,7 @@ class HomeScreen extends StatefulWidget {
     this.onSignIn,
     this.onSignOut,
     this.addNoteRequests,
+    this.addGoalRequests,
     this.noteDrafts,
     this.goalDrafts,
     this.onAddNoteFieldFocused,
@@ -91,8 +92,13 @@ class HomeScreen extends StatefulWidget {
   /// note dialog there.
   final Stream<DateTime>? addNoteRequests;
 
-  /// Called when the New note dialog opened for one of [addNoteRequests]
-  /// has its field focused.
+  /// Taps on the home screen goal button: each opens the New goal sheet
+  /// over whatever's open.
+  final Stream<DateTime>? addGoalRequests;
+
+  /// Called when the New note dialog opened for one of [addNoteRequests],
+  /// or the New goal sheet for one of [addGoalRequests], has its field
+  /// focused.
   final VoidCallback? onAddNoteFieldFocused;
 
   /// Taps on the home screen calendar: each switches to Events and shows
@@ -113,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final GoalDrafts _goalDrafts =
       widget.goalDrafts ?? GoalDrafts.inMemory();
   StreamSubscription<DateTime>? _addNoteRequests;
+  StreamSubscription<DateTime>? _addGoalRequests;
   StreamSubscription<CalendarTap>? _calendarTaps;
 
   /// Passes [HomeScreen.addNoteRequests] on to whichever NotesScreen is
@@ -146,6 +153,9 @@ class _HomeScreenState extends State<HomeScreen> {
       // Once the notes screen is built and listening.
       WidgetsBinding.instance.addPostFrameCallback((_) => _toNotes.add(at));
     });
+    _addGoalRequests = widget.addGoalRequests?.listen(
+      (_) => _setGoal(onFieldFocused: widget.onAddNoteFieldFocused),
+    );
     _calendarTaps = widget.calendarTaps?.listen(_showCalendarTap);
   }
 
@@ -186,6 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _addNoteRequests?.cancel();
+    _addGoalRequests?.cancel();
     _calendarTaps?.cancel();
     _toNotes.close();
     if (widget.noteDrafts == null) _noteDrafts.dispose();
@@ -262,8 +273,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Opens the New goal sheet over whatever's open, as [_writeNote] does
   /// the New note sheet -- or, from its More, the full New goal page.
-  /// Nothing without goals to set.
-  Future<void> _setGoal() async {
+  /// Nothing without goals to set. Calls [onFieldFocused] once its field
+  /// has focus.
+  Future<void> _setGoal({VoidCallback? onFieldFocused}) async {
     final repository = GoalsScope.of(context);
     if (repository == null || newGoalSheetOpen) return;
     GoalActions actions() => GoalActions(
@@ -278,6 +290,7 @@ class _HomeScreenState extends State<HomeScreen> {
       keep: (fields) => actions().create(fields),
       goals: _planMemory.goals ?? const [],
       drafts: _goalDrafts,
+      onFieldFocused: onFieldFocused,
     );
     if (result is! MoreGoal || !mounted) return;
     final saved = await actions().add(

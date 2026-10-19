@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Long-press the app icon for "Add note"; drag it to the home screen to
-     pin it as its own icon. The launcher draws the icon and label, so they
-     match the rest of the home screen. It sends the same ADD_NOTE action
-     as the widget (see MainActivity). -->
+<!-- Long-press the app icon for "Add note" or "Add goal"; drag one to the
+     home screen to pin it as its own icon. The launcher draws the icon and
+     label, so they match the rest of the home screen. Each sends the same
+     action as its widget (see MainActivity). -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
         android:enabled="true"
@@ -12,6 +12,17 @@
         android:shortcutShortLabel="@string/add_note_widget_label">
         <intent
             android:action="com.cranthony.timetracker.ADD_NOTE"
+            android:targetClass="com.cranthony.timetracker.MainActivity"
+            android:targetPackage="com.cranthony.timetracker" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_add_goal"
+        android:shortcutId="add_goal"
+        android:shortcutLongLabel="@string/add_goal_shortcut_long_label"
+        android:shortcutShortLabel="@string/add_goal_widget_label">
+        <intent
+            android:action="com.cranthony.timetracker.ADD_GOAL"
             android:targetClass="com.cranthony.timetracker.MainActivity"
             android:targetPackage="com.cranthony.timetracker" />
     </shortcut>

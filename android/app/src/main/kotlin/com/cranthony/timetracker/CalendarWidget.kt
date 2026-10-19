@@ -329,8 +329,8 @@ private fun Content(
 }
 
 /**
- * "Calendar", which opens Events at now, and the "+" for a new note:
- * above the days, or, [atBottom], below them.
+ * "Calendar", which opens Events at now, then the buttons for a new goal
+ * and a new note: above the days, or, [atBottom], below them.
  */
 @Composable
 private fun Header(context: Context, atBottom: Boolean) {
@@ -350,21 +350,37 @@ private fun Header(context: Context, atBottom: Boolean) {
             ),
             maxLines = 1,
         )
-        Box(
-            modifier = GlanceModifier
-                .size(32.dp)
-                .cornerRadius(16.dp)
-                .background(GlanceTheme.colors.primary)
-                .clickable(AddNoteWidget.addNote(context)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Image(
-                provider = ImageProvider(R.drawable.ic_add_note),
-                contentDescription = context.getString(R.string.add_note_widget_label),
-                modifier = GlanceModifier.size(20.dp),
-                colorFilter = ColorFilter.tint(GlanceTheme.colors.onPrimary),
-            )
-        }
+        HeaderButton(
+            R.drawable.ic_add_goal,
+            context.getString(R.string.add_goal_widget_label),
+            AddGoalWidget.addGoal(context),
+        )
+        Spacer(GlanceModifier.width(8.dp))
+        HeaderButton(
+            R.drawable.ic_add_note,
+            context.getString(R.string.add_note_widget_label),
+            AddNoteWidget.addNote(context),
+        )
+    }
+}
+
+/** A round button in the [Header], [icon] on it, doing [action]. */
+@Composable
+private fun HeaderButton(icon: Int, label: String, action: Action) {
+    Box(
+        modifier = GlanceModifier
+            .size(32.dp)
+            .cornerRadius(16.dp)
+            .background(GlanceTheme.colors.primary)
+            .clickable(action),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            provider = ImageProvider(icon),
+            contentDescription = label,
+            modifier = GlanceModifier.size(20.dp),
+            colorFilter = ColorFilter.tint(GlanceTheme.colors.onPrimary),
+        )
     }
 }
 

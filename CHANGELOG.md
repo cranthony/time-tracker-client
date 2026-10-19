@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.148.0
+
+- An Add goal home screen widget: a one-cell round button with the app's
+  goal icon that opens the app straight into the New goal sheet, with the
+  keyboard up, as the Add note one does for a note.
+- The home screen calendar has a goal button next to its "+", opening the
+  same sheet.
+- Long-press the app icon for Add goal too, beside Add note; either can
+  be pinned to the home screen.
+
 ## 7.147.0
 
 - Esc does all U does, and more: where nothing else takes it, it goes up
