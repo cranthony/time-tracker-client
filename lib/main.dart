@@ -359,6 +359,7 @@ Future<void> _refreshInBackground() async {
     repository: McpEventsRepository(client),
     cache: cache,
   );
+  final goals = McpGoalsRepository(client, cache: cache);
   final record = await refreshCaches(
     hints: hints,
     notes: McpNotesRepository(client, cache: cache),
@@ -368,6 +369,7 @@ Future<void> _refreshInBackground() async {
     traits: McpTraitsRepository(client, cache: cache),
     people: McpPeopleRepository(client, cache: cache),
     habits: McpHabitsRepository(client, cache: cache),
+    goals: goals,
     events: events,
   );
   await record.save();
@@ -376,9 +378,7 @@ Future<void> _refreshInBackground() async {
   await CalendarWidget().publish(
     events,
     actions: (await actions.cachedActions())?.actions ?? const [],
-    goals:
-        await McpGoalsRepository(client, cache: cache).cachedGoals() ??
-        const [],
+    goals: await goals.cachedGoals() ?? const [],
   );
   final now = DateTime.now();
   final next = nextRefresh(
@@ -664,6 +664,12 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     unawaited(widget.eventOutbox?.notices?.load());
     widget.eventOutbox?.start();
     _writeQueue.start();
+    // The goals, afresh: they may have changed elsewhere meanwhile -- by
+    // Claude, or on another device -- for the goals due strip and the
+    // home screen calendar.
+    if (widget.goalsRepository case final goals?) {
+      unawaited(_planMemory.loadGoals(goals, again: true));
+    }
   }
 
   Future<void> _onBackground() async {

@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.162.1
+
+- The home screen calendar's goals stay up to date while the app's
+  closed: the background fetch gets the goals along with everything
+  else, rather than showing the ones from the app's last run.
+- Coming back to the app asks for the goals again, so the goals due
+  above the timeline, and on the home screen calendar, show changes
+  made elsewhere -- by Claude, say -- without opening another page.
+
 ## 7.162.0
 
 - A person can have their own prompts for a trait's fact. On their

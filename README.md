@@ -712,15 +712,18 @@ Service's, would be one more of them.
 
 On Android, the app fetches what it keeps while it's closed, so it's fresh
 when you open it: the notes and when they were last compacted, every
-action, trait, person, location and habit, and the week either side of
-today's events. It fetches 10 minutes after each time Claude's routines
+action, trait, person, location, habit and goal, and the week either side
+of today's events -- and the home screen calendar's events and goals with
+them. It fetches 10 minutes after each time Claude's routines
 run -- compacting notes, answering the notes on a proposal -- and
 otherwise every 6 hours. Android's WorkManager runs each fetch around its
 time: usually within minutes, later while the phone's idle. Signed out,
 it stops till you sign in. What it keeps, the app reads afresh -- each
 answer kept apart, so neither the app nor the fetch ever puts back an
 older one over what the other kept -- and back in the app, the Events
-page shows the proposal it fetched at once, while it asks again.
+page shows the proposal it fetched at once, while it asks again. Each
+time you come back to the app, it asks for the goals again too, in case
+they changed elsewhere meanwhile.
 
 The routines' times are **compaction schedule hints**, kept on the server
 (the Compaction Schedule tab of the calendar's metadata spreadsheet): the

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/proposal.dart';
@@ -8,6 +9,7 @@ import 'package:time_tracker_client/screens/background_updates_screen.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/services/background_refresh.dart';
+import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
@@ -291,6 +293,37 @@ void main() {
       expect(record.fetched, ['routine times']);
       expect(record.failed, ['actions']);
       expect(record.ok, isFalse);
+    });
+
+    test(
+      'fetches the goals, keeping them for the app and its widget',
+      () async {
+        final cache = InMemoryResponseCache();
+        final client = _Client([
+          {'id': 'g1', 'title': 'Run 5k', 'status': 'active'},
+        ]);
+        final record = await refreshCaches(
+          goals: McpGoalsRepository(client, cache: cache),
+          clock: () => _now,
+        );
+        final kept = await McpGoalsRepository(
+          _Client(null),
+          cache: cache,
+        ).cachedGoals();
+
+        expect(record.fetched, ['goals']);
+        expect(client.called, ['get_goals']);
+        expect(kept!.single.title, 'Run 5k');
+      },
+    );
+
+    test('says when it could not fetch the goals', () async {
+      final record = await refreshCaches(
+        goals: _FailingGoals(McpException('down')),
+        clock: () => _now,
+      );
+
+      expect(record.failed, ['goals']);
     });
 
     test('stops, signed out', () async {
@@ -641,4 +674,13 @@ class _FailingActions extends InMemoryActionsRepository {
 
   @override
   Future<ActionList> actions() async => throw error;
+}
+
+class _FailingGoals extends InMemoryGoalsRepository {
+  _FailingGoals(this.error);
+
+  final Object error;
+
+  @override
+  Future<List<Goal>> goals() async => throw error;
 }
