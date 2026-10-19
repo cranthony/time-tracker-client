@@ -9,6 +9,23 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.157.0
+
+- Traits keep facts about each person. A trait's editor has a Facts
+  section above its parts. Each fact has a name, what its summary of a
+  person keeps, and optionally what to log when that changes. A judgment
+  can be judged from the trait's facts.
+- A person's page shows each fact's summary of them under each trait's
+  score. Tapping the trait shows its facts first, with each summary and
+  the changes compaction logged to it.
+- A person's editor edits their summaries in place of "What matters".
+  Thoughtful's "What matters" fact now holds what that field used to.
+  Changes made here aren't logged.
+- An event's notes show what compaction changed in people's facts. A
+  proposal's menu shows the facts it rewrites, each next to the summary
+  as it is now.
+- "Person notes" is no longer a fact a judgment can be judged from.
+
 ## 7.156.3
 
 - An action added from an event's action picker shows in its color --

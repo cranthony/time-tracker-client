@@ -14,6 +14,7 @@ import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/proposal.dart';
 import '../models/recurrence.dart';
+import '../models/trait.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/note_writes.dart';
 import '../outbox/write_queue.dart';
@@ -5273,6 +5274,15 @@ class _EventsScreenState extends State<EventsScreen> {
         onAbandon: _abandonProposal,
         hidden: _hidden,
         onHide: _toggleHidden,
+        onFacts: () => showFactSummariesSheet(
+          context,
+          proposal,
+          personNames: _personNames,
+          factNames: {
+            for (final t in _memory.traits ?? const <Trait>[])
+              for (final f in t.facts) '${t.id}/${f.id}': f.name,
+          },
+        ),
       ),
     if (_shownProposal case final proposal?) _buildDetails(proposal),
   ];

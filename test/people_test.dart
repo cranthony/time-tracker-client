@@ -140,7 +140,9 @@ void main() {
         'status': 'active',
         'circles': ['dance'],
         'circle_names': ['Dance friends'],
-        'what_matters': '- loves jazz',
+        'facts': {
+          'thoughtful': {'what_matters': '- loves jazz'},
+        },
         'traits': {
           'select': ['present'],
           'parts': {
@@ -151,7 +153,27 @@ void main() {
         },
       });
 
+      expect(
+        personUpdate('sam', {
+          'context': null,
+          'name': 'Sam',
+          'facts': {
+            'thoughtful': {'what_matters': '- jazz'},
+          },
+        }, version: 3),
+        {
+          'person': {'id': 'sam', 'name': 'Sam', 'version': 3},
+          'clear_fields': ['context'],
+          'facts': {
+            'thoughtful': {'what_matters': '- jazz'},
+          },
+        },
+        reason: "Their summaries go beside them, as update_person takes them",
+      );
       expect(sam.circleIds, ['dance']);
+      // Their summaries are read, and set apart from them.
+      expect(sam.summary('thoughtful', 'what_matters'), '- loves jazz');
+      expect(sam.summary('thoughtful', 'other'), isNull);
       expect(sam.traits.select, ['present']);
       expect(sam.traits.applies('reliable'), isFalse);
       expect(sam.toJson(), {
@@ -160,7 +182,6 @@ void main() {
         'context': 'from salsa',
         'status': 'active',
         'circles': ['dance'],
-        'what_matters': '- loves jazz',
         'traits': {
           'select': ['present'],
           'parts': {

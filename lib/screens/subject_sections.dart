@@ -82,6 +82,8 @@ class SubjectSections {
     required this.why,
     this.trends = false,
     this.noteOf,
+    this.person,
+    this.factLogs,
     this.actionNames = const {},
     this.personNames = const {},
     this.locationNames = const {},
@@ -109,6 +111,11 @@ class SubjectSections {
 
   /// Whose notes on its events are shown.
   final String? noteOf;
+
+  /// The person it is, if it's a person: each trait's score shows what it
+  /// keeps about them, and [factLogs] (by trait id) what changed in it.
+  final Person? person;
+  final Future<List<FactLog>> Function(String traitId)? factLogs;
   final Map<String?, String> actionNames;
   final Map<String?, String> personNames;
   final Map<String?, String> locationNames;
@@ -177,6 +184,9 @@ class SubjectSections {
             scale: scale,
             personNames: personNames,
             locationNames: locationNames,
+            person: person,
+            traitList: traitList,
+            factLogs: factLogs,
           ),
         ),
       ),

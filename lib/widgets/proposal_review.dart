@@ -99,7 +99,8 @@ bool _same(List<String> a, List<String> b) =>
 /// calendar.
 /// Its menu offers to [onHide] it, to show the calendar under it, or --
 /// [hidden] -- to show it again; while it's hidden, or shown as it last
-/// planned, a line under it says so.
+/// planned, a line under it says so. With trait fact summaries to
+/// rewrite, its menu offers to [onFacts] show them.
 /// While [busy], nothing can be tapped; nor while [closing] -- confirming,
 /// finishing or abandoning it, which it names -- waits to save.
 class ProposalBar extends StatelessWidget {
@@ -118,9 +119,11 @@ class ProposalBar extends StatelessWidget {
     this.onAbandon,
     this.hidden = false,
     this.onHide,
+    this.onFacts,
   });
 
   final Proposal proposal;
+  final VoidCallback? onFacts;
   final bool busy;
 
   /// What's waiting to save that confirms, finishes or abandons it: "Confirm
@@ -247,6 +250,11 @@ class ProposalBar extends StatelessWidget {
                                     text: ' · $changes changed',
                                     style: TextStyle(color: colors.secondary),
                                   ),
+                                if (proposal.factSummaries.length case final n
+                                    when n > 0 && !hidden)
+                                  TextSpan(
+                                    text: ' · $n fact${n == 1 ? '' : 's'}',
+                                  ),
                               ],
                             ),
                             maxLines: 1,
@@ -306,6 +314,15 @@ class ProposalBar extends StatelessWidget {
                       PopupMenuItem(
                         value: notesOf,
                         child: Text('Notes for Claude ($notes)'),
+                      ),
+                    if (onFacts case final facts?
+                        when proposal.factSummaries.isNotEmpty)
+                      PopupMenuItem(
+                        value: facts,
+                        child: Text(
+                          'Facts it rewrites '
+                          '(${proposal.factSummaries.length})',
+                        ),
                       ),
                     if (onGoTo case final goTo?)
                       PopupMenuItem(value: goTo, child: const Text('Go to it')),
@@ -2304,3 +2321,64 @@ class _CancelledDialogState extends State<_CancelledDialog> {
     );
   }
 }
+
+/// Shows the trait fact summaries [proposal] rewrites: each person's
+/// (named from [personNames]) fact (from [factNames], by "trait id/fact
+/// id"), the summary as it would be, and as it is now. They're applied
+/// with it; to change one, leave Claude a note.
+Future<void> showFactSummariesSheet(
+  BuildContext context,
+  Proposal proposal, {
+  Map<String, String> personNames = const {},
+  Map<String, String> factNames = const {},
+}) => showModalBottomSheet<void>(
+  context: context,
+  isScrollControlled: true,
+  showDragHandle: true,
+  builder: (context) {
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      builder: (context, controller) => ListView(
+        controller: controller,
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [
+          Text('Facts it rewrites', style: theme.textTheme.titleMedium),
+          Text(
+            "Each one's whole summary as it would be once it's confirmed, "
+            'beside what it is now. The events whose notes showed each '
+            'change log it. To change one, leave Claude a note.',
+            style: muted,
+          ),
+          for (final s in proposal.factSummaries)
+            Card.outlined(
+              margin: const EdgeInsets.only(top: 12),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${personNames[s.personId] ?? s.personId} · '
+                      '${factNames[s.fact] ?? s.fact}',
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 6),
+                    Text('Would be', style: theme.textTheme.labelMedium),
+                    Text(s.summary.isEmpty ? '(empty)' : s.summary),
+                    const SizedBox(height: 6),
+                    Text('Now', style: theme.textTheme.labelMedium),
+                    Text(s.previous ?? 'Nothing yet', style: muted),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  },
+);

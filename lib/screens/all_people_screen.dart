@@ -233,7 +233,7 @@ class _AllPeopleScreenState extends State<AllPeopleScreen> {
           if (matchesSearch(_query, [
             person.name,
             person.context,
-            person.whatMatters,
+            for (final byFact in person.facts.values) ...byFact.values,
             if (person.isSelf) 'you',
             for (final id in person.circleIds) circleName(id),
           ]))

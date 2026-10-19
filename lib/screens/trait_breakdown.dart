@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/facts.dart';
+import '../models/person.dart';
 import '../models/trait.dart';
 
 /// Shows [trait]'s daily scores, [days], newest first, each the mean
@@ -66,10 +67,13 @@ Future<void> showTraitHistory(
   ),
 );
 
-/// Shows how [score] was reached: each of its parts' score, weight and how
-/// it was reached, and the events behind it -- named from [events] (by id,
-/// each as the server sent it, with its facts) where they're there, each
-/// with Claude's rating of it for a judgment. Each part is titled from
+/// Shows how [score] was reached -- first, for a person, the trait's
+/// [facts]: each one's summary of them (null for none yet) and what
+/// compaction changed in it, from [factLogs] (their logs of this trait,
+/// newest first) -- then each of its parts' score, weight and how it was
+/// reached, and the events behind it -- named from [events] (by id, each
+/// as the server sent it, with its facts) where they're there, each with
+/// Claude's rating of it for a judgment. Each part is titled from
 /// [labels], in order, where it has one.
 Future<void> showTraitParts(
   BuildContext context,
@@ -79,81 +83,170 @@ Future<void> showTraitParts(
   Map<String?, String> personNames = const {},
   Map<String?, String> locationNames = const {},
   List<String> labels = const [],
-}) => showModalBottomSheet<void>(
-  context: context,
-  isScrollControlled: true,
-  showDragHandle: true,
-  builder: (context) {
-    final theme = Theme.of(context);
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.6,
-      builder: (context, controller) => ListView(
-        controller: controller,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        children: [
-          Text(
-            '${score.name}: ${score.score ?? '–'}',
-            style: theme.textTheme.titleLarge,
-          ),
-          if (title != null) Text(title, style: theme.textTheme.bodySmall),
-          const SizedBox(height: 8),
-          for (final (i, part) in score.parts.indexed)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
+  List<(TraitFact, String?)> facts = const [],
+  Future<List<FactLog>> Function()? factLogs,
+}) {
+  final logs = facts.isEmpty ? null : factLogs?.call();
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (context) {
+      final theme = Theme.of(context);
+      return DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        builder: (context, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          children: [
+            Text(
+              '${score.name}: ${score.score ?? '–'}',
+              style: theme.textTheme.titleLarge,
+            ),
+            if (title != null) Text(title, style: theme.textTheme.bodySmall),
+            if (facts.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 4),
+                child: Text('Facts', style: theme.textTheme.titleMedium),
+              ),
+              for (final (fact, summary) in facts)
+                _factCard(theme, fact, summary, logs),
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 4),
+                child: Text('Parts', style: theme.textTheme.titleMedium),
+              ),
+            ] else
+              const SizedBox(height: 8),
+            for (final (i, part) in score.parts.indexed)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              i < labels.length
+                                  ? labels[i]
+                                  : partKinds[part.kind]?.label ?? part.key,
+                              style: theme.textTheme.titleSmall,
+                            ),
+                          ),
+                          Text(
+                            part.score == null ? '–' : '${part.score}',
+                            style: theme.textTheme.titleMedium,
+                          ),
+                        ],
+                      ),
+                      if (part.weight != 1)
+                        Text(
+                          'Weight ${part.weight}',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      Text(part.said),
+                      if (part.rubric case final rubric?)
+                        Text(
+                          rubric,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      for (final id in part.eventIds)
+                        _event(
+                          theme,
+                          id,
+                          events[id],
+                          personNames,
+                          locationNames,
+                          part.judgments
+                              .where((j) => j.eventId == id)
+                              .firstOrNull,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+/// [fact]'s card: its [summary] of the person, then the changes [logs]
+/// (theirs, of its trait) say compaction made to it, newest first.
+Widget _factCard(
+  ThemeData theme,
+  TraitFact fact,
+  String? summary,
+  Future<List<FactLog>>? logs,
+) => Card(
+  child: Padding(
+    padding: const EdgeInsets.all(12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(fact.name, style: theme.textTheme.titleSmall),
+        const SizedBox(height: 4),
+        Text(
+          summary ?? 'Nothing yet. Compaction adds to it as notes show things.',
+          style: summary == null ? TextStyle(color: theme.hintColor) : null,
+        ),
+        if (logs != null)
+          FutureBuilder<List<FactLog>>(
+            future: logs,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    "Couldn't load its changes.",
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                );
+              }
+              final mine = [
+                for (final log in snapshot.data ?? const <FactLog>[])
+                  if (log.factId == fact.id) log,
+              ];
+              if (!snapshot.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: LinearProgressIndicator(),
+                );
+              }
+              if (mine.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            i < labels.length
-                                ? labels[i]
-                                : partKinds[part.kind]?.label ?? part.key,
-                            style: theme.textTheme.titleSmall,
-                          ),
+                    Text('Changes', style: theme.textTheme.labelLarge),
+                    for (final log in mine)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '• ${switch (log.eventStart) {
+                            final start? => '${start.year}-${_two(start.month)}-${_two(start.day)} ',
+                            null => '',
+                          }}${log.eventSummary ?? '(no title)'} — ${log.log}',
+                          style: theme.textTheme.bodySmall,
                         ),
-                        Text(
-                          part.score == null ? '–' : '${part.score}',
-                          style: theme.textTheme.titleMedium,
-                        ),
-                      ],
-                    ),
-                    if (part.weight != 1)
-                      Text(
-                        'Weight ${part.weight}',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    Text(part.said),
-                    if (part.rubric case final rubric?)
-                      Text(
-                        rubric,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    for (final id in part.eventIds)
-                      _event(
-                        theme,
-                        id,
-                        events[id],
-                        personNames,
-                        locationNames,
-                        part.judgments
-                            .where((j) => j.eventId == id)
-                            .firstOrNull,
                       ),
                   ],
                 ),
-              ),
-            ),
-          const SizedBox(height: 16),
-        ],
-      ),
-    );
-  },
+              );
+            },
+          ),
+      ],
+    ),
+  ),
 );
 
 Widget _event(

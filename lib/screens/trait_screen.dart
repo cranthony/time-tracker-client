@@ -93,6 +93,38 @@ class _TraitScreenState extends State<TraitScreen> {
             ),
           for (final problem in _trait.problems)
             Text(problem, style: TextStyle(color: theme.colorScheme.error)),
+          if (_trait.facts.isNotEmpty) ...[
+            _heading(theme, 'Facts'),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'What it keeps about each person it applies to, for its '
+                'judgments: compaction rewrites their summary as notes show '
+                'something new.',
+                style: muted,
+              ),
+            ),
+            for (final fact in _trait.facts)
+              Card.outlined(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(fact.name, style: theme.textTheme.titleSmall),
+                      const SizedBox(height: 4),
+                      Text(fact.summaryPrompt, style: small),
+                      if (fact.logPrompt case final log?)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text('Logged: $log', style: muted),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
           _heading(theme, 'Parts'),
           if (_trait.scoring case final scoring? when !scoring.isMean)
             Padding(
@@ -107,6 +139,7 @@ class _TraitScreenState extends State<TraitScreen> {
               part,
               widget.actionNames,
               weight: _trait.scoring?.weightOf(key) ?? 1,
+              facts: _trait.facts,
             ),
           const SizedBox(height: 8),
           if (days.isEmpty)
@@ -175,9 +208,17 @@ class _TraitScreenState extends State<TraitScreen> {
 /// and for a judgment, its rubric, rating scale, facts, and how its
 /// judgments combine.
 class _PartCard extends StatelessWidget {
-  const _PartCard(this.part, this.actionNames, {this.weight = 1});
+  const _PartCard(
+    this.part,
+    this.actionNames, {
+    this.weight = 1,
+    this.facts = const [],
+  });
 
   final Part part;
+
+  /// Its trait's facts, to name those it's judged from.
+  final List<TraitFact> facts;
   final Map<String?, String> actionNames;
   final num weight;
 
@@ -232,7 +273,7 @@ class _PartCard extends StatelessWidget {
                 ),
               const SizedBox(height: 6),
               Text(
-                'Judged from ${[for (final MapEntry(:key, :value) in judgmentFactsOf(part).entries) '${(judgmentFacts[key]?.label ?? key).toLowerCase()}${value == null ? '' : ' (last $value days)'}'].join(', ')}',
+                'Judged from ${[for (final MapEntry(:key, :value) in judgmentFactsOf(part).entries) '${traitFactId(key) == null ? judgmentFactLabel(key).toLowerCase() : judgmentFactLabel(key, facts)}${value == null ? '' : ' (last $value days)'}'].join(', ')}',
                 style: muted,
               ),
               if (scoring case final scoring? when !scoring.isMean)

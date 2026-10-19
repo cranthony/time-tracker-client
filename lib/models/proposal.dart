@@ -433,6 +433,7 @@ class Proposal {
     this.changedSince = const {},
     this.replaced = const [],
     this.recap,
+    this.factSummaries = const [],
   });
 
   /// 12 hex digits.
@@ -527,6 +528,10 @@ class Proposal {
   /// Claude's account of its last revision: what it did, and what it's
   /// unsure of. Null from a server that doesn't say.
   final ProposalRecap? recap;
+
+  /// The trait fact summaries it rewrites, each beside the person's
+  /// summary as it is now: applied with it.
+  final List<ProposedSummary> factSummaries;
 
   /// The events (ids or keys) the user's edits changed since Claude wrote
   /// [recap]: what it says of them may no longer hold.
@@ -654,6 +659,10 @@ class Proposal {
       json['recap'],
       revision: (json['recap_revision'] as num?)?.toInt(),
     ),
+    factSummaries: [
+      for (final s in json['fact_summaries'] as List? ?? const [])
+        if (s is Map) ?ProposedSummary.fromJson(s.cast()),
+    ],
   );
 
   Proposal copyWith({
@@ -694,7 +703,40 @@ class Proposal {
     changedSince: changedSince ?? this.changedSince,
     replaced: replaced ?? this.replaced,
     recap: recap,
+    factSummaries: factSummaries,
   );
+}
+
+/// A trait fact summary a [Proposal] rewrites, mirroring an item of
+/// `get_proposal`'s `fact_summaries`: [summary], the whole of it, for
+/// [personId]'s [fact] ("trait id/fact id"), and theirs as it is now
+/// ([previous]; null for none yet).
+class ProposedSummary {
+  const ProposedSummary({
+    required this.personId,
+    required this.fact,
+    required this.summary,
+    this.previous,
+  });
+
+  final String personId;
+  final String fact;
+  final String summary;
+  final String? previous;
+
+  static ProposedSummary? fromJson(Map<String, dynamic> json) {
+    final (person, fact) = (json['person_id'], json['fact']);
+    if (person is! String || fact is! String) return null;
+    return ProposedSummary(
+      personId: person,
+      fact: fact,
+      summary: json['summary'] as String? ?? '',
+      previous: switch (json['previous']) {
+        final String text when text.trim().isNotEmpty => text,
+        _ => null,
+      },
+    );
+  }
 }
 
 /// What a [ProposalAddition] is.

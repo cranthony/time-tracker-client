@@ -117,10 +117,19 @@ class WriteKind {
     createTool: 'create_person',
     updateTool: 'update_person',
     writable: _person,
+    updateArguments: _personUpdate,
   );
 
   static Map<String, Object?> _person(Map<String, Object?> item) =>
       Person.fromJson({'id': '', ...item}).toJson();
+
+  /// A person's update: their trait facts' summaries (`facts`) beside
+  /// them, the rest under "person".
+  static Map<String, Object?> _personUpdate(
+    String id,
+    Map<String, Object?> changes,
+    int? version,
+  ) => personUpdate(id, changes, version: version);
 
   static Map<String, Object?> _location(Map<String, Object?> item) =>
       Location.fromJson({'id': '', ...item}).toJson();

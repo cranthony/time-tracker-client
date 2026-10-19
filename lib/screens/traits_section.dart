@@ -133,6 +133,7 @@ class TraitsSectionState extends State<TraitsSection> {
               'definition': edited.definition,
               'parts': edited.parts,
               'scoring': edited.scoring?.toJson(),
+              'facts': [for (final fact in edited.facts) fact.toJson()],
             }),
     );
     if (saved != null) await reload();

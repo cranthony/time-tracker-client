@@ -15,6 +15,7 @@ class Trait {
     this.definition,
     this.parts = const [],
     this.scoring,
+    this.facts = const [],
     this.problems = const [],
   });
 
@@ -31,6 +32,13 @@ class Trait {
   /// the plain mean.
   final Aggregation? scoring;
 
+  /// What it keeps about each person it applies to, for its judgments:
+  /// each person's summary of each, rewritten by compaction.
+  final List<TraitFact> facts;
+
+  /// Its fact [id], if it has one.
+  TraitFact? fact(String id) => facts.where((f) => f.id == id).firstOrNull;
+
   /// What's wrong with it, as the server says, for one edited by hand:
   /// its bad parts aren't rated.
   final List<String> problems;
@@ -45,6 +53,10 @@ class Trait {
         if (part is Map) Map<String, Object?>.unmodifiable(part.cast()),
     ],
     scoring: Aggregation.fromJson(json['scoring']),
+    facts: [
+      for (final fact in json['facts'] as List? ?? const [])
+        if (fact is Map) TraitFact.fromJson(fact.cast()),
+    ],
     problems: [for (final p in json['problems'] as List? ?? const []) '$p'],
   );
 
@@ -56,7 +68,88 @@ class Trait {
     'definition': ?definition,
     'parts': parts,
     'scoring': ?scoring?.toJson(),
+    'facts': [for (final fact in facts) fact.toJson()],
   };
+}
+
+/// One of a trait's facts: what it keeps about each person it applies
+/// to, for its judgments -- each person's summary of it, which compaction
+/// rewrites whole when an event's notes show something new, logging what
+/// changed on the event. A judgment part names it as `fact:<id>`
+/// ([judgmentName]).
+class TraitFact {
+  const TraitFact({
+    required this.id,
+    required this.name,
+    required this.summaryPrompt,
+    this.logPrompt,
+  });
+
+  /// Made from its name when it's added ([newFactId]); it never changes.
+  final String id;
+  final String name;
+
+  /// What its summary of a person keeps, and how: what Claude is told.
+  final String summaryPrompt;
+
+  /// What's worth logging when a summary changes, if it says.
+  final String? logPrompt;
+
+  /// How a judgment part names it.
+  String get judgmentName => '$traitFactPrefix$id';
+
+  factory TraitFact.fromJson(Map<String, dynamic> json) => TraitFact(
+    id: json['id'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    summaryPrompt: json['summary_prompt'] as String? ?? '',
+    logPrompt: switch (json['log_prompt']) {
+      final String text when text.trim().isNotEmpty => text,
+      _ => null,
+    },
+  );
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'summary_prompt': summaryPrompt,
+    'log_prompt': ?logPrompt,
+  };
+}
+
+/// What a judgment part names a trait's fact by, before its id.
+const traitFactPrefix = 'fact:';
+
+/// The id of the trait fact a judgment fact names (`fact:<id>`), if it
+/// names one.
+String? traitFactId(String name) =>
+    name.startsWith(traitFactPrefix) && name.length > traitFactPrefix.length
+    ? name.substring(traitFactPrefix.length)
+    : null;
+
+/// An id for a new fact named [name], as the server makes one: its name
+/// in lowercase, words joined by "_", and none of [taken].
+String newFactId(String name, Iterable<String> taken) {
+  final words = name
+      .toLowerCase()
+      .replaceAll(RegExp('[^a-z0-9]+'), '_')
+      .replaceAll(RegExp(r'^_+|_+$'), '');
+  var base = words.length > 27 ? words.substring(0, 27) : words;
+  base = base.replaceAll(RegExp(r'_+$'), '');
+  if (base.isEmpty) base = 'fact';
+  var id = base;
+  for (var n = 2; taken.contains(id); n++) {
+    id = '${base}_$n';
+  }
+  return id;
+}
+
+/// A judgment fact's label: a trait fact's name, from [facts] (its
+/// trait's), or a built-in one's ([judgmentFacts]).
+String judgmentFactLabel(String name, [List<TraitFact> facts = const []]) {
+  if (traitFactId(name) case final id?) {
+    return facts.where((f) => f.id == id).firstOrNull?.name ?? id;
+  }
+  return judgmentFacts[name]?.label ?? name;
 }
 
 /// One part of a trait: `{"id": ..., "kind": ..., ...}`, the fields its
@@ -257,8 +350,9 @@ const engagementTypes = {'with': 'With them', 'for': 'For them'};
 /// is, and whether it looks back over a number of days.
 typedef JudgmentFact = ({String label, String hint, bool lookback});
 
-/// The facts a judgment can be made from, as the server names them (its
-/// utilities/traits.py's FACTS).
+/// The facts any judgment can be made from, as the server names them (its
+/// stores/traits.rs's FACTS); a trait's own facts are named `fact:<id>`
+/// ([TraitFact.judgmentName]).
 const judgmentFacts = <String, JudgmentFact>{
   'action': (
     label: 'Action',
@@ -279,18 +373,6 @@ const judgmentFacts = <String, JudgmentFact>{
   'general_notes': (
     label: 'General notes',
     hint: "The event's own notes",
-    lookback: false,
-  ),
-  'person_notes': (
-    label: 'Person notes',
-    hint:
-        'The notes on the person: yours for a "for" part, theirs for a '
-        '"with" one',
-    lookback: false,
-  ),
-  'what_matters': (
-    label: 'What matters',
-    hint: "What's important to them, as their page says",
     lookback: false,
   ),
 };
@@ -352,22 +434,50 @@ String? traitProblem(Trait trait) {
   if (trait.name.trim().isEmpty) return 'Give it a name.';
   if (trait.name.length > 50) return 'Its name can be at most 50 characters.';
   if (!traitStatuses.containsKey(trait.status)) return 'Pick a status.';
+  if (factsProblem(trait.facts) case final problem?) return problem;
   if (trait.parts.isEmpty) return 'Give it at least one part.';
-  return partsProblem(trait.parts);
+  return partsProblem(
+    trait.parts,
+    factIds: [for (final fact in trait.facts) fact.id],
+  );
+}
+
+/// What's wrong with the first bad fact of [facts], or null if they're
+/// fine: each named, its name its own, with a summary prompt.
+String? factsProblem(List<TraitFact> facts) {
+  final names = <String>{};
+  for (final (i, fact) in facts.indexed) {
+    final name = fact.name.trim();
+    if (name.isEmpty) return 'Fact ${i + 1}: give it a name.';
+    if (name.length > 50) {
+      return 'Fact ${i + 1}: its name can be at most 50 characters.';
+    }
+    if (!names.add(name.toLowerCase())) {
+      return 'Two facts are named "$name".';
+    }
+    if (fact.summaryPrompt.trim().isEmpty) {
+      return 'Fact ${i + 1}: say what its summary keeps.';
+    }
+  }
+  return null;
 }
 
 /// What's wrong with the first bad part of [parts], or null if they're
-/// fine.
-String? partsProblem(List<Part> parts) {
+/// fine; with [factIds], each trait fact a judgment names must be one of
+/// them (its trait's).
+String? partsProblem(List<Part> parts, {List<String>? factIds}) {
   for (final (i, part) in parts.indexed) {
-    if (partProblem(part) case final problem?) return 'Part ${i + 1}: $problem';
+    if (partProblem(part, factIds: factIds) case final problem?) {
+      return 'Part ${i + 1}: $problem';
+    }
   }
   return null;
 }
 
 /// What's wrong with [part], in a sentence, or null if it's fine: the
-/// checks the server's `part_problems` makes.
-String? partProblem(Part part) {
+/// checks the server's `part_problems` makes. With [factIds], each trait
+/// fact it names must be one of them.
+String? partProblem(Part part, {List<String>? factIds}) {
   final kind = partKinds[part['kind']];
   if (kind == null) return 'pick a kind.';
   bool positive(Object? n) => n is num && n > 0;
@@ -414,8 +524,13 @@ String? partProblem(Part part) {
     final facts = part['facts'] as List? ?? const [];
     if (facts.isEmpty) return 'pick at least one fact to judge by.';
     final names = judgmentFactsOf(part);
-    if (names.keys.any((f) => !judgmentFacts.containsKey(f))) {
-      return "it has a fact the app doesn't know.";
+    for (final name in names.keys) {
+      if (judgmentFacts.containsKey(name)) continue;
+      final id = traitFactId(name);
+      if (id == null) return "it has a fact the app doesn't know.";
+      if (factIds != null && !factIds.contains(id)) {
+        return "it's judged from a fact its trait doesn't have.";
+      }
     }
     for (final fact in facts) {
       final days = fact is Map ? fact['lookback_days'] : null;

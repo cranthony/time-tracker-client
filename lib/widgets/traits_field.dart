@@ -139,6 +139,7 @@ class _TraitsFieldState extends State<TraitsField> {
         final preview? => (parts) => preview(trait, parts),
         null => null,
       },
+      facts: trait.facts,
     );
     if (edited != null) _changed(() => _parts[trait.id!] = edited);
   }
