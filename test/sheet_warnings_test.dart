@@ -323,6 +323,82 @@ void main() {
     });
   });
 
+  group('dismissing', () {
+    final flag = SheetWarningsFlag(
+      recent: 2,
+      latest: DateTime.utc(2026, 10, 18, 9),
+    );
+
+    Future<SheetWarningsDismissal> show(
+      WidgetTester tester,
+      ValueNotifier<SheetWarningsFlag?> warnings,
+    ) async {
+      final dismissal = SheetWarningsDismissal(persist: false);
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => SheetWarningsBanner(
+            warnings: warnings,
+            dismissal: dismissal,
+            clock: () => _now,
+            onOpen: () {},
+            child: child!,
+          ),
+          home: const Scaffold(body: Text('Events')),
+        ),
+      );
+      return dismissal;
+    }
+
+    testWidgets('hides the strip, until a later warning', (tester) async {
+      final warnings = ValueNotifier<SheetWarningsFlag?>(flag);
+      await show(tester, warnings);
+      expect(find.byIcon(Icons.edit_note), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pump();
+      expect(find.byIcon(Icons.edit_note), findsNothing);
+      expect(find.text('Events'), findsOneWidget);
+
+      // The server still says of the same week's warnings.
+      warnings.value = SheetWarningsFlag(recent: 2, latest: flag.latest);
+      await tester.pump();
+      expect(find.byIcon(Icons.edit_note), findsNothing);
+
+      warnings.value = SheetWarningsFlag(
+        recent: 3,
+        latest: DateTime.utc(2026, 10, 18, 11),
+      );
+      await tester.pump();
+      expect(find.byIcon(Icons.edit_note), findsOneWidget);
+    });
+
+    testWidgets('one with no time said, only as it was', (tester) async {
+      final warnings = ValueNotifier<SheetWarningsFlag?>(_said);
+      await show(tester, warnings);
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pump();
+      expect(find.byIcon(Icons.edit_note), findsNothing);
+
+      warnings.value = const SheetWarningsFlag(recent: 3);
+      await tester.pump();
+      expect(find.byIcon(Icons.edit_note), findsOneWidget);
+    });
+
+    test('keeps the latest dismissed', () {
+      final dismissal = SheetWarningsDismissal(persist: false)
+        ..dismiss(flag)
+        ..dismiss(SheetWarningsFlag(recent: 1, latest: DateTime.utc(2026)));
+      expect(dismissal.hides(flag), isTrue);
+      expect(
+        dismissal.hides(
+          SheetWarningsFlag(recent: 3, latest: DateTime.utc(2026, 10, 19)),
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('the details', () {
     Future<void> show(WidgetTester tester, DiagnosticsRepository repo) async {
       await tester.pumpWidget(

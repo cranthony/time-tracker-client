@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.153.0
+
+- The strip saying the metadata spreadsheet or calendar was changed
+  outside the server has a close button. Dismissed, it stays away on this
+  device until the server finds a later change; the server still lists
+  the week's changes, a tap away on the strip when it's back.
+
 ## 7.152.0
 
 - On the Plan page, each pane has a hotkey: its title's first letter.

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// What the server last said, in a handshake's or a tool result's
 /// `_meta`, of changes made behind its back -- the metadata spreadsheet
@@ -46,3 +47,64 @@ class SheetWarningsFlag {
   @override
   String toString() => 'SheetWarningsFlag($recent, $latest)';
 }
+
+/// The warnings the user dismissed from [SheetWarningsBanner]: up to the
+/// latest the server had said of when they dismissed it. Kept on this
+/// device only; the server still says what it found that week. A warning
+/// that comes later shows again. Listeners hear every change.
+class SheetWarningsDismissal extends ChangeNotifier {
+  /// Kept on the device with [persist]; otherwise only while the app
+  /// runs.
+  SheetWarningsDismissal({this.persist = true});
+
+  final bool persist;
+  DateTime? _upTo;
+  SheetWarningsFlag? _flag;
+  Future<void>? _loading;
+
+  /// Reads what's kept on the device, once. Best effort.
+  Future<void> load() => _loading ??= () async {
+    if (!persist) return;
+    try {
+      final kept = await SharedPreferencesAsync().getString(_key);
+      final upTo = kept == null ? null : DateTime.tryParse(kept);
+      if (upTo == null || _upTo != null) return;
+      _upTo = upTo;
+      notifyListeners();
+    } catch (_) {
+      // Nowhere to keep it.
+    }
+  }();
+
+  /// Whether [flag] says only of warnings dismissed already. One with no
+  /// time said is dismissed only as it was, while the app runs.
+  bool hides(SheetWarningsFlag flag) => switch ((flag.latest, _upTo)) {
+    (final latest?, final upTo?) => !latest.isAfter(upTo),
+    (null, _) => flag == _flag,
+    _ => false,
+  };
+
+  /// Dismisses what [flag] says of.
+  void dismiss(SheetWarningsFlag flag) {
+    _flag = flag;
+    final latest = flag.latest;
+    if (latest != null && !(_upTo?.isAfter(latest) ?? false)) {
+      _upTo = latest;
+      if (persist) {
+        try {
+          SharedPreferencesAsync()
+              .setString(_key, latest.toUtc().toIso8601String())
+              .catchError((_) {});
+        } catch (_) {
+          // Nowhere to keep it: it lasts until the app closes.
+        }
+      }
+    }
+    notifyListeners();
+  }
+
+  static const _key = 'sheet_warnings_dismissed';
+}
+
+/// The app's [SheetWarningsDismissal].
+final sheetWarningsDismissal = SheetWarningsDismissal();

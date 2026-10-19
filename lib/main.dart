@@ -44,6 +44,7 @@ import 'services/response_cache.dart';
 import 'services/schedule_hints_repository.dart';
 import 'services/server_url.dart';
 import 'services/server_client.dart';
+import 'services/sheet_warnings.dart';
 import 'services/traits_repository.dart';
 import 'platform/google_calendar_source.dart';
 import 'services/google_calendars.dart';
@@ -565,6 +566,8 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     _startEventOutbox();
     // Their times, and the next fetch scheduled from them. Best effort.
     widget.backgroundRefresh?.load().catchError((Object _) {});
+    // The changes outside the server dismissed already. Best effort.
+    sheetWarningsDismissal.load();
     _lifecycle = AppLifecycleListener(
       onResume: _onForeground,
       onPause: _onBackground,
