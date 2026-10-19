@@ -11,6 +11,8 @@ import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/recurrence.dart';
 import 'package:time_tracker_client/models/repeat.dart';
 import 'package:time_tracker_client/outbox/note_writes.dart';
+import 'package:time_tracker_client/outbox/outbox_store.dart';
+import 'package:time_tracker_client/outbox/write_queue.dart';
 import 'package:time_tracker_client/platform/calendar_widget.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/screens/home_screen.dart';
@@ -19,6 +21,8 @@ import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
+import 'package:time_tracker_client/services/people_repository.dart';
+import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/widgets/error_sheet.dart';
 import 'package:time_tracker_client/widgets/pending_event_box.dart';
@@ -2942,6 +2946,89 @@ void main() {
     expect(marked(), [at(29, 22), at(30, 8), at(30, 9, 30)]);
   });
 
+  testWidgets('loads the actions again once an action is saved, as the '
+      'notes are', (tester) async {
+    final actions = _CountingActionsRepository(const []);
+    // One queue for both, as the app's.
+    final queue = WriteQueue(
+      store: InMemoryOutboxStore(),
+      call: localActionCalls(actions),
+    );
+    final actionWrites = ActionWrites(queue);
+    final memory = PlanMemory(
+      eventStore: EventStore(repository: InMemoryEventsRepository()),
+    )..useActionWrites(actionWrites);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppSettingsScope(
+          settings: current(),
+          child: EventsScreen(
+            repository: InMemoryEventsRepository(),
+            serverLabel: 'offline demo',
+            notesRepository: InMemoryNotesRepository(),
+            outbox: NoteWrites(queue),
+            actionsRepository: actions,
+            memory: memory,
+            clock: () => now,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final fetched = actions.fetches;
+
+    final id = actionWrites.create({'name': 'Run'});
+    await tester.runAsync(queue.flush);
+    await tester.pumpAndSettle();
+    expect(actions.fetches, greaterThan(fetched));
+    // As the server has it, not only as it was saved.
+    expect(memory.actions!.actions.map((a) => a.id), contains(id));
+    expect(queue.justSaved, isEmpty);
+  });
+
+  testWidgets('loads the locations again once a location is saved, and '
+      'not the actions', (tester) async {
+    final actions = _CountingActionsRepository(const []);
+    final people = _CountingPeopleRepository();
+    final queue = WriteQueue(
+      store: InMemoryOutboxStore(),
+      call: (tool, arguments) async =>
+          tool == 'create_location' ? const {} : null,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppSettingsScope(
+          settings: current(),
+          child: PeopleScope(
+            repository: people,
+            child: EventsScreen(
+              repository: InMemoryEventsRepository(),
+              serverLabel: 'offline demo',
+              notesRepository: InMemoryNotesRepository(),
+              outbox: NoteWrites(queue),
+              actionsRepository: actions,
+              clock: () => now,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final (actionFetches, locationFetches, peopleFetches) = (
+      actions.fetches,
+      people.locationFetches,
+      people.peopleFetches,
+    );
+
+    queue.create(WriteKind.location, {'name': 'Gym'});
+    await tester.runAsync(queue.flush);
+    await tester.pumpAndSettle();
+    expect(people.locationFetches, greaterThan(locationFetches));
+    expect(people.peopleFetches, peopleFetches);
+    expect(actions.fetches, actionFetches);
+    expect(queue.justSaved, isEmpty);
+  });
+
   group('HomeScreen', () {
     late NoteWrites outbox;
     late InMemoryNotesRepository notes;
@@ -3282,6 +3369,24 @@ class _RecurrenceClient extends McpClient {
     ];
     // A batch of event changes answers with its events; the rest, a list.
     return name.endsWith('_event') ? {'events': events} : events;
+  }
+}
+
+/// Counts how often everyone, and every location, is fetched.
+class _CountingPeopleRepository extends InMemoryPeopleRepository {
+  var peopleFetches = 0;
+  var locationFetches = 0;
+
+  @override
+  Future<PeopleList> people() {
+    peopleFetches++;
+    return super.people();
+  }
+
+  @override
+  Future<List<Location>> locations() {
+    locationFetches++;
+    return super.locations();
   }
 }
 

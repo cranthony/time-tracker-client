@@ -422,6 +422,24 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _loadPeople();
+    final memory = PlanMemoryScope.of(context);
+    if (!identical(memory, _memory)) {
+      _memory?.removeListener(_memoryChanged);
+      _memory = memory?..addListener(_memoryChanged);
+      _shownActions = memory?.shownActions;
+    }
+  }
+
+  /// The Events page's memory, followed for its actions as they're
+  /// loaded again: one just added, say, with the color the server gave it.
+  PlanMemory? _memory;
+  ActionList? _shownActions;
+
+  void _memoryChanged() {
+    final shown = _memory?.shownActions;
+    if (!mounted || identical(shown, _shownActions)) return;
+    _shownActions = shown;
+    setState(() => _actionList = _loadActions());
   }
 
   bool _peopleAsked = false;
@@ -512,6 +530,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
 
   @override
   void dispose() {
+    _memory?.removeListener(_memoryChanged);
     _text.dispose();
     super.dispose();
   }

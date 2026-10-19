@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.156.3
+
+- An action added from an event's action picker shows in its color --
+  on the Events page, and in the event's dialog -- as soon as it's
+  saved, rather than only once the actions were refreshed on the Plan
+  page. People and locations added or changed there are loaded again
+  once they're saved too, so a location shows its group's path.
+
 ## 7.156.2
 
 - An action's split chip says "Split the rest", not "The rest", when
