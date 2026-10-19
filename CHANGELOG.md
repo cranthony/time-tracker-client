@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.144.0
+
+- J and K go down and up a person's or a habit's trait scores, as they
+  do other lists; Enter opens the one highlighted, showing how it was
+  reached.
+
 ## 7.143.0
 
 - An event's action, with its split chip, is level with the plow beside

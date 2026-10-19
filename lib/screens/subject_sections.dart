@@ -156,17 +156,24 @@ class SubjectSections {
       defaults: PlanMemoryScope.of(context)?.scoringDefaults.traits,
       own: own,
     ),
+    // What J and K go down and up: each trait's score, tapped for how
+    // it was reached.
     if (scored)
-      ...traitScoreTiles(
-        context,
-        _scores,
-        subjectId,
-        whom: whom,
-        why: why,
-        trends: trends,
-        scale: scale,
-        personNames: personNames,
-        locationNames: locationNames,
+      HotkeyItems(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: traitScoreTiles(
+            context,
+            _scores,
+            subjectId,
+            whom: whom,
+            why: why,
+            trends: trends,
+            scale: scale,
+            personNames: personNames,
+            locationNames: locationNames,
+          ),
+        ),
       ),
   ];
 
