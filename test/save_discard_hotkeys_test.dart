@@ -313,7 +313,7 @@ void main() {
           closed = true;
         },
       );
-      await tester.tap(find.text('Minutes'));
+      await tester.tap(find.text('Duration'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '0');
       await tester.pump();

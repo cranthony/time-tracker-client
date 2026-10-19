@@ -9,7 +9,7 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
-## 7.142.1
+## 7.143.0
 
 - An event's action, with its split chip, is level with the plow beside
   it again, as a location is with its pin: the chip is no taller than
@@ -18,6 +18,11 @@ on. Add the new version's section here at the same time; CI checks both.
   end and is tapped anywhere in the row's height, as the map button is;
   with several, each is tapped anywhere in its line's height, and a
   little either side.
+- An action given neither a duration nor a percent says "The rest" on
+  its split chip, not "Even share".
+- A split's Minutes option is Duration, set with the usual duration
+  picker: typed as "1h 30m", "90m" or "1:30", or stepped an hour or 5
+  minutes at a time.
 
 ## 7.142.0
 

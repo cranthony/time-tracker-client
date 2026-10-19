@@ -1736,7 +1736,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       eventMinutes: _time('end').difference(_time('start')).inMinutes,
       kind: 'action',
       rest:
-          "It shares the time the other actions' minutes and percents "
+          "It shares the time the other actions' durations and percents "
           'leave evenly with the others given neither.',
       make: (minutes, percent, remaining) => ActionShare(
         id,
@@ -1765,7 +1765,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     Widget chip(int i, {double height = 28}) => _splitChip(
       context,
       shares[i],
-      ids.length == 1 ? 'All of it' : 'Even share',
+      ids.length == 1 ? 'All of it' : 'The rest',
       _canEdit('action_ids') ? () => _setActionShare(ids[i]) : null,
       height: height,
     );

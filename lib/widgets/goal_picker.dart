@@ -111,7 +111,7 @@ Future<GoalShare?> showGoalShareDialog(
   eventMinutes: eventMinutes,
   kind: 'goal',
   rest:
-      "It counts the time the other goals' minutes and percents leave, "
+      "It counts the time the other goals' durations and percents leave, "
       'as every goal given neither does.',
   make: (minutes, percent, remaining) => GoalShare(
     share.goalId,

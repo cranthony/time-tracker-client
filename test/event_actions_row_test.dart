@@ -92,7 +92,7 @@ void main() {
 
     // Tapped above the chip, it sets the share.
     await tapRoom(tester, 'All of it', 2);
-    expect(find.text('Minutes'), findsOneWidget);
+    expect(find.text('Duration'), findsOneWidget);
   });
 
   testWidgets("several actions' chips are each on its line, the line's "
@@ -109,13 +109,13 @@ void main() {
           tester.getTopLeft(find.text('Floss')).dy,
       28,
     );
-    expect(tester.getSize(room('Even share')).height, greaterThanOrEqualTo(28));
+    expect(tester.getSize(room('The rest')).height, greaterThanOrEqualTo(28));
     expect(
-      tester.getSize(pill('Even share')).height,
+      tester.getSize(pill('The rest')).height,
       lessThanOrEqualTo(tester.getSize(find.text('Floss')).height),
     );
 
-    await tapRoom(tester, 'Even share', 1);
-    expect(find.text('Minutes'), findsOneWidget);
+    await tapRoom(tester, 'The rest', 1);
+    expect(find.text('Duration'), findsOneWidget);
   });
 }
