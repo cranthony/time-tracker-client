@@ -5,8 +5,9 @@ import 'share.dart';
 /// properties, mirroring the Time Tracker MCP server's `Facts` (its
 /// facts.rs): where it was, who was there with the user, who it
 /// was done for while they weren't there, and a subjective note on each
-/// person who was there ("self" for the user) -- and whether it's a
-/// [commute]. Every field is optional.
+/// person who was there ("self" for the user) -- whether it's a
+/// [commute], and what compaction changed in people's trait facts
+/// ([logs]). Every field is optional.
 /// What was done at it isn't here: that's its actions, which set its
 /// label. They're saved whole through `update_event`.
 ///
@@ -21,6 +22,7 @@ class Facts {
     this.forIds = const [],
     this.notes = const {},
     this.commute = false,
+    this.logs = const {},
     this.locationSplits = const {},
     this.withSplits = const {},
     this.forSplits = const {},
@@ -74,6 +76,12 @@ class Facts {
       forIds: for_,
       notes: notes ?? this.notes,
       commute: commute ?? this.commute,
+      // Only those it's still with or for, and the user, keep theirs.
+      logs: {
+        for (final MapEntry(:key, :value) in logs.entries)
+          if (key == selfPersonId || with_.contains(key) || for_.contains(key))
+            key: value,
+      },
       locationSplits: kept(locationSplits ?? this.locationSplits, where),
       withSplits: kept(withSplits ?? this.withSplits, with_),
       forSplits: kept(forSplits ?? this.forSplits, for_),
@@ -112,12 +120,18 @@ class Facts {
   /// walk for its own sake is never taken for one.
   final bool commute;
 
+  /// What compaction changed in each person's trait facts, as it logged
+  /// it here: by person id ([selfPersonId] too), then "trait id/fact id".
+  /// Not edited in the app; kept as they are.
+  final Map<String, Map<String, String>> logs;
+
   bool get isEmpty =>
       locationIds.isEmpty &&
       withIds.isEmpty &&
       forIds.isEmpty &&
       notes.isEmpty &&
-      !commute;
+      !commute &&
+      logs.isEmpty;
 
   /// These, but a commute or not as [commute] says.
   Facts withCommute(bool commute) => copyWith(commute: commute);
@@ -158,6 +172,15 @@ class Facts {
           '$key': ?text(value),
       },
       commute: json['commute'] == true,
+      logs: {
+        for (final MapEntry(:key, :value)
+            in (json['logs'] as Map? ?? const {}).entries)
+          if (value is Map)
+            '$key': {
+              for (final MapEntry(key: fact, value: log) in value.entries)
+                '$fact': ?text(log),
+            },
+      },
     );
   }
 
@@ -170,6 +193,7 @@ class Facts {
     if (forIds.isNotEmpty) 'for_ids': [for (final s in forShares) s.toJson()],
     if (notes.isNotEmpty) 'notes': notes,
     if (commute) 'commute': true,
+    if (logs.isNotEmpty) 'logs': logs,
   };
 
   /// What's wrong with them, as the server checks it, or null if they're
@@ -218,7 +242,14 @@ class Facts {
       _sameList(withShares, other.withShares) &&
       _sameList(forShares, other.forShares) &&
       notes.length == other.notes.length &&
-      notes.entries.every((e) => other.notes[e.key] == e.value);
+      notes.entries.every((e) => other.notes[e.key] == e.value) &&
+      logs.length == other.logs.length &&
+      logs.entries.every((e) {
+        final theirs = other.logs[e.key];
+        return theirs != null &&
+            theirs.length == e.value.length &&
+            e.value.entries.every((l) => theirs[l.key] == l.value);
+      });
 
   @override
   int get hashCode => Object.hash(
@@ -232,8 +263,20 @@ class Facts {
     ]),
     Object.hashAllUnordered(notes.entries.map((e) => (e.key, e.value))),
     commute,
+    Object.hashAllUnordered([
+      for (final MapEntry(key: person, value: logged) in logs.entries)
+        for (final MapEntry(:key, :value) in logged.entries)
+          (person, key, value),
+    ]),
   );
 }
+
+/// [facts]' logs, each (person id, "trait id/fact id", log), in order.
+List<(String, String, String)> factLogLines(Facts? facts) => [
+  for (final MapEntry(key: person, value: logged)
+      in facts?.logs.entries ?? const <MapEntry<String, Map<String, String>>>[])
+    for (final MapEntry(:key, :value) in logged.entries) (person, key, value),
+];
 
 /// The assistant's judgment of one event, for one person, against one
 /// judgment part of a trait: a rating on its scale, and a line of

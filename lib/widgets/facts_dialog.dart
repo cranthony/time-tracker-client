@@ -22,6 +22,7 @@ Future<Facts?> showFactsDialog(
   Facts? facts, {
   List<Judgment> judgments = const [],
   Map<String?, String> traitNames = const {},
+  Map<String, String> factNames = const {},
   List<ProposalAddition> additions = const [],
   bool pickers = true,
 }) => showDialog<Facts>(
@@ -30,6 +31,7 @@ Future<Facts?> showFactsDialog(
     facts: facts ?? const Facts(),
     judgments: judgments,
     traitNames: traitNames,
+    factNames: factNames,
     additions: additions,
     pickers: pickers,
   ),
@@ -40,6 +42,7 @@ class _FactsDialog extends StatefulWidget {
     required this.facts,
     required this.judgments,
     required this.traitNames,
+    required this.factNames,
     this.additions = const [],
     required this.pickers,
   });
@@ -47,6 +50,9 @@ class _FactsDialog extends StatefulWidget {
   final Facts facts;
   final List<Judgment> judgments;
   final Map<String?, String> traitNames;
+
+  /// Each trait fact's name, by "trait id/fact id", for the facts' logs.
+  final Map<String, String> factNames;
   final bool pickers;
 
   /// The people and locations a compaction proposal adds: offered too,
@@ -237,6 +243,22 @@ class _FactsDialogState extends State<_FactsDialog> {
                             ? 'How it was for you'
                             : 'How it was for them, what they shared',
                       ),
+                    if (factLogLines(widget.facts) case final logs
+                        when logs.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: Text(
+                          'What it changed in their facts',
+                          style: theme.textTheme.labelLarge,
+                        ),
+                      ),
+                      for (final (person, fact, log) in logs)
+                        Text(
+                          '${_name(everyone, person, _habits)} · '
+                          '${widget.factNames[fact] ?? fact}: $log',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                    ],
                     if (widget.judgments.isNotEmpty) ...[
                       Padding(
                         padding: const EdgeInsets.only(top: 16),

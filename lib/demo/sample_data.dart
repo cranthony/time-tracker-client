@@ -74,7 +74,38 @@ class SampleData {
     locations: locations,
     locationGroups: locationGroups,
     travelTimes: travelTimes,
+    factLogs: factLogs,
   );
+
+  /// What compaction changed in people's trait facts: Sam's new job, and
+  /// Mom's surgery, each logged on the coffee or call that showed it.
+  Map<String, List<FactLog>> get factLogs => {
+    'sam': [
+      FactLog(
+        eventSummary: 'Coffee with Sam',
+        eventStart: _at(8, 30, -4),
+        traitId: 'thoughtful',
+        factId: 'what_matters',
+        log: 'Starts a new job next month, and is nervous about it.',
+      ),
+      FactLog(
+        eventSummary: 'Salsa social',
+        eventStart: _at(20, 0, -11),
+        traitId: 'thoughtful',
+        factId: 'what_matters',
+        log: 'Signed up for a half marathon in the spring.',
+      ),
+    ],
+    'mom': [
+      FactLog(
+        eventSummary: 'Call Mom',
+        eventStart: _at(18, 0, -2),
+        traitId: 'thoughtful',
+        factId: 'what_matters',
+        log: 'Knee surgery set for the 20th.',
+      ),
+    ],
+  };
 
   HabitsRepository habitsRepository() => InMemoryHabitsRepository(habits);
 
@@ -580,6 +611,19 @@ class SampleData {
       id: 'thoughtful',
       name: 'Thoughtful',
       definition: 'Remember what matters to them, and act on it.',
+      facts: [
+        TraitFact(
+          id: 'what_matters',
+          name: 'What matters',
+          summaryPrompt:
+              "What's important to them, so I can remember it and prepare "
+              'for it: the people, interests, plans, hopes, worries and '
+              'coming events in their life. A Markdown list, kept current.',
+          logPrompt:
+              'What changed in what matters to them, and what in the event '
+              'showed it.',
+        ),
+      ],
       parts: [
         {
           'kind': 'judgment',
@@ -591,7 +635,7 @@ class SampleData {
             '2': 'It was shaped around what matters to them',
             '3': 'It showed specific, remembered care for them',
           },
-          'facts': ['action', 'general_notes', 'person_notes'],
+          'facts': ['action', 'general_notes', 'fact:what_matters'],
         },
         {'kind': 'continuity', 'last_within_days': 14, 'next_within_days': 14},
       ],
@@ -629,7 +673,7 @@ class SampleData {
             '2': 'Mostly attentive',
             '3': 'Fully present, listening closely',
           },
-          'facts': ['general_notes', 'person_notes'],
+          'facts': ['general_notes'],
           'scoring': {'weight_by': 'duration'},
         },
       ],
@@ -834,7 +878,10 @@ class SampleData {
         'context': p.context,
         'status': p.status,
         'circles': p.circles,
-        'what_matters': p.whatMatters,
+        if (p.whatMatters.isNotEmpty)
+          'facts': {
+            'thoughtful': {'what_matters': p.whatMatters},
+          },
         'traits': _personTraits[p.id]?.toJson(),
         // Dinners together: on the habit graph, built on cooking.
         if (p.id == 'sam') 'foundations': [habitSubject('cook-from-scratch')],

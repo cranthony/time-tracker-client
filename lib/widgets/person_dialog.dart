@@ -16,9 +16,9 @@ import 'traits_field.dart';
 /// Adds a person (with no [person]) or edits one, on a page of its own
 /// ([EditPage]): their name, a context
 /// that tells them apart from others of the same name, the [circles]
-/// they're in, what matters to them, which of [traits] apply to them --
-/// every active one, or those picked -- with their own parts for any, and
-/// their status. Self is in no circle and always active. Saves with
+/// they're in, which of [traits] apply to them -- every active one, or
+/// those picked -- with their own parts for any, their summary of each of
+/// those traits' facts (someone already there), and their status. Self is in no circle and always active. Saves with
 /// [save], which gets the fields as `create_person` or `update_person`
 /// takes them (null to clear one), and returns what it returned, or null
 /// if it was called off. [actions] names the actions and groups a part
@@ -80,9 +80,17 @@ class _PersonEditorState extends State<_PersonEditor> {
     text: widget.person?.name ?? widget.name,
   );
   late final _context = TextEditingController(text: widget.person?.context);
-  late final _whatMatters = TextEditingController(
-    text: widget.person?.whatMatters,
-  );
+
+  /// Their summary of each trait fact, by "trait id/fact id", for every
+  /// trait's -- those shown being those of the traits that apply.
+  late final _summaries = {
+    for (final trait in widget.traits)
+      if (trait.id case final traitId?)
+        for (final fact in trait.facts)
+          '$traitId/${fact.id}': TextEditingController(
+            text: widget.person?.summary(traitId, fact.id),
+          ),
+  };
   late final _circleIds = {...?widget.person?.circleIds};
   late String _status = widget.person?.status ?? 'active';
 
@@ -96,7 +104,9 @@ class _PersonEditorState extends State<_PersonEditor> {
   void dispose() {
     _name.dispose();
     _context.dispose();
-    _whatMatters.dispose();
+    for (final summary in _summaries.values) {
+      summary.dispose();
+    }
     super.dispose();
   }
 
@@ -106,13 +116,40 @@ class _PersonEditorState extends State<_PersonEditor> {
   Map<String, Object?> get _fields => {
     'name': _name.text.trim(),
     'context': _text(_context),
-    'what_matters': _text(_whatMatters),
     'traits': _traits.isDefault ? null : _traits.toJson(),
+    // Every summary shown, as update_person's facts set them -- when one
+    // changed.
+    if (widget.person case final person? when _summariesChanged(person))
+      'facts': {
+        for (final (trait, facts) in _shownFacts)
+          trait.id!: {
+            for (final fact in facts)
+              fact.id: _summaries['${trait.id}/${fact.id}']!.text.trim(),
+          },
+      },
     if (!_isSelf) ...{
       'circles': [..._circleIds],
       'status': _status,
     },
   };
+
+  /// The active traits that apply to them, as their traits stand, each
+  /// with its facts: those whose summaries are shown.
+  List<(Trait, List<TraitFact>)> get _shownFacts => [
+    for (final trait in widget.traits)
+      if (trait.id != null &&
+          trait.status == 'active' &&
+          trait.facts.isNotEmpty &&
+          (_traits.select?.contains(trait.id) ?? true))
+        (trait, trait.facts),
+  ];
+
+  bool _summariesChanged(Person person) => [
+    for (final (trait, facts) in _shownFacts)
+      for (final fact in facts)
+        _summaries['${trait.id}/${fact.id}']!.text.trim() !=
+            (person.summary(trait.id!, fact.id) ?? ''),
+  ].any((changed) => changed);
 
   Future<void> _save() async {
     final navigator = Navigator.of(context);
@@ -216,30 +253,6 @@ class _PersonEditorState extends State<_PersonEditor> {
               ),
             ),
         ],
-        Padding(
-          padding: const EdgeInsets.only(top: 16),
-          child: FieldHotkey(
-            'W',
-            child: TextField(
-              controller: _whatMatters,
-              minLines: 6,
-              maxLines: null,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                labelText: _isSelf
-                    ? 'What matters to you'
-                    : 'What matters to them',
-                hintText: '- 2026-10-05: starts a new job in November',
-                helperText:
-                    'One dated line each: facts, moments coming up, '
-                    'preferences.',
-                helperMaxLines: 2,
-                border: const OutlineInputBorder(),
-                floatingLabelBehavior: FloatingLabelBehavior.always,
-              ),
-            ),
-          ),
-        ),
         FieldHotkey(
           'T',
           focusOnly: true,
@@ -260,9 +273,39 @@ class _PersonEditorState extends State<_PersonEditor> {
               ),
               _ => null,
             },
-            onChanged: (traits) => _traits = traits,
+            onChanged: (traits) => setState(() => _traits = traits),
           ),
         ),
+        if (widget.person != null && _shownFacts.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 16, bottom: 4),
+            child: Text('Facts', style: theme.textTheme.titleSmall),
+          ),
+          Text(
+            'What each trait keeps about ${_isSelf ? 'you' : 'them'}, for '
+            'its judgments. Compaction rewrites these as notes show '
+            "something new; what you change here isn't logged.",
+            style: theme.textTheme.bodySmall,
+          ),
+          for (final (trait, facts) in _shownFacts)
+            for (final fact in facts)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: TextField(
+                  controller: _summaries['${trait.id}/${fact.id}'],
+                  minLines: 3,
+                  maxLines: null,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    labelText: '${fact.name} · ${trait.name}',
+                    helperText: fact.summaryPrompt,
+                    helperMaxLines: 3,
+                    border: const OutlineInputBorder(),
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                  ),
+                ),
+              ),
+        ],
         if (!_isSelf && widget.person != null) ...[
           const SizedBox(height: 16),
           FieldHotkey(

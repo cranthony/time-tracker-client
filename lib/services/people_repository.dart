@@ -29,6 +29,10 @@ abstract class PeopleRepository {
   /// [id]; a null clears that field. Returns them as saved.
   Future<Person> updatePerson(String id, Map<String, Object?> changes);
 
+  /// What compaction changed in person [personId]'s trait facts -- of
+  /// trait [traitId], if given -- newest first.
+  Future<List<FactLog>> factLogs(String personId, {String? traitId});
+
   /// Creates a circle from [circle]'s fields; returns it with its id.
   Future<Circle> createCircle(Circle circle);
 
@@ -207,6 +211,17 @@ class McpPeopleRepository implements PeopleRepository {
   Future<PeopleList> people() =>
       _orKept(WriteKind.person, _fetchPeople, cachedPeople);
 
+  @override
+  Future<List<FactLog>> factLogs(String personId, {String? traitId}) async => [
+    for (final log
+        in await _client.callTool('get_fact_logs', {
+              'person_id': personId,
+              'trait_id': ?traitId,
+            })
+            as List)
+      FactLog.fromJson((log as Map).cast<String, dynamic>()),
+  ];
+
   Future<PeopleList> _fetchPeople() async {
     final people = await _client.callTool('get_people', {
       'statuses': personStatuses.keys.toList(),
@@ -250,10 +265,7 @@ class McpPeopleRepository implements PeopleRepository {
   Future<Person> _updatePerson(String id, Map<String, Object?> changes) async =>
       Person.fromJson(
         _map(
-          await _client.callTool(
-            'update_person',
-            _update('person', id, changes),
-          ),
+          await _client.callTool('update_person', personUpdate(id, changes)),
         ),
       );
 
@@ -500,6 +512,7 @@ class InMemoryPeopleRepository implements PeopleRepository {
     List<Location> locations = const [],
     List<LocationGroup> locationGroups = const [],
     List<TravelTime> travelTimes = const [],
+    this._factLogs = const {},
   }) : _people = [for (final p in people) _withIds(p)],
        _circles = [...circles],
        _locations = [...locations],
@@ -507,6 +520,9 @@ class InMemoryPeopleRepository implements PeopleRepository {
        _travel = [...travelTimes];
 
   final List<Person> _people;
+
+  /// Each person's fact logs, by id, newest first.
+  final Map<String, List<FactLog>> _factLogs;
   final List<Circle> _circles;
   final List<Location> _locations;
   final List<LocationGroup> _groups;
@@ -519,8 +535,15 @@ class InMemoryPeopleRepository implements PeopleRepository {
       ? person
       : Person.fromJson({
           ...person.toJson(),
+          'facts': person.facts,
           'traits': traitsWithPartIds(person.traits, fresh: fresh).toJson(),
         }).withCancelledEvents(person.cancelledEvents);
+
+  @override
+  Future<List<FactLog>> factLogs(String personId, {String? traitId}) async => [
+    for (final log in _factLogs[personId] ?? const <FactLog>[])
+      if (traitId == null || log.traitId == traitId) log,
+  ];
 
   @override
   Future<PeopleList?> cachedPeople() async => null;
@@ -596,8 +619,17 @@ class InMemoryPeopleRepository implements PeopleRepository {
       throw McpException('Self is always active.');
     }
     final updated = _withIds(
-      Person.fromJson({...before.toJson(), ...changes})
-          .withCancelledEvents(before.cancelledEvents),
+      Person.fromJson({
+        ...before.toJson(),
+        ...changes,
+        'facts': {
+          for (final MapEntry(:key, :value) in before.facts.entries)
+            key: {...value},
+          if (changes['facts'] case final Map given)
+            for (final MapEntry(:key, :value) in given.entries)
+              '$key': {...?before.facts['$key'], ...(value as Map).cast()},
+        },
+      }).withCancelledEvents(before.cancelledEvents),
       fresh: true,
     );
     _checkPerson(updated);

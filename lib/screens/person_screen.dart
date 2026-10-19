@@ -8,6 +8,7 @@ import '../models/share.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/events_repository.dart';
+import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import '../widgets/durations.dart';
@@ -18,11 +19,13 @@ import 'subject_sections.dart';
 import 'trait_breakdown.dart';
 
 /// A person -- Self included -- on one page: who they are (their context
-/// and circles), which traits apply to them and their own parts for any,
-/// and what matters to them. Once [memory] has scored everyone from the
-/// events (see [PlanMemory.scores]), also their relationship health,
-/// their traits' scores of the last day that's over (tapping one shows
-/// the parts, events and Claude's judgments behind it), their history
+/// and circles), and which traits apply to them and their own parts for
+/// any. Once [memory] has scored everyone from the events (see
+/// [PlanMemory.scores]), also their relationship health, their traits'
+/// scores of the last day that's over, each with what it keeps about them
+/// (its facts' summaries; tapping one shows them with what compaction
+/// changed in each, then the parts, events and Claude's judgments behind
+/// it), their history
 /// (the actions done and locations of their events, with how often and
 /// when), and a timeline of those events with what happened at each.
 /// Always, the events the user cancelled that count against their
@@ -165,6 +168,14 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
       withWhom: _person.isSelf ? null : 'with them',
       why: 'off, archived, or not theirs',
       noteOf: _person.id,
+      person: _person,
+      factLogs: switch (PeopleScope.of(context)) {
+        final people? => (traitId) => people.factLogs(
+          _person.id,
+          traitId: traitId,
+        ),
+        null => null,
+      },
       actionNames: widget.actionNames,
       personNames: widget.personNames,
       locationNames: widget.locationNames,
@@ -201,17 +212,6 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
                 subtitle: Text(circles.map((c) => c.name).join(', ')),
               ),
             ...sections.traitSection(),
-            sectionHeading(
-              theme,
-              _person.isSelf ? 'What matters to you' : 'What matters to them',
-            ),
-            sectionPadded(switch (_person.whatMatters) {
-              final text? when text.trim().isNotEmpty => Text(text),
-              _ => Text(
-                'Nothing yet. Compaction adds to it as notes reveal things.',
-                style: TextStyle(color: theme.hintColor),
-              ),
-            }),
             if (_scored) ...[
               sectionHeading(theme, 'History'),
               ..._history(theme),
@@ -498,8 +498,17 @@ List<Widget> traitScoreTiles(
   HealthScale scale = HealthScale.relationship,
   Map<String?, String> personNames = const {},
   Map<String?, String> locationNames = const {},
+  Person? person,
+  Map<String, Trait> traitList = const {},
+  Future<List<FactLog>> Function(String traitId)? factLogs,
 }) {
   final theme = Theme.of(context);
+  // A person's summary of each of a trait's facts, null for none yet.
+  List<(TraitFact, String?)> factsOf(String traitId) => [
+    if (person != null)
+      for (final fact in traitList[traitId]?.facts ?? const <TraitFact>[])
+        (fact, person.summary(traitId, fact.id)),
+  ];
   Widget padded(Widget child) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     child: child,
@@ -535,7 +544,7 @@ List<Widget> traitScoreTiles(
         style: theme.textTheme.headlineSmall,
       ),
     ),
-    for (final score in rating.traits)
+    for (final score in rating.traits) ...[
       ListTile(
         title: Text(
           score.weight == 1 ? score.name : '${score.name} ×${score.weight}',
@@ -569,8 +578,33 @@ List<Widget> traitScoreTiles(
           events: scores.eventsBehind(score),
           personNames: personNames,
           locationNames: locationNames,
+          facts: factsOf(score.traitId),
+          factLogs: switch (factLogs) {
+            final logs? => () => logs(score.traitId),
+            null => null,
+          },
         ),
       ),
+      // Under it, what it keeps about them.
+      for (final (fact, summary) in factsOf(score.traitId))
+        Padding(
+          padding: const EdgeInsets.fromLTRB(32, 0, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(fact.name, style: theme.textTheme.labelLarge),
+              Text(
+                summary ?? 'Nothing yet.',
+                style: summary == null
+                    ? theme.textTheme.bodySmall?.copyWith(
+                        color: theme.hintColor,
+                      )
+                    : theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+    ],
     if (rating.leftOut.isNotEmpty)
       padded(
         Text(

@@ -43,6 +43,13 @@ const _adventurous = Trait(
   name: 'Adventurous',
   definition: 'Try new things together.',
   parts: [_novelty],
+  facts: [
+    TraitFact(
+      id: 'interests',
+      name: 'Interests',
+      summaryPrompt: 'What they love doing.',
+    ),
+  ],
 );
 const _reliable = Trait(
   id: 'reliable',
@@ -53,7 +60,107 @@ const _reliable = Trait(
 );
 
 void main() {
+  group('Trait facts', () {
+    test('are read and sent back as the server keeps them', () {
+      final trait = Trait.fromJson({
+        'id': 'thoughtful',
+        'name': 'Thoughtful',
+        'parts': [],
+        'facts': [
+          {
+            'id': 'what_matters',
+            'name': 'What matters',
+            'summary_prompt': 'What they care about.',
+            'log_prompt': '',
+          },
+        ],
+      });
+      expect(trait.fact('what_matters')?.name, 'What matters');
+      expect(trait.facts.single.logPrompt, isNull);
+      expect(trait.toJson()['facts'], [
+        {
+          'id': 'what_matters',
+          'name': 'What matters',
+          'summary_prompt': 'What they care about.',
+        },
+      ]);
+      expect(
+        judgmentFactLabel('fact:what_matters', trait.facts),
+        'What matters',
+      );
+      expect(judgmentFactLabel('general_notes'), 'General notes');
+    });
+
+    test("a new one's id is made from its name, as the server makes it", () {
+      expect(newFactId('What matters!', const []), 'what_matters');
+      expect(
+        newFactId('What matters', const ['what_matters']),
+        'what_matters_2',
+      );
+      expect(newFactId('  ', const []), 'fact');
+    });
+
+    test('are checked as the server checks them', () {
+      Trait trait(List<TraitFact> facts, List<Object> judgedFrom) => Trait(
+        name: 'Kind',
+        facts: facts,
+        parts: [
+          {
+            'kind': 'judgment',
+            'rubric': 'Was I kind?',
+            'ratings': {'0': 'No', '1': 'Yes'},
+            'facts': judgedFrom,
+          },
+        ],
+      );
+      const worries = TraitFact(
+        id: 'worries',
+        name: 'Worries',
+        summaryPrompt: 'What weighs on them.',
+      );
+      expect(traitProblem(trait([worries], ['fact:worries'])), isNull);
+      expect(
+        traitProblem(trait([], ['fact:worries'])),
+        "Part 1: it's judged from a fact its trait doesn't have.",
+      );
+      expect(
+        traitProblem(trait([worries, worries], ['action'])),
+        'Two facts are named "Worries".',
+      );
+      expect(
+        traitProblem(
+          trait(
+            [const TraitFact(id: 'w', name: 'W', summaryPrompt: ' ')],
+            ['action'],
+          ),
+        ),
+        'Fact 1: say what its summary keeps.',
+      );
+    });
+  });
+
   group('Facts', () {
+    test("keep compaction's logs, and only for those still there", () {
+      final facts = Facts.fromJson({
+        'with_ids': ['sam'],
+        'logs': {
+          'sam': {'thoughtful/what_matters': 'New job'},
+          'self': {'thoughtful/what_matters': ' '},
+        },
+      })!;
+      expect(facts.logs, {
+        'sam': {'thoughtful/what_matters': 'New job'},
+        'self': <String, String>{},
+      });
+      expect(factLogLines(facts), [
+        ('sam', 'thoughtful/what_matters', 'New job'),
+      ]);
+      expect(facts.toJson()['logs'], facts.logs);
+      expect(facts.copyWith(withIds: ['kim']).logs.keys, ['self']);
+      expect(facts.copyWith(notes: {'sam': 'Glad'}).logs['sam'], {
+        'thoughtful/what_matters': 'New job',
+      });
+    });
     test('read from the server and written back without what is unset', () {
       final facts = Facts.fromJson({
         'location_ids': ['hall'],
@@ -232,10 +339,28 @@ void main() {
       expect(
         partProblem(
           judgment({
-            'facts': ['action', 'person_notes', 'what_matters'],
+            'facts': ['action', 'fact:what_matters'],
           }),
         ),
         isNull,
+      );
+      // Only a trait's own facts, once it's known which it has.
+      expect(
+        partProblem(
+          judgment({
+            'facts': ['action', 'fact:what_matters'],
+          }),
+          factIds: ['interests'],
+        ),
+        "it's judged from a fact its trait doesn't have.",
+      );
+      expect(
+        partProblem(
+          judgment({
+            'facts': ['person_notes'],
+          }),
+        ),
+        "it has a fact the app doesn't know.",
       );
       expect(
         partProblem(
@@ -451,6 +576,22 @@ void main() {
       await tester.pump();
       expect(find.text('Give it at least one part.'), findsOneWidget);
 
+      // A fact it keeps about each person, to judge from.
+      await tester.tap(find.text('Add fact'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Name').last,
+        'Their worries',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'What its summary keeps'),
+        'What weighs on them.',
+      );
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+      await tester.pumpAndSettle();
+      expect(find.text('What weighs on them.'), findsOneWidget);
+
       await tester.tap(find.text('Add part'));
       await tester.pumpAndSettle();
       expect(find.text('Part 1: rubric is needed.'), findsOneWidget);
@@ -468,7 +609,7 @@ void main() {
       }
       // Read for them, from their notes too, looking back a fortnight.
       await tester.tap(find.text('For them'));
-      await tester.tap(find.text('Person notes'));
+      await tester.tap(find.text('Their worries').last);
       await tester.tap(find.text('Location history'));
       await tester.pump();
       await tester.enterText(find.widgetWithText(TextField, 'Lookback'), '14');
@@ -478,6 +619,10 @@ void main() {
 
       final created = (await repository.traits()).last;
       expect(created.id, 'kind');
+      expect(
+        [for (final f in created.facts) (f.id, f.name, f.summaryPrompt)],
+        [('their_worries', 'Their worries', 'What weighs on them.')],
+      );
       // Given an id of its own, as the server would.
       expect(created.parts.single['id'], isA<String>());
       expect({...created.parts.single}..remove('id'), {
@@ -488,7 +633,7 @@ void main() {
         'facts': [
           'action',
           'general_notes',
-          'person_notes',
+          'fact:their_worries',
           {'fact': 'location_history', 'lookback_days': 14},
         ],
       });
@@ -613,7 +758,9 @@ void main() {
       name: 'Sam',
       context: 'from salsa',
       circleIds: ['close'],
-      whatMatters: '- loves jazz',
+      facts: {
+        'adventurous': {'interests': '- loves jazz'},
+      },
       traits: PersonTraits(
         parts: {
           'reliable': [
@@ -870,12 +1017,28 @@ void main() {
       expect(highlighted(), first);
     });
 
+    testWidgets("a trait's score shows what it keeps about them, and "
+        'tapped, its facts first', (tester) async {
+      await pump(tester, memory: await _scoredMemory([jazz], people: [sam]));
+
+      expect(find.text('Interests'), findsOneWidget);
+      expect(find.text('- loves jazz'), findsOneWidget);
+      await tester.tap(find.text('Adventurous').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Facts'), findsOneWidget);
+      expect(find.text('Parts'), findsOneWidget);
+      expect(find.text('Interests'), findsNWidgets(2));
+      expect(find.text('- loves jazz'), findsNWidgets(2));
+    });
+
     testWidgets("leaves out scores and history where they aren't worked "
         'out', (tester) async {
       await pump(tester);
 
       expect(find.text('Every active trait'), findsOneWidget);
-      expect(find.text('- loves jazz'), findsOneWidget);
+      // Shown under their traits' scores.
+      expect(find.text('- loves jazz'), findsNothing);
       expect(find.text('History'), findsNothing);
       expect(find.text('Events'), findsNothing);
     });

@@ -20,7 +20,7 @@ import 'scoring_editor.dart';
 /// With [preview], each card ends with its part's score as it stands --
 /// "[previewLabel]: 88 · 35h of 40h in the last 7 days" -- and, for a
 /// part that fades instead of giving partial credit, what partial credit
-/// would score.
+/// would score. A judgment can be judged from the trait's [facts] too.
 class PartsEditor extends StatefulWidget {
   const PartsEditor({
     super.key,
@@ -30,10 +30,14 @@ class PartsEditor extends StatefulWidget {
     this.exceptionActions,
     this.preview,
     this.previewLabel = 'Yesterday',
+    this.facts = const [],
   });
 
   final List<Part> parts;
   final ValueChanged<List<Part>> onChanged;
+
+  /// The trait's facts, which its judgments can be judged from.
+  final List<TraitFact> facts;
   final Map<String, String> actions;
   final Map<String, String>? exceptionActions;
   final PartsPreview? preview;
@@ -433,7 +437,32 @@ class _PartsEditorState extends State<PartsEditor> {
       'group of them.',
       style: theme.textTheme.bodySmall,
     ),
-    for (final MapEntry(:key, :value) in judgmentFacts.entries)
+    for (final (:key, :label, :hint, :lookback) in [
+      for (final MapEntry(:key, :value) in judgmentFacts.entries)
+        (
+          key: key,
+          label: value.label,
+          hint: value.hint,
+          lookback: value.lookback,
+        ),
+      for (final fact in widget.facts)
+        (
+          key: fact.judgmentName,
+          label: fact.name,
+          hint: 'Their summary: ${fact.summaryPrompt}',
+          lookback: false,
+        ),
+      // One the trait no longer has, to let go of.
+      for (final key in draft.facts.keys)
+        if (!judgmentFacts.containsKey(key) &&
+            !widget.facts.any((f) => f.judgmentName == key))
+          (
+            key: key,
+            label: judgmentFactLabel(key),
+            hint: "The trait doesn't have it",
+            lookback: false,
+          ),
+    ])
       Row(
         children: [
           Expanded(
@@ -441,12 +470,12 @@ class _PartsEditorState extends State<PartsEditor> {
               dense: true,
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
-              title: Text(value.label),
-              subtitle: Text(value.hint),
+              title: Text(label),
+              subtitle: Text(hint),
               value: draft.facts.containsKey(key),
               onChanged: (on) {
                 if (on ?? false) {
-                  draft.facts[key] = value.lookback
+                  draft.facts[key] = lookback
                       ? TextEditingController(text: '$defaultLookbackDays')
                       : null;
                 } else {
@@ -807,6 +836,7 @@ Future<List<Part>?> showPartsEditor(
   Map<String, String>? exceptionActions,
   List<String> Function(List<Part> parts)? warnings,
   PartsPreview? preview,
+  List<TraitFact> facts = const [],
 }) => showEditPage<List<Part>>(
   context,
   _PartsPage(
@@ -817,6 +847,7 @@ Future<List<Part>?> showPartsEditor(
     exceptionActions: exceptionActions,
     warnings: warnings,
     preview: preview,
+    facts: facts,
   ),
 );
 
@@ -829,9 +860,11 @@ class _PartsPage extends StatefulWidget {
     required this.exceptionActions,
     required this.warnings,
     required this.preview,
+    required this.facts,
   });
 
   final String title;
+  final List<TraitFact> facts;
   final String? explanation;
   final List<Part> parts;
   final Map<String, String> actions;
@@ -854,7 +887,10 @@ class _PartsPageState extends State<_PartsPage> {
       saveLabel: 'Done',
       problem: _parts.isEmpty
           ? 'Give it at least one part.'
-          : partsProblem(_parts),
+          : partsProblem(
+              _parts,
+              factIds: [for (final fact in widget.facts) fact.id],
+            ),
       onSave: () => Navigator.of(context).pop(_parts),
       children: [
         if (widget.explanation case final explanation?)
@@ -864,6 +900,7 @@ class _PartsPageState extends State<_PartsPage> {
           actions: widget.actions,
           exceptionActions: widget.exceptionActions,
           preview: widget.preview,
+          facts: widget.facts,
           onChanged: (parts) => setState(() => _parts = parts),
         ),
         for (final warning in widget.warnings?.call(_parts) ?? const [])

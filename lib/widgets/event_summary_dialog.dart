@@ -418,6 +418,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   Map<String, String> _locationMaps = const {};
   Map<String?, String> _traitNames = const {};
 
+  /// Each trait fact's name, by "trait id/fact id", for its logs.
+  Map<String, String> _factNames = const {};
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -507,6 +510,10 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     }
     if (traits != null) {
       _traitNames = {for (final t in traits) t.id: t.name};
+      _factNames = {
+        for (final t in traits)
+          for (final f in t.facts) '${t.id}/${f.id}': f.name,
+      };
     }
   }
 
@@ -2140,6 +2147,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       Facts.fromJson(_value('facts')),
       judgments: judgmentsFromJson(widget.values['judgments']),
       traitNames: _traitNames,
+      factNames: _factNames,
       additions: widget.additions,
       // Who and where, in their own row.
       pickers: false,
@@ -2151,7 +2159,10 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     final theme = Theme.of(context);
     final facts = Facts.fromJson(_value('facts'));
     final judgments = judgmentsFromJson(widget.values['judgments']);
-    final empty = (facts?.notes.isEmpty ?? true) && judgments.isEmpty;
+    final empty =
+        (facts?.notes.isEmpty ?? true) &&
+        (facts?.logs.isEmpty ?? true) &&
+        judgments.isEmpty;
     return _row(
       context,
       icon: Icons.note_alt_outlined,
@@ -2177,6 +2188,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontStyle: FontStyle.italic,
                     ),
+                  ),
+                for (final (person, fact, log) in factLogLines(facts))
+                  Text(
+                    '${_personNames[person] ?? person} · '
+                    '${_factNames[fact] ?? fact}: $log',
+                    style: theme.textTheme.bodySmall,
                   ),
                 if (judgments.isNotEmpty)
                   Text(

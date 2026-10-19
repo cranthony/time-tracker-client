@@ -1,6 +1,68 @@
 import 'scoring.dart';
 import 'trait.dart';
 
+/// What compaction changed in one of a person's trait facts, logged on
+/// the event whose notes showed it: one of `get_fact_logs`'
+/// `LoggedChange`s.
+class FactLog {
+  const FactLog({
+    this.eventId,
+    this.eventSummary,
+    this.eventStart,
+    required this.traitId,
+    required this.factId,
+    required this.log,
+    this.loggedAt,
+  });
+
+  final String? eventId;
+  final String? eventSummary;
+  final DateTime? eventStart;
+  final String traitId;
+  final String factId;
+  final String log;
+  final DateTime? loggedAt;
+
+  factory FactLog.fromJson(Map<String, dynamic> json) {
+    DateTime? time(Object? value) =>
+        value is String ? DateTime.tryParse(value)?.toLocal() : null;
+    return FactLog(
+      eventId: json['event_id'] as String?,
+      eventSummary: json['event_summary'] as String?,
+      eventStart: time(json['event_start']),
+      traitId: json['trait_id'] as String? ?? '',
+      factId: json['fact_id'] as String? ?? '',
+      log: json['log'] as String? ?? '',
+      loggedAt: time(json['logged_at']),
+    );
+  }
+}
+
+/// [changes] to person [id] as `update_person` takes them: their trait
+/// facts' summaries (`facts`, {trait id: {fact id: summary}}) beside the
+/// person, the rest under "person" -- a null going in clear_fields --
+/// with the [version] last seen.
+Map<String, Object?> personUpdate(
+  String id,
+  Map<String, Object?> changes, {
+  int? version,
+}) {
+  final fields = {...changes}..remove('facts');
+  final clear = [
+    for (final MapEntry(:key, :value) in fields.entries)
+      if (value == null) key,
+  ];
+  return {
+    'person': {
+      'id': id,
+      for (final MapEntry(:key, :value) in fields.entries) key: ?value,
+      'version': ?version,
+    },
+    if (clear.isNotEmpty) 'clear_fields': clear,
+    'facts': ?changes['facts'],
+  };
+}
+
 /// Who the user wants to be with, mirroring the Time Tracker MCP server's
 /// `ListedPerson` (its utilities/people.py): a person, who can belong to
 /// any number of [Circle]s. "Self" is always one of them ([selfPersonId]),
@@ -15,7 +77,7 @@ class Person {
     this.context,
     this.status = 'active',
     this.circleIds = const [],
-    this.whatMatters,
+    this.facts = const {},
     this.traits = const PersonTraits(),
     this.foundations,
     this.cancelledEvents = const [],
@@ -34,8 +96,18 @@ class Person {
   /// The circles they're in, by id: any number of them.
   final List<String> circleIds;
 
-  /// What's important to them; for Self, to the user. Markdown.
-  final String? whatMatters;
+  /// Their summary of each trait fact, by trait id and then fact id
+  /// (see [TraitFact]): what each trait keeps about them, for its
+  /// judgments, as compaction (or the user) last wrote it. Markdown. Only
+  /// those that say anything; edited apart from them, with
+  /// `update_person`'s `facts`.
+  final Map<String, Map<String, String>> facts;
+
+  /// Their summary of [trait]'s fact [factId], if they have one.
+  String? summary(String trait, String factId) => switch (facts[trait]?[factId]) {
+    final text? when text.trim().isNotEmpty => text,
+    _ => null,
+  };
 
   /// Which traits apply to them, and their own parts for any.
   final PersonTraits traits;
@@ -61,7 +133,7 @@ class Person {
     context: context,
     status: status,
     circleIds: circleIds,
-    whatMatters: whatMatters,
+    facts: facts,
     traits: traits,
     foundations: foundations,
     cancelledEvents: events,
@@ -76,7 +148,15 @@ class Person {
     context: _text(json['context']),
     status: json['status'] as String? ?? 'active',
     circleIds: [for (final id in json['circles'] as List? ?? const []) '$id'],
-    whatMatters: _text(json['what_matters']),
+    facts: {
+      if (json['facts'] case final Map byTrait)
+        for (final MapEntry(:key, :value) in byTrait.entries)
+          if (value is Map)
+            '$key': {
+              for (final MapEntry(key: fact, value: text) in value.entries)
+                if (text is String) '$fact': text,
+            },
+    },
     traits: PersonTraits.fromJson(json['traits']),
     foundations: switch (json['foundations']) {
       final List items => [for (final f in items) '$f'],
@@ -96,7 +176,6 @@ class Person {
     'context': ?context,
     'status': status,
     'circles': circleIds,
-    'what_matters': ?whatMatters,
     if (!traits.isDefault) 'traits': traits.toJson(),
     'foundations': ?foundations,
   };
