@@ -16,6 +16,7 @@ class Goal {
     required this.title,
     this.parentId,
     this.required = false,
+    this.priority,
     this.expectedMinutes,
     this.deadline,
     this.deadlineOffsetMinutes,
@@ -36,6 +37,10 @@ class Goal {
 
   /// Whether its parent needs it done to be done.
   final bool required;
+
+  /// How much it matters, 0 the most, as actions' priorities; null, it
+  /// takes its nearest parent's ([GoalTree.priorityOf]).
+  final int? priority;
 
   /// How long it's expected to take: a guide for estimating, compared
   /// with the time spent, never enforced.
@@ -101,6 +106,7 @@ class Goal {
     title: json['title'] as String? ?? '',
     parentId: _text(json['parent_id']),
     required: json['required'] == true,
+    priority: (json['priority'] as num?)?.toInt(),
     expectedMinutes: (json['expected_minutes'] as num?)?.toInt(),
     deadline: _text(json['deadline']),
     deadlineOffsetMinutes: (json['deadline_offset_minutes'] as num?)?.toInt(),
@@ -123,6 +129,7 @@ class Goal {
     'title': title,
     'parent_id': ?parentId,
     if (required) 'required': true,
+    'priority': ?priority,
     'expected_minutes': ?expectedMinutes,
     'deadline': ?deadline,
     'deadline_offset_minutes': ?deadlineOffsetMinutes,
@@ -328,16 +335,35 @@ class GoalTree {
   /// Whether [id] is [ancestor], or under it.
   bool isWithin(String id, String ancestor) =>
       id == ancestor || ancestorsOf(id).any((g) => g.id == ancestor);
+
+  /// The priority that applies to [id]: its own, or its nearest parent's
+  /// that has one, or [defaultGoalPriority].
+  int priorityOf(String id) =>
+      this[id]?.priority ??
+      ancestorsOf(id).reversed.map((g) => g.priority).nonNulls.firstOrNull ??
+      defaultGoalPriority;
+
+  /// [byPriority]'s order, with each goal's priority as [priorityOf] has
+  /// it.
+  int compare(Goal a, Goal b) {
+    final byPriority = priorityOf(a.id).compareTo(priorityOf(b.id));
+    return byPriority != 0 ? byPriority : compareByDeadline(a, b);
+  }
 }
 
-/// [goals] as the Goals pane lists them: soonest due first, those with
-/// no deadline last, then by title.
-List<Goal> byDeadline(Iterable<Goal> goals) =>
-    [...goals]..sort(compareByDeadline);
+/// The priority a goal with none, anywhere up its tree, is treated as.
+const defaultGoalPriority = 3;
 
-/// [byDeadline]'s order: soonest due first -- on one day, those due at a
-/// time, by time, then those due by its end -- those with no deadline
-/// last, then by title.
+/// [goals] as the app lists them: the highest priority (the lowest
+/// number) first, each one's as [GoalTree.priorityOf] has it in [tree] --
+/// by default, [goals] themselves -- then as [compareByDeadline] has them.
+List<Goal> byPriority(Iterable<Goal> goals, [GoalTree? tree]) {
+  final listed = [...goals];
+  return listed..sort((tree ?? GoalTree(listed)).compare);
+}
+
+/// Soonest due first -- on one day, those due at a time, by time, then
+/// those due by its end -- those with no deadline last, then by title.
 int compareByDeadline(Goal a, Goal b) {
   final (x, y) = (a.due, b.due);
   if (x != null && y != null && x != y) return x.compareTo(y);

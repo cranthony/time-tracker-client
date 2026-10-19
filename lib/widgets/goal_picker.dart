@@ -26,7 +26,7 @@ Future<List<GoalShare>?> showGoalsSheet(
       if (g.open || pickedIds.contains(g.id)) g,
   ];
   final nodes = [
-    for (final g in byDeadline(shown))
+    for (final g in byPriority(shown, tree))
       PickerNode(
         id: g.id,
         label: goalTitle(g),

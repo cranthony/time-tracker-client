@@ -10,6 +10,7 @@ import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/widgets/goal_tile.dart';
 import 'package:time_tracker_client/widgets/html_editor.dart';
+import 'package:time_tracker_client/widgets/priority_chip.dart';
 
 List<Map<String, Object?>> _history(String status) => [
   {'status': status, 'at': '2026-10-01T09:00:00'},
@@ -323,5 +324,54 @@ void main() {
     final saved = {for (final g in await repository.goals()) g.id: g.status};
     expect(saved, containsPair('ship', 'obsolete'));
     expect(saved, containsPair('pane', 'obsolete'));
+  });
+
+  testWidgets('a priority set on the edit page lists the goal first, '
+      'its chip filled, and what is under it inherits it', (tester) async {
+    await pump(tester);
+    List<(String, int?, bool)> chips() => [
+      for (final tile in tester.widgetList<GoalTile>(find.byType(GoalTile)))
+        (
+          tile.goal.title,
+          tester
+              .widget<PriorityChip>(
+                find.descendant(
+                  of: find.byWidget(tile),
+                  matching: find.byType(PriorityChip),
+                ),
+              )
+              .priority,
+          tester
+              .widget<PriorityChip>(
+                find.descendant(
+                  of: find.byWidget(tile),
+                  matching: find.byType(PriorityChip),
+                ),
+              )
+              .own,
+        ),
+    ];
+    expect(chips(), [('Learn Rust', 3, false), ('Ship the app', 3, false)]);
+
+    await tester.tap(find.byTooltip('Edit Ship the app'));
+    await tester.pumpAndSettle();
+    expect(find.text('None (P3)'), findsOneWidget);
+    await tester.tap(find.text('P1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    expect(
+      {for (final g in await repository.goals()) g.id: g.priority}['ship'],
+      1,
+    );
+    expect(chips(), [('Ship the app', 1, true), ('Learn Rust', 3, false)]);
+
+    await tester.tap(find.text('Ship the app'));
+    await tester.pumpAndSettle();
+    expect(chips().first, ('Write the pane', 1, false));
+    await tester.tap(find.byTooltip('Edit Write the pane'));
+    await tester.pumpAndSettle();
+    expect(find.text('Inherit (P1)'), findsOneWidget);
   });
 }

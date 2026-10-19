@@ -95,11 +95,13 @@ class SampleData {
       String? at,
       int? minutes,
       bool required = false,
+      int? priority,
       String? description,
     }) => Goal.fromJson({
       'id': id,
       'title': title,
       'parent_id': parent,
+      'priority': priority,
       'status': status,
       'deadline': due == null ? null : [day(due), ?at].join('T'),
       'expected_minutes': minutes,
@@ -113,6 +115,7 @@ class SampleData {
         'Ship the time tracker app',
         due: 45,
         minutes: 60 * 40,
+        priority: 1,
         description:
             '<p>A release the family can use every day: <b>notes</b>, '
             '<b>events</b> and the <b>plan</b>.</p>',
@@ -125,7 +128,13 @@ class SampleData {
         minutes: 60 * 12,
         required: true,
       ),
-      goal('goal-icon', 'Draw the goal icon', parent: 'goals-pane', due: 0),
+      goal(
+        'goal-icon',
+        'Draw the goal icon',
+        parent: 'goals-pane',
+        due: 0,
+        priority: 0,
+      ),
       goal(
         'goals-strip',
         'Show the goals due above the timeline',
@@ -147,7 +156,13 @@ class SampleData {
         parent: 'ship-app',
         status: 'inactive',
       ),
-      goal('marathon', 'Run a half marathon', due: 90, minutes: 60 * 30),
+      goal(
+        'marathon',
+        'Run a half marathon',
+        due: 90,
+        minutes: 60 * 30,
+        priority: 2,
+      ),
       goal(
         'race-signup',
         'Sign up for the race',

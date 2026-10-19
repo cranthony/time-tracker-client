@@ -22,7 +22,7 @@ void main() {
     expect(goalsDueOn(goals, DateTime(2026, 10, 17)), isEmpty);
   });
 
-  test('goalsDueOn: by status, then as byDeadline has each', () {
+  test('goalsDueOn: by status, then as byPriority has each', () {
     final mixed = [
       _goal('obsolete', 'A', '2026-10-18T08:00', status: 'obsolete'),
       _goal('missed', 'A', '2026-10-18T08:00', status: 'missed'),
@@ -46,7 +46,39 @@ void main() {
     final active = mixed.where((g) => g.active);
     expect(
       goalsDueOn(active, day).map((g) => g.id),
-      byDeadline(active).map((g) => g.id),
+      byPriority(active).map((g) => g.id),
+    );
+  });
+
+  test('goalsDueOn: within a status, the highest priority first, '
+      'inherited from goals not listed', () {
+    const parent = Goal(id: 'parent', title: 'Parent', priority: 0);
+    final due = [
+      _goal('p3 early', 'A', '2026-10-18T08:00'),
+      _goal('p1', 'B', '2026-10-18'),
+      Goal(
+        id: 'inherits p0',
+        title: 'C',
+        parentId: 'parent',
+        deadline: '2026-10-18T20:00',
+      ),
+      _goal('done p0', 'D', '2026-10-18', status: 'done'),
+    ];
+    final withPriorities = [
+      for (final g in due)
+        switch (g.id) {
+          'p1' => Goal.fromJson({...g.toJson(), 'priority': 1}),
+          'done p0' => Goal.fromJson({...g.toJson(), 'priority': 0}),
+          _ => g,
+        },
+    ];
+    expect(
+      goalsDueOn(
+        withPriorities,
+        day,
+        GoalTree([parent, ...withPriorities]),
+      ).map((g) => g.id),
+      ['inherits p0', 'p1', 'p3 early', 'done p0'],
     );
   });
 
