@@ -1392,6 +1392,27 @@ class _SaveOrDiscardState extends State<SaveOrDiscard> {
   );
 }
 
+/// [child], a dialog or sheet whose Save or Done button is [onSave]:
+/// Ctrl+Enter presses it, even from its text fields; nothing while it's
+/// null, as the button can't be pressed. For one whose Esc should warn
+/// before discarding changes, see [SaveOrDiscard].
+class SaveHotkey extends StatelessWidget {
+  const SaveHotkey({super.key, required this.onSave, required this.child});
+
+  final VoidCallback? onSave;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => HotkeyBindings(
+    bindings: [
+      HotkeyBinding(const HotkeyTrigger.ctrl(LogicalKeyboardKey.enter), () {
+        onSave?.call();
+      }),
+    ],
+    child: child,
+  );
+}
+
 /// Puts [bindings] to work while this is in the tree: while the page or
 /// dialog it's in is the one on top, or for one that says so, whatever's
 /// over it ([WhenCovered.run]). Nothing, without a [HotkeyScope] above.

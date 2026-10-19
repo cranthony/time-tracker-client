@@ -269,55 +269,58 @@ class _EditTimeDialogState extends State<_EditTimeDialog> {
       );
     }
 
-    return AlertDialog(
-      title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '${strings.formatMediumDate(_at)}, '
-            '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(_at))}',
-            style: theme.textTheme.bodyMedium,
+    return SaveHotkey(
+      onSave: () => Navigator.of(context).pop(_at),
+      child: AlertDialog(
+        title: Text(widget.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${strings.formatMediumDate(_at)}, '
+              '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(_at))}',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                column(
+                  'Day',
+                  offset < 0 ? '−${-offset}' : '+$offset',
+                  'day',
+                  up: _stepped(days: 1),
+                  down: _stepped(days: -1),
+                ),
+                column(
+                  'Hour',
+                  _at.hour.toString().padLeft(2, '0'),
+                  'hour',
+                  up: _stepped(hours: 1),
+                  down: _stepped(hours: -1),
+                ),
+                column(
+                  'Minute',
+                  _at.minute.toString().padLeft(2, '0'),
+                  'minute',
+                  up: _stepped(minutes: 1),
+                  down: _stepped(minutes: -1),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
           ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              column(
-                'Day',
-                offset < 0 ? '−${-offset}' : '+$offset',
-                'day',
-                up: _stepped(days: 1),
-                down: _stepped(days: -1),
-              ),
-              column(
-                'Hour',
-                _at.hour.toString().padLeft(2, '0'),
-                'hour',
-                up: _stepped(hours: 1),
-                down: _stepped(hours: -1),
-              ),
-              column(
-                'Minute',
-                _at.minute.toString().padLeft(2, '0'),
-                'minute',
-                up: _stepped(minutes: 1),
-                down: _stepped(minutes: -1),
-              ),
-            ],
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(_at),
+            child: const Text('Done'),
           ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(_at),
-          child: const Text('Done'),
-        ),
-      ],
     );
   }
 }

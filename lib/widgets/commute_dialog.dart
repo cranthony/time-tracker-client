@@ -70,59 +70,60 @@ class _CommuteDialogState extends State<_CommuteDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final fields = _fields;
-    return AlertDialog(
-      title: Text(widget.title),
-      scrollable: true,
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FieldHotkey(
-            'S',
-            child: TextField(
-              controller: _summary,
-              decoration: const InputDecoration(
-                labelText: 'Summary',
-                border: OutlineInputBorder(),
-                isDense: true,
+    final save = fields == null
+        ? null
+        : () => Navigator.of(context).pop(fields);
+    return SaveHotkey(
+      onSave: save,
+      child: AlertDialog(
+        title: Text(widget.title),
+        scrollable: true,
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FieldHotkey(
+              'S',
+              child: TextField(
+                controller: _summary,
+                decoration: const InputDecoration(
+                  labelText: 'Summary',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onChanged: (_) => setState(() {}),
               ),
-              onChanged: (_) => setState(() {}),
             ),
-          ),
-          const SizedBox(height: 16),
-          if (widget.help case final help?)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(
-                help,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+            const SizedBox(height: 16),
+            if (widget.help case final help?)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  help,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
+            FieldHotkey(
+              'T',
+              child: DurationField(
+                controller: _minutes,
+                label: 'Takes',
+                step: 5,
+                onChanged: () => setState(() {}),
+              ),
             ),
-          FieldHotkey(
-            'T',
-            child: DurationField(
-              controller: _minutes,
-              label: 'Takes',
-              step: 5,
-              onChanged: () => setState(() {}),
-            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
           ),
+          FilledButton(onPressed: save, child: const Text('Save')),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: fields == null
-              ? null
-              : () => Navigator.of(context).pop(fields),
-          child: const Text('Save'),
-        ),
-      ],
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/widgets/picker_search.dart';
 import 'package:time_tracker_client/widgets/picker_sheet.dart';
@@ -16,8 +17,10 @@ const _places = [
 ];
 
 void main() {
-  testWidgets('searches by every word, picks the top match with Enter, and '
-      'shows the picked as chips to take off', (tester) async {
+  testWidgets('searches by every word; Enter goes to the top match, and '
+      'Enter again picks it; the picked show as chips to take off', (
+    tester,
+  ) async {
     var picked = <String>[];
     final search = PickerSearch();
     addTearDown(search.dispose);
@@ -47,9 +50,17 @@ void main() {
     expect(find.widgetWithText(CheckboxListTile, 'Sam Ortiz'), findsOneWidget);
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump();
+    // Nothing picked yet: the keyboard's on the top match.
+    expect(picked, isEmpty);
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'Top result');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
     expect(picked, ['Sam Ortiz']);
-    // The search cleared, ready for the next.
-    expect(find.widgetWithText(CheckboxListTile, 'Priya Shah'), findsOneWidget);
+    // The search kept.
+    expect(find.widgetWithText(CheckboxListTile, 'Priya Shah'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), '');
+    await tester.pump();
 
     await tester.tap(find.widgetWithText(CheckboxListTile, 'Priya Shah'));
     await tester.pump();
@@ -62,6 +73,33 @@ void main() {
     );
     await tester.pump();
     expect(picked, ['Priya Shah']);
+  });
+
+  testWidgets('Enter in the search never unpicks the top match', (
+    tester,
+  ) async {
+    var picked = <String>['Sam Ortiz'];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => TreePicker(
+              nodes: const [
+                PickerNode(id: 'Sam Lee', label: 'Sam Lee'),
+                PickerNode(id: 'Sam Ortiz', label: 'Sam Ortiz'),
+              ],
+              picked: picked,
+              onChanged: (ids) => setState(() => picked = ids),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.enterText(find.byType(TextField), 'ortiz');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    expect(picked, ['Sam Ortiz']);
+    expect(FocusManager.instance.primaryFocus?.debugLabel, 'Top result');
   });
 
   testWidgets('a PickerField picks a group with a tap, starts with it open '

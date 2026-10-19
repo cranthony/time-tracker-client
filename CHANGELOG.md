@@ -9,6 +9,18 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.141.0
+
+- Ctrl+Enter presses Done in every picker sheet -- actions, goals, who,
+  where -- and Save (or Done, or Set) in the commute, cursor time,
+  share, priority color and edit-cancel dialogs, as it already did in
+  the event, action, person and properties dialogs.
+- Enter in a picker's search moves the keyboard to the top result,
+  rather than picking it: Enter or Space there picks (or unpicks) it, and
+  J goes on down. Before, Enter toggled the top match, so with the
+  sheet opened on an event's summary -- which matches its own action --
+  it unpicked that action.
+
 ## 7.140.0
 
 - The goals due on the day shown are in a strip above its timeline,
