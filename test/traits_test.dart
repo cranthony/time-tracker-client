@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/facts.dart';
@@ -20,6 +21,7 @@ import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
 import 'package:time_tracker_client/widgets/facts_dialog.dart';
+import 'package:time_tracker_client/widgets/hotkeys.dart';
 
 const Part _novelty = {
   'kind': 'judgment',
@@ -648,8 +650,12 @@ void main() {
       tester.view.physicalSize = const Size(800, 2400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
+      final hotkeys = Hotkeys();
       await tester.pumpWidget(
         MaterialApp(
+          navigatorObservers: [hotkeys],
+          builder: (context, child) =>
+              HotkeyScope(hotkeys: hotkeys, child: child!),
           home: PersonScreen(
             person: person ?? sam,
             traits: traits,
@@ -772,6 +778,31 @@ void main() {
       ]) {
         expect(find.text(title), findsOneWidget);
       }
+    });
+
+    testWidgets('J and K go from trait score to trait score', (
+      tester,
+    ) async {
+      await pump(tester, memory: await _scoredMemory([jazz], people: [sam]));
+      String? highlighted() {
+        final tile = FocusManager.instance.primaryFocus?.context
+            ?.findAncestorWidgetOfExactType<ListTile>();
+        return (tile?.title as Text?)?.data;
+      }
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyJ);
+      await tester.pumpAndSettle();
+      final first = highlighted();
+      expect(first, isNotNull);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyJ);
+      await tester.pumpAndSettle();
+      final second = highlighted();
+      expect(second, isNotNull);
+      expect(second, isNot(first));
+      expect({first, second}, {'Adventurous', 'Reliable'});
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+      await tester.pumpAndSettle();
+      expect(highlighted(), first);
     });
 
     testWidgets("leaves out scores and history where they aren't worked "
