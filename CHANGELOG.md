@@ -15,7 +15,8 @@ on. Add the new version's section here at the same time; CI checks both.
   goal icon that opens the app straight into the New goal sheet, with the
   keyboard up, as the Add note one does for a note.
 - The home screen calendar has a goal button next to its "+", opening the
-  same sheet.
+  same sheet. Each is a 48dp tap target round its 32dp circle, so the two
+  side by side are easy to hit apart.
 - Long-press the app icon for Add goal too, beside Add note; either can
   be pinned to the home screen.
 - The emulator check that the home screen "+" brings up the keyboard
