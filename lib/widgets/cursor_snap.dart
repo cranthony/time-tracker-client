@@ -12,12 +12,13 @@ enum SnapTo {
 }
 
 /// Which cursor it is, for what it snaps to, kept for each: a new or
-/// moved event's anchor -- where it was started from -- and its end; and
-/// the end of a compaction's window, extended.
+/// moved event's anchor -- where it was started from -- and its end; the
+/// end of a compaction's window, extended; and where a new note goes.
 enum CursorRole {
   anchor('anchor'),
   end('end'),
-  windowEnd('window_end');
+  windowEnd('window_end'),
+  note('note');
 
   const CursorRole(this.key);
 

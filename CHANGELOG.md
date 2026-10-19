@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.164.0
+
+- A notepad button left of the Events page's "+" writes a note at a
+  time of your choosing: it puts up a cursor -- dragged, or stepped with
+  its "−" and "+", or J and K -- and ✓ (or Enter) opens the New note
+  sheet at the cursor's time. ✕ (or Esc) puts it away.
+
 ## 7.163.1
 
 - The home screen calendar's goals stay up to date while the app's

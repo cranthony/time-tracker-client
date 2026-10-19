@@ -30,6 +30,7 @@ import 'package:time_tracker_client/widgets/other_events.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/durations.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
+import 'package:time_tracker_client/widgets/note_cursor.dart';
 
 import 'hold_drag.dart';
 
@@ -2944,6 +2945,82 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(marked(), [at(29, 22), at(30, 8), at(30, 9, 30)]);
+  });
+
+  /// Lets a second go by: while a cursor's up, the marks it snaps to
+  /// pulse, never settling.
+  Future<void> pulsing(WidgetTester tester) async {
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
+
+  testWidgets('the note button places a cursor, and ✓ writes a note at '
+      'its time', (tester) async {
+    final notes = InMemoryNotesRepository();
+    // Not started, so the note stays waiting, to look at.
+    final outbox = NoteWrites.local(notes);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EventsScreen(
+          repository: InMemoryEventsRepository(),
+          serverLabel: 'offline demo',
+          notesRepository: notes,
+          outbox: outbox,
+          clock: () => now,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // Smaller than +, and left of it.
+    final note = tester.getRect(find.byTooltip('New note at a time'));
+    final add = tester.getRect(find.byTooltip('New event'));
+    expect(note.width, lessThan(add.width));
+    expect(note.right, lessThan(add.left));
+
+    await tester.tap(find.byTooltip('New note at a time'));
+    await pulsing(tester);
+    DateTime cursor() =>
+        tester.widget<NoteCursorView>(find.byType(NoteCursorView)).at;
+    expect(cursor(), now);
+    expect(find.text('Place a note'), findsOneWidget);
+    await tester.tap(find.byTooltip('Later'));
+    await pulsing(tester);
+    final at = cursor();
+    expect(at.isAfter(now), isTrue);
+
+    await tester.tap(find.byTooltip('Write a note here'));
+    await pulsing(tester);
+    await tester.enterText(find.byType(TextField).last, 'Coffee');
+    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    await pulsing(tester);
+    expect(outbox.items.single.note.timestamp, at);
+    expect(outbox.items.single.note.description, 'Coffee');
+    // Done: the cursor's put away, the + back.
+    expect(find.byType(NoteCursorView), findsNothing);
+    expect(find.byTooltip('New event'), findsOneWidget);
+  });
+
+  testWidgets('✕ puts the note cursor away', (tester) async {
+    final notes = InMemoryNotesRepository();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EventsScreen(
+          repository: InMemoryEventsRepository(),
+          serverLabel: 'offline demo',
+          notesRepository: notes,
+          outbox: NoteWrites.local(notes),
+          clock: () => now,
+        ),
+      ),
+    );
+    await pulsing(tester);
+    await tester.tap(find.byTooltip('New note at a time'));
+    await pulsing(tester);
+    await tester.tap(find.byTooltip('Cancel'));
+    await pulsing(tester);
+    expect(find.byType(NoteCursorView), findsNothing);
+    expect(find.byTooltip('New note at a time'), findsOneWidget);
   });
 
   testWidgets('loads the actions again once an action is saved, as the '

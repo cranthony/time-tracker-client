@@ -27,6 +27,7 @@ import '../services/goals_repository.dart';
 import '../services/habits_repository.dart';
 import '../services/mcp_client.dart';
 import '../services/events_place.dart';
+import '../services/note_drafts.dart';
 import '../services/notes_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
@@ -48,6 +49,8 @@ import '../widgets/google_event_sheet.dart';
 import '../widgets/event_lists.dart';
 import '../widgets/mode_stack.dart';
 import '../widgets/window_cursor.dart';
+import '../widgets/note_cursor.dart';
+import '../widgets/note_dialog.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/cursor_sheet.dart';
 import '../widgets/cursor_snap.dart';
@@ -113,6 +116,7 @@ class EventsScreen extends StatefulWidget {
     this.actionsRepository,
     this.notesRepository,
     this.outbox,
+    this.noteDrafts,
     this.eventOutbox,
     this.showEventRequests,
     this.showTimeRequests,
@@ -163,6 +167,10 @@ class EventsScreen extends StatefulWidget {
 
   /// The notes not saved yet, to mark them too.
   final NoteWrites? outbox;
+
+  /// Where what's typed in the New note sheet is kept as a draft until
+  /// it's added.
+  final NoteDrafts? noteDrafts;
 
   /// Where changes to events and the proposal wait to be saved; without
   /// it, each is saved before its dialog closes.
@@ -660,6 +668,10 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Where the proposal's window is being extended to, while it is: its
   /// end's cursor.
   DateTime? _extendTo;
+
+  /// Where a new note goes, while it's being placed: its cursor, which ✓
+  /// opens the New note sheet at.
+  DateTime? _noteAt;
 
   /// Which of the proposal's notes is shown under its bar, and
   /// highlighted on the timeline.
@@ -2362,6 +2374,49 @@ class _EventsScreenState extends State<EventsScreen> {
     });
   }
 
+  /// Starts placing a new note: its cursor, where a new event's would
+  /// start.
+  void _startNoting() {
+    final now = widget.clock();
+    DateTime at;
+    if (!now.isBefore(_day) && now.isBefore(_dayEnd)) {
+      at = now;
+    } else if (_scroll.hasClients) {
+      final middle = _scroll.offset + _scroll.position.viewportDimension / 2;
+      at = timelineTime(middle, day: _from, dayEnd: _to, scale: _scale);
+    } else {
+      at = _day.add(const Duration(hours: 9));
+    }
+    setState(() => _noteAt = _onGrid(at));
+  }
+
+  /// The note's cursor, dragged to [to]: where it stops.
+  void _moveNoteCursor(DateTime to) =>
+      setState(() => _noteAt = _snap(to, CursorRole.note));
+
+  /// Where the note's cursor steps to, [later] or earlier: its next stop,
+  /// if it has one.
+  DateTime? _noteStep({required bool later}) {
+    final at = _noteAt;
+    if (at == null) return null;
+    return _stops(CursorRole.note).next(at, later: later);
+  }
+
+  /// Opens the New note sheet at the note's cursor; the cursor's put
+  /// away once the note's kept, or stays if the sheet's dismissed.
+  Future<void> _addNoteAtCursor() async {
+    final at = _noteAt;
+    final outbox = widget.outbox;
+    if (at == null || outbox == null || newNoteSheetOpen) return;
+    final note = await showAddNoteDialog(
+      context,
+      keep: outbox.add,
+      drafts: widget.noteDrafts,
+      time: at,
+    );
+    if (note != null && mounted) setState(() => _noteAt = null);
+  }
+
   /// The day shown's events, in order, for J and K to step through.
   List<Event> _steppable() => [
     for (final e in _eventsOn(_day) ?? const <Event>[])
@@ -2452,6 +2507,11 @@ class _EventsScreenState extends State<EventsScreen> {
   /// are two -- to its next stop; or else the highlight, to the next
   /// event.
   void _keyStep({required bool later}) {
+    if (_noteAt != null) {
+      final to = _noteStep(later: later);
+      if (to != null) setState(() => _noteAt = to);
+      return;
+    }
     final box = _box;
     if (box == null) return _stepEvent(later: later);
     final role = box.other == null ? CursorRole.anchor : _selected;
@@ -2472,6 +2532,10 @@ class _EventsScreenState extends State<EventsScreen> {
   /// goes on, as ✓ does. Picking events, picks the one highlighted; or
   /// else opens it.
   void _keyEnter() {
+    if (_noteAt != null) {
+      unawaited(_addNoteAtCursor());
+      return;
+    }
     final box = _box;
     if (box != null) {
       if (box.other == null) {
@@ -2549,7 +2613,7 @@ class _EventsScreenState extends State<EventsScreen> {
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyT), _goToNow),
     for (final key in const [LogicalKeyboardKey.keyC, LogicalKeyboardKey.add])
       HotkeyBinding(HotkeyTrigger.key(key), () {
-        if (_box != null || _selecting != null) return;
+        if (_box != null || _selecting != null || _noteAt != null) return;
         _startCreating(_keyedEvent?.end);
       }),
   ];
@@ -3433,7 +3497,8 @@ class _EventsScreenState extends State<EventsScreen> {
             (settings.snapFor(CursorRole.anchor).contains(snap) ||
                 settings.snapFor(CursorRole.end).contains(snap))) ||
         (_extendTo != null &&
-            settings.snapFor(CursorRole.windowEnd).contains(snap));
+            settings.snapFor(CursorRole.windowEnd).contains(snap)) ||
+        (_noteAt != null && settings.snapFor(CursorRole.note).contains(snap));
   }
 
   /// Whether the proposal's window can be extended: it's being reviewed,
@@ -3444,6 +3509,7 @@ class _EventsScreenState extends State<EventsScreen> {
           !_proposalBusy &&
           _box == null &&
           _extendTo == null &&
+          _noteAt == null &&
           p.through.isBefore(widget.clock()),
     null => false,
   };
@@ -3884,6 +3950,7 @@ class _EventsScreenState extends State<EventsScreen> {
           ? EventsMode.placeCursor
           : EventsMode.create,
     if (_extendTo != null) EventsMode.extend,
+    if (_noteAt != null) EventsMode.placeNote,
     if (_selecting case final list?)
       EventsMode(list.icon, 'Select events to ${list.verb}'),
   ];
@@ -3892,6 +3959,8 @@ class _EventsScreenState extends State<EventsScreen> {
   void _leaveMode() {
     if (_selecting != null) {
       _endSelecting(kept: false);
+    } else if (_noteAt != null) {
+      setState(() => _noteAt = null);
     } else if (_extendTo != null) {
       setState(() => _extendTo = null);
     } else if (_box != null) {
@@ -4806,6 +4875,32 @@ class _EventsScreenState extends State<EventsScreen> {
                   ),
                 ],
               )
+            : _noteAt != null
+            // Placing a note: ✓ opens the New note sheet at the cursor.
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  HotkeyHint(
+                    Hotkey.leaveMode,
+                    child: FloatingActionButton(
+                      heroTag: 'cancel-note',
+                      tooltip: 'Cancel',
+                      onPressed: _leaveMode,
+                      child: const Icon(Icons.close),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  HotkeyHint(
+                    Hotkey.setEnd,
+                    child: FloatingActionButton(
+                      heroTag: 'done-note',
+                      tooltip: 'Write a note here',
+                      onPressed: _addNoteAtCursor,
+                      child: const Icon(Icons.check),
+                    ),
+                  ),
+                ],
+              )
             : _box != null
             ? Column(
                 mainAxisSize: MainAxisSize.min,
@@ -4929,14 +5024,28 @@ class _EventsScreenState extends State<EventsScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  HotkeyHint(
-                    Hotkey.create,
-                    child: FloatingActionButton(
-                      heroTag: 'new',
-                      tooltip: 'New event',
-                      onPressed: _startCreating,
-                      child: const Icon(Icons.add),
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.outbox != null) ...[
+                        FloatingActionButton.small(
+                          heroTag: 'new-note',
+                          tooltip: 'New note at a time',
+                          onPressed: _startNoting,
+                          child: const Icon(Icons.edit_note),
+                        ),
+                        const SizedBox(width: 12),
+                      ],
+                      HotkeyHint(
+                        Hotkey.create,
+                        child: FloatingActionButton(
+                          heroTag: 'new',
+                          tooltip: 'New event',
+                          onPressed: _startCreating,
+                          child: const Icon(Icons.add),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -5415,7 +5524,7 @@ class _EventsScreenState extends State<EventsScreen> {
                     Positioned.fill(
                       child: PageView.builder(
                         controller: _pages,
-                        physics: _box != null
+                        physics: _box != null || _noteAt != null
                             ? const NeverScrollableScrollPhysics()
                             : noDrag,
                         onPageChanged: (page) => _show(_dayAt(page)),
@@ -5446,6 +5555,22 @@ class _EventsScreenState extends State<EventsScreen> {
                           onOpen: _openExtension,
                           onDone: to.isAfter(proposal.through) ? _extend : null,
                           onCancel: () => setState(() => _extendTo = null),
+                        ),
+                      ),
+                    if (_noteAt case final at?)
+                      Positioned.fill(
+                        child: NoteCursorView(
+                          day: _from,
+                          dayEnd: _to,
+                          scale: _scale,
+                          at: at,
+                          onMove: _moveNoteCursor,
+                          onStep: ({required later}) {
+                            final to = _noteStep(later: later);
+                            if (to != null) setState(() => _noteAt = to);
+                          },
+                          canStep: ({required later}) =>
+                              _noteStep(later: later) != null,
                         ),
                       ),
                     if (_box case final box?)
@@ -5633,7 +5758,9 @@ class _EventsScreenState extends State<EventsScreen> {
                     : null,
                 listed: _listed,
                 // Pressed and held, it's moved: the box around it.
-                onLongPress: _box == null ? _startMoving : null,
+                onLongPress: _box == null && _noteAt == null
+                    ? _startMoving
+                    : null,
                 googleEvents: GoogleCalendars.of(context)?.on(day) ?? const [],
                 googleOnTop: _googleOnTop,
                 weather: _weatherBand(),

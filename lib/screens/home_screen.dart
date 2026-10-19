@@ -344,6 +344,7 @@ class _HomeScreenState extends State<HomeScreen> {
           actionsRepository: widget.actionsRepository,
           notesRepository: widget.notesRepository,
           outbox: widget.outbox,
+          noteDrafts: _noteDrafts,
           onSignIn: widget.onSignIn,
           onSignOut: widget.onSignOut,
           version: widget.version,
