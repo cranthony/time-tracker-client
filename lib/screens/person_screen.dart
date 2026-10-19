@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../models/facts.dart';
+import '../models/goal.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/scoring.dart';
-import '../models/share.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/events_repository.dart';
+import '../services/goals_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
@@ -15,7 +16,9 @@ import '../widgets/durations.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/fact_prompts_dialog.dart';
 import '../widgets/focus_buttons.dart';
+import '../widgets/goal_editor.dart' show deadlineLabel;
 import '../widgets/health.dart';
+import 'goal_screen.dart';
 import 'person_history.dart';
 import 'subject_sections.dart';
 import 'trait_breakdown.dart';
@@ -30,6 +33,7 @@ import 'trait_breakdown.dart';
 /// it), their history
 /// (the actions done and locations of their events, with how often and
 /// when), and a timeline of those events with what happened at each.
+/// The open goals done with them or for them, each opening its page.
 /// Always, the events the user cancelled that count against their
 /// follow-through ([Person.cancelledEvents]). The page of all their events
 /// can load every event whose facts name them over the last
@@ -255,6 +259,7 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
                 title: const Text('Circles'),
                 subtitle: Text(circles.map((c) => c.name).join(', ')),
               ),
+            ..._goals(theme),
             ...sections.traitSection(),
             if (_scored) ...[
               sectionHeading(theme, 'History'),
@@ -266,6 +271,50 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
         ),
       ),
     );
+  }
+
+  /// The open goals done with them or for them, soonest due first --
+  /// nothing, without any.
+  List<Widget> _goals(ThemeData theme) {
+    final memory = widget.memory;
+    final id = _person.id;
+    final goals = [
+      for (final g in memory?.goals ?? const <Goal>[])
+        if (g.open && g.involves(id)) g,
+    ]..sort(compareByDeadline);
+    if (goals.isEmpty) return const [];
+    final repository = GoalsScope.of(context);
+    final them = _person.isSelf ? 'you' : 'them';
+    return [
+      sectionHeading(theme, 'Goals'),
+      for (final g in goals)
+        ListTile(
+          dense: true,
+          leading: Icon(
+            g.forIds.contains(id) ? Icons.card_giftcard : Icons.group_outlined,
+          ),
+          title: Text(goalTitle(g)),
+          subtitle: Text(
+            [
+              g.forIds.contains(id) ? 'For $them' : 'With $them',
+              if (g.deadline != null)
+                'Due ${deadlineLabel(context, g.deadline)}',
+              if (g.inactive) 'Inactive',
+            ].join(' · '),
+          ),
+          onTap: repository == null || memory == null
+              ? null
+              : () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => GoalScreen(
+                      goalId: g.id,
+                      repository: repository,
+                      memory: memory,
+                    ),
+                  ),
+                ),
+        ),
+    ];
   }
 
   List<Widget> _history(ThemeData theme) {

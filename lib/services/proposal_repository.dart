@@ -3,13 +3,14 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/event.dart';
+import '../models/goal.dart';
 import '../models/note.dart';
 import '../models/person.dart';
 import '../models/proposal.dart';
-import '../models/share.dart';
 import '../widgets/other_events.dart';
 import 'actions_repository.dart';
 import 'events_repository.dart';
+import 'goals_repository.dart';
 import 'mcp_client.dart';
 import 'people_repository.dart';
 import 'response_cache.dart';
@@ -46,7 +47,8 @@ class ProposalEdits {
 
   /// What's to become of a proposal's additions: each made now -- with,
   /// if it's corrected, its [name] and a person's context or a location's
-  /// hint ([detail]) -- found among those there ([id]), or dropped.
+  /// hint ([detail]); a goal made active, due by [deadline] -- found among
+  /// those there ([id]), or dropped.
   final List<
     ({
       String ref,
@@ -55,6 +57,7 @@ class ProposalEdits {
       String? name,
       String? detail,
       AdditionKind kind,
+      String? deadline,
     })
   >
   additions;
@@ -108,6 +111,10 @@ class ProposalEdits {
             'name': ?a.name,
             if (a.detail != null)
               a.kind == AdditionKind.location ? 'hint' : 'context': a.detail,
+            if (a.deadline != null) ...{
+              'status': 'active',
+              'deadline': a.deadline,
+            },
           },
       ],
   };
@@ -150,10 +157,13 @@ class ProposalEdits {
             name: a['name'] as String?,
             detail: (a['hint'] ?? a['context']) as String?,
             // Only where a detail goes: a location's hint, else a
-            // person's context.
-            kind: a.containsKey('hint')
+            // person's context -- or a goal's deadline.
+            kind: a.containsKey('deadline')
+                ? AdditionKind.goal
+                : a.containsKey('hint')
                 ? AdditionKind.location
                 : AdditionKind.person,
+            deadline: a['deadline'] as String?,
           ),
       ],
     );
@@ -525,6 +535,7 @@ class InMemoryProposalRepository implements ProposalRepository {
     this.onApplied,
     this.people,
     this.actions,
+    this.goals,
     Map<int, Set<String>> changed = const {},
   }) : _changed = {...changed},
        _claude = _proposal,
@@ -546,9 +557,10 @@ class InMemoryProposalRepository implements ProposalRepository {
   final void Function(Proposal applied)? onApplied;
 
   /// Where an addition made now is made, if anywhere: people and
-  /// locations, and actions.
+  /// locations, actions, and goals.
   final PeopleRepository? people;
   final ActionsRepository? actions;
+  final GoalsRepository? goals;
 
   /// The events' actions and facts before each addition was settled, by
   /// ref, then event id: to put back when it's unsettled.
@@ -830,6 +842,20 @@ class InMemoryProposalRepository implements ProposalRepository {
                       ..remove('ref'),
                   ) ??
                   'action-${edit.ref.substring(4)}',
+            AdditionKind.goal => switch (goals) {
+              final goals? => (await goals.createGoal(
+                Goal.fromJson({
+                  ...addition.fields,
+                  'id': '',
+                  'title': name,
+                  'with_ids': _settledPeople(addition.withIds, settled, all),
+                  'for_ids': _settledPeople(addition.forIds, settled, all),
+                  'status': edit.deadline == null ? 'inactive' : 'active',
+                  if (edit.deadline != null) 'deadline': edit.deadline,
+                }),
+              )).id,
+              null => 'goal-${edit.ref.substring(4)}',
+            },
           };
       }
       pending.remove(addition);
@@ -862,6 +888,33 @@ class InMemoryProposalRepository implements ProposalRepository {
       }
     }
     return (pending, settled);
+  }
+
+  /// [ids] -- a new goal's people -- each named by its id, a person
+  /// [settled] already by theirs (one dropped left out). Refused while
+  /// one of [all] the proposal adds isn't settled.
+  static List<String> _settledPeople(
+    List<String> ids,
+    List<AdditionSettled> settled,
+    Map<String, ProposalAddition> all,
+  ) {
+    final waiting = [
+      for (final id in ids)
+        if (all.containsKey(id) && !settled.any((s) => s.ref == id)) id,
+    ];
+    if (waiting.isNotEmpty) {
+      throw McpException(
+        'amend_proposal: additions: it names ${waiting.join(', ')}: settle '
+        'them first',
+      );
+    }
+    return [
+      for (final id in ids)
+        if (settled.where((s) => s.ref == id).firstOrNull case final s?)
+          ?s.id
+        else
+          id,
+    ];
   }
 
   /// The proposal as Claude made it.

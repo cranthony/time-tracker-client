@@ -320,6 +320,10 @@ class _GoalScreenState extends State<GoalScreen> {
         (goalStatuses[goal.status] ?? goal.status, _when(context, at)),
       if (goal.parentId != null)
         ('Parent', goal.required ? 'Needs it done' : "Doesn't need it done"),
+      if (goal.withIds.isNotEmpty)
+        ('With', goal.withIds.map(goalPeopleNames(widget.memory)).join(', ')),
+      if (goal.forIds.isNotEmpty)
+        ('For', goal.forIds.map(goalPeopleNames(widget.memory)).join(', ')),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),

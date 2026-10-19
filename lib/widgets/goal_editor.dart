@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../models/facts.dart';
 import '../models/goal.dart';
 import '../models/goal_changes.dart';
+import '../models/person.dart';
+import '../services/plan_memory.dart';
 import 'color_picker.dart' show priorityColor;
 import 'duration_field.dart';
 import 'edit_page.dart';
 import 'event_description.dart';
 import 'html_editor.dart';
+import 'picker_sheet.dart';
 
 /// Adds a goal (with no [goal]) under [parent] (the top level, if null),
 /// or edits [goal], on a page of its own: its title, status, deadline (a
@@ -14,7 +18,8 @@ import 'html_editor.dart';
 /// some days or weeks before it, following it), priority (its own, or
 /// its parent's, inherited), expected time, whether
 /// its parent needs it, its description and definition of done (HTML, in
-/// [showHtmlEditor]) and the hints for telling its events. A new one
+/// [showHtmlEditor]), the hints for telling its events, and the people
+/// it's done with and for (picked as an event's are). A new one
 /// starts active, or inactive if chosen; an active one needs a deadline.
 /// Saving is off while the change breaks a rule (see [planned]) against
 /// [goals], every goal there is, saying which -- a change of status
@@ -103,6 +108,8 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   late String? _description = _goal?.description ?? widget.description;
   late String? _definitionOfDone =
       _goal?.definitionOfDone ?? widget.definitionOfDone;
+  late List<String> _with = [...?_goal?.withIds];
+  late List<String> _for = [...?_goal?.forIds];
 
   @override
   void dispose() {
@@ -151,14 +158,27 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     'attribution_hints': _text(_hints),
   };
 
+  /// The people it's done with and for, keyed as the server takes them:
+  /// null for none.
+  Map<String, Object?> get _people => {
+    'with_ids': _with.isEmpty ? null : [..._with],
+    'for_ids': _for.isEmpty ? null : [..._for],
+  };
+
   /// A new goal's fields, or what an edit changes.
   Map<String, Object?> get _changes {
     final goal = _goal;
     final fields = _fields;
     if (goal == null) {
-      return {...fields, 'parent_id': widget.parent?.id, 'status': _status}
-        ..removeWhere((_, v) => v == null);
+      return {
+        ...fields,
+        ..._people,
+        'parent_id': widget.parent?.id,
+        'status': _status,
+      }..removeWhere((_, v) => v == null);
     }
+    bool same(List<String> a, List<String> b) =>
+        a.length == b.length && a.every(b.contains);
     final before = {
       'title': goal.title,
       'deadline': goal.deadline,
@@ -174,7 +194,24 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
       for (final MapEntry(:key, :value) in fields.entries)
         if (value != before[key]) key: value,
       if (_status != goal.status) 'status': _status,
+      if (!same(_with, goal.withIds)) 'with_ids': _people['with_ids'],
+      if (!same(_for, goal.forIds)) 'for_ids': _people['for_ids'],
     };
+  }
+
+  /// Picks who it's done with and for, as an event's are picked.
+  Future<void> _pickPeople() async {
+    final picked = await showWhoWhereSheet(
+      context,
+      Facts(withIds: _with, forIds: _for),
+      withCaption: 'Who you’ll do it with',
+      forCaption: 'Who it’s for, who won’t be part of doing it',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _with = [...picked.facts.withIds];
+      _for = [...picked.facts.forIds];
+    });
   }
 
   String? get _problem {
@@ -492,6 +529,13 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
           ),
         ),
         const SizedBox(height: 8),
+        _PeopleField(
+          withIds: _with,
+          forIds: _for,
+          names: goalPeopleNames(PlanMemoryScope.of(context)),
+          onTap: _pickPeople,
+        ),
+        const SizedBox(height: 8),
         TextField(
           controller: _hints,
           minLines: 2,
@@ -505,6 +549,78 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
       ],
     );
   }
+}
+
+/// Who a goal is done with and for, as it reads, tapped to pick them:
+/// "Add people" while there's no one.
+class _PeopleField extends StatelessWidget {
+  const _PeopleField({
+    required this.withIds,
+    required this.forIds,
+    required this.names,
+    required this.onTap,
+  });
+
+  final List<String> withIds;
+  final List<String> forIds;
+  final String Function(String id) names;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final said = goalPeopleLabel(withIds, forIds, names);
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('People', style: theme.textTheme.labelLarge),
+                  const SizedBox(height: 4),
+                  Text(
+                    said ?? 'Add who it’s with or for',
+                    style: said == null
+                        ? TextStyle(color: theme.hintColor)
+                        : null,
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.group_outlined, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Names people by id from [memory]: an id it doesn't know, as itself.
+String Function(String id) goalPeopleNames(PlanMemory? memory) {
+  final byId = {
+    for (final p in memory?.people?.withSelf ?? const <Person>[])
+      p.id: personName(p),
+  };
+  return (id) => byId[id] ?? id;
+}
+
+/// Who a goal is done with and for, named by [names]: "With Ana · For
+/// Sam"; null if no one.
+String? goalPeopleLabel(
+  List<String> withIds,
+  List<String> forIds,
+  String Function(String id) names,
+) {
+  final parts = [
+    if (withIds.isNotEmpty) 'With ${withIds.map(names).join(', ')}',
+    if (forIds.isNotEmpty) 'For ${forIds.map(names).join(', ')}',
+  ];
+  return parts.isEmpty ? null : parts.join(' · ');
 }
 
 /// An HTML field, as it reads, tapped to edit: "Add [label]" while
