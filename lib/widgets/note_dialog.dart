@@ -130,9 +130,16 @@ class _NoteDialog extends StatefulWidget {
 }
 
 class _NoteDialogState extends State<_NoteDialog> {
-  late final _description = TextEditingController(
-    text: widget.draft?.description ?? widget.note?.description,
-  );
+  /// With the cursor after what's there, to carry on typing.
+  late final _description = () {
+    final text = widget.draft?.description ?? widget.note?.description ?? '';
+    return TextEditingController.fromValue(
+      TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      ),
+    );
+  }();
   late DateTime _time =
       widget.draft?.timestamp.toLocal() ??
       widget.note?.timestamp.toLocal() ??
@@ -355,8 +362,7 @@ class _NoteDialogState extends State<_NoteDialog> {
             child: TextField(
               controller: _description,
               focusNode: _focus,
-              // Only for a new note: an edit may be just to the time.
-              autofocus: !_editing,
+              autofocus: true,
               minLines: 4,
               maxLines: 8,
               // Wraps onto several lines, but Enter adds the note rather

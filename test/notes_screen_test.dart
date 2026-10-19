@@ -343,6 +343,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Edit note'), findsOneWidget);
     expect(find.text('9:30 AM'), findsWidgets);
+    final editable = tester.widget<EditableText>(find.byType(EditableText));
+    expect(editable.focusNode.hasFocus, isTrue);
+    expect(
+      editable.controller.selection,
+      const TextSelection.collapsed(offset: 'Standup'.length),
+    );
     await tester.enterText(find.byType(TextField), 'Standup, ran long');
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
