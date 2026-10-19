@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.156.1
+
+- The Habits pane, and the health of habits and people wherever it
+  shows, loads about ten times faster -- most of all in the web app,
+  where working it out held everything up until it was done.
+
 ## 7.156.0
 
 - The server's memory graph gives "Heap in use (untracked)" and

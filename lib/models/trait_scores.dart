@@ -59,6 +59,7 @@ import 'facts.dart';
 import 'habit.dart';
 import 'person.dart';
 import 'scoring.dart';
+import 'share.dart';
 import 'trait.dart';
 import '../widgets/durations.dart' show formatMinutes;
 
@@ -287,6 +288,24 @@ List<TraitScore> scoreSubject(
   List<Event> events, {
   String? Function(String id)? parentOf,
   ScoringDefaults defaults = const ScoringDefaults(),
+}) => _scoreSubject(
+  subject,
+  traits,
+  end,
+  events,
+  _Reading(parentOf),
+  defaults: defaults,
+);
+
+/// [scoreSubject], with [reading] keeping what it works out from [events]
+/// for the next day scored from them.
+List<TraitScore> _scoreSubject(
+  Subject subject,
+  List<Trait> traits,
+  DateTime end,
+  List<Event> events,
+  _Reading reading, {
+  required ScoringDefaults defaults,
 }) {
   final combined = traitsAggregation(subject, defaults);
   return [
@@ -305,7 +324,7 @@ List<TraitScore> scoreSubject(
                 keys[i],
                 end,
                 events,
-                parentOf,
+                reading,
                 weight: aggregation.weightOf(keys[i]),
               ),
           ];
@@ -337,10 +356,11 @@ List<PartScore?> scoreParts(
   String? Function(String id)? parentOf,
 }) {
   final keys = partKeys(parts);
+  final reading = _Reading(parentOf);
   return [
     for (final (i, part) in parts.indexed)
       subject.reads(part)
-          ? _part(subject, traitId, part, keys[i], end, events, parentOf)
+          ? _part(subject, traitId, part, keys[i], end, events, reading)
           : null,
   ];
 }
@@ -365,54 +385,118 @@ List<Event> _engaged(
   Subject subject,
   String engagement,
   List<Event> events,
-  String? Function(String id)? parentOf,
+  _Reading reading,
 ) {
   final personId = subject.id;
   if (subject.scope case final scope?) {
     if (engagement != 'with' || scope.isEmpty) return const [];
-    return _ofAction(events, scope, parentOf);
+    return _ofAction(events, scope, reading);
   }
   if (engagement == 'with' && personId == selfPersonId) return events;
-  return [
-    for (final e in events)
-      if (Facts.fromJson(e.properties['facts']) case final facts?)
-        if ((engagement == 'with' ? facts.withIds : facts.forIds).contains(
-          personId,
-        ))
-          e,
-  ];
+  return reading.engaged(
+    events,
+    (engagement, personId),
+    () => [
+      for (final e in events)
+        if (_facts(e) case final facts?)
+          if ((engagement == 'with' ? facts.withIds : facts.forIds).contains(
+            personId,
+          ))
+            e,
+    ],
+  );
 }
 
 /// [events] of the action [actionId] -- or of any action in the group it
 /// names -- or all of them without one.
-List<Event> _ofAction(
-  List<Event> events,
-  String? actionId,
-  String? Function(String id)? parentOf,
-) => [
-  for (final e in events)
-    if (_isOf(e.actionIds, actionId, parentOf)) e,
-];
+List<Event> _ofAction(List<Event> events, String? actionId, _Reading reading) {
+  if (actionId == null || actionId.isEmpty) return events;
+  return reading.ofAction(
+    events,
+    actionId,
+    () => [
+      for (final e in events)
+        if (_isOf(_actionIds(e), actionId, reading)) e,
+    ],
+  );
+}
 
 /// Whether [actionIds] are of the action [actionId], or in the group it
 /// names; any are, without one.
-bool _isOf(
-  List<String> actionIds,
-  String? actionId,
-  String? Function(String id)? parentOf,
-) {
+bool _isOf(List<String> actionIds, String? actionId, _Reading reading) {
   if (actionId == null || actionId.isEmpty) return true;
-  bool matches(String candidate) {
-    final seen = <String>{};
-    for (String? id = candidate; id != null && seen.add(id);) {
-      if (id == actionId) return true;
-      id = parentOf?.call(id);
-    }
-    return false;
-  }
-
-  return actionIds.any(matches);
+  return actionIds.any((id) => reading.lineage(id).contains(actionId));
 }
+
+/// What scoring works out from a list of events, kept for the next
+/// subject, part and day scored from the same list -- which is never
+/// changed while it's scored from: which events each person took part in,
+/// which are of each action, and each action's groups by [parentOf].
+class _Reading {
+  _Reading(this.parentOf);
+
+  /// An action's group, as [_isOf] reads it.
+  final String? Function(String id)? parentOf;
+
+  final _engaged = Expando<Map<(String, String), List<Event>>>();
+  final _ofAction = Expando<Map<String, List<Event>>>();
+  final _lineages = <String, Set<String>>{};
+  final _days = <(int, int, int), DateTime>{};
+
+  /// The midnight [days] days after [at]'s, as `DateTime(at.year,
+  /// at.month, at.day + days)` -- slow to make, and made again for every
+  /// subject, part and day, while it's the same few days.
+  DateTime day(DateTime at, int days) =>
+      _days[(at.year, at.month, at.day + days)] ??= DateTime(
+        at.year,
+        at.month,
+        at.day + days,
+      );
+
+  /// Those of [events] [made] gives, for [key]: worked out once.
+  List<Event> engaged(
+    List<Event> events,
+    (String, String) key,
+    List<Event> Function() made,
+  ) => (_engaged[events] ??= {})[key] ??= made();
+
+  /// Those of [events] of [actionId], [made] gives: worked out once.
+  List<Event> ofAction(
+    List<Event> events,
+    String actionId,
+    List<Event> Function() made,
+  ) => (_ofAction[events] ??= {})[actionId] ??= made();
+
+  /// [id] and every group it's in.
+  Set<String> lineage(String id) => _lineages[id] ??= () {
+    final seen = <String>{};
+    for (String? at = id; at != null && seen.add(at);) {
+      at = parentOf?.call(at);
+    }
+    return seen;
+  }();
+}
+
+/// What's read off each event, read once: an event is never changed, but
+/// scoring reads it again for every subject, part and day.
+final _factsRead = Expando<(Facts?,)>();
+final _actionSharesRead = Expando<List<ActionShare>>();
+final _actionIdsRead = Expando<List<String>>();
+final _judgmentsRead = Expando<List<Judgment>>();
+
+Facts? _facts(Event e) =>
+    (_factsRead[e] ??= (Facts.fromJson(e.properties['facts']),)).$1;
+
+List<ActionShare> _actionShares(Event e) =>
+    _actionSharesRead[e] ??= e.actionShares;
+
+List<String> _actionIds(Event e) =>
+    _actionIdsRead[e] ??= [for (final a in _actionShares(e)) a.actionId];
+
+List<Judgment> _judgments(Event e) => _judgmentsRead[e] ??= judgmentsFromJson(
+  e.properties['judgments'],
+  eventId: e.id,
+);
 
 num _num(Object? value, num fallback) => value is num ? value : fallback;
 
@@ -427,7 +511,7 @@ PartScore _part(
   String key,
   DateTime end,
   List<Event> events,
-  String? Function(String id)? parentOf, {
+  _Reading reading, {
   num weight = 1,
 }) {
   final kind = switch (part['kind']) {
@@ -444,7 +528,7 @@ PartScore _part(
   }
   final rubric = part['rubric'] as String?;
   final engagement = part['engagement_type'] as String? ?? 'with';
-  var engaged = _engaged(subject, engagement, events, parentOf);
+  var engaged = _engaged(subject, engagement, events, reading);
 
   PartScore score(int? value, String said, List<Event> behind) => PartScore(
     key: key,
@@ -464,10 +548,7 @@ PartScore _part(
       final behind = <Event>[];
       for (final e in engaged) {
         if (e.start.isBefore(from) || !e.start.isBefore(end)) continue;
-        for (final j in judgmentsFromJson(
-          e.properties['judgments'],
-          eventId: e.id,
-        )) {
+        for (final j in _judgments(e)) {
           if (j.personId == subject.id &&
               j.traitId == traitId &&
               j.part == key &&
@@ -504,7 +585,7 @@ PartScore _part(
         judgments: judged,
       );
     case 'continuity':
-      engaged = _ofAction(engaged, part['action'] as String?, parentOf);
+      engaged = _ofAction(engaged, part['action'] as String?, reading);
       final lastDays = _num(part['last_within_days'], defaultWithinDays);
       final nextDays = _num(part['next_within_days'], defaultWithinDays);
       Event? last, next;
@@ -537,14 +618,14 @@ PartScore _part(
       );
     case 'count' || 'duration':
       final action = part['action'] as String?;
-      engaged = _ofAction(engaged, action, parentOf);
+      engaged = _ofAction(engaged, action, reading);
       final (rating, said, behind) = _overInterval(
         part,
         kind,
         end,
         engaged,
         (e) =>
-            _actionShare(e, action, parentOf) *
+            _actionShare(e, action, reading) *
             _personShare(e, subject, engagement),
       );
       return score(rating, said, behind);
@@ -554,14 +635,14 @@ PartScore _part(
       final theirs = subject.isHabit || subject.id == selfPersonId
           ? events
           : engaged;
-      final (rating, said, behind) = _spacing(part, end, theirs, parentOf);
+      final (rating, said, behind) = _spacing(part, end, theirs, reading);
       return score(rating, said, behind);
     default: // follow_through
-      engaged = _ofAction(engaged, part['action'] as String?, parentOf);
+      engaged = _ofAction(engaged, part['action'] as String?, reading);
       final dropped = [
         for (final c in subject.cancelledEvents)
           if (c.engagement == engagement &&
-              _isOf(c.actionIds, part['action'] as String?, parentOf))
+              _isOf(c.actionIds, part['action'] as String?, reading))
             c,
       ];
       final (rating, said, behind) = _followThrough(
@@ -569,6 +650,7 @@ PartScore _part(
         end,
         engaged,
         dropped,
+        reading,
       );
       return score(rating, said, behind);
   }
@@ -582,6 +664,7 @@ PartScore _part(
   DateTime end,
   List<Event> kept,
   List<CancelledEvent> dropped,
+  _Reading reading,
 ) {
   final penalty = _num(part['penalty'], followThroughPenalty);
   final recovery = _num(part['recovery'], followThroughRecovery);
@@ -589,15 +672,18 @@ PartScore _part(
     part['look_back_days'],
     followThroughLookBackDays,
   ).round();
-  final start = DateTime(end.year, end.month, end.day - 1);
+  // Only those of the days run through, not every day's search of all.
+  final first = reading.day(end, -lookBack);
+  kept = [
+    for (final e in kept)
+      if (!e.start.isBefore(first) && e.start.isBefore(end)) e,
+  ];
   num score = 100, before = 100;
   var lost = 0;
   var gained = <Event>[];
   for (var back = lookBack - 1; back >= 0; back--) {
-    final dayStart = DateTime(start.year, start.month, start.day - back);
-    final dayEnd = back == 0
-        ? end
-        : DateTime(dayStart.year, dayStart.month, dayStart.day + 1);
+    final dayStart = reading.day(end, -1 - back);
+    final dayEnd = back == 0 ? end : reading.day(end, -back);
     bool within(DateTime t) => !t.isBefore(dayStart) && t.isBefore(dayEnd);
     before = score;
     lost = dropped.where((c) => within(c.start)).length;
@@ -631,19 +717,19 @@ double _days(Duration d) => d.inMicroseconds / Duration.microsecondsPerDay;
   Part part,
   DateTime end,
   List<Event> events,
-  String? Function(String id)? parentOf,
+  _Reading reading,
 ) {
   final gap = Duration(minutes: ((part['max_gap_hours'] as num) * 60).round());
-  final dayStart = DateTime(end.year, end.month, end.day - 1);
-  final from = DateTime(end.year, end.month, end.day - 1 - spacingLeadDays);
+  final dayStart = reading.day(end, -1);
+  final from = reading.day(end, -1 - spacingLeadDays);
   final resets = [
-    for (final e in _ofAction(events, part['action'] as String?, parentOf))
+    for (final e in _ofAction(events, part['action'] as String?, reading))
       if (e.start.isBefore(end) && !e.start.isBefore(from)) e,
   ];
   final exceptions = [
     for (final x in spacingExceptions(part))
       for (final e in events)
-        if (x.actions.any((a) => _isOf(e.actionIds, a, parentOf)) &&
+        if (x.actions.any((a) => _isOf(_actionIds(e), a, reading)) &&
             e.end.isAfter(from) &&
             e.start.isBefore(end))
           (event: e, reset: x.resetHours),
@@ -714,6 +800,17 @@ double _days(Duration d) => d.inMicroseconds / Duration.microsecondsPerDay;
 ) {
   final intervalDays = _num(part['interval_days'], defaultWindowDays);
   final interval = Duration(minutes: (intervalDays * 24 * 60).round());
+  // Only those any window it measures -- back to when it was last met,
+  // with zero_at_days -- takes in: each measure searches them all.
+  final reach = switch (part['zero_at_days']) {
+    final num days => Duration(minutes: (days * 24 * 60).round()),
+    _ => Duration.zero,
+  };
+  final earliest = end.subtract(interval + reach);
+  events = [
+    for (final e in events)
+      if (e.start.isBefore(end) && e.end.isAfter(earliest)) e,
+  ];
   final num target;
   final double Function(DateTime at) value;
   final String said;
@@ -835,9 +932,11 @@ double _minutesIn(
 /// all of it for the user, or a habit.
 double _personShare(Event event, Subject subject, String engagement) {
   if (subject.scope != null || subject.id == selfPersonId) return 1;
-  final fractions = engagement == 'with'
-      ? event.withFractions
-      : event.forFractions;
+  final facts = _facts(event);
+  final fractions = shareFractions(
+    (engagement == 'with' ? facts?.withShares : facts?.forShares) ?? const [],
+    event.end.difference(event.start),
+  );
   return fractions[subject.id] ?? 1;
 }
 
@@ -845,16 +944,15 @@ double _personShare(Event event, Subject subject, String engagement) {
 /// the group it names -- as its actions' shares say
 /// ([Event.actionFractions], as the summaries count it); all of it
 /// without one.
-double _actionShare(
-  Event event,
-  String? actionId,
-  String? Function(String id)? parentOf,
-) {
+double _actionShare(Event event, String? actionId, _Reading reading) {
   if (actionId == null || actionId.isEmpty) return 1;
-  return event
-      .actionFractions()
-      .entries
-      .where((part) => _isOf([part.key], actionId, parentOf))
+  // As Event.actionFractions has them, from its shares read once.
+  return shareFractions(
+        _actionShares(event),
+        event.end.difference(event.start),
+        split: RemainingSplit.even,
+      ).entries
+      .where((part) => _isOf([part.key], actionId, reading))
       .fold(0.0, (sum, part) => sum + part.value);
 }
 
@@ -918,6 +1016,8 @@ class TraitScores {
       for (final e in events)
         if (!e.isCancelled) e,
     ];
+    // What's worked out from them once, for every subject and day.
+    final reading = _Reading(parentOf);
     final ratings = <String, List<TraitsRating>>{};
     final consistency = <String, int>{};
     final eventsOf = <String, List<Event>>{};
@@ -929,7 +1029,7 @@ class TraitScores {
       if (!subject.active) continue;
       ratings[subject.id] = [
         for (var i = 0; i < starts.length; i++)
-          _rate(subject, traits, starts[i], keys[i], kept, parentOf, defaults),
+          _rate(subject, traits, starts[i], keys[i], kept, reading, defaults),
       ];
       bool healthy(int? rating) => rating != null && rating >= healthyRating;
       var streak = 0;
@@ -943,25 +1043,21 @@ class TraitScores {
         streak == back - 1 && back <= maxConsistencyDays + 1;
         back++
       ) {
-        final start = DateTime(
-          midnight.year,
-          midnight.month,
-          midnight.day - back,
-        );
+        final start = reading.day(midnight, -back);
         final rated = _rate(
           subject,
           traits,
           start,
           _dayKey(start),
           kept,
-          parentOf,
+          reading,
           defaults,
         );
         if (healthy(rated.rating)) streak++;
       }
       consistency[subject.id] = math.min(streak, maxConsistencyDays + 1);
       final involved = subject.isHabit
-          ? _engaged(subject, 'with', kept, parentOf)
+          ? _engaged(subject, 'with', kept, reading)
           : [
               for (final e in kept)
                 if (_involves(subject.id, e)) e,
@@ -1014,17 +1110,16 @@ class TraitScores {
     DateTime start,
     String day,
     List<Event> events,
-    String? Function(String id)? parentOf,
+    _Reading reading,
     ScoringDefaults defaults,
   ) {
-    final end = DateTime(start.year, start.month, start.day + 1);
-    final scores = scoreSubject(
+    final end = reading.day(start, 1);
+    final scores = _scoreSubject(
       subject,
       traits,
-      start,
       end,
       events,
-      parentOf: parentOf,
+      reading,
       defaults: defaults,
     );
     final combined = traitsAggregation(subject, defaults);
@@ -1173,7 +1268,7 @@ class TraitScores {
   /// Whether [e] was with or for [personId]: for Self, whether it says
   /// anything of who or where.
   static bool _involves(String personId, Event e) {
-    final facts = Facts.fromJson(e.properties['facts']);
+    final facts = _facts(e);
     if (facts == null) return false;
     if (personId == selfPersonId) return !facts.isEmpty;
     return facts.withIds.contains(personId) || facts.forIds.contains(personId);

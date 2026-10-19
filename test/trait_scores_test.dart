@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/demo/sample_data.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/habit.dart';
 import 'package:time_tracker_client/models/note.dart';
@@ -1091,5 +1092,66 @@ void main() {
       ).health('sam'),
       0,
     );
+  });
+
+  test('scoring every day at once rates each as scoring it alone does', () {
+    // What compute works out once, for every subject and day, is what
+    // each would have worked out for itself.
+    final now = DateTime(2026, 10, 7, 15);
+    final sample = SampleData(now);
+    final events = [
+      for (var week = 0; week < 5; week++)
+        for (final e in sample.events)
+          Event.fromJson({
+            ...e.toJson().cast<String, dynamic>(),
+            'id': '${e.id}-$week',
+            'start': localIsoTimestamp(
+              e.start.subtract(Duration(days: 7 * week)),
+            ),
+            'end': localIsoTimestamp(e.end.subtract(Duration(days: 7 * week))),
+          }),
+    ];
+    final parents = {
+      for (final a in sample.actions)
+        if (a.id != null) a.id!: a.parentId,
+    };
+    final scores = TraitScores.compute(
+      traits: sample.traits,
+      people: sample.people,
+      habits: sample.habits,
+      events: events,
+      today: now,
+      parentOf: (id) => parents[id],
+    );
+    final subjects = [
+      for (final p in sample.people) Subject.person(p),
+      for (final h in sample.habits) Subject.habit(h),
+    ];
+    var rated = 0;
+    for (final subject in subjects.where((s) => s.active)) {
+      for (final day in scores.days) {
+        final start = DateTime.parse(day);
+        final alone = scoreSubject(
+          subject,
+          sample.traits,
+          start,
+          DateTime(start.year, start.month, start.day + 1),
+          events,
+          parentOf: (id) => parents[id],
+        );
+        String said(List<TraitScore> traits) => [
+          for (final t in traits)
+            '${t.traitId} ${t.score}: '
+                '${[for (final p in t.parts) '${p.key} ${p.score} ${p.said} ${p.eventIds}'].join('; ')}',
+        ].join('\n');
+        expect(
+          said(scores.rating(subject.id, day)!.traits),
+          said(alone),
+          reason: '${subject.id} on $day',
+        );
+        rated++;
+      }
+    }
+    expect(rated, greaterThan(20));
   });
 }
