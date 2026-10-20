@@ -15,6 +15,9 @@ class EventsMode {
   /// Changing an event's times: its box.
   static const edit = EventsMode(Icons.edit_calendar_outlined, 'Edit an event');
 
+  /// Placing a cursor where a new note goes.
+  static const placeNote = EventsMode(Icons.edit_note, 'Place a note');
+
   /// Extending the open proposal's compaction window.
   static const extend = EventsMode(
     Icons.expand,
