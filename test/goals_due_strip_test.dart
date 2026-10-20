@@ -83,6 +83,49 @@ void main() {
     );
   });
 
+  test('overdueGoalsOn: the open goals due before the day, active first, '
+      'then the highest priority, then the longest overdue', () {
+    final mixed = [
+      _goal('today', 'Today', '2026-10-18'),
+      _goal('yesterday', 'Yesterday', '2026-10-17T17:00'),
+      _goal('older', 'Older', '2026-10-10'),
+      _goal('inactive', 'Inactive', '2026-10-01', status: 'inactive'),
+      _goal('done', 'Done', '2026-10-01', status: 'done'),
+      _goal('missed', 'Missed', '2026-10-01', status: 'missed'),
+      _goal('obsolete', 'Obsolete', '2026-10-01', status: 'obsolete'),
+      _goal('none', 'None', null),
+      Goal.fromJson({
+        ..._goal('urgent', 'Urgent', '2026-10-15').toJson(),
+        'priority': 0,
+      }),
+    ];
+    expect(overdueGoalsOn(mixed, day).map((g) => g.id), [
+      'urgent',
+      'older',
+      'yesterday',
+      'inactive',
+    ]);
+    expect(overdueGoalsOn(mixed, DateTime(2026, 10, 1)), isEmpty);
+    expect(overdueGoalsOn(mixed, DateTime(2026, 10, 2)).map((g) => g.id), [
+      'inactive',
+    ]);
+    const parent = Goal(id: 'parent', title: 'Parent', priority: 0);
+    final child = Goal(
+      id: 'child',
+      title: 'Child',
+      parentId: 'parent',
+      deadline: '2026-10-17',
+    );
+    expect(
+      overdueGoalsOn(
+        [...mixed, child],
+        day,
+        GoalTree([parent, ...mixed, child]),
+      ).map((g) => g.id).take(2),
+      ['urgent', 'child'],
+    );
+  });
+
   Future<void> pump(
     WidgetTester tester, {
     required bool collapsed,
@@ -117,6 +160,78 @@ void main() {
     expect(find.textContaining('4 goals due (3 open)'), findsOneWidget);
     await tester.tap(find.textContaining('4 goals due'));
     expect(collapsed, isFalse);
+  });
+
+  testWidgets("overdue goals follow the day's, each saying the day it was "
+      'due, in the error color; tapping one opens it; nothing on a past '
+      'day', (tester) async {
+    Goal? tapped;
+    final late = [
+      _goal('o', 'Late report', '2026-10-17'),
+      _goal('t', 'Timed', '2026-10-16T09:00'),
+    ];
+    Future<void> show({
+      required DateTime today,
+      required bool collapsed,
+      List<Goal>? due,
+    }) => tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalsDueStrip(
+            goals: due ?? goalsDueOn(goals, day),
+            overdue: late,
+            day: day,
+            today: today,
+            collapsed: collapsed,
+            onCollapsed: (_) {},
+            onTap: (g) => tapped = g,
+          ),
+        ),
+      ),
+    );
+    await show(today: day, collapsed: false);
+    expect(find.text('Overdue'), findsOneWidget);
+    expect(find.textContaining('due Oct 17'), findsOneWidget);
+    expect(find.textContaining('due Oct 16'), findsOneWidget);
+    expect(find.textContaining('9:00 AM'), findsNothing);
+    final colors = Theme.of(tester.element(find.byType(GoalsDueStrip)))
+        .colorScheme;
+    expect(
+      tester.widget<Text>(find.textContaining('due Oct 17')).style?.color,
+      colors.onErrorContainer,
+    );
+    expect(
+      tester.widget<Text>(find.textContaining('Zebra')).style?.color,
+      colors.onSecondaryContainer,
+    );
+    await tester.tap(find.textContaining('due Oct 17'));
+    expect(tapped?.id, 'o');
+
+    await show(today: day, collapsed: true);
+    expect(
+      find.textContaining('4 goals due (3 open), 2 overdue · '),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Late report, Timed'), findsOneWidget);
+    await show(today: day, collapsed: true, due: const []);
+    expect(
+      find.textContaining('2 goals overdue · Late report, Timed'),
+      findsOneWidget,
+    );
+
+    // The day shown is past: just its own.
+    await show(today: DateTime(2026, 10, 19), collapsed: false);
+    expect(find.text('Overdue'), findsNothing);
+    expect(find.textContaining('due Oct'), findsNothing);
+    expect(find.textContaining('Zebra'), findsOneWidget);
+    await show(today: DateTime(2026, 10, 19), collapsed: true);
+    expect(find.textContaining('overdue'), findsNothing);
+    await show(today: DateTime(2026, 10, 19), collapsed: false, due: const []);
+    expect(find.byType(InkWell), findsNothing);
+
+    // Ahead of today, shown too.
+    await show(today: DateTime(2026, 10, 17), collapsed: false);
+    expect(find.textContaining('due Oct 17'), findsOneWidget);
   });
 
   testWidgets('nothing, with nothing due', (tester) async {
