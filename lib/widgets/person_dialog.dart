@@ -25,11 +25,14 @@ import 'traits_field.dart';
 /// can count. With [focus], a star beside Save prioritizes someone
 /// already there, at once. With [scoreParts], the parts of their own of
 /// someone already there are scored as they're edited. Someone added
-/// starts with [name], if given.
+/// starts with [name], if given, and with [fields] -- their name, context
+/// and circles, as `create_person` takes them -- typed in the quick New
+/// person sheet before its More.
 Future<Person?> showPersonEditor(
   BuildContext context, {
   Person? person,
   String? name,
+  Map<String, Object?> fields = const {},
   List<Circle> circles = const [],
   List<Trait> traits = const [],
   Map<String, String> actions = const {},
@@ -40,7 +43,8 @@ Future<Person?> showPersonEditor(
   context,
   _PersonEditor(
     person: person,
-    name: name,
+    name: fields['name'] as String? ?? name,
+    typed: fields,
     circles: circles,
     traits: traits,
     actions: actions,
@@ -54,6 +58,7 @@ class _PersonEditor extends StatefulWidget {
   const _PersonEditor({
     required this.person,
     required this.name,
+    required this.typed,
     required this.circles,
     required this.traits,
     required this.actions,
@@ -64,6 +69,9 @@ class _PersonEditor extends StatefulWidget {
 
   final Person? person;
   final String? name;
+
+  /// What a new person starts with, as `create_person` takes it.
+  final Map<String, Object?> typed;
   final List<Circle> circles;
   final List<Trait> traits;
   final Map<String, String> actions;
@@ -79,7 +87,9 @@ class _PersonEditorState extends State<_PersonEditor> {
   late final _name = TextEditingController(
     text: widget.person?.name ?? widget.name,
   );
-  late final _context = TextEditingController(text: widget.person?.context);
+  late final _context = TextEditingController(
+    text: widget.person?.context ?? widget.typed['context'] as String?,
+  );
 
   /// Their summary of each trait fact, by "trait id/fact id", for every
   /// trait's -- those shown being those of the traits that apply.
@@ -91,7 +101,10 @@ class _PersonEditorState extends State<_PersonEditor> {
             text: widget.person?.summary(traitId, fact.id),
           ),
   };
-  late final _circleIds = {...?widget.person?.circleIds};
+  late final _circleIds = {
+    ...?widget.person?.circleIds,
+    for (final id in widget.typed['circles'] as List? ?? const []) '$id',
+  };
   late String _status = widget.person?.status ?? 'active';
 
   /// Which traits apply to them, and their own parts for any.

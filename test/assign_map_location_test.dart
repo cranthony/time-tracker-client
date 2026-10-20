@@ -137,8 +137,16 @@ void main() {
     await tester.tap(find.text('Add location “Cafe Roma”…'));
     await tester.pumpAndSettle();
     expect(find.text('New location'), findsOneWidget);
-    expect(inDialog('Cafe Roma, 3 Elm St'), findsOneWidget);
-    await tester.tap(find.text('Save').last);
+    expect(
+      tester
+          .widget<TextField>(
+            find.widgetWithText(TextField, 'Map location (optional)'),
+          )
+          .controller!
+          .text,
+      'Cafe Roma, 3 Elm St',
+    );
+    await tester.tap(find.text('Add').last);
     await tester.pumpAndSettle();
     final made = (await people.locations()).firstWhere(
       (l) => l.name == 'Cafe Roma',

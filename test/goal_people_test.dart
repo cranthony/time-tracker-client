@@ -136,6 +136,7 @@ void main() {
           detail: null,
           kind: kind,
           deadline: deadline,
+          fields: null,
         ),
       ],
     );

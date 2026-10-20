@@ -655,6 +655,17 @@ void main() {
         'college',
       );
       await tester.tap(find.widgetWithText(FilterChip, 'Family').last);
+      await tester.pump();
+      // The rest on the full page, with what's typed in the sheet.
+      await tester.tap(find.text('More'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextField, 'Priya'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilterChip>(find.widgetWithText(FilterChip, 'Family'))
+            .selected,
+        isTrue,
+      );
       // How the traits combine is above them, edited by its sigma.
       expect(
         tester.getTopLeft(find.text('How the traits combine')).dy,
@@ -722,10 +733,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Mom');
       await tester.pump();
-      await tester.tap(find.text('Save'));
+      await tester.tap(find.text('Add'));
       await tester.pumpAndSettle();
 
-      expect(find.text("Couldn't save"), findsOneWidget);
+      // The sheet stays open, saying so, to try again.
+      expect(find.textContaining("Couldn't add it"), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
     });
 
     testWidgets("Self can't be archived, or prioritized", (tester) async {
@@ -815,7 +828,7 @@ void main() {
         "'my place'",
       );
       await tester.pump();
-      await tester.tap(find.text('Save'));
+      await tester.tap(find.text('Add'));
       await tester.pumpAndSettle();
       expect(find.text('Home'), findsOneWidget);
 

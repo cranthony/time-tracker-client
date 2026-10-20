@@ -1990,8 +1990,13 @@ sealed class AdditionChoice {
   const AdditionChoice();
 }
 
-/// Make it now, called [name], with a person's context or a location's
-/// hint, [detail]; a goal, active and due by [deadline], if given.
+/// Make a person, location or action now, in its quick sheet: with every
+/// field it has there, starting as Claude has it.
+final class MakeAddition extends AdditionChoice {
+  const MakeAddition();
+}
+
+/// Make a goal now, titled [name]; active and due by [deadline], if given.
 final class CreateAddition extends AdditionChoice {
   const CreateAddition(this.name, this.detail, {this.deadline});
   final String name;
@@ -2113,6 +2118,12 @@ class _AdditionSheetState extends State<_AdditionSheet> {
 
   Future<void> _create() async {
     final a = widget.addition;
+    // A person, location or action in its quick sheet, with room for its
+    // other fields.
+    if (a.kind != AdditionKind.goal) {
+      Navigator.of(context).pop(const MakeAddition());
+      return;
+    }
     final made = await showDialog<CreateAddition>(
       context: context,
       builder: (context) => _CreateAdditionDialog(addition: a),
@@ -2241,8 +2252,8 @@ class _AdditionSheetState extends State<_AdditionSheet> {
   }
 }
 
-/// Asks what a new [addition] is to be made as: its name, and a person's
-/// context or a location's hint, as Claude has them to start with.
+/// Asks what a new goal [addition] is to be titled, as Claude has it to
+/// start with.
 class _CreateAdditionDialog extends StatefulWidget {
   const _CreateAdditionDialog({required this.addition});
 
@@ -2254,51 +2265,27 @@ class _CreateAdditionDialog extends StatefulWidget {
 
 class _CreateAdditionDialogState extends State<_CreateAdditionDialog> {
   late final _name = TextEditingController(text: widget.addition.name);
-  late final _detail = TextEditingController(text: widget.addition.detail);
 
   @override
   void dispose() {
     _name.dispose();
-    _detail.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final a = widget.addition;
-    final detail = switch (a.kind) {
-      AdditionKind.person => 'Context: what tells them apart',
-      AdditionKind.location => 'Hint: other names, an address',
-      AdditionKind.action || AdditionKind.goal => null,
-    };
     return AlertDialog(
-      title: Text('Make the ${a.kind.label.toLowerCase()} now'),
+      title: const Text('Make the goal now'),
       content: SizedBox(
         width: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FieldHotkey(
-              'N',
-              child: TextField(
-                controller: _name,
-                autofocus: true,
-                decoration: InputDecoration(
-                  labelText: a.kind == AdditionKind.goal ? 'Title' : 'Name',
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
-            ),
-            if (detail != null)
-              FieldHotkey(
-                // Context, or hint.
-                detail[0],
-                child: TextField(
-                  controller: _detail,
-                  decoration: InputDecoration(labelText: detail),
-                ),
-              ),
-          ],
+        child: FieldHotkey(
+          'T',
+          child: TextField(
+            controller: _name,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Title'),
+            onChanged: (_) => setState(() {}),
+          ),
         ),
       ),
       actions: [
@@ -2309,14 +2296,9 @@ class _CreateAdditionDialogState extends State<_CreateAdditionDialog> {
         FilledButton(
           onPressed: _name.text.trim().isEmpty
               ? null
-              : () => Navigator.of(context).pop(
-                  CreateAddition(
-                    _name.text.trim(),
-                    detail == null || _detail.text.trim().isEmpty
-                        ? null
-                        : _detail.text.trim(),
-                  ),
-                ),
+              : () =>
+                    Navigator.of(context)
+                        .pop(CreateAddition(_name.text.trim(), null)),
           child: const Text('Make it'),
         ),
       ],

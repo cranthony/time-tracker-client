@@ -9,6 +9,21 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.172.0
+
+- New people, locations and actions are added in a quick sheet over the
+  bottom of the screen, as notes and goals are: a person's name, context
+  and circles; a location's name, hint, map location and group; an
+  action's name and group. A person's and an action's More button goes on
+  in the full page or dialog with what's typed. If adding fails, the
+  sheet stays open, saying why, to try again. This applies everywhere
+  they're added: the People, Locations and Plan pages, the Events page's
+  pickers, and an event's facts.
+- In a proposal, Make it now opens the same sheet for a person, location
+  or action Claude adds, starting as Claude has it, so a new location can
+  be put in its group (and given a map location) as it's made. Needs the
+  server's `amend_proposal` to take an addition's `fields`.
+
 ## 7.171.1
 
 - The Events page's goals-due strip shows overdue goals only on today,

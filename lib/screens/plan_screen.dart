@@ -42,6 +42,7 @@ import '../widgets/status_message.dart';
 import '../widgets/tree_tile.dart';
 import '../services/client_health.dart';
 import '../services/work_timing.dart';
+import '../widgets/quick_add_sheet.dart';
 
 /// The Plan page: panes to swipe between, or pick from the tabs at the
 /// top, each with a search of its own --
@@ -630,12 +631,21 @@ class _PlanScreenState extends State<PlanScreen> {
   Future<void> _add({String? parentId, bool group = false}) async {
     final actions = await _allActions();
     if (!mounted) return;
-    await showNewActionDialog(
+    // The quick sheet first; its More, the full dialog.
+    await showAddActionSheet<ActionList>(
       context,
-      create: _create,
       parentId: parentId,
       group: group,
       actions: actions,
+      save: _create,
+      more: (fields) => showNewActionDialog(
+        context,
+        create: _create,
+        parentId: fields['parent_id'] as String?,
+        group: group,
+        fields: fields,
+        actions: actions,
+      ),
     );
   }
 

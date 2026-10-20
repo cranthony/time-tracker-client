@@ -48,8 +48,9 @@ class ProposalEdits {
 
   /// What's to become of a proposal's additions: each made now -- with,
   /// if it's corrected, its [name] and a person's context or a location's
-  /// hint ([detail]); a goal made active, due by [deadline] -- found among
-  /// those there ([id]), or dropped.
+  /// hint ([detail]), and any of its other [fields], as its create tool
+  /// takes them (a location's group, say); a goal made active, due by
+  /// [deadline] -- found among those there ([id]), or dropped.
   final List<
     ({
       String ref,
@@ -59,6 +60,7 @@ class ProposalEdits {
       String? detail,
       AdditionKind kind,
       String? deadline,
+      Map<String, Object?>? fields,
     })
   >
   additions;
@@ -124,6 +126,10 @@ class ProposalEdits {
               'status': 'active',
               'deadline': a.deadline,
             },
+            // Only when there are some: an older server still takes the
+            // rest.
+            if (a.fields case final fields? when fields.isNotEmpty)
+              'fields': fields,
           },
       ],
     // Only when there are some: an older server still takes the rest.
@@ -185,6 +191,7 @@ class ProposalEdits {
                 ? AdditionKind.location
                 : AdditionKind.person,
             deadline: a['deadline'] as String?,
+            fields: (a['fields'] as Map?)?.cast<String, Object?>(),
           ),
       ],
       goalChanges: [
@@ -899,20 +906,34 @@ class InMemoryProposalRepository implements ProposalRepository {
           id = switch (addition.kind) {
             AdditionKind.person => switch (people) {
               final people? => (await people.createPerson(
-                Person(id: '', name: name, context: detail),
+                Person.fromJson({
+                  'id': '',
+                  'context': ?detail,
+                  ...?edit.fields,
+                  'name': name,
+                }),
               )).id,
               null => 'person-${edit.ref.substring(4)}',
             },
             AdditionKind.location => switch (people) {
               final people? => (await people.createLocation(
-                Location(id: '', name: name, hint: detail),
+                Location.fromJson({
+                  'id': '',
+                  'hint': ?detail,
+                  ...?edit.fields,
+                  'name': name,
+                }),
               )).id,
               null => 'location-${edit.ref.substring(4)}',
             },
             AdditionKind.action =>
               await actions?.createAction(
-                    {...addition.fields, 'name': name, 'status': 'active'}
-                      ..remove('ref'),
+                    {
+                      ...addition.fields,
+                      ...?edit.fields,
+                      'name': name,
+                      'status': 'active',
+                    }..remove('ref'),
                   ) ??
                   'action-${edit.ref.substring(4)}',
             AdditionKind.goal => switch (goals) {

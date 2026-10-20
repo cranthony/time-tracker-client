@@ -11,6 +11,7 @@ import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
 import '../widgets/tree_tile.dart';
 import 'travel_times_screen.dart';
+import '../widgets/quick_add_sheet.dart';
 
 /// The Plan page's Locations pane -- where: each place events happen,
 /// with the hint the assistant recognizes it by, under the location
@@ -79,24 +80,28 @@ class LocationsPaneState extends State<LocationsPane> {
 
   Future<void> _edit(Location? location) async {
     final repository = widget.repository;
+    if (location == null) {
+      final added = await showAddLocationSheet<Location>(
+        context,
+        groups: _groups,
+        save: (fields) =>
+            repository.createLocation(Location.fromJson({'id': '', ...fields})),
+      );
+      if (added != null) await reload();
+      return;
+    }
     final saved = await showLocationDialog(
       context,
       location: location,
       groups: _groups,
-      save: (fields) => location == null
-          ? repository.createLocation(Location.fromJson({'id': '', ...fields}))
-          : repository.updateLocation(location.id, fields),
-      delete: location == null
-          ? null
-          : () => repository.deleteLocation(location.id),
-      extra: location == null
-          ? null
-          : LocationTravelTimes(
-              placeId: location.id,
-              repository: repository,
-              memory: widget.memory,
-              actions: widget.actions,
-            ),
+      save: (fields) => repository.updateLocation(location.id, fields),
+      delete: () => repository.deleteLocation(location.id),
+      extra: LocationTravelTimes(
+        placeId: location.id,
+        repository: repository,
+        memory: widget.memory,
+        actions: widget.actions,
+      ),
     );
     if (saved != null) await reload();
   }
