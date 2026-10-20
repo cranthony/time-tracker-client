@@ -687,6 +687,38 @@ void main() {
       await render(tester, 'events', events());
     });
 
+    // Writing a note at a time: the notepad button by "+"; the cursor it
+    // puts up, mid-view; and ✓'s New note sheet, at the cursor's time.
+    for (final (name, step) in [
+      ('events_note_button', 0),
+      ('events_note_cursor', 1),
+      ('events_note_sheet', 2),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        final notes = sample.notesRepository();
+        await render(
+          tester,
+          name,
+          EventsScreen(
+            repository: sample.eventsRepository(),
+            notesRepository: notes,
+            actionsRepository: sample.actionsRepository(),
+            outbox: NoteWrites.local(notes),
+            serverLabel: 'sample',
+            clock: () => _now,
+          ),
+          then: () async {
+            if (step < 1) return;
+            await tester.tap(find.byTooltip('New note at a time'));
+            await tester.pumpAndSettle();
+            if (step < 2) return;
+            await tester.tap(find.byTooltip('Write a note here'));
+            await tester.pumpAndSettle();
+          },
+        );
+      });
+    }
+
     // Changes waiting to save, made while paused: lunch renamed and run
     // late, and the call with Mom cancelled -- each marked on the
     // timeline, the bar at the foot saying so; the bar's sheet of them;

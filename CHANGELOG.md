@@ -12,7 +12,8 @@ on. Add the new version's section here at the same time; CI checks both.
 ## 7.164.0
 
 - A notepad button left of the Events page's "+" writes a note at a
-  time of your choosing: it puts up a cursor -- dragged, or stepped with
+  time of your choosing: it puts up a cursor in the middle of what's in
+  view -- dragged, or stepped with
   its "−" and "+", or J and K -- and ✓ (or Enter) opens the New note
   sheet at the cursor's time. ✕ (or Esc) puts it away.
 

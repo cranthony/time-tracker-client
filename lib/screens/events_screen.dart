@@ -2374,19 +2374,17 @@ class _EventsScreenState extends State<EventsScreen> {
     });
   }
 
-  /// Starts placing a new note: its cursor, where a new event's would
-  /// start.
+  /// Starts placing a new note: its cursor in the middle of what's in
+  /// view -- on today too, not at now.
   void _startNoting() {
-    final now = widget.clock();
-    DateTime at;
-    if (!now.isBefore(_day) && now.isBefore(_dayEnd)) {
-      at = now;
-    } else if (_scroll.hasClients) {
-      final middle = _scroll.offset + _scroll.position.viewportDimension / 2;
-      at = timelineTime(middle, day: _from, dayEnd: _to, scale: _scale);
-    } else {
-      at = _day.add(const Duration(hours: 9));
-    }
+    final at = _scroll.hasClients
+        ? timelineTime(
+            _scroll.offset + _scroll.position.viewportDimension / 2,
+            day: _from,
+            dayEnd: _to,
+            scale: _scale,
+          )
+        : _day.add(const Duration(hours: 9));
     setState(() => _noteAt = _onGrid(at));
   }
 

@@ -1038,7 +1038,7 @@ of people and actions, a trait's page, a trait and an action being
 edited, and its
 actions with every status, and the time summary on each page and folded
 away), the habit graph (all of it, and searched), a person's page, Self's habits, a habit's page, how one of its scores
-was reached and one being edited, Events (with each page of its day summary, folded away, events that
+was reached and one being edited, Events (with each page of its day summary, folded away, a note being placed at a time and its sheet, events that
 overlap,
 what happened at an event, and a compaction proposal: the band, its
 start, a note stepped to, its notes for Claude, and waiting for Claude; and

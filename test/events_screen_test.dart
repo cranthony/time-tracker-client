@@ -2982,12 +2982,29 @@ void main() {
     await pulsing(tester);
     DateTime cursor() =>
         tester.widget<NoteCursorView>(find.byType(NoteCursorView)).at;
-    expect(cursor(), now);
+    // In the middle of the view, not at now.
+    final position = tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byType(ListView),
+            matching: find.byWidgetPredicate(
+              (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+            ),
+          ),
+        )
+        .position;
+    final middle = timelineTime(
+      position.pixels + position.viewportDimension / 2,
+      day: DateTime(2026, 9, 30),
+      dayEnd: DateTime(2026, 10, 1),
+      scale: defaultTimelineScale,
+    );
+    expect(cursor().difference(middle).inMinutes.abs(), lessThan(15));
     expect(find.text('Place a note'), findsOneWidget);
     await tester.tap(find.byTooltip('Later'));
     await pulsing(tester);
     final at = cursor();
-    expect(at.isAfter(now), isTrue);
+    expect(at.isAfter(middle), isTrue);
 
     await tester.tap(find.byTooltip('Write a note here'));
     await pulsing(tester);
