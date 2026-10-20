@@ -300,6 +300,8 @@ class _HomeScreenState extends State<HomeScreen> {
       deadline: result.deadline,
       description: result.description,
       definitionOfDone: result.definitionOfDone,
+      withIds: result.withIds,
+      forIds: result.forIds,
     );
     if (saved) await _goalDrafts.remove();
   }

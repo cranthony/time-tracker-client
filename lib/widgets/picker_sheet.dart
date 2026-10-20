@@ -392,7 +392,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
 
   final repository = PeopleScope.of(context);
   final memory = PlanMemoryScope.of(context);
-  var people = _people(repository, memory);
+  var people = knownPeople(repository, memory);
   var locations = _locations(repository, memory);
 
   // Who it was with, or for: everyone to pick from, [picked] picked;
@@ -477,7 +477,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
                 final p = byId[node.id];
                 if (p == null) return;
                 if (await editPerson(context, person: p) == null) return;
-                setState(() => people = _people(repository, memory));
+                setState(() => people = knownPeople(repository, memory));
               },
         add: repository == null
             ? null
@@ -488,7 +488,7 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
                   final added = await editPerson(context, name: name);
                   if (added == null) return;
                   search.controller.clear();
-                  people = _people(repository, memory);
+                  people = knownPeople(repository, memory);
                   picking({...picked, added.id});
                 },
               ),
@@ -916,13 +916,16 @@ class _MapLocationPage extends StatelessWidget {
 
 /// Everyone, from what the app has, or is loading, rather than asking
 /// again; what it kept, if that fails.
-Future<PeopleList>? _people(PeopleRepository? repository, PlanMemory? memory) {
+Future<PeopleList>? knownPeople(
+  PeopleRepository? repository,
+  PlanMemory? memory,
+) {
   if (repository == null) return null;
   if (memory == null) return repository.people();
   return _kept(memory.loadPeople(repository), () => memory.people);
 }
 
-/// The locations, as [_people] has everyone.
+/// The locations, as [knownPeople] has everyone.
 Future<List<Location>>? _locations(
   PeopleRepository? repository,
   PlanMemory? memory, {

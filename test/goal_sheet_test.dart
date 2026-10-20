@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/services/goal_drafts.dart';
+import 'package:time_tracker_client/services/people_repository.dart';
+import 'package:time_tracker_client/widgets/goal_editor.dart';
 import 'package:time_tracker_client/widgets/goal_sheet.dart';
 
 Goal _goal(String id, {String? parent, String status = 'active'}) =>
@@ -24,35 +27,53 @@ void main() {
   late GoalDrafts drafts;
   GoalSheetResult? result;
 
+  /// Opens the sheet -- over a [PeopleScope] with [people], if given, as
+  /// the app's has.
   Future<void> open(
     WidgetTester tester, {
     GoalDrafts? withDrafts,
     List<Goal> goals = const [],
+    List<Person>? people,
   }) async {
     kept = [];
     drafts = withDrafts ?? GoalDrafts.inMemory();
     result = null;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () async => result = await showAddGoalSheet(
-                context,
-                keep: (fields) async => kept.add(fields),
-                goals: goals,
-                drafts: drafts,
-                now: () => now,
-              ),
-              child: const Text('Open'),
+    final app = MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => result = await showAddGoalSheet(
+              context,
+              keep: (fields) async => kept.add(fields),
+              goals: goals,
+              drafts: drafts,
+              now: () => now,
             ),
+            child: const Text('Open'),
           ),
         ),
       ),
     );
+    await tester.pumpWidget(
+      people == null
+          ? app
+          : PeopleScope(
+              repository: InMemoryPeopleRepository(people: people),
+              child: app,
+            ),
+    );
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
   }
+
+  final people = [
+    const Person(id: 'ana', name: 'Ana'),
+    const Person(id: 'sam', name: 'Sam', context: 'from salsa'),
+    const Person(id: 'bo', name: 'Bo', status: 'archived'),
+  ];
+
+  /// The search field of the picker sheet open over the goal sheet.
+  Finder search() => find.byType(TextField).last;
 
   FilledButton add(WidgetTester tester) =>
       tester.widget(find.widgetWithText(FilledButton, 'Add'));
@@ -218,6 +239,156 @@ void main() {
       'description': 'Around the lake',
       'definition_of_done': 'Under an hour',
     });
+  });
+
+  testWidgets('without people to pick from, there are no With or For rows', (
+    tester,
+  ) async {
+    await open(tester);
+    expect(find.text('With'), findsNothing);
+    expect(find.text('For'), findsNothing);
+  });
+
+  testWidgets('With and For each add a person with a tap, searching for '
+      "the title's words; no one is in both; a chip tapped takes them off", (
+    tester,
+  ) async {
+    await open(tester, people: people);
+    await tester.enterText(find.byType(TextField), 'Help Sam move');
+    await tester.pump();
+    expect(find.byType(InputChip), findsNothing);
+
+    // Sam matches the title; a tap picks them.
+    await tester.tap(find.text('With'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sam (from salsa)'), findsOneWidget);
+    expect(find.text('Ana'), findsNothing);
+    await tester.tap(find.text('Sam (from salsa)'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(InputChip, 'Sam'), findsOneWidget);
+    expect(drafts.draft?.withIds, ['sam']);
+    expect(drafts.draft?.forIds, isEmpty);
+
+    // Picked as who it's for, they're no longer who it's with.
+    await tester.tap(find.text('For'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sam (from salsa)'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(InputChip, 'Sam'), findsOneWidget);
+    expect(drafts.draft?.withIds, isEmpty);
+    expect(drafts.draft?.forIds, ['sam']);
+
+    // Everyone active but Self and those picked already for this row,
+    // searching over.
+    await tester.tap(find.text('With'));
+    await tester.pumpAndSettle();
+    await tester.enterText(search(), '');
+    await tester.pumpAndSettle();
+    expect(find.text('Ana'), findsOneWidget);
+    expect(find.text('Sam (from salsa)'), findsOneWidget);
+    expect(find.text('Bo'), findsNothing);
+    expect(find.text('Self'), findsNothing);
+    await tester.tap(find.text('Ana'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(InputChip, 'Ana'), findsOneWidget);
+    expect(find.widgetWithText(InputChip, 'Sam'), findsOneWidget);
+    await tester.tap(find.text('For'));
+    await tester.pumpAndSettle();
+    await tester.enterText(search(), '');
+    await tester.pumpAndSettle();
+    expect(find.text('Sam (from salsa)'), findsNothing);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(kept.single['with_ids'], ['ana']);
+    expect(kept.single['for_ids'], ['sam']);
+  });
+
+  testWidgets('a chip tapped takes its person off, and Add sends no one '
+      'once there is no one', (tester) async {
+    await open(tester, people: people);
+    await tester.enterText(find.byType(TextField), 'Help Sam move');
+    await tester.pump();
+    await tester.tap(find.text('For'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sam (from salsa)'));
+    await tester.pumpAndSettle();
+    expect(drafts.draft?.forIds, ['sam']);
+
+    await tester.tap(find.widgetWithText(InputChip, 'Sam'));
+    await tester.pumpAndSettle();
+    expect(find.byType(InputChip), findsNothing);
+    expect(drafts.draft?.forIds, isEmpty);
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(kept.single.containsKey('with_ids'), isFalse);
+    expect(kept.single.containsKey('for_ids'), isFalse);
+  });
+
+  testWidgets("a draft's people come back, named, and More carries them "
+      'over', (tester) async {
+    final withDraft = GoalDrafts.inMemory();
+    await withDraft.put(
+      GoalDraft(
+        title: 'Help Sam move',
+        day: now,
+        withIds: const ['ana'],
+        forIds: const ['sam'],
+      ),
+    );
+    await open(tester, withDrafts: withDraft, people: people);
+    expect(find.widgetWithText(InputChip, 'Ana'), findsOneWidget);
+    expect(find.widgetWithText(InputChip, 'Sam'), findsOneWidget);
+
+    await tester.tap(find.text('More'));
+    await tester.pumpAndSettle();
+    final more = result as MoreGoal;
+    expect(more.withIds, ['ana']);
+    expect(more.forIds, ['sam']);
+  });
+
+  testWidgets('the full New goal page starts with the people given it', (
+    tester,
+  ) async {
+    // Tall enough for the whole page, its People field at the foot.
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GoalEditorPage(
+          goals: const [],
+          title: 'Help Sam move',
+          withIds: const ['ana'],
+          forIds: const ['sam'],
+          now: () => now,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // Named by id, with no people loaded to name them.
+    expect(find.text('With ana · For sam'), findsOneWidget);
+  });
+
+  test('a draft keeps its people, sent only when there are some', () {
+    final draft = GoalDraft(
+      title: 'Help Sam move',
+      day: now,
+      withIds: const ['ana'],
+      forIds: const ['sam'],
+    );
+    final json = draft.toJson();
+    expect(json['with_ids'], ['ana']);
+    expect(json['for_ids'], ['sam']);
+    final read = GoalDraft.fromJson(json);
+    expect(read.withIds, ['ana']);
+    expect(read.forIds, ['sam']);
+    final alone = GoalDraft(title: 'Read more', day: now).toJson();
+    expect(alone.containsKey('with_ids'), isFalse);
+    expect(alone.containsKey('for_ids'), isFalse);
+    expect(GoalDraft.fromJson(alone).withIds, isEmpty);
   });
 
   testWidgets("what's typed is kept as a draft, which the next sheet "
