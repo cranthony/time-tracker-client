@@ -11,15 +11,35 @@ import 'goal_tile.dart';
 /// by title.
 List<Goal> goalsDueOn(Iterable<Goal> goals, DateTime day, [GoalTree? tree]) {
   final date = deadlineOf(day);
-  final order = tree ?? GoalTree(goals);
   return [
     for (final g in goals)
       if (g.deadline?.trim().split('T').first == date && g.due != null) g,
-  ]..sort((a, b) {
-    final byStatus = _rank(a).compareTo(_rank(b));
-    return byStatus != 0 ? byStatus : order.compare(a, b);
-  });
+  ]..sort(_byStatus(tree ?? GoalTree(goals)));
 }
+
+/// The goals overdue on [day], from [goals]: the open ones -- active or
+/// inactive -- due before it, in the order [goalsDueOn] gives: active
+/// ones first, then each status's as [byPriority] has them in [tree] (by
+/// default, [goals] themselves), so, at a priority, the longest overdue
+/// first.
+List<Goal> overdueGoalsOn(
+  Iterable<Goal> goals,
+  DateTime day, [
+  GoalTree? tree,
+]) {
+  final date = deadlineOf(day);
+  return [
+    for (final g in goals)
+      if (g.open)
+        if (dueDay(g) case final due? when due.compareTo(date) < 0) g,
+  ]..sort(_byStatus(tree ?? GoalTree(goals)));
+}
+
+/// Orders goals by status, then as [order] compares them.
+Comparator<Goal> _byStatus(GoalTree order) => (a, b) {
+  final byStatus = _rank(a).compareTo(_rank(b));
+  return byStatus != 0 ? byStatus : order.compare(a, b);
+};
 
 const _statusOrder = ['active', 'inactive', 'done', 'missed', 'obsolete'];
 
@@ -34,13 +54,19 @@ int _rank(Goal goal) => switch (_statusOrder.indexOf(goal.status)) {
 /// sight wherever it's scrolled to: a pill each, or, [collapsed], one
 /// line naming them. An open one with an expected time says what's left
 /// of it ([leftLabel]); one that's closed says so: done, missed or
-/// obsolete. Tapping a pill calls [onTap].
+/// obsolete. After them, the [overdue] ones -- still open past their
+/// day -- each saying the day it was due, so they stay in sight until
+/// they're done or retargeted; only on today or later, though, not on a
+/// past day. Tapping a pill calls [onTap].
 class GoalsDueStrip extends StatelessWidget {
   const GoalsDueStrip({
     super.key,
     required this.goals,
     required this.collapsed,
     required this.onCollapsed,
+    this.overdue = const [],
+    this.day,
+    this.today,
     this.tree,
     this.spent,
     this.onTap,
@@ -48,6 +74,14 @@ class GoalsDueStrip extends StatelessWidget {
 
   /// The day's, as [goalsDueOn] gives them.
   final List<Goal> goals;
+
+  /// The open ones due before the day, as [overdueGoalsOn] gives them.
+  final List<Goal> overdue;
+
+  /// The day shown and today, for whether [overdue] is shown: it isn't on
+  /// a day before today. Shown whenever either is unknown.
+  final DateTime? day;
+  final DateTime? today;
   final bool collapsed;
   final ValueChanged<bool> onCollapsed;
 
@@ -59,9 +93,17 @@ class GoalsDueStrip extends StatelessWidget {
   final Map<String, Duration>? spent;
   final ValueChanged<Goal>? onTap;
 
+  /// [overdue], on today or later; nothing on a past day.
+  List<Goal> get _late => switch ((day, today)) {
+    (final d?, final t?) when deadlineOf(d).compareTo(deadlineOf(t)) < 0 =>
+      const [],
+    _ => overdue,
+  };
+
   @override
   Widget build(BuildContext context) {
-    if (goals.isEmpty) return const SizedBox.shrink();
+    final late = _late;
+    if (goals.isEmpty && late.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final muted = theme.textTheme.labelMedium?.copyWith(
@@ -73,6 +115,22 @@ class GoalsDueStrip extends StatelessWidget {
       tooltip: collapsed ? 'Show goals due' : 'Hide goals due',
       icon: Icon(collapsed ? Icons.expand_more : Icons.expand_less),
       onPressed: () => onCollapsed(!collapsed),
+    );
+    final counts = [
+      if (goals.isNotEmpty)
+        '${_count(goals.length)} due'
+            '${open < goals.length ? ' ($open open)' : ''}',
+      if (late.isNotEmpty)
+        goals.isEmpty
+            ? '${_count(late.length)} overdue'
+            : '${late.length} overdue',
+    ];
+    _Pill pill(Goal g, {bool late = false}) => _Pill(
+      goal: g,
+      path: tree?.pathOf(g.id) ?? g.path,
+      dueDay: late ? _dueDayLabel(context, g) : null,
+      left: g.closed || spent == null ? null : leftLabel(g, spent![g.id]),
+      onTap: onTap == null ? null : () => onTap!(g),
     );
     return Material(
       color: colors.surfaceContainerLow,
@@ -88,9 +146,8 @@ class GoalsDueStrip extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '${_count(goals.length)} due'
-                        '${open < goals.length ? ' ($open open)' : ''} · '
-                        '${goals.map(goalTitle).join(', ')}',
+                        '${counts.join(', ')} · '
+                        '${[...goals, ...late].map(goalTitle).join(', ')}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: muted,
@@ -109,18 +166,33 @@ class GoalsDueStrip extends StatelessWidget {
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            for (final g in goals)
-                              _Pill(
-                                goal: g,
-                                path: tree?.pathOf(g.id) ?? g.path,
-                                left: g.closed || spent == null
-                                    ? null
-                                    : leftLabel(g, spent![g.id]),
-                                onTap: onTap == null ? null : () => onTap!(g),
+                            if (goals.isNotEmpty)
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [for (final g in goals) pill(g)],
+                              ),
+                            if (late.isNotEmpty)
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  top: goals.isEmpty ? 0 : 6,
+                                ),
+                                child: Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Text(
+                                      'Overdue',
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(color: colors.error),
+                                    ),
+                                    for (final g in late) pill(g, late: true),
+                                  ],
+                                ),
                               ),
                           ],
                         ),
@@ -135,16 +207,35 @@ class GoalsDueStrip extends StatelessWidget {
   }
 
   static String _count(int n) => '$n goal${n == 1 ? '' : 's'}';
+
+  /// The day [goal] was due, short: "Oct 17".
+  static String _dueDayLabel(BuildContext context, Goal goal) {
+    final due = goal.due!;
+    final day = deadlineHasTime(goal.deadline)
+        ? due
+        : due.subtract(const Duration(days: 1));
+    return MaterialLocalizations.of(context).formatShortMonthDay(day);
+  }
 }
 
 /// [goal] as a pill: its title, its time if it's due at one, and what's
 /// [left] of its expected time, or, closed, struck through with what it
-/// came to. Its parents are in its tooltip.
+/// came to. Overdue -- [dueDay] given -- it's in the error color and says
+/// the day it was due instead of a time. Its parents are in its tooltip.
 class _Pill extends StatelessWidget {
-  const _Pill({required this.goal, required this.path, this.left, this.onTap});
+  const _Pill({
+    required this.goal,
+    required this.path,
+    this.dueDay,
+    this.left,
+    this.onTap,
+  });
 
   final Goal goal;
   final List<String> path;
+
+  /// The day it was due, when it's overdue; null when it's the day's own.
+  final String? dueDay;
   final String? left;
   final VoidCallback? onTap;
 
@@ -154,8 +245,13 @@ class _Pill extends StatelessWidget {
     final colors = theme.colorScheme;
     final closed = goal.closed;
     final done = goal.status == 'done';
-    final ink = closed ? colors.onSurfaceVariant : colors.onSecondaryContainer;
-    final time = deadlineHasTime(goal.deadline)
+    final overdue = dueDay != null;
+    final ink = overdue
+        ? colors.onErrorContainer
+        : closed
+        ? colors.onSurfaceVariant
+        : colors.onSecondaryContainer;
+    final time = !overdue && deadlineHasTime(goal.deadline)
         ? MaterialLocalizations.of(context)
               .formatTimeOfDay(TimeOfDay.fromDateTime(goal.due!))
         : null;
@@ -163,7 +259,12 @@ class _Pill extends StatelessWidget {
     final status = closed ? goalStatuses[goal.status]!.toLowerCase() : null;
     final label = [
       title,
-      if (time != null) 'due at $time' else 'due by the end of the day',
+      if (overdue)
+        'due $dueDay, overdue'
+      else if (time != null)
+        'due at $time'
+      else
+        'due by the end of the day',
       ?left,
       ?status,
     ].join(', ');
@@ -172,10 +273,18 @@ class _Pill extends StatelessWidget {
       button: onTap != null,
       excludeSemantics: true,
       child: Material(
-        color: closed ? Colors.transparent : colors.secondaryContainer,
+        color: overdue
+            ? colors.errorContainer
+            : closed
+            ? Colors.transparent
+            : colors.secondaryContainer,
         shape: StadiumBorder(
           side: BorderSide(
-            color: closed ? colors.outlineVariant : colors.secondary,
+            color: overdue
+                ? colors.error
+                : closed
+                ? colors.outlineVariant
+                : colors.secondary,
           ),
         ),
         clipBehavior: Clip.antiAlias,
@@ -204,6 +313,7 @@ class _Pill extends StatelessWidget {
                                 : null,
                           ),
                         ),
+                        if (overdue) TextSpan(text: '  ·  due $dueDay'),
                         if (left != null) TextSpan(text: '  ·  $left'),
                       ],
                     ),

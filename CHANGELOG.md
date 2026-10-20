@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.167.0
+
+- Open goals whose deadline has passed stay on the Events page's goals-due
+  strip, in an Overdue group after the day's own goals, until they're done
+  or retargeted: each pill names the goal and the day it was due, in red,
+  and opens the goal as the others do. The collapsed line counts them too
+  ("2 goals due, 1 overdue"). Only on today and later; a past day shows
+  just what was due on it.
+
 ## 7.166.0
 
 - A note placed on an earlier day of the Events page says so: the New

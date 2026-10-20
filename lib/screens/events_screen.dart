@@ -349,10 +349,10 @@ class _EventsScreenState extends State<EventsScreen> {
   Map<String, Duration>? _compactedGoalTime(List<Goal> goals) {
     final through = _lastCompaction;
     if (through == null ||
-        !goalsDueOn(
-          goals,
-          _day,
-        ).any((g) => g.open && g.expectedMinutes != null)) {
+        ![
+          ...goalsDueOn(goals, _day),
+          ...overdueGoalsOn(goals, _day),
+        ].any((g) => g.open && g.expectedMinutes != null)) {
       return null;
     }
     final key = (_memory.eventStore?.version, goals, through);
@@ -5461,6 +5461,9 @@ class _EventsScreenState extends State<EventsScreen> {
     if (_memory.goals case final goals?)
       GoalsDueStrip(
         goals: goalsDueOn(goals, _day),
+        overdue: overdueGoalsOn(goals, _day),
+        day: _day,
+        today: widget.clock(),
         tree: GoalTree(goals),
         spent: _compactedGoalTime(goals),
         collapsed: _goalsDueCollapsed,
