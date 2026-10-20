@@ -274,6 +274,233 @@ void main() {
     });
   });
 
+  group('goal changes', () {
+    test('reads the changes it makes to goals, those the user settled, and '
+        'the recap points that cite them', () {
+      final proposal = Proposal.fromJson({
+        ...proposalJson(),
+        'goal_changes': [
+          {
+            'goal_id': 'recipe',
+            'title': 'Recipe sent to Kopal',
+            'path': ['Kitchen'],
+            'status': 'done',
+            'at': iso(10, 30),
+            'note_ids': ['n2#2'],
+            'retry_deadline': null,
+            'decided_by': 'claude',
+          },
+          {
+            'goal_id': 'fence',
+            'title': 'Fence fixed',
+            'path': <String>[],
+            'status': 'missed',
+            'at': iso(12),
+            'retry_deadline': '2026-10-05',
+            'decided_by': 'user',
+          },
+          // A server that gives neither title nor path.
+          {'goal_id': 'gone', 'status': 'obsolete', 'at': null},
+          {'status': 'done'},
+        ],
+        'settled_goal_changes': [
+          {
+            'goal_id': 'fence',
+            'use': 'change',
+            'status': 'missed',
+            'at': iso(12),
+            'retry_deadline': '2026-10-05',
+          },
+          {
+            'goal_id': 'bread',
+            'use': 'apply',
+            'status': 'done',
+            'at': iso(11),
+            'retry_deadline': null,
+          },
+          {
+            'goal_id': 'nap',
+            'use': 'drop',
+            'status': null,
+            'at': null,
+            'retry_deadline': null,
+          },
+          {'goal_id': 'odd', 'use': 'unknown'},
+        ],
+        'recap': {
+          'overview': 'Kopal has the recipe',
+          'did': [
+            {
+              'text': 'Marked the recipe done',
+              'goal_ids': ['recipe'],
+              'note_ids': ['n2#2'],
+            },
+          ],
+        },
+      });
+      expect(
+        [
+          for (final c in proposal.goalChanges)
+            (
+              c.goalId,
+              c.name,
+              c.path.join(','),
+              c.status,
+              c.at?.toLocal(),
+              c.noteIds.join(','),
+              c.retryDeadline,
+              c.decidedBy,
+              c.retries,
+            ),
+        ],
+        [
+          (
+            'recipe',
+            'Recipe sent to Kopal',
+            'Kitchen',
+            'done',
+            at(10, 30),
+            'n2#2',
+            null,
+            DecidedBy.claude,
+            false,
+          ),
+          (
+            'fence',
+            'Fence fixed',
+            '',
+            'missed',
+            at(12),
+            '',
+            '2026-10-05',
+            DecidedBy.user,
+            true,
+          ),
+          ('gone', 'gone', '', 'obsolete', null, '', null, null, false),
+        ],
+      );
+      expect(proposal.goalChange('fence')?.title, 'Fence fixed');
+      expect(proposal.goalChange('nap'), isNull);
+      expect(
+        [
+          for (final s in proposal.settledGoalChanges)
+            (s.goalId, s.use, s.status, s.at?.toLocal(), s.retryDeadline),
+        ],
+        [
+          ('fence', GoalChangeUse.change, 'missed', at(12), '2026-10-05'),
+          ('bread', GoalChangeUse.apply, 'done', at(11), null),
+          ('nap', GoalChangeUse.drop, null, null, null),
+        ],
+      );
+      expect(proposal.recap!.did.single.goalIds, ['recipe']);
+      // Kept by the app's own revisions.
+      expect(proposal.copyWith(revision: 3).goalChanges, hasLength(3));
+      // From a server without them.
+      final older = Proposal.fromJson(proposalJson());
+      expect(older.goalChanges, isEmpty);
+      expect(older.settledGoalChanges, isEmpty);
+    });
+
+    test('settling them, in amend_proposal: applied, dropped, changed, or '
+        'missed and tried again -- sent only when there are some', () {
+      const edits = ProposalEdits(
+        goalChanges: [
+          (
+            goalId: 'recipe',
+            use: GoalChangeUse.apply,
+            status: null,
+            at: null,
+            retryDeadline: null,
+          ),
+          (
+            goalId: 'nap',
+            use: GoalChangeUse.drop,
+            status: null,
+            at: null,
+            retryDeadline: null,
+          ),
+          (
+            goalId: 'fence',
+            use: GoalChangeUse.change,
+            status: 'obsolete',
+            at: null,
+            retryDeadline: null,
+          ),
+          (
+            goalId: 'bread',
+            use: GoalChangeUse.change,
+            status: 'missed',
+            at: null,
+            retryDeadline: '2026-10-05',
+          ),
+        ],
+      );
+      expect(edits.isEmpty, isFalse);
+      final json = edits.toJson();
+      expect(json, {
+        'goal_changes': [
+          {'goal_id': 'recipe', 'use': 'apply'},
+          {'goal_id': 'nap', 'use': 'drop'},
+          {'goal_id': 'fence', 'use': 'change', 'status': 'obsolete'},
+          {
+            'goal_id': 'bread',
+            'use': 'change',
+            'status': 'missed',
+            'retry_deadline': '2026-10-05',
+          },
+        ],
+      });
+      // Kept waiting to be sent, and read back.
+      expect(ProposalEdits.fromJson(json).goalChanges, edits.goalChanges);
+      // A time, when given, as the server takes it.
+      final timed = ProposalEdits(
+        goalChanges: [
+          (
+            goalId: 'recipe',
+            use: GoalChangeUse.change,
+            status: 'done',
+            at: at(10, 30),
+            retryDeadline: null,
+          ),
+        ],
+      );
+      expect(timed.toJson()['goal_changes'], [
+        {
+          'goal_id': 'recipe',
+          'use': 'change',
+          'status': 'done',
+          'at': iso(10, 30),
+        },
+      ]);
+      expect(
+        ProposalEdits.fromJson(timed.toJson()).goalChanges.single.at?.toLocal(),
+        at(10, 30),
+      );
+      // None: not sent, so an older server takes the rest.
+      expect(
+        const ProposalEdits(asPlanned: ['tea'])
+            .toJson()
+            .containsKey('goal_changes'),
+        isFalse,
+      );
+    });
+
+    test("confirming says what applying it left for the user: a goal change "
+        'the goals refused', () {
+      final outcome = ProposalOutcome.fromJson({
+        'status': 'applied',
+        'message': 'Applied.',
+        'warnings': [
+          "the goal change to fence (missed) wasn't made: it has open "
+              'sub-goals. Make it with update_goals if it still applies.',
+        ],
+      });
+      expect(outcome.status, ProposalOutcomeStatus.applied);
+      expect(outcome.warnings, hasLength(1));
+      expect(ProposalOutcome.fromJson({'status': 'applied'}).warnings, isEmpty);
+    });
+  });
+
   group('ProposalEvent', () {
     test('reads whether a historical note revisits it, and marks it so', () {
       final breakfast = ProposalEvent.fromJson({

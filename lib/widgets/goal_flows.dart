@@ -11,6 +11,32 @@ import 'goal_editor.dart';
 import 'goal_icon.dart';
 import 'hotkeys.dart';
 
+/// Asks which day to try a goal again by -- tomorrow to start with, no
+/// earlier than [today] -- and gives the deadline: that day, at the time
+/// of day the goal's [deadline] has, if it has one. Null if dismissed.
+Future<String?> pickRetryDeadline(
+  BuildContext context, {
+  required DateTime today,
+  String? deadline,
+}) async {
+  final start = DateTime(today.year, today.month, today.day);
+  final day = await showDatePicker(
+    context: context,
+    initialDate: DateTime(start.year, start.month, start.day + 1),
+    firstDate: start,
+    lastDate: DateTime(start.year + 10),
+    helpText: 'Try again by',
+  );
+  if (day == null) return null;
+  final due = deadlineEnd(deadline);
+  return due != null && deadlineHasTime(deadline)
+      ? deadlineOf(
+          DateTime(day.year, day.month, day.day, due.hour, due.minute),
+          time: true,
+        )
+      : deadlineOf(day);
+}
+
 /// What the Goals pane and a goal's page do to goals: add, edit, change
 /// their status, move and delete them -- each a change to one goal or
 /// several ([GoalChange]s), checked against the server's rules before
@@ -268,24 +294,13 @@ class GoalActions {
   /// history keeps the deadline it missed and it stays open, as it was
   /// ([retrying]). Nothing for a goal with no deadline.
   Future<void> retry(Goal goal) async {
-    final due = goal.due;
-    if (due == null || goal.closed) return;
-    final today = now();
-    final start = DateTime(today.year, today.month, today.day);
-    final day = await showDatePicker(
-      context: context,
-      initialDate: DateTime(start.year, start.month, start.day + 1),
-      firstDate: start,
-      lastDate: DateTime(start.year + 10),
-      helpText: 'Try again by',
+    if (goal.due == null || goal.closed) return;
+    final deadline = await pickRetryDeadline(
+      context,
+      today: now(),
+      deadline: goal.deadline,
     );
-    if (day == null || !context.mounted) return;
-    final deadline = deadlineHasTime(goal.deadline)
-        ? deadlineOf(
-            DateTime(day.year, day.month, day.day, due.hour, due.minute),
-            time: true,
-          )
-        : deadlineOf(day);
+    if (deadline == null || !context.mounted) return;
     await save(
       "Couldn't try ${goalTitle(goal)} again",
       retrying(goal, deadline, now: now()),

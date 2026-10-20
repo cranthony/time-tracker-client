@@ -692,6 +692,7 @@ class _EventsScreenState extends State<EventsScreen> {
       if (_note != null) ProposalDetailPage.notes,
       if (_cancel != null) ProposalDetailPage.followThrough,
       if (_addition != null) ProposalDetailPage.added,
+      if (_goalChange != null) ProposalDetailPage.goals,
     ];
     return pages.contains(_detailPage) ? _detailPage : pages.firstOrNull;
   }
@@ -756,6 +757,76 @@ class _EventsScreenState extends State<EventsScreen> {
             settled: settled[ref],
           ),
     ];
+  }
+
+  /// Which of the proposal's goal changes is shown.
+  int _goalChangeIndex = 0;
+
+  /// Every goal change the app's seen the open proposal make, by goal id,
+  /// as Claude first made it: one the user settled leaves the proposal's
+  /// changes, or is changed in them, but is still shown -- and can be put
+  /// back.
+  final _seenGoalChanges = <String, ProposalGoalChange>{};
+
+  /// The proposal's goal changes -- still to settle, then settled -- in
+  /// the order it first made them.
+  List<_GoalChanged> get _goalChanges {
+    final proposal = _proposal;
+    if (proposal == null) return const [];
+    for (final c in proposal.goalChanges) {
+      // Claude's, as first seen; one the user changed isn't Claude's.
+      if (c.decidedBy != DecidedBy.user) {
+        _seenGoalChanges.putIfAbsent(c.goalId, () => c);
+      }
+    }
+    final settled = {for (final s in proposal.settledGoalChanges) s.goalId: s};
+    final pending = {for (final c in proposal.goalChanges) c.goalId: c};
+    return [
+      for (final id in {
+        ..._seenGoalChanges.keys,
+        ...pending.keys,
+        ...settled.keys,
+      })
+        if (pending.containsKey(id) || settled.containsKey(id))
+          (
+            change:
+                pending[id] ??
+                switch ((_seenGoalChanges[id], settled[id])) {
+                  (final claudes?, _) => claudes,
+                  (null, final s?) => ProposalGoalChange(
+                    goalId: id,
+                    status: s.status ?? 'done',
+                    title: _memory.goals
+                        ?.where((g) => g.id == id)
+                        .firstOrNull
+                        ?.title,
+                    at: s.at,
+                    retryDeadline: s.retryDeadline,
+                    decidedBy: DecidedBy.user,
+                  ),
+                  _ => ProposalGoalChange(goalId: id, status: 'done'),
+                },
+            settled: settled[id],
+            claudes: _seenGoalChanges[id],
+          ),
+    ];
+  }
+
+  /// The goal change shown under the proposal's bar, if it makes any.
+  _GoalChanged? get _goalChange => switch (_goalChanges) {
+    final changes when changes.isNotEmpty =>
+      changes[_goalChangeIndex.clamp(0, changes.length - 1)],
+    _ => null,
+  };
+
+  /// Shows the [index]th of the proposal's goal changes under its bar.
+  void _goToGoalChange(int index) {
+    final changes = _goalChanges;
+    if (changes.isEmpty) return;
+    setState(() {
+      _goalChangeIndex = index.clamp(0, changes.length - 1);
+      _detailPage = ProposalDetailPage.goals;
+    });
   }
 
   /// The events of what happened that [added] is used at, given as an
@@ -834,7 +905,7 @@ class _EventsScreenState extends State<EventsScreen> {
       final a? => {for (final e in _usesOf(a)) e.id},
       null => const {},
     },
-    ProposalDetailPage.notes || null => const {},
+    ProposalDetailPage.notes || ProposalDetailPage.goals || null => const {},
   };
 
   /// The proposal's notes, after the latest one an earlier compaction
@@ -896,8 +967,14 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Shows the [index]th point of Claude's recap under the proposal's
   /// bar, and scrolls the timeline to [eventId] or [noteId] -- or, with
-  /// neither, to the first event, or else note, it names.
-  void _goToRecap(int index, {String? eventId, String? noteId}) {
+  /// neither, to the first event, or else note, it names. With [goalId],
+  /// shows that goal change instead.
+  void _goToRecap(
+    int index, {
+    String? eventId,
+    String? noteId,
+    String? goalId,
+  }) {
     final points = _proposal?.recap?.points ?? const <RecapPoint>[];
     if (points.isEmpty) return;
     final i = index.clamp(0, points.length - 1);
@@ -905,6 +982,11 @@ class _EventsScreenState extends State<EventsScreen> {
       _recapIndex = i;
       _detailPage = ProposalDetailPage.claude;
     });
+    if (goalId != null) {
+      final at = _goalChanges.indexWhere((c) => c.change.goalId == goalId);
+      if (at >= 0) _goToGoalChange(at);
+      return;
+    }
     final point = points[i];
     final proposal = _proposal;
     final event = proposal?.event(
@@ -941,9 +1023,17 @@ class _EventsScreenState extends State<EventsScreen> {
     };
   }
 
+  /// The open proposal's goal changes, by goal id, named for Claude's
+  /// recap: the goal's title, and what the change marks it.
+  Map<String, String> get _recapGoalNames => {
+    for (final (:change, settled: _, claudes: _) in _goalChanges)
+      change.goalId:
+          '${change.name} · ${goalChangeLabel(context, change.status, change.retryDeadline)}',
+  };
+
   /// Shows all of Claude's recap, and goes where the user asks of it: to
-  /// a point, an event or a note -- or leaves a note for Claude answering
-  /// a point it's unsure of.
+  /// a point, an event, a note or a goal change -- or leaves a note for
+  /// Claude answering a point it's unsure of.
   Future<void> _openRecap() async {
     final proposal = _proposal;
     final recap = proposal?.recap;
@@ -954,6 +1044,7 @@ class _EventsScreenState extends State<EventsScreen> {
       revision: proposal.revision,
       events: _recapEventNames,
       notes: _recapNoteNames,
+      goals: _recapGoalNames,
       changed: proposal.editedSinceRecap,
       canAsk: !_proposalBusy,
       answersTo: proposal.answersTo,
@@ -962,8 +1053,13 @@ class _EventsScreenState extends State<EventsScreen> {
     );
     if (action == null || !mounted) return;
     switch (action) {
-      case GoToRecapPoint(:final index, :final eventId, :final noteId):
-        _goToRecap(index, eventId: eventId, noteId: noteId);
+      case GoToRecapPoint(
+        :final index,
+        :final eventId,
+        :final noteId,
+        :final goalId,
+      ):
+        _goToRecap(index, eventId: eventId, noteId: noteId, goalId: goalId);
       case AskAboutRecapPoint(:final point):
         final note = point.eventIds.isEmpty
             ? _proposalNotes
@@ -4457,6 +4553,35 @@ class _EventsScreenState extends State<EventsScreen> {
             ),
           ),
         );
+        // A goal change the goals refused: left for the user.
+        final warnings = outcome.warningsSince(proposal);
+        if (warnings.isNotEmpty) {
+          await showDialog<void>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Confirmed, with warnings'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final w in warnings)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text('• $w'),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
       case ProposalOutcomeStatus.rechecked:
         // What the recheck changed, from the revision confirmed.
         final again =
@@ -4630,6 +4755,7 @@ class _EventsScreenState extends State<EventsScreen> {
     String? about,
     ProposalNote? aboutNote,
     ProposalAddition? aboutAddition,
+    ProposalGoalChange? aboutGoalChange,
     RecapPoint? answering,
   }) async {
     final subject = switch ((aboutNote, aboutAddition)) {
@@ -4637,6 +4763,8 @@ class _EventsScreenState extends State<EventsScreen> {
       (final n?, _) => 'About ${_noteNames[n.id]}',
       (_, final a?) =>
         'About the new ${a.kind.label.toLowerCase()} “${a.name}”',
+      _ when aboutGoalChange != null =>
+        'About the change to the goal “${aboutGoalChange.name}”',
       _ => null,
     };
     final note = await showProposalNoteDialog(
@@ -4646,10 +4774,15 @@ class _EventsScreenState extends State<EventsScreen> {
       subject: subject,
     );
     if (note == null || !mounted) return;
-    // Quoting the point it answers, for Claude, and to show it under.
-    final text = switch (answering) {
-      final point? => ProposalFeedback.answering(point, note.text),
-      null => note.text,
+    // Quoting the point it answers, for Claude, and to show it under; a
+    // note about a goal change names the goal, as a note has nowhere else
+    // to say it.
+    final text = switch ((answering, aboutGoalChange)) {
+      (final point?, _) => ProposalFeedback.answering(point, note.text),
+      (null, final c?) =>
+        'About the change to the goal “${c.name}” (${c.goalId}):\n\n'
+            '${note.text}',
+      _ => note.text,
     };
     // What's added is named by its ref.
     final eventId = switch ((aboutNote, aboutAddition)) {
@@ -5104,7 +5237,8 @@ class _EventsScreenState extends State<EventsScreen> {
       _recapPoint != null ||
       _note != null ||
       _cancel != null ||
-      _addition != null;
+      _addition != null ||
+      _goalChange != null;
 
   /// Says why the open proposal can't be confirmed, if it can't, at the
   /// foot of the page ([ProposalProblemStatus]): once the frame's built,
@@ -5147,12 +5281,22 @@ class _EventsScreenState extends State<EventsScreen> {
     final additionAt = addition == null
         ? -1
         : indexOf(added, (a) => a.addition.ref == addition.addition.ref);
+    final goalChanges = _goalChanges;
+    final goalChange = _goalChange;
+    final goalChangeAt = goalChange == null
+        ? -1
+        : indexOf(
+            goalChanges,
+            (c) => c.change.goalId == goalChange.change.goalId,
+          );
+    final goalNames = _recapGoalNames;
     // Its pages, as it'll have them: those with something on.
     final pages = [
       if (point != null) ProposalDetailPage.claude,
       if (note != null) ProposalDetailPage.notes,
       if (cancel != null) ProposalDetailPage.followThrough,
       if (addition != null) ProposalDetailPage.added,
+      if (goalChange != null) ProposalDetailPage.goals,
     ];
     return ProposalDetails(
       initialPage: switch (pages.indexOf(_detailPage)) {
@@ -5169,6 +5313,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 for (final id in point.eventIds)
                   ?_reviewedSummaries[id] ?? eventNames[id],
                 for (final id in point.noteIds) ?noteNames[id],
+                for (final id in point.goalIds) ?goalNames[id],
               ],
               changed: point.eventIds.any(edited.contains),
               answers: proposal.answersTo(point),
@@ -5247,10 +5392,134 @@ class _EventsScreenState extends State<EventsScreen> {
                   : null,
             ),
       addCount: added.length,
+      goals: goalChange == null
+          ? null
+          : ProposalGoalChangeStrip(
+              change: goalChange.change,
+              settled: goalChange.settled,
+              index: goalChangeAt,
+              count: goalChanges.length,
+              from: [
+                for (final id in goalChange.change.noteIds) ?noteNames[id],
+              ],
+              onSettle: _proposalBusy
+                  ? null
+                  : () => _settleGoalChange(goalChange),
+              onApply:
+                  _proposalBusy ||
+                      goalChange.settled != null &&
+                          goalChange.settled!.use != GoalChangeUse.change
+                  ? null
+                  : () => _settleGoalChange(goalChange, apply: true),
+              onPrevious: goalChangeAt > 0
+                  ? () => _goToGoalChange(goalChangeAt - 1)
+                  : null,
+              onNext: goalChangeAt < goalChanges.length - 1
+                  ? () => _goToGoalChange(goalChangeAt + 1)
+                  : null,
+            ),
+      goalCount: goalChanges.length,
       collapsed: _detailsCollapsed,
       onCollapsed: _setDetailsCollapsed,
       onPage: (page) => setState(() => _detailPage = page),
     );
+  }
+
+  /// Asks what's to become of the goal change [changed], and amends the
+  /// proposal so: applied now, dropped, changed -- to mark the goal done,
+  /// missed (tried again by a day picked) or obsolete -- or put back as
+  /// Claude proposed it; or leaves a note for Claude about it. With
+  /// [apply], it's applied at once.
+  Future<void> _settleGoalChange(
+    _GoalChanged changed, {
+    bool apply = false,
+  }) async {
+    final c = changed.change;
+    final from = [for (final id in c.noteIds) ?_recapNoteNames[id]];
+    final choice = apply
+        ? const ApplyGoalChange()
+        : await showGoalChangeSheet(
+            context,
+            c,
+            settled: changed.settled,
+            claudes: changed.claudes,
+            from: from,
+            now: widget.clock,
+          );
+    if (choice == null || !mounted) return;
+    ProposalEdits settling(
+      GoalChangeUse use, {
+      String? status,
+      String? retryDeadline,
+    }) => ProposalEdits(
+      goalChanges: [
+        (
+          goalId: c.goalId,
+          use: use,
+          status: status,
+          at: null,
+          retryDeadline: retryDeadline,
+        ),
+      ],
+    );
+    final (edits, said) = switch (choice) {
+      ApplyGoalChange() => (
+        settling(GoalChangeUse.apply),
+        'Applied: “${c.name}” is ${goalStatuses[c.status]?.toLowerCase() ?? c.status}'
+            '${c.retries ? ', and tried again' : ''}.',
+      ),
+      DropGoalChange() => (
+        settling(GoalChangeUse.drop),
+        'Dropped: “${c.name}” is left alone.',
+      ),
+      ChangeGoalChange(:final status, :final retryDeadline) => (
+        settling(
+          GoalChangeUse.change,
+          status: status,
+          retryDeadline: retryDeadline,
+        ),
+        'Changed: “${c.name}” · '
+            '${goalChangeLabel(context, status, retryDeadline)}.',
+      ),
+      // As Claude had it: a change back to its status -- or, for one of
+      // the user's own, dropped.
+      PutBackGoalChange() => (
+        switch (changed.claudes) {
+          final claudes? => settling(
+            GoalChangeUse.change,
+            status: claudes.status,
+            retryDeadline: claudes.retryDeadline,
+          ),
+          null => settling(GoalChangeUse.drop),
+        },
+        'Put back as Claude proposed it.',
+      ),
+      AskAboutGoalChange() => (null, null),
+    };
+    if (edits == null) return _noteForClaude(aboutGoalChange: c);
+    await runOrShowError(
+      context,
+      title: "Couldn't settle it",
+      action: () async {
+        final amended = await _amend(edits);
+        if (!mounted) return;
+        _amended(amended, said!);
+        // Applied: the goal's changed where it's kept.
+        if (choice is ApplyGoalChange) unawaited(_reloadGoals());
+      },
+    );
+  }
+
+  /// Loads the goals again, after one's changed outside the app's own
+  /// goal flows. Best effort.
+  Future<void> _reloadGoals() async {
+    final repository = GoalsScope.of(context);
+    if (repository == null) return;
+    try {
+      _memory.goals = await repository.goals();
+    } catch (_) {
+      // Shown as they were, till they're next loaded.
+    }
   }
 
   /// Asks what's to become of [added], and amends the proposal so: made
@@ -5965,6 +6234,15 @@ class _EventsScreenState extends State<EventsScreen> {
 /// One of the things a proposal adds, and how the user settled it, if
 /// they have.
 typedef _Added = ({ProposalAddition addition, AdditionSettled? settled});
+
+/// A goal change the proposal makes, or made: [change] as it stands, how
+/// the user [settled] it, if they have, and [claudes], as Claude first
+/// proposed it -- null for one of the user's own.
+typedef _GoalChanged = ({
+  ProposalGoalChange change,
+  GoalChangeSettled? settled,
+  ProposalGoalChange? claudes,
+});
 
 /// Where whether a proposal's details are folded away is kept.
 const _detailsCollapsedKey = 'proposal_details_collapsed';

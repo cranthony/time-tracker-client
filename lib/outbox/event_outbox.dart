@@ -1076,6 +1076,9 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
         for (final a in edits.additions)
           if (pending.contains(a.ref)) a,
       ],
+      // Said twice, a goal change settles the same way: one applied
+      // already isn't made again.
+      goalChanges: edits.goalChanges,
       through: edits.through,
     );
   }
@@ -1183,6 +1186,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
       },
       revision: outcome.proposal?.revision,
       message: outcome.message,
+      warnings: outcome.warnings,
     );
     return outcome;
   }
@@ -1194,6 +1198,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
     String? message,
     List<String> eventIds = const [],
     List<String> eventNames = const [],
+    List<String> warnings = const [],
   }) async {
     try {
       await notices?.add(
@@ -1206,6 +1211,7 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
           message: message,
           eventIds: eventIds,
           eventNames: eventNames,
+          warnings: warnings,
         ),
       );
     } catch (_) {
