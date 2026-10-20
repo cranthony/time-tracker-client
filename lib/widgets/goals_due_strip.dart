@@ -18,16 +18,21 @@ List<Goal> goalsDueOn(Iterable<Goal> goals, DateTime day, [GoalTree? tree]) {
 }
 
 /// The goals overdue on [day], from [goals]: the open ones -- active or
-/// inactive -- due before it, in the order [goalsDueOn] gives: active
-/// ones first, then each status's as [byPriority] has them in [tree] (by
-/// default, [goals] themselves), so, at a priority, the longest overdue
-/// first.
+/// inactive -- due before it and, if [today] is given, before [today]
+/// too, so a day ahead doesn't call overdue what isn't due yet. In the
+/// order [goalsDueOn] gives: active ones first, then each status's as
+/// [byPriority] has them in [tree] (by default, [goals] themselves), so,
+/// at a priority, the longest overdue first.
 List<Goal> overdueGoalsOn(
   Iterable<Goal> goals,
-  DateTime day, [
+  DateTime day, {
+  DateTime? today,
   GoalTree? tree,
-]) {
-  final date = deadlineOf(day);
+}) {
+  final date = [
+    deadlineOf(day),
+    if (today != null) deadlineOf(today),
+  ].reduce((a, b) => a.compareTo(b) <= 0 ? a : b);
   return [
     for (final g in goals)
       if (g.open)
@@ -82,7 +87,7 @@ enum OverdueGoalAction {
 /// day -- struck through, saying so, and by when it's being tried again
 /// if it's open. Then the [overdue] ones -- still open past their day --
 /// each saying the day it was due, so they stay in sight until they're
-/// done or retargeted; only on today or later, though, not on a past
+/// done or retargeted; only on today, though, not on a past or future
 /// day. Tapping a pill calls [onTap]; holding an overdue one (or
 /// right-clicking it) offers [OverdueGoalAction]s, each calling
 /// [onOverdueAction] -- or nothing, if that's null.
@@ -113,8 +118,8 @@ class GoalsDueStrip extends StatelessWidget {
   /// The open ones due before the day, as [overdueGoalsOn] gives them.
   final List<Goal> overdue;
 
-  /// The day shown and today, for whether [overdue] is shown: it isn't on
-  /// a day before today. Shown whenever either is unknown.
+  /// The day shown and today, for whether [overdue] is shown: only on
+  /// today. Shown whenever either is unknown.
   final DateTime? day;
   final DateTime? today;
   final bool collapsed;
@@ -132,10 +137,9 @@ class GoalsDueStrip extends StatelessWidget {
   /// are offered, if null.
   final void Function(Goal goal, OverdueGoalAction action)? onOverdueAction;
 
-  /// [overdue], on today or later; nothing on a past day.
+  /// [overdue], on today; nothing on a past or future day.
   List<Goal> get _late => switch ((day, today)) {
-    (final d?, final t?) when deadlineOf(d).compareTo(deadlineOf(t)) < 0 =>
-      const [],
+    (final d?, final t?) when deadlineOf(d) != deadlineOf(t) => const [],
     _ => overdue,
   };
 

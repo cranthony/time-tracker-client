@@ -352,7 +352,7 @@ class _EventsScreenState extends State<EventsScreen> {
     if (through == null ||
         ![
           ...goalsDueOn(goals, _day),
-          ...overdueGoalsOn(goals, _day),
+          ...overdueGoalsOn(goals, _day, today: widget.clock()),
         ].any((g) => g.open && g.expectedMinutes != null)) {
       return null;
     }
@@ -5754,7 +5754,7 @@ class _EventsScreenState extends State<EventsScreen> {
       GoalsDueStrip(
         goals: goalsDueOn(goals, _day),
         missed: missedOn(goals, _day),
-        overdue: overdueGoalsOn(goals, _day),
+        overdue: overdueGoalsOn(goals, _day, today: widget.clock()),
         day: _day,
         today: widget.clock(),
         tree: GoalTree(goals),

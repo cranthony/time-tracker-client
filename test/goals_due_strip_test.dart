@@ -120,9 +120,39 @@ void main() {
       overdueGoalsOn(
         [...mixed, child],
         day,
-        GoalTree([parent, ...mixed, child]),
+        tree: GoalTree([parent, ...mixed, child]),
       ).map((g) => g.id).take(2),
       ['urgent', 'child'],
+    );
+  });
+
+  test("overdueGoalsOn: on a day ahead of today, only what's overdue "
+      'today, not what falls due before the day shown', () {
+    final ahead = [
+      _goal('past', 'Past', '2026-10-17'),
+      _goal('today', 'Today', '2026-10-18'),
+      _goal('soon', 'Soon', '2026-10-20'),
+    ];
+    expect(overdueGoalsOn(ahead, DateTime(2026, 10, 25)).map((g) => g.id), [
+      'past',
+      'today',
+      'soon',
+    ]);
+    expect(
+      overdueGoalsOn(
+        ahead,
+        DateTime(2026, 10, 25),
+        today: day,
+      ).map((g) => g.id),
+      ['past'],
+    );
+    expect(
+      overdueGoalsOn(
+        ahead,
+        day,
+        today: DateTime(2026, 10, 25),
+      ).map((g) => g.id),
+      ['past'],
     );
   });
 
@@ -164,7 +194,7 @@ void main() {
 
   testWidgets("overdue goals follow the day's, each saying the day it was "
       'due, in the error color; tapping one opens it; nothing on a past '
-      'day', (tester) async {
+      'or future day', (tester) async {
     Goal? tapped;
     final late = [
       _goal('o', 'Late report', '2026-10-17'),
@@ -229,9 +259,11 @@ void main() {
     await show(today: DateTime(2026, 10, 19), collapsed: false, due: const []);
     expect(find.byType(InkWell), findsNothing);
 
-    // Ahead of today, shown too.
+    // The day shown is ahead: just its own too.
     await show(today: DateTime(2026, 10, 17), collapsed: false);
-    expect(find.textContaining('due Oct 17'), findsOneWidget);
+    expect(find.text('Overdue'), findsNothing);
+    expect(find.textContaining('due Oct'), findsNothing);
+    expect(find.textContaining('Zebra'), findsOneWidget);
   });
 
   testWidgets('nothing, with nothing due', (tester) async {
