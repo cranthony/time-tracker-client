@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.171.1
+
+- The Events page's goals-due strip shows overdue goals only on today,
+  not on days ahead, and calls a goal overdue only once its day is
+  before today: one due later this week no longer shows as overdue when
+  looking at a day after it.
+
 ## 7.171.0
 
 - A compaction proposal's changes to goals you already have -- marked
