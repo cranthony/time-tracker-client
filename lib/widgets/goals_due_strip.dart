@@ -35,6 +35,18 @@ List<Goal> overdueGoalsOn(
   ]..sort(_byStatus(tree ?? GoalTree(goals)));
 }
 
+/// The goals missed from [day], from [goals]: each with a miss in its
+/// history ([Goal.misses]) whose deadline fell on [day] -- whether it was
+/// tried again since, and is open or closed now, or stayed missed. In the
+/// order [goalsDueOn] gives.
+List<Goal> missedOn(Iterable<Goal> goals, DateTime day, [GoalTree? tree]) {
+  final date = deadlineOf(day);
+  return [
+    for (final g in goals)
+      if (g.misses.any((m) => m.deadline?.trim().split('T').first == date)) g,
+  ]..sort(_byStatus(tree ?? GoalTree(goals)));
+}
+
 /// Orders goals by status, then as [order] compares them.
 Comparator<Goal> _byStatus(GoalTree order) => (a, b) {
   final byStatus = _rank(a).compareTo(_rank(b));
@@ -50,30 +62,53 @@ int _rank(Goal goal) => switch (_statusOrder.indexOf(goal.status)) {
   final i => i,
 };
 
+/// What a long-press (or, with a mouse, a right-click) on an overdue
+/// goal's pill offers: what its page offers an overdue goal.
+enum OverdueGoalAction {
+  done('Mark done'),
+  missed('Mark missed'),
+  retry('Missed, try again…');
+
+  const OverdueGoalAction(this.label);
+
+  final String label;
+}
+
 /// The goals due on the day shown, above its timeline, so they're in
 /// sight wherever it's scrolled to: a pill each, or, [collapsed], one
 /// line naming them. An open one with an expected time says what's left
 /// of it ([leftLabel]); one that's closed says so: done, missed or
-/// obsolete. After them, the [overdue] ones -- still open past their
-/// day -- each saying the day it was due, so they stay in sight until
-/// they're done or retargeted; only on today or later, though, not on a
-/// past day. Tapping a pill calls [onTap].
+/// obsolete. After them, a greyed pill for each goal [missed] from the
+/// day -- struck through, saying so, and by when it's being tried again
+/// if it's open. Then the [overdue] ones -- still open past their day --
+/// each saying the day it was due, so they stay in sight until they're
+/// done or retargeted; only on today or later, though, not on a past
+/// day. Tapping a pill calls [onTap]; holding an overdue one (or
+/// right-clicking it) offers [OverdueGoalAction]s, each calling
+/// [onOverdueAction] -- or nothing, if that's null.
 class GoalsDueStrip extends StatelessWidget {
   const GoalsDueStrip({
     super.key,
     required this.goals,
     required this.collapsed,
     required this.onCollapsed,
+    this.missed = const [],
     this.overdue = const [],
     this.day,
     this.today,
     this.tree,
     this.spent,
     this.onTap,
+    this.onOverdueAction,
   });
 
   /// The day's, as [goalsDueOn] gives them.
   final List<Goal> goals;
+
+  /// Those missed from the day, as [missedOn] gives them. One that's
+  /// among [goals] too -- tried again by the same day -- is shown once,
+  /// as due.
+  final List<Goal> missed;
 
   /// The open ones due before the day, as [overdueGoalsOn] gives them.
   final List<Goal> overdue;
@@ -93,6 +128,10 @@ class GoalsDueStrip extends StatelessWidget {
   final Map<String, Duration>? spent;
   final ValueChanged<Goal>? onTap;
 
+  /// What an [OverdueGoalAction] picked for an overdue goal does; none
+  /// are offered, if null.
+  final void Function(Goal goal, OverdueGoalAction action)? onOverdueAction;
+
   /// [overdue], on today or later; nothing on a past day.
   List<Goal> get _late => switch ((day, today)) {
     (final d?, final t?) when deadlineOf(d).compareTo(deadlineOf(t)) < 0 =>
@@ -100,10 +139,19 @@ class GoalsDueStrip extends StatelessWidget {
     _ => overdue,
   };
 
+  /// [missed], less any shown as due.
+  List<Goal> get _ghosts => [
+    for (final g in missed)
+      if (!goals.any((d) => d.id == g.id)) g,
+  ];
+
   @override
   Widget build(BuildContext context) {
     final late = _late;
-    if (goals.isEmpty && late.isEmpty) return const SizedBox.shrink();
+    final ghosts = _ghosts;
+    if (goals.isEmpty && ghosts.isEmpty && late.isEmpty) {
+      return const SizedBox.shrink();
+    }
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final muted = theme.textTheme.labelMedium?.copyWith(
@@ -116,21 +164,28 @@ class GoalsDueStrip extends StatelessWidget {
       icon: Icon(collapsed ? Icons.expand_more : Icons.expand_less),
       onPressed: () => onCollapsed(!collapsed),
     );
-    final counts = [
+    final counted = [
       if (goals.isNotEmpty)
-        '${_count(goals.length)} due'
-            '${open < goals.length ? ' ($open open)' : ''}',
-      if (late.isNotEmpty)
-        goals.isEmpty
-            ? '${_count(late.length)} overdue'
-            : '${late.length} overdue',
+        (goals.length, 'due${open < goals.length ? ' ($open open)' : ''}'),
+      if (ghosts.isNotEmpty) (ghosts.length, 'missed'),
+      if (late.isNotEmpty) (late.length, 'overdue'),
     ];
-    _Pill pill(Goal g, {bool late = false}) => _Pill(
+    final counts = [
+      for (final (i, (n, what)) in counted.indexed)
+        '${i == 0 ? _count(n) : n} $what',
+    ];
+    _Pill pill(Goal g, {bool late = false, bool ghost = false}) => _Pill(
       goal: g,
       path: tree?.pathOf(g.id) ?? g.path,
       dueDay: late ? _dueDayLabel(context, g) : null,
-      left: g.closed || spent == null ? null : leftLabel(g, spent![g.id]),
+      missed: ghost ? _missedNotes(context, g) : null,
+      left: g.closed || ghost || spent == null
+          ? null
+          : leftLabel(g, spent![g.id]),
       onTap: onTap == null ? null : () => onTap!(g),
+      onAction: late && onOverdueAction != null
+          ? (action) => onOverdueAction!(g, action)
+          : null,
     );
     return Material(
       color: colors.surfaceContainerLow,
@@ -147,7 +202,7 @@ class GoalsDueStrip extends StatelessWidget {
                     Expanded(
                       child: Text(
                         '${counts.join(', ')} · '
-                        '${[...goals, ...late].map(goalTitle).join(', ')}',
+                        '${[...goals, ...ghosts, ...late].map(goalTitle).join(', ')}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: muted,
@@ -169,16 +224,19 @@ class GoalsDueStrip extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (goals.isNotEmpty)
+                            if (goals.isNotEmpty || ghosts.isNotEmpty)
                               Wrap(
                                 spacing: 6,
                                 runSpacing: 6,
-                                children: [for (final g in goals) pill(g)],
+                                children: [
+                                  for (final g in goals) pill(g),
+                                  for (final g in ghosts) pill(g, ghost: true),
+                                ],
                               ),
                             if (late.isNotEmpty)
                               Padding(
                                 padding: EdgeInsets.only(
-                                  top: goals.isEmpty ? 0 : 6,
+                                  top: goals.isEmpty && ghosts.isEmpty ? 0 : 6,
                                 ),
                                 child: Wrap(
                                   spacing: 6,
@@ -216,19 +274,39 @@ class GoalsDueStrip extends StatelessWidget {
         : due.subtract(const Duration(days: 1));
     return MaterialLocalizations.of(context).formatShortMonthDay(day);
   }
+
+  /// What a ghost of [goal], missed from the day, says after its title:
+  /// that it was missed, and, if it's open, by when it's being tried
+  /// again: "Oct 25", or "Oct 25, 9:00 AM" if at a time.
+  static List<String> _missedNotes(BuildContext context, Goal goal) => [
+    'missed',
+    if (goal.open && goal.due != null)
+      'tried again by ${_dueDayLabel(context, goal)}'
+          '${deadlineHasTime(goal.deadline) ? ', ${_timeLabel(context, goal)}' : ''}',
+  ];
+
+  static String _timeLabel(BuildContext context, Goal goal) =>
+      MaterialLocalizations.of(context)
+          .formatTimeOfDay(TimeOfDay.fromDateTime(goal.due!));
 }
 
 /// [goal] as a pill: its title, its time if it's due at one, and what's
 /// [left] of its expected time, or, closed, struck through with what it
 /// came to. Overdue -- [dueDay] given -- it's in the error color and says
-/// the day it was due instead of a time. Its parents are in its tooltip.
+/// the day it was due instead of a time, and holding it (or
+/// right-clicking it) offers the [OverdueGoalAction]s, if [onAction] is
+/// given. [missed] given, it's a ghost of a goal missed from the day:
+/// greyed and struck through like a closed one, saying those notes
+/// instead of a time. Its parents are in its tooltip.
 class _Pill extends StatelessWidget {
   const _Pill({
     required this.goal,
     required this.path,
     this.dueDay,
+    this.missed,
     this.left,
     this.onTap,
+    this.onAction,
   });
 
   final Goal goal;
@@ -236,41 +314,54 @@ class _Pill extends StatelessWidget {
 
   /// The day it was due, when it's overdue; null when it's the day's own.
   final String? dueDay;
+
+  /// What it says as a ghost of a miss from the day; null when it isn't.
+  final List<String>? missed;
   final String? left;
   final VoidCallback? onTap;
+  final ValueChanged<OverdueGoalAction>? onAction;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final closed = goal.closed;
-    final done = goal.status == 'done';
+    final ghost = missed != null;
+    final closed = goal.closed || ghost;
+    final done = !ghost && goal.status == 'done';
     final overdue = dueDay != null;
     final ink = overdue
         ? colors.onErrorContainer
         : closed
         ? colors.onSurfaceVariant
         : colors.onSecondaryContainer;
-    final time = !overdue && deadlineHasTime(goal.deadline)
+    final time = !overdue && !ghost && deadlineHasTime(goal.deadline)
         ? MaterialLocalizations.of(context)
               .formatTimeOfDay(TimeOfDay.fromDateTime(goal.due!))
         : null;
     final title = goalTitle(goal);
-    final status = closed ? goalStatuses[goal.status]!.toLowerCase() : null;
+    final status = closed && !ghost
+        ? goalStatuses[goal.status]!.toLowerCase()
+        : null;
     final label = [
       title,
-      if (overdue)
+      if (ghost)
+        'missed that day'
+      else if (overdue)
         'due $dueDay, overdue'
       else if (time != null)
         'due at $time'
       else
         'due by the end of the day',
+      ...?missed?.skip(1),
       ?left,
       ?status,
     ].join(', ');
+    final menu = onAction == null ? null : () => _showMenu(context);
     final pill = Semantics(
       label: label,
       button: onTap != null,
+      onLongPress: menu,
+      onLongPressHint: menu == null ? null : 'Mark done or missed',
       excludeSemantics: true,
       child: Material(
         color: overdue
@@ -290,6 +381,8 @@ class _Pill extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
+          onLongPress: menu,
+          onSecondaryTap: menu,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
             child: Row(
@@ -314,6 +407,8 @@ class _Pill extends StatelessWidget {
                           ),
                         ),
                         if (overdue) TextSpan(text: '  ·  due $dueDay'),
+                        for (final note in missed ?? const <String>[])
+                          TextSpan(text: '  ·  $note'),
                         if (left != null) TextSpan(text: '  ·  $left'),
                       ],
                     ),
@@ -331,5 +426,26 @@ class _Pill extends StatelessWidget {
     return path.isEmpty
         ? pill
         : Tooltip(message: [...path, title].join(' › '), child: pill);
+  }
+
+  /// The [OverdueGoalAction]s, in a menu below the pill; the one picked
+  /// goes to [onAction].
+  Future<void> _showMenu(BuildContext context) async {
+    final box = context.findRenderObject()! as RenderBox;
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final rect = Rect.fromPoints(
+      box.localToGlobal(Offset.zero, ancestor: overlay),
+      box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+    );
+    final picked = await showMenu<OverdueGoalAction>(
+      context: context,
+      position: RelativeRect.fromRect(rect, Offset.zero & overlay.size),
+      items: [
+        for (final action in OverdueGoalAction.values)
+          PopupMenuItem(value: action, child: Text(action.label)),
+      ],
+    );
+    if (picked != null) onAction?.call(picked);
   }
 }
