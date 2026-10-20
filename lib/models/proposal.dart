@@ -1250,25 +1250,39 @@ class ProposalOutcome {
   final Proposal? proposal;
 
   /// What applying it left for the user: a goal change the goals refused,
-  /// to make by hand if it still applies.
+  /// to make by hand if it still applies. The server adds them to the
+  /// applied revision's own warnings ([Proposal.warnings]), so those it
+  /// had before confirming are among them too.
   final List<String> warnings;
 
-  factory ProposalOutcome.fromJson(Map<String, dynamic> json) =>
-      ProposalOutcome(
-        status: switch (json['status']) {
-          'rechecked' => ProposalOutcomeStatus.rechecked,
-          'needs_claude' => ProposalOutcomeStatus.needsClaude,
-          'rebuilt' => ProposalOutcomeStatus.rebuilt,
-          'abandoned' => ProposalOutcomeStatus.abandoned,
-          _ => ProposalOutcomeStatus.applied,
-        },
-        message: json['message'] as String?,
-        proposal: switch (json['proposal']) {
-          final Map p => Proposal.fromJson(p.cast<String, dynamic>()),
-          _ => null,
-        },
-        warnings: [for (final w in json['warnings'] as List? ?? const []) '$w'],
-      );
+  factory ProposalOutcome.fromJson(Map<String, dynamic> json) {
+    final proposal = switch (json['proposal']) {
+      final Map p => Proposal.fromJson(p.cast<String, dynamic>()),
+      _ => null,
+    };
+    return ProposalOutcome(
+      status: switch (json['status']) {
+        'rechecked' => ProposalOutcomeStatus.rechecked,
+        'needs_claude' => ProposalOutcomeStatus.needsClaude,
+        'rebuilt' => ProposalOutcomeStatus.rebuilt,
+        'abandoned' => ProposalOutcomeStatus.abandoned,
+        _ => ProposalOutcomeStatus.applied,
+      },
+      message: json['message'] as String?,
+      proposal: proposal,
+      warnings: switch (json['warnings']) {
+        final List warnings => [for (final w in warnings) '$w'],
+        _ => proposal?.warnings ?? const [],
+      },
+    );
+  }
+
+  /// [warnings] less those [before] -- the proposal as it was confirmed --
+  /// already had: what applying it added.
+  List<String> warningsSince(Proposal before) => [
+    for (final w in warnings)
+      if (!before.warnings.contains(w)) w,
+  ];
 }
 
 enum ProposalOutcomeStatus {

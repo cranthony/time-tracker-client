@@ -498,6 +498,28 @@ void main() {
       expect(outcome.status, ProposalOutcomeStatus.applied);
       expect(outcome.warnings, hasLength(1));
       expect(ProposalOutcome.fromJson({'status': 'applied'}).warnings, isEmpty);
+      // As the server has it: in the applied revision's warnings, with
+      // those it had before.
+      final before = Proposal.fromJson({
+        ...proposalJson(),
+        'warnings': ['A note was left out.'],
+      });
+      final applied = ProposalOutcome.fromJson({
+        'status': 'applied',
+        'proposal': {
+          ...proposalJson(state: 'applied'),
+          'warnings': [
+            'A note was left out.',
+            "the goal change to fence (missed) wasn't made: it has open "
+                'sub-goals.',
+          ],
+        },
+      });
+      expect(applied.warnings, hasLength(2));
+      expect(applied.warningsSince(before), [
+        "the goal change to fence (missed) wasn't made: it has open "
+            'sub-goals.',
+      ]);
     });
   });
 
