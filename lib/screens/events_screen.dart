@@ -16,6 +16,7 @@ import '../models/proposal.dart';
 import '../models/recurrence.dart';
 import '../models/trait.dart';
 import '../outbox/event_outbox.dart';
+import '../outbox/legacy_writes.dart' show actionWriteFields;
 import '../outbox/note_writes.dart';
 import '../outbox/write_queue.dart';
 import '../services/keep_rules.dart';
@@ -52,6 +53,7 @@ import '../widgets/mode_stack.dart';
 import '../widgets/window_cursor.dart';
 import '../widgets/note_cursor.dart';
 import '../widgets/note_dialog.dart';
+import '../widgets/picker_edits.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/cursor_sheet.dart';
 import '../widgets/cursor_snap.dart';
@@ -5527,7 +5529,8 @@ class _EventsScreenState extends State<EventsScreen> {
   /// -- or leaves a note for Claude about it.
   ///
   /// With [activate], a new goal is made at once, active, due when the
-  /// user picks.
+  /// user picks. A person, location or action made now is made in its
+  /// quick sheet ([_make]).
   Future<void> _settle(_Added added, {bool activate = false}) async {
     final a = added.addition;
     final existing = <({String id, String name, String? detail})>[
@@ -5569,6 +5572,7 @@ class _EventsScreenState extends State<EventsScreen> {
             existing: existing,
           );
     if (choice == null || !mounted) return;
+    if (choice is MakeAddition) return _make(a);
     ProposalEdits settling(
       AdditionUse use, {
       String? id,
@@ -5585,6 +5589,7 @@ class _EventsScreenState extends State<EventsScreen> {
           detail: detail,
           kind: a.kind,
           deadline: deadline,
+          fields: null,
         ),
       ],
     );
@@ -5613,7 +5618,7 @@ class _EventsScreenState extends State<EventsScreen> {
         ProposalEdits(asPlanned: [a.ref]),
         'Put back as Claude proposed it.',
       ),
-      AskAboutAddition() => (null, null),
+      AskAboutAddition() || MakeAddition() => (null, null),
     };
     if (edits == null) return _noteForClaude(aboutAddition: a);
     await runOrShowError(
@@ -5627,6 +5632,82 @@ class _EventsScreenState extends State<EventsScreen> {
         _amended(amended, said!);
       },
     );
+  }
+
+  /// Makes the person, location or action [a] now, in its quick sheet --
+  /// or its More, the full page or dialog -- starting as Claude has it,
+  /// and amends the proposal so: made with every field set there. If the
+  /// amend fails, the sheet stays open, saying so, to try again.
+  Future<void> _make(ProposalAddition a) async {
+    final kind = a.kind.label.toLowerCase();
+    Future<void> make(Map<String, Object?> fields) async {
+      final name = (fields['name'] as String?)?.trim();
+      final amended = await _amend(
+        ProposalEdits(
+          additions: [
+            (
+              ref: a.ref,
+              use: AdditionUse.create,
+              id: null,
+              name: name == null || name.isEmpty ? null : name,
+              detail: null,
+              kind: a.kind,
+              deadline: null,
+              // Everything else, its context or hint too -- cleared, if
+              // it was.
+              fields: {...fields}..remove('name'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return;
+      // Made now: named from where it's kept, once it's saved (see
+      // _learnNames).
+      _amended(amended, 'Made the $kind “${name ?? a.name}”.');
+    }
+
+    switch (a.kind) {
+      case AdditionKind.person:
+        await editPerson(
+          context,
+          name: a.name,
+          about: a.detail,
+          create: (fields) async {
+            await make(fields);
+            return Person.fromJson({'id': '', ...fields});
+          },
+        );
+      case AdditionKind.location:
+        await editLocation(
+          context,
+          name: a.name,
+          hint: a.detail,
+          mapLocation: a.fields['map_location'] as String?,
+          create: (fields) async {
+            await make(fields);
+            return Location.fromJson({'id': '', ...fields});
+          },
+        );
+      case AdditionKind.action:
+        await addAction(
+          context,
+          a.name,
+          parentId: a.fields['group_id'] as String?,
+          create: (fields) async {
+            await make({
+              for (final MapEntry(:key, :value) in actionWriteFields(
+                fields,
+                group: false,
+              ).entries)
+                // Made active, as any made now is.
+                if (value != null && key != 'status') key: value,
+            });
+            return null;
+          },
+        );
+      case AdditionKind.goal:
+        break;
+    }
   }
 
   /// Says whether [cancel] counts against follow-through -- [counts] --

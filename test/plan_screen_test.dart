@@ -111,6 +111,9 @@ void main() {
   /// The open dialog's Save button.
   final saveButton = find.widgetWithText(FilledButton, 'Save');
 
+  /// The open quick sheet's Add button.
+  final addButton = find.widgetWithText(FilledButton, 'Add');
+
   /// Taps [finder] in the open dialog, scrolling it into view first.
   Future<void> tapInDialog(WidgetTester tester, Finder finder) async {
     await tester.ensureVisible(finder);
@@ -510,7 +513,7 @@ void main() {
     // Its group, by name.
     expect(
       find.descendant(
-        of: find.byType(AlertDialog),
+        of: find.byType(BottomSheet),
         matching: find.text('Cooking'),
       ),
       findsOneWidget,
@@ -518,7 +521,7 @@ void main() {
 
     await tester.enterText(nameField, 'Make curry');
     await tester.pumpAndSettle();
-    await tester.tap(saveButton);
+    await tester.tap(addButton);
     await tester.pumpAndSettle();
 
     final added = (await repo.actions()).actions.firstWhere(
@@ -549,7 +552,7 @@ void main() {
     expect(find.text('New group'), findsOneWidget);
     await tester.enterText(nameField, 'Music');
     await tester.pumpAndSettle();
-    await tester.tap(saveButton);
+    await tester.tap(addButton);
     await tester.pumpAndSettle();
 
     final added = (await repo.actions()).actions.firstWhere(
@@ -581,7 +584,7 @@ void main() {
     await tester.tap(find.text('New action'));
     await settle(tester);
     await rename(tester, name);
-    await tester.tap(saveButton);
+    await tester.tap(addButton);
     await settle(tester);
   }
 
@@ -818,6 +821,11 @@ void main() {
     await tester.tap(find.byTooltip('Add an action or group'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('New action'));
+    await tester.pumpAndSettle();
+    // Not in the quick sheet without one, either.
+    expect(tester.widget<FilledButton>(addButton).onPressed, isNull);
+    // The rest of its fields, in the full dialog.
+    await tester.tap(find.text('More'));
     await tester.pumpAndSettle();
     expect(find.text('New action'), findsOneWidget);
     // Change something other than the name: it still can't be saved.

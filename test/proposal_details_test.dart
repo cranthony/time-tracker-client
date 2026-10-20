@@ -211,6 +211,7 @@ void main() {
           detail: 'from work',
           kind: AdditionKind.person,
           deadline: null,
+          fields: null,
         ),
         (
           ref: 'new:teahouse',
@@ -220,6 +221,7 @@ void main() {
           detail: null,
           kind: AdditionKind.location,
           deadline: null,
+          fields: null,
         ),
         (
           ref: 'new:matcha',
@@ -229,6 +231,7 @@ void main() {
           detail: null,
           kind: AdditionKind.action,
           deadline: null,
+          fields: null,
         ),
       ],
       asPlanned: ['new:old'],
@@ -267,6 +270,7 @@ void main() {
           const Person(id: 'joanne', name: 'Joanne', context: 'from work'),
         ],
         locations: [const Location(id: 'cafe', name: 'The café')],
+        locationGroups: [const LocationGroup(id: 'elm', name: 'Elm St')],
       );
       proposals = _Proposals(
         Proposal.fromJson({...proposalJson(), ...extra}),
@@ -462,19 +466,20 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      // Jo, made now, corrected.
+      // Jo, made now, corrected, in the New person sheet.
       await settle('Make it now');
+      expect(find.text('New person'), findsOneWidget);
       await tester.enterText(
         find
             .descendant(
-              of: find.byType(AlertDialog),
+              of: find.byType(BottomSheet),
               matching: find.byType(TextField),
             )
             .first,
         'Jo B.',
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Make it'));
+      await tester.tap(find.text('Add'));
       await tester.pumpAndSettle();
       expect(proposals.amends.last.toJson(), {
         'additions': [
@@ -482,7 +487,7 @@ void main() {
             'ref': 'new:jo',
             'use': 'create',
             'name': 'Jo B.',
-            'context': "Sam's friend",
+            'fields': {'context': "Sam's friend"},
           },
         ],
       });
@@ -526,6 +531,45 @@ void main() {
       });
       expect(proposals.proposal!.event('tea')!.actionIds, ['drink']);
       expect(find.textContaining('Dropped: not real'), findsOneWidget);
+    });
+
+    testWidgets('a location made now is put in the group picked in its '
+        'sheet, with its hint as Claude has it', (tester) async {
+      await open(tester);
+      await page(tester, 'Added (3)');
+      for (var i = 0; i < 2; i++) {
+        await tester.tap(find.byTooltip('Next addition'));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byTooltip('Settle it').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Make it now'));
+      await tester.pumpAndSettle();
+      expect(find.text('New location'), findsOneWidget);
+      expect(find.text('on Elm'), findsOneWidget);
+
+      await tester.tap(find.text('Group (optional)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Elm St').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add'));
+      await tester.pumpAndSettle();
+
+      expect(proposals.amends.last.toJson(), {
+        'additions': [
+          {
+            'ref': 'new:teahouse',
+            'use': 'create',
+            'name': 'The teahouse',
+            'fields': {'hint': 'on Elm', 'group_id': 'elm'},
+          },
+        ],
+      });
+      final made = (await people.locations()).singleWhere(
+        (l) => l.name == 'The teahouse',
+      );
+      expect((made.hint, made.groupId), ('on Elm', 'elm'));
+      expect(find.text('New location'), findsNothing);
     });
 
     testWidgets('asks Claude about what it adds, in a note naming it by its '
@@ -594,6 +638,7 @@ void main() {
               detail: null,
               kind: AdditionKind.location,
               deadline: null,
+              fields: null,
             ),
           ],
         ),

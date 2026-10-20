@@ -1386,7 +1386,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Home');
     await tester.pump();
-    await tester.tap(find.text('Save'));
+    await tester.tap(find.text('Add'));
     await tester.pumpAndSettle();
     // Picked, once it's made.
     expect(

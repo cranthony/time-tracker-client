@@ -24,6 +24,7 @@ import '../services/client_health.dart';
 import '../services/work_timing.dart';
 import '../widgets/refreshing_bar.dart';
 import '../models/time_split.dart';
+import '../widgets/quick_add_sheet.dart';
 
 /// The Plan page's People pane -- who the user wants to be with -- in two
 /// sections, one over the other, each folded away by tapping its head:
@@ -177,18 +178,31 @@ class PeoplePaneState extends State<PeoplePane> {
     final traits = await _traits();
     if (!mounted) return;
     final repository = widget.repository;
-    final saved = await showPersonEditor(
+    final circles = _people?.circles ?? const <Circle>[];
+    Future<Person> create(Map<String, Object?> fields) =>
+        repository.createPerson(Person.fromJson({'id': '', ...fields}));
+    Future<Person?> page(Map<String, Object?> fields) => showPersonEditor(
       context,
       person: person,
+      fields: fields,
       focus: widget.memory.focus,
-      circles: _people?.circles ?? const [],
+      circles: circles,
       traits: traits,
       actions: widget.actions,
       scoreParts: widget.memory.scoreDraftParts,
       save: (fields) => person == null
-          ? repository.createPerson(Person.fromJson({'id': '', ...fields}))
+          ? create(fields)
           : repository.updatePerson(person.id, fields),
     );
+    // Someone new in the quick sheet first; its More, the page.
+    final saved = person == null
+        ? await showAddPersonSheet<Person>(
+            context,
+            circles: circles,
+            save: create,
+            more: page,
+          )
+        : await page(const {});
     if (saved != null) await reload();
   }
 

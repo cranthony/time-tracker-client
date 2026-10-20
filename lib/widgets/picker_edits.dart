@@ -9,13 +9,15 @@ import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import 'action_dialog.dart';
 import 'person_dialog.dart';
+import 'quick_add_sheet.dart';
 
 // Adding to, and editing, what the Events page's pickers pick from --
 // actions, people and locations -- from the pickers themselves, as the
-// Plan page does: each in the same dialog, with what the app has from
-// [ActionsScope], [PeopleScope] and [PlanMemoryScope]. One added is
-// made at once, rather than in the background, so it has its id to be
-// picked by.
+// Plan page does: each added in its quick sheet (and its More, the same
+// dialog or page), and edited in the same dialog or page, with what the
+// app has from [ActionsScope], [PeopleScope] and [PlanMemoryScope]. One
+// added is made at once, rather than in the background, so it has its id
+// to be picked by.
 
 /// Every action, as shown: with the edits still going out. None if they
 /// can't be loaded: the dialog can still name one, or edit it.
@@ -35,36 +37,54 @@ Future<List<PlanAction>> _allActions(
 /// Whether actions can be added and edited here.
 bool canEditActions(BuildContext context) => ActionsScope.of(context) != null;
 
-/// Adds an action, named [name] to start with. Returns its id; null if
-/// it was called off.
-Future<String?> addAction(BuildContext context, String name) async {
+/// Adds an action, named [name] and in group [parentId] to start with, in
+/// its quick sheet, or its More, the full dialog. It's made with [create] (by default, as
+/// the actions are), given its fields as `create_action` takes them and
+/// returning its id, if it knows it. Returns its id; null if it was
+/// called off.
+Future<String?> addAction(
+  BuildContext context,
+  String name, {
+  String? parentId,
+  Future<String?> Function(Map<String, Object?> fields)? create,
+}) async {
   final scope = ActionsScope.of(context);
   if (scope == null) return null;
   final memory = PlanMemoryScope.of(context);
   String? made;
   final actions = await _allActions(scope.repository, memory);
   if (!context.mounted) return null;
-  final listed = await showNewActionDialog(
+  Future<ActionList> make(Map<String, Object?> fields) async {
+    final id = await (create ?? scope.repository.createAction)(fields);
+    final ActionList list;
+    if (memory == null) {
+      list = await scope.repository.actions();
+    } else {
+      await memory.loadActions(scope.repository, again: true);
+      list = memory.shownActions!;
+    }
+    made =
+        id ??
+        list.actions
+            .where((a) => a.name == fields['name'] && !a.isGroup)
+            .lastOrNull
+            ?.id;
+    return list;
+  }
+
+  final listed = await showAddActionSheet<ActionList>(
     context,
-    fields: {if (name.isNotEmpty) 'name': name},
+    name: name.isEmpty ? null : name,
+    parentId: parentId,
     actions: actions,
-    create: (fields) async {
-      final id = await scope.repository.createAction(fields);
-      final ActionList list;
-      if (memory == null) {
-        list = await scope.repository.actions();
-      } else {
-        await memory.loadActions(scope.repository, again: true);
-        list = memory.shownActions!;
-      }
-      made =
-          id ??
-          list.actions
-              .where((a) => a.name == fields['name'] && !a.isGroup)
-              .lastOrNull
-              ?.id;
-      return list;
-    },
+    save: make,
+    more: (fields) => showNewActionDialog(
+      context,
+      fields: fields,
+      parentId: fields['parent_id'] as String?,
+      actions: actions,
+      create: make,
+    ),
   );
   return listed == null ? null : made;
 }
@@ -90,13 +110,18 @@ Future<bool> editAction(BuildContext context, PlanAction action) async {
   return saved != null;
 }
 
-/// Adds someone (with no [person]), named [name] to start with, or edits
-/// [person], on the page the Plan page does. Returns them as saved; null
-/// if it was called off.
+/// Adds someone (with no [person]), named [name] and with [about] as
+/// their context to start with, in the quick New person sheet -- or its
+/// More, the page the Plan page edits on -- or edits [person], on that
+/// page. Someone added is made with [create] (by default, as people are),
+/// given their fields as `create_person` takes them. Returns them as
+/// saved; null if it was called off.
 Future<Person?> editPerson(
   BuildContext context, {
   Person? person,
   String? name,
+  String? about,
+  Future<Person> Function(Map<String, Object?> fields)? create,
 }) async {
   final repository = PeopleScope.of(context);
   if (repository == null) return null;
@@ -109,12 +134,18 @@ Future<Person?> editPerson(
     // Which apply can wait.
   }
   if (!context.mounted) return null;
-  final saved = await showPersonEditor(
+  final circles = memory?.people?.circles ?? const <Circle>[];
+  final make =
+      create ??
+      (fields) =>
+          repository.createPerson(Person.fromJson({'id': '', ...fields}));
+  Future<Person?> page(Map<String, Object?> fields) => showPersonEditor(
     context,
     person: person,
     name: name,
+    fields: fields,
     focus: memory?.focus,
-    circles: memory?.people?.circles ?? const [],
+    circles: circles,
     traits: traits,
     actions: {
       for (final action in memory?.actions?.actions ?? const <PlanAction>[])
@@ -123,37 +154,63 @@ Future<Person?> editPerson(
     },
     scoreParts: memory?.scoreDraftParts,
     save: (fields) => person == null
-        ? repository.createPerson(Person.fromJson({'id': '', ...fields}))
+        ? make(fields)
         : repository.updatePerson(person.id, fields),
   );
+  final saved = person != null
+      ? await page(const {})
+      : await showAddPersonSheet<Person>(
+          context,
+          name: name,
+          about: about,
+          circles: circles,
+          save: make,
+          more: page,
+        );
   if (saved != null) {
     await _reload(() => memory?.loadPeople(repository, again: true));
   }
   return saved;
 }
 
-/// Adds a location (with no [location]), named [name] to start with, or
-/// edits [location]; with [mapLocation], its map location starts as that.
-/// Returns it as saved; null if it was called off.
+/// Adds a location (with no [location]), named [name] and with [hint] to
+/// start with, in the quick New location sheet, or edits [location] in
+/// its dialog; with [mapLocation], its map location starts as that. One
+/// added is made with [create] (by default, as locations are), given its
+/// fields as `create_location` takes them. Returns it as saved; null if
+/// it was called off.
 Future<Location?> editLocation(
   BuildContext context, {
   Location? location,
   String? name,
+  String? hint,
   String? mapLocation,
+  Future<Location> Function(Map<String, Object?> fields)? create,
 }) async {
   final repository = PeopleScope.of(context);
   if (repository == null) return null;
   final memory = PlanMemoryScope.of(context);
-  final saved = await showLocationDialog(
-    context,
-    location: location,
-    name: name,
-    mapLocation: mapLocation,
-    groups: memory?.locationGroups ?? const [],
-    save: (fields) => location == null
-        ? repository.createLocation(Location.fromJson({'id': '', ...fields}))
-        : repository.updateLocation(location.id, fields),
-  );
+  final groups = memory?.locationGroups ?? const <LocationGroup>[];
+  final saved = location == null
+      ? await showAddLocationSheet<Location>(
+          context,
+          name: name,
+          hint: hint,
+          mapLocation: mapLocation,
+          groups: groups,
+          save:
+              create ??
+              (fields) => repository.createLocation(
+                Location.fromJson({'id': '', ...fields}),
+              ),
+        )
+      : await showLocationDialog(
+          context,
+          location: location,
+          mapLocation: mapLocation,
+          groups: groups,
+          save: (fields) => repository.updateLocation(location.id, fields),
+        );
   if (saved != null) {
     await _reload(() => memory?.loadLocations(repository, again: true));
   }

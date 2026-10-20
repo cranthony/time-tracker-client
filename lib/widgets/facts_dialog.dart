@@ -7,7 +7,7 @@ import '../models/proposal.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import 'hotkeys.dart';
-import 'person_dialog.dart';
+import 'quick_add_sheet.dart';
 
 /// Edits what happened at an event, its [facts] -- who was there with you,
 /// who it was done for while they weren't, where it was, and a note on you
@@ -135,7 +135,7 @@ class _FactsDialogState extends State<_FactsDialog> {
   Future<void> _newLocation() async {
     final repository = _repository;
     if (repository == null) return;
-    final created = await showLocationDialog(
+    final created = await showAddLocationSheet<Location>(
       context,
       groups: _memory?.locationGroups ?? const [],
       save: (fields) =>
