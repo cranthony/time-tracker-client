@@ -41,11 +41,16 @@ class ProposalNotice {
     this.message,
     this.eventIds = const [],
     this.eventNames = const [],
+    this.warnings = const [],
   });
 
   final String id;
   final ProposalNoticeKind kind;
   final String proposalId;
+
+  /// What applying it left for the user: a goal change the goals refused,
+  /// to make by hand if it still applies.
+  final List<String> warnings;
 
   /// When it came.
   final DateTime at;
@@ -100,6 +105,7 @@ class ProposalNotice {
     'message': ?message,
     if (eventIds.isNotEmpty) 'event_ids': eventIds,
     if (eventNames.isNotEmpty) 'event_names': eventNames,
+    if (warnings.isNotEmpty) 'warnings': warnings,
   };
 
   static ProposalNotice? fromJson(Object? json) {
@@ -116,6 +122,7 @@ class ProposalNotice {
       message: json['message'] as String?,
       eventIds: [for (final e in json['event_ids'] as List? ?? []) '$e'],
       eventNames: [for (final e in json['event_names'] as List? ?? []) '$e'],
+      warnings: [for (final w in json['warnings'] as List? ?? []) '$w'],
     );
   }
 }

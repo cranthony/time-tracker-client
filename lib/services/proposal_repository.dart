@@ -29,6 +29,7 @@ class ProposalEdits {
     this.asPlanned = const [],
     this.notes = const [],
     this.additions = const [],
+    this.goalChanges = const [],
     this.through,
   });
 
@@ -62,6 +63,13 @@ class ProposalEdits {
   >
   additions;
 
+  /// The user's say on the proposal's goal changes, each by its goal's
+  /// id: applied now, dropped, or changed -- to [status], at [at], tried
+  /// again by [retryDeadline] (status `missed`) -- the fields given over
+  /// the proposal's. A change of a goal the proposal doesn't change adds
+  /// one, with its status.
+  final List<GoalChangeEdit> goalChanges;
+
   bool get isEmpty =>
       updates.isEmpty &&
       creates.isEmpty &&
@@ -69,6 +77,7 @@ class ProposalEdits {
       asPlanned.isEmpty &&
       notes.isEmpty &&
       additions.isEmpty &&
+      goalChanges.isEmpty &&
       through == null;
 
   /// The ids and keys of the events they name, and the notes' ids.
@@ -115,6 +124,18 @@ class ProposalEdits {
               'status': 'active',
               'deadline': a.deadline,
             },
+          },
+      ],
+    // Only when there are some: an older server still takes the rest.
+    if (goalChanges.isNotEmpty)
+      'goal_changes': [
+        for (final c in goalChanges)
+          {
+            'goal_id': c.goalId,
+            'use': c.use.name,
+            'status': ?c.status,
+            if (c.at case final at?) 'at': localIsoTimestamp(at),
+            'retry_deadline': ?c.retryDeadline,
           },
       ],
   };
@@ -166,6 +187,20 @@ class ProposalEdits {
             deadline: a['deadline'] as String?,
           ),
       ],
+      goalChanges: [
+        for (final c in maps('goal_changes'))
+          if (GoalChangeUse.parse(c['use']) case final use?)
+            (
+              goalId: '${c['goal_id']}',
+              use: use,
+              status: c['status'] as String?,
+              at: switch (c['at']) {
+                final String at => DateTime.tryParse(at),
+                _ => null,
+              },
+              retryDeadline: c['retry_deadline'] as String?,
+            ),
+      ],
     );
   }
 
@@ -192,6 +227,16 @@ class ProposalEdits {
     ],
   );
 }
+
+/// The user's say on one of a proposal's goal changes, as `amend_proposal`
+/// takes it (see [ProposalEdits.goalChanges]).
+typedef GoalChangeEdit = ({
+  String goalId,
+  GoalChangeUse use,
+  String? status,
+  DateTime? at,
+  String? retryDeadline,
+});
 
 /// An edit the proposal can't take, said in a way to show the user.
 class ProposalEditException implements Exception {
@@ -773,6 +818,7 @@ class InMemoryProposalRepository implements ProposalRepository {
     }
     final notes = _editedNotes(current, events, edits);
     final (additions, settled) = await _settle(current, events, edits, changed);
+    final (goalChanges, settledGoals) = await _settleGoals(current, edits);
     final revision = current.revision + 1;
     _changed[revision] = changed;
     _proposal = current.copyWith(
@@ -785,6 +831,8 @@ class InMemoryProposalRepository implements ProposalRepository {
       notes: notes,
       additions: additions,
       settledAdditions: settled,
+      goalChanges: goalChanges,
+      settledGoalChanges: settledGoals,
       reason: 'user edit',
       byUser: true,
       userEdits: [...current.userEdits, edits.toJson()],
@@ -913,6 +961,116 @@ class InMemoryProposalRepository implements ProposalRepository {
       }
     }
     return (pending, settled);
+  }
+
+  /// [current]'s goal changes, and those settled, after [edits] settle
+  /// them, as the server does: one applied is made now, in [goals], if
+  /// given; one dropped leaves the goal alone; one changed is kept, with
+  /// the user's status, time and retry deadline over Claude's -- or added,
+  /// for a goal the proposal didn't change -- as the user's.
+  Future<(List<ProposalGoalChange>, List<GoalChangeSettled>)> _settleGoals(
+    Proposal current,
+    ProposalEdits edits,
+  ) async {
+    final pending = [...current.goalChanges];
+    final settled = [...current.settledGoalChanges];
+    for (final edit in edits.goalChanges) {
+      final id = edit.goalId;
+      final proposed = pending.where((c) => c.goalId == id).firstOrNull;
+      if (edit.use == GoalChangeUse.drop && proposed == null) {
+        throw McpException(
+          "amend_proposal: goal_changes: $id isn't a goal the proposal "
+          "changes, so there's nothing to drop",
+        );
+      }
+      final status = edit.status ?? proposed?.status;
+      if (status == null) {
+        throw McpException(
+          edit.use == GoalChangeUse.apply
+              ? "amend_proposal: goal_changes: $id isn't a goal the proposal "
+                    "changes: give its status with use 'change' to add one"
+              : "amend_proposal: goal_changes: $id isn't a goal the proposal "
+                    'changes yet, so its change needs a status',
+        );
+      }
+      final change = ProposalGoalChange(
+        goalId: id,
+        status: status,
+        title:
+            proposed?.title ??
+            (await goals?.goals())?.where((g) => g.id == id).firstOrNull?.title,
+        path: proposed?.path ?? const [],
+        at: edit.at ?? proposed?.at ?? current.through,
+        noteIds: proposed?.noteIds ?? const [],
+        retryDeadline: status == 'missed'
+            ? edit.retryDeadline ?? proposed?.retryDeadline
+            : null,
+        decidedBy: DecidedBy.user,
+      );
+      if (edit.use == GoalChangeUse.apply) await _applyGoalChange(change);
+      pending.removeWhere((c) => c.goalId == id);
+      settled.removeWhere((s) => s.goalId == id);
+      if (edit.use == GoalChangeUse.change) pending.add(change);
+      settled.add(
+        GoalChangeSettled(
+          goalId: id,
+          use: edit.use,
+          status: edit.use == GoalChangeUse.drop ? null : change.status,
+          at: edit.use == GoalChangeUse.drop ? null : change.at,
+          retryDeadline: edit.use == GoalChangeUse.drop
+              ? null
+              : change.retryDeadline,
+        ),
+      );
+    }
+    return (pending, settled);
+  }
+
+  /// Makes [change] in [goals], if given, as the server would: the goal's
+  /// status and its history, at the change's time -- a retry, its
+  /// history gaining the miss and then its status again, with the new
+  /// deadline as its own.
+  Future<void> _applyGoalChange(ProposalGoalChange change) async {
+    final goals = this.goals;
+    if (goals == null) return;
+    final goal = (await goals.goals())
+        .where((g) => g.id == change.goalId)
+        .firstOrNull;
+    if (goal == null) {
+      throw McpException(
+        "amend_proposal: goal_changes: there's no goal ${change.goalId}",
+      );
+    }
+    if (goal.closed) {
+      throw McpException(
+        'amend_proposal: goal_changes: ${change.goalId}: goal '
+        '${change.goalId} (${goal.title}) is ${goal.status} already, not open',
+      );
+    }
+    final at = change.at ?? DateTime.now();
+    if (change.retries) {
+      await goals.updateGoal(goal.id, {
+        'deadline': change.retryDeadline,
+        'status': goal.status,
+        'history': [
+          for (final c in goal.history) c.toJson(),
+          StatusChange('missed', at, deadline: goal.deadline).toJson(),
+          StatusChange(
+            goal.status,
+            at,
+            deadline: change.retryDeadline,
+          ).toJson(),
+        ],
+      });
+    } else {
+      await goals.updateGoal(goal.id, {
+        'status': change.status,
+        'history': [
+          for (final c in goal.history) c.toJson(),
+          StatusChange(change.status, at, deadline: goal.deadline).toJson(),
+        ],
+      });
+    }
   }
 
   /// [ids] -- a new goal's people -- each named by its id, a person

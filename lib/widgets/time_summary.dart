@@ -111,6 +111,20 @@ class _TimeSummaryState extends State<TimeSummary> {
   final _heights = <int, double>{};
 
   @override
+  void didUpdateWidget(TimeSummary oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Asked to turn to another page: the host going to what's on it.
+    final page = widget.initialPage;
+    if (page != oldWidget.initialPage && page != _page && _pages.hasClients) {
+      _pages.animateToPage(
+        page,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  @override
   void dispose() {
     _pages.dispose();
     super.dispose();

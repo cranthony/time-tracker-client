@@ -9,6 +9,21 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.171.0
+
+- A compaction proposal's changes to goals you already have -- marked
+  done from a note that says so, missed when a deadline passed in its
+  window, or obsolete -- are shown on a Goals page of the proposal's
+  details on the Events page, one at a time, each with the goal, what the
+  change marks it, where the goal sits and the note it came from. Tap one
+  to settle it before confirming: apply it now, drop it (the goal is left
+  alone), change it to done, missed or obsolete, or to missed and tried
+  again by a day you pick, or ask Claude about it. A settled change says
+  so, and a dropped or changed one can be put back as Claude proposed it.
+  Claude's recap can cite a goal change, and its chip goes to it. The rest
+  are made when the proposal is confirmed; if the goals refuse one by
+  then, confirming says so.
+
 ## 7.170.0
 
 - The New goal sheet asks who the goal is done with and who it's for:

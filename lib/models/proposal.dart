@@ -337,19 +337,24 @@ enum FeedbackStatus { open, answered, withdrawn }
 enum RecapKind { overview, did, unsure }
 
 /// One point of Claude's [ProposalRecap]: its [text], in Markdown, and the
-/// events (ids or keys) and time notes it's about.
+/// events (ids or keys), time notes and goal changes (by goal id) it's
+/// about.
 class RecapPoint {
   const RecapPoint({
     required this.kind,
     required this.text,
     this.eventIds = const [],
     this.noteIds = const [],
+    this.goalIds = const [],
   });
 
   final RecapKind kind;
   final String text;
   final List<String> eventIds;
   final List<String> noteIds;
+
+  /// The goals whose changes ([Proposal.goalChanges]) it's about.
+  final List<String> goalIds;
 
   /// It as a note answering it quotes it: on one line, cut short.
   String get quote {
@@ -366,6 +371,7 @@ class RecapPoint {
       text: text,
       eventIds: [for (final id in json['event_ids'] as List? ?? []) '$id'],
       noteIds: [for (final id in json['note_ids'] as List? ?? []) '$id'],
+      goalIds: [for (final id in json['goal_ids'] as List? ?? []) '$id'],
     ),
     _ => null,
   };
@@ -436,6 +442,8 @@ class Proposal {
     this.notes = const [],
     this.additions = const [],
     this.settledAdditions = const [],
+    this.goalChanges = const [],
+    this.settledGoalChanges = const [],
     this.feedback = const [],
     this.userEdits = const [],
     this.changedSince = const {},
@@ -513,6 +521,23 @@ class Proposal {
   Map<String, String> get addedNames => {
     for (final a in additions) a.ref: a.name,
   };
+
+  /// The changes it makes to goals there are -- done, missed or obsolete
+  /// -- when it's applied: Claude's, less those the user applied or
+  /// dropped, with the user's over them where they changed one.
+  final List<ProposalGoalChange> goalChanges;
+
+  /// The goal changes the user settled: applied now, dropped, or changed.
+  final List<GoalChangeSettled> settledGoalChanges;
+
+  /// The change [goalChanges] makes to the goal [goalId], if it makes one.
+  ProposalGoalChange? goalChange(String? goalId) {
+    if (goalId == null) return null;
+    for (final c in goalChanges) {
+      if (c.goalId == goalId) return c;
+    }
+    return null;
+  }
 
   /// The cancelled events of what happened: each counting against
   /// follow-through, or not.
@@ -657,6 +682,14 @@ class Proposal {
       for (final s in (json['settled_additions'] as List? ?? []).cast<Map>())
         ?AdditionSettled.fromJson(s.cast<String, Object?>()),
     ],
+    goalChanges: [
+      for (final c in json['goal_changes'] as List? ?? const [])
+        if (c is Map) ?ProposalGoalChange.fromJson(c.cast<String, Object?>()),
+    ],
+    settledGoalChanges: [
+      for (final s in json['settled_goal_changes'] as List? ?? const [])
+        if (s is Map) ?GoalChangeSettled.fromJson(s.cast<String, Object?>()),
+    ],
     feedback: [
       for (final f in json['feedback'] as List? ?? [])
         ProposalFeedback.fromJson((f as Map).cast<String, dynamic>()),
@@ -694,6 +727,8 @@ class Proposal {
     List<ProposalNote>? notes,
     List<ProposalAddition>? additions,
     List<AdditionSettled>? settledAdditions,
+    List<ProposalGoalChange>? goalChanges,
+    List<GoalChangeSettled>? settledGoalChanges,
   }) => Proposal(
     id: id,
     revision: revision ?? this.revision,
@@ -712,6 +747,8 @@ class Proposal {
     notes: notes ?? this.notes,
     additions: additions ?? this.additions,
     settledAdditions: settledAdditions ?? this.settledAdditions,
+    goalChanges: goalChanges ?? this.goalChanges,
+    settledGoalChanges: settledGoalChanges ?? this.settledGoalChanges,
     feedback: feedback ?? this.feedback,
     userEdits: userEdits ?? this.userEdits,
     changedSince: changedSince ?? this.changedSince,
@@ -860,6 +897,146 @@ class AdditionSettled {
           ref: ref,
           use: use,
           id: json['id'] as String?,
+        ),
+        _ => null,
+      };
+}
+
+/// What a goal change marks a goal: `done`, `missed` or `obsolete`, as
+/// [Goal.status] names them.
+const goalChangeStatuses = ['done', 'missed', 'obsolete'];
+
+/// A change a [Proposal] makes to a goal there is, when it's applied,
+/// mirroring an item of `get_proposal`'s `goal_changes`: the goal
+/// [goalId] -- its [title] and [path] now -- becomes [status] at [at],
+/// from the notes [noteIds]. With [retryDeadline] (status `missed`), the
+/// goal is missed and tried again by then: its history gains the miss,
+/// with the deadline it missed, and it stays open, due by the new one.
+/// Decided by Claude, or by the user once they changed it.
+class ProposalGoalChange {
+  const ProposalGoalChange({
+    required this.goalId,
+    required this.status,
+    this.title,
+    this.path = const [],
+    this.at,
+    this.noteIds = const [],
+    this.retryDeadline,
+    this.decidedBy,
+  });
+
+  final String goalId;
+  final String? title;
+
+  /// Its parents' titles, outermost first.
+  final List<String> path;
+
+  /// One of [goalChangeStatuses].
+  final String status;
+  final DateTime? at;
+  final List<String> noteIds;
+  final String? retryDeadline;
+  final DecidedBy? decidedBy;
+
+  /// Its title, or, for a goal that's gone, its id.
+  String get name => switch (title) {
+    final t? when t.trim().isNotEmpty => t,
+    _ => goalId,
+  };
+
+  /// Whether it misses the goal and tries it again.
+  bool get retries => status == 'missed' && retryDeadline != null;
+
+  static ProposalGoalChange? fromJson(Map<String, Object?> json) {
+    final (goalId, status) = (json['goal_id'], json['status']);
+    if (goalId is! String || status is! String) return null;
+    return ProposalGoalChange(
+      goalId: goalId,
+      status: status,
+      title: json['title'] as String?,
+      path: [for (final p in json['path'] as List? ?? const []) '$p'],
+      at: switch (json['at']) {
+        final String at => DateTime.tryParse(at),
+        _ => null,
+      },
+      noteIds: [for (final id in json['note_ids'] as List? ?? const []) '$id'],
+      retryDeadline: json['retry_deadline'] as String?,
+      decidedBy: switch (json['decided_by']) {
+        'claude' => DecidedBy.claude,
+        'user' => DecidedBy.user,
+        _ => null,
+      },
+    );
+  }
+
+  ProposalGoalChange copyWith({
+    String? status,
+    DateTime? at,
+    String? Function()? retryDeadline,
+    DecidedBy? decidedBy,
+  }) => ProposalGoalChange(
+    goalId: goalId,
+    status: status ?? this.status,
+    title: title,
+    path: path,
+    at: at ?? this.at,
+    noteIds: noteIds,
+    retryDeadline: retryDeadline == null ? this.retryDeadline : retryDeadline(),
+    decidedBy: decidedBy ?? this.decidedBy,
+  );
+}
+
+/// How the user settled one of a proposal's goal changes.
+enum GoalChangeUse {
+  /// Made now, as one update of the goal.
+  apply,
+
+  /// The goal's left alone.
+  drop,
+
+  /// Kept in the proposal, with the user's status, time and retry
+  /// deadline over Claude's -- or a change of the user's own, to a goal
+  /// Claude didn't change.
+  change;
+
+  static GoalChangeUse? parse(Object? json) {
+    for (final use in values) {
+      if (use.name == json) return use;
+    }
+    return null;
+  }
+}
+
+/// One of a proposal's goal changes the user settled, mirroring an item
+/// of `get_proposal`'s `settled_goal_changes`: the goal [goalId]'s [use],
+/// and, applied or changed, the [status], time and [retryDeadline] it was
+/// settled with.
+class GoalChangeSettled {
+  const GoalChangeSettled({
+    required this.goalId,
+    required this.use,
+    this.status,
+    this.at,
+    this.retryDeadline,
+  });
+
+  final String goalId;
+  final GoalChangeUse use;
+  final String? status;
+  final DateTime? at;
+  final String? retryDeadline;
+
+  static GoalChangeSettled? fromJson(Map<String, Object?> json) =>
+      switch ((json['goal_id'], GoalChangeUse.parse(json['use']))) {
+        (final String goalId, final use?) => GoalChangeSettled(
+          goalId: goalId,
+          use: use,
+          status: json['status'] as String?,
+          at: switch (json['at']) {
+            final String at => DateTime.tryParse(at),
+            _ => null,
+          },
+          retryDeadline: json['retry_deadline'] as String?,
         ),
         _ => null,
       };
@@ -1058,7 +1235,12 @@ class ProposalNote {
 /// What confirming a [Proposal], or finishing one whose apply stopped,
 /// came to, mirroring `confirm_proposal` and `finish_proposal`.
 class ProposalOutcome {
-  const ProposalOutcome({required this.status, this.message, this.proposal});
+  const ProposalOutcome({
+    required this.status,
+    this.message,
+    this.proposal,
+    this.warnings = const [],
+  });
 
   final ProposalOutcomeStatus status;
   final String? message;
@@ -1067,21 +1249,40 @@ class ProposalOutcome {
   /// rechecked or rebuilt.
   final Proposal? proposal;
 
-  factory ProposalOutcome.fromJson(Map<String, dynamic> json) =>
-      ProposalOutcome(
-        status: switch (json['status']) {
-          'rechecked' => ProposalOutcomeStatus.rechecked,
-          'needs_claude' => ProposalOutcomeStatus.needsClaude,
-          'rebuilt' => ProposalOutcomeStatus.rebuilt,
-          'abandoned' => ProposalOutcomeStatus.abandoned,
-          _ => ProposalOutcomeStatus.applied,
-        },
-        message: json['message'] as String?,
-        proposal: switch (json['proposal']) {
-          final Map p => Proposal.fromJson(p.cast<String, dynamic>()),
-          _ => null,
-        },
-      );
+  /// What applying it left for the user: a goal change the goals refused,
+  /// to make by hand if it still applies. The server adds them to the
+  /// applied revision's own warnings ([Proposal.warnings]), so those it
+  /// had before confirming are among them too.
+  final List<String> warnings;
+
+  factory ProposalOutcome.fromJson(Map<String, dynamic> json) {
+    final proposal = switch (json['proposal']) {
+      final Map p => Proposal.fromJson(p.cast<String, dynamic>()),
+      _ => null,
+    };
+    return ProposalOutcome(
+      status: switch (json['status']) {
+        'rechecked' => ProposalOutcomeStatus.rechecked,
+        'needs_claude' => ProposalOutcomeStatus.needsClaude,
+        'rebuilt' => ProposalOutcomeStatus.rebuilt,
+        'abandoned' => ProposalOutcomeStatus.abandoned,
+        _ => ProposalOutcomeStatus.applied,
+      },
+      message: json['message'] as String?,
+      proposal: proposal,
+      warnings: switch (json['warnings']) {
+        final List warnings => [for (final w in warnings) '$w'],
+        _ => proposal?.warnings ?? const [],
+      },
+    );
+  }
+
+  /// [warnings] less those [before] -- the proposal as it was confirmed --
+  /// already had: what applying it added.
+  List<String> warningsSince(Proposal before) => [
+    for (final w in warnings)
+      if (!before.warnings.contains(w)) w,
+  ];
 }
 
 enum ProposalOutcomeStatus {

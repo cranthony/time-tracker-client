@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/facts.dart';
-import '../models/goal.dart' show deadlineEnd, deadlineOf;
+import '../models/goal.dart' show deadlineEnd, deadlineOf, goalStatuses;
 import '../models/proposal.dart';
 import '../outbox/proposal_notices.dart';
 import 'hotkeys.dart';
 import 'error_sheet.dart';
 import 'day_timeline.dart';
+import 'goal_editor.dart' show deadlineLabel;
+import 'goal_flows.dart' show pickRetryDeadline;
 import 'recap_markdown.dart';
 import 'time_summary.dart';
 
@@ -462,6 +464,13 @@ class ProposalNoticesBanner extends StatelessWidget {
                                 notice.kind != ProposalNoticeKind.replaced)
                           Text(
                             message,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSecondaryContainer,
+                            ),
+                          ),
+                        for (final warning in notice.warnings)
+                          Text(
+                            '• $warning',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colors.onSecondaryContainer,
                             ),
@@ -1264,6 +1273,311 @@ class ProposalAdditionStrip extends StatelessWidget {
   }
 }
 
+/// What a goal change does, in a few words, as the strip and sheet say
+/// it: "mark done", "missed", "missed, try again by Sat, Oct 25",
+/// "obsolete".
+String goalChangeLabel(
+  BuildContext context,
+  String status, [
+  String? retryDeadline,
+]) => switch (status) {
+  'done' => 'mark done',
+  'missed' when retryDeadline != null =>
+    'missed, try again by ${deadlineLabel(context, retryDeadline)}',
+  _ => goalStatuses[status]?.toLowerCase() ?? status,
+};
+
+/// How a goal change was [settled], in words: still to settle, applied
+/// now, dropped, or changed.
+String goalChangeState(GoalChangeSettled? settled) => switch (settled?.use) {
+  null => 'To settle: made when it’s confirmed',
+  GoalChangeUse.apply => 'Applied now · you',
+  GoalChangeUse.drop => 'Dropped: the goal’s left alone · you',
+  GoalChangeUse.change => 'Changed · you',
+};
+
+/// The badge of a goal change marking a goal [status].
+IconData goalChangeIcon(String status) => switch (status) {
+  'done' => Icons.check_circle_outline,
+  'missed' => Icons.event_busy_outlined,
+  'obsolete' => Icons.archive_outlined,
+  _ => Icons.flag_outlined,
+};
+
+/// A change the proposal makes to a goal there is -- the [index]th of
+/// [count] -- the goal, and what the change marks it, where it sits
+/// ([path]) and the notes it came [from]; and, once the user's [settled]
+/// it, how: applied now, dropped, or changed. Tapping it, or its button,
+/// calls [onSettle], to settle it, or say otherwise; [onApply] applies it
+/// now; with buttons to go to the one before it ([onPrevious]) and after
+/// it ([onNext]).
+class ProposalGoalChangeStrip extends StatelessWidget {
+  const ProposalGoalChangeStrip({
+    super.key,
+    required this.change,
+    required this.index,
+    required this.count,
+    this.settled,
+    this.from = const [],
+    this.onSettle,
+    this.onApply,
+    this.onPrevious,
+    this.onNext,
+  });
+
+  final ProposalGoalChange change;
+  final int index;
+  final int count;
+  final GoalChangeSettled? settled;
+
+  /// The notes it came from, named: "10:30 AM note".
+  final List<String> from;
+  final VoidCallback? onSettle;
+  final VoidCallback? onApply;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final dropped = settled?.use == GoalChangeUse.drop;
+    return _DetailRow(
+      badge: dropped ? Icons.block : goalChangeIcon(change.status),
+      what: 'goal change',
+      index: index,
+      count: count,
+      title: TextSpan(
+        children: [
+          const TextSpan(
+            text: 'Goal  ',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          TextSpan(
+            text: change.name,
+            style: dropped
+                ? const TextStyle(decoration: TextDecoration.lineThrough)
+                : null,
+          ),
+          if (!dropped)
+            TextSpan(
+              text:
+                  ' · ${goalChangeLabel(context, change.status, change.retryDeadline)}',
+            ),
+        ],
+      ),
+      says: [
+        if (change.path.isNotEmpty) change.path.join(' › '),
+        if (from.isNotEmpty) 'from the ${from.join(', ')}',
+        goalChangeState(settled),
+      ].join(' · '),
+      saysColor: settled == null ? colors.secondary : null,
+      actions: [
+        if (onApply != null)
+          IconButton(
+            tooltip: 'Apply it now',
+            visualDensity: VisualDensity.compact,
+            onPressed: onApply,
+            icon: const Icon(Icons.play_arrow_outlined),
+          ),
+        if (onSettle != null)
+          IconButton(
+            tooltip: settled == null ? 'Settle it' : 'Change how it’s settled',
+            visualDensity: VisualDensity.compact,
+            onPressed: onSettle,
+            icon: const Icon(Icons.rule),
+          ),
+      ],
+      onPrevious: onPrevious,
+      onNext: onNext,
+      onTap: onSettle,
+    );
+  }
+}
+
+/// What the user said is to become of a goal change, from
+/// [showGoalChangeSheet].
+sealed class GoalChangeChoice {
+  const GoalChangeChoice();
+}
+
+/// Make it now, as one change of the goal.
+final class ApplyGoalChange extends GoalChangeChoice {
+  const ApplyGoalChange();
+}
+
+/// Leave the goal alone.
+final class DropGoalChange extends GoalChangeChoice {
+  const DropGoalChange();
+}
+
+/// Keep it in the proposal, marking the goal [status] -- missed and
+/// tried again by [retryDeadline], if given.
+final class ChangeGoalChange extends GoalChangeChoice {
+  const ChangeGoalChange(this.status, {this.retryDeadline});
+  final String status;
+  final String? retryDeadline;
+}
+
+/// Put it back as Claude proposed it.
+final class PutBackGoalChange extends GoalChangeChoice {
+  const PutBackGoalChange();
+}
+
+/// Leave a note for Claude about it.
+final class AskAboutGoalChange extends GoalChangeChoice {
+  const AskAboutGoalChange();
+}
+
+/// Asks what's to become of [change]: applied now; dropped, the goal left
+/// alone; or changed, to mark the goal done, missed -- tried again by a
+/// day picked -- or obsolete. Once it's [settled], it can be put back as
+/// Claude proposed it ([claudes], if Claude proposed one). Either way, it
+/// can be asked about, in a note for Claude. [now] is for the retry's
+/// date picker.
+Future<GoalChangeChoice?> showGoalChangeSheet(
+  BuildContext context,
+  ProposalGoalChange change, {
+  GoalChangeSettled? settled,
+  ProposalGoalChange? claudes,
+  List<String> from = const [],
+  DateTime Function() now = DateTime.now,
+}) => showModalBottomSheet<GoalChangeChoice>(
+  context: context,
+  isScrollControlled: true,
+  showDragHandle: true,
+  builder: (context) {
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final pending =
+        settled == null ||
+        (settled.use == GoalChangeUse.change && claudes != null);
+    final proposes =
+        'Proposed: ${goalChangeLabel(context, change.status, change.retryDeadline)}'
+        '${switch (change.at) {
+          final at? => ', ${_time(context, at)}',
+          null => '',
+        }}';
+    Future<void> retry() async {
+      final deadline = await pickRetryDeadline(
+        context,
+        today: now(),
+        deadline: change.retryDeadline,
+      );
+      if (deadline != null && context.mounted) {
+        Navigator.of(context)
+            .pop(ChangeGoalChange('missed', retryDeadline: deadline));
+      }
+    }
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.7,
+      maxChildSize: 0.95,
+      builder: (context, scroll) => ListView(
+        controller: scroll,
+        padding: const EdgeInsets.only(bottom: 24),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Text(
+              'Goal: ${change.name}',
+              style: theme.textTheme.titleMedium,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              [
+                if (change.path.isNotEmpty) change.path.join(' › '),
+                if (from.isNotEmpty) 'From the ${from.join(', ')}',
+                if (settled?.use != GoalChangeUse.drop) proposes,
+                goalChangeState(settled),
+              ].join('\n'),
+              style: muted,
+            ),
+          ),
+          if (pending) ...[
+            ListTile(
+              leading: const Icon(Icons.play_arrow_outlined),
+              title: const Text('Apply it now'),
+              subtitle: const Text(
+                'As one change of the goal. It stays, whatever becomes of '
+                'the proposal.',
+              ),
+              onTap: () => Navigator.of(context).pop(const ApplyGoalChange()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.block),
+              title: const Text('Drop it'),
+              subtitle: const Text('Leave the goal alone'),
+              onTap: () => Navigator.of(context).pop(const DropGoalChange()),
+            ),
+            if (settled != null)
+              ListTile(
+                leading: const Icon(Icons.undo),
+                title: const Text('Put it back as Claude proposed it'),
+                subtitle: Text(
+                  goalChangeLabel(
+                    context,
+                    claudes!.status,
+                    claudes.retryDeadline,
+                  ),
+                ),
+                onTap: () =>
+                    Navigator.of(context).pop(const PutBackGoalChange()),
+              ),
+          ] else if (settled.use == GoalChangeUse.drop)
+            ListTile(
+              leading: const Icon(Icons.undo),
+              title: const Text('Put it back as Claude proposed it'),
+              subtitle: const Text('To settle later'),
+              onTap: () => Navigator.of(context).pop(const PutBackGoalChange()),
+            ),
+          ListTile(
+            leading: const Icon(Icons.add_comment_outlined),
+            title: const Text('Ask Claude about it'),
+            subtitle: const Text('Leave a note for Claude about this goal'),
+            onTap: () => Navigator.of(context).pop(const AskAboutGoalChange()),
+          ),
+          if (pending) ...[
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: Text('Or change it to', style: theme.textTheme.titleSmall),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(
+                'Kept in the proposal as yours, made when it’s confirmed.',
+                style: muted,
+              ),
+            ),
+            for (final status in goalChangeStatuses)
+              if (status != change.status || change.retryDeadline != null)
+                ListTile(
+                  leading: Icon(goalChangeIcon(status)),
+                  title: Text(goalStatuses[status]!),
+                  onTap: () =>
+                      Navigator.of(context).pop(ChangeGoalChange(status)),
+                ),
+            ListTile(
+              leading: const Icon(Icons.replay),
+              title: const Text('Missed, try again by…'),
+              subtitle: const Text(
+                'The goal stays open, due by the day you pick; its history '
+                'keeps the deadline it missed.',
+              ),
+              onTap: retry,
+            ),
+          ],
+        ],
+      ),
+    );
+  },
+);
+
 /// The badge of a point of Claude's recap of [kind].
 IconData recapIcon(RecapKind kind) => switch (kind) {
   RecapKind.overview => Icons.notes,
@@ -1357,13 +1671,14 @@ sealed class RecapAction {
   const RecapAction();
 }
 
-/// Go to the [index]th point, and to [eventId] or [noteId] of it -- or,
-/// with neither, the first it names.
+/// Go to the [index]th point, and to [eventId], [noteId] or the goal
+/// change [goalId] of it -- or, with none, the first it names.
 final class GoToRecapPoint extends RecapAction {
-  const GoToRecapPoint(this.index, {this.eventId, this.noteId});
+  const GoToRecapPoint(this.index, {this.eventId, this.noteId, this.goalId});
   final int index;
   final String? eventId;
   final String? noteId;
+  final String? goalId;
 }
 
 /// Leave a note for Claude about [point].
@@ -1374,7 +1689,8 @@ final class AskAboutRecapPoint extends RecapAction {
 
 /// Shows all of Claude's [recap]: its overview, what it did and what it's
 /// unsure of, each point in full with a chip for each event ([events], by
-/// id or key) and note ([notes], by id) it names, to go to. Those the
+/// id or key), note ([notes], by id) and goal change ([goals], by goal
+/// id) it names, to go to. Those the
 /// user's edits [changed] since are marked, and if the proposal's
 /// [revision] is past the recap's, it says so. A point Claude is unsure of
 /// can be answered, in a note for Claude, unless [canAsk] is false; the
@@ -1387,6 +1703,7 @@ Future<RecapAction?> showRecapSheet(
   int? revision,
   Map<String, String> events = const {},
   Map<String, String> notes = const {},
+  Map<String, String> goals = const {},
   Set<String> changed = const {},
   bool canAsk = true,
   List<ProposalFeedback> Function(RecapPoint point)? answersTo,
@@ -1424,10 +1741,17 @@ Future<RecapAction?> showRecapSheet(
           answers: answersTo?.call(point) ?? const [],
           events: events,
           notes: notes,
+          goals: goals,
           changed: point.eventIds.any(changed.contains),
-          onGoTo: ({String? eventId, String? noteId}) =>
-              Navigator.of(context)
-                  .pop(GoToRecapPoint(i, eventId: eventId, noteId: noteId)),
+          onGoTo: ({String? eventId, String? noteId, String? goalId}) =>
+              Navigator.of(context).pop(
+                GoToRecapPoint(
+                  i,
+                  eventId: eventId,
+                  noteId: noteId,
+                  goalId: goalId,
+                ),
+              ),
           onAsk: canAsk && point.kind == RecapKind.unsure
               ? () => Navigator.of(context).pop(AskAboutRecapPoint(point))
               : null,
@@ -1492,6 +1816,7 @@ class _RecapPointCard extends StatelessWidget {
     required this.notes,
     required this.changed,
     required this.onGoTo,
+    this.goals = const {},
     this.answers = const [],
     this.onAsk,
   });
@@ -1500,8 +1825,11 @@ class _RecapPointCard extends StatelessWidget {
   final List<ProposalFeedback> answers;
   final Map<String, String> events;
   final Map<String, String> notes;
+
+  /// The goal changes it may name, by goal id, as the goal's called.
+  final Map<String, String> goals;
   final bool changed;
-  final void Function({String? eventId, String? noteId}) onGoTo;
+  final void Function({String? eventId, String? noteId, String? goalId}) onGoTo;
   final VoidCallback? onAsk;
 
   @override
@@ -1581,6 +1909,7 @@ class _RecapPointCard extends StatelessWidget {
                   ),
                 if (point.eventIds.isNotEmpty ||
                     point.noteIds.isNotEmpty ||
+                    point.goalIds.isNotEmpty ||
                     onAsk != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
@@ -1609,6 +1938,17 @@ class _RecapPointCard extends StatelessWidget {
                             visualDensity: VisualDensity.compact,
                             onPressed: notes.containsKey(id)
                                 ? () => onGoTo(noteId: id)
+                                : null,
+                          ),
+                        for (final id in point.goalIds)
+                          ActionChip(
+                            avatar: const Icon(Icons.flag_outlined, size: 16),
+                            label: Text(
+                              goals[id] ?? 'A goal change no longer in it',
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: goals.containsKey(id)
+                                ? () => onGoTo(goalId: id)
                                 : null,
                           ),
                         if (onAsk != null)
@@ -2013,6 +2353,8 @@ class ProposalDetails extends StatelessWidget {
     this.counting = 0,
     this.adds,
     this.addCount = 0,
+    this.goals,
+    this.goalCount = 0,
     this.collapsed = false,
     this.onCollapsed,
     this.initialPage = 0,
@@ -2034,6 +2376,10 @@ class ProposalDetails extends StatelessWidget {
   final int counting;
   final Widget? adds;
   final int addCount;
+
+  /// The changes it makes to goals there are, one at a time.
+  final Widget? goals;
+  final int goalCount;
   final bool collapsed;
   final ValueChanged<bool>? onCollapsed;
 
@@ -2047,6 +2393,7 @@ class ProposalDetails extends StatelessWidget {
     if (notes != null) ProposalDetailPage.notes,
     if (cancels != null) ProposalDetailPage.followThrough,
     if (adds != null) ProposalDetailPage.added,
+    if (goals != null) ProposalDetailPage.goals,
   ];
 
   @override
@@ -2081,6 +2428,7 @@ class ProposalDetails extends StatelessWidget {
             ProposalDetailPage.followThrough =>
               'Follow-through ($counting of $cancelCount)',
             ProposalDetailPage.added => 'Added ($addCount)',
+            ProposalDetailPage.goals => 'Goals ($goalCount)',
           },
       ],
       pages: [
@@ -2090,6 +2438,7 @@ class ProposalDetails extends StatelessWidget {
             ProposalDetailPage.notes => notes!,
             ProposalDetailPage.followThrough => cancels!,
             ProposalDetailPage.added => adds!,
+            ProposalDetailPage.goals => goals!,
           },
       ],
     );
@@ -2097,7 +2446,7 @@ class ProposalDetails extends StatelessWidget {
 }
 
 /// A page of [ProposalDetails].
-enum ProposalDetailPage { claude, notes, followThrough, added }
+enum ProposalDetailPage { claude, notes, followThrough, added, goals }
 
 /// What the user said a note is for, from [showNoteUseSheet].
 sealed class NoteUseChoice {
