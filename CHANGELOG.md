@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.166.0
+
+- A note placed on an earlier day of the Events page says so: the New
+  note sheet's time names the date whenever it isn't today (still just
+  the time for today's). Going to another day while a note's cursor is
+  up takes the cursor along, at the same time of day.
+
 ## 7.165.0
 
 - A notepad button left of the Events page's "+" writes a note at a

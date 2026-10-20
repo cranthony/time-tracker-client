@@ -9,13 +9,13 @@ import '../services/note_drafts.dart';
 import 'hotkeys.dart';
 
 /// Asks for a new note's description and time (defaulting to [time], or
-/// now), in a sheet over the bottom of the screen, and hands it to [keep]
+/// now; its date said too when it isn't today), in a sheet over the bottom of the screen, and hands it to [keep]
 /// -- the outbox's add, which keeps it on the device until it's saved --
 /// itself: so it's kept whatever happened to the page that opened it
 /// meanwhile. The sheet closes once [keep] has it; if [keep] fails, it
 /// stays open, saying so, to try again. Returns the note kept, or null if
 /// dismissed. Calls [onFieldFocused] once its field has focus and has
-/// asked for the keyboard.
+/// asked for the keyboard. [clock] says what today is, and Now's time.
 ///
 /// What's typed is kept in [drafts] as it's typed, as a draft, until it's
 /// added -- so closing the sheet, or the app, loses nothing; [draft], one
@@ -27,6 +27,7 @@ Future<Note?> showAddNoteDialog(
   NoteDraft? draft,
   DateTime? time,
   VoidCallback? onFieldFocused,
+  DateTime Function() clock = DateTime.now,
 }) async {
   _newNoteSheets++;
   try {
@@ -38,6 +39,7 @@ Future<Note?> showAddNoteDialog(
         drafts: drafts,
         draft: draft,
         onFieldFocused: onFieldFocused,
+        clock: clock,
       ),
     );
     return result is SaveNote ? result.note : null;
@@ -106,6 +108,7 @@ class _NoteDialog extends StatefulWidget {
     this.drafts,
     this.draft,
     this.onFieldFocused,
+    this.clock = DateTime.now,
   });
 
   /// The note being edited; null for a new one.
@@ -124,6 +127,9 @@ class _NoteDialog extends StatefulWidget {
   final NoteDrafts? drafts;
   final NoteDraft? draft;
   final VoidCallback? onFieldFocused;
+
+  /// What today is, and Now's time.
+  final DateTime Function() clock;
 
   @override
   State<_NoteDialog> createState() => _NoteDialogState();
@@ -144,7 +150,7 @@ class _NoteDialogState extends State<_NoteDialog> {
       widget.draft?.timestamp.toLocal() ??
       widget.note?.timestamp.toLocal() ??
       widget.time ??
-      DateTime.now();
+      widget.clock();
 
   final _focus = FocusNode();
 
@@ -302,8 +308,15 @@ class _NoteDialogState extends State<_NoteDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final time = MaterialLocalizations.of(context)
-        .formatTimeOfDay(TimeOfDay.fromDateTime(_time));
+    final localizations = MaterialLocalizations.of(context);
+    final now = widget.clock();
+    final clock = localizations.formatTimeOfDay(TimeOfDay.fromDateTime(_time));
+    // The date only when it isn't today's: a note for an earlier day.
+    final time = DateUtils.isSameDay(_time, now)
+        ? clock
+        : _time.year == now.year
+        ? '${localizations.formatMediumDate(_time)} · $clock'
+        : '${localizations.formatShortDate(_time)} · $clock';
     final media = MediaQuery.of(context);
     return HotkeyBindings(
       bindings: [
@@ -420,7 +433,7 @@ class _NoteDialogState extends State<_NoteDialog> {
                       'N',
                       child: TextButton(
                         style: TextButton.styleFrom(visualDensity: _dense),
-                        onPressed: () => _setTime(DateTime.now()),
+                        onPressed: () => _setTime(widget.clock()),
                         child: const Text('Now'),
                       ),
                     ),
