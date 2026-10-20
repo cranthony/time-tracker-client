@@ -7,7 +7,10 @@ import 'package:flutter/services.dart';
 
 import '../models/goal.dart';
 import '../models/goal_changes.dart';
+import '../models/person.dart';
 import '../services/goal_drafts.dart';
+import '../services/people_repository.dart';
+import '../services/plan_memory.dart';
 import 'goal_editor.dart' show HtmlField;
 import 'goal_icon.dart';
 import 'hotkeys.dart';
@@ -16,13 +19,18 @@ import 'picker_sheet.dart';
 import 'tree_picker.dart';
 
 /// Asks for a new goal's title and the day it's due (today, to begin
-/// with), the goal it goes under (the top level, to begin with), its
+/// with), the goal it goes under (the top level, to begin with), who it's
+/// done with and for (no one, to begin with: a row of chips each, a
+/// person picked by a tap, and taken off by a tap on their chip; no one
+/// in both), its
 /// description and its definition of done, in a sheet over the bottom of
 /// the screen, and hands its fields -- an active goal's, keyed as the
 /// server takes them -- to
 /// [keep] itself, before it closes; if [keep] fails, it stays open,
 /// saying so, to try again. Adding is off while the goal would break a
-/// rule against [goals], every goal there is, saying which.
+/// rule against [goals], every goal there is, saying which. The people
+/// come from the [PeopleScope] over [context], as the full page's do;
+/// without one, there are no With or For rows.
 ///
 /// Its More button closes it to go on in the full New goal page instead,
 /// with what's typed: [MoreGoal]. What's typed is kept in [drafts] as
@@ -41,6 +49,8 @@ Future<GoalSheetResult?> showAddGoalSheet(
 }) async {
   _newGoalSheets++;
   try {
+    final people = PeopleScope.of(context);
+    final memory = PlanMemoryScope.of(context);
     return await showModalBottomSheet<GoalSheetResult>(
       context: context,
       isScrollControlled: true,
@@ -50,6 +60,8 @@ Future<GoalSheetResult?> showAddGoalSheet(
         keep: keep,
         goals: goals,
         drafts: drafts,
+        people: people,
+        memory: memory,
         now: now,
         onFieldFocused: onFieldFocused,
       ),
@@ -81,6 +93,8 @@ final class MoreGoal extends GoalSheetResult {
     this.description,
     this.definitionOfDone,
     this.parentId,
+    this.withIds = const [],
+    this.forIds = const [],
   });
   final String title;
   final String deadline;
@@ -89,6 +103,10 @@ final class MoreGoal extends GoalSheetResult {
 
   /// The goal it goes under; null for the top level.
   final String? parentId;
+
+  /// Who it's done with, and who it's for, by person id.
+  final List<String> withIds;
+  final List<String> forIds;
 }
 
 class _GoalSheet extends StatefulWidget {
@@ -97,12 +115,21 @@ class _GoalSheet extends StatefulWidget {
     required this.goals,
     required this.now,
     this.drafts,
+    this.people,
+    this.memory,
     this.onFieldFocused,
   });
 
   final Future<void> Function(Map<String, Object?> fields) keep;
   final List<Goal> goals;
   final GoalDrafts? drafts;
+
+  /// Where the people to pick from come from; null for none to pick.
+  final PeopleRepository? people;
+
+  /// What the app has loaded, if anything: the people, before they're
+  /// asked for again.
+  final PlanMemory? memory;
   final DateTime Function() now;
   final VoidCallback? onFieldFocused;
 
@@ -131,6 +158,17 @@ class _GoalSheetState extends State<_GoalSheet> {
     _ => null,
   };
 
+  /// Who it's done with, and who it's for: no one in both.
+  late final List<String> _with = [...?widget.drafts?.draft?.withIds];
+  late final List<String> _for = [...?widget.drafts?.draft?.forIds];
+
+  /// Everyone, once they've loaded -- what the app had, till then; null
+  /// without that, or with no one to pick from.
+  late PeopleList? _people = widget.memory?.people;
+
+  /// Whether there's anyone to pick from.
+  bool get _peoplePickable => widget.people != null;
+
   late final _tree = GoalTree(widget.goals);
 
   /// What it can go under: the active goals -- it's active itself.
@@ -155,6 +193,20 @@ class _GoalSheetState extends State<_GoalSheet> {
     super.initState();
     if (widget.onFieldFocused != null) _focus.addListener(_focusChanged);
     _title.addListener(_changed);
+    unawaited(_loadPeople());
+  }
+
+  /// Loads everyone, to pick from and to name those picked; what the app
+  /// had stands, if that fails.
+  Future<void> _loadPeople() async {
+    final loading = knownPeople(widget.people, widget.memory);
+    if (loading == null) return;
+    try {
+      final people = await loading;
+      if (mounted) setState(() => _people = people);
+    } catch (e) {
+      debugPrint("Couldn't load the people: $e");
+    }
   }
 
   final _focus = FocusNode();
@@ -193,6 +245,8 @@ class _GoalSheetState extends State<_GoalSheet> {
           description: _description,
           definitionOfDone: _definitionOfDone,
           parentId: _parentId,
+          withIds: [..._with],
+          forIds: [..._for],
         ),
       );
     }
@@ -249,6 +303,56 @@ class _GoalSheetState extends State<_GoalSheet> {
     _keepDraft();
   }
 
+  /// Everyone who can be picked: the active people, and anyone picked
+  /// already, Self aside -- a goal isn't with or for oneself.
+  List<Person> get _pickable => [
+    for (final p in _people?.withSelf ?? const <Person>[])
+      if (!p.isSelf &&
+          (p.active || _with.contains(p.id) || _for.contains(p.id)))
+        p,
+  ];
+
+  /// [id]'s name, or the id itself, till they've loaded.
+  String _name(String id) => switch (_pickable.where((p) => p.id == id)) {
+    final found when found.isNotEmpty => personName(found.first),
+    _ => id,
+  };
+
+  /// Picks someone it's done with ([with_]) or for, searching for what's
+  /// typed as its title, by any word, selected to type over, as its
+  /// parent is picked: one tap adds them. Picking them for one takes them
+  /// off the other, since no one is both.
+  Future<void> _pickPerson({required bool with_}) async {
+    final (mine, other) = with_ ? (_with, _for) : (_for, _with);
+    final picked = await pickNode(
+      context,
+      title: with_ ? 'With' : 'For',
+      nodes: [
+        for (final p in _pickable)
+          if (!mine.contains(p.id))
+            PickerNode(id: p.id, label: personName(p, context: true)),
+      ],
+      searchHint: 'Search people',
+      query: _title.text,
+    );
+    final id = picked?.id;
+    if (id == null || !mounted) return;
+    setState(() {
+      other.remove(id);
+      if (!mine.contains(id)) mine.add(id);
+    });
+    _keepDraft();
+  }
+
+  /// Takes [id] off whichever of with and for they're in.
+  void _removePerson(String id) {
+    setState(() {
+      _with.remove(id);
+      _for.remove(id);
+    });
+    _keepDraft();
+  }
+
   Future<void> _editHtml(
     String title,
     String? text,
@@ -268,6 +372,8 @@ class _GoalSheetState extends State<_GoalSheet> {
     'parent_id': ?_parentId,
     'description': ?_description,
     'definition_of_done': ?_definitionOfDone,
+    if (_with.isNotEmpty) 'with_ids': [..._with],
+    if (_for.isNotEmpty) 'for_ids': [..._for],
   };
 
   /// Why it can't be added, besides having no title; null if it can.
@@ -313,8 +419,40 @@ class _GoalSheetState extends State<_GoalSheet> {
       description: _description,
       definitionOfDone: _definitionOfDone,
       parentId: _parentId,
+      withIds: [..._with],
+      forIds: [..._for],
     ),
   );
+
+  /// Who it's done with ([with_]), or for, as a row of chips: one to add
+  /// someone, then one each for those picked, tapped to take them off.
+  Widget _peopleRow({required bool with_}) {
+    final ids = with_ ? _with : _for;
+    return Wrap(
+      spacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        FieldHotkey(
+          with_ ? 'W' : 'R',
+          child: ActionChip(
+            avatar: const Icon(Icons.person_add_alt_1),
+            label: Text(with_ ? 'With' : 'For'),
+            tooltip: with_
+                ? 'Add who you’ll do it with'
+                : 'Add who it’s for, who won’t be part of doing it',
+            onPressed: _keeping ? null : () => _pickPerson(with_: with_),
+          ),
+        ),
+        for (final id in ids)
+          InputChip(
+            label: Text(_name(id)),
+            tooltip: 'Take ${_name(id)} off',
+            onPressed: _keeping ? null : () => _removePerson(id),
+            onDeleted: _keeping ? null : () => _removePerson(id),
+          ),
+      ],
+    );
+  }
 
   /// Throws the draft away, and closes.
   Future<void> _discard() async {
@@ -395,6 +533,10 @@ class _GoalSheetState extends State<_GoalSheet> {
                 onPressed: _keeping ? null : _pickParent,
               ),
             ),
+            if (_peoplePickable) ...[
+              _peopleRow(with_: true),
+              _peopleRow(with_: false),
+            ],
             FieldHotkey(
               'S',
               child: HtmlField(

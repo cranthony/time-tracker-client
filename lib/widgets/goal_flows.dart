@@ -129,7 +129,8 @@ class GoalActions {
   }
 
   /// Adds a goal under [parent] (the top level, if null), starting with
-  /// [title], [deadline], [description] and [definitionOfDone] if they're
+  /// [title], [deadline], [description] and [definitionOfDone], and the
+  /// people it's done with ([withIds]) and for ([forIds]), if they're
   /// given. Whether it's saved.
   Future<bool> add({
     Goal? parent,
@@ -137,6 +138,8 @@ class GoalActions {
     String? deadline,
     String? description,
     String? definitionOfDone,
+    List<String> withIds = const [],
+    List<String> forIds = const [],
   }) async {
     final fields = await showGoalEditor(
       context,
@@ -146,6 +149,8 @@ class GoalActions {
       deadline: deadline,
       description: description,
       definitionOfDone: definitionOfDone,
+      withIds: withIds,
+      forIds: forIds,
       now: now,
     );
     if (fields == null || !context.mounted) return false;

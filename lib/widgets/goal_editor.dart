@@ -24,8 +24,9 @@ import 'picker_sheet.dart';
 /// Saving is off while the change breaks a rule (see [planned]) against
 /// [goals], every goal there is, saying which -- a change of status
 /// checked with what it takes ([editing]). A new one starts with [title]
-/// and [deadline], [description] and [definitionOfDone], if they're
-/// given -- from the New goal sheet, say.
+/// and [deadline], [description] and [definitionOfDone], and the people
+/// it's done with ([withIds]) and for ([forIds]), if they're given --
+/// from the New goal sheet, say.
 /// Gives a new goal's fields, or an edit's changes (a null clearing a
 /// field) -- null if nothing's saved.
 Future<Map<String, Object?>?> showGoalEditor(
@@ -37,6 +38,8 @@ Future<Map<String, Object?>?> showGoalEditor(
   String? deadline,
   String? description,
   String? definitionOfDone,
+  List<String> withIds = const [],
+  List<String> forIds = const [],
   DateTime Function() now = DateTime.now,
 }) => Navigator.of(context).push<Map<String, Object?>>(
   MaterialPageRoute(
@@ -49,6 +52,8 @@ Future<Map<String, Object?>?> showGoalEditor(
       deadline: deadline,
       description: description,
       definitionOfDone: definitionOfDone,
+      withIds: withIds,
+      forIds: forIds,
       now: now,
     ),
   ),
@@ -64,6 +69,8 @@ class GoalEditorPage extends StatefulWidget {
     this.deadline,
     this.description,
     this.definitionOfDone,
+    this.withIds = const [],
+    this.forIds = const [],
     this.now = DateTime.now,
   });
 
@@ -76,6 +83,10 @@ class GoalEditorPage extends StatefulWidget {
   final String? deadline;
   final String? description;
   final String? definitionOfDone;
+
+  /// A new goal's people, to begin with: who it's done with, and for.
+  final List<String> withIds;
+  final List<String> forIds;
   final DateTime Function() now;
 
   @override
@@ -108,8 +119,8 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   late String? _description = _goal?.description ?? widget.description;
   late String? _definitionOfDone =
       _goal?.definitionOfDone ?? widget.definitionOfDone;
-  late List<String> _with = [...?_goal?.withIds];
-  late List<String> _for = [...?_goal?.forIds];
+  late List<String> _with = [...(_goal?.withIds ?? widget.withIds)];
+  late List<String> _for = [...(_goal?.forIds ?? widget.forIds)];
 
   @override
   void dispose() {

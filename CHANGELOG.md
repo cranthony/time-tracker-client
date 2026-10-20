@@ -9,6 +9,17 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.170.0
+
+- The New goal sheet asks who the goal is done with and who it's for:
+  a With row and a For row of chips under the goal it goes under, each
+  adding a person with a tap (searching for the title's words, as the
+  parent is picked) and taking one off with a tap on their chip. No one
+  is in both: picking them for one takes them off the other. They're
+  kept in the draft like the rest, and More carries them to the full New
+  goal page. The rows are there only where there are people to pick
+  from.
+
 ## 7.169.0
 
 - The Events page's goals-due strip offers what an overdue goal's page

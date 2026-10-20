@@ -14,6 +14,8 @@ class GoalDraft {
     this.description,
     this.definitionOfDone,
     this.parentId,
+    this.withIds = const [],
+    this.forIds = const [],
   });
 
   /// As typed, untrimmed.
@@ -29,12 +31,19 @@ class GoalDraft {
   /// The goal it goes under; null for the top level.
   final String? parentId;
 
+  /// Who it's done with, and who it's for, by person id, as a goal's
+  /// with_ids and for_ids: no one in both.
+  final List<String> withIds;
+  final List<String> forIds;
+
   factory GoalDraft.fromJson(Map<String, dynamic> json) => GoalDraft(
     title: json['title'] as String? ?? '',
     day: DateTime.parse(json['day'] as String),
     description: json['description'] as String?,
     definitionOfDone: json['definition_of_done'] as String?,
     parentId: json['parent_id'] as String?,
+    withIds: [for (final id in json['with_ids'] as List? ?? const []) '$id'],
+    forIds: [for (final id in json['for_ids'] as List? ?? const []) '$id'],
   );
 
   Map<String, dynamic> toJson() => {
@@ -43,6 +52,8 @@ class GoalDraft {
     'description': ?description,
     'definition_of_done': ?definitionOfDone,
     'parent_id': ?parentId,
+    if (withIds.isNotEmpty) 'with_ids': withIds,
+    if (forIds.isNotEmpty) 'for_ids': forIds,
   };
 }
 
