@@ -909,6 +909,15 @@ Claude can't apply one; only confirming it in the app does.
   "Change history?" first, and approved, the server keeps to it in every
   revision after. One it couldn't tell, refused, offers **Change
   history** from the changes waiting.
+- **Historical notes.** A note written for a time an earlier compaction
+  already settled -- added at a past time, say -- is marked historical in the
+  notes list ("Historical · compacting it revisits the event it was written
+  for"). The next proposal *revisits* the event it falls within: the
+  bar names each one it revisits, with its date, and tapping that line
+  goes to it, on its own day, marked "Revisited". What happened at it --
+  its actions, people, location, notes -- can change, and it's judged
+  again once confirmed; its times can't, and moving or cancelling it in
+  the proposal says so rather than asking to change history.
 - **Extending it.** Its "through" tab, with a pencil, extends what
   happened past where Claude's revision ran to: the end's cursor, its
   anchor fixed at Claude's end, dragged, stepped to its next stop

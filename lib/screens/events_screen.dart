@@ -2248,6 +2248,13 @@ class _EventsScreenState extends State<EventsScreen> {
     if (proposal == null || repository == null) {
       throw StateError('No proposal is open.');
     }
+    if (movesRevisited(edits, proposal) case final e?) {
+      throw McpException(
+        '“${e.summary ?? '(no summary)'}” is an earlier event a historical note '
+        'revisits: what happened at it can change here, but not when. '
+        'Change its times on the calendar once this is confirmed.',
+      );
+    }
     // Asked now, if it changes what a compaction settled; one the app
     // can't tell is refused, and asked then (below, or from the changes
     // waiting).
@@ -5475,6 +5482,10 @@ class _EventsScreenState extends State<EventsScreen> {
         onAbandon: _abandonProposal,
         hidden: _hidden,
         onHide: _toggleHidden,
+        onRevisited: switch (proposal.revisited) {
+          [final first, ...] => () => _scrollToTime(first.start, nearTop: true),
+          _ => null,
+        },
         onFacts: () => showFactSummariesSheet(
           context,
           proposal,

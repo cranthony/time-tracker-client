@@ -9,14 +9,23 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
-## 7.164.0
+## 7.165.0
 
 - A notepad button left of the Events page's "+" writes a note at a
   time of your choosing: it puts up a cursor in the middle of what's in
-  view -- dragged, or stepped with
-  its "−" and "+", or J and K -- and ✓ (or Enter) opens the New note
-  sheet at the cursor's time. ✕ (or Esc) puts it away. While it's
+  view -- dragged, or stepped with its "−" and "+", or J and K -- and
+  ✓ (or Enter) opens the New note sheet at the cursor's time. ✕ (or Esc) puts it away. While it's
   placed, the event the cursor's in is ringed.
+
+## 7.164.0
+
+- A note you add for a time that's already been compacted is marked
+  historical in the notes list. The next proposal revisits the event it was written
+  for: its bar names each event it revisits, with the date, and tapping
+  that goes to it, marked "Revisited". What happened at it can change in
+  the proposal, and it's judged again once you confirm; its times can't,
+  and moving or cancelling it says so. Needs the server to revisit
+  historical notes; with an older one, nothing changes.
 
 ## 7.163.1
 

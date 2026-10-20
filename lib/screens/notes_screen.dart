@@ -414,6 +414,12 @@ class _NotesScreenState extends State<NotesScreen> {
     Widget draftTile(NoteDraft d, VoidCallback onTap) =>
         _DraftTile(draft: d, onTap: onTap);
 
+    // Written for a time the last compaction already settled: the next
+    // revisits the event it falls within.
+    final settledUntil = needsSignIn ? null : _status?.lastCompaction;
+    bool historical(Note note) =>
+        settledUntil != null && note.timestamp.isBefore(settledUntil);
+
     final rows = <({DateTime at, Widget tile})>[
       for (final note in notes ?? const <Note>[])
         if (note.id case final id?
@@ -446,6 +452,7 @@ class _NotesScreenState extends State<NotesScreen> {
               at: shown.timestamp,
               tile: _NoteTile(
                 note: shown,
+                historical: historical(shown),
                 // Without an id (from an older server) it can't be changed.
                 onTap: note.id == null ? null : () => _editNote(shown, note),
               ),
@@ -663,19 +670,41 @@ class _DashPainter extends CustomPainter {
 }
 
 class _NoteTile extends StatelessWidget {
-  const _NoteTile({required this.note, this.onTap});
+  const _NoteTile({required this.note, this.historical = false, this.onTap});
 
   final Note note;
+
+  /// Whether it's for a time the last compaction settled: the next one
+  /// revisits the event it falls within, which says so.
+  final bool historical;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return ListTile(
       leading: Text(_time(context, note), style: theme.textTheme.titleMedium),
       title: note.description == null
           ? Text('(no description)', style: TextStyle(color: theme.hintColor))
           : Text(note.description!),
+      subtitle: historical
+          ? Row(
+              children: [
+                Icon(Icons.update, size: 14, color: scheme.secondary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Historical · compacting it revisits the event it was '
+                    'written for',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.secondary,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : null,
       onTap: onTap,
     );
   }
