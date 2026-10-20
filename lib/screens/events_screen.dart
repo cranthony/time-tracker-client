@@ -2388,6 +2388,16 @@ class _EventsScreenState extends State<EventsScreen> {
     setState(() => _noteAt = _onGrid(at));
   }
 
+  /// The event the note's cursor is in -- from its start up to its end --
+  /// to ring while it's placed; the latest started, where they overlap.
+  Event? get _noteInside {
+    final at = _noteAt;
+    if (at == null) return null;
+    return _otherEvents(null).events
+        .where((e) => !e.start.isAfter(at) && e.end.isAfter(at))
+        .lastOrNull;
+  }
+
   /// The note's cursor, dragged to [to]: where it stops.
   void _moveNoteCursor(DateTime to) =>
       setState(() => _noteAt = _snap(to, CursorRole.note));
@@ -5776,7 +5786,8 @@ class _EventsScreenState extends State<EventsScreen> {
                     : null,
                 faded: _moving?.id,
                 highlighted: _highlighted,
-                keyed: _keyed,
+                // Placing a note, the event it's in; or else J and K's.
+                keyed: _noteAt != null ? _noteInside?.id : _keyed,
                 // While the box is up, what its cursors stop at.
                 pulseNotes: _snapsTo(SnapTo.notes),
                 pulseEdges: _snapsTo(SnapTo.events),

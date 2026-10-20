@@ -3018,6 +3018,46 @@ void main() {
     expect(find.byTooltip('New event'), findsOneWidget);
   });
 
+  testWidgets('placing a note rings the event its cursor is in', (
+    tester,
+  ) async {
+    final notes = InMemoryNotesRepository();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EventsScreen(
+          repository: InMemoryEventsRepository([
+            Event(id: 'a', start: at(30, 9), end: at(30, 10), summary: 'A'),
+            Event(id: 'b', start: at(30, 10), end: at(30, 11), summary: 'B'),
+          ]),
+          serverLabel: 'offline demo',
+          notesRepository: notes,
+          outbox: NoteWrites.local(notes),
+          clock: () => now,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    String? keyed() => tester
+        .widget<DayTimeline>(find.byKey(ValueKey(('shown', at(30, 0)))).first)
+        .keyed;
+    expect(keyed(), isNull);
+
+    await tester.tap(find.byTooltip('New note at a time'));
+    await pulsing(tester);
+    final view = tester.widget<NoteCursorView>(find.byType(NoteCursorView));
+    // Inside A; then, at its end, B's start: B.
+    view.onMove(at(30, 9, 30));
+    await pulsing(tester);
+    expect(keyed(), 'a');
+    view.onMove(at(30, 10));
+    await pulsing(tester);
+    expect(keyed(), 'b');
+    // In no event, none.
+    view.onMove(at(30, 15));
+    await pulsing(tester);
+    expect(keyed(), isNull);
+  });
+
   testWidgets('✕ puts the note cursor away', (tester) async {
     final notes = InMemoryNotesRepository();
     await tester.pumpWidget(
