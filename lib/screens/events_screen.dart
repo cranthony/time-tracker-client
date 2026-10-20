@@ -2066,6 +2066,10 @@ class _EventsScreenState extends State<EventsScreen> {
           DateTime(day.year, day.month, day.day, cursor.hour, cursor.minute),
         );
       }
+      // A note being placed goes along too, at the same time of day.
+      if (_noteAt case final at?) {
+        _noteAt = DateTime(day.year, day.month, day.day, at.hour, at.minute);
+      }
       _day = day;
       _loads.reset();
       _fresh.removeWhere((d) => (_pageOf(d) - _pageOf(day)).abs() > 3);
@@ -2428,6 +2432,7 @@ class _EventsScreenState extends State<EventsScreen> {
       keep: outbox.add,
       drafts: widget.noteDrafts,
       time: at,
+      clock: widget.clock,
     );
     if (note != null && mounted) setState(() => _noteAt = null);
   }

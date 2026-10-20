@@ -3058,6 +3058,53 @@ void main() {
     expect(keyed(), isNull);
   });
 
+  testWidgets('a note placed on an earlier day keeps its date, which its '
+      'sheet says; changing days takes the cursor along', (tester) async {
+    final notes = InMemoryNotesRepository();
+    final outbox = NoteWrites.local(notes);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EventsScreen(
+          repository: InMemoryEventsRepository(),
+          serverLabel: 'offline demo',
+          notesRepository: notes,
+          outbox: outbox,
+          clock: () => now,
+        ),
+      ),
+    );
+    await pulsing(tester);
+    await tester.tap(find.byTooltip('New note at a time'));
+    await pulsing(tester);
+    DateTime cursor() =>
+        tester.widget<NoteCursorView>(find.byType(NoteCursorView)).at;
+    tester
+        .widget<NoteCursorView>(find.byType(NoteCursorView))
+        .onMove(at(30, 15));
+    await pulsing(tester);
+    // On today, the sheet says only the time.
+    await tester.tap(find.byTooltip('Write a note here'));
+    await pulsing(tester);
+    expect(find.widgetWithText(ActionChip, '3:00 PM'), findsOneWidget);
+    Navigator.of(tester.element(find.text('New note'))).pop();
+    await pulsing(tester);
+
+    // The day before: the cursor goes along, at the same time.
+    await tester.tap(find.byTooltip('Previous day'));
+    await pulsing(tester);
+    expect(cursor(), at(29, 15));
+    await tester.tap(find.byTooltip('Write a note here'));
+    await pulsing(tester);
+    expect(
+      find.widgetWithText(ActionChip, 'Tue, Sep 29 · 3:00 PM'),
+      findsOneWidget,
+    );
+    await tester.enterText(find.byType(TextField).last, 'Looking back');
+    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    await pulsing(tester);
+    expect(outbox.items.single.note.timestamp, at(29, 15));
+  });
+
   testWidgets('✕ puts the note cursor away', (tester) async {
     final notes = InMemoryNotesRepository();
     await tester.pumpWidget(
