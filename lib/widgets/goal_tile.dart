@@ -48,6 +48,13 @@ String? spentLabel(Goal goal, Duration? spent) {
   };
 }
 
+/// [n] times: "once", "twice", "3 times".
+String timesLabel(int n) => switch (n) {
+  1 => 'once',
+  2 => 'twice',
+  _ => '$n times',
+};
+
 /// A goal's color by its status: active in the theme's primary, the rest
 /// quieter.
 Color goalColor(BuildContext context, Goal goal) {
@@ -95,6 +102,8 @@ class GoalTile extends StatelessWidget {
     final details = [
       if (!goal.active) goalStatuses[goal.status] ?? goal.status,
       if (goal.deadline != null) 'Due ${deadlineLabel(context, goal.deadline)}',
+      if (goal.open && goal.misses.isNotEmpty)
+        'Missed ${timesLabel(goal.misses.length)}',
       ?spentLabel(goal, spent),
       if (subGoals > 0) '$subGoals sub-goal${subGoals == 1 ? '' : 's'}',
       if (goal.required) 'Required',

@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.168.0
+
+- A goal you didn't get to by its deadline can be missed and tried
+  again: "Missed, try again…" on its page (in its menu, and beside its
+  status once it's overdue) picks the new day, and records the miss --
+  with the deadline it missed -- in the goal's history, which now says
+  what each change was due by. The goal stays as it was, active or
+  inactive. Its page and its tile say how many times it's been missed.
+
 ## 7.167.0
 
 - Open goals whose deadline has passed stay on the Events page's goals-due
