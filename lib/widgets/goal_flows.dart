@@ -249,9 +249,42 @@ class GoalActions {
       ...change.changes,
       'history': [
         for (final c in goal.history) c.toJson(),
-        StatusChange('active', when).toJson(),
+        StatusChange(
+          'active',
+          when,
+          deadline: change.changes['deadline'] as String? ?? goal.deadline,
+        ).toJson(),
       ],
     });
+  }
+
+  /// Marks [goal] missed and tries it again by a day picked -- at the
+  /// time it was due, if it was due at one -- as one change, so its
+  /// history keeps the deadline it missed and it stays open, as it was
+  /// ([retrying]). Nothing for a goal with no deadline.
+  Future<void> retry(Goal goal) async {
+    final due = goal.due;
+    if (due == null || goal.closed) return;
+    final today = now();
+    final start = DateTime(today.year, today.month, today.day);
+    final day = await showDatePicker(
+      context: context,
+      initialDate: DateTime(start.year, start.month, start.day + 1),
+      firstDate: start,
+      lastDate: DateTime(start.year + 10),
+      helpText: 'Try again by',
+    );
+    if (day == null || !context.mounted) return;
+    final deadline = deadlineHasTime(goal.deadline)
+        ? deadlineOf(
+            DateTime(day.year, day.month, day.day, due.hour, due.minute),
+            time: true,
+          )
+        : deadlineOf(day);
+    await save(
+      "Couldn't try ${goalTitle(goal)} again",
+      retrying(goal, deadline, now: now()),
+    );
   }
 
   /// Deactivates [goal] -- its active sub-goals too, if the user agrees --
@@ -433,7 +466,10 @@ class GoalActions {
       GoalUpdate(goal.id, {
         'history': [
           for (final (i, c) in goal.history.indexed)
-            (i == index ? StatusChange(c.status, when) : c).toJson(),
+            (i == index
+                    ? StatusChange(c.status, when, deadline: c.deadline)
+                    : c)
+                .toJson(),
         ],
       }),
     ]);

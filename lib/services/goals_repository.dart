@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 
 import '../models/goal.dart';
 import '../models/goal_changes.dart';
-import '../models/note.dart';
 import '../outbox/write_queue.dart';
 import 'mcp_client.dart';
 import 'response_cache.dart';
@@ -259,7 +258,9 @@ class InMemoryGoalsRepository implements GoalsRepository {
       ...goal.toJson(),
       'id': id,
       if (goal.history.isEmpty)
-        'history': [StatusChange(goal.status, _now).toJson()],
+        'history': [
+          StatusChange(goal.status, _now, deadline: goal.deadline).toJson(),
+        ],
       'version': 1,
     });
     final all = followingParents([..._goals, created]);
@@ -289,7 +290,11 @@ class InMemoryGoalsRepository implements GoalsRepository {
     if (!changes.containsKey('history') && json['status'] != before.status) {
       json['history'] = [
         for (final c in before.history) c.toJson(),
-        {'status': json['status'], 'at': localIsoTimestamp(_now)},
+        StatusChange(
+          json['status'] as String,
+          _now,
+          deadline: json['deadline'] as String?,
+        ).toJson(),
       ];
     }
     json['version'] = (before.version ?? 0) + 1;

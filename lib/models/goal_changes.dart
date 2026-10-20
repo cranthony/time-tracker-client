@@ -78,7 +78,13 @@ List<Goal> applied(
           goal.history.isEmpty
               ? Goal.fromJson({
                   ...goal.toJson(),
-                  'history': [StatusChange(goal.status, now).toJson()],
+                  'history': [
+                    StatusChange(
+                      goal.status,
+                      now,
+                      deadline: goal.deadline,
+                    ).toJson(),
+                  ],
                 })
               : goal,
         );
@@ -101,7 +107,11 @@ List<Goal> applied(
             json['status'] != before.status) {
           json['history'] = [
             for (final c in before.history) c.toJson(),
-            StatusChange(json['status'] as String, now).toJson(),
+            StatusChange(
+              json['status'] as String,
+              now,
+              deadline: json['deadline'] as String?,
+            ).toJson(),
           ];
         }
         out[i] = Goal.fromJson(json);
@@ -346,6 +356,28 @@ List<GoalChange> editing(
   goal.id,
   fields,
 );
+
+/// [goal] missed, and tried again by [deadline]: one update, so its
+/// history records both at [now] -- missed, with the deadline it
+/// missed, then its status as it was (active or inactive), with the new
+/// one -- and the goal stays open, due [deadline]. A missed goal is one
+/// a deadline passed without; nothing stops it being tried again, any
+/// number of times.
+List<GoalChange> retrying(
+  Goal goal,
+  String deadline, {
+  required DateTime now,
+}) => [
+  GoalUpdate(goal.id, {
+    'deadline': deadline,
+    'status': goal.status,
+    'history': [
+      for (final c in goal.history) c.toJson(),
+      StatusChange('missed', now, deadline: goal.deadline).toJson(),
+      StatusChange(goal.status, now, deadline: deadline).toJson(),
+    ],
+  }),
+];
 
 /// The end of [now]'s day, as a deadline: "End of today".
 String endOfToday(DateTime now) => deadlineOf(now);

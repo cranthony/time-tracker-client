@@ -90,6 +90,8 @@ class _GoalScreenState extends State<GoalScreen> {
             widget.memory.goals?.any((g) => g.id == goal.id) != true) {
           Navigator.of(context).pop();
         }
+      case 'retry':
+        await actions.retry(goal);
       default:
         await actions.setStatus(goal, action);
     }
@@ -150,6 +152,8 @@ class _GoalScreenState extends State<GoalScreen> {
             itemBuilder: (context) => [
               for (final (status, label) in _statusMoves(goal))
                 PopupMenuItem(value: status, child: Text(label)),
+              if (_canRetry(goal))
+                const PopupMenuItem(value: 'retry', child: Text(_retryLabel)),
               const PopupMenuDivider(),
               const PopupMenuItem(value: 'move', child: Text('Move…')),
               const PopupMenuItem(value: 'delete', child: Text('Delete…')),
@@ -253,7 +257,12 @@ class _GoalScreenState extends State<GoalScreen> {
                 dense: true,
                 leading: const Icon(Icons.history, size: 20),
                 title: Text(goalStatuses[change.status] ?? change.status),
-                subtitle: Text(_when(context, change.at)),
+                subtitle: Text(
+                  change.deadline == null
+                      ? _when(context, change.at)
+                      : '${_when(context, change.at)} · '
+                            'due ${deadlineLabel(context, change.deadline)}',
+                ),
                 onTap: () => _actions.retime(goal, i),
                 trailing: goal.history.length < 2
                     ? null
@@ -286,6 +295,16 @@ class _GoalScreenState extends State<GoalScreen> {
         _ => const [('active', 'Reopen'), ('inactive', 'Reopen as inactive')],
       };
 
+  static const _retryLabel = 'Missed, try again…';
+
+  /// Whether [goal] can be marked missed and tried again: open, with a
+  /// deadline.
+  static bool _canRetry(Goal goal) => goal.open && goal.due != null;
+
+  /// Whether [goal]'s deadline has passed while it's open.
+  static bool _overdue(Goal goal) =>
+      _canRetry(goal) && goal.due!.isBefore(DateTime.now());
+
   Widget _statusRow(BuildContext context, Goal goal) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
     child: Wrap(
@@ -306,6 +325,11 @@ class _GoalScreenState extends State<GoalScreen> {
             onPressed: () => _actions.setStatus(goal, status),
             child: Text(label),
           ),
+        if (_overdue(goal))
+          OutlinedButton(
+            onPressed: () => _actions.retry(goal),
+            child: const Text(_retryLabel),
+          ),
       ],
     ),
   );
@@ -318,6 +342,12 @@ class _GoalScreenState extends State<GoalScreen> {
       if (goal.startedAt case final at?) ('Started', _when(context, at)),
       if (goal.closedAt case final at?)
         (goalStatuses[goal.status] ?? goal.status, _when(context, at)),
+      if (goal.misses case [..., final last] && final misses when goal.open)
+        (
+          'Missed',
+          '${timesLabel(misses.length)}'
+              '${last.deadline == null ? '' : ', last due ${deadlineLabel(context, last.deadline)}'}',
+        ),
       if (goal.parentId != null)
         ('Parent', goal.required ? 'Needs it done' : "Doesn't need it done"),
       if (goal.withIds.isNotEmpty)

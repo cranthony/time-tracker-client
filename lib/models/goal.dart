@@ -114,6 +114,13 @@ class Goal {
   /// When it was done, missed or made obsolete, if it is.
   DateTime? get closedAt => closed ? history.lastOrNull?.at : null;
 
+  /// Each time it was missed, oldest first: a deadline passed without it
+  /// -- and, if it's open, it was tried again after each.
+  List<StatusChange> get misses => [
+    for (final c in history)
+      if (c.status == 'missed') c,
+  ];
+
   /// When it falls due, local: a date's at the midnight after it.
   DateTime? get due => deadlineEnd(deadline);
 
@@ -174,17 +181,28 @@ class Goal {
   };
 }
 
-/// One change of a goal's status: what it became, and when.
+/// One change of a goal's status: what it became, when, and the
+/// deadline it had then.
 class StatusChange {
-  const StatusChange(this.status, this.at);
+  const StatusChange(this.status, this.at, {this.deadline});
 
   final String status;
   final DateTime at;
 
+  /// The goal's deadline in force at this change, as the server keeps
+  /// it, if it had one and the change recorded it -- a missed entry's is
+  /// the deadline it missed. Changes from before deadlines were kept
+  /// have none.
+  final String? deadline;
+
   static StatusChange? fromJson(Object? json) => switch (json) {
     {'status': final String status, 'at': final String at} =>
       switch (DateTime.tryParse(at)) {
-        final moment? => StatusChange(status, moment),
+        final moment? => StatusChange(
+          status,
+          moment,
+          deadline: Goal._text((json as Map)['deadline']),
+        ),
         null => null,
       },
     _ => null,
@@ -193,6 +211,9 @@ class StatusChange {
   Map<String, Object?> toJson() => {
     'status': status,
     'at': localIsoTimestamp(at),
+    // Only when there is one: a server from before history entries kept
+    // deadlines still saves the rest.
+    'deadline': ?deadline,
   };
 }
 

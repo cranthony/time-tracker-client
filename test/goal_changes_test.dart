@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/goal_changes.dart';
+import 'package:time_tracker_client/models/note.dart';
 
 final _now = DateTime(2026, 10, 17, 9);
 
@@ -174,6 +175,58 @@ void main() {
     final b = after.firstWhere((g) => g.id == 'b');
     expect(b.history.map((c) => c.status), ['inactive', 'active']);
     expect(b.startedAt!.isAtSameMomentAs(_now), isTrue);
+  });
+
+  test('a status change records the deadline the goal has then', () {
+    final after = applied(goals, [
+      const GoalUpdate('b', {'status': 'active', 'deadline': '2026-11-02'}),
+      const GoalUpdate('c', {'status': 'done'}),
+    ], now: _now);
+
+    final b = after.firstWhere((g) => g.id == 'b');
+    expect(b.history.last.deadline, '2026-11-02');
+    final c = after.firstWhere((g) => g.id == 'c');
+    expect(c.history.last.deadline, '2026-11-20');
+    expect(c.history.first.deadline, isNull);
+    expect(c.history.last.toJson(), {
+      'status': 'done',
+      'at': localIsoTimestamp(_now),
+      'deadline': '2026-11-20',
+    });
+    expect(c.history.first.toJson().containsKey('deadline'), isFalse);
+  });
+
+  test('a goal missed and tried again keeps the deadline it missed, and '
+      'its status', () {
+    final changes = retrying(tree['c']!, '2026-11-27', now: _now);
+    expect(planned(goals, changes, now: _now), isEmpty);
+
+    final c = applied(goals, changes, now: _now).firstWhere((g) => g.id == 'c');
+    expect(c.status, 'active');
+    expect(c.deadline, '2026-11-27');
+    expect(c.history.map((h) => h.status), ['active', 'missed', 'active']);
+    expect(c.history.map((h) => h.deadline), [
+      null,
+      '2026-11-20',
+      '2026-11-27',
+    ]);
+    expect(c.history[1].at.isAtSameMomentAs(_now), isTrue);
+    expect(c.misses.map((h) => h.deadline), ['2026-11-20']);
+    expect(c.open, isTrue);
+    expect(c.closedAt, isNull);
+
+    // An inactive goal stays inactive.
+    final b = applied(
+      goals,
+      retrying(
+        _goal('b', status: 'inactive', deadline: '2026-10-10'),
+        '2026-10-24',
+        now: _now,
+      ),
+      now: _now,
+    ).firstWhere((g) => g.id == 'b');
+    expect(b.status, 'inactive');
+    expect(b.history.map((h) => h.status), ['inactive', 'missed', 'inactive']);
   });
 
   test('quick deadlines are the end of today, and of the week', () {
