@@ -39,6 +39,7 @@ import '../widgets/event_description.dart';
 import '../widgets/google_all_day_strip.dart';
 import '../widgets/goal_editor.dart'
     show deadlineLabel, goalPeopleLabel, goalPeopleNames;
+import '../widgets/goal_flows.dart';
 import '../widgets/goal_tile.dart';
 import '../widgets/goals_due_strip.dart';
 import 'goal_screen.dart';
@@ -1731,6 +1732,28 @@ class _EventsScreenState extends State<EventsScreen> {
         ),
       ),
     );
+  }
+
+  /// [action], picked by holding [goal]'s overdue pill on the goals-due
+  /// strip: marks it done or missed, or missed and tried again by a day
+  /// picked, as its page does -- if there are goals to change.
+  Future<void> _actOnOverdue(Goal goal, OverdueGoalAction action) async {
+    final repository = GoalsScope.of(context);
+    if (repository == null) return;
+    final actions = GoalActions(
+      context: context,
+      repository: repository,
+      memory: _memory,
+      now: widget.clock,
+    );
+    switch (action) {
+      case OverdueGoalAction.done:
+        await actions.setStatus(goal, 'done');
+      case OverdueGoalAction.missed:
+        await actions.setStatus(goal, 'missed');
+      case OverdueGoalAction.retry:
+        await actions.retry(goal);
+    }
   }
 
   void _setAllDayCollapsed(bool collapsed) {
@@ -5461,6 +5484,7 @@ class _EventsScreenState extends State<EventsScreen> {
     if (_memory.goals case final goals?)
       GoalsDueStrip(
         goals: goalsDueOn(goals, _day),
+        missed: missedOn(goals, _day),
         overdue: overdueGoalsOn(goals, _day),
         day: _day,
         today: widget.clock(),
@@ -5469,6 +5493,7 @@ class _EventsScreenState extends State<EventsScreen> {
         collapsed: _goalsDueCollapsed,
         onCollapsed: _setGoalsDueCollapsed,
         onTap: GoalsScope.of(context) == null ? null : _openGoal,
+        onOverdueAction: GoalsScope.of(context) == null ? null : _actOnOverdue,
       ),
     if (_notices.isNotEmpty)
       ProposalNoticesBanner(

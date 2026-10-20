@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.169.0
+
+- The Events page's goals-due strip offers what an overdue goal's page
+  does: hold its pill (or right-click it) for "Mark done", "Mark missed"
+  and "Missed, try again…". A tap still opens the goal. And a day keeps a
+  greyed, struck-through pill for each goal missed from it, saying so and,
+  if the goal's open, by when it's being tried again; tapping it opens the
+  goal.
+
 ## 7.168.0
 
 - A goal you didn't get to by its deadline can be missed and tried
