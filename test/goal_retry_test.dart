@@ -87,14 +87,14 @@ void main() {
     tester,
   ) async {
     await pump(tester, status: 'inactive', deadline: '2099-01-05');
-    // Not overdue: only in the menu.
+    // Not overdue yet: the button's there all the same, and the menu too.
     expect(
       find.widgetWithText(OutlinedButton, 'Missed, try again…'),
-      findsNothing,
+      findsOneWidget,
     );
     await tester.tap(menu);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Missed, try again…'));
+    await tester.tap(find.text('Missed, try again…').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();

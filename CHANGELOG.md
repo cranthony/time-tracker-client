@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.173.0
+
+- A goal's page shows the "Missed, try again…" button for every open
+  goal -- active or inactive -- with a deadline, not only once the
+  deadline has passed, so it can be missed and given a new day early.
+
 ## 7.172.1
 
 - The New goal sheet's With and For chips sit on the same line as the
