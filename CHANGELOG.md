@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.172.1
+
+- The New goal sheet's With and For chips sit on the same line as the
+  goal it goes under, at the right: With at the far right, and For just
+  left of it. Where they don't fit beside it, they go under it, still at
+  the right.
+
 ## 7.172.0
 
 - New people, locations and actions are added in a quick sheet over the

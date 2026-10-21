@@ -20,9 +20,9 @@ import 'tree_picker.dart';
 
 /// Asks for a new goal's title and the day it's due (today, to begin
 /// with), the goal it goes under (the top level, to begin with), who it's
-/// done with and for (no one, to begin with: a row of chips each, a
-/// person picked by a tap, and taken off by a tap on their chip; no one
-/// in both), its
+/// done with and for (no one, to begin with: chips each, at the right of
+/// the goal it goes under's, a person picked by a tap, and taken off by a
+/// tap on their chip; no one in both), its
 /// description and its definition of done, in a sheet over the bottom of
 /// the screen, and hands its fields -- an active goal's, keyed as the
 /// server takes them -- to
@@ -424,34 +424,30 @@ class _GoalSheetState extends State<_GoalSheet> {
     ),
   );
 
-  /// Who it's done with ([with_]), or for, as a row of chips: one to add
-  /// someone, then one each for those picked, tapped to take them off.
-  Widget _peopleRow({required bool with_}) {
+  /// Who it's done with ([with_]), or for, as chips: one to add someone,
+  /// then one each for those picked, tapped to take them off.
+  List<Widget> _peopleChips({required bool with_}) {
     final ids = with_ ? _with : _for;
-    return Wrap(
-      spacing: 4,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        FieldHotkey(
-          with_ ? 'W' : 'R',
-          child: ActionChip(
-            avatar: const Icon(Icons.person_add_alt_1),
-            label: Text(with_ ? 'With' : 'For'),
-            tooltip: with_
-                ? 'Add who you’ll do it with'
-                : 'Add who it’s for, who won’t be part of doing it',
-            onPressed: _keeping ? null : () => _pickPerson(with_: with_),
-          ),
+    return [
+      FieldHotkey(
+        with_ ? 'W' : 'R',
+        child: ActionChip(
+          avatar: const Icon(Icons.person_add_alt_1),
+          label: Text(with_ ? 'With' : 'For'),
+          tooltip: with_
+              ? 'Add who you’ll do it with'
+              : 'Add who it’s for, who won’t be part of doing it',
+          onPressed: _keeping ? null : () => _pickPerson(with_: with_),
         ),
-        for (final id in ids)
-          InputChip(
-            label: Text(_name(id)),
-            tooltip: 'Take ${_name(id)} off',
-            onPressed: _keeping ? null : () => _removePerson(id),
-            onDeleted: _keeping ? null : () => _removePerson(id),
-          ),
-      ],
-    );
+      ),
+      for (final id in ids)
+        InputChip(
+          label: Text(_name(id)),
+          tooltip: 'Take ${_name(id)} off',
+          onPressed: _keeping ? null : () => _removePerson(id),
+          onDeleted: _keeping ? null : () => _removePerson(id),
+        ),
+    ];
   }
 
   /// Throws the draft away, and closes.
@@ -519,24 +515,35 @@ class _GoalSheetState extends State<_GoalSheet> {
               ),
             ),
             const SizedBox(height: 8),
-            FieldHotkey(
-              'U',
-              child: ActionChip(
-                avatar: const GoalIcon(size: 18),
-                label: Text(
-                  parent == null
-                      ? 'Top level'
-                      : 'Under ${[..._tree.pathOf(parent.id), goalTitle(parent)].join(' › ')}',
-                  overflow: TextOverflow.ellipsis,
+            // The parent at the left, and who it's for, then with, at the
+            // right -- under it, where they don't fit beside it.
+            _LineOrTwo(
+              start: FieldHotkey(
+                'U',
+                child: ActionChip(
+                  avatar: const GoalIcon(size: 18),
+                  label: Text(
+                    parent == null
+                        ? 'Top level'
+                        : 'Under ${[..._tree.pathOf(parent.id), goalTitle(parent)].join(' › ')}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  tooltip: 'The goal it goes under',
+                  onPressed: _keeping ? null : _pickParent,
                 ),
-                tooltip: 'The goal it goes under',
-                onPressed: _keeping ? null : _pickParent,
               ),
+              end: _peoplePickable
+                  ? Wrap(
+                      spacing: 4,
+                      alignment: WrapAlignment.end,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        ..._peopleChips(with_: false),
+                        ..._peopleChips(with_: true),
+                      ],
+                    )
+                  : const SizedBox.shrink(),
             ),
-            if (_peoplePickable) ...[
-              _peopleRow(with_: true),
-              _peopleRow(with_: false),
-            ],
             FieldHotkey(
               'S',
               child: HtmlField(

@@ -249,6 +249,21 @@ void main() {
     expect(find.text('For'), findsNothing);
   });
 
+  testWidgets('With and For sit on the line of the goal it goes under, at '
+      'the right: With last, For just before it', (tester) async {
+    await open(tester, people: people);
+    final under = tester.getRect(find.text('Top level'));
+    final with_ = tester.getRect(find.text('With'));
+    final for_ = tester.getRect(find.text('For'));
+    expect(with_.center.dy, closeTo(under.center.dy, 4));
+    expect(for_.center.dy, closeTo(under.center.dy, 4));
+    expect(for_.right, lessThan(with_.left));
+    expect(under.right, lessThan(for_.left));
+    // At the right, as the Add button is.
+    final add = tester.getRect(find.widgetWithText(FilledButton, 'Add'));
+    expect(with_.right, closeTo(add.right, 24));
+  });
+
   testWidgets('With and For each add a person with a tap, searching for '
       "the title's words; no one is in both; a chip tapped takes them off", (
     tester,
