@@ -298,12 +298,8 @@ class _GoalScreenState extends State<GoalScreen> {
   static const _retryLabel = 'Missed, try again…';
 
   /// Whether [goal] can be marked missed and tried again: open, with a
-  /// deadline.
+  /// deadline -- passed or not.
   static bool _canRetry(Goal goal) => goal.open && goal.due != null;
-
-  /// Whether [goal]'s deadline has passed while it's open.
-  static bool _overdue(Goal goal) =>
-      _canRetry(goal) && goal.due!.isBefore(DateTime.now());
 
   Widget _statusRow(BuildContext context, Goal goal) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -325,7 +321,7 @@ class _GoalScreenState extends State<GoalScreen> {
             onPressed: () => _actions.setStatus(goal, status),
             child: Text(label),
           ),
-        if (_overdue(goal))
+        if (_canRetry(goal))
           OutlinedButton(
             onPressed: () => _actions.retry(goal),
             child: const Text(_retryLabel),
