@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.181.0
+
+- The New goal sheet's Under picker has an Add goal row: it adds the goal
+  to go under, named as it's typed, in a New goal sheet of its own over
+  it, due on the same day to start with -- or that sheet's More, the full
+  New goal page -- and picks it. That sheet's Under picker can add one in
+  turn, each sheet stacked over the last.
+
 ## 7.180.0
 
 - The New goal sheet has no Definition of done field. A chip beside the
