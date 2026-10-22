@@ -28,16 +28,45 @@ void main() {
   GoalSheetResult? result;
 
   /// Opens the sheet -- over a [PeopleScope] with [people], if given, as
-  /// the app's has.
+  /// the app's has. With [addParents], its Under picker adds a goal to go
+  /// under in a sheet of its own, as the app's does, kept with the rest,
+  /// its title as its id.
   Future<void> open(
     WidgetTester tester, {
     GoalDrafts? withDrafts,
     List<Goal> goals = const [],
     List<Person>? people,
+    bool addParents = false,
   }) async {
     kept = [];
     drafts = withDrafts ?? GoalDrafts.inMemory();
     result = null;
+    final all = [...goals];
+    Future<AddedParent?> addParent(
+      BuildContext context,
+      String title,
+      DateTime day,
+    ) async {
+      Goal? added;
+      await showAddGoalSheet(
+        context,
+        keep: (fields) async {
+          kept.add(fields);
+          added = Goal.fromJson({...fields, 'id': fields['title']});
+          all.add(added!);
+        },
+        goals: [...all],
+        title: title,
+        day: day,
+        addParent: (title, day) => addParent(context, title, day),
+        now: () => now,
+      );
+      return switch (added) {
+        final added? => (added: added, goals: [...all]),
+        null => null,
+      };
+    }
+
     final app = MaterialApp(
       home: Scaffold(
         body: Builder(
@@ -47,6 +76,9 @@ void main() {
               keep: (fields) async => kept.add(fields),
               goals: goals,
               drafts: drafts,
+              addParent: addParents
+                  ? (title, day) => addParent(context, title, day)
+                  : null,
               now: () => now,
             ),
             child: const Text('Open'),
@@ -180,6 +212,89 @@ void main() {
     await tester.tap(find.text('Add'));
     await tester.pumpAndSettle();
     expect(kept.single['parent_id'], 'Run a marathon');
+  });
+
+  testWidgets('without a way to add one, its parent is only picked', (
+    tester,
+  ) async {
+    await open(tester, goals: [_goal('Health')]);
+    await tester.tap(find.text('Top level'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Add goal'), findsNothing);
+  });
+
+  testWidgets('a parent is added, named as typed, in a New goal sheet over '
+      'it, due when it is -- and that one can add its own', (tester) async {
+    await open(tester, goals: [_goal('Health')], addParents: true);
+    await tester.enterText(find.byType(TextField), 'Run 10k');
+    await tester.tap(find.byTooltip('A day later'));
+    await tester.pump();
+    await tester.tap(find.text('Top level'));
+    await tester.pumpAndSettle();
+    await tester.enterText(search(), 'Fitness');
+    await tester.pump();
+    await tester.tap(find.text('Add goal “Fitness”…'));
+    await tester.pumpAndSettle();
+
+    // The sheet it goes under, over it, named and due as typed there.
+    expect(find.text('New goal'), findsNWidgets(2));
+    expect(
+      tester.widget<TextField>(find.byType(TextField).last).controller!.text,
+      'Fitness',
+    );
+    expect(find.text('Mon, Oct 19'), findsNWidgets(2));
+
+    // One under that, in turn.
+    await tester.tap(find.text('Top level').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(search(), 'Wellbeing');
+    await tester.pump();
+    await tester.tap(find.text('Add goal “Wellbeing”…'));
+    await tester.pumpAndSettle();
+    expect(find.text('New goal'), findsNWidgets(3));
+    await tester.tap(find.text('Add').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('New goal'), findsNWidgets(2));
+    expect(find.text('Under Wellbeing'), findsOneWidget);
+    await tester.tap(find.text('Add').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('New goal'), findsOneWidget);
+    expect(find.text('Under Wellbeing › Fitness'), findsOneWidget);
+    // Only the first sheet's is kept as a draft.
+    expect(drafts.draft?.title, 'Run 10k');
+    expect(drafts.draft?.parentId, 'Fitness');
+
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect([for (final k in kept) (k['title'], k['parent_id'])], [
+      ('Wellbeing', null),
+      ('Fitness', 'Wellbeing'),
+      ('Run 10k', 'Fitness'),
+    ]);
+    expect(kept.first['deadline'], '2026-10-19');
+  });
+
+  testWidgets('a parent called off leaves it as it was', (tester) async {
+    await open(tester, goals: [_goal('Health')], addParents: true);
+    await tester.enterText(find.byType(TextField), 'Run 10k');
+    await tester.tap(find.text('Top level'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add goal “Run 10k”…'));
+    await tester.pumpAndSettle();
+    expect(find.text('New goal'), findsNWidgets(2));
+    // Dismissed: back to the picker, to pick another.
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(find.text('New goal'), findsOneWidget);
+    expect(find.text('Add goal “Run 10k”…'), findsOneWidget);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add goal “Run 10k”…'), findsNothing);
+    expect(find.text('Top level'), findsOneWidget);
+    expect(kept, isEmpty);
   });
 
   testWidgets('More gives its parent, priority and description', (

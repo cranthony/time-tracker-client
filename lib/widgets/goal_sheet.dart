@@ -42,11 +42,21 @@ import 'tree_picker.dart';
 /// throws the draft away. Returns what was chosen, or null if dismissed.
 /// Calls [onFieldFocused] once its field has focus and has asked for the
 /// keyboard, as the New note sheet does.
+///
+/// Without a draft, it starts with [title] and due on [day], if given.
+/// With [addParent], its Under picker can add a goal for it to go under,
+/// titled as it's typed there and due on the day this one is, to start
+/// with: what [addParent] returns -- the goal added, and every goal there
+/// is now (any added over it too), or null if it was called off -- is
+/// what it goes under.
 Future<GoalSheetResult?> showAddGoalSheet(
   BuildContext context, {
   required Future<void> Function(Map<String, Object?> fields) keep,
   List<Goal> goals = const [],
   GoalDrafts? drafts,
+  String? title,
+  DateTime? day,
+  Future<AddedParent?> Function(String title, DateTime day)? addParent,
   DateTime Function() now = DateTime.now,
   VoidCallback? onFieldFocused,
 }) async {
@@ -63,6 +73,9 @@ Future<GoalSheetResult?> showAddGoalSheet(
         keep: keep,
         goals: goals,
         drafts: drafts,
+        title: title,
+        day: day,
+        addParent: addParent,
         people: people,
         memory: memory,
         now: now,
@@ -75,6 +88,10 @@ Future<GoalSheetResult?> showAddGoalSheet(
 }
 
 var _newGoalSheets = 0;
+
+/// A goal added from a New goal sheet's Under picker, for it to go under,
+/// and every goal there is now.
+typedef AddedParent = ({Goal added, List<Goal> goals});
 
 /// Whether a New goal sheet is open, so a hotkey doesn't open another.
 bool get newGoalSheetOpen => _newGoalSheets > 0;
@@ -120,6 +137,9 @@ class _GoalSheet extends StatefulWidget {
     required this.goals,
     required this.now,
     this.drafts,
+    this.title,
+    this.day,
+    this.addParent,
     this.people,
     this.memory,
     this.onFieldFocused,
@@ -128,6 +148,13 @@ class _GoalSheet extends StatefulWidget {
   final Future<void> Function(Map<String, Object?> fields) keep;
   final List<Goal> goals;
   final GoalDrafts? drafts;
+
+  /// What it starts with, without a draft.
+  final String? title;
+  final DateTime? day;
+
+  /// Adds a goal for it to go under; null for none to be added.
+  final Future<AddedParent?> Function(String title, DateTime day)? addParent;
 
   /// Where the people to pick from come from; null for none to pick.
   final PeopleRepository? people;
@@ -145,10 +172,12 @@ class _GoalSheet extends StatefulWidget {
 class _GoalSheetState extends State<_GoalSheet> {
   late final _today = _dayOf(widget.now());
 
-  late final _title = TextEditingController(text: widget.drafts?.draft?.title);
+  late final _title = TextEditingController(
+    text: widget.drafts?.draft?.title ?? widget.title,
+  );
 
   /// The day it's due; not before today, even for a draft from days ago.
-  late DateTime _day = switch (widget.drafts?.draft?.day) {
+  late DateTime _day = switch (widget.drafts?.draft?.day ?? widget.day) {
     final day? when !day.isBefore(_today) => _dayOf(day),
     _ => _today,
   };
@@ -176,11 +205,15 @@ class _GoalSheetState extends State<_GoalSheet> {
   /// Whether there's anyone to pick from.
   bool get _peoplePickable => widget.people != null;
 
-  late final _tree = GoalTree(widget.goals);
+  /// Every goal there is: those it was given, or as they were once one
+  /// was added for it to go under.
+  late List<Goal> _goals = widget.goals;
+
+  late var _tree = GoalTree(_goals);
 
   /// What it can go under: the active goals -- it's active itself.
   List<Goal> get _parents => [
-    for (final g in widget.goals)
+    for (final g in _goals)
       if (g.active) g,
   ];
 
@@ -282,9 +315,11 @@ class _GoalSheetState extends State<_GoalSheet> {
   }
 
   /// Picks the goal it goes under, searching for what's typed as its
-  /// title, by any word, selected to type over.
+  /// title, by any word, selected to type over. With [_GoalSheet.addParent],
+  /// a new one can be added, named as it's typed, and picked.
   Future<void> _pickParent() async {
     final parents = _parents;
+    final addParent = widget.addParent;
     final picked = await pickNode(
       context,
       title: 'Under',
@@ -304,6 +339,26 @@ class _GoalSheetState extends State<_GoalSheet> {
       marker: (_) => const GoalIcon(size: 18),
       searchHint: 'Search goals',
       query: _title.text,
+      add: addParent == null
+          ? null
+          : (
+              noun: 'goal',
+              icon: Icons.add_task,
+              onAdd: (name) async {
+                final parent = await addParent(name, _day);
+                if (parent == null || !mounted) return null;
+                final (:added, :goals) = parent;
+                setState(() {
+                  _goals = [
+                    for (final g in goals)
+                      if (g.id != added.id) g,
+                    added,
+                  ];
+                  _tree = GoalTree(_goals);
+                });
+                return added.id;
+              },
+            ),
     );
     if (picked == null || !mounted) return;
     setState(() => _parentId = picked.id);
@@ -441,7 +496,7 @@ class _GoalSheetState extends State<_GoalSheet> {
   /// Why it can't be added, besides having no title; null if it can.
   String? get _problem {
     if (_title.text.trim().isEmpty) return null;
-    final problems = planned(widget.goals, [
+    final problems = planned(_goals, [
       GoalCreate(Goal.fromJson({'id': '\u0000new', ..._fields})),
     ], now: widget.now());
     return problems.isEmpty ? null : problems.join(' ');

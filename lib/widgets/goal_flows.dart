@@ -71,8 +71,13 @@ class GoalActions {
   }
 
   /// Saves [changes], in order, unless they'd break a rule -- then says
-  /// which, under [title], and saves nothing. True if they're saved.
-  Future<bool> save(String title, List<GoalChange> changes) async {
+  /// which, under [title], and saves nothing. True if they're saved. A
+  /// goal created on its own is given to [onCreated], as the server has it.
+  Future<bool> save(
+    String title,
+    List<GoalChange> changes, {
+    ValueChanged<Goal>? onCreated,
+  }) async {
     if (changes.isEmpty) return true;
     // Several at once are checked as the server checks them: whole.
     final problems = changes.length > 1
@@ -118,6 +123,7 @@ class GoalActions {
               Goal.fromJson({...goal.toJson(), 'id': ''}),
             );
             _shown([GoalCreate(created)]);
+            onCreated?.call(created);
           case GoalUpdate(:final id, changes: final fields):
             await repository.updateGoal(id, fields);
             _shown([change]);
@@ -157,8 +163,8 @@ class GoalActions {
   /// Adds a goal under [parent] (the top level, if null), starting with
   /// [title], [deadline], [description] and [priority], and the
   /// people it's done with ([withIds]) and for ([forIds]), if they're
-  /// given. Whether it's saved.
-  Future<bool> add({
+  /// given. Returns it as saved; null if it wasn't.
+  Future<Goal?> add({
     Goal? parent,
     String? title,
     String? deadline,
@@ -179,19 +185,22 @@ class GoalActions {
       forIds: forIds,
       now: now,
     );
-    if (fields == null || !context.mounted) return false;
-    return save("Couldn't add the goal", [
+    if (fields == null || !context.mounted) return null;
+    Goal? added;
+    await save("Couldn't add the goal", [
       GoalCreate(Goal.fromJson({'id': '', ...fields})),
-    ]);
+    ], onCreated: (goal) => added = goal);
+    return added;
   }
 
   /// Adds a goal made of [fields], from the New goal sheet: shown in
-  /// [memory] at once. Throws if it can't be.
-  Future<void> create(Map<String, Object?> fields) async {
+  /// [memory] at once. Returns it as saved; throws if it can't be.
+  Future<Goal> create(Map<String, Object?> fields) async {
     final created = await repository.createGoal(
       Goal.fromJson({'id': '', ...fields}),
     );
     _shown([GoalCreate(created)]);
+    return created;
   }
 
   /// Edits [goal] -- a change of its status made as [setStatus] makes it,
