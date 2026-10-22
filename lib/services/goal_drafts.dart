@@ -12,7 +12,7 @@ class GoalDraft {
     required this.title,
     required this.day,
     this.description,
-    this.definitionOfDone,
+    this.priority,
     this.parentId,
     this.withIds = const [],
     this.forIds = const [],
@@ -26,7 +26,9 @@ class GoalDraft {
 
   /// HTML, as the goal's; null for none.
   final String? description;
-  final String? definitionOfDone;
+
+  /// Its own priority; null to inherit its parent's.
+  final int? priority;
 
   /// The goal it goes under; null for the top level.
   final String? parentId;
@@ -40,7 +42,7 @@ class GoalDraft {
     title: json['title'] as String? ?? '',
     day: DateTime.parse(json['day'] as String),
     description: json['description'] as String?,
-    definitionOfDone: json['definition_of_done'] as String?,
+    priority: (json['priority'] as num?)?.toInt(),
     parentId: json['parent_id'] as String?,
     withIds: [for (final id in json['with_ids'] as List? ?? const []) '$id'],
     forIds: [for (final id in json['for_ids'] as List? ?? const []) '$id'],
@@ -50,7 +52,7 @@ class GoalDraft {
     'title': title,
     'day': DateTime(day.year, day.month, day.day).toIso8601String(),
     'description': ?description,
-    'definition_of_done': ?definitionOfDone,
+    'priority': ?priority,
     'parent_id': ?parentId,
     if (withIds.isNotEmpty) 'with_ids': withIds,
     if (forIds.isNotEmpty) 'for_ids': forIds,

@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.180.0
+
+- The New goal sheet has no Definition of done field. A chip beside the
+  goal it goes under sets its priority (P picks it): its parent's to begin
+  with, or one of its own. The draft keeps it, and More carries it over.
+
 ## 7.179.0
 
 - On a goal's page, D marks it done, M marks it missed, and T marks it

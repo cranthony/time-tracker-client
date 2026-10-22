@@ -299,7 +299,7 @@ class _HomeScreenState extends State<HomeScreen> {
       title: result.title,
       deadline: result.deadline,
       description: result.description,
-      definitionOfDone: result.definitionOfDone,
+      priority: result.priority,
       withIds: result.withIds,
       forIds: result.forIds,
     );

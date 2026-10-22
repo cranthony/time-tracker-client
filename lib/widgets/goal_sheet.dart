@@ -11,7 +11,9 @@ import '../models/person.dart';
 import '../services/goal_drafts.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
+import 'color_picker.dart' show priorityColor;
 import 'goal_editor.dart' show HtmlField;
+import 'goal_fields.dart' show inheritedPriorityLabel;
 import 'goal_icon.dart';
 import 'hotkeys.dart';
 import 'html_editor.dart';
@@ -23,9 +25,9 @@ import 'tree_picker.dart';
 /// with), the goal it goes under (the top level, to begin with), who it's
 /// done with and for (no one, to begin with: chips each, at the right of
 /// the goal it goes under's, a person picked by a tap, and taken off by a
-/// tap on their chip; no one in both), its
-/// description and its definition of done, in a sheet over the bottom of
-/// the screen, and hands its fields -- an active goal's, keyed as the
+/// tap on their chip; no one in both), its priority (its parent's, to
+/// begin with: a chip beside the goal it goes under's) and its
+/// description, in a sheet over the bottom of the screen, and hands its fields -- an active goal's, keyed as the
 /// server takes them -- to
 /// [keep] itself, before it closes; if [keep] fails, it stays open,
 /// saying so, to try again. Adding is off while the goal would break a
@@ -92,7 +94,7 @@ final class MoreGoal extends GoalSheetResult {
     required this.title,
     required this.deadline,
     this.description,
-    this.definitionOfDone,
+    this.priority,
     this.parentId,
     this.withIds = const [],
     this.forIds = const [],
@@ -100,7 +102,9 @@ final class MoreGoal extends GoalSheetResult {
   final String title;
   final String deadline;
   final String? description;
-  final String? definitionOfDone;
+
+  /// Its own priority; null to inherit its parent's.
+  final int? priority;
 
   /// The goal it goes under; null for the top level.
   final String? parentId;
@@ -150,7 +154,9 @@ class _GoalSheetState extends State<_GoalSheet> {
   };
 
   late String? _description = widget.drafts?.draft?.description;
-  late String? _definitionOfDone = widget.drafts?.draft?.definitionOfDone;
+
+  /// Its own priority; null to inherit its parent's.
+  late int? _priority = widget.drafts?.draft?.priority;
 
   /// The goal it goes under, if it's still one it can: null for the top
   /// level.
@@ -244,7 +250,7 @@ class _GoalSheetState extends State<_GoalSheet> {
           title: _title.text,
           day: _day,
           description: _description,
-          definitionOfDone: _definitionOfDone,
+          priority: _priority,
           parentId: _parentId,
           withIds: [..._with],
           forIds: [..._for],
@@ -319,6 +325,49 @@ class _GoalSheetState extends State<_GoalSheet> {
     _ => id,
   };
 
+  /// Picks its priority from a menu below [chip]: its parent's, or one
+  /// of its own.
+  Future<void> _pickPriority(BuildContext chip) async {
+    final box = chip.findRenderObject()! as RenderBox;
+    final overlay = Overlay.of(chip).context.findRenderObject()! as RenderBox;
+    final rect = Rect.fromPoints(
+      box.localToGlobal(Offset.zero, ancestor: overlay),
+      box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+    );
+    final picked = await showMenu<int>(
+      context: chip,
+      position: RelativeRect.fromRect(rect, Offset.zero & overlay.size),
+      items: [
+        PopupMenuItem(value: -1, child: Text(_inheritLabel)),
+        for (final p in const [0, 1, 2, 3])
+          PopupMenuItem(
+            value: p,
+            child: Row(
+              children: [
+                CircleAvatar(radius: 8, backgroundColor: priorityColor(p)),
+                const SizedBox(width: 12),
+                Text('P$p'),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _priority = picked < 0 ? null : picked);
+    _keepDraft();
+  }
+
+  /// What it has with no priority of its own: its parent's, or the
+  /// default at the top level.
+  int get _inherited => switch (_parentId) {
+    final id? => _tree.priorityOf(id),
+    null => defaultGoalPriority,
+  };
+
+  String get _inheritLabel => _parentId == null
+      ? 'None (P$defaultGoalPriority)'
+      : 'Inherit (P$_inherited)';
+
   /// Picks someone it's done with ([with_]) or for, searching for what's
   /// typed as its title, by any word, selected to type over, as its
   /// parent is picked: one tap adds them. Someone new is added in the
@@ -384,7 +433,7 @@ class _GoalSheetState extends State<_GoalSheet> {
     'status': 'active',
     'parent_id': ?_parentId,
     'description': ?_description,
-    'definition_of_done': ?_definitionOfDone,
+    'priority': ?_priority,
     if (_with.isNotEmpty) 'with_ids': [..._with],
     if (_for.isNotEmpty) 'for_ids': [..._for],
   };
@@ -430,7 +479,7 @@ class _GoalSheetState extends State<_GoalSheet> {
       title: _title.text.trim(),
       deadline: deadlineOf(_day),
       description: _description,
-      definitionOfDone: _definitionOfDone,
+      priority: _priority,
       parentId: _parentId,
       withIds: [..._with],
       forIds: [..._for],
@@ -528,22 +577,50 @@ class _GoalSheetState extends State<_GoalSheet> {
               ),
             ),
             const SizedBox(height: 8),
-            // The parent at the left, and who it's for, then with, at the
-            // right -- under it, where they don't fit beside it.
+            // The parent and its priority at the left, and who it's for,
+            // then with, at the right -- under them, where they don't fit
+            // beside them.
             _LineOrTwo(
-              start: FieldHotkey(
-                'U',
-                child: ActionChip(
-                  avatar: const GoalIcon(size: 18),
-                  label: Text(
-                    parent == null
-                        ? 'Top level'
-                        : 'Under ${[..._tree.pathOf(parent.id), goalTitle(parent)].join(' › ')}',
-                    overflow: TextOverflow.ellipsis,
+              start: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: FieldHotkey(
+                      'U',
+                      child: ActionChip(
+                        avatar: const GoalIcon(size: 18),
+                        label: Text(
+                          parent == null
+                              ? 'Top level'
+                              : 'Under ${[..._tree.pathOf(parent.id), goalTitle(parent)].join(' › ')}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        tooltip: 'The goal it goes under',
+                        onPressed: _keeping ? null : _pickParent,
+                      ),
+                    ),
                   ),
-                  tooltip: 'The goal it goes under',
-                  onPressed: _keeping ? null : _pickParent,
-                ),
+                  const SizedBox(width: 4),
+                  FieldHotkey(
+                    'P',
+                    child: Builder(
+                      builder: (chip) => ActionChip(
+                        avatar: CircleAvatar(
+                          backgroundColor: priorityColor(
+                            _priority ?? _inherited,
+                          ),
+                        ),
+                        label: Text(
+                          _priority == null ? _inheritLabel : 'P$_priority',
+                        ),
+                        tooltip: _priority == null
+                            ? inheritedPriorityLabel(_tree, _parentId)
+                            : 'Its own priority',
+                        onPressed: _keeping ? null : () => _pickPriority(chip),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               end: _peoplePickable
                   ? Wrap(
@@ -566,18 +643,6 @@ class _GoalSheetState extends State<_GoalSheet> {
                   'Description',
                   _description,
                   (v) => _description = v,
-                ),
-              ),
-            ),
-            FieldHotkey(
-              'F',
-              child: HtmlField(
-                label: 'Definition of done',
-                text: _definitionOfDone,
-                onTap: () => _editHtml(
-                  'Definition of done',
-                  _definitionOfDone,
-                  (v) => _definitionOfDone = v,
                 ),
               ),
             ),

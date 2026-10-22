@@ -155,7 +155,7 @@ class GoalActions {
   }
 
   /// Adds a goal under [parent] (the top level, if null), starting with
-  /// [title], [deadline], [description] and [definitionOfDone], and the
+  /// [title], [deadline], [description] and [priority], and the
   /// people it's done with ([withIds]) and for ([forIds]), if they're
   /// given. Whether it's saved.
   Future<bool> add({
@@ -163,7 +163,7 @@ class GoalActions {
     String? title,
     String? deadline,
     String? description,
-    String? definitionOfDone,
+    int? priority,
     List<String> withIds = const [],
     List<String> forIds = const [],
   }) async {
@@ -174,7 +174,7 @@ class GoalActions {
       title: title,
       deadline: deadline,
       description: description,
-      definitionOfDone: definitionOfDone,
+      priority: priority,
       withIds: withIds,
       forIds: forIds,
       now: now,
