@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.174.0
+
+- The New goal sheet's With and For pickers can add someone new, as the
+  Events page's can: "Add person" opens the quick New person sheet (with
+  More, for the full page), named as you typed, and picks them.
+
 ## 7.173.0
 
 - A goal's page shows the "Missed, try again…" button for every open
