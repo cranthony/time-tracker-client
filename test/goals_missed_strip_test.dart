@@ -215,7 +215,7 @@ void main() {
       );
       expect(
         tester.widget<Text>(find.textContaining('Due today')).style?.color,
-        colors.onSecondaryContainer,
+        Colors.black87,
       );
       // After the day's own, before the overdue group (none here).
       expect(find.text('Overdue'), findsNothing);

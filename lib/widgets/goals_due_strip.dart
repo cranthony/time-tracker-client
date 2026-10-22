@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
+import 'color_picker.dart';
 import 'goal_icon.dart';
 import 'goal_tile.dart';
 
@@ -181,6 +182,7 @@ class GoalsDueStrip extends StatelessWidget {
     _Pill pill(Goal g, {bool late = false, bool ghost = false}) => _Pill(
       goal: g,
       path: tree?.pathOf(g.id) ?? g.path,
+      priority: tree?.priorityOf(g.id) ?? g.priority ?? defaultGoalPriority,
       dueDay: late ? _dueDayLabel(context, g) : null,
       missed: ghost ? _missedNotes(context, g) : null,
       left: g.closed || ghost || spent == null
@@ -294,18 +296,20 @@ class GoalsDueStrip extends StatelessWidget {
           .formatTimeOfDay(TimeOfDay.fromDateTime(goal.due!));
 }
 
-/// [goal] as a pill: its title, its time if it's due at one, and what's
-/// [left] of its expected time, or, closed, struck through with what it
-/// came to. Overdue -- [dueDay] given -- it's in the error color and says
-/// the day it was due instead of a time, and holding it (or
-/// right-clicking it) offers the [OverdueGoalAction]s, if [onAction] is
-/// given. [missed] given, it's a ghost of a goal missed from the day:
+/// [goal] as a pill, filled in its [priority]'s color: its title, its
+/// time if it's due at one, and what's [left] of its expected time, or,
+/// closed, greyed and struck through with what it came to, just outlined
+/// in that color. Overdue -- [dueDay] given -- it's outlined in the error
+/// color and says the day it was due instead of a time, and holding it
+/// (or right-clicking it) offers the [OverdueGoalAction]s, if [onAction]
+/// is given. [missed] given, it's a ghost of a goal missed from the day:
 /// greyed and struck through like a closed one, saying those notes
 /// instead of a time. Its parents are in its tooltip.
 class _Pill extends StatelessWidget {
   const _Pill({
     required this.goal,
     required this.path,
+    required this.priority,
     this.dueDay,
     this.missed,
     this.left,
@@ -315,6 +319,9 @@ class _Pill extends StatelessWidget {
 
   final Goal goal;
   final List<String> path;
+
+  /// The priority that applies to it ([GoalTree.priorityOf]).
+  final int priority;
 
   /// The day it was due, when it's overdue; null when it's the day's own.
   final String? dueDay;
@@ -333,11 +340,8 @@ class _Pill extends StatelessWidget {
     final closed = goal.closed || ghost;
     final done = !ghost && goal.status == 'done';
     final overdue = dueDay != null;
-    final ink = overdue
-        ? colors.onErrorContainer
-        : closed
-        ? colors.onSurfaceVariant
-        : colors.onSecondaryContainer;
+    final tint = priorityColor(priority);
+    final ink = closed ? colors.onSurfaceVariant : Colors.black87;
     final time = !overdue && !ghost && deadlineHasTime(goal.deadline)
         ? MaterialLocalizations.of(context)
               .formatTimeOfDay(TimeOfDay.fromDateTime(goal.due!))
@@ -368,19 +372,11 @@ class _Pill extends StatelessWidget {
       onLongPressHint: menu == null ? null : 'Mark done or missed',
       excludeSemantics: true,
       child: Material(
-        color: overdue
-            ? colors.errorContainer
-            : closed
-            ? Colors.transparent
-            : colors.secondaryContainer,
+        color: closed ? Colors.transparent : tint,
         shape: StadiumBorder(
-          side: BorderSide(
-            color: overdue
-                ? colors.error
-                : closed
-                ? colors.outlineVariant
-                : colors.secondary,
-          ),
+          side: overdue
+              ? BorderSide(color: colors.error, width: 2)
+              : BorderSide(color: tint),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
