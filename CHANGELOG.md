@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.183.0
+
+- An event's Goals picker also offers the goals closed after the event
+  started -- a goal made and done the same day, say -- faded, with their
+  status beside them.
+
 ## 7.182.0
 
 - An event's Goals picker has an Add goal row, as the New goal sheet's
