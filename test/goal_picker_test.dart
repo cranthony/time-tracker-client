@@ -29,6 +29,15 @@ final _goals = [
       {'status': 'obsolete', 'at': '2026-10-01T09:00:00'},
     ],
   }),
+  Goal.fromJson({
+    'id': 'email',
+    'title': 'Answer the email',
+    'status': 'done',
+    'history': [
+      {'status': 'active', 'at': '2026-10-20T09:00:00'},
+      {'status': 'done', 'at': '2026-10-20T11:00:00'},
+    ],
+  }),
 ];
 
 void main() {
@@ -57,8 +66,9 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
 
-    // Open goals only: the obsolete one isn't offered.
+    // Open goals only: the closed ones aren't offered.
     expect(find.text('Old idea'), findsNothing);
+    expect(find.text('Answer the email'), findsNothing);
     await tester.tap(find.text('Write the pane'));
     await tester.pumpAndSettle();
 
@@ -76,6 +86,44 @@ void main() {
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     expect(picked, const [GoalShare('ship'), GoalShare('pane', minutes: 45)]);
+  });
+
+  testWidgets('offers the goals closed after the event started', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    List<GoalShare>? picked;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => picked = await showGoalsSheet(
+              context,
+              goals: _goals,
+              picked: const [],
+              eventMinutes: 60,
+              eventStart: DateTime(2026, 10, 20, 10),
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    // Done at 11:00, after the event's 10:00 start, it's offered, its
+    // status beside it; the one obsolete since 1 October isn't.
+    expect(find.text('Old idea'), findsNothing);
+    // "Done" twice: its status, and the sheet's button.
+    expect(find.text('Done'), findsNWidgets(2));
+    await tester.tap(find.text('Answer the email'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+    await tester.pumpAndSettle();
+    expect(picked, const [GoalShare('email')]);
   });
 
   testWidgets('a goal is added, named as typed, and picked', (tester) async {

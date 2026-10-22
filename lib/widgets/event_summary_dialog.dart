@@ -1914,6 +1914,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       goals: _goals,
       picked: _goalShares,
       eventMinutes: minutes,
+      eventStart: start,
       addGoal: memory == null || repository == null
           ? null
           : (title) => addGoalFor(
