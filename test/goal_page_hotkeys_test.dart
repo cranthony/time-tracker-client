@@ -124,6 +124,49 @@ void main() {
     expect(highlighted(), titles.first);
   });
 
+  /// The status on the goal's page that's on top.
+  String status(WidgetTester tester) => tester
+      .widget<Text>(
+        find.descendant(
+          of: find.descendant(
+            of: find.byType(GoalScreen).last,
+            matching: find.byType(Chip),
+          ),
+          matching: find.byType(Text),
+        ),
+      )
+      .data!;
+
+  /// The page of a sub-goal of [pumpGoal]'s, with none under it.
+  Future<void> pumpSubGoal(WidgetTester tester) async {
+    await pumpGoal(tester);
+    await tester.tap(find.text('Write the pane'));
+    await tester.pumpAndSettle();
+    expect(status(tester), 'Active');
+  }
+
+  testWidgets("D on a goal's page marks it done", (tester) async {
+    await pumpSubGoal(tester);
+    await press(tester, LogicalKeyboardKey.keyD);
+    expect(status(tester), 'Done');
+    // Done, it can't be again.
+    await press(tester, LogicalKeyboardKey.keyD);
+    expect(status(tester), 'Done');
+  });
+
+  testWidgets("M on a goal's page marks it missed", (tester) async {
+    await pumpSubGoal(tester);
+    await press(tester, LogicalKeyboardKey.keyM);
+    expect(status(tester), 'Missed');
+  });
+
+  testWidgets("T on a goal's page marks it missed to try again, by a day "
+      'picked', (tester) async {
+    await pumpSubGoal(tester);
+    await press(tester, LogicalKeyboardKey.keyT);
+    expect(find.text('Try again by'), findsOneWidget);
+  });
+
   testWidgets("E on a goal's page edits it", (tester) async {
     await pumpGoal(tester);
     await press(tester, LogicalKeyboardKey.keyE);
