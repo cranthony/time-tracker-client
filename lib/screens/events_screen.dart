@@ -5823,6 +5823,7 @@ class _EventsScreenState extends State<EventsScreen> {
         events: events,
         day: _day,
         actions: _actionsById,
+        goals: _memory.goals ?? const [],
         collapsed: _summaryCollapsed,
         onCollapsed: _setSummaryCollapsed,
         durations: _summaryDurations,

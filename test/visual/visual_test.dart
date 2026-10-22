@@ -1244,10 +1244,10 @@ void main() {
       });
     }
 
-    // The day's summary swiped once, from its actions to their top-level
-    // ones, and twice, to its priorities.
+    // The day's summary swiped once, from its actions to its top-level
+    // goals, and twice, to its priorities.
     for (final (name, swipes) in [
-      ('events_summary_top_level', 1),
+      ('events_summary_goals', 1),
       ('events_summary_priorities', 2),
       // Folded away.
       ('events_summary_collapsed', 0),

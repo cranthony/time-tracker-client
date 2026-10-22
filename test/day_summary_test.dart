@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/widgets/day_summary.dart';
 import 'package:time_tracker_client/widgets/time_summary.dart';
@@ -15,12 +16,19 @@ void main() {
     DateTime end, {
     int? priority,
     List<Object> actions = const [],
+    List<String> goals = const [],
     bool cancelled = false,
   }) => Event(
     start: start,
     end: end,
     isCancelled: cancelled,
-    properties: {'effective_priority': ?priority, 'action_ids': actions},
+    properties: {
+      'effective_priority': ?priority,
+      'action_ids': actions,
+      'goals': [
+        for (final id in goals) {'goal_id': id},
+      ],
+    },
   );
 
   /// Each share's label and hours.
@@ -128,18 +136,48 @@ void main() {
         'Unscheduled': 21,
       });
     });
+  });
 
-    test("top-level actions count their sub-actions' time once", () {
-      final slices = actionShares(events, day, actions, topLevel: true);
+  group('goalShares', () {
+    const goals = [
+      Goal(id: 'ship', title: 'Ship'),
+      Goal(id: 'pane', title: 'Pane', parentId: 'ship'),
+      Goal(id: 'icon', title: 'Icon', parentId: 'pane'),
+      Goal(id: 'learn', title: 'Learn'),
+      Goal(id: 'read', title: 'Read'),
+      Goal(id: 'run', title: 'Run'),
+      Goal(id: 'walk', title: 'Walk'),
+    ];
+    final events = [
+      event(at(8), at(12), goals: ['icon']),
+      event(at(12), at(14), goals: ['pane', 'learn']),
+      event(at(14), at(15), goals: ['learn']),
+      event(at(15), at(16), goals: ['read']),
+      event(at(16), at(16, 30), goals: ['run']),
+      event(at(16, 30), at(17), goals: ['walk']),
+      // A goal there isn't any more, then none at all.
+      event(at(17), at(18), goals: ['gone']),
+      event(at(18), at(20)),
+    ];
+
+    test("the top-level goals, with their sub-goals' time, then the rest, "
+        'no goal and unscheduled', () {
+      final slices = goalShares(events, day, goals);
       expect(hours(slices), {
-        'Work': 4,
-        'Cook': 3,
-        'Top': 1.5,
-        '2 other actions': 1.5,
-        'No action': 2,
+        'Ship': 5,
+        'Learn': 2,
+        'Read': 1,
+        '2 other goals': 1,
+        'No goal': 3,
         'Unscheduled': 12,
       });
-      expect(slices[1].color, const Color(0xFF33B679));
+    });
+
+    test('with no goals known, all of it is no goal', () {
+      expect(hours(goalShares(events, day, const [])), {
+        'No goal': 12,
+        'Unscheduled': 12,
+      });
     });
   });
 

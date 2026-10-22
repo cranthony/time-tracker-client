@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.184.0
+
+- The events timeline's summary turns from its actions to its time by
+  top-level goal -- each event's time toward the top-level goals it's
+  for, its sub-goals' counted toward theirs, as the Goals pane splits it
+  -- where it showed top-level actions.
+
 ## 7.183.0
 
 - An event's Goals picker also offers the goals closed after the event
