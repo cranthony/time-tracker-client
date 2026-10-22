@@ -1469,6 +1469,39 @@ void main() {
       expect(find.text('3/4'), findsOneWidget);
     });
 
+    testWidgets("turned to from Claude's recap, the notes page scrolls the "
+        'timeline to the note shown', (tester) async {
+      await open(
+        tester,
+        json: {
+          ...proposalJson(),
+          'recap': {'overview': 'A quiet morning'},
+        },
+      );
+      expect(find.textContaining('A quiet morning'), findsOneWidget);
+      final scrollable = find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byWidgetPredicate(
+              (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+            ),
+          )
+          .first;
+      final position = tester.state<ScrollableState>(scrollable).position;
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Notes (4)'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Tea at last'), findsOneWidget);
+      // The note shown, at 9:15, in the middle of the view.
+      final rect = tester.getRect(scrollable);
+      expect(
+        tester.getTopLeft(today).dy + y(at(9, 15)),
+        moreOrLessEquals(rect.center.dy, epsilon: 4),
+      );
+    });
+
     testWidgets("without the proposal's, the note the app was told was "
         'compacted last is there as context', (tester) async {
       final json = proposalJson();

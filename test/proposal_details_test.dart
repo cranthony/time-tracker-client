@@ -309,6 +309,46 @@ void main() {
         if (value.selected) key,
     };
 
+    testWidgets('turned to, the follow-through and added pages scroll the '
+        'timeline to the cancel shown, and where what is added is used', (
+      tester,
+    ) async {
+      await open(tester);
+      final scrollable = find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byWidgetPredicate(
+              (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+            ),
+          )
+          .first;
+      final position = tester.state<ScrollableState>(scrollable).position;
+      final today = find.byKey(ValueKey(('shown', at(0))));
+      // Where [time] is on screen, from the middle of the timeline's view.
+      double fromMiddle(DateTime time) =>
+          tester.getTopLeft(today).dy +
+          timelineOffset(
+            time,
+            day: at(0),
+            dayEnd: DateTime(2026, 10, 1),
+            scale: defaultTimelineScale,
+          ) -
+          tester.getRect(scrollable).center.dy;
+
+      // It opens on the follow-through page: turned from it and back.
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      await page(tester, 'Added (3)');
+      expect(outlined(tester), {'tea'});
+      expect(fromMiddle(at(9)), moreOrLessEquals(0, epsilon: 16));
+
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      await page(tester, 'Follow-through (1 of 2)');
+      expect(outlined(tester), {'call'});
+      expect(fromMiddle(at(10)), moreOrLessEquals(0, epsilon: 16));
+    });
+
     testWidgets('under the bar, pages of how many cancels count against '
         'follow-through, and what it adds; folded away and back', (
       tester,

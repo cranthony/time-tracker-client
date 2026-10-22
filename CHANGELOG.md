@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.176.0
+
+- Turning a compaction proposal's details to Notes, Follow-through or
+  Added scrolls the timeline to the note or cancel shown, or to where
+  what's added is first used -- as stepping through them does.
+
 ## 7.175.0
 
 - The Events page's goal pills are in each goal's priority color -- its
