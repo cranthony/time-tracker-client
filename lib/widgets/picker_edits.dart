@@ -177,8 +177,9 @@ Future<Person?> editPerson(
 /// start with, in the quick New location sheet, or edits [location] in
 /// its dialog; with [mapLocation], its map location starts as that. One
 /// added is made with [create] (by default, as locations are), given its
-/// fields as `create_location` takes them. Returns it as saved; null if
-/// it was called off.
+/// fields as `create_location` takes them. A new group to put it in can
+/// be added from its group picker, too. Returns it as saved; null if it
+/// was called off.
 Future<Location?> editLocation(
   BuildContext context, {
   Location? location,
@@ -191,6 +192,7 @@ Future<Location?> editLocation(
   if (repository == null) return null;
   final memory = PlanMemoryScope.of(context);
   final groups = memory?.locationGroups ?? const <LocationGroup>[];
+  final addGroup = addLocationGroup(repository, memory);
   final saved = location == null
       ? await showAddLocationSheet<Location>(
           context,
@@ -198,6 +200,7 @@ Future<Location?> editLocation(
           hint: hint,
           mapLocation: mapLocation,
           groups: groups,
+          addGroup: addGroup,
           save:
               create ??
               (fields) => repository.createLocation(
@@ -209,6 +212,7 @@ Future<Location?> editLocation(
           location: location,
           mapLocation: mapLocation,
           groups: groups,
+          addGroup: addGroup,
           save: (fields) => repository.updateLocation(location.id, fields),
         );
   if (saved != null) {
@@ -216,6 +220,20 @@ Future<Location?> editLocation(
   }
   return saved;
 }
+
+/// Adds a location group, given its fields as `create_location_group`
+/// takes them, then loads [memory]'s locations and groups again, so it's
+/// among them. Returns it as saved.
+Future<LocationGroup> Function(Map<String, Object?> fields) addLocationGroup(
+  PeopleRepository repository,
+  PlanMemory? memory,
+) => (fields) async {
+  final added = await repository.createLocationGroup(
+    LocationGroup.fromJson({'id': '', ...fields}),
+  );
+  await _reload(() => memory?.loadLocations(repository, again: true));
+  return added;
+};
 
 /// Gives [location] [map] as its map location: at once, if it has none
 /// (or has it already); otherwise in its dialog, [map] in place of the

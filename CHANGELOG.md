@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.178.0
+
+- A location group picker -- in the New location sheet, and the location
+  and location group dialogs -- has an Add location group row, as the
+  location picker has Add location: it adds one, named as it's typed, in
+  a quick New location group sheet (its name, note and the group it's
+  inside, which can be a new one too), and picks it. With no groups yet,
+  the picker shows, so the first can be added.
+
 ## 7.177.0
 
 - A goal's page and its edit page lay its fields out alike, in the same

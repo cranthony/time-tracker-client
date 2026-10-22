@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/person.dart';
@@ -7,6 +9,7 @@ import '../services/actions_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../widgets/person_dialog.dart';
+import '../widgets/picker_edits.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
 import '../widgets/tree_tile.dart';
@@ -78,6 +81,13 @@ class LocationsPaneState extends State<LocationsPane> {
     }
   }
 
+  /// Adds a location group from a group picker, showing it here at once.
+  Future<LocationGroup> _addGroup(Map<String, Object?> fields) async {
+    final added = await addLocationGroup(widget.repository, null)(fields);
+    unawaited(reload());
+    return added;
+  }
+
   Future<void> _edit(Location? location) async {
     final repository = widget.repository;
     if (location == null) {
@@ -86,6 +96,7 @@ class LocationsPaneState extends State<LocationsPane> {
         groups: _groups,
         save: (fields) =>
             repository.createLocation(Location.fromJson({'id': '', ...fields})),
+        addGroup: _addGroup,
       );
       if (added != null) await reload();
       return;
@@ -94,6 +105,7 @@ class LocationsPaneState extends State<LocationsPane> {
       context,
       location: location,
       groups: _groups,
+      addGroup: _addGroup,
       save: (fields) => repository.updateLocation(location.id, fields),
       delete: () => repository.deleteLocation(location.id),
       extra: LocationTravelTimes(
@@ -112,6 +124,7 @@ class LocationsPaneState extends State<LocationsPane> {
       context,
       group: group,
       groups: _groups,
+      addGroup: _addGroup,
       save: (fields) => group == null
           ? repository.createLocationGroup(
               LocationGroup.fromJson({'id': '', ...fields}),
