@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.175.0
+
+- The Events page's goal pills are in each goal's priority color -- its
+  own, or the nearest parent's: filled while open, outlined once done,
+  missed or obsolete. An overdue one keeps a red outline.
+
 ## 7.174.0
 
 - The New goal sheet's With and For pickers can add someone new, as the

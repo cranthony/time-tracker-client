@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/widgets/color_picker.dart';
 import 'package:time_tracker_client/widgets/goal_tile.dart';
 import 'package:time_tracker_client/widgets/goals_due_strip.dart';
 
@@ -226,13 +227,21 @@ void main() {
     expect(find.textContaining('9:00 AM'), findsNothing);
     final colors = Theme.of(tester.element(find.byType(GoalsDueStrip)))
         .colorScheme;
-    expect(
-      tester.widget<Text>(find.textContaining('due Oct 17')).style?.color,
-      colors.onErrorContainer,
+    Material pillOf(String text) => tester.widget<Material>(
+      find
+          .ancestor(
+            of: find.textContaining(text),
+            matching: find.byType(Material),
+          )
+          .first,
     );
     expect(
-      tester.widget<Text>(find.textContaining('Zebra')).style?.color,
-      colors.onSecondaryContainer,
+      (pillOf('due Oct 17').shape! as StadiumBorder).side.color,
+      colors.error,
+    );
+    expect(
+      (pillOf('Zebra').shape! as StadiumBorder).side.color,
+      isNot(colors.error),
     );
     await tester.tap(find.textContaining('due Oct 17'));
     expect(tapped?.id, 'o');
@@ -264,6 +273,58 @@ void main() {
     expect(find.text('Overdue'), findsNothing);
     expect(find.textContaining('due Oct'), findsNothing);
     expect(find.textContaining('Zebra'), findsOneWidget);
+  });
+
+  testWidgets("each pill is in its priority's color: filled when open, "
+      "outlined when closed; a goal with none takes its parent's", (
+    tester,
+  ) async {
+    final ranked = [
+      Goal(id: 'p', title: 'Parent', priority: 1),
+      Goal(
+        id: 'k',
+        title: 'Kid',
+        parentId: 'p',
+        deadline: '2026-10-18',
+        status: 'active',
+      ),
+      Goal(id: 'u', title: 'Urgent', priority: 0, deadline: '2026-10-18'),
+      Goal(
+        id: 'x',
+        title: 'Finished',
+        priority: 2,
+        deadline: '2026-10-18',
+        status: 'done',
+      ),
+    ];
+    final tree = GoalTree(ranked);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalsDueStrip(
+            goals: goalsDueOn(ranked, day, tree),
+            tree: tree,
+            collapsed: false,
+            onCollapsed: (_) {},
+          ),
+        ),
+      ),
+    );
+    Material pillOf(String text) => tester.widget<Material>(
+      find
+          .ancestor(
+            of: find.textContaining(text),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    expect(pillOf('Kid').color, priorityColor(1));
+    expect(pillOf('Urgent').color, priorityColor(0));
+    expect(pillOf('Finished').color, Colors.transparent);
+    expect(
+      (pillOf('Finished').shape! as StadiumBorder).side.color,
+      priorityColor(2),
+    );
   });
 
   testWidgets('nothing, with nothing due', (tester) async {
