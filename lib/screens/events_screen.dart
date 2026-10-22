@@ -1086,6 +1086,15 @@ class _EventsScreenState extends State<EventsScreen> {
     _scrollToTime(notes[i].time);
   }
 
+  /// Turns the proposal's details to [page]; turned to its notes, the
+  /// timeline scrolls to the note shown.
+  void _turnDetailsTo(ProposalDetailPage page) {
+    setState(() => _detailPage = page);
+    if (page == ProposalDetailPage.notes) {
+      if (_note case final note?) _scrollToTime(note.time);
+    }
+  }
+
   /// Shows the [index]th of the proposal's cancels under its bar, and
   /// scrolls the timeline to it.
   void _goToCancel(int index) {
@@ -5423,7 +5432,7 @@ class _EventsScreenState extends State<EventsScreen> {
       goalCount: goalChanges.length,
       collapsed: _detailsCollapsed,
       onCollapsed: _setDetailsCollapsed,
-      onPage: (page) => setState(() => _detailPage = page),
+      onPage: _turnDetailsTo,
     );
   }
 
