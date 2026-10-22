@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.182.0
+
+- An event's Goals picker has an Add goal row, as the New goal sheet's
+  Under picker does: it adds the goal, named as it's typed, in a New goal
+  sheet over it, due on the day the event starts to start with -- or that
+  sheet's More, the full New goal page -- and picks it.
+
 ## 7.181.1
 
 - The New goal sheet's priority chip reads just "(P3)" for a top-level
