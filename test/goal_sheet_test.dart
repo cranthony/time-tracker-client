@@ -182,7 +182,7 @@ void main() {
     expect(kept.single['parent_id'], 'Run a marathon');
   });
 
-  testWidgets('More gives its parent, description and definition of done', (
+  testWidgets('More gives its parent, priority and description', (
     tester,
   ) async {
     await open(tester, goals: [_goal('Running')]);
@@ -200,36 +200,35 @@ void main() {
     expect(find.text('Around the lake'), findsOneWidget);
     expect(drafts.draft?.description, 'Around the lake');
 
-    await tester.tap(find.text('Add definition of done'));
+    await tester.tap(find.text('Inherit (P3)'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).last, 'Under an hour');
-    await tester.tap(find.text('Save'));
+    await tester.tap(find.text('P1'));
     await tester.pumpAndSettle();
+    expect(drafts.draft?.priority, 1);
 
     await tester.tap(find.text('More'));
     await tester.pumpAndSettle();
     final more = result as MoreGoal;
     expect(more.parentId, 'Running');
     expect(more.description, 'Around the lake');
-    expect(more.definitionOfDone, 'Under an hour');
+    expect(more.priority, 1);
   });
 
-  testWidgets('Add keeps its description and definition of done', (
-    tester,
-  ) async {
+  testWidgets('Add keeps its description and priority', (tester) async {
     final withDraft = GoalDrafts.inMemory();
     await withDraft.put(
       GoalDraft(
         title: 'Run 10k',
         day: now,
         description: 'Around the lake',
-        definitionOfDone: 'Under an hour',
+        priority: 0,
         parentId: 'Gone',
       ),
     );
     await open(tester, withDrafts: withDraft);
     // Its parent's gone: it's at the top level.
     expect(find.text('Top level'), findsOneWidget);
+    expect(find.text('P0'), findsOneWidget);
     await tester.tap(find.text('Add'));
     await tester.pumpAndSettle();
     expect(kept.single, {
@@ -237,8 +236,35 @@ void main() {
       'deadline': '2026-10-18',
       'status': 'active',
       'description': 'Around the lake',
-      'definition_of_done': 'Under an hour',
+      'priority': 0,
     });
+  });
+
+  testWidgets("its priority starts as its parent's, beside the goal it goes "
+      'under, and has no definition of done', (tester) async {
+    final goals = [
+      Goal.fromJson({..._goal('Health').toJson(), 'priority': 1}),
+    ];
+    await open(tester, goals: goals);
+    await tester.enterText(find.byType(TextField), 'Health check');
+    await tester.pump();
+    expect(find.text('None (P3)'), findsOneWidget);
+    expect(find.text('Add definition of done'), findsNothing);
+    final under = tester.getRect(find.text('Top level'));
+    final priority = tester.getRect(find.text('None (P3)'));
+    expect(priority.center.dy, closeTo(under.center.dy, 4));
+    expect(priority.left, greaterThan(under.right));
+    expect(priority.left - under.right, lessThan(80));
+
+    await tester.tap(find.text('Top level'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Health'));
+    await tester.pumpAndSettle();
+    expect(find.text('Inherit (P1)'), findsOneWidget);
+
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(kept.single.containsKey('priority'), isFalse);
   });
 
   testWidgets('without people to pick from, there are no With or For rows', (

@@ -27,7 +27,7 @@ import 'picker_sheet.dart';
 /// Saving is off while the change breaks a rule (see [planned]) against
 /// [goals], every goal there is, saying which -- a change of status
 /// checked with what it takes ([editing]). A new one starts with [title]
-/// and [deadline], [description] and [definitionOfDone], and the people
+/// and [deadline], [description] and [priority], and the people
 /// it's done with ([withIds]) and for ([forIds]), if they're given --
 /// from the New goal sheet, say.
 /// Gives a new goal's fields, or an edit's changes (a null clearing a
@@ -40,7 +40,7 @@ Future<Map<String, Object?>?> showGoalEditor(
   String? title,
   String? deadline,
   String? description,
-  String? definitionOfDone,
+  int? priority,
   List<String> withIds = const [],
   List<String> forIds = const [],
   DateTime Function() now = DateTime.now,
@@ -54,7 +54,7 @@ Future<Map<String, Object?>?> showGoalEditor(
       title: title,
       deadline: deadline,
       description: description,
-      definitionOfDone: definitionOfDone,
+      priority: priority,
       withIds: withIds,
       forIds: forIds,
       now: now,
@@ -71,7 +71,7 @@ class GoalEditorPage extends StatefulWidget {
     this.title,
     this.deadline,
     this.description,
-    this.definitionOfDone,
+    this.priority,
     this.withIds = const [],
     this.forIds = const [],
     this.now = DateTime.now,
@@ -85,7 +85,7 @@ class GoalEditorPage extends StatefulWidget {
   final String? title;
   final String? deadline;
   final String? description;
-  final String? definitionOfDone;
+  final int? priority;
 
   /// A new goal's people, to begin with: who it's done with, and for.
   final List<String> withIds;
@@ -118,10 +118,9 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   late bool _follows = widget.parent != null && (_goal?.followsParent ?? false);
   late String _status = _goal?.status ?? 'active';
   late bool _required = _goal?.required ?? false;
-  late int? _priority = _goal?.priority;
+  late int? _priority = _goal?.priority ?? widget.priority;
   late String? _description = _goal?.description ?? widget.description;
-  late String? _definitionOfDone =
-      _goal?.definitionOfDone ?? widget.definitionOfDone;
+  late String? _definitionOfDone = _goal?.definitionOfDone;
   late List<String> _with = [...(_goal?.withIds ?? widget.withIds)];
   late List<String> _for = [...(_goal?.forIds ?? widget.forIds)];
 
