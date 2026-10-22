@@ -9,6 +9,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.181.1
+
+- The New goal sheet's priority chip reads just "(P3)" for a top-level
+  goal left at no priority, instead of "None (P3)".
+
 ## 7.181.0
 
 - The New goal sheet's Under picker has an Add goal row: it adds the goal

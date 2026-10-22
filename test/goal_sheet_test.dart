@@ -363,10 +363,10 @@ void main() {
     await open(tester, goals: goals);
     await tester.enterText(find.byType(TextField), 'Health check');
     await tester.pump();
-    expect(find.text('None (P3)'), findsOneWidget);
+    expect(find.text('(P3)'), findsOneWidget);
     expect(find.text('Add definition of done'), findsNothing);
     final under = tester.getRect(find.text('Top level'));
-    final priority = tester.getRect(find.text('None (P3)'));
+    final priority = tester.getRect(find.text('(P3)'));
     expect(priority.center.dy, closeTo(under.center.dy, 4));
     expect(priority.left, greaterThan(under.right));
     expect(priority.left - under.right, lessThan(80));
