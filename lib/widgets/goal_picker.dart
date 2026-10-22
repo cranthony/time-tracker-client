@@ -8,8 +8,10 @@ import 'share_dialog.dart';
 import 'tree_picker.dart';
 
 /// Picks the goals an event is for in a [showPickerSheet]: a [TreePicker]
-/// over the open goals (and any [picked] already that aren't), each under
-/// its parent, the picked as chips. Tapping a chip sets how much of the
+/// over the open goals, those closed after the event's [eventStart] (the
+/// time before they closed was for them -- a goal made and done the same
+/// day, say), and any [picked] already, each under its parent, the
+/// picked as chips. Tapping a chip sets how much of the
 /// event that goal takes ([showGoalShareDialog]); each chip says it. What
 /// the shares come to is checked against the event, [eventMinutes] long.
 /// With [addGoal], a new one can be added, named as it's typed: what it
@@ -21,6 +23,7 @@ Future<List<GoalShare>?> showGoalsSheet(
   required List<Goal> goals,
   required List<GoalShare> picked,
   required int eventMinutes,
+  DateTime? eventStart,
   Future<GoalAdded?> Function(String title)? addGoal,
 }) {
   var shares = [...picked];
@@ -29,7 +32,10 @@ Future<List<GoalShare>?> showGoalsSheet(
   List<PickerNode> nodesOf(List<Goal> goals) => [
     for (final g in byPriority([
       for (final g in goals)
-        if (g.open || pickedIds.contains(g.id)) g,
+        if (g.open ||
+            pickedIds.contains(g.id) ||
+            (eventStart != null && (g.closedAt?.isAfter(eventStart) ?? false)))
+          g,
     ], tree))
       PickerNode(
         id: g.id,
