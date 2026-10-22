@@ -78,6 +78,61 @@ void main() {
     expect(picked, const [GoalShare('ship'), GoalShare('pane', minutes: 45)]);
   });
 
+  testWidgets('a goal is added, named as typed, and picked', (tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final asked = <String>[];
+    List<GoalShare>? picked;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => picked = await showGoalsSheet(
+              context,
+              goals: _goals,
+              picked: const [GoalShare('ship')],
+              eventMinutes: 60,
+              addGoal: (title) async {
+                asked.add(title);
+                final added = Goal.fromJson({
+                  'id': 'docs',
+                  'title': title,
+                  'parent_id': 'ship',
+                  'history': [
+                    {'status': 'active', 'at': '2026-10-01T09:00:00'},
+                  ],
+                });
+                return (added: added, goals: [..._goals, added]);
+              },
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'Write the docs');
+    await tester.pump();
+    await tester.tap(find.text('Add goal “Write the docs”…'));
+    await tester.pumpAndSettle();
+    expect(asked, ['Write the docs']);
+
+    // Picked, the search cleared, and offered with the rest.
+    expect(find.widgetWithText(InputChip, 'Write the docs'), findsOne);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
+    expect(find.text('Write the pane'), findsOne);
+
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(picked, const [GoalShare('ship'), GoalShare('docs')]);
+  });
+
   testWidgets("a share can't take more than the event", (tester) async {
     GoalShare? set;
     await tester.pumpWidget(

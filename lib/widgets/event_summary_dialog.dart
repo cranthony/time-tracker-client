@@ -1900,17 +1900,29 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   }
 
   /// Picks its goals in a sheet up from the foot -- offering to activate
-  /// any picked that's inactive, from its start.
+  /// any picked that's inactive, from its start. One can be added there,
+  /// due on the day it starts, to start with.
   Future<void> _pickGoals() async {
     setState(() => _editing = null);
     final start = _time('start');
     final minutes = _time('end').difference(start).inMinutes;
     final was = {for (final s in _goalShares) s.goalId};
+    final memory = PlanMemoryScope.of(context);
+    final repository = GoalsScope.of(context);
     final picked = await showGoalsSheet(
       context,
       goals: _goals,
       picked: _goalShares,
       eventMinutes: minutes,
+      addGoal: memory == null || repository == null
+          ? null
+          : (title) => addGoalFor(
+              context,
+              repository: repository,
+              memory: memory,
+              title: title,
+              day: start,
+            ),
     );
     if (picked == null || !mounted) return;
     final tree = GoalTree(_goals);
@@ -1920,8 +1932,6 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           if (tree[s.goalId] case final goal? when goal.inactive) goal,
     ];
     if (waking.isNotEmpty) {
-      final memory = PlanMemoryScope.of(context);
-      final repository = GoalsScope.of(context);
       final names = waking.map((g) => '“${goalTitle(g)}”').join(', ');
       final wake = await showDialog<bool>(
         context: context,
