@@ -420,7 +420,7 @@ class _GoalSheetState extends State<_GoalSheet> {
   };
 
   String get _inheritLabel => _parentId == null
-      ? 'None (P$defaultGoalPriority)'
+      ? '(P$defaultGoalPriority)'
       : 'Inherit (P$_inherited)';
 
   /// Picks someone it's done with ([with_]) or for, searching for what's
