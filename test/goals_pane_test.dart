@@ -293,7 +293,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('1 week before'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Due Tue, Nov 24'), findsOneWidget);
+    expect(find.textContaining('Tue, Nov 24 · 1w before'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await tester.pumpAndSettle();
 

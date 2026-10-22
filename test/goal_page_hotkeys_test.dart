@@ -43,6 +43,10 @@ void main() {
 
   /// A goal's page, with two sub-goals.
   Future<void> pumpGoal(WidgetTester tester) async {
+    // Tall enough for the page's fields and its sub-goals under them.
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final repo = InMemoryActionsRepository();
     await tester.pumpWidget(
       withHotkeys(

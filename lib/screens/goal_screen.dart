@@ -5,18 +5,25 @@ import '../services/goals_repository.dart';
 import '../services/plan_memory.dart';
 import '../widgets/app_menu.dart' show RefreshButton;
 import '../widgets/event_description.dart';
+import '../widgets/durations.dart';
 import '../widgets/goal_editor.dart';
+import '../widgets/goal_fields.dart';
 import '../widgets/goal_flows.dart';
 import '../widgets/goal_reorder_list.dart';
 import '../widgets/goal_tile.dart';
 import '../widgets/hotkeys.dart';
+import '../widgets/priority_chip.dart';
 
 /// A goal's page, the same for a goal at any depth: read only, with the
 /// pencil in its bar to edit it. Its title has its path (its parents'
 /// titles) under it, and lines to its left, one for each level deep it
-/// is. Below: its status, with what can change it; when it's due, its
-/// expected time against the time spent; when it started and closed;
-/// its description, definition of done and attribution hints; the goals
+/// is -- as its edit page's bar has them ([GoalBarTitle]). Below, its
+/// fields as its edit page lays them out ([GoalField]), each said even
+/// with nothing in it: its status, with what can change it, and when it
+/// started and closed; its deadline, and how it follows its parent's;
+/// its priority, its own or where it's inherited from; its expected time
+/// and the time spent; whether its parent needs it; its people; its
+/// description, definition of done and attribution hints. Then the goals
 /// directly under it (as [byPriority] lists them, filtered by status),
 /// each opening its own page, held and dragged to reorder it
 /// ([GoalReorderList]), with "+" to add one; and its history, each
@@ -114,30 +121,10 @@ class _GoalScreenState extends State<GoalScreen> {
       for (final c in children)
         if (_statuses.contains(c.status)) c,
     ], tree);
-    final path = tree.pathOf(goal.id);
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
-        title: Row(
-          children: [
-            DepthBars(depth: tree.depthOf(goal.id), height: 36),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(goalTitle(goal), overflow: TextOverflow.ellipsis),
-                  if (path.isNotEmpty)
-                    Text(
-                      path.join(' › '),
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
+        title: GoalBarTitle(title: goalTitle(goal), path: tree.pathOf(goal.id)),
         actions: [
           RefreshButton(onRefresh: () async => _refresher.currentState?.show()),
           EditHotkey(
@@ -168,22 +155,7 @@ class _GoalScreenState extends State<GoalScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.only(bottom: 24),
           children: [
-            _statusRow(context, goal),
-            _facts(context, goal, spent[goal.id]),
-            if (goal.description case final text?)
-              _section(
-                context,
-                'Description',
-                EventDescription(text, maxLines: null, selectable: true),
-              ),
-            if (goal.definitionOfDone case final text?)
-              _section(
-                context,
-                'Definition of done',
-                EventDescription(text, maxLines: null, selectable: true),
-              ),
-            if (goal.attributionHints case final text?)
-              _section(context, 'Attribution hints', SelectableText(text)),
+            _fields(context, goal, tree, spent[goal.id]),
             const Divider(height: 24),
             Padding(
               padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 4, 0),
@@ -301,91 +273,150 @@ class _GoalScreenState extends State<GoalScreen> {
   /// deadline -- passed or not.
   static bool _canRetry(Goal goal) => goal.open && goal.due != null;
 
-  Widget _statusRow(BuildContext context, Goal goal) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-    child: Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        Chip(
-          avatar: Icon(
-            Icons.flag_outlined,
-            size: 16,
-            color: goalColor(context, goal),
-          ),
-          label: Text(goalStatuses[goal.status] ?? goal.status),
+  /// [goal]'s status, with the first two it can change to, and trying
+  /// it again if it can be.
+  Widget _status(Goal goal) => Wrap(
+    spacing: 8,
+    runSpacing: 4,
+    crossAxisAlignment: WrapCrossAlignment.center,
+    children: [
+      Chip(
+        avatar: Icon(
+          Icons.flag_outlined,
+          size: 16,
+          color: goalColor(context, goal),
         ),
-        for (final (status, label) in _statusMoves(goal).take(2))
-          OutlinedButton(
-            onPressed: () => _actions.setStatus(goal, status),
-            child: Text(label),
-          ),
-        if (_canRetry(goal))
-          OutlinedButton(
-            onPressed: () => _actions.retry(goal),
-            child: const Text(_retryLabel),
-          ),
-      ],
-    ),
+        label: Text(goalStatuses[goal.status] ?? goal.status),
+      ),
+      for (final (status, label) in _statusMoves(goal).take(2))
+        OutlinedButton(
+          onPressed: () => _actions.setStatus(goal, status),
+          child: Text(label),
+        ),
+      if (_canRetry(goal))
+        OutlinedButton(
+          onPressed: () => _actions.retry(goal),
+          child: const Text(_retryLabel),
+        ),
+    ],
   );
 
-  Widget _facts(BuildContext context, Goal goal, Duration? spent) {
+  /// [goal]'s fields, in the order its edit page has them and under the
+  /// same labels ([GoalField]), each said even with nothing in it; after
+  /// its status, when it started and closed, and how often it's been
+  /// missed.
+  Widget _fields(
+    BuildContext context,
+    Goal goal,
+    GoalTree tree,
+    Duration? spent,
+  ) {
     final theme = Theme.of(context);
-    final rows = [
-      if (goal.deadline != null) ('Due', deadlineLabel(context, goal.deadline)),
-      if (spentLabel(goal, spent) case final s?) ('Time', s),
-      if (goal.startedAt case final at?) ('Started', _when(context, at)),
-      if (goal.closedAt case final at?)
-        (goalStatuses[goal.status] ?? goal.status, _when(context, at)),
-      if (goal.misses case [..., final last] && final misses when goal.open)
-        (
-          'Missed',
-          '${timesLabel(misses.length)}'
-              '${last.deadline == null ? '' : ', last due ${deadlineLabel(context, last.deadline)}'}',
-        ),
-      if (goal.parentId != null)
-        ('Parent', goal.required ? 'Needs it done' : "Doesn't need it done"),
-      if (goal.withIds.isNotEmpty)
-        ('With', goal.withIds.map(goalPeopleNames(widget.memory)).join(', ')),
-      if (goal.forIds.isNotEmpty)
-        ('For', goal.forIds.map(goalPeopleNames(widget.memory)).join(', ')),
-    ];
+    final parent = tree[goal.parentId];
+    final people = goalPeopleLabel(
+      goal.withIds,
+      goal.forIds,
+      goalPeopleNames(widget.memory),
+    );
+    final minutes = spent?.inMinutes ?? 0;
+    final spentText = minutes > 0 ? ' · ${formatMinutes(minutes)} spent' : '';
+    Widget html(String? text) => text == null
+        ? const GoalFieldEmpty('None')
+        : EventDescription(text, maxLines: null, selectable: true);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final (label, value) in rows)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 88,
-                    child: Text(label, style: theme.textTheme.labelLarge),
-                  ),
-                  Expanded(child: Text(value)),
-                ],
+          GoalField(label: 'Status', child: _status(goal)),
+          if (goal.startedAt case final at?)
+            GoalField(label: 'Started', child: Text(_when(context, at))),
+          if (goal.closedAt case final at?)
+            GoalField(
+              label: goalStatuses[goal.status] ?? goal.status,
+              child: Text(_when(context, at)),
+            ),
+          if (goal.misses case [..., final last] && final misses when goal.open)
+            GoalField(
+              label: 'Missed',
+              child: Text(
+                '${timesLabel(misses.length)}'
+                '${last.deadline == null ? '' : ', last due ${deadlineLabel(context, last.deadline)}'}',
               ),
             ),
+          GoalField(
+            label: 'Deadline',
+            child: goal.deadline == null
+                ? const GoalFieldEmpty('None')
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(deadlineLabel(context, goal.deadline)),
+                      if ((parent, goal.deadlineOffsetMinutes) case (
+                        final parent?,
+                        final minutes?,
+                      ))
+                        Text(
+                          followsLabel(goalTitle(parent), minutes),
+                          style: theme.textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
+          ),
+          GoalField(
+            label: 'Priority',
+            child: Wrap(
+              spacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                PriorityChip(
+                  priority: tree.priorityOf(goal.id),
+                  own: goal.priority != null,
+                  large: true,
+                ),
+                if (goal.priority == null)
+                  Text(
+                    inheritedPriorityLabel(tree, goal.parentId),
+                    style: theme.textTheme.bodySmall,
+                  ),
+              ],
+            ),
+          ),
+          GoalField(
+            label: 'Expected time',
+            child: switch (goal.expectedMinutes) {
+              final expected? => Text('${formatMinutes(expected)}$spentText'),
+              null when minutes > 0 => Text('None set$spentText'),
+              null => const GoalFieldEmpty('None'),
+            },
+          ),
+          if (parent != null)
+            GoalField(
+              label: 'Required',
+              child: Text(requiredLabel(goalTitle(parent), goal.required)),
+            ),
+          GoalField(
+            label: 'People',
+            child: people == null
+                ? const GoalFieldEmpty('No one')
+                : Text(people),
+          ),
+          GoalField(label: 'Description', child: html(goal.description)),
+          GoalField(
+            label: 'Definition of done',
+            child: html(goal.definitionOfDone),
+          ),
+          GoalField(
+            label: 'Attribution hints',
+            child: switch (goal.attributionHints) {
+              final text? => SelectableText(text),
+              null => const GoalFieldEmpty('None'),
+            },
+          ),
         ],
       ),
     );
   }
-
-  Widget _section(BuildContext context, String title, Widget body) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 4),
-        body,
-      ],
-    ),
-  );
 
   static String _when(BuildContext context, DateTime at) {
     final strings = MaterialLocalizations.of(context);

@@ -16,6 +16,7 @@ class EditPage extends StatelessWidget {
   const EditPage({
     super.key,
     required this.title,
+    this.heading,
     required this.children,
     required this.onSave,
     this.actions = const [],
@@ -28,6 +29,9 @@ class EditPage extends StatelessWidget {
   final ValueGetter<bool>? changed;
 
   final String title;
+
+  /// Shown in the bar in place of [title].
+  final Widget? heading;
   final List<Widget> children;
   final VoidCallback onSave;
   final List<Widget> actions;
@@ -43,7 +47,7 @@ class EditPage extends StatelessWidget {
       onSave: saving || problem != null ? null : onSave,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(title),
+          title: heading ?? Text(title),
           actions: [
             ...actions,
             Padding(
