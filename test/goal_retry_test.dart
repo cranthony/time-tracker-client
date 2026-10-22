@@ -31,6 +31,10 @@ void main() {
     ]);
     memory = PlanMemory();
     await memory.loadGoals(repository);
+    // Tall enough for the page's fields and its history under them.
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
         home: GoalScreen(

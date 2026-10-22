@@ -9,6 +9,7 @@ import 'color_picker.dart' show priorityColor;
 import 'duration_field.dart';
 import 'edit_page.dart';
 import 'event_description.dart';
+import 'goal_fields.dart';
 import 'html_editor.dart';
 import 'picker_sheet.dart';
 
@@ -19,7 +20,9 @@ import 'picker_sheet.dart';
 /// its parent's, inherited), expected time, whether
 /// its parent needs it, its description and definition of done (HTML, in
 /// [showHtmlEditor]), the hints for telling its events, and the people
-/// it's done with and for (picked as an event's are). A new one
+/// it's done with and for (picked as an event's are) -- laid out, and
+/// its bar titled, as the goal's page has them ([GoalField],
+/// [GoalBarTitle]). A new one
 /// starts active, or inactive if chosen; an active one needs a deadline.
 /// Saving is off while the change breaks a rule (see [planned]) against
 /// [goals], every goal there is, saying which -- a change of status
@@ -326,25 +329,31 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     final theme = Theme.of(context);
     final goal = _goal;
     final parent = widget.parent;
+    final tree = GoalTree(widget.goals);
     final problem = _problem;
     final now = widget.now();
     final deadline = _shownDeadline;
+    final people = goalPeopleLabel(
+      _with,
+      _for,
+      goalPeopleNames(PlanMemoryScope.of(context)),
+    );
+    final title = goal == null
+        ? (parent == null ? 'New goal' : 'New sub-goal')
+        : 'Edit goal';
     return EditPage(
-      title: goal == null
-          ? (parent == null ? 'New goal' : 'New sub-goal')
-          : 'Edit goal',
+      title: title,
+      heading: GoalBarTitle(
+        title: title,
+        path: parent == null
+            ? const []
+            : [...tree.pathOf(parent.id), goalTitle(parent)],
+      ),
       problem: problem,
       changed: () => _changes.isNotEmpty,
       onSave: () => Navigator.of(context).pop(_changes),
+      // In the order the goal's page has them, under the same labels.
       children: [
-        if (parent != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              'Under ${[...GoalTree(widget.goals).pathOf(parent.id), goalTitle(parent)].join(' › ')}',
-              style: theme.textTheme.bodySmall,
-            ),
-          ),
         TextField(
           controller: _title,
           autofocus: goal == null,
@@ -355,260 +364,231 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
           ),
           onChanged: (_) => setState(() {}),
         ),
-        if (goal == null) ...[
-          const SizedBox(height: 16),
-          SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'active', label: Text('Start active')),
-              ButtonSegment(value: 'inactive', label: Text('Start inactive')),
-            ],
-            selected: {_status},
-            onSelectionChanged: (picked) =>
-                setState(() => _status = picked.single),
-          ),
-        ] else ...[
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            initialValue: _status,
-            decoration: const InputDecoration(labelText: 'Status'),
-            items: [
-              for (final MapEntry(:key, :value) in goalStatuses.entries)
-                DropdownMenuItem(value: key, child: Text(value)),
-            ],
-            onChanged: (picked) {
-              if (picked != null) setState(() => _status = picked);
-            },
-          ),
-        ],
-        const SizedBox(height: 16),
-        Text('Deadline', style: theme.textTheme.labelLarge),
-        if (parent != null)
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text("Follow its parent's deadline"),
-            subtitle: Text(
-              parent.deadline == null
-                  ? '“${goalTitle(parent)}” has no deadline yet'
-                  : _follows
-                  ? 'Due ${deadlineLabel(context, deadline)}, moving with '
-                        '“${goalTitle(parent)}”'
-                  : '“${goalTitle(parent)}” is due '
-                        '${deadlineLabel(context, parent.deadline)}',
-            ),
-            value: _follows,
-            onChanged: (value) => setState(() {
-              // Untied, it keeps the deadline it had.
-              if (!value) _deadline = _shownDeadline;
-              _follows = value;
-            }),
-          ),
-        if (_follows) ...[
-          Wrap(
-            spacing: 8,
+        const SizedBox(height: 8),
+        GoalField(
+          label: 'Status',
+          child: goal == null
+              ? SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'active', label: Text('Active')),
+                    ButtonSegment(value: 'inactive', label: Text('Inactive')),
+                  ],
+                  selected: {_status},
+                  onSelectionChanged: (picked) =>
+                      setState(() => _status = picked.single),
+                )
+              : DropdownButtonFormField<String>(
+                  initialValue: _status,
+                  items: [
+                    for (final MapEntry(:key, :value) in goalStatuses.entries)
+                      DropdownMenuItem(value: key, child: Text(value)),
+                  ],
+                  onChanged: (picked) {
+                    if (picked != null) setState(() => _status = picked);
+                  },
+                ),
+        ),
+        GoalField(
+          label: 'Deadline',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final (label, minutes) in const [
-                ("Same as parent's", 0),
-                ('1 day before', Duration.minutesPerDay),
-                ('1 week before', 7 * Duration.minutesPerDay),
-              ])
-                ChoiceChip(
-                  label: Text(label),
-                  selected: _offsetMinutes == minutes,
-                  onSelected: (_) => setState(() {
-                    _offset.text = '$minutes';
-                    _offsetPicks++;
+              if (parent != null)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text("Follow its parent's deadline"),
+                  subtitle: Text(
+                    parent.deadline == null
+                        ? '“${goalTitle(parent)}” has no deadline yet'
+                        : _follows
+                        ? '${deadlineLabel(context, deadline)} · '
+                              '${followsLabel(goalTitle(parent), _offsetMinutes ?? 0)}'
+                        : '“${goalTitle(parent)}” is due '
+                              '${deadlineLabel(context, parent.deadline)}',
+                  ),
+                  value: _follows,
+                  onChanged: (value) => setState(() {
+                    // Untied, it keeps the deadline it had.
+                    if (!value) _deadline = _shownDeadline;
+                    _follows = value;
                   }),
                 ),
+              if (_follows) ...[
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final (label, minutes) in const [
+                      ("Same as parent's", 0),
+                      ('1 day before', Duration.minutesPerDay),
+                      ('1 week before', 7 * Duration.minutesPerDay),
+                    ])
+                      ChoiceChip(
+                        label: Text(label),
+                        selected: _offsetMinutes == minutes,
+                        onSelected: (_) => setState(() {
+                          _offset.text = '$minutes';
+                          _offsetPicks++;
+                        }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                DurationField(
+                  // Shown anew when a chip sets it.
+                  key: ValueKey(_offsetPicks),
+                  controller: _offset,
+                  label: "How long before its parent's",
+                  days: true,
+                  onChanged: () => setState(() {}),
+                ),
+              ] else ...[
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.event),
+                      label: Text(
+                        _deadline == null
+                            ? 'Pick a date'
+                            : deadlineLabel(context, _deadline),
+                      ),
+                      onPressed: _pickDate,
+                    ),
+                    if (_deadline != null)
+                      TextButton.icon(
+                        icon: const Icon(Icons.schedule),
+                        label: Text(
+                          deadlineHasTime(_deadline)
+                              ? 'Change time'
+                              : 'Add a time',
+                        ),
+                        onPressed: _pickTime,
+                      ),
+                    if (deadlineHasTime(_deadline))
+                      TextButton(
+                        onPressed: () => setState(
+                          () => _deadline = _deadline!.split('T').first,
+                        ),
+                        child: const Text('End of day'),
+                      ),
+                    if (_deadline != null && _status != 'active')
+                      IconButton(
+                        tooltip: 'No deadline',
+                        icon: const Icon(Icons.clear),
+                        onPressed: () => setState(() => _deadline = null),
+                      ),
+                  ],
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    ActionChip(
+                      label: const Text('End of today'),
+                      onPressed: () =>
+                          setState(() => _deadline = endOfToday(now)),
+                    ),
+                    ActionChip(
+                      label: const Text('End of this week'),
+                      onPressed: () =>
+                          setState(() => _deadline = endOfWeek(now)),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: 8),
-          DurationField(
-            // Shown anew when a chip sets it.
-            key: ValueKey(_offsetPicks),
-            controller: _offset,
-            label: "How long before its parent's",
-            days: true,
-            onChanged: () => setState(() {}),
-          ),
-        ] else ...[
-          const SizedBox(height: 4),
-          Wrap(
+        ),
+        GoalField(
+          label: 'Priority',
+          child: Wrap(
             spacing: 8,
             runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              OutlinedButton.icon(
-                icon: const Icon(Icons.event),
-                label: Text(
-                  _deadline == null
-                      ? 'Pick a date'
-                      : deadlineLabel(context, _deadline),
-                ),
-                onPressed: _pickDate,
-              ),
-              if (_deadline != null)
-                TextButton.icon(
-                  icon: const Icon(Icons.schedule),
-                  label: Text(
-                    deadlineHasTime(_deadline) ? 'Change time' : 'Add a time',
-                  ),
-                  onPressed: _pickTime,
-                ),
-              if (deadlineHasTime(_deadline))
-                TextButton(
-                  onPressed: () =>
-                      setState(() => _deadline = _deadline!.split('T').first),
-                  child: const Text('End of day'),
-                ),
-              if (_deadline != null && _status != 'active')
-                IconButton(
-                  tooltip: 'No deadline',
-                  icon: const Icon(Icons.clear),
-                  onPressed: () => setState(() => _deadline = null),
-                ),
-            ],
-          ),
-          Wrap(
-            spacing: 8,
-            children: [
-              ActionChip(
-                label: const Text('End of today'),
-                onPressed: () => setState(() => _deadline = endOfToday(now)),
-              ),
-              ActionChip(
-                label: const Text('End of this week'),
-                onPressed: () => setState(() => _deadline = endOfWeek(now)),
-              ),
-            ],
-          ),
-        ],
-        const SizedBox(height: 16),
-        Text('Priority', style: theme.textTheme.labelLarge),
-        const SizedBox(height: 4),
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          children: [
-            ChoiceChip(
-              showCheckmark: false,
-              label: Text(
-                parent == null
-                    ? 'None (P$defaultGoalPriority)'
-                    : 'Inherit (P${GoalTree(widget.goals).priorityOf(parent.id)})',
-              ),
-              selected: _priority == null,
-              onSelected: (_) => setState(() => _priority = null),
-            ),
-            for (final p in const [0, 1, 2, 3])
               ChoiceChip(
                 showCheckmark: false,
-                avatar: CircleAvatar(backgroundColor: priorityColor(p)),
-                label: Text('P$p'),
-                selected: _priority == p,
-                onSelected: (_) => setState(() => _priority = p),
+                label: Text(
+                  parent == null
+                      ? 'None (P$defaultGoalPriority)'
+                      : 'Inherit (P${tree.priorityOf(parent.id)})',
+                ),
+                tooltip: inheritedPriorityLabel(tree, parent?.id),
+                selected: _priority == null,
+                onSelected: (_) => setState(() => _priority = null),
               ),
-          ],
+              for (final p in const [0, 1, 2, 3])
+                ChoiceChip(
+                  showCheckmark: false,
+                  avatar: CircleAvatar(backgroundColor: priorityColor(p)),
+                  label: Text('P$p'),
+                  selected: _priority == p,
+                  onSelected: (_) => setState(() => _priority = p),
+                ),
+            ],
+          ),
         ),
-        const SizedBox(height: 16),
-        DurationField(
-          controller: _minutes,
-          label: 'Expected time (optional)',
-          onChanged: () => setState(() {}),
+        GoalField(
+          label: 'Expected time',
+          child: DurationField(
+            controller: _minutes,
+            label: 'How long it should take (optional)',
+            onChanged: () => setState(() {}),
+          ),
         ),
         if (parent != null)
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Required'),
-            subtitle: Text('“${goalTitle(parent)}” needs it done to be done'),
-            value: _required,
-            onChanged: (value) => setState(() => _required = value),
+          GoalField(
+            label: 'Required',
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(requiredLabel(goalTitle(parent), _required)),
+              value: _required,
+              onChanged: (value) => setState(() => _required = value),
+            ),
           ),
-        const SizedBox(height: 8),
-        HtmlField(
+        GoalField(
+          label: 'People',
+          onTap: _pickPeople,
+          child: people == null
+              ? const GoalFieldEmpty('Add who it’s with or for')
+              : Text(people),
+        ),
+        GoalField(
           label: 'Description',
-          text: _description,
           onTap: () =>
               _editHtml('Description', _description, (v) => _description = v),
+          child: _html(_description, 'Add description'),
         ),
-        HtmlField(
+        GoalField(
           label: 'Definition of done',
-          text: _definitionOfDone,
           onTap: () => _editHtml(
             'Definition of done',
             _definitionOfDone,
             (v) => _definitionOfDone = v,
           ),
+          child: _html(_definitionOfDone, 'Add definition of done'),
         ),
-        const SizedBox(height: 8),
-        _PeopleField(
-          withIds: _with,
-          forIds: _for,
-          names: goalPeopleNames(PlanMemoryScope.of(context)),
-          onTap: _pickPeople,
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _hints,
-          minLines: 2,
-          maxLines: 6,
-          decoration: const InputDecoration(
-            labelText: 'Attribution hints',
-            hintText: 'How Claude can tell which events are for it',
+        GoalField(
+          label: 'Attribution hints',
+          child: TextField(
+            controller: _hints,
+            minLines: 2,
+            maxLines: 6,
+            decoration: InputDecoration(
+              hintText: 'How Claude can tell which events are for it',
+              hintStyle: TextStyle(color: theme.hintColor),
+            ),
+            onChanged: (_) => setState(() {}),
           ),
-          onChanged: (_) => setState(() {}),
         ),
       ],
     );
   }
-}
 
-/// Who a goal is done with and for, as it reads, tapped to pick them:
-/// "Add people" while there's no one.
-class _PeopleField extends StatelessWidget {
-  const _PeopleField({
-    required this.withIds,
-    required this.forIds,
-    required this.names,
-    required this.onTap,
-  });
-
-  final List<String> withIds;
-  final List<String> forIds;
-  final String Function(String id) names;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final said = goalPeopleLabel(withIds, forIds, names);
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('People', style: theme.textTheme.labelLarge),
-                  const SizedBox(height: 4),
-                  Text(
-                    said ?? 'Add who it’s with or for',
-                    style: said == null
-                        ? TextStyle(color: theme.hintColor)
-                        : null,
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.group_outlined, size: 18),
-          ],
-        ),
-      ),
-    );
-  }
+  /// An HTML field's [text] as it reads, or [empty] while there's none.
+  static Widget _html(String? text, String empty) => text == null
+      ? GoalFieldEmpty(empty)
+      : EventDescription(text, maxLines: 4, expandable: false);
 }
 
 /// Names people by id from [memory]: an id it doesn't know, as itself.

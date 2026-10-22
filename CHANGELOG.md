@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.177.0
+
+- A goal's page and its edit page lay its fields out alike, in the same
+  order and under the same labels, its title and path in the bar of
+  each. Its page now shows its priority -- its own, or where it's
+  inherited from -- and how its deadline follows its parent's, and says
+  every field, even one with nothing in it ("None", "No one"). Who it's
+  with and for are one People row on both.
+
 ## 7.176.0
 
 - Turning a compaction proposal's details to Notes, Follow-through or
