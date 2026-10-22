@@ -956,7 +956,8 @@ Future<T> _kept<T>(Future<void> loading, T? Function() kept) async {
 /// tapping one
 /// picks it and closes the sheet. With [groupsPickable], a group is picked
 /// as anything else is, its arrow opening it; otherwise tapping a group
-/// opens it. [marker] goes before a name.
+/// opens it. [marker] goes before a name. With [add], a new one can be
+/// added from the sheet, as [pickNode] adds one.
 class PickerField extends StatelessWidget {
   const PickerField({
     super.key,
@@ -968,6 +969,7 @@ class PickerField extends StatelessWidget {
     this.groupsPickable = false,
     this.marker,
     this.searchHint = 'Search',
+    this.add,
   });
 
   final String label;
@@ -978,6 +980,12 @@ class PickerField extends StatelessWidget {
   final bool groupsPickable;
   final Widget Function(PickerNode node)? marker;
   final String searchHint;
+  final ({
+    String noun,
+    IconData icon,
+    Future<String?> Function(String name) onAdd,
+  })?
+  add;
 
   Future<void> _pick(BuildContext context) async {
     final picked = await pickNode(
@@ -989,6 +997,7 @@ class PickerField extends StatelessWidget {
       groupsPickable: groupsPickable,
       marker: marker,
       searchHint: searchHint,
+      add: add,
     );
     if (picked != null && picked.id != value) onChanged(picked.id);
   }

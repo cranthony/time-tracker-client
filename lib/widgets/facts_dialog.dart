@@ -7,6 +7,7 @@ import '../models/proposal.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import 'hotkeys.dart';
+import 'picker_edits.dart';
 import 'quick_add_sheet.dart';
 
 /// Edits what happened at an event, its [facts] -- who was there with you,
@@ -140,6 +141,7 @@ class _FactsDialogState extends State<_FactsDialog> {
       groups: _memory?.locationGroups ?? const [],
       save: (fields) =>
           repository.createLocation(Location.fromJson({'id': '', ...fields})),
+      addGroup: addLocationGroup(repository, _memory),
     );
     if (created == null || !mounted) return;
     setState(() {

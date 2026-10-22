@@ -10,8 +10,8 @@ import 'actions_picker.dart';
 import 'hotkeys.dart';
 import 'picker_sheet.dart';
 
-// Quick ways to add a person, a location or an action: a sheet over the
-// bottom of the screen, as the New note and New goal sheets are, with the
+// Quick ways to add a person, a location, a location group or an action:
+// a sheet over the bottom of the screen, as the New note and New goal sheets are, with the
 // fields most often set -- and, where there's more to set than fits, a
 // More button that goes on in the full page or dialog with what's typed.
 
@@ -40,7 +40,9 @@ Future<T?> showAddPersonSheet<T extends Object>(
 /// if given, and saves it with [save], given the fields as
 /// `create_location` takes them; if [save] fails, it stays open, saying
 /// so, to try again. That's every field a location has, so there's no
-/// More. Returns what [save] returned, or null if it was called off.
+/// More. With [addGroup], a new group can be added from its group picker
+/// (see [LocationGroupField]). Returns what [save] returned, or null if it
+/// was called off.
 Future<T?> showAddLocationSheet<T extends Object>(
   BuildContext context, {
   String? name,
@@ -48,6 +50,7 @@ Future<T?> showAddLocationSheet<T extends Object>(
   String? mapLocation,
   List<LocationGroup> groups = const [],
   required Future<T> Function(Map<String, Object?> fields) save,
+  Future<LocationGroup> Function(Map<String, Object?> fields)? addGroup,
 }) => _show(
   context,
   _LocationSheet(
@@ -56,7 +59,26 @@ Future<T?> showAddLocationSheet<T extends Object>(
     mapLocation: mapLocation,
     groups: groups,
     save: save,
+    addGroup: addGroup,
   ),
+  null,
+);
+
+/// Asks for a new location group's name, note and the group it's inside
+/// (of [groups]), in a sheet, starting with [name] if given, and saves it
+/// with [save], given the fields as `create_location_group` takes them;
+/// if [save] fails, it stays open, saying so, to try again. The group
+/// it's inside can be a new one too, added with [save] in turn. That's
+/// every field a group has, so there's no More. Returns the group as
+/// saved, or null if it was called off.
+Future<LocationGroup?> showAddLocationGroupSheet(
+  BuildContext context, {
+  String? name,
+  List<LocationGroup> groups = const [],
+  required Future<LocationGroup> Function(Map<String, Object?> fields) save,
+}) => _show(
+  context,
+  _LocationGroupSheet(name: name, groups: groups, save: save),
   null,
 );
 
@@ -259,6 +281,68 @@ class _Frame extends StatelessWidget {
 /// [text] trimmed, or null if that leaves nothing.
 String? _trimmed(String text) => text.trim().isEmpty ? null : text.trim();
 
+/// The location group something's in, of [groups], under [label]: none,
+/// or one picked in a sheet, as [PickerField] picks. With [addGroup], a
+/// new one can be added there, named as it's typed, in the quick New
+/// location group sheet: [onAdded] is told of it -- and of any group
+/// added inside that sheet in turn -- so it can be shown, then it's
+/// picked.
+class LocationGroupField extends StatelessWidget {
+  const LocationGroupField({
+    super.key,
+    required this.label,
+    required this.groups,
+    required this.value,
+    required this.onChanged,
+    this.addGroup,
+    this.onAdded,
+  });
+
+  final String label;
+  final List<LocationGroup> groups;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  final Future<LocationGroup> Function(Map<String, Object?> fields)? addGroup;
+  final ValueChanged<LocationGroup>? onAdded;
+
+  @override
+  Widget build(BuildContext context) => PickerField(
+    label: label,
+    nodes: locationGroupNodes(groups),
+    value: value,
+    none: 'None',
+    groupsPickable: true,
+    searchHint: 'Search groups',
+    onChanged: onChanged,
+    add: switch (addGroup) {
+      final addGroup? => (
+        noun: 'location group',
+        icon: Icons.create_new_folder_outlined,
+        onAdd: (name) async {
+          final added = await showAddLocationGroupSheet(
+            context,
+            name: name.isEmpty ? null : name,
+            groups: groups,
+            save: (fields) async {
+              final added = await addGroup(fields);
+              onAdded?.call(added);
+              return added;
+            },
+          );
+          return added?.id;
+        },
+      ),
+      null => null,
+    },
+  );
+}
+
+/// [groups] with [added], if they don't have it already.
+List<LocationGroup> withGroup(
+  List<LocationGroup> groups,
+  LocationGroup added,
+) => groups.any((g) => g.id == added.id) ? groups : [...groups, added];
+
 InputDecoration _decoration(String label, {String? hint, String? helper}) =>
     InputDecoration(
       labelText: label,
@@ -385,6 +469,7 @@ class _LocationSheet<T> extends StatefulWidget {
     required this.mapLocation,
     required this.groups,
     required this.save,
+    required this.addGroup,
   });
 
   final String? name;
@@ -392,6 +477,7 @@ class _LocationSheet<T> extends StatefulWidget {
   final String? mapLocation;
   final List<LocationGroup> groups;
   final Future<T> Function(Map<String, Object?> fields) save;
+  final Future<LocationGroup> Function(Map<String, Object?> fields)? addGroup;
 
   @override
   State<_LocationSheet<T>> createState() => _LocationSheetState<T>();
@@ -402,6 +488,7 @@ class _LocationSheetState<T> extends State<_LocationSheet<T>>
   late final _name = TextEditingController(text: widget.name);
   late final _hint = TextEditingController(text: widget.hint);
   late final _map = TextEditingController(text: widget.mapLocation);
+  late var _groups = widget.groups;
   String? _group;
 
   @override
@@ -471,19 +558,111 @@ class _LocationSheetState<T> extends State<_LocationSheet<T>>
           ),
         ),
       ),
-      if (widget.groups.isNotEmpty)
+      if (_groups.isNotEmpty || widget.addGroup != null)
         FieldHotkey(
           'G',
-          child: PickerField(
+          child: LocationGroupField(
             label: 'Group (optional)',
-            nodes: locationGroupNodes(widget.groups),
+            groups: _groups,
             value: _group,
-            none: 'None',
-            groupsPickable: true,
-            searchHint: 'Search groups',
+            addGroup: widget.addGroup,
+            onAdded: (added) {
+              if (mounted) setState(() => _groups = withGroup(_groups, added));
+            },
             onChanged: (picked) => setState(() => _group = picked),
           ),
         ),
+    ],
+  );
+}
+
+class _LocationGroupSheet extends StatefulWidget {
+  const _LocationGroupSheet({
+    required this.name,
+    required this.groups,
+    required this.save,
+  });
+
+  final String? name;
+  final List<LocationGroup> groups;
+  final Future<LocationGroup> Function(Map<String, Object?> fields) save;
+
+  @override
+  State<_LocationGroupSheet> createState() => _LocationGroupSheetState();
+}
+
+class _LocationGroupSheetState extends State<_LocationGroupSheet>
+    with _Adding<_LocationGroupSheet, LocationGroup> {
+  late final _name = TextEditingController(text: widget.name);
+  final _note = TextEditingController();
+  late var _groups = widget.groups;
+  String? _group;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  @override
+  Future<LocationGroup> Function(Map<String, Object?> fields) get save =>
+      widget.save;
+
+  @override
+  bool get complete => _name.text.trim().isNotEmpty;
+
+  @override
+  Map<String, Object?> get fields => {
+    'name': _name.text.trim(),
+    'note': _trimmed(_note.text),
+    'group_id': ?_group,
+  };
+
+  @override
+  Widget build(BuildContext context) => _Frame(
+    title: 'New location group',
+    saving: saving,
+    saveError: saveError,
+    onAdd: addable ? add : null,
+    fields: [
+      FieldHotkey(
+        'N',
+        child: TextField(
+          controller: _name,
+          autofocus: true,
+          maxLength: 50,
+          textCapitalization: TextCapitalization.words,
+          decoration: _decoration('Name', hint: 'e.g. Brooklyn'),
+          onChanged: (_) => setState(() {}),
+          onSubmitted: (_) => add(),
+        ),
+      ),
+      FieldHotkey(
+        'O',
+        child: TextField(
+          controller: _note,
+          minLines: 1,
+          maxLines: 3,
+          decoration: _decoration(
+            'Note (optional)',
+            hint: 'What it covers: "the blocks around the park"',
+          ),
+        ),
+      ),
+      FieldHotkey(
+        'I',
+        child: LocationGroupField(
+          label: 'Inside (optional)',
+          groups: _groups,
+          value: _group,
+          addGroup: widget.save,
+          onAdded: (added) {
+            if (mounted) setState(() => _groups = withGroup(_groups, added));
+          },
+          onChanged: (picked) => setState(() => _group = picked),
+        ),
+      ),
     ],
   );
 }

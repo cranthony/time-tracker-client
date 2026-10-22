@@ -9,7 +9,7 @@ import 'hotkeys.dart';
 import 'edit_page.dart';
 import 'error_sheet.dart';
 import 'focus_buttons.dart';
-import 'picker_sheet.dart';
+import 'quick_add_sheet.dart';
 import 'scoring_editor.dart';
 import 'traits_field.dart';
 
@@ -395,8 +395,9 @@ Future<bool> showCircleDialog(
 /// null if it was called off. "Delete", asked first, calls [delete]: then
 /// [location] is returned. One added starts with [name], if given; with
 /// [mapLocation], its map location starts as that, and one it had shows
-/// under it. [extra] shows under the rest -- its travel times, from the
-/// Locations pane.
+/// under it. With [addGroup], a new group can be added from its group
+/// picker (see [LocationGroupField]). [extra] shows under the rest -- its
+/// travel times, from the Locations pane.
 Future<Location?> showLocationDialog(
   BuildContext context, {
   Location? location,
@@ -404,6 +405,7 @@ Future<Location?> showLocationDialog(
   String? mapLocation,
   List<LocationGroup> groups = const [],
   required Future<Location> Function(Map<String, Object?> fields) save,
+  Future<LocationGroup> Function(Map<String, Object?> fields)? addGroup,
   Future<void> Function()? delete,
   Widget? extra,
 }) async {
@@ -422,9 +424,10 @@ Future<Location?> showLocationDialog(
       deleteExplanation:
           "Events there keep its id, but won't say where they were.",
       map: (value: location?.mapLocation, typed: mapLocation),
-      group: groups.isEmpty
+      group: groups.isEmpty && addGroup == null
           ? null
           : (value: location?.groupId, choices: groups, label: 'Group'),
+      addGroup: addGroup,
       save: (fields) async => saved = await save(fields),
       delete: delete,
       extra: extra,
@@ -437,13 +440,15 @@ Future<Location?> showLocationDialog(
 /// and the group it's inside, from [groups] -- never itself, or one inside
 /// it. Saves with [save], returning what it returned, or null if it was
 /// called off. "Delete", asked first, calls [delete]: then [group] is
-/// returned. [extra] shows under the rest -- its travel times, from the
-/// Locations pane.
+/// returned. With [addGroup], a new group to be inside can be added from
+/// its picker (see [LocationGroupField]). [extra] shows under the rest --
+/// its travel times, from the Locations pane.
 Future<LocationGroup?> showLocationGroupDialog(
   BuildContext context, {
   LocationGroup? group,
   List<LocationGroup> groups = const [],
   required Future<LocationGroup> Function(Map<String, Object?> fields) save,
+  Future<LocationGroup> Function(Map<String, Object?> fields)? addGroup,
   Future<void> Function()? delete,
   Widget? extra,
 }) async {
@@ -466,9 +471,10 @@ Future<LocationGroup?> showLocationGroupDialog(
       deleteExplanation:
           'Its locations and groups stay: they move up into the group it '
           'was in.',
-      group: choices.isEmpty
+      group: choices.isEmpty && addGroup == null
           ? null
           : (value: group?.groupId, choices: choices, label: 'Inside'),
+      addGroup: addGroup,
       save: (fields) async => saved = await save(fields),
       delete: delete,
       extra: extra,
@@ -493,6 +499,7 @@ class _NamedDialog extends StatefulWidget {
     this.scoring,
     this.map,
     this.group,
+    this.addGroup,
     this.typed,
     this.extra,
   });
@@ -529,6 +536,9 @@ class _NamedDialog extends StatefulWidget {
   /// the groups it can be in, by [label].
   final ({String? value, List<LocationGroup> choices, String label})? group;
 
+  /// Adds a location group, to put it in.
+  final Future<LocationGroup> Function(Map<String, Object?> fields)? addGroup;
+
   /// More, under the rest: for a location, its travel times.
   final Widget? extra;
 
@@ -543,6 +553,7 @@ class _NamedDialogState extends State<_NamedDialog> {
     text: widget.map?.typed ?? widget.map?.value,
   );
   late String? _group = widget.group?.value;
+  late var _groups = widget.group?.choices ?? const <LocationGroup>[];
   late Aggregation? _scoring = widget.scoring?.value;
   bool _scoringChanged = false;
 
@@ -705,13 +716,16 @@ class _NamedDialogState extends State<_NamedDialog> {
                 const SizedBox(height: 16),
                 FieldHotkey(
                   letters[group.label],
-                  child: PickerField(
+                  child: LocationGroupField(
                     label: '${group.label} (optional)',
-                    nodes: locationGroupNodes(group.choices),
+                    groups: _groups,
                     value: _group,
-                    none: 'None',
-                    groupsPickable: true,
-                    searchHint: 'Search groups',
+                    addGroup: widget.addGroup,
+                    onAdded: (added) {
+                      if (mounted) {
+                        setState(() => _groups = withGroup(_groups, added));
+                      }
+                    },
                     onChanged: (picked) => setState(() => _group = picked),
                   ),
                 ),

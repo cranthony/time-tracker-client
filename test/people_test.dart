@@ -967,10 +967,17 @@ void main() {
       await tester.pumpAndSettle();
 
       // New York can't go in Brooklyn, inside it -- so there's nowhere
-      // to put it.
+      // to put it, but a new group.
       await tester.tap(find.text('New York'));
       await tester.pumpAndSettle();
-      expect(find.text('Inside (optional)'), findsNothing);
+      await tester.tap(
+        find.widgetWithText(InputDecorator, 'Inside (optional)'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('New York › Brooklyn'), findsNothing);
+      expect(find.text('Add location group…'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       // Brooklyn can go in New York, but not in itself.
