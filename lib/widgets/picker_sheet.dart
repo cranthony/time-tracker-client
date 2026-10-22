@@ -101,7 +101,7 @@ Future<List<String>?> showActionsSheet(
     context,
     title: 'Actions',
     result: () => ids,
-    body: (context, setState) => _OwnSearch(
+    body: (context, setState) => OwnPickerSearch(
       text: typed,
       matchAny: typed.isNotEmpty,
       builder: (context, search) => FutureBuilder(
@@ -661,7 +661,7 @@ Future<Location?> _pickMapLocationHolder(
   context,
   title: 'Assign to a location',
   result: () => null,
-  body: (context, _) => _OwnSearch(
+  body: (context, _) => OwnPickerSearch(
     text: '',
     matchAny: false,
     builder: (context, search) => FutureBuilder(
@@ -711,10 +711,11 @@ String? _firstMap(List<Location>? locations, List<String> ids) => [
 
 /// A [PickerSearch] of its own for what [builder] builds, kept as long as
 /// it is, starting with [text]; [matchAny] as given.
-class _OwnSearch extends StatefulWidget {
-  const _OwnSearch({
-    required this.text,
-    required this.matchAny,
+class OwnPickerSearch extends StatefulWidget {
+  const OwnPickerSearch({
+    super.key,
+    this.text = '',
+    this.matchAny = false,
     required this.builder,
   });
 
@@ -723,10 +724,10 @@ class _OwnSearch extends StatefulWidget {
   final Widget Function(BuildContext context, PickerSearch search) builder;
 
   @override
-  State<_OwnSearch> createState() => _OwnSearchState();
+  State<OwnPickerSearch> createState() => _OwnPickerSearchState();
 }
 
-class _OwnSearchState extends State<_OwnSearch> {
+class _OwnPickerSearchState extends State<OwnPickerSearch> {
   late final _search = PickerSearch(
     text: widget.text,
     matchAny: widget.matchAny,
@@ -1061,7 +1062,7 @@ Future<({String? id})?> pickNode(
   context,
   title: title,
   result: () => (id: value),
-  body: (context, _) => _OwnSearch(
+  body: (context, _) => OwnPickerSearch(
     text: query?.trim() ?? '',
     matchAny: query?.trim().isNotEmpty ?? false,
     builder: (context, search) => TreePicker(
@@ -1114,7 +1115,7 @@ Future<List<String>?> pickNodes(
     context,
     title: title,
     result: () => ids,
-    body: (context, setState) => _OwnSearch(
+    body: (context, setState) => OwnPickerSearch(
       text: typed,
       matchAny: typed.isNotEmpty,
       builder: (context, search) => TreePicker(

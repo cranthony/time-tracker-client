@@ -56,7 +56,7 @@ Future<GoalSheetResult?> showAddGoalSheet(
   GoalDrafts? drafts,
   String? title,
   DateTime? day,
-  Future<AddedParent?> Function(String title, DateTime day)? addParent,
+  Future<GoalAdded?> Function(String title, DateTime day)? addParent,
   DateTime Function() now = DateTime.now,
   VoidCallback? onFieldFocused,
 }) async {
@@ -89,9 +89,9 @@ Future<GoalSheetResult?> showAddGoalSheet(
 
 var _newGoalSheets = 0;
 
-/// A goal added from a New goal sheet's Under picker, for it to go under,
-/// and every goal there is now.
-typedef AddedParent = ({Goal added, List<Goal> goals});
+/// A goal added from a picker -- a New goal sheet's Under picker, for it
+/// to go under, say -- and every goal there is now.
+typedef GoalAdded = ({Goal added, List<Goal> goals});
 
 /// Whether a New goal sheet is open, so a hotkey doesn't open another.
 bool get newGoalSheetOpen => _newGoalSheets > 0;
@@ -154,7 +154,7 @@ class _GoalSheet extends StatefulWidget {
   final DateTime? day;
 
   /// Adds a goal for it to go under; null for none to be added.
-  final Future<AddedParent?> Function(String title, DateTime day)? addParent;
+  final Future<GoalAdded?> Function(String title, DateTime day)? addParent;
 
   /// Where the people to pick from come from; null for none to pick.
   final PeopleRepository? people;

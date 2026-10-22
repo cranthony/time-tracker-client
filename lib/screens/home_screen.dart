@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/event.dart';
-import '../models/goal.dart';
 import '../outbox/action_writes.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/note_writes.dart';
@@ -281,61 +280,14 @@ class _HomeScreenState extends State<HomeScreen> {
     if (repository == null || newGoalSheetOpen) return;
     // What's there to check it against, if they've loaded.
     unawaited(_planMemory.loadGoals(repository));
-    final saved = await _addGoal(
-      repository,
+    final saved = await addGoalInSheet(
+      context,
+      repository: repository,
+      memory: _planMemory,
       drafts: _goalDrafts,
       onFieldFocused: onFieldFocused,
     );
     if (saved != null) await _goalDrafts.remove();
-  }
-
-  /// Adds a goal in a New goal sheet, starting with [title] and due on
-  /// [day], if given -- or, from its More, the full New goal page. Its
-  /// Under picker adds a goal for it to go under the same way, in a sheet
-  /// over it, kept as no draft. Returns it as saved; null if it was
-  /// called off.
-  Future<Goal?> _addGoal(
-    GoalsRepository repository, {
-    GoalDrafts? drafts,
-    String? title,
-    DateTime? day,
-    VoidCallback? onFieldFocused,
-  }) async {
-    GoalActions actions() => GoalActions(
-      context: context,
-      repository: repository,
-      memory: _planMemory,
-    );
-    Goal? added;
-    final result = await showAddGoalSheet(
-      context,
-      keep: (fields) async => added = await actions().create(fields),
-      goals: _planMemory.goals ?? const [],
-      drafts: drafts,
-      title: title,
-      day: day,
-      addParent: (title, day) async {
-        final added = await _addGoal(
-          repository,
-          title: title.isEmpty ? null : title,
-          day: day,
-        );
-        if (added == null) return null;
-        return (added: added, goals: _planMemory.goals ?? const []);
-      },
-      onFieldFocused: onFieldFocused,
-    );
-    if (result is! MoreGoal || !mounted) return added;
-    final goalActions = actions();
-    return goalActions.add(
-      parent: goalActions.tree[result.parentId],
-      title: result.title,
-      deadline: result.deadline,
-      description: result.description,
-      priority: result.priority,
-      withIds: result.withIds,
-      forIds: result.forIds,
-    );
   }
 
   /// Goes to [tab], from a hotkey: Events at now. Not while a dialog is

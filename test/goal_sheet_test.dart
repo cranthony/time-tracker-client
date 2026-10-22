@@ -42,7 +42,7 @@ void main() {
     drafts = withDrafts ?? GoalDrafts.inMemory();
     result = null;
     final all = [...goals];
-    Future<AddedParent?> addParent(
+    Future<GoalAdded?> addParent(
       BuildContext context,
       String title,
       DateTime day,
@@ -268,11 +268,10 @@ void main() {
 
     await tester.tap(find.text('Add'));
     await tester.pumpAndSettle();
-    expect([for (final k in kept) (k['title'], k['parent_id'])], [
-      ('Wellbeing', null),
-      ('Fitness', 'Wellbeing'),
-      ('Run 10k', 'Fitness'),
-    ]);
+    expect(
+      [for (final k in kept) (k['title'], k['parent_id'])],
+      [('Wellbeing', null), ('Fitness', 'Wellbeing'), ('Run 10k', 'Fitness')],
+    );
     expect(kept.first['deadline'], '2026-10-19');
   });
 

@@ -4,11 +4,13 @@ import 'durations.dart';
 import '../models/event.dart';
 import '../models/goal.dart';
 import '../models/goal_changes.dart';
+import '../services/goal_drafts.dart';
 import '../services/goals_repository.dart';
 import '../services/plan_memory.dart';
 import 'error_sheet.dart';
 import 'goal_editor.dart';
 import 'goal_icon.dart';
+import 'goal_sheet.dart';
 import 'hotkeys.dart';
 
 /// Asks which day to try a goal again by -- tomorrow to start with, no
@@ -35,6 +37,73 @@ Future<String?> pickRetryDeadline(
           time: true,
         )
       : deadlineOf(day);
+}
+
+/// Adds a goal in a New goal sheet, saved through [repository] and shown
+/// in [memory], starting with [title] and due on [day], if given -- or,
+/// from its More, the full New goal page. Its Under picker adds a goal
+/// for it to go under the same way, in a sheet over it, kept as no
+/// draft. Returns it as saved; null if it was called off.
+Future<Goal?> addGoalInSheet(
+  BuildContext context, {
+  required GoalsRepository repository,
+  required PlanMemory memory,
+  GoalDrafts? drafts,
+  String? title,
+  DateTime? day,
+  VoidCallback? onFieldFocused,
+}) async {
+  GoalActions actions() =>
+      GoalActions(context: context, repository: repository, memory: memory);
+  Goal? added;
+  final result = await showAddGoalSheet(
+    context,
+    keep: (fields) async => added = await actions().create(fields),
+    goals: memory.goals ?? const [],
+    drafts: drafts,
+    title: title,
+    day: day,
+    addParent: (title, day) => addGoalFor(
+      context,
+      repository: repository,
+      memory: memory,
+      title: title,
+      day: day,
+    ),
+    onFieldFocused: onFieldFocused,
+  );
+  if (result is! MoreGoal || !context.mounted) return added;
+  final goalActions = actions();
+  return goalActions.add(
+    parent: goalActions.tree[result.parentId],
+    title: result.title,
+    deadline: result.deadline,
+    description: result.description,
+    priority: result.priority,
+    withIds: result.withIds,
+    forIds: result.forIds,
+  );
+}
+
+/// Adds a goal from a picker, as [addGoalInSheet] does, named [title] as
+/// it's typed there (nothing, if it's blank) and due on [day]: the goal
+/// added, and every goal there is now; null if it was called off.
+Future<GoalAdded?> addGoalFor(
+  BuildContext context, {
+  required GoalsRepository repository,
+  required PlanMemory memory,
+  required String title,
+  DateTime? day,
+}) async {
+  final added = await addGoalInSheet(
+    context,
+    repository: repository,
+    memory: memory,
+    title: title.isEmpty ? null : title,
+    day: day,
+  );
+  if (added == null) return null;
+  return (added: added, goals: memory.goals ?? const []);
 }
 
 /// What the Goals pane and a goal's page do to goals: add, edit, change
