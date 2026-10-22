@@ -11,8 +11,9 @@ on. Add the new version's section here at the same time; CI checks both.
 
 ## 7.176.0
 
-- Turning a compaction proposal's details to Notes scrolls the timeline
-  to the note shown, as stepping between notes does.
+- Turning a compaction proposal's details to Notes, Follow-through or
+  Added scrolls the timeline to the note or cancel shown, or to where
+  what's added is first used -- as stepping through them does.
 
 ## 7.175.0
 
