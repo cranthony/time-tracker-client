@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/goal.dart';
 import '../services/goals_repository.dart';
@@ -27,7 +28,8 @@ import '../widgets/priority_chip.dart';
 /// directly under it (as [byPriority] lists them, filtered by status),
 /// each opening its own page, held and dragged to reorder it
 /// ([GoalReorderList]), with "+" to add one; and its history, each
-/// change's time tapped to change it, or deleted.
+/// change's time tapped to change it, or deleted. D marks it done, M
+/// missed, and T missed to try again, whenever it can be.
 class GoalScreen extends StatefulWidget {
   const GoalScreen({
     super.key,
@@ -121,130 +123,155 @@ class _GoalScreenState extends State<GoalScreen> {
       for (final c in children)
         if (_statuses.contains(c.status)) c,
     ], tree);
-    return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: GoalBarTitle(title: goalTitle(goal), path: tree.pathOf(goal.id)),
-        actions: [
-          RefreshButton(onRefresh: () async => _refresher.currentState?.show()),
-          EditHotkey(
-            child: IconButton(
-              tooltip: 'Edit',
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: () => _actions.edit(goal),
-            ),
+    bool can(String status) => _statusMoves(goal).any((m) => m.$1 == status);
+    return HotkeyBindings(
+      bindings: [
+        HotkeyBinding(
+          const HotkeyTrigger.key(LogicalKeyboardKey.keyD),
+          () => _actions.setStatus(goal, 'done'),
+          when: () => can('done'),
+        ),
+        HotkeyBinding(
+          const HotkeyTrigger.key(LogicalKeyboardKey.keyM),
+          () => _actions.setStatus(goal, 'missed'),
+          when: () => can('missed'),
+        ),
+        HotkeyBinding(
+          const HotkeyTrigger.key(LogicalKeyboardKey.keyT),
+          () => _actions.retry(goal),
+          when: () => _canRetry(goal),
+        ),
+      ],
+      child: Scaffold(
+        appBar: AppBar(
+          titleSpacing: 0,
+          title: GoalBarTitle(
+            title: goalTitle(goal),
+            path: tree.pathOf(goal.id),
           ),
-          PopupMenuButton<String>(
-            onSelected: (action) => _menu(action, goal),
-            itemBuilder: (context) => [
-              for (final (status, label) in _statusMoves(goal))
-                PopupMenuItem(value: status, child: Text(label)),
-              if (_canRetry(goal))
-                const PopupMenuItem(value: 'retry', child: Text(_retryLabel)),
-              const PopupMenuDivider(),
-              const PopupMenuItem(value: 'move', child: Text('Move…')),
-              const PopupMenuItem(value: 'delete', child: Text('Delete…')),
+          actions: [
+            RefreshButton(
+              onRefresh: () async => _refresher.currentState?.show(),
+            ),
+            EditHotkey(
+              child: IconButton(
+                tooltip: 'Edit',
+                icon: const Icon(Icons.edit_outlined),
+                onPressed: () => _actions.edit(goal),
+              ),
+            ),
+            PopupMenuButton<String>(
+              onSelected: (action) => _menu(action, goal),
+              itemBuilder: (context) => [
+                for (final (status, label) in _statusMoves(goal))
+                  PopupMenuItem(value: status, child: Text(label)),
+                if (_canRetry(goal))
+                  const PopupMenuItem(value: 'retry', child: Text(_retryLabel)),
+                const PopupMenuDivider(),
+                const PopupMenuItem(value: 'move', child: Text('Move…')),
+                const PopupMenuItem(value: 'delete', child: Text('Delete…')),
+              ],
+            ),
+          ],
+        ),
+        body: RefreshIndicator(
+          key: _refresher,
+          onRefresh: _reload,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 24),
+            children: [
+              _fields(context, goal, tree, spent[goal.id]),
+              const Divider(height: 24),
+              Padding(
+                padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 4, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Sub-goals',
+                        style: theme.textTheme.titleMedium,
+                      ),
+                    ),
+                    GoalStatusFilter(
+                      statuses: _statuses,
+                      onChanged: (picked) => setState(() => _statuses = picked),
+                    ),
+                    NewHotkey(
+                      child: IconButton(
+                        tooltip: 'New sub-goal',
+                        icon: const Icon(Icons.add),
+                        onPressed: goal.closed
+                            ? null
+                            : () => _actions.add(parent: goal),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (children.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: Text(
+                    goal.closed
+                        ? 'Nothing under it.'
+                        : 'Nothing under it yet. Tap + to add a piece of it.',
+                    style: TextStyle(color: theme.hintColor),
+                  ),
+                )
+              else if (shown.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: Text(
+                    'None with the statuses shown.',
+                    style: TextStyle(color: theme.hintColor),
+                  ),
+                ),
+              // What J and K go down and up: not the buttons over them, nor
+              // the history under them.
+              HotkeyItems(
+                child: GoalReorderList(
+                  goals: shown,
+                  tree: tree,
+                  scrolls: false,
+                  onMove: _actions.reorder,
+                  tile: (child) => GoalTile(
+                    goal: child,
+                    spent: spent[child.id],
+                    subGoals: tree.childrenOf(child.id).length,
+                    priority: tree.priorityOf(child.id),
+                    onTap: () => _open(child),
+                    onEdit: () => _actions.edit(child),
+                  ),
+                ),
+              ),
+              const Divider(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text('History', style: theme.textTheme.titleMedium),
+              ),
+              for (final (i, change) in goal.history.indexed.toList().reversed)
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.history, size: 20),
+                  title: Text(goalStatuses[change.status] ?? change.status),
+                  subtitle: Text(
+                    change.deadline == null
+                        ? _when(context, change.at)
+                        : '${_when(context, change.at)} · '
+                              'due ${deadlineLabel(context, change.deadline)}',
+                  ),
+                  onTap: () => _actions.retime(goal, i),
+                  trailing: goal.history.length < 2
+                      ? null
+                      : IconButton(
+                          tooltip: 'Delete this change',
+                          icon: const Icon(Icons.delete_outline, size: 20),
+                          onPressed: () => _actions.forget(goal, i),
+                        ),
+                ),
             ],
           ),
-        ],
-      ),
-      body: RefreshIndicator(
-        key: _refresher,
-        onRefresh: _reload,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 24),
-          children: [
-            _fields(context, goal, tree, spent[goal.id]),
-            const Divider(height: 24),
-            Padding(
-              padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 4, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Sub-goals',
-                      style: theme.textTheme.titleMedium,
-                    ),
-                  ),
-                  GoalStatusFilter(
-                    statuses: _statuses,
-                    onChanged: (picked) => setState(() => _statuses = picked),
-                  ),
-                  NewHotkey(
-                    child: IconButton(
-                      tooltip: 'New sub-goal',
-                      icon: const Icon(Icons.add),
-                      onPressed: goal.closed
-                          ? null
-                          : () => _actions.add(parent: goal),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (children.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Text(
-                  goal.closed
-                      ? 'Nothing under it.'
-                      : 'Nothing under it yet. Tap + to add a piece of it.',
-                  style: TextStyle(color: theme.hintColor),
-                ),
-              )
-            else if (shown.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Text(
-                  'None with the statuses shown.',
-                  style: TextStyle(color: theme.hintColor),
-                ),
-              ),
-            // What J and K go down and up: not the buttons over them, nor
-            // the history under them.
-            HotkeyItems(
-              child: GoalReorderList(
-                goals: shown,
-                tree: tree,
-                scrolls: false,
-                onMove: _actions.reorder,
-                tile: (child) => GoalTile(
-                  goal: child,
-                  spent: spent[child.id],
-                  subGoals: tree.childrenOf(child.id).length,
-                  priority: tree.priorityOf(child.id),
-                  onTap: () => _open(child),
-                  onEdit: () => _actions.edit(child),
-                ),
-              ),
-            ),
-            const Divider(height: 24),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text('History', style: theme.textTheme.titleMedium),
-            ),
-            for (final (i, change) in goal.history.indexed.toList().reversed)
-              ListTile(
-                dense: true,
-                leading: const Icon(Icons.history, size: 20),
-                title: Text(goalStatuses[change.status] ?? change.status),
-                subtitle: Text(
-                  change.deadline == null
-                      ? _when(context, change.at)
-                      : '${_when(context, change.at)} · '
-                            'due ${deadlineLabel(context, change.deadline)}',
-                ),
-                onTap: () => _actions.retime(goal, i),
-                trailing: goal.history.length < 2
-                    ? null
-                    : IconButton(
-                        tooltip: 'Delete this change',
-                        icon: const Icon(Icons.delete_outline, size: 20),
-                        onPressed: () => _actions.forget(goal, i),
-                      ),
-              ),
-          ],
         ),
       ),
     );
@@ -289,17 +316,34 @@ class _GoalScreenState extends State<GoalScreen> {
         label: Text(goalStatuses[goal.status] ?? goal.status),
       ),
       for (final (status, label) in _statusMoves(goal).take(2))
-        OutlinedButton(
-          onPressed: () => _actions.setStatus(goal, status),
-          child: Text(label),
+        _hinted(
+          _statusHotkeys[status],
+          OutlinedButton(
+            onPressed: () => _actions.setStatus(goal, status),
+            child: Text(label),
+          ),
         ),
       if (_canRetry(goal))
-        OutlinedButton(
-          onPressed: () => _actions.retry(goal),
-          child: const Text(_retryLabel),
+        HotkeyHint(
+          Hotkey.retry,
+          child: OutlinedButton(
+            onPressed: () => _actions.retry(goal),
+            child: const Text(_retryLabel),
+          ),
         ),
     ],
   );
+
+  /// The keys that change a goal's status to each one that has one: D
+  /// done, M missed -- whenever it can be, its button shown or not.
+  static const _statusHotkeys = {
+    'done': Hotkey.markDone,
+    'missed': Hotkey.markMissed,
+  };
+
+  /// [button], with [hotkey]'s letter on it while Ctrl is held, if any.
+  static Widget _hinted(Hotkey? hotkey, Widget button) =>
+      hotkey == null ? button : HotkeyHint(hotkey, child: button);
 
   /// [goal]'s fields, in the order its edit page has them and under the
   /// same labels ([GoalField]), each said even with nothing in it; after

@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.179.0
+
+- On a goal's page, D marks it done, M marks it missed, and T marks it
+  missed to try again -- whenever it can be, its button shown or not.
+  Holding Ctrl shows each letter on its button.
+
 ## 7.178.0
 
 - A location group picker -- in the New location sheet, and the location

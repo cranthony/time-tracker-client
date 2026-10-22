@@ -13,6 +13,7 @@ enum HotkeyPlace {
   creating('Making or moving an event'),
   event('In an event'),
   plan('On the Plan page'),
+  goal("On a goal's page"),
   diagnostics('On the Diagnostics page');
 
   const HotkeyPlace(this.title);
@@ -259,6 +260,14 @@ class Hotkey {
     HotkeyPlace.plan,
   );
 
+  static const markDone = Hotkey('D', 'Mark it done', HotkeyPlace.goal);
+  static const markMissed = Hotkey('M', 'Mark it missed', HotkeyPlace.goal);
+  static const retry = Hotkey(
+    'T',
+    'Mark it missed and try again, by a day picked',
+    HotkeyPlace.goal,
+  );
+
   static const diagnosticsPanes = Hotkey(
     'H / L',
     'Go to the Server pane (H) or the App pane (L)',
@@ -321,6 +330,9 @@ class Hotkey {
     planItems,
     planEnds,
     planPanes,
+    markDone,
+    markMissed,
+    retry,
     diagnosticsPanes,
     graphs,
     zoom,
