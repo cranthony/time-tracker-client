@@ -321,6 +321,38 @@ void main() {
     expect(kept.single['for_ids'], ['sam']);
   });
 
+  testWidgets('someone new is added in the quick New person sheet, named as '
+      "it's typed, and picked", (tester) async {
+    await open(tester, people: people);
+    await tester.enterText(find.byType(TextField), 'Call Jo');
+    await tester.pump();
+    await tester.tap(find.text('For'));
+    await tester.pumpAndSettle();
+    await tester.enterText(search(), 'Jo');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add person “Jo”…'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('New person'), findsOneWidget);
+    // Over the picker, whose search has it too.
+    expect(
+      tester
+          .widget<TextField>(find.widgetWithText(TextField, 'Name'))
+          .controller!
+          .text,
+      'Jo',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Add').last);
+    await tester.pumpAndSettle();
+
+    // Back on the goal sheet, the picker closed, with them for it.
+    expect(find.text('New person'), findsNothing);
+    expect(find.text('New goal'), findsOneWidget);
+    expect(find.widgetWithText(InputChip, 'Jo'), findsOneWidget);
+    expect(drafts.draft?.forIds, hasLength(1));
+    expect(drafts.draft?.withIds, isEmpty);
+  });
+
   testWidgets('a chip tapped takes its person off, and Add sends no one '
       'once there is no one', (tester) async {
     await open(tester, people: people);

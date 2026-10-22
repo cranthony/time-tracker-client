@@ -1033,7 +1033,9 @@ class PickerField extends StatelessWidget {
 /// [searchHint] says, [value] picked to start with: the one picked (null
 /// for [none]), or null if it's dismissed. Every group starts open, and
 /// the keyboard comes up to search; with a [query], the search starts
-/// with it, selected, to type over.
+/// with it, selected, to type over. With [add], a new one can be added,
+/// named as it's typed: what its `onAdd` returns -- the new one's id, or
+/// null if it was called off -- is picked.
 Future<({String? id})?> pickNode(
   BuildContext context, {
   required String title,
@@ -1044,6 +1046,8 @@ Future<({String? id})?> pickNode(
   Widget Function(PickerNode node)? marker,
   String searchHint = 'Search',
   String? query,
+  ({String noun, IconData icon, Future<String?> Function(String name) onAdd})?
+  add,
 }) => showPickerSheet<({String? id})>(
   context,
   title: title,
@@ -1062,6 +1066,19 @@ Future<({String? id})?> pickNode(
       autofocus: true,
       marker: marker,
       onChanged: (ids) => Navigator.of(context).pop((id: ids.firstOrNull)),
+      add: switch (add) {
+        (:final noun, :final icon, :final onAdd) => (
+          noun: noun,
+          icon: icon,
+          onAdd: (name) async {
+            final id = await onAdd(name);
+            if (id != null && context.mounted) {
+              Navigator.of(context).pop((id: id));
+            }
+          },
+        ),
+        null => null,
+      },
     ),
   ),
 );

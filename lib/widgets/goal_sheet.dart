@@ -15,6 +15,7 @@ import 'goal_editor.dart' show HtmlField;
 import 'goal_icon.dart';
 import 'hotkeys.dart';
 import 'html_editor.dart';
+import 'picker_edits.dart';
 import 'picker_sheet.dart';
 import 'tree_picker.dart';
 
@@ -320,8 +321,9 @@ class _GoalSheetState extends State<_GoalSheet> {
 
   /// Picks someone it's done with ([with_]) or for, searching for what's
   /// typed as its title, by any word, selected to type over, as its
-  /// parent is picked: one tap adds them. Picking them for one takes them
-  /// off the other, since no one is both.
+  /// parent is picked: one tap adds them. Someone new is added in the
+  /// quick New person sheet, named as it's typed, and picked. Picking them
+  /// for one takes them off the other, since no one is both.
   Future<void> _pickPerson({required bool with_}) async {
     final (mine, other) = with_ ? (_with, _for) : (_for, _with);
     final picked = await pickNode(
@@ -334,6 +336,17 @@ class _GoalSheetState extends State<_GoalSheet> {
       ],
       searchHint: 'Search people',
       query: _title.text,
+      add: (
+        noun: 'person',
+        icon: Icons.person_add_alt,
+        onAdd: (name) async {
+          final added = await editPerson(context, name: name);
+          if (added == null) return null;
+          // To name their chip.
+          await _loadPeople();
+          return added.id;
+        },
+      ),
     );
     final id = picked?.id;
     if (id == null || !mounted) return;
