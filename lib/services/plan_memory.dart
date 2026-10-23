@@ -48,6 +48,10 @@ class PlanMemory extends ChangeNotifier {
     if (eventStore != null) useEvents(eventStore);
   }
 
+  /// The Library pane's section shown last: People, Actions or
+  /// Locations.
+  String librarySection = 'People';
+
   /// The actions as the server last listed them.
   ActionList? actions;
 

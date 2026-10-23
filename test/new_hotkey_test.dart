@@ -111,7 +111,8 @@ void main() {
     tester,
   ) async {
     await pumpPlan(tester);
-    await tester.tap(find.text('Actions'));
+    // In the Library, its only section here.
+    await tester.tap(find.text('Library'));
     await tester.pumpAndSettle();
     await plus(tester);
     expect(find.text('New action'), findsOneWidget);

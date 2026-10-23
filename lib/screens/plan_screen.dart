@@ -22,6 +22,7 @@ import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import 'goals_pane.dart';
 import 'locations_pane.dart';
+import 'library_pane.dart';
 import 'people_pane.dart';
 import 'traits_pane.dart';
 import 'habits_pane.dart';
@@ -46,18 +47,19 @@ import '../services/work_timing.dart';
 import '../widgets/quick_add_sheet.dart';
 
 /// The Plan page: panes to swipe between, or pick from the tabs at the
-/// top, each with a search of its own --
+/// top --
 ///
 /// * **Goals**, what to aim for, leftmost ([GoalsPane]), from the
 ///   [GoalsScope];
-/// * **Actions**, what to do: the actions, kept as actions, and the
-///   groups they're in, as a tree;
 /// * **Habits**, what to practice ([HabitsPane]), from the [HabitsScope];
 /// * **Traits**, how to be, under Self ([TraitsPane]), from the
 ///   [TraitsScope] and the [PeopleScope];
-/// * **People**, who to be with, Self always among them, and their
-///   circles ([PeoplePane]), from the [PeopleScope];
-/// * **Locations**, where ([LocationsPane]), from the [PeopleScope].
+/// * **Library**, what grows without end, one section at a time
+///   ([LibraryPane]), each with a search of its own: **People**, who to
+///   be with, Self always among them, and their circles ([PeoplePane]),
+///   from the [PeopleScope]; **Actions**, what to do: the actions, kept
+///   as actions, and the groups they're in, as a tree; and
+///   **Locations**, where ([LocationsPane]), from the [PeopleScope].
 ///
 /// Landing on it loads everything at once, every pane's and the
 /// summaries', starting from what [memory] kept from the last visit, or
@@ -745,11 +747,33 @@ class _PlanScreenState extends State<PlanScreen> {
   void _stepInPane(FocusNode pane, {required bool later, bool toEnd = false}) =>
       stepItems(pane, later: later, toEnd: toEnd);
 
-  /// The Plan page's hotkeys, with the [panes] shown in [tabs]: J and K
-  /// down and up the one shown, and each pane's first letter to it.
-  List<HotkeyBinding> _paneKeys(TabController tabs, List<String> panes) {
+  /// The Library pane's title.
+  static const _library = 'Library';
+
+  /// The Library pane's section shown, of those in [library].
+  String _librarySection(List<String> library) =>
+      library.contains(_memory.librarySection)
+      ? _memory.librarySection
+      : library.first;
+
+  void _showSection(String section) =>
+      setState(() => _memory.librarySection = section);
+
+  /// The Plan page's hotkeys, with the [panes] shown in [tabs], and the
+  /// sections in the [library]: J and K down and up the one shown, and
+  /// each pane's key to it ([_paneLetter]) -- a section's to it, in the
+  /// Library.
+  List<HotkeyBinding> _paneKeys(
+    TabController tabs,
+    List<String> panes,
+    List<String> library,
+  ) {
+    FocusNode shown() => _paneNode(switch (panes[tabs.index]) {
+      _library => _librarySection(library),
+      final title => title,
+    });
     void step(bool later, {bool toEnd = false}) =>
-        _stepInPane(_paneNode(panes[tabs.index]), later: later, toEnd: toEnd);
+        _stepInPane(shown(), later: later, toEnd: toEnd);
     return [
       HotkeyBinding(
         const HotkeyTrigger.key(LogicalKeyboardKey.keyJ),
@@ -772,12 +796,24 @@ class _PlanScreenState extends State<PlanScreen> {
           HotkeyTrigger.key(_paneLetter(title)),
           () => tabs.animateTo(i),
         ),
+      for (final title in library)
+        HotkeyBinding(HotkeyTrigger.key(_paneLetter(title)), () {
+          _showSection(title);
+          tabs.animateTo(panes.indexOf(_library));
+        }),
     ];
   }
 
-  /// The key that goes to the pane titled [title]: its first letter.
+  /// The key that goes to the pane titled [title]: its first letter, or
+  /// for the Library, W, for who, what and where.
   static LogicalKeyboardKey _paneLetter(String title) =>
-      LogicalKeyboardKey.findKeyByKeyId(title.toLowerCase().codeUnitAt(0))!;
+      LogicalKeyboardKey.findKeyByKeyId(
+        _paneKeyLabel(title).toLowerCase().codeUnitAt(0),
+      )!;
+
+  /// [_paneLetter], as a hotkey hint shows it.
+  static String _paneKeyLabel(String title) =>
+      title == _library ? 'W' : title[0];
 
   Widget _build(BuildContext context) {
     final actions = _actions;
@@ -791,6 +827,39 @@ class _PlanScreenState extends State<PlanScreen> {
       for (final person in _people?.withSelf ?? const [defaultSelf])
         person.id: personName(person),
     };
+    // What grows without end, together: who, what and where.
+    final library = <(String, Widget)>[
+      if (people != null)
+        (
+          'People',
+          PeoplePane(
+            key: _peoplePane,
+            repository: people,
+            memory: _memory,
+            summary: _summaryView,
+            traits: traits,
+            onPeople: (_) => setState(() {}),
+            actionNames: _actionNames,
+            actions: _actionChoices,
+            locationNames: _locationNames,
+          ),
+        ),
+      // Built only once it's shown: what it works out is costly.
+      ('Actions', Builder(builder: _actionsPane)),
+      if (people != null)
+        (
+          'Locations',
+          LocationsPane(
+            key: _locationsPane,
+            repository: people,
+            actions: widget.repository,
+            memory: _memory,
+            summary: _summaryView,
+            onLocations: (_) => setState(() {}),
+          ),
+        ),
+    ];
+    final libraryTitles = [for (final (title, _) in library) title];
     // Goals first: what the rest is for.
     final panes = <(String, String, Widget)>[
       if (goals != null)
@@ -805,8 +874,6 @@ class _PlanScreenState extends State<PlanScreen> {
             onQuickAdd: widget.onQuickAddGoal,
           ),
         ),
-      // Built only while it's shown: what it works out is costly.
-      ('Actions', 'do', Builder(builder: _actionsPane)),
       if (habits != null)
         (
           'Habits',
@@ -821,49 +888,32 @@ class _PlanScreenState extends State<PlanScreen> {
             locationNames: _locationNames,
           ),
         ),
-      if (people != null) ...[
-        if (traits != null)
-          (
-            'Traits',
-            'be',
-            TraitsPane(
-              key: _traitsPane,
-              repository: traits,
-              people: people,
-              memory: _memory,
-              actionNames: _actionNames,
-              actions: _actionChoices,
-              locationNames: _locationNames,
-            ),
-          ),
+      if (people != null && traits != null)
         (
-          'People',
-          'who',
-          PeoplePane(
-            key: _peoplePane,
-            repository: people,
+          'Traits',
+          'be',
+          TraitsPane(
+            key: _traitsPane,
+            repository: traits,
+            people: people,
             memory: _memory,
-            summary: _summaryView,
-            traits: traits,
-            onPeople: (_) => setState(() {}),
             actionNames: _actionNames,
             actions: _actionChoices,
             locationNames: _locationNames,
           ),
         ),
-        (
-          'Locations',
-          'where',
-          LocationsPane(
-            key: _locationsPane,
-            repository: people,
-            actions: widget.repository,
-            memory: _memory,
-            summary: _summaryView,
-            onLocations: (_) => setState(() {}),
-          ),
+      (
+        _library,
+        'who/what/where',
+        LibraryPane(
+          sections: [
+            for (final (title, pane) in library)
+              (title, Focus(focusNode: _paneNode(title), child: pane)),
+          ],
+          shown: _librarySection(libraryTitles),
+          onShown: _showSection,
         ),
-      ],
+      ),
     ];
     final theme = Theme.of(context);
     return PopScope(
@@ -894,8 +944,12 @@ class _PlanScreenState extends State<PlanScreen> {
                         onRefresh: _needsSignIn
                             ? null
                             : () => _refreshPane(
-                                panes[DefaultTabController.of(context).index]
-                                    .$1,
+                                switch (panes[DefaultTabController.of(context)
+                                        .index]
+                                    .$1) {
+                                  _library => _librarySection(libraryTitles),
+                                  final title => title,
+                                },
                               ),
                       ),
                     ),
@@ -914,7 +968,7 @@ class _PlanScreenState extends State<PlanScreen> {
                             children: [
                               HotkeyHint(
                                 Hotkey(
-                                  title[0],
+                                  _paneKeyLabel(title),
                                   'Go to $title',
                                   HotkeyPlace.plan,
                                 ),
@@ -944,7 +998,7 @@ class _PlanScreenState extends State<PlanScreen> {
                 builder: (context) => HotkeyBindings(
                   bindings: _paneKeys(DefaultTabController.of(context), [
                     for (final (title, _, _) in panes) title,
-                  ]),
+                  ], libraryTitles),
                   child: panes.length == 1
                       ? Focus(
                           focusNode: _paneNode(panes.single.$1),
