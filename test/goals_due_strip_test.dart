@@ -157,6 +157,151 @@ void main() {
     );
   });
 
+  test('upcomingGoalsOn: the active ones due after the day, by priority '
+      'then the day due', () {
+    final ahead = [
+      _goal('today', 'Today', '2026-10-18'),
+      _goal('past', 'Past', '2026-10-17'),
+      _goal('later', 'Later', '2026-10-25'),
+      _goal('soon', 'Soon', '2026-10-19T09:00'),
+      _goal('inactive', 'Inactive', '2026-10-20', status: 'inactive'),
+      _goal('done', 'Done', '2026-10-20', status: 'done'),
+      _goal('none', 'None', null),
+      Goal.fromJson({
+        ..._goal('urgent', 'Urgent', '2026-10-30').toJson(),
+        'priority': 0,
+      }),
+    ];
+    expect(upcomingGoalsOn(ahead, day).map((g) => g.id), [
+      'urgent',
+      'soon',
+      'later',
+    ]);
+    // Ahead of today, too, by what's active now.
+    expect(
+      upcomingGoalsOn(
+        ahead,
+        day,
+        today: DateTime(2026, 10, 10),
+      ).map((g) => g.id),
+      ['urgent', 'soon', 'later'],
+    );
+  });
+
+  test('upcomingGoalsOn: on a past day, as each goal was at its end', () {
+    Goal withHistory(
+      String id,
+      List<StatusChange> history,
+      String deadline, {
+      String status = 'active',
+    }) => Goal(
+      id: id,
+      title: id,
+      deadline: deadline,
+      status: status,
+      history: history,
+    );
+    final ahead = [
+      // Active then, done since.
+      withHistory(
+        'since done',
+        [
+          StatusChange('active', DateTime(2026, 10, 1), deadline: '2026-10-20'),
+          StatusChange('done', DateTime(2026, 10, 19)),
+        ],
+        '2026-10-20',
+        status: 'done',
+      ),
+      // Activated after the day.
+      withHistory('later', [
+        StatusChange('inactive', DateTime(2026, 10, 1)),
+        StatusChange('active', DateTime(2026, 10, 19), deadline: '2026-10-22'),
+      ], '2026-10-22'),
+      // Made after the day.
+      withHistory('new', [
+        StatusChange('active', DateTime(2026, 10, 19), deadline: '2026-10-22'),
+      ], '2026-10-22'),
+      // Due after the day then; tried again since, by a later day.
+      withHistory('retried', [
+        StatusChange('active', DateTime(2026, 10, 1), deadline: '2026-10-19'),
+        StatusChange('missed', DateTime(2026, 10, 20), deadline: '2026-10-19'),
+        StatusChange('active', DateTime(2026, 10, 20), deadline: '2026-10-27'),
+      ], '2026-10-27'),
+      // No history: as it is.
+      _goal('plain', 'plain', '2026-10-21'),
+    ];
+    final then = upcomingGoalsOn(ahead, day, today: DateTime(2026, 10, 21));
+    expect(then.map((g) => g.id), ['retried', 'since done', 'plain']);
+    expect(then.first.deadline, '2026-10-19');
+  });
+
+  testWidgets('upcoming goals come last, just outlined in their '
+      "priority's color, each saying when it's due; those past a week "
+      'on one pill listing them', (tester) async {
+    Goal? tapped;
+    final ahead = upcomingGoalsOn([
+      _goal('s', 'Soon', '2026-10-20'),
+      _goal('t', 'Timed', '2026-10-25T09:00'),
+      _goal('f', 'Far', '2026-10-26'),
+      _goal('g', 'Farther', '2026-11-30'),
+    ], day);
+    Future<void> show({required bool collapsed, List<Goal>? due}) =>
+        tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: GoalsDueStrip(
+                goals: due ?? goalsDueOn(goals, day),
+                upcoming: ahead,
+                day: day,
+                today: day,
+                collapsed: collapsed,
+                onCollapsed: (_) {},
+                onTap: (g) => tapped = g,
+              ),
+            ),
+          ),
+        );
+    await show(collapsed: false);
+    expect(find.text('Upcoming'), findsOneWidget);
+    expect(find.textContaining('due Oct 20'), findsOneWidget);
+    expect(find.textContaining('due Oct 25, 9:00 AM'), findsOneWidget);
+    expect(find.textContaining('Far'), findsNothing);
+    expect(find.text('+2 later'), findsOneWidget);
+    Material pillOf(String text) => tester.widget<Material>(
+      find
+          .ancestor(
+            of: find.textContaining(text),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    expect(pillOf('Soon').color, Colors.transparent);
+    expect(
+      (pillOf('Soon').shape! as StadiumBorder).side.color,
+      priorityColor(defaultGoalPriority),
+    );
+    await tester.tap(find.textContaining('Soon'));
+    expect(tapped?.id, 's');
+
+    await tester.tap(find.text('+2 later'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Far  ·  due Oct 26'), findsOneWidget);
+    await tester.tap(find.textContaining('Farther'));
+    await tester.pumpAndSettle();
+    expect(tapped?.id, 'g');
+
+    await show(collapsed: true);
+    expect(
+      find.textContaining('4 goals due (3 open), 4 upcoming · '),
+      findsOneWidget,
+    );
+    await show(collapsed: true, due: const []);
+    expect(
+      find.textContaining('4 goals upcoming · Soon, Timed'),
+      findsOneWidget,
+    );
+  });
+
   Future<void> pump(
     WidgetTester tester, {
     required bool collapsed,

@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.185.0
+
+- The goals-due strip above the events timeline lists the upcoming goals
+  too -- active, due after the day shown -- just outlined in their
+  priority's color, each saying when it's due: by priority, then the day
+  due. Those due within a week of the day get a pill each; the rest are
+  counted on a "+N later" pill that lists them. On a past day, it's what
+  was upcoming then, as each goal's history had it.
+
 ## 7.184.0
 
 - The events timeline's summary turns from its actions to its time by

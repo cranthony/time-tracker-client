@@ -347,7 +347,8 @@ class _EventsScreenState extends State<EventsScreen> {
   /// The time spent toward each goal in the events kept here that have
   /// been compacted -- ended by [_lastCompaction] -- for the goals due
   /// strip; null until when notes were last compacted is known, or if no
-  /// open goal due on the day shown has an expected time. Worked out
+  /// open goal on the strip -- due, overdue or upcoming -- has an
+  /// expected time. Worked out
   /// again only when the events, the goals or that change.
   Map<String, Duration>? _compactedGoalTime(List<Goal> goals) {
     final through = _lastCompaction;
@@ -355,6 +356,7 @@ class _EventsScreenState extends State<EventsScreen> {
         ![
           ...goalsDueOn(goals, _day),
           ...overdueGoalsOn(goals, _day, today: widget.clock()),
+          ...upcomingGoalsOn(goals, _day, today: widget.clock()),
         ].any((g) => g.open && g.expectedMinutes != null)) {
       return null;
     }
@@ -5853,6 +5855,7 @@ class _EventsScreenState extends State<EventsScreen> {
         goals: goalsDueOn(goals, _day),
         missed: missedOn(goals, _day),
         overdue: overdueGoalsOn(goals, _day, today: widget.clock()),
+        upcoming: upcomingGoalsOn(goals, _day, today: widget.clock()),
         day: _day,
         today: widget.clock(),
         tree: GoalTree(goals),
