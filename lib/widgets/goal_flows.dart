@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'durations.dart';
 import '../models/event.dart';
 import '../models/goal.dart';
+import '../models/goal_activation.dart';
 import '../models/goal_changes.dart';
 import '../services/goal_drafts.dart';
 import '../services/goals_repository.dart';
@@ -207,11 +208,35 @@ class GoalActions {
     );
   }
 
-  /// Shows [made] in [memory] at once, then the goals as the server has
-  /// them, best effort.
+  /// Shows [made] in [memory] at once -- with each goal waiting for what
+  /// it closed activated, as the server will, and a word that it is --
+  /// then the goals as the server has them, best effort.
   void _shown(List<GoalChange> made) {
-    memory.showGoals(applied(goals, made, now: now()));
+    final waited = {
+      for (final g in goals)
+        if (g.activateWhen != null && g.inactive) g.id,
+    };
+    final (shown, started) = startingWaiting(
+      applied(goals, made, now: now()),
+      now(),
+    );
+    memory.showGoals(shown);
     memory.loadGoals(repository, again: true).ignore();
+    final names = [
+      for (final id in started)
+        if (waited.contains(id)) goalTitle(GoalTree(shown)[id]!),
+    ];
+    if (names.isEmpty || !context.mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(
+          names.length == 1
+              ? '“${names.single}” is now active'
+              : '${names.length} goals waiting on it are now active: '
+                    '${names.map((n) => '“$n”').join(', ')}',
+        ),
+      ),
+    );
   }
 
   /// Saves [sortOrders], by goal id, as a goal's dragged into place
@@ -259,6 +284,34 @@ class GoalActions {
     await save("Couldn't add the goal", [
       GoalCreate(Goal.fromJson({'id': '', ...fields})),
     ], onCreated: (goal) => added = goal);
+    return added;
+  }
+
+  /// Adds the goal that comes after [goal]: under the same parent,
+  /// inactive, waiting for [goal] to close, and due a week after it
+  /// starts -- each changed as the editor's opened with it.
+  Future<Goal?> addNext(Goal goal) async {
+    final fields = await showGoalEditor(
+      context,
+      parent: tree[goal.parentId],
+      goals: goals,
+      status: 'inactive',
+      activateWhen: {
+        'after': [
+          {'goal_closed': goal.id},
+        ],
+      },
+      deadlineRule: const {
+        'after_start': {'days': 7},
+      },
+      priority: goal.priority,
+      now: now,
+    );
+    if (fields == null || !context.mounted) return null;
+    Goal? added;
+    await save("Couldn't add the next goal", [
+      GoalCreate(Goal.fromJson({'id': '', ...fields})),
+    ], onCreated: (g) => added = g);
     return added;
   }
 

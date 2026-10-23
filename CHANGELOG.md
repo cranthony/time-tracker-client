@@ -9,6 +9,25 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.187.0
+
+- Goals can be chained. An inactive goal's edit page has a Starts
+  section: the goals it waits to close and the days it waits for, then,
+  if wanted, the next day, and a hold while enough other goals are
+  active (any priority, its own or higher, exactly its own, or P0-P2 or
+  higher). The server activates it once they've come.
+- A goal's deadline can be measured from when it starts, or from another
+  goal's deadline, as well as a date or its parent's: picked on its edit
+  page, and shown on its page ("1w after it starts").
+- A goal's page says what it waits for and when it's expected to start
+  (or that it's held back), lists the goals that start after it, and
+  its menu has Add next goal…: a new inactive goal under the same
+  parent, waiting for it, due a week after it starts.
+- The Goals pane marks a goal that's waiting with an hourglass,
+  "Waiting", and when it's expected to start.
+- Closing a goal that others wait for says which of them are now
+  active, and shows them so at once.
+
 ## 7.186.0
 
 - Goals follow the server's new deadlines: each one's deadline is what

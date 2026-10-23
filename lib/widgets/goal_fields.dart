@@ -101,6 +101,25 @@ String followsLabel(String parentTitle, int minutes) => minutes <= 0
     : '${formatDays(Duration(minutes: minutes))} before “$parentTitle” '
           'is due, moving with it';
 
+/// What [goal]'s deadline is measured from, when it's its start or
+/// another goal's, its goals named from [tree]: "1w after it starts", "2d
+/// after “Draft” is due"; null otherwise.
+String? ruleLabel(Goal goal, GoalTree tree) {
+  String after(Object? offset) => switch (offset) {
+    {'days': final num d} when d == 0 => 'The day',
+    {'days': final num d} => '${formatDays(Duration(days: d.toInt()))} after',
+    {'minutes': final num m} when m == 0 => 'When',
+    {'minutes': final num m} => '${formatMinutes(m.toInt())} after',
+    _ => 'After',
+  };
+  return switch (goal.deadlineRule) {
+    {'after_start': final offset} => '${after(offset)} it starts',
+    {'after_goal': {'id': final String id} && final offset} =>
+      '${after(offset)} “${tree[id] == null ? id : goalTitle(tree[id]!)}” is due',
+    _ => null,
+  };
+}
+
 /// Whether a sub-goal's parent, [parentTitle], needs it done.
 String requiredLabel(String parentTitle, bool required) => required
     ? '“$parentTitle” needs it done to be done'

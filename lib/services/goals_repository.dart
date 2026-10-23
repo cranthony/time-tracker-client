@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../models/goal.dart';
+import '../models/goal_activation.dart';
 import '../models/goal_changes.dart';
 import '../outbox/write_queue.dart';
 import 'mcp_client.dart';
@@ -235,7 +236,20 @@ class InMemoryGoalsRepository implements GoalsRepository {
   Future<List<Goal>?> cachedGoals() async => null;
 
   @override
-  Future<List<Goal>> goals() async => [for (final g in _goals) _withPath(g)];
+  Future<List<Goal>> goals() async {
+    _startWaiting();
+    return [for (final g in _goals) _withPath(g)];
+  }
+
+  /// Activates each goal whose activate_when is ready, as the server does
+  /// whenever goals are read or changed.
+  void _startWaiting() {
+    final (started, ids) = startingWaiting(_goals, _now);
+    if (ids.isEmpty) return;
+    _goals
+      ..clear()
+      ..addAll(started);
+  }
 
   Goal _withPath(Goal goal) => Goal.fromJson({
     ...goal.toJson(),
@@ -278,7 +292,8 @@ class InMemoryGoalsRepository implements GoalsRepository {
     _goals
       ..clear()
       ..addAll(all);
-    return _withPath(all.last);
+    _startWaiting();
+    return _withPath(_goals.firstWhere((g) => g.id == id));
   }
 
   @override
@@ -320,7 +335,8 @@ class InMemoryGoalsRepository implements GoalsRepository {
     _goals
       ..clear()
       ..addAll(all);
-    return _withPath(all[i]);
+    _startWaiting();
+    return _withPath(_goals.firstWhere((g) => g.id == id));
   }
 
   @override
@@ -346,6 +362,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
     _goals
       ..clear()
       ..addAll(after);
+    _startWaiting();
     return ids;
   }
 
