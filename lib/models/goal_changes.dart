@@ -98,10 +98,17 @@ List<Goal> applied(
         final before = out[i];
         final json = {...before.toJson(), ...changes}
           ..removeWhere((_, v) => v == null);
-        // A deadline of its own unties it from its parent's.
+        // A deadline of its own unties it from what it was measured from.
         if (changes.containsKey('deadline') &&
-            !changes.containsKey('deadline_offset_minutes')) {
-          json.remove('deadline_offset_minutes');
+            !changes.containsKey('deadline_offset_minutes') &&
+            !changes.containsKey('deadline_rule')) {
+          json
+            ..remove('deadline_offset_minutes')
+            ..remove('deadline_rule');
+        }
+        // Activated by hand, what it waited for no longer matters.
+        if (json['status'] == 'active' && before.status != 'active') {
+          json.remove('activate_when');
         }
         if (!changes.containsKey('history') &&
             json['status'] != before.status) {
@@ -176,8 +183,7 @@ class MoveLeftover extends Leftover {
 }
 
 /// What of [goal] has to change for it to fit under [parent]: an earlier
-/// deadline, a shorter expected time, or -- under an inactive parent --
-/// inactive itself. Empty if it fits as it is.
+/// deadline, or a shorter expected time. Empty if it fits as it is.
 Map<String, Object?> fitUnder(Goal goal, Goal? parent) {
   if (parent == null || goal.closed) return const {};
   return {
@@ -188,7 +194,6 @@ Map<String, Object?> fitUnder(Goal goal, Goal? parent) {
     if ((goal.expectedMinutes, parent.expectedMinutes)
         case (final m?, final pm?) when m > pm)
       'expected_minutes': pm,
-    if (goal.active && parent.inactive) 'status': 'inactive',
   };
 }
 
@@ -273,24 +278,18 @@ List<Goal> inactiveParents(GoalTree tree, Iterable<Goal> goals) {
     ..sort((a, b) => tree.depthOf(a.id).compareTo(tree.depthOf(b.id)));
 }
 
-/// Deactivates [goal] and its active sub-goals, deepest first.
+/// Deactivates [goal]: just it -- its active sub-goals stay active.
 List<GoalChange> deactivating(GoalTree tree, Goal goal) => [
-  for (final g in tree.descendantsOf(goal.id).reversed)
-    if (g.active) GoalUpdate(g.id, {'status': 'inactive'}),
   GoalUpdate(goal.id, {'status': 'inactive'}),
 ];
 
 /// Moves [goal] under [to] (the top level, if null), changing what has to
-/// change for it to fit ([fitUnder]) -- and, under an inactive parent, its
-/// active sub-goals deactivated first.
+/// change for it to fit ([fitUnder]).
 List<GoalChange> moving(GoalTree tree, Goal goal, String? to, {Goal? made}) {
   final parent = made ?? tree[to];
   final fit = fitUnder(goal, parent);
   return [
     if (made != null) GoalCreate(made),
-    if (fit['status'] == 'inactive')
-      for (final g in tree.descendantsOf(goal.id).reversed)
-        if (g.active) GoalUpdate(g.id, {'status': 'inactive'}),
     GoalUpdate(goal.id, {'parent_id': to, ...fit}),
   ];
 }

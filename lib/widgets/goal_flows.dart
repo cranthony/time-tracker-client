@@ -293,7 +293,7 @@ class GoalActions {
   }
 
   /// Sets [goal]'s status to [status], with what that takes: activating
-  /// its parents, deactivating its sub-goals, or deciding what becomes
+  /// its parents, or deciding what becomes
   /// of those left open -- and [also] changed in it too, if given.
   Future<void> setStatus(
     Goal goal,
@@ -385,28 +385,12 @@ class GoalActions {
     );
   }
 
-  /// Deactivates [goal] -- its active sub-goals too, if the user agrees --
+  /// Deactivates [goal] -- just it: its active sub-goals stay active --
   /// with [also] changed in it too.
   Future<void> deactivate(
     Goal goal, {
     Map<String, Object?> also = const {},
   }) async {
-    final tree = this.tree;
-    final active = [
-      for (final g in tree.descendantsOf(goal.id))
-        if (g.active) g,
-    ];
-    if (active.isNotEmpty) {
-      final ok = await _confirm(
-        title: 'Deactivate ${goalTitle(goal)}?',
-        text:
-            'An inactive goal has no active sub-goals, so '
-            '${_count(active.length, 'active sub-goal')} under it will be '
-            'deactivated too. To keep one active, move it elsewhere first.',
-        action: 'Deactivate them all',
-      );
-      if (!ok || !context.mounted) return;
-    }
     await save(
       "Couldn't deactivate ${goalTitle(goal)}",
       editing(tree, goal, also, status: 'inactive'),
@@ -619,7 +603,7 @@ class GoalActions {
   Future<Map<String, String>?> _askDeadlines(List<Goal> goals, GoalTree tree) {
     final missing = [
       for (final g in goals)
-        if (g.deadline == null) g,
+        if (g.deadline == null && g.deadlineRule == null) g,
     ];
     if (missing.isEmpty) return Future.value(const {});
     return showDialog<Map<String, String>>(

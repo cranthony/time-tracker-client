@@ -312,7 +312,10 @@ void main() {
         goalProblems([
           goal('top', minutes: 600),
           goal('sub', parent: 'top', deadline: '2026-11-01', minutes: 600),
-          goal('later', parent: 'top', status: 'inactive', deadline: null),
+          goal('later', parent: 'top', status: 'inactive'),
+          // An active goal may be under an inactive one.
+          goal('quiet', status: 'inactive'),
+          goal('busy', parent: 'quiet', deadline: '2026-11-01'),
         ]),
         isEmpty,
       );
@@ -340,13 +343,9 @@ void main() {
         goalProblems([goal('top', status: 'done'), goal('sub', parent: 'top')]),
         [contains('is active, but “top” is done')],
       );
-      expect(
-        goalProblems([
-          goal('top', status: 'inactive', deadline: null),
-          goal('sub', parent: 'top'),
-        ]),
-        [contains('is inactive')],
-      );
+      expect(goalProblems([goal('top', status: 'inactive', deadline: null)]), [
+        contains('needs a deadline, to have when it starts'),
+      ]);
       expect(
         goalProblems([goal('top', parent: 'sub'), goal('sub', parent: 'top')]),
         [contains('under itself'), contains('under itself')],

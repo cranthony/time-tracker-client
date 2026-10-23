@@ -133,15 +133,10 @@ void main() {
     expect(planned(deep, activating(t, [t['r']!]), now: _now), isNotEmpty);
   });
 
-  test('deactivating a goal deactivates its active sub-goals first', () {
+  test('deactivating a goal leaves its active sub-goals active', () {
     final changes = deactivating(tree, tree['top']!);
 
-    expect(_described(changes), [
-      'update a1 {status: inactive}',
-      'update c {status: inactive}',
-      'update a {status: inactive}',
-      'update top {status: inactive}',
-    ]);
+    expect(_described(changes), ['update top {status: inactive}']);
     expect(planned(goals, changes, now: _now), isEmpty);
   });
 

@@ -99,7 +99,7 @@ class McpGoalsRepository implements GoalsRepository {
       _map(
         _map(
           await _client.callTool('create_goal', {
-            'goal': goal.toJson()..remove('id'),
+            'goal': goalWire(goal.toJson())..remove('id'),
           }),
         )['goal'],
       ),
@@ -120,10 +120,11 @@ class McpGoalsRepository implements GoalsRepository {
         await _client.callTool('update_goal', {
           'goal': {
             'id': id,
-            for (final MapEntry(:key, :value) in changes.entries) key: ?value,
+            for (final MapEntry(:key, :value) in goalWire(changes).entries)
+              key: ?value,
           },
           if ([
-                for (final MapEntry(:key, :value) in changes.entries)
+                for (final MapEntry(:key, :value) in goalWire(changes).entries)
                   if (value == null) key,
               ]
               case final clear when clear.isNotEmpty)
@@ -165,20 +166,22 @@ class McpGoalsRepository implements GoalsRepository {
     final result = _map(
       await _client.callTool('update_goals', {
         if (creates.isNotEmpty)
-          'creates': [
-            for (final c in creates) {...c}..remove('id'),
-          ],
+          'creates': [for (final c in creates) goalWire(c)..remove('id')],
         if (updates.isNotEmpty)
           'updates': [
             for (final (id, changes) in updates)
               {
                 'goal': {
                   'id': id,
-                  for (final MapEntry(:key, :value) in changes.entries)
+                  for (final MapEntry(:key, :value) in goalWire(
+                    changes,
+                  ).entries)
                     key: ?value,
                 },
                 if ([
-                      for (final MapEntry(:key, :value) in changes.entries)
+                      for (final MapEntry(:key, :value) in goalWire(
+                        changes,
+                      ).entries)
                         if (value == null) key,
                     ]
                     case final clear when clear.isNotEmpty)
@@ -239,8 +242,15 @@ class InMemoryGoalsRepository implements GoalsRepository {
     'path': GoalTree(_goals).pathOf(goal.id),
   });
 
+  /// Refuses [goals], as a change would leave them, for what's wrong with
+  /// them that wasn't before: the server checks only what a change
+  /// touches, so a goal from before a rule keeps until it's changed.
   void _check(List<Goal> goals) {
-    final problems = goalProblems(goals);
+    final before = goalProblems(_goals).toSet();
+    final problems = [
+      for (final p in goalProblems(goals))
+        if (!before.contains(p)) p,
+    ];
     if (problems.isNotEmpty) throw McpException(problems.join(' '));
   }
 
@@ -282,10 +292,17 @@ class InMemoryGoalsRepository implements GoalsRepository {
     final before = _goals[i];
     final json = {...before.toJson(), ...changes}
       ..removeWhere((_, v) => v == null);
-    // A deadline of its own unties it from its parent's.
+    // A deadline of its own unties it from what it was measured from.
     if (changes.containsKey('deadline') &&
-        !changes.containsKey('deadline_offset_minutes')) {
-      json.remove('deadline_offset_minutes');
+        !changes.containsKey('deadline_offset_minutes') &&
+        !changes.containsKey('deadline_rule')) {
+      json
+        ..remove('deadline_offset_minutes')
+        ..remove('deadline_rule');
+    }
+    // Activated by hand, what it waited for no longer matters.
+    if (json['status'] == 'active' && before.status != 'active') {
+      json.remove('activate_when');
     }
     if (!changes.containsKey('history') && json['status'] != before.status) {
       json['history'] = [
