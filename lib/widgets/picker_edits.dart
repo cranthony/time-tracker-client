@@ -144,7 +144,6 @@ Future<Person?> editPerson(
     person: person,
     name: name,
     fields: fields,
-    focus: memory?.focus,
     circles: circles,
     traits: traits,
     actions: {

@@ -4,11 +4,9 @@ import '../models/person.dart';
 import '../models/scoring.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
-import '../services/focus_store.dart';
 import 'hotkeys.dart';
 import 'edit_page.dart';
 import 'error_sheet.dart';
-import 'focus_buttons.dart';
 import 'quick_add_sheet.dart';
 import 'scoring_editor.dart';
 import 'traits_field.dart';
@@ -22,8 +20,7 @@ import 'traits_field.dart';
 /// [save], which gets the fields as `create_person` or `update_person`
 /// takes them (null to clear one), and returns what it returned, or null
 /// if it was called off. [actions] names the actions and groups a part
-/// can count. With [focus], a star beside Save prioritizes someone
-/// already there, at once. With [scoreParts], the parts of their own of
+/// can count. With [scoreParts], the parts of their own of
 /// someone already there are scored as they're edited. Someone added
 /// starts with [name], if given, and with [fields] -- their name, context
 /// and circles, as `create_person` takes them -- typed in the quick New
@@ -36,7 +33,6 @@ Future<Person?> showPersonEditor(
   List<Circle> circles = const [],
   List<Trait> traits = const [],
   Map<String, String> actions = const {},
-  FocusStore? focus,
   PartsScorer? scoreParts,
   required Future<Person> Function(Map<String, Object?> fields) save,
 }) => showEditPage<Person>(
@@ -48,7 +44,6 @@ Future<Person?> showPersonEditor(
     circles: circles,
     traits: traits,
     actions: actions,
-    focus: focus,
     scoreParts: scoreParts,
     save: save,
   ),
@@ -62,7 +57,6 @@ class _PersonEditor extends StatefulWidget {
     required this.circles,
     required this.traits,
     required this.actions,
-    required this.focus,
     required this.scoreParts,
     required this.save,
   });
@@ -75,7 +69,6 @@ class _PersonEditor extends StatefulWidget {
   final List<Circle> circles;
   final List<Trait> traits;
   final Map<String, String> actions;
-  final FocusStore? focus;
   final PartsScorer? scoreParts;
   final Future<Person> Function(Map<String, Object?> fields) save;
 
@@ -192,11 +185,6 @@ class _PersonEditorState extends State<_PersonEditor> {
         final p when p.isSelf => 'Self',
         final p => 'Edit ${personName(p)}',
       },
-      actions: [
-        if ((widget.focus, person) case (final focus?, final person?)
-            when !person.isSelf)
-          prioritizeButton(focus, person),
-      ],
       problem: problem,
       saving: _saving,
       onSave: _save,

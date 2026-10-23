@@ -18,7 +18,6 @@ import '../services/events_repository.dart';
 import '../services/actions_repository.dart';
 import '../services/client_health.dart';
 import '../services/diagnostics_repository.dart';
-import '../services/focus_store.dart';
 import '../models/goal.dart';
 import '../services/goals_repository.dart';
 import '../services/habits_repository.dart';
@@ -591,14 +590,6 @@ class SampleData {
           timeZone: 'America/New_York',
         ),
       );
-
-  /// Both habits focused on, and three people prioritized. Not kept on
-  /// the device.
-  FocusStore focusStore() => FocusStore(
-    persist: false,
-    habits: const ['guitar-mindfully', 'cook-from-scratch'],
-    people: const ['sam', 'mom', 'jordan'],
-  );
 
   /// The traits. How everyone is rated by them is worked out from the
   /// events, as with the server.

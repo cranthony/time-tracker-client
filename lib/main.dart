@@ -30,7 +30,6 @@ import 'services/background_refresh.dart';
 import 'services/client_health.dart';
 import 'services/diagnostics_repository.dart';
 import 'services/events_repository.dart';
-import 'services/focus_store.dart';
 import 'services/goals_repository.dart';
 import 'services/habits_repository.dart';
 import 'services/mcp_client.dart';
@@ -126,7 +125,6 @@ Future<void> main() async {
         habitsRepository:
             sample?.habitsRepository() ?? InMemoryHabitsRepository(),
         goalsRepository: sample?.goalsRepository() ?? InMemoryGoalsRepository(),
-        focus: sample?.focusStore(),
         diagnosticsRepository: sample?.diagnosticsRepository(),
         calendarWidget: CalendarWidget(),
         googleCalendars: sample == null
@@ -429,7 +427,6 @@ class TimeTrackerApp extends StatefulWidget {
     this.diagnosticsRepository,
     this.clientHealth,
     this.proposalsRepository,
-    this.focus,
     this.settings,
     this.calendarWidget,
     this.googleCalendars,
@@ -480,10 +477,6 @@ class TimeTrackerApp extends StatefulWidget {
   /// The app's own health, recorded as it goes, for the Diagnostics page's
   /// App pane; kept as the app goes to the background.
   final ClientHealthRecorder? clientHealth;
-
-  /// The habits focused on and people prioritized; by default, those
-  /// kept on the device.
-  final FocusStore? focus;
 
   /// The Android home screen calendar, kept up to date with the events,
   /// and its taps shown on Events; without it, it isn't.
@@ -553,7 +546,6 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
       repository: widget.eventsRepository,
       cache: widget.cache,
     ),
-    focus: (widget.focus ?? FocusStore())..load(),
   );
 
   @override

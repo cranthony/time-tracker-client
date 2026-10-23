@@ -78,14 +78,11 @@ tapping the date goes back to the last compaction.
   its pencil edits it, on a page of its own. Time spent's target is
   written, or stepped, in hours and minutes.
 - **People** (who): two sections, each folded away by tapping its head.
-  **Self** has your health and the two habits you focus on (starred on
-  a habit's page), with a way to your page. **People** has
-  the three you keep in front (starred on a person's page, or from their
-  menu), each with their
+  **Self** has your health and your traits, with a way to your page.
+  **People** has "+", to add a person or circle, and "All
+  people and circles", which opens everyone, each with their
   time with you in the summary's window and the last event with them --
-  or the next, looking on; both picks are kept on the device. "All
-  people and circles" opens everyone -- there's no search on the pane
-  itself, with so few on it; its "+" is in People's head --
+  or the next, looking on --
   to search, sort (by health, when
   last or next seen, or time in 24 hours or 7 days, either way) and
   edit, on a page of its own: each with a context
@@ -989,8 +986,8 @@ the layers below it, a layer above the highest of its foundations. Each
 layer has a trend of its own: each day, its lowest rating.
 
 Each is a chip: a habit in its action's color, a person plain, with a
-person by their name. It has the name, the trend, the consistency, and a
-star if it's starred. Tapping one opens its page; holding it (or a right
+person by their name. It has the name, the trend and the consistency;
+each layer is sorted by name. Tapping one opens its page; holding it (or a right
 click) picks what it's built on, archives a habit, or takes a person off
 the graph. A habit's editor picks its foundations too.
 

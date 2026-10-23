@@ -34,8 +34,7 @@ import 'person_screen.dart';
 /// person's plain, with a person by its name. It has their name, their
 /// trend (a person's too in a habit's red, yellow and green, as they're
 /// rated alongside habits here), how many days in a row they've been healthy (see
-/// [consistencyLabel]), and a star if they're starred. Starred ones come
-/// first in a layer, then the rest by name. Tapping one opens their
+/// [consistencyLabel]). Each layer is sorted by name. Tapping one opens their
 /// page; holding it offers what it's built on, archiving a habit, or
 /// taking a person off the graph. "+" adds a habit; the person button
 /// puts people on the graph.
@@ -129,8 +128,7 @@ class HabitsPaneState extends State<HabitsPane> {
     super.dispose();
   }
 
-  /// Shows what changed: the scores, as they're worked out again, or
-  /// which are starred.
+  /// Shows what changed: the scores, as they're worked out again.
   void _changed() {
     if (mounted) setState(() {});
   }
@@ -196,7 +194,6 @@ class HabitsPaneState extends State<HabitsPane> {
     final saved = await showHabitEditor(
       context,
       habit: habit,
-      focus: widget.memory.focus,
       actions: widget.actions,
       traits: [..._traits.values],
       foundationChoices: foundationChoices(_graph, _people, id: habit?.subject),
@@ -379,19 +376,9 @@ class HabitsPaneState extends State<HabitsPane> {
       (layers[graph.layerOf(id)] ??= []).add(graph.nodes[id]!);
     }
     final numbers = layers.keys.toList()..sort();
-    final focus = widget.memory.focus;
-    final starred = {
-      for (final (i, id) in focus.habits.indexed) habitSubject(id): i,
-      for (final (i, id) in focus.people.indexed) id: focus.habits.length + i,
-    };
     for (final members in layers.values) {
       members.sort(
-        (a, b) => switch ((starred[a.id], starred[b.id])) {
-          (final x?, final y?) => x.compareTo(y),
-          (_?, null) => -1,
-          (null, _?) => 1,
-          _ => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-        },
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
       );
     }
     // Opens at the highest layer on track with every one below it.
@@ -607,11 +594,6 @@ class HabitsPaneState extends State<HabitsPane> {
         ? _scores?.healthTrend(node.id) ?? const <int?>[]
         : const <int?>[];
     final consistency = active ? _scores?.consistency(node.id) ?? 0 : 0;
-    final starred = switch ((node.habit, node.person)) {
-      (final h?, _) => widget.memory.focus.isFocusHabit(h.id),
-      (_, final p?) => widget.memory.focus.isPrioritized(p.id),
-      _ => false,
-    };
     final style = theme.textTheme.labelLarge?.copyWith(color: foreground);
     return Opacity(
       opacity: active ? 1 : 0.6,
@@ -675,10 +657,6 @@ class HabitsPaneState extends State<HabitsPane> {
                       color: foreground,
                     ),
                   ),
-                ],
-                if (starred) ...[
-                  const SizedBox(width: 4),
-                  Icon(Icons.star, size: 14, color: foreground),
                 ],
               ],
             ),

@@ -9,10 +9,8 @@ import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import 'actions_picker.dart';
 import 'color_picker.dart';
-import '../services/focus_store.dart';
 import 'edit_page.dart';
 import 'error_sheet.dart';
-import 'focus_buttons.dart';
 import 'foundations_field.dart';
 import 'traits_field.dart';
 
@@ -24,8 +22,7 @@ import 'traits_field.dart';
 /// counts an action outside it, or reads events done for someone, is
 /// warned of. Saves with [save], which gets the fields as `create_habit`
 /// or `update_habit` takes them (null to clear one), and returns what it
-/// returned, or null if it was called off. With [focus], a star beside
-/// Save focuses on one already there, at once. With [foundationChoices],
+/// returned, or null if it was called off. With [foundationChoices],
 /// what it's built on is picked from them; [foundationNames] names its
 /// foundations by id. With [scoreParts], its own parts are scored as
 /// they're edited, for the action picked.
@@ -34,7 +31,6 @@ Future<Habit?> showHabitEditor(
   Habit? habit,
   List<PlanAction> actions = const [],
   List<Trait> traits = const [],
-  FocusStore? focus,
   List<GraphNode>? foundationChoices,
   Map<String, String> foundationNames = const {},
   PartsScorer? scoreParts,
@@ -45,7 +41,6 @@ Future<Habit?> showHabitEditor(
     habit: habit,
     actions: actions,
     traits: traits,
-    focus: focus,
     foundationChoices: foundationChoices,
     foundationNames: foundationNames,
     scoreParts: scoreParts,
@@ -65,7 +60,6 @@ class _HabitEditor extends StatefulWidget {
     required this.habit,
     required this.actions,
     required this.traits,
-    required this.focus,
     required this.foundationChoices,
     required this.foundationNames,
     required this.scoreParts,
@@ -75,7 +69,6 @@ class _HabitEditor extends StatefulWidget {
   final Habit? habit;
   final List<PlanAction> actions;
   final List<Trait> traits;
-  final FocusStore? focus;
   final List<GraphNode>? foundationChoices;
   final Map<String, String> foundationNames;
   final PartsScorer? scoreParts;
@@ -166,10 +159,6 @@ class _HabitEditorState extends State<_HabitEditor> {
         null => 'New habit',
         final h => 'Edit ${habitName(h)}',
       },
-      actions: [
-        if ((widget.focus, widget.habit) case (final focus?, final habit?))
-          focusHabitButton(focus, habit),
-      ],
       problem: problem,
       saving: _saving,
       onSave: _save,

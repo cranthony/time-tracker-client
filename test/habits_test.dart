@@ -13,7 +13,6 @@ import 'package:time_tracker_client/screens/habits_pane.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
-import 'package:time_tracker_client/services/focus_store.dart';
 import 'package:time_tracker_client/services/habits_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
@@ -384,7 +383,6 @@ void main() {
       WidgetTester tester, {
       HabitsRepository? habits,
       PeopleRepository? people,
-      List<String> focus = const [],
       Widget Function(Widget pane)? around,
     }) async {
       tester.view.physicalSize = const Size(800, 2400);
@@ -392,7 +390,6 @@ void main() {
       addTearDown(tester.view.reset);
       final memory =
           PlanMemory(
-              focus: FocusStore(persist: false, habits: focus),
               eventStore: EventStore(repository: InMemoryEventsRepository()),
             )
             ..traits = _traits
@@ -469,25 +466,6 @@ void main() {
 
       expect(find.text('Layer 0'), findsOneWidget);
       expect(panes.offset, 400);
-    });
-
-    testWidgets('puts those starred first, in the order they were', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        habits: InMemoryHabitsRepository([
-          const Habit(id: 'a', name: 'Apples', actionId: 'walk'),
-          const Habit(id: 'b', name: 'Bananas', actionId: 'walk'),
-          const Habit(id: 'c', name: 'Cherries', actionId: 'walk'),
-        ]),
-        focus: ['c', 'b'],
-      );
-
-      double left(String name) => tester.getTopLeft(find.text(name)).dx;
-      expect(left('Cherries'), lessThan(left('Bananas')));
-      expect(left('Bananas'), lessThan(left('Apples')));
-      expect(find.byIcon(Icons.star), findsNWidgets(2));
     });
 
     testWidgets('layers them by what they are built on, layer 0 lowest', (
@@ -807,32 +785,6 @@ void main() {
         findsOneWidget,
       );
     });
-  });
-
-  testWidgets('a habit is focused on by its star, two at most', (tester) async {
-    final memory = PlanMemory(
-      focus: FocusStore(persist: false, habits: ['h2']),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: HabitScreen(habit: _mindfully, memory: memory),
-      ),
-    );
-
-    await tester.tap(find.byTooltip('Focus on Practice mindfully'));
-    await tester.pump();
-    expect(memory.focus.habits, ['h2', 'h1']);
-    expect(find.byTooltip("Don't focus on Practice mindfully"), findsOneWidget);
-
-    memory.focus.setFocusHabit('h1', false);
-    memory.focus.setFocusHabit('h3', true);
-    await tester.pump();
-    expect(
-      find.byTooltip('Focus on Practice mindfully (2 already)'),
-      findsOneWidget,
-    );
-    await tester.tap(find.byTooltip('Focus on Practice mindfully (2 already)'));
-    expect(memory.focus.habits, ['h2', 'h3']);
   });
 
   testWidgets("a habit's page shows what it's built on", (tester) async {

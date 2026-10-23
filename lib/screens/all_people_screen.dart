@@ -8,8 +8,7 @@ import '../widgets/hotkeys.dart';
 import '../widgets/health.dart';
 import '../widgets/plan_pane.dart';
 
-/// Everyone, as the People pane listed them before it kept only Self and
-/// those prioritized in front: Self first, then everyone else, each with
+/// Everyone: Self first, then everyone else, each with
 /// their circles, health, time with the user and when they were last
 /// seen -- or will next be (see [tile]). Above them, the circles, each
 /// with its own health: tapping one shows only the people in it, and

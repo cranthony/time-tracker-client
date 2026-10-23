@@ -15,7 +15,6 @@ import '../services/traits_repository.dart';
 import '../widgets/durations.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/fact_prompts_dialog.dart';
-import '../widgets/focus_buttons.dart';
 import '../widgets/goal_editor.dart' show deadlineLabel;
 import '../widgets/health.dart';
 import 'goal_screen.dart';
@@ -236,8 +235,6 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
       appBar: AppBar(
         title: Text(personName(_person)),
         actions: [
-          if (widget.memory?.focus case final focus? when !_person.isSelf)
-            prioritizeButton(focus, _person),
           if (widget.onEdit != null) editButton(personName(_person), _edit),
         ],
       ),

@@ -213,12 +213,10 @@ class McpPeopleRepository implements PeopleRepository {
 
   @override
   Future<List<FactLog>> factLogs(String personId, {String? traitId}) async => [
-    for (final log
-        in await _client.callTool('get_fact_logs', {
-              'person_id': personId,
-              'trait_id': ?traitId,
-            })
-            as List)
+    for (final log in await _client.callTool('get_fact_logs', {
+      'person_id': personId,
+      'trait_id': ?traitId,
+    }) as List)
       FactLog.fromJson((log as Map).cast<String, dynamic>()),
   ];
 
