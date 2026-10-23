@@ -252,14 +252,19 @@ void main() {
   });
 
   testWidgets('upcoming goals come last, just outlined in their '
-      "priority's color, each saying when it's due; those past a week "
-      'on one pill listing them', (tester) async {
+      "priority's color, each saying when it's due; past the first seven, "
+      'by priority then deadline, on one pill listing them', (tester) async {
     Goal? tapped;
     final ahead = upcomingGoalsOn([
       _goal('s', 'Soon', '2026-10-20'),
       _goal('t', 'Timed', '2026-10-25T09:00'),
+      for (var d = 21; d <= 25; d++) _goal('n$d', 'Next $d', '2026-10-$d'),
       _goal('f', 'Far', '2026-10-26'),
-      _goal('g', 'Farther', '2026-11-30'),
+      // Highest priority, due furthest out: first all the same.
+      Goal.fromJson({
+        ..._goal('g', 'Farther', '2026-11-30').toJson(),
+        'priority': 1,
+      }),
     ], day);
     Future<void> show({required bool collapsed, List<Goal>? due}) =>
         tester.pumpWidget(
@@ -279,9 +284,16 @@ void main() {
         );
     await show(collapsed: false);
     expect(find.text('Upcoming'), findsOneWidget);
+    expect(find.textContaining('Farther  ·  due Nov 30'), findsOneWidget);
     expect(find.textContaining('due Oct 20'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.textContaining('Farther')).dx,
+      lessThan(tester.getTopLeft(find.textContaining('Soon')).dx),
+    );
+    // At 9:00 AM, before the end of its day: ahead of "Next 25".
     expect(find.textContaining('due Oct 25, 9:00 AM'), findsOneWidget);
-    expect(find.textContaining('Far'), findsNothing);
+    expect(find.textContaining('Next 25'), findsNothing);
+    expect(find.textContaining('Far  ·'), findsNothing);
     expect(find.text('+2 later'), findsOneWidget);
     Material pillOf(String text) => tester.widget<Material>(
       find
@@ -301,19 +313,19 @@ void main() {
 
     await tester.tap(find.text('+2 later'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Far  ·  due Oct 26'), findsOneWidget);
-    await tester.tap(find.textContaining('Farther'));
+    expect(find.textContaining('Next 25  ·  due Oct 25'), findsOneWidget);
+    await tester.tap(find.textContaining('Far  ·  due Oct 26'));
     await tester.pumpAndSettle();
-    expect(tapped?.id, 'g');
+    expect(tapped?.id, 'f');
 
     await show(collapsed: true);
     expect(
-      find.textContaining('4 goals due (3 open), 4 upcoming · '),
+      find.textContaining('4 goals due (3 open), 9 upcoming · '),
       findsOneWidget,
     );
     await show(collapsed: true, due: const []);
     expect(
-      find.textContaining('4 goals upcoming · Soon, Timed'),
+      find.textContaining('9 goals upcoming · Farther, Soon, Next 21'),
       findsOneWidget,
     );
   });

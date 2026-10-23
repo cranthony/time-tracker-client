@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.188.1
+
+- The goals-due strip gives the first seven upcoming goals a pill each
+  -- by priority, then deadline -- and counts the rest on "+N later",
+  rather than giving a pill to those due within a week: a high-priority
+  goal due further out no longer comes after lower-priority ones.
+
 ## 7.188.0
 
 - The goals-due strip shows a goal waiting to be activated on the days
