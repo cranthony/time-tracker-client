@@ -9,6 +9,22 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.186.0
+
+- Goals follow the server's new deadlines: each one's deadline is what
+  the server works out (its `due`), and what it's measured from -- the
+  parent's deadline, the goal's start, or another goal's -- is read and
+  written as the server now takes it. A goal can also wait to be
+  activated (`activate_when`), with when it's expected to be
+  (`expected_start`); the app keeps both, ready for the pages that
+  will show them.
+- An active goal may sit under an inactive one: deactivating a goal no
+  longer deactivates its sub-goals, and moving an active goal under an
+  inactive one leaves it active. Activating a goal still activates its
+  inactive parents.
+- An inactive goal needs a deadline too -- a date, or one measured from
+  its parent's or its start -- as the server now asks.
+
 ## 7.185.1
 
 - The goals-due strip's upcoming goals are listed strictly by priority,

@@ -21,6 +21,9 @@ class Goal {
     this.expectedMinutes,
     this.deadline,
     this.deadlineOffsetMinutes,
+    this.deadlineRule,
+    this.activateWhen,
+    this.expectedStart,
     this.status = 'active',
     this.history = const [],
     this.description,
@@ -54,9 +57,10 @@ class Goal {
   /// with the time spent, never enforced.
   final int? expectedMinutes;
 
-  /// When it's due, as the server keeps it: a date ("2026-11-01", due at
-  /// the end of that day) or a date and time ("2026-11-01T17:00"), local.
-  /// Needed while it's active.
+  /// When it's due, as the server works it out (its `due`): a date
+  /// ("2026-11-01", due at the end of that day) or a date and time
+  /// ("2026-11-01T17:00"), local. Needed while it's active; null while it
+  /// waits on a start ([deadlineRule]'s `after_start`).
   final String? deadline;
 
   /// Set, [deadline] follows its parent's: this many minutes before it
@@ -64,6 +68,21 @@ class Goal {
   /// while it's open. A deadline set without it unties it; so does a move
   /// to the top level.
   final int? deadlineOffsetMinutes;
+
+  /// What its deadline is measured from, when it's neither a date given
+  /// nor its parent's ([deadlineOffsetMinutes]): `{after_start: {days |
+  /// minutes}}` or `{after_goal: {id, days | minutes}}`, as the server
+  /// takes it. Kept so by the server while it's open.
+  final Map<String, Object?>? deadlineRule;
+
+  /// What it waits for before the server activates it, while it's
+  /// inactive: `{after: [{goal_closed} | {at}], delay, hold_while}`, as
+  /// the server takes it.
+  final Map<String, Object?>? activateWhen;
+
+  /// Waiting to be activated, when it's expected to be, as the server
+  /// says: a date, from its start, or a date and time. Not sent back.
+  final String? expectedStart;
 
   /// One of [goalStatuses]' keys.
   final String status;
@@ -135,8 +154,21 @@ class Goal {
     priority: (json['priority'] as num?)?.toInt(),
     sortOrder: (json['sort_order'] as num?)?.toInt(),
     expectedMinutes: (json['expected_minutes'] as num?)?.toInt(),
-    deadline: _text(json['deadline']),
-    deadlineOffsetMinutes: (json['deadline_offset_minutes'] as num?)?.toInt(),
+    deadline: _deadline(json),
+    deadlineOffsetMinutes: switch (json['deadline']) {
+      {'before_parent': final Map offset} => _minutes(offset),
+      Map() => null,
+      _ => (json['deadline_offset_minutes'] as num?)?.toInt(),
+    },
+    deadlineRule: switch (json['deadline']) {
+      final Map rule
+          when rule['after_start'] != null || rule['after_goal'] != null =>
+        rule.cast(),
+      Map() => null,
+      _ => (json['deadline_rule'] as Map?)?.cast(),
+    },
+    activateWhen: (json['activate_when'] as Map?)?.cast(),
+    expectedStart: _text(json['expected_start']),
     status: json['status'] as String? ?? 'active',
     history: [
       for (final c in json['history'] as List? ?? const [])
@@ -163,6 +195,9 @@ class Goal {
     'expected_minutes': ?expectedMinutes,
     'deadline': ?deadline,
     'deadline_offset_minutes': ?deadlineOffsetMinutes,
+    'deadline_rule': ?deadlineRule,
+    'activate_when': ?activateWhen,
+    'expected_start': ?expectedStart,
     'status': status,
     if (history.isNotEmpty) 'history': [for (final c in history) c.toJson()],
     'description': ?description,
@@ -179,6 +214,53 @@ class Goal {
     final String text when text.trim().isNotEmpty => text,
     _ => null,
   };
+
+  /// The deadline in [json]: the server's `due`, under a `deadline` that's
+  /// what it's measured from; or the app's own, a date given.
+  static String? _deadline(Map<String, dynamic> json) =>
+      switch (json['deadline']) {
+        {'at': final String at} => _text(json['due']) ?? _text(at),
+        Map() => _text(json['due']),
+        final other => _text(other),
+      };
+
+  /// An offset's days or minutes, in minutes.
+  static int? _minutes(Map offset) => switch (offset) {
+    {'days': final num days} => days.toInt() * Duration.minutesPerDay,
+    {'minutes': final num minutes} => minutes.toInt(),
+    _ => null,
+  };
+}
+
+/// [changes] to a goal -- or a whole goal, as [Goal.toJson] gives it -- as
+/// the server takes them: its deadline as what it's measured from
+/// (`{before_parent}` for a [Goal.deadlineOffsetMinutes], or a
+/// [Goal.deadlineRule]) or the date given (`{at}`), with null clearing
+/// it; and without what the server works out.
+Map<String, Object?> goalWire(Map<String, Object?> changes) {
+  final out = {...changes}
+    ..remove('deadline_rule')
+    ..remove('deadline_offset_minutes')
+    ..remove('expected_start')
+    ..remove('due')
+    ..remove('path');
+  final offset = changes['deadline_offset_minutes'];
+  if (changes['deadline_rule'] case final Map rule) {
+    out['deadline'] = rule;
+  } else if (offset is int) {
+    out['deadline'] = {
+      'before_parent': offset % Duration.minutesPerDay == 0
+          ? {'days': offset ~/ Duration.minutesPerDay}
+          : {'minutes': offset},
+    };
+  } else if (changes.containsKey('deadline')) {
+    out['deadline'] = switch (changes['deadline']) {
+      final String at => {'at': at},
+      final Map given => given,
+      _ => null,
+    };
+  }
+  return out;
 }
 
 /// One change of a goal's status: what it became, when, and the
@@ -294,8 +376,20 @@ List<Goal> followingParents(List<Goal> goals) {
   for (var pass = 0; pass < out.length; pass++) {
     var again = false;
     for (final (i, goal) in out.indexed) {
+      if (goal.closed) continue;
+      if (goal.deadlineRule != null) {
+        final ruled = _ruled(goal, out, at);
+        if (ruled == goal.deadline) continue;
+        out[i] = Goal.fromJson({
+          ...goal.toJson()..remove('deadline'),
+          'deadline': ?ruled,
+          'path': goal.path,
+        });
+        again = true;
+        continue;
+      }
       final minutes = goal.deadlineOffsetMinutes;
-      if (minutes == null || goal.closed || minutes < 0) continue;
+      if (minutes == null || minutes < 0) continue;
       final json = goal.toJson();
       if (goal.parentId == null) {
         json.remove('deadline_offset_minutes');
@@ -312,6 +406,48 @@ List<Goal> followingParents(List<Goal> goals) {
     if (!again) break;
   }
   return out;
+}
+
+/// The deadline [goal]'s [Goal.deadlineRule] gives, among [goals] (by
+/// index [at]), as the server works it out: from its start, the last
+/// time it became active (none until it is); after another goal's
+/// deadline. [goal]'s own, if it can't be worked out.
+String? _ruled(Goal goal, List<Goal> goals, Map<String, int> at) {
+  (int?, int?) offsetOf(Object? offset) => switch (offset) {
+    {'days': final num d} => (d.toInt(), null),
+    {'minutes': final num m} => (null, m.toInt()),
+    _ => (null, null),
+  };
+  switch (goal.deadlineRule) {
+    case {'after_start': final Object? offset}:
+      if (!goal.active) return null;
+      final start = goal.history.where((c) => c.status == 'active').lastOrNull;
+      if (start == null) return goal.deadline;
+      return switch (offsetOf(offset)) {
+        (final d?, _) => deadlineOf(
+          DateTime(start.at.year, start.at.month, start.at.day + d),
+        ),
+        (_, final m?) => deadlineOf(
+          start.at.add(Duration(minutes: m)),
+          time: true,
+        ),
+        _ => goal.deadline,
+      };
+    case {'after_goal': {'id': final String id} && final Map offset}:
+      final other = at[id] == null ? null : goals[at[id]!].deadline;
+      final end = deadlineEnd(other);
+      if (other == null || end == null) return goal.deadline;
+      return switch (offsetOf(offset)) {
+        (final d?, _) when !deadlineHasTime(other) => deadlineOf(
+          DateTime(end.year, end.month, end.day - 1 + d),
+        ),
+        (final d?, _) => deadlineOf(end.add(Duration(days: d)), time: true),
+        (_, 0) => other,
+        (_, final m?) => deadlineOf(end.add(Duration(minutes: m)), time: true),
+        _ => goal.deadline,
+      };
+  }
+  return goal.deadline;
 }
 
 // -- Goals together --------------------------------------------------------
@@ -591,6 +727,12 @@ List<String> goalProblems(List<Goal> goals) {
     if (goal.active && goal.deadline == null) {
       problems.add('${name(goal)} is active, so it needs a deadline.');
     }
+    if (goal.inactive &&
+        goal.deadline == null &&
+        goal.deadlineOffsetMinutes == null &&
+        goal.deadlineRule == null) {
+      problems.add('${name(goal)} needs a deadline, to have when it starts.');
+    }
     final started = goal.startedAt;
     if (started != null && goal.due != null && !started.isBefore(goal.due!)) {
       problems.add('${name(goal)} started after its deadline.');
@@ -624,8 +766,6 @@ List<String> goalProblems(List<Goal> goals) {
         '${name(goal)} is ${goal.status}, but ${name(parent)} is '
         '${parent.status}.',
       );
-    } else if (goal.active && parent.inactive) {
-      problems.add('${name(goal)} is active, but ${name(parent)} is inactive.');
     }
     if ((goal.due, parent.due) case (final due?, final parentDue?)
         when due.isAfter(parentDue)) {

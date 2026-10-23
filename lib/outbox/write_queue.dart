@@ -34,7 +34,16 @@ class WriteKind {
     this.updateArguments,
     this.nameOf,
     this.batchTool,
+    this.wire,
   });
+
+  /// An item, or changes to one, as the server takes them, when that isn't
+  /// as they're kept here (a goal's deadline, say): what's sent.
+  final Map<String, Object?> Function(Map<String, Object?> changes)? wire;
+
+  /// [changes] as they're sent ([wire]).
+  Map<String, Object?> sent(Map<String, Object?> changes) =>
+      wire?.call(changes) ?? changes;
 
   /// The tool that makes, changes and deletes several at once, checked
   /// whole ([WriteQueue.batch]): taking `creates` (each as [createTool]
@@ -326,6 +335,7 @@ class WriteKind {
     writable: _goal,
     nameOf: _goalTitle,
     batchTool: 'update_goals',
+    wire: goalWire,
   );
 
   static Map<String, Object?> _goal(Map<String, Object?> item) =>
@@ -1247,7 +1257,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
         kind.batchTool!,
         <String, Object?>{
           if (write.parts('creates') case final creates when creates.isNotEmpty)
-            'creates': creates,
+            'creates': [for (final c in creates) kind.sent(c)],
           if (write.parts('updates') case final updates when updates.isNotEmpty)
             'updates': [
               for (final u in updates)
@@ -1255,8 +1265,11 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
                   kind.argument: {
                     'id': u['id'],
                     for (final MapEntry(:key, :value)
-                        in (u['changes'] as Map? ?? const {})
-                            .cast<String, Object?>()
+                        in kind
+                            .sent(
+                              (u['changes'] as Map? ?? const {})
+                                  .cast<String, Object?>(),
+                            )
                             .entries)
                       key: ?value,
                     'version':
@@ -1265,7 +1278,12 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
                   },
                   if ([
                         for (final MapEntry(:key, :value)
-                            in (u['changes'] as Map? ?? const {}).entries)
+                            in kind
+                                .sent(
+                                  (u['changes'] as Map? ?? const {})
+                                      .cast<String, Object?>(),
+                                )
+                                .entries)
                           if (value == null) key,
                       ]
                       case final cleared when cleared.isNotEmpty)
@@ -1286,7 +1304,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
       WriteOp.create => (
         kind.createTool,
         <String, Object?>{
-          kind.argument: {...write.changes, 'id': write.itemId},
+          kind.argument: {...kind.sent(write.changes), 'id': write.itemId},
         },
       ),
       WriteOp.update when kind.single => (
@@ -1310,11 +1328,12 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
         <String, Object?>{
           kind.argument: {
             'id': write.itemId,
-            for (final MapEntry(:key, :value) in write.changes.entries)
+            for (final MapEntry(:key, :value)
+                in kind.sent(write.changes).entries)
               key: ?value,
             'version': ?version,
           },
-          if (write.changes.entries.where((c) => c.value == null)
+          if (kind.sent(write.changes).entries.where((c) => c.value == null)
               case final cleared when cleared.isNotEmpty)
             'clear_fields': [for (final c in cleared) c.key],
         },

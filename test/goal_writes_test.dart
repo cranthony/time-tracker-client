@@ -105,7 +105,8 @@ void main() {
     expect(server.calls[0].arguments, {
       'goal': {
         'title': 'Ship',
-        'deadline': '2026-12-01',
+        // As the server takes a deadline.
+        'deadline': {'at': '2026-12-01'},
         'status': 'active',
         'id': made.id,
       },
