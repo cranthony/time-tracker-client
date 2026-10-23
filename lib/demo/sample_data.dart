@@ -128,6 +128,7 @@ class SampleData {
       bool required = false,
       int? priority,
       String? description,
+      Map<String, Object?> also = const {},
     }) => Goal.fromJson({
       'id': id,
       'title': title,
@@ -139,6 +140,7 @@ class SampleData {
       'required': required,
       'description': description,
       'history': since(status, 10),
+      ...also,
     });
     return [
       goal(
@@ -181,11 +183,23 @@ class SampleData {
         due: 0,
         at: '10:00',
       ),
+      // Next in line: waits for the icon, due three days after it starts.
       goal(
         'polish',
         'Polish the settings',
         parent: 'ship-app',
         status: 'inactive',
+        also: const {
+          'deadline_rule': {
+            'after_start': {'days': 3},
+          },
+          'activate_when': {
+            'after': [
+              {'goal_closed': 'goal-icon'},
+            ],
+            'delay': 'next_day',
+          },
+        },
       ),
       goal(
         'marathon',

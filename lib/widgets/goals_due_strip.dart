@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
+import '../models/goal_activation.dart';
 import 'color_picker.dart';
 import 'goal_icon.dart';
 import 'goal_tile.dart';
@@ -45,9 +46,15 @@ List<Goal> overdueGoalsOn(
 /// after it. As of [day]: on one before [today], each as its history had
 /// it at the day's end -- its status then, and the deadline in force --
 /// so a past day shows what was coming up then; one that didn't exist yet
-/// isn't among them. The highest priority first, as [GoalTree.priorityOf]
-/// has it in [tree] (by default, [goals] themselves), then the soonest
-/// due ([compareByDeadline]): at a time, not the user's own order.
+/// isn't among them. On today or a day ahead, too, each goal waiting to
+/// be activated that's expected to have started by the day's end
+/// ([expectedStart]) and not to be due before it -- with the deadline
+/// it's expected to have, and when it's expected to start
+/// ([Goal.expectedStart]); one due on the day is among them only if it's
+/// the deadline it's expected to have, not one it has ([goalsDueOn] has
+/// that). The highest priority first, as [GoalTree.priorityOf] has it in
+/// [tree] (by default, [goals] themselves), then the soonest due
+/// ([compareByDeadline]): at a time, not the user's own order.
 List<Goal> upcomingGoalsOn(
   Iterable<Goal> goals,
   DateTime day, {
@@ -56,12 +63,41 @@ List<Goal> upcomingGoalsOn(
 }) {
   final date = deadlineOf(day);
   final past = today != null && date.compareTo(deadlineOf(today)) < 0;
+  final all = tree ?? GoalTree(goals);
   return [
     for (final g in goals)
       if (past ? _asOf(g, day) : g case final then?)
         if (then.active)
           if (dueDay(then) case final due? when due.compareTo(date) > 0) then,
-  ]..sort(_byPriorityThenDeadline(tree ?? GoalTree(goals)));
+    if (!past)
+      for (final g in goals) ?_expected(g, all, day, today ?? day),
+  ]..sort(_byPriorityThenDeadline(all));
+}
+
+/// [goal], waiting to be activated, as it's expected to be on [day] (as
+/// of [now]): with the deadline it's expected to have, and when it's
+/// expected to start -- if it's expected to have started by the day's
+/// end and not to be due before it. Null otherwise.
+Goal? _expected(Goal goal, GoalTree tree, DateTime day, DateTime now) {
+  if (!goal.inactive || goal.activateWhen == null) return null;
+  final start = expectedStart(goal, tree, now: now);
+  if (start == null) return null;
+  if (!start.isBefore(DateTime(day.year, day.month, day.day + 1))) return null;
+  final due = expectedDeadline(goal, tree, now: now);
+  final dueOn = due?.split('T').first;
+  final date = deadlineOf(day);
+  if (dueOn == null || dueOn.compareTo(date) < 0) return null;
+  // Due on the day by a deadline of its own: the day's, not upcoming.
+  if (goal.deadline != null && dueOn == date) return null;
+  return Goal.fromJson({
+    ...goal.toJson(),
+    'deadline': due,
+    'expected_start': deadlineOf(
+      start,
+      time: start.hour != 0 || start.minute != 0,
+    ),
+    'path': goal.path,
+  });
 }
 
 /// The highest priority first, as [tree] has each, then the soonest due.
@@ -139,7 +175,9 @@ enum OverdueGoalAction {
 /// each saying the day it was due, so they stay in sight until they're
 /// done or retargeted; only on today, though, not on a past or future
 /// day. Last, the [upcoming] ones -- active, due later -- just outlined,
-/// each saying the day it's due: one each for those due within
+/// each saying the day it's due (one only expected to have started by
+/// then, waiting to be activated, in a dashed outline, with an hourglass,
+/// saying when it's expected to start too): one each for those due within
 /// [upcomingDays] of the day, then a "+N later" pill listing the rest.
 /// Tapping a pill calls [onTap]; holding an overdue one (or
 /// right-clicking it) offers [OverdueGoalAction]s, each calling
@@ -264,6 +302,9 @@ class GoalsDueStrip extends StatelessWidget {
       priority: tree?.priorityOf(g.id) ?? g.priority ?? defaultGoalPriority,
       dueDay: late ? _dueDayLabel(context, g) : null,
       upcomingDay: ahead ? _upcomingLabel(context, g) : null,
+      startsOn: ahead && g.inactive && g.expectedStart != null
+          ? startLabelShort(context, g.expectedStart!)
+          : null,
       missed: ghost ? _missedNotes(context, g) : null,
       left: g.closed || ghost || spent == null
           ? null
@@ -427,6 +468,7 @@ class _Pill extends StatelessWidget {
     required this.priority,
     this.dueDay,
     this.upcomingDay,
+    this.startsOn,
     this.missed,
     this.left,
     this.onTap,
@@ -444,6 +486,10 @@ class _Pill extends StatelessWidget {
 
   /// When it's due, when it's upcoming; null when it isn't.
   final String? upcomingDay;
+
+  /// When it's expected to start, when it's upcoming only as expected --
+  /// waiting to be activated; null when it isn't.
+  final String? startsOn;
 
   /// What it says as a ghost of a miss from the day; null when it isn't.
   final List<String>? missed;
@@ -480,6 +526,8 @@ class _Pill extends StatelessWidget {
         'missed that day'
       else if (overdue)
         'due $dueDay, overdue'
+      else if (startsOn != null)
+        'due $upcomingDay, expected to start $startsOn'
       else if (ahead)
         'due $upcomingDay, upcoming'
       else if (time != null)
@@ -502,6 +550,8 @@ class _Pill extends StatelessWidget {
         shape: StadiumBorder(
           side: overdue
               ? BorderSide(color: colors.error, width: 2)
+              : startsOn != null
+              ? BorderSide.none
               : BorderSide(color: tint, width: ahead ? 2 : 1),
         ),
         clipBehavior: Clip.antiAlias,
@@ -516,6 +566,10 @@ class _Pill extends StatelessWidget {
               children: [
                 if (closed) ...[
                   Icon(done ? Icons.check : Icons.close, size: 14, color: ink),
+                  const SizedBox(width: 4),
+                ],
+                if (startsOn != null) ...[
+                  Icon(Icons.hourglass_top, size: 14, color: ink),
                   const SizedBox(width: 4),
                 ],
                 Flexible(
@@ -533,6 +587,8 @@ class _Pill extends StatelessWidget {
                           ),
                         ),
                         if (overdue) TextSpan(text: '  ·  due $dueDay'),
+                        if (startsOn != null)
+                          TextSpan(text: '  ·  starts $startsOn'),
                         if (ahead) TextSpan(text: '  ·  due $upcomingDay'),
                         for (final note in missed ?? const <String>[])
                           TextSpan(text: '  ·  $note'),
@@ -550,9 +606,12 @@ class _Pill extends StatelessWidget {
         ),
       ),
     );
-    return path.isEmpty
+    final drawn = startsOn == null
         ? pill
-        : Tooltip(message: [...path, title].join(' › '), child: pill);
+        : CustomPaint(foregroundPainter: _DashedStadium(tint), child: pill);
+    return path.isEmpty
+        ? drawn
+        : Tooltip(message: [...path, title].join(' › '), child: drawn);
   }
 
   /// The [OverdueGoalAction]s, in a menu below the pill; the one picked
@@ -635,4 +694,47 @@ class _LaterPill extends StatelessWidget {
     );
     if (picked != null) onTap?.call(picked);
   }
+}
+
+/// When a goal waiting to be activated is expected to start, [at] as
+/// [Goal.expectedStart] has it, short: "Nov 2", or "Nov 2, 9:00 AM".
+String startLabelShort(BuildContext context, String at) {
+  final start = startOf(at);
+  if (start == null) return at;
+  final strings = MaterialLocalizations.of(context);
+  final day = strings.formatShortMonthDay(start);
+  return at.contains('T')
+      ? '$day, ${strings.formatTimeOfDay(TimeOfDay.fromDateTime(start))}'
+      : day;
+}
+
+/// A stadium's outline in [color], dashed: a pill only expected to be.
+class _DashedStadium extends CustomPainter {
+  const _DashedStadium(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    final outline = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          (Offset.zero & size).deflate(1),
+          Radius.circular(size.height / 2),
+        ),
+      );
+    const dash = 5.0, gap = 3.0;
+    for (final metric in outline.computeMetrics()) {
+      for (var d = 0.0; d < metric.length; d += dash + gap) {
+        canvas.drawPath(metric.extractPath(d, d + dash), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedStadium old) => old.color != color;
 }

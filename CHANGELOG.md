@@ -9,6 +9,17 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.188.0
+
+- The goals-due strip shows a goal waiting to be activated on the days
+  it's expected to have started by: today or a day ahead, from when it's
+  expected to start until it's due, in a dashed outline with an
+  hourglass, saying when it starts and when it's due. A goal waiting
+  until Monday, due Friday, shows from Monday to Thursday, and as due on
+  Friday; one waiting on another moves as that one's deadline does --
+  tried again later, say.
+- The sample data has a goal waiting on another.
+
 ## 7.187.0
 
 - Goals can be chained. An inactive goal's edit page has a Starts
