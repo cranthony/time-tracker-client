@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
@@ -13,6 +14,7 @@ import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/screens/plan_screen.dart';
+import 'package:time_tracker_client/widgets/hotkeys.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/habits_repository.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
@@ -37,7 +39,12 @@ void main() {
     EventsRepository? events,
     DateTime? lastCompaction,
     PlanMemory? memory,
+    Hotkeys? hotkeys,
   }) => MaterialApp(
+    navigatorObservers: [?hotkeys],
+    builder: hotkeys == null
+        ? null
+        : (context, child) => HotkeyScope(hotkeys: hotkeys, child: child!),
     home: PlanScreen(
       repository: repo,
       outbox: outbox ?? (ActionWrites.local(repo)..start()),
@@ -455,15 +462,17 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(Tab, 'Actions'), findsOneWidget);
+    // The actions are in the Library, after Habits.
+    await tester.tap(find.widgetWithText(Tab, 'Library'));
+    await tester.pumpAndSettle();
 
     expect(shownNames(tester), contains('Tofu tikka'));
 
-    await tester.fling(titled('Cooking').first, const Offset(-300, 0), 1000);
+    await tester.fling(titled('Cooking').first, const Offset(300, 0), 1000);
     await tester.pumpAndSettle();
     expect(find.text('Cook slowly'), findsOneWidget);
     // Still open, back on Actions.
-    await tester.tap(find.widgetWithText(Tab, 'Actions'));
+    await tester.tap(find.widgetWithText(Tab, 'Library'));
     await tester.pumpAndSettle();
     expect(shownNames(tester), contains('Tofu tikka'));
   });
@@ -1005,12 +1014,61 @@ void main() {
     // Before the People pane is ever shown.
     expect(people.calls, ['people', 'locations']);
 
-    await tester.tap(find.widgetWithText(Tab, 'People'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(Tab, 'Locations'));
+    // The Library is the only pane, with no habits or traits.
+    await tester.tap(find.text('Locations'));
     await tester.pumpAndSettle();
     expect(people.calls, ['people', 'locations']);
     expect(find.text('Home'), findsOneWidget);
+  });
+
+  testWidgets('the Library holds People, Actions and Locations, each a key '
+      'away, and keeps the one shown', (tester) async {
+    await tester.pumpWidget(
+      HabitsScope(
+        repository: InMemoryHabitsRepository([
+          const Habit(id: 'h1', name: 'Cook slowly', actionId: 'cooking'),
+        ]),
+        child: PeopleScope(
+          repository: _CountingPeopleRepository(),
+          child: app(tree(), hotkeys: Hotkeys()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('who/what/where'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'People'), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyW);
+    await tester.pumpAndSettle();
+    // People first.
+    expect(find.text('Search people'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
+    await tester.pumpAndSettle();
+    expect(find.text('Home'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
+    await tester.pumpAndSettle();
+    expect(find.text('Cook slowly'), findsOneWidget);
+    // Back to the section last shown.
+    await tester.tap(find.widgetWithText(Tab, 'Library'));
+    await tester.pumpAndSettle();
+    expect(find.text('Home'), findsOneWidget);
+
+    await tester.tap(find.text('Actions'));
+    await tester.pumpAndSettle();
+    expect(shownNames(tester), contains('Tofu tikka'));
+
+    // "+" is the section's shown, not the others'.
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyP);
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.equal, character: '+');
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.equal);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+    expect(find.text('New person'), findsOneWidget);
+    expect(find.text('New action'), findsNothing);
   });
 
   testWidgets('priority colors can be changed from the Actions pane', (

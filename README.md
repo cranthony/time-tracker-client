@@ -50,15 +50,18 @@ confirm: edits to the events in it edit the proposal, not the calendar, and
 a bar above confirms it as shown or leaves a note for Claude to revise it
 (see [Compaction proposals](#compaction-proposals)). Above them, a summary shows how the day's time is split by its top
 actions; swipe it to see the top-level groups, or the time by priority. A **Plan** page
-has its panes, swiped between or picked from its tabs, each but Traits
-with a search of its own. Landing on it loads every pane at once, and it shows what it
+has its panes, swiped between or picked from its tabs -- Goals, Habits,
+Traits and the **Library** (who/what/where), which holds People, Actions
+and Locations, picked by a switch at its top and remembered; each but
+Traits has a search of its own. Each tab's first letter is its hotkey,
+and W the Library's; P, A and L go straight to its sections. Landing on it loads every pane at once, and it shows what it
 had last time while it loads again. The Actions, People and Locations
 panes each have a summary, at the top, of the time in the 24 hours
 and 7 days before the last compaction -- or after it, with "Next" -- worked
 out from the events; its arrows move the window a day at a time, and
 tapping the date goes back to the last compaction.
 
-- **Actions** (do), leftmost: what you do with your time, as a tree of
+- **Actions** (what, in the Library): what you do with your time, as a tree of
   groups -- names that roll up the actions in them -- with actions, the
   only thing events are given, as its leaves, each with its time in the
   window. The summary splits the time by the actions shown, or by
@@ -78,7 +81,7 @@ tapping the date goes back to the last compaction.
   score, the mean of everyone scored by it, and its trend);
   its pencil edits it, on a page of its own. Time spent's target is
   written, or stepped, in hours and minutes.
-- **People** (who): everyone, Self first, each with their
+- **People** (who, in the Library): everyone, Self first, each with their
   time with you in the summary's window and the last event with them --
   or the next, looking on -- to search, sort (by health, when
   last or next seen, or time in 24 hours or 7 days, either way) and
@@ -94,7 +97,7 @@ tapping the date goes back to the last compaction.
   summary splits the time by who it was with, or by circle (people in
   none are "Individuals"). Self's page has their habits too (see
   [Habits](#habits)).
-- **Locations** (where): the places events happen, each with a hint the
+- **Locations** (where, in the Library): the places events happen, each with a hint the
   assistant recognizes it by. The summary splits the time by where it
   was.
 

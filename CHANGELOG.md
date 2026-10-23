@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.193.0
+
+- The Plan page's tabs are Goals, Habits, Traits and Library
+  (who/what/where): People, Actions and Locations are together in the
+  Library, picked by a switch at its top, which remembers the one last
+  shown. W goes to the Library; P, A and L straight to its sections.
+
 ## 7.192.0
 
 - The traits have a pane of their own on the Plan page, Traits (be),

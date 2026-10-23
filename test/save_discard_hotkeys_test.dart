@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/screens/people_pane.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/widgets/tree_picker.dart';
 import 'package:time_tracker_client/widgets/share_dialog.dart';
@@ -234,30 +235,29 @@ void main() {
     expect(list.position.pixels, 0);
   });
 
-  testWidgets("on the Plan page, a pane's first letter goes to it; J "
-      'highlights down the one shown', (tester) async {
+  testWidgets("on the Plan page, a Library section's first letter goes to "
+      'it; J highlights down the one shown', (tester) async {
     await tester.pumpWidget(app(homeScreen()));
     await tester.pumpAndSettle();
     await afterCtrlB(tester, LogicalKeyboardKey.keyP);
-    TabController tabs() =>
-        DefaultTabController.of(tester.element(find.byType(TabBarView)));
-    expect(tabs().index, 0);
+    // People first.
+    expect(find.text('Search people'), findsOneWidget);
 
-    final titles = [
-      for (final title in ['Goals', 'Actions', 'Habits', 'People', 'Locations'])
-        if (find
-            .descendant(of: find.byType(TabBar), matching: find.text(title))
-            .evaluate()
-            .isNotEmpty)
-          title,
-    ];
-    expect(titles.length, greaterThan(2));
-    for (final title in titles.reversed) {
-      await press(
-        tester,
-        LogicalKeyboardKey.findKeyByKeyId(title.toLowerCase().codeUnitAt(0))!,
+    for (final (key, section, search) in [
+      (LogicalKeyboardKey.keyL, 'Locations', 'Search locations'),
+      (LogicalKeyboardKey.keyA, 'Actions', 'Search actions'),
+      (LogicalKeyboardKey.keyP, 'People', 'Search people'),
+    ]) {
+      await press(tester, key);
+      expect(
+        tester
+            .widget<SegmentedButton<String>>(
+              find.byType(SegmentedButton<String>),
+            )
+            .selected,
+        {section},
       );
-      expect(tabs().index, titles.indexOf(title), reason: title);
+      expect(find.text(search), findsOneWidget, reason: search);
     }
 
     final before = FocusManager.instance.primaryFocus;
@@ -265,7 +265,7 @@ void main() {
     final first = FocusManager.instance.primaryFocus;
     expect(first, isNot(before));
     expect(
-      first?.context?.findAncestorWidgetOfExactType<TabBarView>(),
+      first?.context?.findAncestorWidgetOfExactType<PeoplePane>(),
       isNotNull,
     );
   });

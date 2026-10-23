@@ -128,9 +128,19 @@ void main() {
       serverLabel: 'sample',
     );
 
-    /// Swipes the Plan page to its [pane], by tapping its tab.
+    /// Swipes the Plan page to its [pane], by tapping its tab -- or, for
+    /// one of the Library's sections, the Library's, then the section's.
     Future<void> openPane(WidgetTester tester, String pane) async {
-      await tester.tap(find.widgetWithText(Tab, pane));
+      final inLibrary = const ['People', 'Actions', 'Locations'].contains(pane);
+      await tester.tap(find.widgetWithText(Tab, inLibrary ? 'Library' : pane));
+      await tester.pumpAndSettle();
+      if (!inLibrary) return;
+      await tester.tap(
+        find.descendant(
+          of: find.byType(SegmentedButton<String>),
+          matching: find.text(pane),
+        ),
+      );
       await tester.pumpAndSettle();
     }
 
@@ -155,7 +165,7 @@ void main() {
       );
     });
 
-    // The page as it opens: its tabs, over the Actions pane.
+    // The page as it opens: its tabs, over the first pane.
     testWidgets('plan ($mode)', (tester) async {
       await render(tester, 'plan', plan(), scoped: true);
     });
