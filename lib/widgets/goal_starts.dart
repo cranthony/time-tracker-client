@@ -394,3 +394,67 @@ class GoalStartsEditor extends StatelessWidget {
     );
   }
 }
+
+/// Asks what [goal] waits for before it's activated again, as it's
+/// deactivated ("Deactivate until"): the Starts editor ([GoalStartsEditor])
+/// in a dialog, with [goals] to pick from. Returns its activate_when; null
+/// if it's cancelled.
+Future<Map<String, Object?>?> pickDeactivateUntil(
+  BuildContext context, {
+  required Goal goal,
+  required List<Goal> goals,
+  DateTime Function() now = DateTime.now,
+}) => showDialog<Map<String, Object?>>(
+  context: context,
+  builder: (context) =>
+      _DeactivateUntilDialog(goal: goal, goals: goals, now: now),
+);
+
+class _DeactivateUntilDialog extends StatefulWidget {
+  const _DeactivateUntilDialog({
+    required this.goal,
+    required this.goals,
+    required this.now,
+  });
+
+  final Goal goal;
+  final List<Goal> goals;
+  final DateTime Function() now;
+
+  @override
+  State<_DeactivateUntilDialog> createState() => _DeactivateUntilDialogState();
+}
+
+class _DeactivateUntilDialogState extends State<_DeactivateUntilDialog> {
+  Map<String, Object?>? _value;
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text('Deactivate ${goalTitle(widget.goal)} until'),
+    content: SizedBox(
+      width: 480,
+      child: SingleChildScrollView(
+        child: GoalStartsEditor(
+          value: _value,
+          goals: widget.goals,
+          goalId: widget.goal.id,
+          parentId: widget.goal.parentId,
+          now: widget.now,
+          onChanged: (value) => setState(() => _value = value),
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: _value == null
+            ? null
+            : () => Navigator.of(context).pop(_value),
+        child: const Text('Deactivate'),
+      ),
+    ],
+  );
+}

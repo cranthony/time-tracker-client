@@ -167,6 +167,39 @@ void main() {
     expect(find.text('Try again by'), findsOneWidget);
   });
 
+  testWidgets("Deactivate until on a goal's page deactivates it, waiting "
+      'for what is picked', (tester) async {
+    await pumpSubGoal(tester);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Deactivate until…'));
+    await tester.pumpAndSettle();
+    final deactivate = find.widgetWithText(FilledButton, 'Deactivate');
+    // Waiting for nothing, it's just deactivated: that's its own button.
+    expect(tester.widget<FilledButton>(deactivate).onPressed, isNull);
+
+    await tester.tap(find.text('From a day…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(deactivate).onPressed, isNotNull);
+    await tester.tap(deactivate);
+    await tester.pumpAndSettle();
+
+    expect(status(tester), 'Inactive');
+    expect(find.text('Starts'), findsOneWidget);
+    expect(find.textContaining('From '), findsOneWidget);
+  });
+
+  testWidgets('Deactivate until, cancelled, leaves the goal active', (
+    tester,
+  ) async {
+    await pumpSubGoal(tester);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Deactivate until…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(status(tester), 'Active');
+  });
+
   testWidgets("E on a goal's page edits it", (tester) async {
     await pumpGoal(tester);
     await press(tester, LogicalKeyboardKey.keyE);

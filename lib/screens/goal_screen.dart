@@ -105,6 +105,8 @@ class _GoalScreenState extends State<GoalScreen> {
         await actions.retry(goal);
       case 'next':
         await actions.addNext(goal);
+      case 'until':
+        await actions.deactivateUntil(goal);
       default:
         await actions.setStatus(goal, action);
     }
@@ -171,6 +173,8 @@ class _GoalScreenState extends State<GoalScreen> {
                   PopupMenuItem(value: status, child: Text(label)),
                 if (_canRetry(goal))
                   const PopupMenuItem(value: 'retry', child: Text(_retryLabel)),
+                if (goal.active)
+                  const PopupMenuItem(value: 'until', child: Text(_untilLabel)),
                 const PopupMenuDivider(),
                 if (!goal.closed)
                   const PopupMenuItem(
@@ -306,12 +310,15 @@ class _GoalScreenState extends State<GoalScreen> {
 
   static const _retryLabel = 'Missed, try again…';
 
+  static const _untilLabel = 'Deactivate until…';
+
   /// Whether [goal] can be marked missed and tried again: open, with a
   /// deadline -- passed or not.
   static bool _canRetry(Goal goal) => goal.open && goal.due != null;
 
-  /// [goal]'s status, with the first two it can change to, and trying
-  /// it again if it can be.
+  /// [goal]'s status, with the first two it can change to, trying it
+  /// again if it can be, and, active, deactivating it until something
+  /// comes.
   Widget _status(Goal goal) => Wrap(
     spacing: 8,
     runSpacing: 4,
@@ -340,6 +347,11 @@ class _GoalScreenState extends State<GoalScreen> {
             onPressed: () => _actions.retry(goal),
             child: const Text(_retryLabel),
           ),
+        ),
+      if (goal.active)
+        OutlinedButton(
+          onPressed: () => _actions.deactivateUntil(goal),
+          child: const Text(_untilLabel),
         ),
     ],
   );
