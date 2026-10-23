@@ -190,7 +190,11 @@ bool _kin(Goal goal, Goal other, GoalTree tree) =>
 /// Whether one of [goal]'s holds holds it back: at least that many other
 /// goals of the priority it names are active, its parents and sub-goals
 /// not counted.
-bool isHeld(Goal goal, GoalTree tree) {
+bool isHeld(Goal goal, GoalTree tree) => holding(goal, tree) != null;
+
+/// The first of [goal]'s holds that holds it back ([isHeld]); null if none
+/// does.
+Map? holding(Goal goal, GoalTree tree) {
   final holds = goal.activateWhen?['hold_while'] as List? ?? const [];
   final own = tree.priorityOf(goal.id);
   int level(Object? p) => p == 'own' ? own : (p as num).toInt();
@@ -209,9 +213,9 @@ bool isHeld(Goal goal, GoalTree tree) {
     final active = tree.byId.values.where(
       (g) => g.active && !_kin(goal, g, tree) && fits(g),
     );
-    if (active.length >= least) return true;
+    if (active.length >= least) return hold;
   }
-  return false;
+  return null;
 }
 
 /// [goals] with each inactive goal whose activate_when is ready by [now],

@@ -6,6 +6,7 @@ import '../models/goal_activation.dart';
 import '../services/plan_memory.dart';
 import 'goal_editor.dart';
 import 'goal_icon.dart';
+import 'goal_starts.dart';
 import 'priority_chip.dart';
 
 /// The time spent toward each goal in the events kept on the device
@@ -72,8 +73,10 @@ Color goalColor(BuildContext context, Goal goal) {
 /// outlined when it's inherited or the default -- when it's due and the
 /// time spent toward it -- and, if it's not active, its status: one
 /// waiting to be activated ([Goal.activateWhen]) marked with an hourglass,
-/// "Waiting", and when it's expected to start, if the server's said. Tapped, it
-/// opens ([onTap]); its button at the right edits it ([onEdit]).
+/// and, given the [tree] it's in, when it starts ([startsSummary]) --
+/// without, "Waiting", and when it's expected to start, if the server's
+/// said. Tapped, it opens ([onTap]); its button at the right edits it
+/// ([onEdit]).
 class GoalTile extends StatelessWidget {
   const GoalTile({
     super.key,
@@ -81,6 +84,7 @@ class GoalTile extends StatelessWidget {
     this.spent,
     this.subGoals = 0,
     this.priority,
+    this.tree,
     this.onTap,
     this.onEdit,
   });
@@ -94,6 +98,10 @@ class GoalTile extends StatelessWidget {
   /// The priority that applies to it ([GoalTree.priorityOf]); none shown,
   /// if null.
   final int? priority;
+
+  /// The goals it's among, to say when it starts, waiting, by what it
+  /// waits for.
+  final GoalTree? tree;
   final VoidCallback? onTap;
   final VoidCallback? onEdit;
 
@@ -109,10 +117,18 @@ class GoalTile extends StatelessWidget {
     };
     final details = [
       if (waiting)
-        starts == null
-            ? 'Waiting'
-            : 'Waiting, to start '
-                  '${MaterialLocalizations.of(context).formatShortMonthDay(starts)}'
+        switch ((tree, starts)) {
+          (final tree?, _) => startsSummary(
+            context,
+            goal,
+            tree,
+            now: DateTime.now(),
+          ),
+          (null, null) => 'Waiting',
+          (null, final starts?) =>
+            'Waiting, to start '
+                '${MaterialLocalizations.of(context).formatShortMonthDay(starts)}',
+        }
       else if (!goal.active)
         goalStatuses[goal.status] ?? goal.status,
       if (goal.deadline != null) 'Due ${deadlineLabel(context, goal.deadline)}',

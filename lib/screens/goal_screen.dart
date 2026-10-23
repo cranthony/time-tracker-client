@@ -249,6 +249,7 @@ class _GoalScreenState extends State<GoalScreen> {
                     spent: spent[child.id],
                     subGoals: tree.childrenOf(child.id).length,
                     priority: tree.priorityOf(child.id),
+                    tree: tree,
                     onTap: () => _open(child),
                     onEdit: () => _actions.edit(child),
                   ),
