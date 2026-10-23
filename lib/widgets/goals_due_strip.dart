@@ -45,8 +45,9 @@ List<Goal> overdueGoalsOn(
 /// after it. As of [day]: on one before [today], each as its history had
 /// it at the day's end -- its status then, and the deadline in force --
 /// so a past day shows what was coming up then; one that didn't exist yet
-/// isn't among them. In [byPriority]'s order in [tree] (by default,
-/// [goals] themselves): the highest priority first, then the soonest due.
+/// isn't among them. The highest priority first, as [GoalTree.priorityOf]
+/// has it in [tree] (by default, [goals] themselves), then the soonest
+/// due ([compareByDeadline]): at a time, not the user's own order.
 List<Goal> upcomingGoalsOn(
   Iterable<Goal> goals,
   DateTime day, {
@@ -60,8 +61,14 @@ List<Goal> upcomingGoalsOn(
       if (past ? _asOf(g, day) : g case final then?)
         if (then.active)
           if (dueDay(then) case final due? when due.compareTo(date) > 0) then,
-  ]..sort((tree ?? GoalTree(goals)).compare);
+  ]..sort(_byPriorityThenDeadline(tree ?? GoalTree(goals)));
 }
+
+/// The highest priority first, as [tree] has each, then the soonest due.
+Comparator<Goal> _byPriorityThenDeadline(GoalTree tree) => (a, b) {
+  final byPriority = tree.priorityOf(a.id).compareTo(tree.priorityOf(b.id));
+  return byPriority != 0 ? byPriority : compareByDeadline(a, b);
+};
 
 /// [goal] as its history had it at the end of [day]: the status it had
 /// then, with the deadline that change recorded, if it did. [goal] itself

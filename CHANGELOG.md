@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.185.1
+
+- The goals-due strip's upcoming goals are listed strictly by priority,
+  then by deadline -- soonest first, to the time of day -- not by the
+  order goals were dragged into on a day.
+
 ## 7.185.0
 
 - The goals-due strip above the events timeline lists the upcoming goals

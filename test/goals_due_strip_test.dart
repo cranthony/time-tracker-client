@@ -188,6 +188,22 @@ void main() {
     );
   });
 
+  test("upcomingGoalsOn: at a priority, by deadline, not the user's own "
+      'order', () {
+    Goal ordered(Goal g, int order) =>
+        Goal.fromJson({...g.toJson(), 'sort_order': order});
+    final ahead = [
+      ordered(_goal('evening', 'A', '2026-10-20T18:00'), 0),
+      ordered(_goal('morning', 'B', '2026-10-20T09:00'), 1),
+      _goal('next', 'C', '2026-10-21'),
+    ];
+    expect(upcomingGoalsOn(ahead, day).map((g) => g.id), [
+      'morning',
+      'evening',
+      'next',
+    ]);
+  });
+
   test('upcomingGoalsOn: on a past day, as each goal was at its end', () {
     Goal withHistory(
       String id,
