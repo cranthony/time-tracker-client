@@ -66,7 +66,7 @@ tapping the date goes back to the last compaction.
   priority and color, or go on to its details. Only active actions take up one of the calendar's event labels. An
   action Claude made is *proposed* until you approve it. The search finds
   actions by name, path and note, in their groups.
-- **Traits** (how): **Self** at the top, with your health and a way to
+- **Traits** (be): **Self** at the top, with your health and a way to
   your page; under it each trait you define -- none is built in. A
   trait is made of parts: chiefly *judgments*, which Claude makes of each
   event, each with a rubric, a rating scale of your own, and the facts

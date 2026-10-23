@@ -825,7 +825,7 @@ class _PlanScreenState extends State<PlanScreen> {
         if (traits != null)
           (
             'Traits',
-            'how',
+            'be',
             TraitsPane(
               key: _traitsPane,
               repository: traits,
