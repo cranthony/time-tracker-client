@@ -122,9 +122,10 @@ Goal? _asOf(Goal goal, DateTime day) {
   });
 }
 
-/// How many days ahead of the day shown upcoming goals get a pill each;
-/// those due later are counted on one "+N later" pill.
-const upcomingDays = 7;
+/// How many upcoming goals get a pill each, in their order -- the highest
+/// priority first, then the soonest due; the rest are counted on one
+/// "+N later" pill.
+const upcomingPills = 7;
 
 /// The goals missed from [day], from [goals]: each with a miss in its
 /// history ([Goal.misses]) whose deadline fell on [day] -- whether it was
@@ -177,8 +178,9 @@ enum OverdueGoalAction {
 /// day. Last, the [upcoming] ones -- active, due later -- just outlined,
 /// each saying the day it's due (one only expected to have started by
 /// then, waiting to be activated, in a dashed outline, with an hourglass,
-/// saying when it's expected to start too): one each for those due within
-/// [upcomingDays] of the day, then a "+N later" pill listing the rest.
+/// saying when it's expected to start too): one each for the first
+/// [upcomingPills], in [upcoming]'s order, then a "+N later" pill listing
+/// the rest.
 /// Tapping a pill calls [onTap]; holding an overdue one (or
 /// right-clicking it) offers [OverdueGoalAction]s, each calling
 /// [onOverdueAction] -- or nothing, if that's null.
@@ -214,8 +216,7 @@ class GoalsDueStrip extends StatelessWidget {
   final List<Goal> upcoming;
 
   /// The day shown and today, for whether [overdue] is shown: only on
-  /// today. Shown whenever either is unknown. The day, too, for which of
-  /// [upcoming] are soon; all of them are, if it's unknown.
+  /// today. Shown whenever either is unknown.
   final DateTime? day;
   final DateTime? today;
   final bool collapsed;
@@ -245,20 +246,12 @@ class GoalsDueStrip extends StatelessWidget {
       if (!goals.any((d) => d.id == g.id)) g,
   ];
 
-  /// [upcoming], split into those due within [upcomingDays] of the day,
-  /// with a pill each, and those due later.
-  (List<Goal> soon, List<Goal> later) get _ahead {
-    final from = day;
-    if (from == null) return (upcoming, const []);
-    final last = deadlineOf(
-      DateTime(from.year, from.month, from.day + upcomingDays),
-    );
-    bool soon(Goal g) => (dueDay(g) ?? '').compareTo(last) <= 0;
-    return (
-      upcoming.where(soon).toList(),
-      upcoming.where((g) => !soon(g)).toList(),
-    );
-  }
+  /// [upcoming], split into the first [upcomingPills], with a pill each,
+  /// and the rest.
+  (List<Goal> soon, List<Goal> later) get _ahead => (
+    upcoming.take(upcomingPills).toList(),
+    upcoming.skip(upcomingPills).toList(),
+  );
 
   @override
   Widget build(BuildContext context) {
