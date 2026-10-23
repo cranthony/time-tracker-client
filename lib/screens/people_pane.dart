@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../models/people_times.dart';
 import '../models/person.dart';
 import '../models/scoring.dart';
-import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/status_message.dart';
@@ -16,30 +15,29 @@ import '../widgets/person_dialog.dart';
 import '../widgets/person_tile.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
-import 'all_people_screen.dart';
-import 'person_screen.dart';
-import 'traits_section.dart';
+import 'person_pages.dart';
 import '../services/client_health.dart';
 import '../services/work_timing.dart';
 import '../widgets/refreshing_bar.dart';
 import '../models/time_split.dart';
-import '../widgets/quick_add_sheet.dart';
 
-/// The Plan page's People pane -- who the user wants to be with -- in two
-/// sections, one over the other, each folded away by tapping its head:
-///
-/// * **Self**, with their relationship health and its last 8 days in its
-///   head, and a button there that opens their page ([PersonScreen]);
-///   under it the traits -- how they want to be ([TraitsSection]).
-/// * **People**, where "All people and circles" opens everyone
-///   ([AllPeopleScreen]), to sort, search and edit.
+/// The Plan page's People pane -- who the user wants to be with:
+/// everyone, Self first, each with their circles, health, time with the
+/// user in the summary's 24 hours and 7 days, and the last event with
+/// them -- or, with the summary looking on, the next ([PersonTile]).
+/// Above them, the circles, each with its own health: tapping one shows
+/// only the people in it, and "Edit" beside it edits it. Archived people
+/// are shown only when asked for. The search finds people by name,
+/// context, circle and what matters to them. Sorted as listed, or either
+/// way by relationship health, when last (or next) seen, or time in the
+/// summary's 24 hours or 7 days -- those with nothing to sort by last.
+/// "+" adds a person or a circle.
 ///
 /// Tapping a person opens their page; their menu edits or archives
-/// them. "+", in People's head, adds a person or a circle. Above it all, with a
-/// [summary] to measure, the time with people in its window: by person,
-/// and by circle, those in none together as "Individuals". It shows what
-/// [memory] has, while it loads afresh. [onPeople] is told who's there
-/// each time they load.
+/// them. Above it all, with a [summary] to measure, the time with people
+/// in its window: by person, and by circle, those in none together as
+/// "Individuals". It shows what [memory] has, while it loads afresh.
+/// [onPeople] is told who's there each time they load.
 class PeoplePane extends StatefulWidget {
   const PeoplePane({
     super.key,
@@ -59,16 +57,14 @@ class PeoplePane extends StatefulWidget {
   /// What the summary measures, and how it's shown; null for none.
   final SummaryView? summary;
 
-  /// The traits under Self, each person's, and those their dialog
-  /// offers.
+  /// The traits each person's page and dialog offer.
   final TraitsRepository? traits;
   final ValueChanged<PeopleList>? onPeople;
 
   /// Names actions by id, for a person's history.
   final Map<String?, String> actionNames;
 
-  /// The actions and groups a trait's or a person's own parts can count,
-  /// by id.
+  /// The actions and groups a person's own parts can count, by id.
   final Map<String, String> actions;
 
   /// Names locations by id, for where a person's events were.
@@ -82,11 +78,23 @@ class PeoplePaneState extends State<PeoplePane> {
   PeopleList? get _people => widget.memory.people;
   Object? _error;
 
-  /// Whether each section is open.
-  bool _selfOpen = true;
-  bool _peopleOpen = true;
+  String _query = '';
+  bool _archived = false;
+  String? _circle;
+  PeopleSort _sort = PeopleSort.listed;
+  bool _ascending = false;
 
-  final _traitsKey = GlobalKey<TraitsSectionState>();
+  bool get _forward => widget.summary?.window.forward ?? false;
+
+  PersonPages get _pages => PersonPages(
+    repository: widget.repository,
+    memory: widget.memory,
+    traits: widget.traits,
+    actionNames: widget.actionNames,
+    actions: widget.actions,
+    locationNames: widget.locationNames,
+    onSaved: reload,
+  );
 
   @override
   void initState() {
@@ -137,11 +145,10 @@ class PeoplePaneState extends State<PeoplePane> {
 
   ((SummaryWindow, int?, bool), PeopleTimes)? _timesKept;
 
-  /// Loads everyone afresh, the traits, and the events around today
-  /// they're scored from.
+  /// Loads everyone afresh, and the events around today they're scored
+  /// from.
   Future<void> reload() => Future.wait([
     _settle(widget.memory.loadPeople(widget.repository, again: true)),
-    ?_traitsKey.currentState?.reload(),
     ?widget.memory.eventStore?.warm().catchError((Object _) {}),
   ]);
 
@@ -155,46 +162,6 @@ class PeoplePaneState extends State<PeoplePane> {
     } catch (e) {
       if (mounted) setState(() => _error = e);
     }
-  }
-
-  /// The traits that could apply to someone: active, and off.
-  Future<List<Trait>> _traits() async {
-    try {
-      return await widget.traits?.traits() ?? const [];
-    } catch (_) {
-      return const []; // Which apply can wait.
-    }
-  }
-
-  Future<void> _editPerson(Person? person) async {
-    final traits = await _traits();
-    if (!mounted) return;
-    final repository = widget.repository;
-    final circles = _people?.circles ?? const <Circle>[];
-    Future<Person> create(Map<String, Object?> fields) =>
-        repository.createPerson(Person.fromJson({'id': '', ...fields}));
-    Future<Person?> page(Map<String, Object?> fields) => showPersonEditor(
-      context,
-      person: person,
-      fields: fields,
-      circles: circles,
-      traits: traits,
-      actions: widget.actions,
-      scoreParts: widget.memory.scoreDraftParts,
-      save: (fields) => person == null
-          ? create(fields)
-          : repository.updatePerson(person.id, fields),
-    );
-    // Someone new in the quick sheet first; its More, the page.
-    final saved = person == null
-        ? await showAddPersonSheet<Person>(
-            context,
-            circles: circles,
-            save: create,
-            more: page,
-          )
-        : await page(const {});
-    if (saved != null) await reload();
   }
 
   Future<void> _editCircle(Circle? circle) async {
@@ -235,50 +202,29 @@ class PeoplePaneState extends State<PeoplePane> {
     );
   }
 
-  Map<String?, String> get _personNames => {
-    for (final p in _people?.withSelf ?? const <Person>[]) p.id: personName(p),
-  };
+  /// Sorts by [sort], each its natural way first: the least healthy, the
+  /// most recently seen (or soonest next), the most time.
+  void _sortBy(PeopleSort sort) => setState(() {
+    if (sort == _sort) {
+      _ascending = !_ascending;
+      return;
+    }
+    _sort = sort;
+    _ascending = switch (sort) {
+      PeopleSort.health => true,
+      PeopleSort.seen => _forward,
+      _ => false,
+    };
+  });
 
-  void _open(Person person) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PersonScreen(
-          person: person,
-          traits: widget.traits,
-          memory: widget.memory,
-          circles: _people?.circles ?? const [],
-          personNames: _personNames,
-          actionNames: widget.actionNames,
-          locationNames: widget.locationNames,
-          onEdit: () async {
-            await _editPerson(person);
-            return _people?.withSelf
-                .where((p) => p.id == person.id)
-                .firstOrNull;
-          },
-        ),
-      ),
-    );
-  }
-
-  void _openAll() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => AllPeopleScreen(
-          memory: widget.memory,
-          tile: _tile,
-          times: () => _times,
-          forward: widget.summary?.window.forward ?? false,
-          onAddPerson: () => _editPerson(null),
-          onEditCircle: _editCircle,
-          onReload: reload,
-        ),
-      ),
-    );
-  }
+  int? _circleHealth(Circle c) => _scores?.groupHealth(
+    _people?.inCircle(c.id).map((p) => p.id) ?? [],
+    scoring: c.scoring,
+  );
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final people = _people;
     final view = widget.summary;
     // Asked for first: asking is what has them worked out again.
@@ -294,122 +240,191 @@ class PeoplePaneState extends State<PeoplePane> {
                 circleTime(events, view.window, people),
               ],
             ),
+      searchHint: 'Search people',
+      onSearch: (query) => setState(() => _query = query),
+      actions: [
+        PopupMenuButton<PeopleSort>(
+          tooltip: 'Sort people',
+          icon: const Icon(Icons.swap_vert),
+          onSelected: _sortBy,
+          itemBuilder: (_) => [
+            for (final sort in PeopleSort.values)
+              CheckedPopupMenuItem(
+                value: sort,
+                checked: sort == _sort,
+                child: Row(
+                  children: [
+                    Expanded(child: Text(sort.labelFor(forward: _forward))),
+                    if (sort == _sort && sort != PeopleSort.listed)
+                      Icon(
+                        _ascending ? Icons.arrow_upward : Icons.arrow_downward,
+                        size: 18,
+                        semanticLabel: _ascending ? 'Ascending' : 'Descending',
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        IconButton(
+          tooltip: _archived ? 'Hide archived people' : 'Show archived people',
+          icon: Icon(
+            _archived ? Icons.inventory_2 : Icons.inventory_2_outlined,
+          ),
+          onPressed: () => setState(() => _archived = !_archived),
+        ),
+        NewHotkey(
+          child: PopupMenuButton<String>(
+            tooltip: 'Add a person or circle',
+            icon: const Icon(Icons.add),
+            onSelected: (choice) => choice == 'circle'
+                ? _editCircle(null)
+                : _pages.edit(context, null),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'person', child: Text('New person')),
+              PopupMenuItem(value: 'circle', child: Text('New circle')),
+            ],
+          ),
+        ),
+      ],
       // Health as it was, while it's worked out again.
       child: RefreshingBar(
         refreshing: widget.memory.rescoring,
         child: RefreshIndicator(
           onRefresh: reload,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 24),
-            children: switch ((people, _error)) {
-              (null, final error?) => [
-                LoadError(what: 'people', error: error, onRetry: reload),
-                // Self is there regardless.
-                _tile(context, defaultSelf),
-              ],
-              (null, _) => const [LinearProgressIndicator()],
-              (final people?, _) => [
-                ..._selfSection(context, people.self),
-                ..._peopleSection(context),
-              ],
-            },
+          child: HotkeyItems(
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 24),
+              children: switch ((people, _error)) {
+                (null, final error?) => [
+                  LoadError(what: 'people', error: error, onRetry: reload),
+                  // Self is there regardless.
+                  _tile(context, defaultSelf),
+                ],
+                (null, _) => const [LinearProgressIndicator()],
+                (final people?, _) => [
+                  if (_sort != PeopleSort.listed)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: Text(
+                        'By ${_sort.labelFor(forward: _forward).toLowerCase()}, '
+                        '${_ascending ? 'ascending' : 'descending'}',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                  ..._list(context, people),
+                ],
+              },
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// Self, and the traits.
-  List<Widget> _selfSection(BuildContext context, Person self) {
-    final health = _scores?.health(self.id);
-    final trend = _scores?.healthTrend(self.id) ?? const <int?>[];
-    final traits = widget.traits;
-    return [
-      _SectionHead(
-        title: 'Self',
-        open: _selfOpen,
-        onTap: () => setState(() => _selfOpen = !_selfOpen),
-        trailing: [
-          if (trend.nonNulls.isNotEmpty) ...[
-            TrendSparkline(trend: trend, scale: HealthScale.relationship),
-            const SizedBox(width: 8),
-          ],
-          if (health != null)
-            HealthDot(
-              rating: health,
-              scale: HealthScale.relationship,
-              consistency: _scores?.consistency(self.id) ?? 0,
-            ),
-          NewHotkey(
-            child: IconButton(
-              tooltip: 'Your page',
-              icon: const Icon(Icons.person_outline),
-              onPressed: () => _open(self),
-            ),
-          ),
-        ],
-      ),
-      if (_selfOpen) ...[
-        if (traits != null)
-          TraitsSection(
-            key: _traitsKey,
-            repository: traits,
-            memory: widget.memory,
-            personNames: _personNames,
-            actions: widget.actions,
-          ),
-      ],
+  List<Widget> _list(BuildContext context, PeopleList people) {
+    final theme = Theme.of(context);
+    final circle = people.circles.where((c) => c.id == _circle).firstOrNull;
+    String? circleName(String id) =>
+        people.circles.where((c) => c.id == id).firstOrNull?.name;
+    final inCircle = [
+      for (final person in people.withSelf)
+        if ((_archived || person.active) &&
+            (circle == null || person.circleIds.contains(circle.id)))
+          person,
     ];
-  }
-
-  /// Adding someone, and the way to everyone.
-  List<Widget> _peopleSection(BuildContext context) {
+    final shown = sortPeople(
+      [
+        for (final person in inCircle)
+          if (matchesSearch(_query, [
+            person.name,
+            person.context,
+            for (final byFact in person.facts.values) ...byFact.values,
+            if (person.isSelf) 'you',
+            for (final id in person.circleIds) circleName(id),
+          ]))
+            person,
+      ],
+      _sort,
+      ascending: _ascending,
+      health: (id) => _scores?.health(id),
+      times: _times,
+    );
     return [
-      _SectionHead(
-        title: 'People',
-        open: _peopleOpen,
-        onTap: () => setState(() => _peopleOpen = !_peopleOpen),
-        trailing: [
-          PopupMenuButton<String>(
-            tooltip: 'Add a person or circle',
-            icon: const Icon(Icons.add),
-            onSelected: (choice) =>
-                choice == 'circle' ? _editCircle(null) : _editPerson(null),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'person', child: Text('New person')),
-              PopupMenuItem(value: 'circle', child: Text('New circle')),
+      if (people.circles.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (final c in people.circles)
+                FilterChip(
+                  avatar: switch (_circleHealth(c)) {
+                    final h? => HealthRing(health: h),
+                    null => null,
+                  },
+                  label: Text(c.name),
+                  tooltip: switch (_circleHealth(c)) {
+                    final h? => '${c.name}: health $h, ${relationshipBand(h)}',
+                    null => c.note ?? c.name,
+                  },
+                  selected: _circle == c.id,
+                  showCheckmark: false,
+                  onSelected: (on) =>
+                      setState(() => _circle = on ? c.id : null),
+                ),
+              if (circle != null)
+                TextButton.icon(
+                  onPressed: () => _editCircle(circle),
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: Text('Edit ${circle.name}'),
+                ),
             ],
           ),
-        ],
-      ),
-      if (_peopleOpen) ...[
-        _button(
-          context,
-          'All people and circles',
-          Icons.groups_outlined,
-          _openAll,
         ),
-      ],
+      if (circle != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${circle.name}: ${people.inCircle(circle.id).length} '
+                  '${people.inCircle(circle.id).length == 1 ? 'person' : 'people'}',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              if (_scores?.groupTrend(
+                    people.inCircle(circle.id).map((p) => p.id),
+                    scoring: circle.scoring,
+                  )
+                  case final trend? when trend.nonNulls.isNotEmpty) ...[
+                TrendSparkline(trend: trend, scale: HealthScale.relationship),
+                const SizedBox(width: 8),
+              ],
+              if (_circleHealth(circle) case final health?)
+                HealthDot(rating: health, scale: HealthScale.relationship),
+            ],
+          ),
+        ),
+      for (final person in shown) _tile(context, person),
+      if (circle != null && inCircle.isEmpty)
+        const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('No one in this circle yet.'),
+        )
+      else if (shown.isEmpty)
+        NoMatches(query: _query)
+      else if (shown.length == 1 && shown.single.isSelf && _query.isEmpty)
+        const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('Tap + to add the people you want to spend time with.'),
+        ),
     ];
   }
-
-  Widget _button(
-    BuildContext context,
-    String label,
-    IconData icon,
-    VoidCallback onPressed,
-  ) => Align(
-    alignment: AlignmentDirectional.centerStart,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: TextButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon),
-        label: Text(label),
-      ),
-    ),
-  );
 
   /// [person], with their time and last or next event, and their menu:
   /// edit, archive.
@@ -426,11 +441,11 @@ class PeoplePaneState extends State<PeoplePane> {
       consistency: _scores?.consistency(person.id) ?? 0,
       times: _times,
       durations: widget.summary?.durations ?? true,
-      onTap: () => _open(person),
+      onTap: () => _pages.open(context, person),
       menu: PopupMenuButton<String>(
         tooltip: 'More for ${personName(person)}',
         onSelected: (choice) => switch (choice) {
-          'edit' => _editPerson(person),
+          'edit' => _pages.edit(context, person),
           final status => _setStatus(person, status),
         },
         itemBuilder: (_) => [
@@ -445,49 +460,19 @@ class PeoplePaneState extends State<PeoplePane> {
   }
 }
 
-/// A section's head: its [title], what's [trailing] it, and an arrow
-/// that says whether it's [open]; tapping it opens or folds it.
-class _SectionHead extends StatelessWidget {
-  const _SectionHead({
-    required this.title,
-    required this.open,
-    required this.onTap,
-    this.trailing = const [],
-  });
+/// A circle's relationship health, as a ring in its color.
+class HealthRing extends StatelessWidget {
+  const HealthRing({super.key, required this.health});
 
-  final String title;
-  final bool open;
-  final VoidCallback onTap;
-  final List<Widget> trailing;
+  final int health;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surfaceContainer,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: theme.textTheme.titleMedium,
-                  semanticsLabel: '$title, ${open ? 'open' : 'folded away'}',
-                ),
-              ),
-              ...trailing,
-              const SizedBox(width: 4),
-              Icon(
-                open ? Icons.expand_less : Icons.expand_more,
-                semanticLabel: open ? 'Fold away $title' : 'Open $title',
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+    width: 14,
+    height: 14,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.all(color: relationshipColor(health), width: 3),
+    ),
+  );
 }

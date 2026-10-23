@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.192.0
+
+- The traits have a pane of their own on the Plan page, Traits (be),
+  with Self at the top: their health, its trend, and a way to their
+  page.
+- The People pane is everyone and every circle, with the search, sort
+  and archived toggle that "All people and circles" had; that button
+  and its page are gone.
+
 ## 7.191.0
 
 - People are no longer prioritized, nor habits starred: the stars on a

@@ -18,7 +18,6 @@ import 'package:time_tracker_client/outbox/event_outbox.dart';
 import 'package:time_tracker_client/outbox/note_writes.dart';
 import 'package:time_tracker_client/outbox/outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
-import 'package:time_tracker_client/screens/people_pane.dart';
 import 'package:time_tracker_client/screens/background_updates_screen.dart';
 import 'package:time_tracker_client/screens/diagnostics_screen.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
@@ -135,15 +134,6 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    /// The People pane's list, Self's section and all: not its summary's
-    /// pages, which go across.
-    Finder peopleList() => find.descendant(
-      of: find.byType(PeoplePane),
-      matching: find.byWidgetPredicate(
-        (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
-      ),
-    );
-
     // A call to the server that failed, as every failure is shown: here,
     // one that trying again may fix.
     testWidgets('error sheet ($mode)', (tester) async {
@@ -183,6 +173,7 @@ void main() {
 
     for (final (name, pane) in [
       ('plan_habits', 'Habits'),
+      ('plan_traits', 'Traits'),
       ('plan_people', 'People'),
       ('plan_locations', 'Locations'),
     ]) {
@@ -237,16 +228,6 @@ void main() {
           scoped: true,
           then: () async {
             await openPane(tester, 'People');
-            await tester.scrollUntilVisible(
-              find.text('All people and circles'),
-              300,
-              scrollable: peopleList(),
-            );
-            // Built a little below the fold counts as visible: onto it.
-            await tester.ensureVisible(find.text('All people and circles'));
-            await tester.pumpAndSettle();
-            await tester.tap(find.text('All people and circles'));
-            await tester.pumpAndSettle();
             if (sort != null) {
               await tester.tap(find.byTooltip('Sort people'));
               await tester.pumpAndSettle();
@@ -271,16 +252,6 @@ void main() {
         scoped: true,
         then: () async {
           await openPane(tester, 'People');
-          await tester.scrollUntilVisible(
-            find.text('All people and circles'),
-            300,
-            scrollable: peopleList(),
-          );
-          // Built a little below the fold counts as visible: onto it.
-          await tester.ensureVisible(find.text('All people and circles'));
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('All people and circles'));
-          await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('More for Sam'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('Edit'));
@@ -357,17 +328,6 @@ void main() {
           then: () async {
             if (pane != null) {
               await openPane(tester, pane);
-              // The pane has no search: everyone's has.
-              await tester.scrollUntilVisible(
-                find.text('All people and circles'),
-                300,
-                scrollable: peopleList(),
-              );
-              // Built a little below the fold counts as visible: onto it.
-              await tester.ensureVisible(find.text('All people and circles'));
-              await tester.pumpAndSettle();
-              await tester.tap(find.text('All people and circles'));
-              await tester.pumpAndSettle();
             }
             await tester.enterText(
               find.byType(TextField).hitTestable().first,
@@ -389,7 +349,7 @@ void main() {
           plan(),
           scoped: true,
           then: () async {
-            await openPane(tester, 'People');
+            await openPane(tester, 'Traits');
             await tester.tap(find.text('Adventurous'));
             await tester.pumpAndSettle();
             if (edit) {

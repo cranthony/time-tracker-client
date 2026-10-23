@@ -12,7 +12,7 @@ import '../widgets/trait_dialog.dart';
 import 'trait_breakdown.dart';
 import 'trait_screen.dart';
 
-/// The People pane's traits, under Self -- how the user wants to be:
+/// The Traits pane's traits, under Self -- how the user wants to be:
 /// each trait's name, definition, status, latest score (the mean across
 /// the people rated by it) and its last 8 days' scores, and anything
 /// wrong with it. Tapping a trait opens its page, to read

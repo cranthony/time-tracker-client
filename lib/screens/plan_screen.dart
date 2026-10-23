@@ -23,6 +23,7 @@ import '../services/traits_repository.dart';
 import 'goals_pane.dart';
 import 'locations_pane.dart';
 import 'people_pane.dart';
+import 'traits_pane.dart';
 import 'habits_pane.dart';
 import '../widgets/action_icon.dart';
 import '../widgets/error_sheet.dart';
@@ -52,9 +53,10 @@ import '../widgets/quick_add_sheet.dart';
 /// * **Actions**, what to do: the actions, kept as actions, and the
 ///   groups they're in, as a tree;
 /// * **Habits**, what to practice ([HabitsPane]), from the [HabitsScope];
-/// * **People**, who to be with, Self always among them, with the traits
-///   -- how to be -- under them ([PeoplePane]), from the [PeopleScope]
-///   and the [TraitsScope];
+/// * **Traits**, how to be, under Self ([TraitsPane]), from the
+///   [TraitsScope] and the [PeopleScope];
+/// * **People**, who to be with, Self always among them, and their
+///   circles ([PeoplePane]), from the [PeopleScope];
 /// * **Locations**, where ([LocationsPane]), from the [PeopleScope].
 ///
 /// Landing on it loads everything at once, every pane's and the
@@ -166,6 +168,7 @@ class _PlanScreenState extends State<PlanScreen> {
 
   /// The panes besides Actions, for the refresh button to refresh.
   final _habitsPane = GlobalKey<HabitsPaneState>();
+  final _traitsPane = GlobalKey<TraitsPaneState>();
   final _peoplePane = GlobalKey<PeoplePaneState>();
   final _locationsPane = GlobalKey<LocationsPaneState>();
   final _goalsPane = GlobalKey<GoalsPaneState>();
@@ -819,6 +822,20 @@ class _PlanScreenState extends State<PlanScreen> {
           ),
         ),
       if (people != null) ...[
+        if (traits != null)
+          (
+            'Traits',
+            'be',
+            TraitsPane(
+              key: _traitsPane,
+              repository: traits,
+              people: people,
+              memory: _memory,
+              actionNames: _actionNames,
+              actions: _actionChoices,
+              locationNames: _locationNames,
+            ),
+          ),
         (
           'People',
           'who',
@@ -952,6 +969,7 @@ class _PlanScreenState extends State<PlanScreen> {
   Future<void> _refreshPane(String title) async {
     await switch (title) {
       'Habits' => _habitsPane.currentState?.reload(),
+      'Traits' => _traitsPane.currentState?.reload(),
       'People' => _peoplePane.currentState?.reload(),
       'Locations' => _locationsPane.currentState?.reload(),
       'Goals' => _goalsPane.currentState?.reload(),

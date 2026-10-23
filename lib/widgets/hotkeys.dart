@@ -254,9 +254,9 @@ class Hotkey {
     HotkeyPlace.plan,
   );
   static const planPanes = Hotkey(
-    'G / A / H / P / L',
+    'G / A / H / T / P / L',
     "Go to a pane by its title's first letter: Goals (G), Actions (A), "
-        'Habits (H), People (P) or Locations (L)',
+        'Habits (H), Traits (T), People (P) or Locations (L)',
     HotkeyPlace.plan,
   );
 
