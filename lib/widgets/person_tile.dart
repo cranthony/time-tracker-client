@@ -12,7 +12,7 @@ import 'health.dart';
 /// [durations], as a share of each; and the last event with them, or
 /// looking on, the next. Beside them, their relationship [health] and
 /// its [trend], with its [consistency] under it, and a [menu]. Self has no time with themself, so says
-/// "You" instead; a [prioritized] person has a star.
+/// "You" instead.
 class PersonTile extends StatelessWidget {
   const PersonTile({
     super.key,
@@ -23,7 +23,6 @@ class PersonTile extends StatelessWidget {
     this.consistency = 0,
     this.times,
     this.durations = true,
-    this.prioritized = false,
     this.onTap,
     this.menu,
   });
@@ -37,7 +36,6 @@ class PersonTile extends StatelessWidget {
   final int consistency;
   final PeopleTimes? times;
   final bool durations;
-  final bool prioritized;
   final VoidCallback? onTap;
   final Widget? menu;
 
@@ -80,15 +78,6 @@ class PersonTile extends StatelessWidget {
               style: muted ? TextStyle(color: theme.hintColor) : null,
             ),
           ),
-          if (prioritized) ...[
-            const SizedBox(width: 4),
-            Icon(
-              Icons.star,
-              size: 16,
-              color: theme.colorScheme.primary,
-              semanticLabel: 'Prioritized',
-            ),
-          ],
         ],
       ),
       subtitle: who == null

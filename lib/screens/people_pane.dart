@@ -7,7 +7,6 @@ import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/status_message.dart';
-import '../services/focus_store.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
@@ -32,17 +31,11 @@ import '../widgets/quick_add_sheet.dart';
 /// * **Self**, with their relationship health and its last 8 days in its
 ///   head, and a button there that opens their page ([PersonScreen]);
 ///   under it the traits -- how they want to be ([TraitsSection]).
-/// * **People**, the three the user prioritizes, each with
-///   their health, their time with the user in the summary's 24 hours and
-///   7 days, and the last event with them -- or, with the summary looking
-///   on, the next ([PersonTile]); "All people and circles" opens everyone
+/// * **People**, where "All people and circles" opens everyone
 ///   ([AllPeopleScreen]), to sort, search and edit.
 ///
-/// People are prioritized from their menu, on this device only (see
-/// [PlanMemory.focus]). Tapping a
-/// person opens their page; their menu edits, prioritizes or archives
-/// them. There's no search here, with so few: everyone's is on their own
-/// page. "+", in People's head, adds a person or a circle. Above it all, with a
+/// Tapping a person opens their page; their menu edits or archives
+/// them. "+", in People's head, adds a person or a circle. Above it all, with a
 /// [summary] to measure, the time with people in its window: by person,
 /// and by circle, those in none together as "Individuals". It shows what
 /// [memory] has, while it loads afresh. [onPeople] is told who's there
@@ -91,7 +84,7 @@ class PeoplePaneState extends State<PeoplePane> {
 
   /// Whether each section is open.
   bool _selfOpen = true;
-  bool _prioritizedOpen = true;
+  bool _peopleOpen = true;
 
   final _traitsKey = GlobalKey<TraitsSectionState>();
 
@@ -108,8 +101,7 @@ class PeoplePaneState extends State<PeoplePane> {
     super.dispose();
   }
 
-  /// Shows what changed: the scores, as they're worked out again, or
-  /// who's prioritized.
+  /// Shows what changed: the scores, as they're worked out again.
   void _changed() {
     if (mounted) setState(() {});
   }
@@ -185,7 +177,6 @@ class PeoplePaneState extends State<PeoplePane> {
       context,
       person: person,
       fields: fields,
-      focus: widget.memory.focus,
       circles: circles,
       traits: traits,
       actions: widget.actions,
@@ -320,7 +311,7 @@ class PeoplePaneState extends State<PeoplePane> {
               (null, _) => const [LinearProgressIndicator()],
               (final people?, _) => [
                 ..._selfSection(context, people.self),
-                ..._prioritizedSection(context, people),
+                ..._peopleSection(context),
               ],
             },
           ),
@@ -372,19 +363,13 @@ class PeoplePaneState extends State<PeoplePane> {
     ];
   }
 
-  /// The people prioritized.
-  List<Widget> _prioritizedSection(BuildContext context, PeopleList people) {
-    final theme = Theme.of(context);
-    final byId = {
-      for (final p in people.people)
-        if (!p.isSelf && p.status != 'deleted') p.id: p,
-    };
-    final picked = [for (final id in widget.memory.focus.people) ?byId[id]];
+  /// Adding someone, and the way to everyone.
+  List<Widget> _peopleSection(BuildContext context) {
     return [
       _SectionHead(
         title: 'People',
-        open: _prioritizedOpen,
-        onTap: () => setState(() => _prioritizedOpen = !_prioritizedOpen),
+        open: _peopleOpen,
+        onTap: () => setState(() => _peopleOpen = !_peopleOpen),
         trailing: [
           PopupMenuButton<String>(
             tooltip: 'Add a person or circle',
@@ -398,16 +383,7 @@ class PeoplePaneState extends State<PeoplePane> {
           ),
         ],
       ),
-      if (_prioritizedOpen) ...[
-        for (final person in picked) _tile(context, person),
-        if (picked.isEmpty)
-          _hint(
-            theme,
-            byId.isEmpty
-                ? 'Tap + to add the people you want to spend time with.'
-                : 'Prioritize up to ${FocusStore.maxPeople} people from '
-                      'their menu, in All people, to keep them here.',
-          ),
+      if (_peopleOpen) ...[
         _button(
           context,
           'All people and circles',
@@ -417,11 +393,6 @@ class PeoplePaneState extends State<PeoplePane> {
       ],
     ];
   }
-
-  Widget _hint(ThemeData theme, String text) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-    child: Text(text, style: theme.textTheme.bodySmall),
-  );
 
   Widget _button(
     BuildContext context,
@@ -441,10 +412,8 @@ class PeoplePaneState extends State<PeoplePane> {
   );
 
   /// [person], with their time and last or next event, and their menu:
-  /// edit, prioritize, archive.
+  /// edit, archive.
   Widget _tile(BuildContext context, Person person) {
-    final focus = widget.memory.focus;
-    final prioritized = focus.isPrioritized(person.id);
     final circles = [
       for (final c in _people?.circles ?? const <Circle>[])
         if (person.circleIds.contains(c.id)) c.name,
@@ -457,27 +426,15 @@ class PeoplePaneState extends State<PeoplePane> {
       consistency: _scores?.consistency(person.id) ?? 0,
       times: _times,
       durations: widget.summary?.durations ?? true,
-      prioritized: prioritized,
       onTap: () => _open(person),
       menu: PopupMenuButton<String>(
         tooltip: 'More for ${personName(person)}',
         onSelected: (choice) => switch (choice) {
           'edit' => _editPerson(person),
-          'prioritize' => focus.setPrioritized(person.id, !prioritized),
           final status => _setStatus(person, status),
         },
         itemBuilder: (_) => [
           const PopupMenuItem(value: 'edit', child: Text('Edit')),
-          if (!person.isSelf)
-            PopupMenuItem(
-              value: 'prioritize',
-              enabled: prioritized || !focus.peopleFull,
-              child: Text(switch ((prioritized, focus.peopleFull)) {
-                (true, _) => "Don't prioritize",
-                (false, false) => 'Prioritize',
-                (false, true) => 'Prioritize (${FocusStore.maxPeople} already)',
-              }),
-            ),
           if (!person.isSelf)
             person.active
                 ? const PopupMenuItem(value: 'archived', child: Text('Archive'))

@@ -120,9 +120,8 @@ void main() {
       }
     }
 
-    // The sample's habits focused on and people prioritized.
     Widget plan() => PlanScreen(
-      memory: PlanMemory(focus: sample.focusStore()),
+      memory: PlanMemory(),
       outbox: _idleActionWrites(),
       repository: sample.actionsRepository(),
       eventsRepository: sample.eventsRepository(),
@@ -263,7 +262,7 @@ void main() {
       });
     }
 
-    // Sam being edited, on a page of its own, starred.
+    // Sam being edited, on a page of its own.
     testWidgets('person_edit ($mode)', (tester) async {
       await render(
         tester,
@@ -273,12 +272,14 @@ void main() {
         then: () async {
           await openPane(tester, 'People');
           await tester.scrollUntilVisible(
-            find.byTooltip('More for Sam'),
+            find.text('All people and circles'),
             300,
             scrollable: peopleList(),
           );
           // Built a little below the fold counts as visible: onto it.
-          await tester.ensureVisible(find.byTooltip('More for Sam'));
+          await tester.ensureVisible(find.text('All people and circles'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('All people and circles'));
           await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('More for Sam'));
           await tester.pumpAndSettle();

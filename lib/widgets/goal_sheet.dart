@@ -419,9 +419,8 @@ class _GoalSheetState extends State<_GoalSheet> {
     null => defaultGoalPriority,
   };
 
-  String get _inheritLabel => _parentId == null
-      ? '(P$defaultGoalPriority)'
-      : 'Inherit (P$_inherited)';
+  String get _inheritLabel =>
+      _parentId == null ? '(P$defaultGoalPriority)' : 'Inherit (P$_inherited)';
 
   /// Picks someone it's done with ([with_]) or for, searching for what's
   /// typed as its title, by any word, selected to type over, as its

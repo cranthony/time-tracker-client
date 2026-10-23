@@ -11,7 +11,6 @@ import 'package:time_tracker_client/screens/people_pane.dart';
 import 'package:time_tracker_client/screens/traits_section.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
-import 'package:time_tracker_client/services/focus_store.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
@@ -333,7 +332,6 @@ void main() {
       WidgetTester tester, {
       List<Person> people = _people,
       List<Circle> circles = _circles,
-      List<String> prioritized = const [],
       bool forward = false,
       bool durations = true,
       bool selfJudged = false,
@@ -349,7 +347,6 @@ void main() {
       // Scored by how caring their events were.
       final memory = PlanMemory(
         eventStore: EventStore(repository: InMemoryEventsRepository(events)),
-        focus: FocusStore(persist: false, people: prioritized),
       );
       // Loaded this visit, as the traits under Self are shown from.
       await memory.loadTraits(InMemoryTraitsRepository(traits: [_caring]));
@@ -391,20 +388,19 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('is Self, then the people prioritized, each section open '
-        'until folded away', (tester) async {
-      await pump(tester, prioritized: ['mom']);
+    testWidgets('is Self, then People, each section open until folded '
+        'away', (tester) async {
+      await pump(tester);
 
       expect(find.text('Self'), findsOneWidget);
       expect(find.text('People'), findsOneWidget);
       expect(find.text('Caring'), findsOneWidget);
-      expect(find.text('Mom'), findsOneWidget);
-      // Only those prioritized.
-      expect(find.text('Sam'), findsNothing);
+      expect(find.text('All people and circles'), findsOneWidget);
+      // Everyone is a tap away.
+      expect(find.text('Mom'), findsNothing);
 
       await tester.tap(find.text('People'));
       await tester.pumpAndSettle();
-      expect(find.text('Mom'), findsNothing);
       expect(find.text('All people and circles'), findsNothing);
 
       await tester.tap(find.text('Self'));
@@ -415,7 +411,7 @@ void main() {
 
       await tester.tap(find.text('People'));
       await tester.pumpAndSettle();
-      expect(find.text('Mom'), findsOneWidget);
+      expect(find.text('All people and circles'), findsOneWidget);
     });
 
     testWidgets("Self's head has their health and its trend", (tester) async {
@@ -437,14 +433,16 @@ void main() {
 
     testWidgets('a person says their time with you and when you last saw '
         'them, as the summary measures it', (tester) async {
-      await pump(tester, prioritized: ['mom']);
+      await pump(tester);
+      await openAll(tester);
 
       expect(find.text('24h 2h · 7d 2h'), findsOneWidget);
       expect(find.textContaining('Last: Visit Mom · '), findsOneWidget);
     });
 
     testWidgets('as shares, and the next time, looking on', (tester) async {
-      await pump(tester, prioritized: ['mom'], forward: true, durations: false);
+      await pump(tester, forward: true, durations: false);
+      await openAll(tester);
 
       expect(find.text('+24h 4% · +7d 1%'), findsOneWidget);
       expect(find.textContaining('Next: Call Mom · '), findsOneWidget);
@@ -465,20 +463,11 @@ void main() {
       expect(find.byType(EditPage), findsOneWidget);
     });
 
-    testWidgets('says how to prioritize people, with none', (tester) async {
-      await pump(tester);
-
-      expect(find.textContaining('Prioritize up to 3 people'), findsOneWidget);
-    });
-
     testWidgets('shows Self even when no one else is there', (tester) async {
       await pump(tester, people: const [], circles: const []);
 
       expect(find.text('Self'), findsOneWidget);
-      expect(
-        find.text('Tap + to add the people you want to spend time with.'),
-        findsOneWidget,
-      );
+      expect(find.byTooltip('Add a person or circle'), findsOneWidget);
     });
 
     testWidgets('has no search, with so few: everyone has theirs', (
@@ -495,70 +484,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Sam'), findsOneWidget);
       expect(find.text('Mom'), findsNothing);
-    });
-
-    testWidgets('prioritizes someone by the star on their page, or as '
-        "they're edited, on a page of its own", (tester) async {
-      final (_, memory) = await pump(tester, prioritized: ['sam']);
-      await openAll(tester);
-
-      await tester.tap(find.text('Mom'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Prioritize Mom'));
-      await tester.pumpAndSettle();
-      expect(memory.focus.people, ['sam', 'mom']);
-
-      await tester.tap(find.byTooltip('Edit Mom'));
-      await tester.pumpAndSettle();
-      expect(find.byType(EditPage), findsOneWidget);
-      expect(find.byType(AlertDialog), findsNothing);
-      await tester.tap(find.byTooltip("Don't prioritize Mom"));
-      await tester.pumpAndSettle();
-      expect(memory.focus.people, ['sam']);
-      expect(find.byTooltip('Prioritize Mom'), findsOneWidget);
-
-      // Called off: nothing saved, but the star's kept.
-      await tester.tap(find.byType(CloseButton));
-      await tester.pumpAndSettle();
-      expect(find.byType(EditPage), findsNothing);
-      expect(find.byTooltip('Prioritize Mom'), findsOneWidget);
-    });
-
-    testWidgets("Self isn't prioritized", (tester) async {
-      await pump(tester);
-      await tester.tap(find.byTooltip('Your page'));
-      await tester.pumpAndSettle();
-
-      expect(find.byTooltip('Prioritize Self'), findsNothing);
-    });
-
-    testWidgets('prioritizes up to three people from their menu', (
-      tester,
-    ) async {
-      final (_, memory) = await pump(tester, prioritized: ['sam', 'jordan']);
-      await openAll(tester);
-
-      await tester.tap(find.byTooltip('More for Mom'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Prioritize'));
-      await tester.pumpAndSettle();
-      expect(memory.focus.people, ['sam', 'jordan', 'mom']);
-
-      await tester.tap(find.byTooltip('Show archived people'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('More for Casey'));
-      await tester.pumpAndSettle();
-      expect(find.text('Prioritize (3 already)'), findsOneWidget);
-      await tester.tap(find.text('Prioritize (3 already)'));
-      await tester.pumpAndSettle();
-      expect(memory.focus.people, ['sam', 'jordan', 'mom']);
-
-      // Off the menu, and back to the pane.
-      await tester.tapAt(const Offset(4, 300));
-      await tester.pumpAndSettle();
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      expect(find.text('Mom'), findsOneWidget);
     });
 
     testWidgets('sorts everyone, either way', (tester) async {
@@ -741,7 +666,7 @@ void main() {
       expect(find.text('Try again'), findsOneWidget);
     });
 
-    testWidgets("Self can't be archived, or prioritized", (tester) async {
+    testWidgets("Self can't be archived", (tester) async {
       await pump(tester);
       await openAll(tester);
 
@@ -750,7 +675,6 @@ void main() {
 
       expect(find.text('Edit'), findsOneWidget);
       expect(find.text('Archive'), findsNothing);
-      expect(find.text('Prioritize'), findsNothing);
     });
 
     testWidgets('adds a circle, and deletes one, keeping its people', (

@@ -18,7 +18,6 @@ import '../models/trait_scores.dart';
 import '../outbox/actions_shown.dart';
 import '../outbox/action_writes.dart';
 import 'event_store.dart';
-import 'focus_store.dart';
 import 'actions_repository.dart';
 import 'goals_repository.dart';
 import 'habits_repository.dart';
@@ -45,14 +44,9 @@ import 'work_timing.dart';
 /// its load is still under way waits for that one, rather than asking
 /// again.
 class PlanMemory extends ChangeNotifier {
-  PlanMemory({EventStore? eventStore, FocusStore? focus})
-    : focus = focus ?? FocusStore(persist: false) {
+  PlanMemory({EventStore? eventStore}) {
     if (eventStore != null) useEvents(eventStore);
-    this.focus.addListener(notifyListeners);
   }
-
-  /// The habits focused on and people prioritized, kept on the device.
-  final FocusStore focus;
 
   /// The actions as the server last listed them.
   ActionList? actions;

@@ -109,7 +109,10 @@ void main() {
           tester.getTopLeft(find.text('Floss')).dy,
       28,
     );
-    expect(tester.getSize(room('Split the rest')).height, greaterThanOrEqualTo(28));
+    expect(
+      tester.getSize(room('Split the rest')).height,
+      greaterThanOrEqualTo(28),
+    );
     expect(
       tester.getSize(pill('Split the rest')).height,
       lessThanOrEqualTo(tester.getSize(find.text('Floss')).height),

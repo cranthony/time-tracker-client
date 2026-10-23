@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.191.0
+
+- People are no longer prioritized, nor habits starred: the stars on a
+  person's or habit's page and editor, and "Prioritize" in a person's
+  menu, are gone. The People pane's People section has "+" and "All
+  people and circles"; the Habits graph sorts each layer by name. To
+  keep someone in front, put them on the Habits graph.
+
 ## 7.190.0
 
 - A goal's page has "Deactivate until…" in its Status line, and its menu,

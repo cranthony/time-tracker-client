@@ -5,7 +5,6 @@ import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/trait.dart';
 import '../services/plan_memory.dart';
-import '../widgets/focus_buttons.dart';
 import '../widgets/habit_dialog.dart';
 import '../widgets/health.dart';
 import 'subject_sections.dart';
@@ -123,8 +122,6 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
       appBar: AppBar(
         title: Text(habitName(_habit)),
         actions: [
-          if (widget.memory?.focus case final focus?)
-            focusHabitButton(focus, _habit),
           if (widget.onEdit != null) editButton(habitName(_habit), _edit),
         ],
       ),
