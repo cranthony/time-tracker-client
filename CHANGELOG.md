@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.190.0
+
+- A goal's page has "Deactivate until…" in its Status line, and its menu,
+  while it's active: it's made inactive, waiting for what's picked -- a
+  goal to close, a day, the next day after, or while other goals are
+  active -- before it's activated again.
+
 ## 7.189.0
 
 - A goal waiting to be activated says when it starts, on the Goals page

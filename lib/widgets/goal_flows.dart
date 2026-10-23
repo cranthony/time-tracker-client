@@ -12,6 +12,7 @@ import 'error_sheet.dart';
 import 'goal_editor.dart';
 import 'goal_icon.dart';
 import 'goal_sheet.dart';
+import 'goal_starts.dart';
 import 'hotkeys.dart';
 
 /// Asks which day to try a goal again by -- tomorrow to start with, no
@@ -448,6 +449,19 @@ class GoalActions {
       "Couldn't deactivate ${goalTitle(goal)}",
       editing(tree, goal, also, status: 'inactive'),
     );
+  }
+
+  /// Deactivates [goal] until what's picked comes ([pickDeactivateUntil]):
+  /// inactive, waiting for it before it's activated again.
+  Future<void> deactivateUntil(Goal goal) async {
+    final when = await pickDeactivateUntil(
+      context,
+      goal: goal,
+      goals: goals,
+      now: now,
+    );
+    if (when == null || !context.mounted) return;
+    await deactivate(goal, also: {'activate_when': when});
   }
 
   /// Marks [goal] [status] ("done", "missed" or "obsolete"), asking what
