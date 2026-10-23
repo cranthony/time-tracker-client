@@ -289,7 +289,7 @@ void main() {
     await tester.tap(find.byTooltip('Edit').first);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text("Follow its parent's deadline"));
+    await tester.tap(find.text("Before its parent's"));
     await tester.pumpAndSettle();
     await tester.tap(find.text('1 week before'));
     await tester.pumpAndSettle();

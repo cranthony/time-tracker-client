@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'durations.dart';
 import '../models/goal.dart';
+import '../models/goal_activation.dart';
 import '../services/plan_memory.dart';
 import 'goal_editor.dart';
 import 'goal_icon.dart';
@@ -69,7 +70,9 @@ Color goalColor(BuildContext context, Goal goal) {
 /// One goal in a list: its icon, title -- with [priority], the one that
 /// applies, after it as a chip, filled when it's the goal's own and
 /// outlined when it's inherited or the default -- when it's due and the
-/// time spent toward it -- and, if it's not active, its status. Tapped, it
+/// time spent toward it -- and, if it's not active, its status: one
+/// waiting to be activated ([Goal.activateWhen]) marked with an hourglass,
+/// "Waiting", and when it's expected to start, if the server's said. Tapped, it
 /// opens ([onTap]); its button at the right edits it ([onEdit]).
 class GoalTile extends StatelessWidget {
   const GoalTile({
@@ -99,8 +102,19 @@ class GoalTile extends StatelessWidget {
     final theme = Theme.of(context);
     final overdue =
         goal.open && goal.due != null && goal.due!.isBefore(DateTime.now());
+    final waiting = goal.inactive && goal.activateWhen != null;
+    final starts = switch (goal.expectedStart) {
+      final at? when waiting => startOf(at),
+      _ => null,
+    };
     final details = [
-      if (!goal.active) goalStatuses[goal.status] ?? goal.status,
+      if (waiting)
+        starts == null
+            ? 'Waiting'
+            : 'Waiting, to start '
+                  '${MaterialLocalizations.of(context).formatShortMonthDay(starts)}'
+      else if (!goal.active)
+        goalStatuses[goal.status] ?? goal.status,
       if (goal.deadline != null) 'Due ${deadlineLabel(context, goal.deadline)}',
       if (goal.open && goal.misses.isNotEmpty)
         'Missed ${timesLabel(goal.misses.length)}',
@@ -122,6 +136,15 @@ class GoalTile extends StatelessWidget {
                     : null,
               ),
             ),
+            if (waiting) ...[
+              const SizedBox(width: 6),
+              Icon(
+                Icons.hourglass_top,
+                size: 16,
+                color: theme.colorScheme.onSurfaceVariant,
+                semanticLabel: 'Waiting to start',
+              ),
+            ],
             if (priority case final p?) ...[
               const SizedBox(width: 6),
               PriorityChip(priority: p, own: goal.priority != null),

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../models/facts.dart';
@@ -10,8 +12,11 @@ import 'duration_field.dart';
 import 'edit_page.dart';
 import 'event_description.dart';
 import 'goal_fields.dart';
+import 'goal_icon.dart';
+import 'goal_starts.dart';
 import 'html_editor.dart';
 import 'picker_sheet.dart';
+import 'tree_picker.dart';
 
 /// Adds a goal (with no [goal]) under [parent] (the top level, if null),
 /// or edits [goal], on a page of its own: its title, status, deadline (a
@@ -24,6 +29,10 @@ import 'picker_sheet.dart';
 /// its bar titled, as the goal's page has them ([GoalField],
 /// [GoalBarTitle]). A new one
 /// starts active, or inactive if chosen; an active one needs a deadline.
+/// Its deadline can instead be measured from its start, or another goal's
+/// deadline; and an inactive one can wait to be activated ("Starts":
+/// [GoalStartsEditor]). A new one can start with [status], [activateWhen]
+/// and [deadlineRule] -- the next goal in a chain, say.
 /// Saving is off while the change breaks a rule (see [planned]) against
 /// [goals], every goal there is, saying which -- a change of status
 /// checked with what it takes ([editing]). A new one starts with [title]
@@ -43,6 +52,9 @@ Future<Map<String, Object?>?> showGoalEditor(
   int? priority,
   List<String> withIds = const [],
   List<String> forIds = const [],
+  String? status,
+  Map<String, Object?>? activateWhen,
+  Map<String, Object?>? deadlineRule,
   DateTime Function() now = DateTime.now,
 }) => Navigator.of(context).push<Map<String, Object?>>(
   MaterialPageRoute(
@@ -57,6 +69,9 @@ Future<Map<String, Object?>?> showGoalEditor(
       priority: priority,
       withIds: withIds,
       forIds: forIds,
+      status: status,
+      activateWhen: activateWhen,
+      deadlineRule: deadlineRule,
       now: now,
     ),
   ),
@@ -74,6 +89,9 @@ class GoalEditorPage extends StatefulWidget {
     this.priority,
     this.withIds = const [],
     this.forIds = const [],
+    this.status,
+    this.activateWhen,
+    this.deadlineRule,
     this.now = DateTime.now,
   });
 
@@ -90,6 +108,12 @@ class GoalEditorPage extends StatefulWidget {
   /// A new goal's people, to begin with: who it's done with, and for.
   final List<String> withIds;
   final List<String> forIds;
+
+  /// A new goal's status, what it waits for, and what its deadline is
+  /// measured from, to begin with.
+  final String? status;
+  final Map<String, Object?>? activateWhen;
+  final Map<String, Object?>? deadlineRule;
   final DateTime Function() now;
 
   @override
@@ -115,8 +139,42 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
 
   /// How many times a chip has set [_offset].
   var _offsetPicks = 0;
-  late bool _follows = widget.parent != null && (_goal?.followsParent ?? false);
-  late String _status = _goal?.status ?? 'active';
+
+  late final Map<String, Object?>? _rule =
+      _goal?.deadlineRule ?? widget.deadlineRule;
+
+  /// What its deadline is measured from.
+  late _DeadlineFrom _from = switch (_rule) {
+    {'after_start': _} => _DeadlineFrom.start,
+    {'after_goal': _} => _DeadlineFrom.goal,
+    _ when widget.parent != null && (_goal?.followsParent ?? false) =>
+      _DeadlineFrom.parent,
+    _ => _DeadlineFrom.date,
+  };
+
+  bool get _follows => _from == _DeadlineFrom.parent;
+
+  /// How long after its start, or the other goal's deadline, it's due, in
+  /// minutes; and how many times a chip has set it.
+  late final _after = TextEditingController(
+    text: switch (_rule?['after_start'] ?? _rule?['after_goal']) {
+      {'days': final num d} => '${d.toInt() * Duration.minutesPerDay}',
+      {'minutes': final num m} => '${m.toInt()}',
+      _ => '${7 * Duration.minutesPerDay}',
+    },
+  );
+  var _afterPicks = 0;
+
+  /// The goal whose deadline it's measured from, after it.
+  late String? _afterGoal = switch (_rule) {
+    {'after_goal': {'id': final String id}} => id,
+    _ => null,
+  };
+
+  /// What it waits for before it's activated.
+  late Map<String, Object?>? _activateWhen =
+      _goal?.activateWhen ?? widget.activateWhen;
+  late String _status = _goal?.status ?? widget.status ?? 'active';
   late bool _required = _goal?.required ?? false;
   late int? _priority = _goal?.priority ?? widget.priority;
   late String? _description = _goal?.description ?? widget.description;
@@ -130,6 +188,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     _hints.dispose();
     _minutes.dispose();
     _offset.dispose();
+    _after.dispose();
     super.dispose();
   }
 
@@ -152,17 +211,43 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
           _ => null,
         };
 
-  /// Its deadline: its own, or the one following its parent's.
-  String? get _shownDeadline => _follows
-      ? deadlineBefore(widget.parent?.deadline, _offsetMinutes ?? 0) ??
-            _deadline
-      : _deadline;
+  /// Its deadline: its own, or the one following its parent's -- none
+  /// here when it's measured from its start or another goal's.
+  String? get _shownDeadline => switch (_from) {
+    _DeadlineFrom.parent =>
+      deadlineBefore(widget.parent?.deadline, _offsetMinutes ?? 0) ?? _deadline,
+    _DeadlineFrom.date => _deadline,
+    _ => null,
+  };
+
+  /// How long after what it's measured from it's due: days, if it's
+  /// whole days, else minutes; null if what's typed isn't a length.
+  Map<String, Object?>? get _afterOffset =>
+      switch (num.tryParse(_after.text.trim())?.round()) {
+        final m? when m >= 0 && m % Duration.minutesPerDay == 0 => {
+          'days': m ~/ Duration.minutesPerDay,
+        },
+        final m? when m >= 0 => {'minutes': m},
+        _ => null,
+      };
+
+  /// What its deadline is measured from, as the server takes it, when it's
+  /// its start or another goal's; null otherwise.
+  Map<String, Object?>? get _deadlineRule => switch (_from) {
+    _DeadlineFrom.start => {'after_start': ?_afterOffset},
+    _DeadlineFrom.goal => {
+      'after_goal': {'id': _afterGoal, ...?_afterOffset},
+    },
+    _ => null,
+  };
 
   /// What's set, keyed as the server takes it.
   Map<String, Object?> get _fields => {
     'title': _title.text.trim(),
-    'deadline': _shownDeadline,
+    if (_deadlineRule == null) 'deadline': _shownDeadline,
     'deadline_offset_minutes': _offsetMinutes,
+    'deadline_rule': _deadlineRule,
+    'activate_when': _status == 'inactive' ? _activateWhen : null,
     'priority': _priority,
     'expected_minutes': _expected,
     'required': widget.parent == null ? null : _required,
@@ -196,6 +281,9 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
       'title': goal.title,
       'deadline': goal.deadline,
       'deadline_offset_minutes': goal.deadlineOffsetMinutes,
+      'deadline_rule': goal.deadlineRule,
+      // Activated, what it waited for is cleared anyway.
+      'activate_when': _status == 'inactive' ? goal.activateWhen : null,
       'priority': goal.priority,
       'expected_minutes': goal.expectedMinutes,
       'required': goal.parentId == null ? null : goal.required,
@@ -205,7 +293,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     };
     return {
       for (final MapEntry(:key, :value) in fields.entries)
-        if (value != before[key]) key: value,
+        if (jsonEncode(value) != jsonEncode(before[key])) key: value,
       if (_status != goal.status) 'status': _status,
       if (!same(_with, goal.withIds)) 'with_ids': _people['with_ids'],
       if (!same(_for, goal.forIds)) 'for_ids': _people['for_ids'],
@@ -231,6 +319,12 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     if (_title.text.trim().isEmpty) return 'Give it a title.';
     if (_follows && _offsetMinutes == null) {
       return "Say how long before its parent's it's due.";
+    }
+    if (_deadlineRule != null && _afterOffset == null) {
+      return "Say how long after it it's due.";
+    }
+    if (_from == _DeadlineFrom.goal && _afterGoal == null) {
+      return 'Pick the goal its deadline comes after.';
     }
     final goal = _goal;
     final tree = GoalTree(widget.goals);
@@ -323,6 +417,54 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     setState(() => set(edited.isEmpty ? null : edited));
   }
 
+  /// Picks the goal its deadline comes after: any other goal but one
+  /// whose deadline comes, through others, after its own.
+  Future<void> _pickAfterGoal() async {
+    final tree = GoalTree(widget.goals);
+    final self = _goal?.id;
+    bool afterSelf(Goal g) {
+      final seen = <String>{};
+      for (Goal? at = g; at != null;) {
+        if (at.id == self) return true;
+        if (!seen.add(at.id)) return false;
+        at = switch (at.deadlineRule) {
+          {'after_goal': {'id': final String id}} => tree[id],
+          _ when at.followsParent => tree[at.parentId],
+          _ => null,
+        };
+      }
+      return false;
+    }
+
+    final pickable = [
+      for (final g in byPriority(widget.goals, tree))
+        if (g.open && !afterSelf(g)) g,
+    ];
+    final picked = await pickNode(
+      context,
+      title: 'Due after',
+      nodes: [
+        for (final g in pickable)
+          PickerNode(
+            id: g.id,
+            label: goalTitle(g),
+            parentId: pickable.any((p) => p.id == g.parentId)
+                ? g.parentId
+                : null,
+            path: [...tree.pathOf(g.id), goalTitle(g)].join(' › '),
+            group: pickable.any((c) => c.parentId == g.id),
+          ),
+      ],
+      value: _afterGoal,
+      groupsPickable: true,
+      marker: (_) => const GoalIcon(size: 18),
+      searchHint: 'Search goals',
+    );
+    if (picked?.id case final id? when mounted) {
+      setState(() => _afterGoal = id);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -392,26 +534,74 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (parent != null)
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text("Follow its parent's deadline"),
-                  subtitle: Text(
-                    parent.deadline == null
-                        ? '“${goalTitle(parent)}” has no deadline yet'
-                        : _follows
-                        ? '${deadlineLabel(context, deadline)} · '
-                              '${followsLabel(goalTitle(parent), _offsetMinutes ?? 0)}'
-                        : '“${goalTitle(parent)}” is due '
-                              '${deadlineLabel(context, parent.deadline)}',
-                  ),
-                  value: _follows,
-                  onChanged: (value) => setState(() {
-                    // Untied, it keeps the deadline it had.
-                    if (!value) _deadline = _shownDeadline;
-                    _follows = value;
-                  }),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final from in _DeadlineFrom.values)
+                    if (from != _DeadlineFrom.parent || parent != null)
+                      ChoiceChip(
+                        label: Text(from.label),
+                        selected: _from == from,
+                        onSelected: (_) => setState(() {
+                          // Untied, it keeps the deadline it had.
+                          if (from == _DeadlineFrom.date) {
+                            _deadline = _shownDeadline ?? _deadline;
+                          }
+                          _from = from;
+                        }),
+                      ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_follows && parent != null)
+                Text(
+                  parent.deadline == null
+                      ? '“${goalTitle(parent)}” has no deadline yet'
+                      : '${deadlineLabel(context, deadline)} · '
+                            '${followsLabel(goalTitle(parent), _offsetMinutes ?? 0)}',
                 ),
+              if (_from == _DeadlineFrom.goal)
+                OutlinedButton.icon(
+                  icon: const GoalIcon(size: 18),
+                  label: Text(switch (tree[_afterGoal]) {
+                    final g? => 'After “${goalTitle(g)}” is due',
+                    null => 'Pick the goal',
+                  }),
+                  onPressed: _pickAfterGoal,
+                ),
+              if (_from == _DeadlineFrom.start ||
+                  _from == _DeadlineFrom.goal) ...[
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final (label, minutes) in const [
+                      ('Same day', 0),
+                      ('1 day after', Duration.minutesPerDay),
+                      ('1 week after', 7 * Duration.minutesPerDay),
+                    ])
+                      ChoiceChip(
+                        label: Text(label),
+                        selected: _after.text.trim() == '$minutes',
+                        onSelected: (_) => setState(() {
+                          _after.text = '$minutes';
+                          _afterPicks++;
+                        }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                DurationField(
+                  // Shown anew when a chip sets it.
+                  key: ValueKey(('after', _afterPicks)),
+                  controller: _after,
+                  label: _from == _DeadlineFrom.start
+                      ? 'How long after it starts'
+                      : "How long after that goal's",
+                  days: true,
+                  onChanged: () => setState(() {}),
+                ),
+              ],
               if (_follows) ...[
                 Wrap(
                   spacing: 8,
@@ -440,7 +630,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
                   days: true,
                   onChanged: () => setState(() {}),
                 ),
-              ] else ...[
+              ] else if (_from == _DeadlineFrom.date) ...[
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
@@ -499,6 +689,18 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
             ],
           ),
         ),
+        if (_status == 'inactive')
+          GoalField(
+            label: 'Starts',
+            child: GoalStartsEditor(
+              value: _activateWhen,
+              goals: widget.goals,
+              goalId: goal?.id,
+              parentId: parent?.id,
+              now: widget.now,
+              onChanged: (value) => setState(() => _activateWhen = value),
+            ),
+          ),
         GoalField(
           label: 'Priority',
           child: Wrap(
@@ -671,4 +873,17 @@ String deadlineLabel(BuildContext context, String? deadline) {
   }
   return '${strings.formatMediumDate(at)}, '
       '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(at))}';
+}
+
+/// What a goal's deadline in the editor is measured from: a date given,
+/// its parent's (before it), its start, or another goal's (after them).
+enum _DeadlineFrom {
+  date('A date'),
+  parent("Before its parent's"),
+  start('After it starts'),
+  goal("After another goal's");
+
+  const _DeadlineFrom(this.label);
+
+  final String label;
 }

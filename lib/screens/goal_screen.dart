@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/goal.dart';
+import '../models/goal_activation.dart';
 import '../services/goals_repository.dart';
 import '../services/plan_memory.dart';
 import '../widgets/app_menu.dart' show RefreshButton;
@@ -11,6 +12,7 @@ import '../widgets/goal_editor.dart';
 import '../widgets/goal_fields.dart';
 import '../widgets/goal_flows.dart';
 import '../widgets/goal_reorder_list.dart';
+import '../widgets/goal_starts.dart';
 import '../widgets/goal_tile.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/priority_chip.dart';
@@ -101,6 +103,8 @@ class _GoalScreenState extends State<GoalScreen> {
         }
       case 'retry':
         await actions.retry(goal);
+      case 'next':
+        await actions.addNext(goal);
       default:
         await actions.setStatus(goal, action);
     }
@@ -168,6 +172,11 @@ class _GoalScreenState extends State<GoalScreen> {
                 if (_canRetry(goal))
                   const PopupMenuItem(value: 'retry', child: Text(_retryLabel)),
                 const PopupMenuDivider(),
+                if (!goal.closed)
+                  const PopupMenuItem(
+                    value: 'next',
+                    child: Text('Add next goal…'),
+                  ),
                 const PopupMenuItem(value: 'move', child: Text('Move…')),
                 const PopupMenuItem(value: 'delete', child: Text('Delete…')),
               ],
@@ -390,12 +399,16 @@ class _GoalScreenState extends State<GoalScreen> {
             ),
           GoalField(
             label: 'Deadline',
-            child: goal.deadline == null
+            child: goal.deadline == null && goal.deadlineRule == null
                 ? const GoalFieldEmpty('None')
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(deadlineLabel(context, goal.deadline)),
+                      if (goal.deadline != null)
+                        Text(deadlineLabel(context, goal.deadline))
+                      else if (expectedDeadline(goal, tree, now: DateTime.now())
+                          case final expected?)
+                        Text('Expected ${deadlineLabel(context, expected)}'),
                       if ((parent, goal.deadlineOffsetMinutes) case (
                         final parent?,
                         final minutes?,
@@ -404,9 +417,47 @@ class _GoalScreenState extends State<GoalScreen> {
                           followsLabel(goalTitle(parent), minutes),
                           style: theme.textTheme.bodySmall,
                         ),
+                      if (ruleLabel(goal, tree) case final rule?)
+                        Text(rule, style: theme.textTheme.bodySmall),
                     ],
                   ),
           ),
+          if (goal.inactive && goal.activateWhen != null)
+            GoalField(
+              label: 'Starts',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final line in startsLines(context, goal, tree))
+                    Text(line),
+                  Text(switch (expectedStart(goal, tree, now: DateTime.now())) {
+                    final at? => 'Expected to start ${_when(context, at)}',
+                    null when isHeld(goal, tree) =>
+                      'Held back for now: ready, with too many active',
+                    null =>
+                      'Not expected yet: what it waits for has no '
+                          'deadline',
+                  }, style: theme.textTheme.bodySmall),
+                ],
+              ),
+            ),
+          if (waitingOn(tree.byId.values, goal.id) case final next
+              when next.isNotEmpty)
+            GoalField(
+              label: 'Starts after it',
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final g in next)
+                    ActionChip(
+                      avatar: const Icon(Icons.hourglass_top, size: 16),
+                      label: Text(goalTitle(g)),
+                      onPressed: () => _open(g),
+                    ),
+                ],
+              ),
+            ),
           GoalField(
             label: 'Priority',
             child: Wrap(
