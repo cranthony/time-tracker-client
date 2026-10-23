@@ -166,6 +166,7 @@ class GoalsPaneState extends State<GoalsPane> {
                 spent: spent[goal.id],
                 subGoals: tree.childrenOf(goal.id).length,
                 priority: tree.priorityOf(goal.id),
+                tree: tree,
                 onTap: () => _open(goal),
                 onEdit: () => _actions.edit(goal),
               ),

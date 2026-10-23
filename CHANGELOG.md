@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.189.0
+
+- A goal waiting to be activated says when it starts, on the Goals page
+  and among a goal's sub-goals: "Starts Nov 2" when it's expected to --
+  by the deadline of the goal it waits for, say -- or, ready, "Ready to
+  start" or what holds it back; or else the goals it still waits for,
+  "Starts after “Draft the plan” closes, the next day".
+
 ## 7.188.1
 
 - The goals-due strip gives the first seven upcoming goals a pill each

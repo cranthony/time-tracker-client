@@ -44,6 +44,53 @@ List<String> startsLines(BuildContext context, Goal goal, GoalTree tree) {
   ];
 }
 
+/// When [goal], waiting to be activated, starts, in a line for its tile,
+/// its goals named from [tree]: "Starts Oct 30" (or "Starts Oct 30, 9:00
+/// AM") if it's expected to ([expectedStart]); ready by [now], "Ready,
+/// held while 3 other goals are active" or "Ready to start"; or else the
+/// goals it still waits for, "Starts after “Draft the plan” closes, the
+/// next day". "Waiting" if it waits for none.
+String startsSummary(
+  BuildContext context,
+  Goal goal,
+  GoalTree tree, {
+  required DateTime now,
+}) {
+  final strings = MaterialLocalizations.of(context);
+  if (expectedStart(goal, tree, now: now) case final at?) {
+    final day = strings.formatShortMonthDay(at);
+    return at.hour == 0 && at.minute == 0
+        ? 'Starts $day'
+        : 'Starts $day, '
+              '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(at))}';
+  }
+  if (readyAt(goal, tree) case final at? when !at.isAfter(now)) {
+    return switch (holding(goal, tree)) {
+      final hold? =>
+        'Ready, held while ${holdLabel(hold, tree.priorityOf(goal.id))}',
+      null => 'Ready to start',
+    };
+  }
+  final open = [
+    for (final id in waitsFor(goal))
+      if (tree[id] == null)
+        'a goal deleted since'
+      else if (tree[id]!.closedAt == null)
+        '“${goalTitle(tree[id]!)}”',
+  ];
+  if (open.isEmpty) return 'Waiting';
+  final names = open.length == 1
+      ? open.single
+      : '${open.take(open.length - 1).join(', ')} and ${open.last}';
+  final then = waitsNextDay(goal)
+      ? ', the next day'
+      : switch (delayMinutes(goal)) {
+          final m? when m > 0 => ', then ${formatMinutes(m)} later',
+          _ => '',
+        };
+  return 'Starts after $names close${open.length == 1 ? 's' : ''}$then';
+}
+
 /// What a hold counts, for a goal of priority [own]: "3 other goals at P1
 /// or higher are active".
 String holdLabel(Map hold, int own) {
