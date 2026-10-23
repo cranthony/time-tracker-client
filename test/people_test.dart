@@ -8,6 +8,8 @@ import 'package:time_tracker_client/models/time_split.dart';
 import 'package:time_tracker_client/models/trait.dart';
 import 'package:time_tracker_client/screens/locations_pane.dart';
 import 'package:time_tracker_client/screens/people_pane.dart';
+import 'package:time_tracker_client/screens/person_screen.dart';
+import 'package:time_tracker_client/screens/traits_pane.dart';
 import 'package:time_tracker_client/screens/traits_section.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
@@ -382,59 +384,22 @@ void main() {
       return (repository, memory);
     }
 
-    /// Opens everyone, from the pane.
-    Future<void> openAll(WidgetTester tester) async {
-      await tester.tap(find.text('All people and circles'));
-      await tester.pumpAndSettle();
-    }
-
-    testWidgets('is Self, then People, each section open until folded '
-        'away', (tester) async {
+    testWidgets('lists everyone, Self first, with no button to more', (
+      tester,
+    ) async {
       await pump(tester);
 
-      expect(find.text('Self'), findsOneWidget);
-      expect(find.text('People'), findsOneWidget);
-      expect(find.text('Caring'), findsOneWidget);
-      expect(find.text('All people and circles'), findsOneWidget);
-      // Everyone is a tap away.
-      expect(find.text('Mom'), findsNothing);
-
-      await tester.tap(find.text('People'));
-      await tester.pumpAndSettle();
+      for (final name in ['Self', 'Mom', 'Sam', 'Jordan']) {
+        expect(find.text(name), findsOneWidget);
+      }
       expect(find.text('All people and circles'), findsNothing);
-
-      await tester.tap(find.text('Self'));
-      await tester.pumpAndSettle();
-      expect(find.text('Caring'), findsNothing);
-      // Their page is a tap away, folded or not.
-      expect(find.byTooltip('Your page'), findsOneWidget);
-
-      await tester.tap(find.text('People'));
-      await tester.pumpAndSettle();
-      expect(find.text('All people and circles'), findsOneWidget);
-    });
-
-    testWidgets("Self's head has their health and its trend", (tester) async {
-      await pump(tester, selfJudged: true);
-
-      final head = find.ancestor(
-        of: find.text('Self'),
-        matching: find.byType(InkWell),
-      );
-      expect(
-        find.descendant(of: head, matching: find.byType(HealthDot)),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: head, matching: find.byType(TrendSparkline)),
-        findsOneWidget,
-      );
+      // The traits have a pane of their own.
+      expect(find.byType(TraitsSection), findsNothing);
     });
 
     testWidgets('a person says their time with you and when you last saw '
         'them, as the summary measures it', (tester) async {
       await pump(tester);
-      await openAll(tester);
 
       expect(find.text('24h 2h · 7d 2h'), findsOneWidget);
       expect(find.textContaining('Last: Visit Mom · '), findsOneWidget);
@@ -442,25 +407,9 @@ void main() {
 
     testWidgets('as shares, and the next time, looking on', (tester) async {
       await pump(tester, forward: true, durations: false);
-      await openAll(tester);
 
       expect(find.text('+24h 4% · +7d 1%'), findsOneWidget);
       expect(find.textContaining('Next: Call Mom · '), findsOneWidget);
-    });
-
-    testWidgets('shows the traits under Self, and adds one', (tester) async {
-      await pump(tester);
-
-      final self = find.ancestor(
-        of: find.text('Caring'),
-        matching: find.byType(TraitsSection),
-      );
-      expect(self, findsOneWidget);
-      expect(find.byType(TextField), findsNothing);
-
-      await tester.tap(find.widgetWithText(TextButton, 'Trait'));
-      await tester.pumpAndSettle();
-      expect(find.byType(EditPage), findsOneWidget);
     });
 
     testWidgets('shows Self even when no one else is there', (tester) async {
@@ -468,18 +417,15 @@ void main() {
 
       expect(find.text('Self'), findsOneWidget);
       expect(find.byTooltip('Add a person or circle'), findsOneWidget);
+      expect(
+        find.text('Tap + to add the people you want to spend time with.'),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('has no search, with so few: everyone has theirs', (
-      tester,
-    ) async {
+    testWidgets('searches everyone', (tester) async {
       await pump(tester);
 
-      expect(find.byType(TextField), findsNothing);
-      // Adding stays.
-      expect(find.byTooltip('Add a person or circle'), findsOneWidget);
-
-      await openAll(tester);
       await tester.enterText(find.byType(TextField).first, 'salsa');
       await tester.pumpAndSettle();
       expect(find.text('Sam'), findsOneWidget);
@@ -488,7 +434,6 @@ void main() {
 
     testWidgets('sorts everyone, either way', (tester) async {
       await pump(tester);
-      await openAll(tester);
 
       List<String> shown() =>
           [
@@ -521,7 +466,6 @@ void main() {
     testWidgets("lists everyone with their context, circles and health, "
         'archived only when asked', (tester) async {
       await pump(tester);
-      await openAll(tester);
 
       expect(find.text('Self'), findsOneWidget);
       expect(find.text('from salsa · Family, Dance friends'), findsOneWidget);
@@ -547,14 +491,12 @@ void main() {
         people: const [Person(id: 'sam', name: 'Sam')],
         circles: const [],
       );
-      await openAll(tester);
 
       expect(find.byType(HealthDot), findsNothing);
     });
 
     testWidgets('shows only the people in a circle picked', (tester) async {
       await pump(tester);
-      await openAll(tester);
 
       await tester.tap(find.widgetWithText(FilterChip, 'Dance friends'));
       await tester.pumpAndSettle();
@@ -643,7 +585,6 @@ void main() {
           ],
         },
       );
-      await openAll(tester);
       expect(find.text('Priya'), findsOneWidget);
     });
 
@@ -668,7 +609,6 @@ void main() {
 
     testWidgets("Self can't be archived", (tester) async {
       await pump(tester);
-      await openAll(tester);
 
       await tester.tap(find.byTooltip('More for Self'));
       await tester.pumpAndSettle();
@@ -681,7 +621,6 @@ void main() {
       tester,
     ) async {
       final (repository, _) = await pump(tester);
-      await openAll(tester);
 
       await tester.tap(find.byTooltip('Add a person or circle'));
       await tester.pumpAndSettle();
@@ -708,6 +647,86 @@ void main() {
         'family',
       ]);
       expect(find.text('Jordan'), findsOneWidget);
+    });
+  });
+
+  group('TraitsPane', () {
+    Future<void> pump(WidgetTester tester, {bool selfJudged = false}) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final memory = PlanMemory(
+        eventStore: EventStore(
+          repository: InMemoryEventsRepository([
+            _visit(self: selfJudged),
+            _call(),
+          ]),
+        ),
+      );
+      final traits = InMemoryTraitsRepository(traits: [_caring]);
+      await memory.loadTraits(traits);
+      await memory.eventStore!.warm();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: _Fill(
+              child: TraitsPane(
+                repository: traits,
+                people: InMemoryPeopleRepository(
+                  people: _people,
+                  circles: _circles,
+                ),
+                memory: memory,
+                actions: const {'call': 'Call'},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('is Self, then the traits, and adds one', (tester) async {
+      await pump(tester);
+
+      expect(find.text('Self'), findsOneWidget);
+      expect(
+        find.ancestor(
+          of: find.text('Caring'),
+          matching: find.byType(TraitsSection),
+        ),
+        findsOneWidget,
+      );
+      // No one else here: they're in People.
+      expect(find.text('Mom'), findsNothing);
+
+      await tester.tap(find.widgetWithText(TextButton, 'Trait'));
+      await tester.pumpAndSettle();
+      expect(find.byType(EditPage), findsOneWidget);
+    });
+
+    testWidgets("Self's head has their health and its trend", (tester) async {
+      await pump(tester, selfJudged: true);
+
+      final head = find
+          .ancestor(of: find.text('Self'), matching: find.byType(Row))
+          .first;
+      expect(
+        find.descendant(of: head, matching: find.byType(HealthDot)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: head, matching: find.byType(TrendSparkline)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('opens your page', (tester) async {
+      await pump(tester);
+
+      await tester.tap(find.byTooltip('Your page'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PersonScreen), findsOneWidget);
     });
   });
 

@@ -50,7 +50,7 @@ confirm: edits to the events in it edit the proposal, not the calendar, and
 a bar above confirms it as shown or leaves a note for Claude to revise it
 (see [Compaction proposals](#compaction-proposals)). Above them, a summary shows how the day's time is split by its top
 actions; swipe it to see the top-level groups, or the time by priority. A **Plan** page
-has four panes, swiped between or picked from its tabs, each but People
+has its panes, swiped between or picked from its tabs, each but Traits
 with a search of its own. Landing on it loads every pane at once, and it shows what it
 had last time while it loads again. The Actions, People and Locations
 panes each have a summary, at the top, of the time in the 24 hours
@@ -66,7 +66,8 @@ tapping the date goes back to the last compaction.
   priority and color, or go on to its details. Only active actions take up one of the calendar's event labels. An
   action Claude made is *proposed* until you approve it. The search finds
   actions by name, path and note, in their groups.
-- **Traits** (how to be): each trait you define -- none is built in. A
+- **Traits** (how): **Self** at the top, with your health and a way to
+  your page; under it each trait you define -- none is built in. A
   trait is made of parts: chiefly *judgments*, which Claude makes of each
   event, each with a rubric, a rating scale of your own, and the facts
   it's judged from (actions, action history and location history, each
@@ -77,15 +78,11 @@ tapping the date goes back to the last compaction.
   score, the mean of everyone scored by it, and its trend);
   its pencil edits it, on a page of its own. Time spent's target is
   written, or stepped, in hours and minutes.
-- **People** (who): two sections, each folded away by tapping its head.
-  **Self** has your health and your traits, with a way to your page.
-  **People** has "+", to add a person or circle, and "All
-  people and circles", which opens everyone, each with their
+- **People** (who): everyone, Self first, each with their
   time with you in the summary's window and the last event with them --
-  or the next, looking on --
-  to search, sort (by health, when
+  or the next, looking on -- to search, sort (by health, when
   last or next seen, or time in 24 hours or 7 days, either way) and
-  edit, on a page of its own: each with a context
+  edit; "+" adds a person or circle. Each has a context
   that tells people of the same name apart, in any number of circles.
   Tap a circle to see only its people; tap a person for their page: who
   they are, which traits apply to them (every active one, or those
