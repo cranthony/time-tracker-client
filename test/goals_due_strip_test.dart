@@ -318,6 +318,135 @@ void main() {
     );
   });
 
+  test('upcomingGoalsOn: a goal waiting until Monday, due Friday, is '
+      'upcoming from Monday until Thursday, then due on Friday', () {
+    final today = DateTime(2026, 10, 22);
+    final waiting = Goal(
+      id: 'w',
+      title: 'Waiting',
+      status: 'inactive',
+      deadline: '2026-10-30',
+      activateWhen: const {
+        'after': [
+          {'at': '2026-10-26'},
+        ],
+      },
+      history: [StatusChange('inactive', DateTime(2026, 10, 20))],
+    );
+    List<String> on(int day) => [
+      for (final g in upcomingGoalsOn(
+        [waiting],
+        DateTime(2026, 10, day),
+        today: today,
+      ))
+        '${g.id} ${g.expectedStart}',
+    ];
+    expect(on(23), isEmpty);
+    expect(on(25), isEmpty);
+    for (final day in [26, 27, 28, 29]) {
+      expect(on(day), ['w 2026-10-26'], reason: 'Oct $day');
+    }
+    expect(on(30), isEmpty);
+    expect(goalsDueOn([waiting], DateTime(2026, 10, 30)), [waiting]);
+    // Never on a past day: what was, not what was expected.
+    expect(
+      upcomingGoalsOn(
+        [waiting],
+        DateTime(2026, 10, 26),
+        today: DateTime(2026, 10, 28),
+      ),
+      isEmpty,
+    );
+  });
+
+  test('upcomingGoalsOn: a goal waiting for another to close, due days '
+      'after it starts, is upcoming from the day after the other is due, '
+      'through the day it is expected to be due', () {
+    final today = DateTime(2026, 10, 22);
+    final first = Goal(
+      id: 'first',
+      title: 'First',
+      deadline: '2026-10-25',
+      history: [StatusChange('active', DateTime(2026, 10, 1))],
+    );
+    final next = Goal(
+      id: 'next',
+      title: 'Next',
+      status: 'inactive',
+      deadlineRule: const {
+        'after_start': {'days': 3},
+      },
+      activateWhen: const {
+        'after': [
+          {'goal_closed': 'first'},
+        ],
+      },
+      history: [StatusChange('inactive', DateTime(2026, 10, 1))],
+    );
+    List<String> on(int day) => [
+      for (final g in upcomingGoalsOn(
+        [first, next],
+        DateTime(2026, 10, day),
+        today: today,
+      ))
+        if (g.id == 'next') '${g.deadline} ${g.expectedStart}',
+    ];
+    expect(on(25), isEmpty);
+    expect(on(26), ['2026-10-29 2026-10-26']);
+    expect(on(29), ['2026-10-29 2026-10-26']);
+    expect(on(30), isEmpty);
+  });
+
+  testWidgets('a goal only expected by then is outlined dashed, with an '
+      'hourglass and when it starts', (tester) async {
+    final expected = upcomingGoalsOn(
+      [
+        Goal(
+          id: 'w',
+          title: 'Waiting',
+          status: 'inactive',
+          deadline: '2026-10-30',
+          activateWhen: const {
+            'after': [
+              {'at': '2026-10-26'},
+            ],
+          },
+          history: [StatusChange('inactive', DateTime(2026, 10, 20))],
+        ),
+      ],
+      DateTime(2026, 10, 27),
+      today: DateTime(2026, 10, 22),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalsDueStrip(
+            goals: const [],
+            upcoming: expected,
+            day: DateTime(2026, 10, 27),
+            today: DateTime(2026, 10, 22),
+            collapsed: false,
+            onCollapsed: (_) {},
+          ),
+        ),
+      ),
+    );
+    expect(find.textContaining('starts Oct 26'), findsOneWidget);
+    expect(find.textContaining('due Oct 30'), findsOneWidget);
+    expect(find.byIcon(Icons.hourglass_top), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.textContaining('Waiting'),
+        matching: find.byWidgetPredicate(
+          (w) =>
+              w is CustomPaint &&
+              '${w.foregroundPainter.runtimeType}' == '_DashedStadium',
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
   Future<void> pump(
     WidgetTester tester, {
     required bool collapsed,
