@@ -4,18 +4,17 @@ import '../models/habit_graph.dart';
 import 'picker_sheet.dart';
 import 'tree_picker.dart';
 
-/// What a habit, or a person, can be built on: every habit and person in
-/// [graph] -- a person by their habits, but for those on it themselves
-/// as before people had habits -- but not [id] itself, nor anything
-/// built on it, which would make a cycle. Habits first, then people,
-/// each by name.
+/// What a habit can be built on: every habit in [graph] -- a person's
+/// or circle's among them -- but not [id] itself, nor anything built on
+/// it, which would make a cycle. Habits of actions first, then people's
+/// and circles', each by name.
 List<GraphNode> foundationChoices(HabitGraph graph, {String? id}) {
   final excluded = {?id, if (id != null) ...graph.builtOn(id)};
   return [
     for (final n in graph.nodes.values)
       if (!excluded.contains(n.id)) n,
   ]..sort(
-    (a, b) => switch ((a.isPerson, b.isPerson)) {
+    (a, b) => switch ((a.isRelationship, b.isRelationship)) {
       (false, true) => -1,
       (true, false) => 1,
       _ => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
@@ -24,8 +23,8 @@ List<GraphNode> foundationChoices(HabitGraph graph, {String? id}) {
 }
 
 /// Picks what something is built on, from [choices], starting with
-/// [selected], in a [pickNodes] sheet: habits and people, searched by
-/// name and context. Returns the ids picked, in [choices]' order, or null
+/// [selected], in a [pickNodes] sheet: habits, searched by name and
+/// note. Returns the ids picked, in [choices]' order, or null
 /// if it was called off.
 Future<List<String>?> showFoundationsPicker(
   BuildContext context, {
@@ -39,17 +38,19 @@ Future<List<String>?> showFoundationsPicker(
     title: title,
     nodes: [
       for (final c in choices)
-        PickerNode(id: c.id, label: c.name, detail: c.person?.context),
+        PickerNode(id: c.id, label: c.name, detail: c.habit.note),
     ],
     // Unknown ones can't be picked here; they're kept below.
     picked: [
       for (final id in selected)
         if (byId.containsKey(id)) id,
     ],
-    searchHint: 'Search habits and people',
-    empty: 'No habits or people.',
+    searchHint: 'Search habits',
+    empty: 'No habits.',
     marker: (node) => Icon(
-      byId[node.id]?.isPerson ?? false ? Icons.person_outline : Icons.repeat,
+      byId[node.id]?.isRelationship ?? false
+          ? Icons.person_outline
+          : Icons.repeat,
       size: 20,
     ),
   );

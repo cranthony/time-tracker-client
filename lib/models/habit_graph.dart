@@ -1,66 +1,39 @@
 import 'habit.dart';
-import 'person.dart';
 
 /// One node of the habit graph: one of Self's habits, by its subject id
-/// (`habit:<id>`), or a person, by their id.
+/// (`habit:<id>`) -- a person's or circle's among them, which is how
+/// they're on it.
 class GraphNode {
-  const GraphNode.habit(Habit this.habit) : person = null;
-  const GraphNode.person(Person this.person) : habit = null;
+  const GraphNode(this.habit);
 
-  final Habit? habit;
-  final Person? person;
+  final Habit habit;
 
   /// Its subject id: what foundations name it by, and what it's scored
   /// as.
-  String get id => habit?.subject ?? person!.id;
+  String get id => habit.subject;
 
-  String get name => switch ((habit, person)) {
-    (final h?, _) => habitName(h),
-    (_, final p?) => p.name.isEmpty ? '(no name)' : p.name,
-    _ => '',
-  };
+  String get name => habitName(habit);
 
-  bool get isPerson => person != null;
+  /// Whether it's a person's or circle's habit.
+  bool get isRelationship => habit.isRelationship;
 
   /// What it's built on, as stored: unknown and deleted ones among them.
-  List<String> get foundations =>
-      habit?.foundations ?? person?.foundations ?? const [];
+  List<String> get foundations => habit.foundations;
 
-  /// Whether it's set aside: an archived habit or person.
-  bool get archived => (habit?.status ?? person!.status) == 'archived';
+  /// Whether it's set aside: an archived habit.
+  bool get archived => habit.status == 'archived';
 }
 
-/// Self's habits, and the people on the habit graph, layered by what
-/// they're built on: layer 0 has those with no foundations, and each
-/// other one sits a layer above the highest of its foundations.
+/// Self's habits, layered by what they're built on: layer 0 has those
+/// with no foundations, and each other one sits a layer above the
+/// highest of its foundations.
 ///
-/// Its nodes are every habit not deleted, every person not deleted who's
-/// on the graph ([Person.onHabitGraph]), and any other person a node is
-/// built on. A foundation that's no node -- deleted, say -- is left out.
+/// Its nodes are every habit not deleted. A foundation that's no node --
+/// deleted, say -- is left out.
 class HabitGraph {
-  HabitGraph({List<Habit> habits = const [], List<Person> people = const []}) {
+  HabitGraph({List<Habit> habits = const []}) {
     for (final h in habits) {
-      if (h.status != 'deleted') _nodes[h.subject] = GraphNode.habit(h);
-    }
-    final everyone = {
-      for (final p in people)
-        if (p.status != 'deleted') p.id: p,
-    };
-    for (final p in everyone.values) {
-      if (p.onHabitGraph) _nodes[p.id] = GraphNode.person(p);
-    }
-    // Those built on, though not on it themselves.
-    for (var added = true; added;) {
-      added = false;
-      for (final n in [..._nodes.values]) {
-        for (final f in n.foundations) {
-          final p = everyone[f];
-          if (p != null && !_nodes.containsKey(f)) {
-            _nodes[f] = GraphNode.person(p);
-            added = true;
-          }
-        }
-      }
+      if (h.status != 'deleted') _nodes[h.subject] = GraphNode(h);
     }
   }
 

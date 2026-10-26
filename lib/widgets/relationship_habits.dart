@@ -31,7 +31,7 @@ Future<Habit?> editRelationshipHabit(
     _ => throw ArgumentError('A habit for a person or circle'),
   };
   final habits = memory.habits ?? const <Habit>[];
-  final graph = HabitGraph(habits: habits, people: people);
+  final graph = HabitGraph(habits: habits);
   final saved = await showRelationshipHabitEditor(
     context,
     habit: habit,
