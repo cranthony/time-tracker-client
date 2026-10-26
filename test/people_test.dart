@@ -171,6 +171,14 @@ void main() {
         },
         reason: "Their summaries go beside them, as update_person takes them",
       );
+      // Foundations of their own, set or cleared before people were on the
+      // habit graph by their habits, aren't sent.
+      expect(personUpdate('sam', {'foundations': null}, version: 3), {
+        'person': {'id': 'sam', 'version': 3},
+      });
+      expect(personUpdate('sam', {'foundations': <String>[]}), {
+        'person': {'id': 'sam'},
+      });
       expect(sam.circleIds, ['dance']);
       // Their summaries are read, and set apart from them.
       expect(sam.summary('thoughtful', 'what_matters'), '- loves jazz');
