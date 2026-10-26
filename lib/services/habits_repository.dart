@@ -134,7 +134,7 @@ class InMemoryHabitsRepository implements HabitsRepository {
 
   void _check(Habit habit) {
     if (habit.name.trim().isEmpty) throw McpException('Give it a name.');
-    if (habit.actionId.isEmpty && !habit.isRelationship) {
+    if (habit.actionId.isEmpty && !habit.isRelationship && !habit.isGoal) {
       throw McpException('Pick the action or group it is about.');
     }
     if (_habits.any(

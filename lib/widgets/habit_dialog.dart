@@ -5,6 +5,7 @@ import '../models/habit.dart';
 import '../models/habit_graph.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
+import '../models/recurring_goal.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import 'actions_picker.dart';
@@ -16,7 +17,9 @@ import 'traits_field.dart';
 
 /// Adds a habit (with no [habit]) or edits one, on a page of its own
 /// ([EditPage]): its name, the action or
-/// group of [actions] whose events it's about, a note on what it's for,
+/// group of [actions] whose events it's about -- or, for a recurring
+/// goal's habit, the goal made for each day, week or month, picked in
+/// place of an action for a new one -- a note on what it's for,
 /// which of [traits] apply to it -- every active one, or those picked --
 /// with its own parts for any, and its status. A part of its own that
 /// counts an action outside it, or reads events done for someone, is
@@ -83,7 +86,25 @@ class _HabitEditorState extends State<_HabitEditor> {
   late final _note = TextEditingController(text: widget.habit?.note);
   late String? _actionId = widget.habit?.actionId;
   late String _status = widget.habit?.status ?? 'active';
+
+  /// Whether it's a recurring goal's habit: picked for a new one, fixed
+  /// for one there is.
+  late bool _isGoal = widget.habit?.isGoal ?? false;
+  late String _period = widget.habit?.recurringGoal?.period ?? 'week';
+  late final _goalTitle = TextEditingController(
+    text: widget.habit?.recurringGoal?.title,
+  );
+  late final _definitionOfDone = TextEditingController(
+    text: widget.habit?.recurringGoal?.definitionOfDone,
+  );
+  late final _attributionHints = TextEditingController(
+    text: widget.habit?.recurringGoal?.attributionHints,
+  );
+  late final _ratePeriods = TextEditingController(
+    text: '${widget.habit?.recurringGoal?.ratedPeriods ?? defaultRatePeriods}',
+  );
   late PersonTraits _traits = widget.habit?.traits ?? const PersonTraits();
+  late final PersonTraits _actionTraits = _traits;
   late List<String> _foundations = widget.habit?.foundations ?? const [];
   bool _saving = false;
 
@@ -95,8 +116,44 @@ class _HabitEditorState extends State<_HabitEditor> {
   void dispose() {
     _name.dispose();
     _note.dispose();
+    _goalTitle.dispose();
+    _definitionOfDone.dispose();
+    _attributionHints.dispose();
+    _ratePeriods.dispose();
     super.dispose();
   }
+
+  static String? _text(TextEditingController c) =>
+      c.text.trim().isEmpty ? null : c.text.trim();
+
+  int? get _rateValue => int.tryParse(_ratePeriods.text.trim());
+
+  /// Its recurring goal as it's being edited: what the server takes,
+  /// kept as it was where this doesn't edit it.
+  RecurringGoal get _recurring {
+    final was = widget.habit?.recurringGoal ?? const RecurringGoal();
+    return RecurringGoal(
+      period: _period,
+      title: _text(_goalTitle),
+      priority: was.priority,
+      expectedMinutes: was.expectedMinutes,
+      description: was.description,
+      definitionOfDone: _text(_definitionOfDone),
+      attributionHints: _text(_attributionHints),
+      withIds: was.withIds,
+      forIds: was.forIds,
+      ratePeriods: _rateValue == defaultRatePeriods && was.ratePeriods == null
+          ? null
+          : _rateValue,
+    );
+  }
+
+  /// Switches a new habit between an action's and a recurring goal's: a
+  /// goal's is scored by its goal rate alone till it's given traits.
+  void _pickGoal(bool goal) => setState(() {
+    _isGoal = goal;
+    _traits = goal ? const PersonTraits(select: []) : _actionTraits;
+  });
 
   String? get _noteText => _note.text.trim().isEmpty ? null : _note.text.trim();
 
@@ -118,7 +175,10 @@ class _HabitEditorState extends State<_HabitEditor> {
 
   Map<String, Object?> get _fields => {
     'name': _name.text.trim(),
-    'action_id': _actionId,
+    if (_isGoal)
+      'recurring_goal': _recurring.toJson()
+    else
+      'action_id': _actionId,
     'note': _noteText,
     'traits': _traits.isDefault ? null : _traits.toJson(),
     // Only when changed, so a server without them is never asked.
@@ -150,6 +210,10 @@ class _HabitEditorState extends State<_HabitEditor> {
     final theme = Theme.of(context);
     final problem = _name.text.trim().isEmpty
         ? 'Give it a name.'
+        : _isGoal
+        ? (_rateValue == null || _rateValue! < 1
+              ? 'Give how many periods its goal rate counts: 1 or more.'
+              : null)
         : _actionId == null
         ? 'Pick the action or group it is about.'
         : null;
@@ -178,37 +242,24 @@ class _HabitEditorState extends State<_HabitEditor> {
             onChanged: (_) => setState(() {}),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.only(top: 16, bottom: 4),
-          child: Text('Action or group', style: theme.textTheme.titleSmall),
-        ),
-        FieldHotkey(
-          'A',
-          child: ActionField(
-            actions: widget.actions,
-            value: _actionId,
-            title: 'What is it about?',
-            hint: 'Pick an action or group',
-            exclude: {
-              // Nothing deleted, nor put away, unless it's there
-              // already.
-              for (final a in widget.actions)
-                if (const {'archived', 'deleted'}.contains(a.status) &&
-                    a.id != _actionId)
-                  ?a.id,
-            },
-            marker: actionDot,
-            onChanged: (id) => setState(() => _actionId = id),
+        if (widget.habit == null)
+          Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: FieldHotkey(
+              'K',
+              onPressed: () => _pickGoal(!_isGoal),
+              child: SegmentedButton<bool>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: false, label: Text('An action')),
+                  ButtonSegment(value: true, label: Text('A recurring goal')),
+                ],
+                selected: {_isGoal},
+                onSelectionChanged: (picked) => _pickGoal(picked.single),
+              ),
+            ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            'Its events are yours with this action, or with any '
-            'action under this group.',
-            style: theme.textTheme.bodySmall,
-          ),
-        ),
+        if (_isGoal) ..._goalFields(theme) else ..._actionFields(theme),
         Padding(
           padding: const EdgeInsets.only(top: 16),
           child: FieldHotkey(
@@ -266,7 +317,7 @@ class _HabitEditorState extends State<_HabitEditor> {
                 "trait's: a rubric for this habit alone, say. Counts, "
                 'time spent and the like count only its events, and '
                 "you're at every one.",
-            warnings: _actionId == null
+            warnings: _actionId == null || _isGoal
                 ? null
                 : (parts) => habitPartWarnings(
                     parts,
@@ -274,7 +325,7 @@ class _HabitEditorState extends State<_HabitEditor> {
                     (id) => _byId[id]?.parentId,
                     {for (final id in _byId.keys) id: _actionName(id)},
                   ),
-            preview: switch ((widget.scoreParts, _actionId)) {
+            preview: switch ((widget.scoreParts, _isGoal ? null : _actionId)) {
               (final score?, final actionId?) => (trait, parts) => score(
                 Subject(
                   id: widget.habit?.subject ?? 'habit:',
@@ -321,11 +372,141 @@ class _HabitEditorState extends State<_HabitEditor> {
     );
   }
 
+  /// The action or group it's about, for an action's habit.
+  List<Widget> _actionFields(ThemeData theme) => [
+    Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 4),
+      child: Text('Action or group', style: theme.textTheme.titleSmall),
+    ),
+    FieldHotkey(
+      'A',
+      child: ActionField(
+        actions: widget.actions,
+        value: _actionId,
+        title: 'What is it about?',
+        hint: 'Pick an action or group',
+        exclude: {
+          // Nothing deleted, nor put away, unless it's there
+          // already.
+          for (final a in widget.actions)
+            if (const {'archived', 'deleted'}.contains(a.status) &&
+                a.id != _actionId)
+              ?a.id,
+        },
+        marker: actionDot,
+        onChanged: (id) => setState(() => _actionId = id),
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        'Its events are yours with this action, or with any '
+        'action under this group.',
+        style: theme.textTheme.bodySmall,
+      ),
+    ),
+  ];
+
+  /// The goal made for each period, for a recurring goal's habit.
+  List<Widget> _goalFields(ThemeData theme) => [
+    Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 4),
+      child: Text('A goal each', style: theme.textTheme.titleSmall),
+    ),
+    FieldHotkey(
+      'P',
+      onPressed: () =>
+          setState(() => _period = nextOf(goalPeriods.keys.toList(), _period)),
+      child: SegmentedButton<String>(
+        showSelectedIcon: false,
+        segments: [
+          for (final MapEntry(:key, :value) in goalPeriods.entries)
+            ButtonSegment(value: key, label: Text(value.$1)),
+        ],
+        selected: {_period},
+        onSelectionChanged: (picked) => setState(() => _period = picked.single),
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        'A goal is made as each ${goalPeriods[_period]!.$1.toLowerCase()} '
+        '${_period == 'week' ? 'starts, on Sunday' : 'starts'}, once the one '
+        'before is done; one missed is tried again through the next. Its '
+        'events are those tagged with its goals.',
+        style: theme.textTheme.bodySmall,
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: TextField(
+        controller: _goalTitle,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: InputDecoration(
+          labelText: "Goals' title (optional)",
+          hintText: _name.text.trim().isEmpty
+              ? "The habit's name"
+              : _name.text.trim(),
+          border: const OutlineInputBorder(),
+          isDense: true,
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+        ),
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: TextField(
+        controller: _definitionOfDone,
+        minLines: 2,
+        maxLines: null,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: const InputDecoration(
+          labelText: 'Done when (optional)',
+          hintText: 'e.g. I talked with Mom for at least 20 minutes',
+          helperText: 'Compaction marks each goal done or missed by this.',
+          border: OutlineInputBorder(),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+        ),
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: TextField(
+        controller: _attributionHints,
+        minLines: 2,
+        maxLines: null,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: const InputDecoration(
+          labelText: 'Its events (optional)',
+          hintText: 'e.g. Calls or visits with Mom',
+          helperText: 'Which events compaction tags with its goals.',
+          border: OutlineInputBorder(),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+        ),
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: TextField(
+        controller: _ratePeriods,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(
+          labelText: 'Goal rate counts the last',
+          suffixText: goalPeriods[_period]!.$2,
+          helperText: "It's scored by how many of them had its goal done.",
+          border: const OutlineInputBorder(),
+          isDense: true,
+        ),
+        onChanged: (_) => setState(() {}),
+      ),
+    ),
+  ];
+
   /// What's amiss with its own parts, as they stand: those that count
   /// nothing here, or read events done for someone.
   List<Widget> _warnings(ThemeData theme) {
     final scope = _actionId;
-    if (scope == null) return const [];
+    if (scope == null || _isGoal) return const [];
     final traitNames = {for (final t in widget.traits) t.id: t.name};
     return [
       for (final MapEntry(:key, :value) in _traits.parts.entries)
