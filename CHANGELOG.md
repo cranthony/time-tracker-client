@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.195.0
+
+- A habit can be a recurring goal's: the server makes a goal for each
+  day, week (Sunday to Saturday) or month, and tries a missed one again
+  through the next. Such a habit is scored by its goal rate -- how many
+  of its last periods (6 by default) had its goal done -- and judged on
+  the events tagged with its goals.
+
 ## 7.194.0
 
 - A habit can be a person's or a circle's: some of their traits, as

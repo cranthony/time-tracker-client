@@ -32,6 +32,7 @@ class Goal {
     this.withIds = const [],
     this.forIds = const [],
     this.path = const [],
+    this.habitId,
     this.version,
   });
 
@@ -114,6 +115,11 @@ class Goal {
   /// sent back.
   final List<String> path;
 
+  /// The habit whose recurring goal it is, for one of its periods: made
+  /// by the server, its id the habit's and the period's start
+  /// (`<habit id>_2026-11-01`). Not sent back.
+  final String? habitId;
+
   final int? version;
 
   bool get active => status == 'active';
@@ -180,6 +186,7 @@ class Goal {
     withIds: [for (final id in json['with_ids'] as List? ?? const []) '$id'],
     forIds: [for (final id in json['for_ids'] as List? ?? const []) '$id'],
     path: [for (final p in json['path'] as List? ?? const []) '$p'],
+    habitId: _text(json['habit_id']),
     version: (json['version'] as num?)?.toInt(),
   );
 
@@ -207,6 +214,8 @@ class Goal {
     // still saves the rest.
     if (withIds.isNotEmpty) 'with_ids': withIds,
     if (forIds.isNotEmpty) 'for_ids': forIds,
+    // Kept through an edit made here; never sent (see goalWire).
+    'habit_id': ?habitId,
     'version': ?version,
   };
 
@@ -243,7 +252,8 @@ Map<String, Object?> goalWire(Map<String, Object?> changes) {
     ..remove('deadline_offset_minutes')
     ..remove('expected_start')
     ..remove('due')
-    ..remove('path');
+    ..remove('path')
+    ..remove('habit_id');
   final offset = changes['deadline_offset_minutes'];
   if (changes['deadline_rule'] case final Map rule) {
     out['deadline'] = rule;
