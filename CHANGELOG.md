@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.200.0
+
+- A trait part can score when things happen: a schedule. Each day it's
+  on, its window (from and to, crossing midnight if need be) scores 100
+  if an event of its action starts in it, or ends in it -- or, measuring
+  what's covered, the share of it the events cover, with slack forgiven
+  (an hour for lunch, say). The part scores the mean of those days over
+  its last 7 (or however many it says). Its editor picks the times, the
+  measure, the days and, for what's covered, the slack.
+
 ## 7.199.0
 
 - A recurring goal can be quarterly (from January, April, July or

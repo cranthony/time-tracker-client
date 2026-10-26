@@ -185,7 +185,7 @@ const _action = (
 );
 
 /// The part fields that are text, not numbers.
-const textFields = {'rubric', 'noun', 'action'};
+const textFields = {'rubric', 'noun', 'action', 'from', 'to', 'measure'};
 
 /// The kinds of part, as the server names them (its utilities/traits.py's
 /// PART_KINDS), each with the fields the app edits.
@@ -314,6 +314,77 @@ const partKinds = <String, PartKind>{
       ),
     ],
   ),
+  'schedule': (
+    label: 'Schedule',
+    hint:
+        "When it happens: each day it's on, by its window -- an event of the "
+        'action starting in it, one ending in it, or how much of it they '
+        'cover, less any slack. The part scores the mean of those days over '
+        'its last days.',
+    fields: [
+      (field: 'action', label: 'Action', required: true, hint: null),
+      (field: 'from', label: 'From', required: true, hint: null),
+      (field: 'to', label: 'To', required: true, hint: null),
+      (field: 'measure', label: 'Measure', required: true, hint: null),
+      (
+        field: 'window_days',
+        label: 'Over, in days',
+        required: false,
+        hint: '$defaultScheduleWindowDays',
+      ),
+      // Kept in minutes; shown, and entered, in hours and minutes. Only
+      // for what's covered.
+      (field: 'slack_minutes', label: 'Slack', required: false, hint: '0'),
+    ],
+  ),
+};
+
+/// What a schedule part scores a day it's on by, as the server names
+/// them, and as the app shows them.
+const scheduleMeasures = {
+  'starts': 'Starts in it',
+  'ends': 'Ends in it',
+  'covered': 'Covers it',
+};
+
+/// The days a schedule part can be on, as the server names them, Monday
+/// first, with [DateTime.weekday]'s numbers.
+const scheduleWeekdays = {
+  'mon': 1,
+  'tue': 2,
+  'wed': 3,
+  'thu': 4,
+  'fri': 5,
+  'sat': 6,
+  'sun': 7,
+};
+
+/// How many days back a schedule part looks unless it says.
+const defaultScheduleWindowDays = 7;
+
+/// The minutes after midnight of [value], "HH:MM"; null if it isn't one.
+int? scheduleMinutes(Object? value) {
+  if (value is! String) return null;
+  final match = RegExp(r'^(\d\d):(\d\d)$').firstMatch(value);
+  if (match == null) return null;
+  final (h, m) = (int.parse(match[1]!), int.parse(match[2]!));
+  return h < 24 && m < 60 ? h * 60 + m : null;
+}
+
+/// [minutes] after midnight as a schedule part keeps them: "06:30".
+String scheduleTime(int minutes) =>
+    '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
+    '${(minutes % 60).toString().padLeft(2, '0')}';
+
+/// A schedule part's window's length, in minutes: to [to] from [from],
+/// across midnight if it's before it.
+int scheduleLength(int from, int to) => (to - from) % (24 * 60);
+
+/// The days [part] (a schedule's) is on, by [DateTime.weekday]: every day
+/// without its own.
+Set<int> scheduleDays(Part part) => switch (part['days']) {
+  final List days => {for (final d in days) ?scheduleWeekdays[d]},
+  _ => {...scheduleWeekdays.values},
 };
 
 /// A spacing part's exception: [actions] whose events stop its clock,
@@ -496,6 +567,18 @@ String? partProblem(Part part, {List<String>? factIds}) {
         if (value is! String || value.trim().isEmpty) {
           return '${field.label.toLowerCase()} must be some text.';
         }
+      case 'from' || 'to':
+        if (scheduleMinutes(value) == null) {
+          return '${field.label.toLowerCase()} must be a time of day.';
+        }
+      case 'measure':
+        if (!scheduleMeasures.containsKey(value)) {
+          return 'pick what it measures.';
+        }
+      case 'slack_minutes':
+        if (value is! num || value < 0) {
+          return 'its slack must be 0 or more.';
+        }
       case 'penalty' || 'recovery':
         if (value is! num || value < 0 || value > 100) {
           return '${field.label.toLowerCase()} must be from 0 to 100.';
@@ -557,6 +640,27 @@ String? partProblem(Part part, {List<String>? factIds}) {
       final reset = e['reset_hours'];
       if (reset != null && (reset is! num || reset < 0)) {
         return "an exception's time left must be 0 hours or more.";
+      }
+    }
+  }
+  if (part['kind'] == 'schedule') {
+    final from = scheduleMinutes(part['from'])!;
+    final to = scheduleMinutes(part['to'])!;
+    if (from == to) return 'its window must end at another time.';
+    final days = part['days'];
+    if (days != null &&
+        (days is! List ||
+            days.isEmpty ||
+            days.any((d) => !scheduleWeekdays.containsKey(d)) ||
+            days.toSet().length != days.length)) {
+      return 'pick the days it is on.';
+    }
+    if (part['slack_minutes'] case final num slack) {
+      if (part['measure'] != 'covered') {
+        return 'only what it covers can have slack.';
+      }
+      if (slack >= scheduleLength(from, to)) {
+        return 'its slack must be shorter than its window.';
       }
     }
   }
@@ -623,6 +727,27 @@ String describePart(Part part, [Map<String?, String> actionNames = const {}]) {
       'Continuity${action == null ? '' : ' of $action'}: last within '
           '${days(part['last_within_days'] ?? 14)}, next within '
           '${days(part['next_within_days'] ?? 14)}',
+    'schedule' => () {
+      final picked = scheduleDays(part);
+      final on = picked.length == 7
+          ? 'every day'
+          : [
+              for (final MapEntry(:key, :value) in scheduleWeekdays.entries)
+                if (picked.contains(value))
+                  '${key[0].toUpperCase()}${key.substring(1)}',
+            ].join(', ');
+      final how = switch (part['measure']) {
+        'starts' => 'starting',
+        'ends' => 'ending',
+        _ => 'covering',
+      };
+      final slack = switch (part['slack_minutes']) {
+        final num m when m > 0 => ', ${formatMinutes(m)} slack',
+        _ => '',
+      };
+      return '${action ?? 'Events'} $how ${part['from']}–${part['to']}, '
+          '$on (over ${days(part['window_days'] ?? defaultScheduleWindowDays)}$slack)';
+    }(),
     'spacing' => [
       'At most ${part['max_gap_hours']} hours between '
           '${action ?? 'events'}',

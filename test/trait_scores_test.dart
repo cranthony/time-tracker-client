@@ -901,6 +901,137 @@ void main() {
     });
   });
 
+  group('schedule', () {
+    /// An event of [action] on the day [daysAgo] days before the one
+    /// scored, from [from] to [to] ("HH:MM", the next day's if before it).
+    Event at(
+      String id,
+      int daysAgo,
+      String from,
+      String to, [
+      String action = 'a',
+    ]) {
+      final day = DateTime(_start.year, _start.month, _start.day - daysAgo);
+      final start = day.add(Duration(minutes: scheduleMinutes(from)!));
+      var end = day.add(Duration(minutes: scheduleMinutes(to)!));
+      if (!end.isAfter(start)) end = end.add(const Duration(days: 1));
+      return Event.fromJson({
+        'id': id,
+        'summary': id,
+        'start': localIsoTimestamp(start),
+        'end': localIsoTimestamp(end),
+        'action_ids': [action],
+        'facts': {'with_ids': <String>[], 'for_ids': <String>[]},
+      });
+    }
+
+    PartScore scheduled(Part part, List<Event> events) => _score(
+      [
+        {'kind': 'schedule', 'action': 'a', ...part},
+      ],
+      events,
+      person: _self,
+    ).parts.single;
+
+    test('ends: the share of the days one ended in its window', () {
+      final score = scheduled(
+        {'from': '06:30', 'to': '07:30', 'measure': 'ends'},
+        [
+          // Up in time on five of the week's seven days; late on one.
+          for (final back in [0, 1, 2, 4, 6])
+            at('night $back', back + 1, '23:00', '07:00'),
+          at('late', 4, '23:00', '09:15'),
+          at('other', 3, '23:00', '07:00', 'b'),
+        ],
+      );
+      expect(score.score, 71);
+      expect(
+        score.said,
+        'Ended in 06:30–07:30 on 5 of 7 days in the last 7 days',
+      );
+      expect(score.eventIds, hasLength(5));
+    });
+
+    test('starts, on the days it is on alone', () {
+      // From Friday the 25th to Thursday the 1st: five weekdays.
+      final score = scheduled(
+        {
+          'from': '05:00',
+          'to': '10:00',
+          'measure': 'starts',
+          'days': ['mon', 'tue', 'wed', 'thu', 'fri'],
+        },
+        [
+          for (final back in [0, 1, 2, 6])
+            at('gym $back', back, '08:00', '09:00'),
+          // A Saturday's isn't counted, nor is one starting too late.
+          at('saturday', 5, '08:00', '09:00'),
+          at('late', 3, '11:00', '12:00'),
+        ],
+      );
+      expect(score.score, 80);
+      expect(
+        score.said,
+        'Started in 05:00–10:00 on 4 of 5 days in the last 7 days',
+      );
+    });
+
+    test('a window crossing midnight is the night after the day it starts', () {
+      final part = {
+        'from': '22:30',
+        'to': '00:30',
+        'measure': 'starts',
+        'window_days': 1,
+      };
+      expect(scheduled(part, [at('bed', 0, '23:45', '07:00')]).score, 100);
+      expect(scheduled(part, [at('bed', -1, '00:15', '07:00')]).score, 100);
+      expect(scheduled(part, [at('bed', -1, '01:00', '07:00')]).score, 0);
+    });
+
+    test("covered: the share of the window covered, its slack forgiven, "
+        'overlaps once', () {
+      final part = {
+        'from': '10:00',
+        'to': '18:00',
+        'measure': 'covered',
+        'slack_minutes': 60,
+        'window_days': 1,
+      };
+      final day = scheduled(part, [
+        at('morning', 0, '09:30', '12:30'),
+        at('afternoon', 0, '13:30', '18:30'),
+      ]);
+      expect(day.score, 100);
+      expect(
+        day.said,
+        '100% of 10:00–18:00 covered (1h slack), on average over 1 day in the last day',
+      );
+      // Four hours of the seven needed, the overlap once.
+      expect(
+        scheduled(part, [
+          at('one', 0, '10:00', '13:00'),
+          at('two', 0, '12:00', '14:00'),
+        ]).score,
+        57,
+      );
+    });
+
+    test("has nothing to rate it by with no day it's on", () {
+      final score = scheduled(
+        {
+          'from': '10:00',
+          'to': '18:00',
+          'measure': 'covered',
+          'days': ['sat'],
+          'window_days': 1,
+        },
+        [at('work', 0, '10:00', '18:00')],
+      );
+      expect(score.score, isNull);
+      expect(score.said, "No day it's on in the last day");
+    });
+  });
+
   group('spacing', () {
     const part = {
       'kind': 'spacing',

@@ -11,7 +11,8 @@ import 'scoring_editor.dart';
 /// reads events with someone or for them -- as cards, with "Add part"
 /// below them. A judgment's card edits its rubric, its rating scale and
 /// the facts Claude judges it from, each history with its lookback; a
-/// spacing part's, its exceptions. Each part keeps its id, which its
+/// spacing part's, its exceptions; a schedule's, its window's times, what
+/// it measures, the days it's on and, for what's covered, its slack. Each part keeps its id, which its
 /// judgments and weight are kept under; a new one has none until saved.
 /// Calls [onChanged] with the parts as they stand after every edit,
 /// whether or not they're valid yet; see [partProblem]. [actions] names
@@ -207,6 +208,22 @@ class _PartsEditorState extends State<PartsEditor> {
                 _actionPicker(draft, required: field.required)
               else if (field.field == 'zero_at_days')
                 ..._fadeFields(theme, draft)
+              else if (field.field == 'from' || field.field == 'to')
+                _timeField(draft, field.field, field.label)
+              else if (field.field == 'measure')
+                ..._measureFields(theme, draft)
+              else if (field.field == 'slack_minutes')
+                if (draft.controller('measure').text == 'covered')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, right: 8),
+                    child: DurationField(
+                      controller: draft.controller('slack_minutes'),
+                      label: "Slack: what it needn't cover (optional)",
+                      onChanged: _changed,
+                    ),
+                  )
+                else
+                  const SizedBox.shrink()
               else if (field.field == 'target_min')
                 Padding(
                   padding: const EdgeInsets.only(top: 8, right: 8),
@@ -229,6 +246,7 @@ class _PartsEditorState extends State<PartsEditor> {
               ...judgmentScoringFields(theme, draft.scoring, _changed),
             ],
             if (draft.kind == 'spacing') ..._spacingFields(theme, draft),
+            if (draft.kind == 'schedule') ..._dayFields(theme, draft),
             if (preview case (final score, final partial))
               _preview(theme, score, partial),
           ],
@@ -610,6 +628,105 @@ class _PartsEditorState extends State<PartsEditor> {
     ];
   }
 
+  /// A schedule part's [field], `from` or `to`: a time of day, picked.
+  Widget _timeField(_PartDraft draft, String field, String label) {
+    final controller = draft.controller(field);
+    final minutes = scheduleMinutes(controller.text.trim());
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, right: 8),
+      child: OutlinedButton.icon(
+        icon: const Icon(Icons.schedule, size: 18),
+        label: Text(
+          minutes == null
+              ? '$label: pick a time'
+              : '$label ${scheduleTime(minutes)}',
+        ),
+        onPressed: () async {
+          final picked = await showTimePicker(
+            context: context,
+            initialTime: minutes == null
+                ? const TimeOfDay(hour: 9, minute: 0)
+                : TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60),
+          );
+          if (picked == null) return;
+          controller.text = scheduleTime(picked.hour * 60 + picked.minute);
+          _changed();
+        },
+      ),
+    );
+  }
+
+  /// What a schedule part measures of its window each day it's on.
+  List<Widget> _measureFields(ThemeData theme, _PartDraft draft) {
+    final measure = draft.controller('measure');
+    return [
+      Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Text('An event of it', style: theme.textTheme.labelLarge),
+      ),
+      Padding(
+        padding: const EdgeInsets.only(top: 8, right: 8),
+        child: SegmentedButton<String>(
+          showSelectedIcon: false,
+          emptySelectionAllowed: true,
+          segments: [
+            for (final MapEntry(:key, :value) in scheduleMeasures.entries)
+              ButtonSegment(value: key, label: Text(value)),
+          ],
+          selected: {if (measure.text.isNotEmpty) measure.text},
+          onSelectionChanged: (picked) {
+            measure.text = picked.firstOrNull ?? '';
+            _changed();
+          },
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.only(top: 4, right: 8),
+        child: Text(switch (measure.text) {
+          'starts' => '100 on a day one starts in the window, else 0.',
+          'ends' => '100 on a day one ends in the window, else 0.',
+          'covered' =>
+            'The share of the window they cover, any slack forgiven: '
+                'an hour for lunch, say.',
+          _ => 'Pick how each day it is on is scored.',
+        }, style: theme.textTheme.bodySmall),
+      ),
+    ];
+  }
+
+  /// The days a schedule part is on: every one, unless some are picked.
+  List<Widget> _dayFields(ThemeData theme, _PartDraft draft) => [
+    Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Text('On', style: theme.textTheme.labelLarge),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(top: 4, right: 8),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: [
+          for (final day in scheduleWeekdays.keys)
+            FilterChip(
+              label: Text('${day[0].toUpperCase()}${day.substring(1)}'),
+              selected: draft.days.contains(day),
+              onSelected: (on) {
+                on ? draft.days.add(day) : draft.days.remove(day);
+                _changed();
+              },
+            ),
+        ],
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(top: 4, right: 8),
+      child: Text(
+        "A day it isn't on isn't scored at all.",
+        style: theme.textTheme.bodySmall,
+      ),
+    ),
+  ];
+
   Widget _input(
     TextEditingController controller,
     String label, {
@@ -704,6 +821,10 @@ class _PartDraft {
       for (final e in spacingExceptions(part))
         _ExceptionDraft(e.actions, e.resetHours),
     ]);
+    days.addAll(switch (part['days']) {
+      final List picked => [for (final d in picked) '$d'],
+      _ => scheduleWeekdays.keys,
+    });
   }
 
   String kind;
@@ -729,6 +850,9 @@ class _PartDraft {
 
   /// A spacing part's exceptions.
   final exceptions = <_ExceptionDraft>[];
+
+  /// The days a schedule part is on: every one, to start with.
+  final days = <String>{};
 
   /// The facts picked, each history with its lookback's field.
   final facts = <String, TextEditingController?>{};
@@ -756,7 +880,15 @@ class _PartDraft {
       'id': ?id,
       'kind': kind,
       if (engagement != 'with') 'engagement_type': engagement,
-      for (final field in fields) field: ?value(field),
+      for (final field in fields)
+        // Slack is only for what's covered.
+        if (field != 'slack_minutes' || value('measure') == 'covered')
+          field: ?value(field),
+      if (kind == 'schedule' && days.length < scheduleWeekdays.length)
+        'days': [
+          for (final day in scheduleWeekdays.keys)
+            if (days.contains(day)) day,
+        ],
       if (fades && fields.contains('zero_at_days')) 'zero_at_days': _zeroAt,
       if (kind == 'spacing' && exceptions.isNotEmpty)
         'exceptions': [

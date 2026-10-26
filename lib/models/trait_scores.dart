@@ -54,6 +54,14 @@
 /// |                  | each event of its `action` winds it back to         |
 /// |                  | `max_gap_hours`; an exception's events stop it, and |
 /// |                  | after one, it has `reset_hours` left (if given)     |
+/// | `schedule`       | the mean, over `window_days` (7) ending with the    |
+/// |                  | day, of each day it's on (`days`, every one by      |
+/// |                  | default): by its window, `from` to `to` ("HH:MM";   |
+/// |                  | `to` before `from` crosses midnight), 100 if an     |
+/// |                  | event of its `action` `starts` (or `ends`) in it,   |
+/// |                  | else 0; or, `covered`, the share of it the events   |
+/// |                  | cover, `slack_minutes` (0) forgiven -- null with no |
+/// |                  | day it's on                                         |
 ///
 /// `continuity`, `count`, `duration` and `follow_through` with an
 /// `action` count only events of that action -- or, for an action group,
@@ -295,6 +303,7 @@ List<(Trait, List<Part>)> traitsFor(Subject subject, List<Trait> traits) => [
         followThroughLookBackDays,
       ),
       'spacing' => spacingLeadDays,
+      'schedule' => days(part['window_days'], defaultScheduleWindowDays),
       _ => 0,
     };
     back = math.max(back, n);
@@ -730,6 +739,14 @@ PartScore _part(
           : engaged;
       final (rating, said, behind) = _spacing(part, end, theirs, reading);
       return score(rating, said, behind);
+    case 'schedule':
+      final (rating, said, behind) = _schedule(
+        part,
+        end,
+        _ofAction(engaged, part['action'] as String?, reading),
+        reading,
+      );
+      return score(rating, said, behind);
     default: // follow_through
       engaged = _ofAction(engaged, part['action'] as String?, reading);
       final dropped = [
@@ -879,6 +896,88 @@ double _days(Duration d) => d.inMicroseconds / Duration.microsecondsPerDay;
               '${formatMinutes(counted.inMinutes)}',
     behind,
   );
+}
+
+/// A schedule part's score of the day ending at [end], how it was
+/// reached, and the events in its windows: the mean of each day it's on,
+/// over its `window_days` ending with that day, as its measure scores
+/// that day's window -- [events] being its action's. Null, with no day
+/// it's on.
+(int?, String, List<Event>) _schedule(
+  Part part,
+  DateTime end,
+  List<Event> events,
+  _Reading reading,
+) {
+  final from = scheduleMinutes(part['from'])!;
+  final to = scheduleMinutes(part['to'])!;
+  final length = scheduleLength(from, to);
+  final measure = part['measure'] as String;
+  final slack = _num(part['slack_minutes'], 0);
+  final windowDays = _num(
+    part['window_days'],
+    defaultScheduleWindowDays,
+  ).ceil();
+  final on = scheduleDays(part);
+  final scores = <num>[];
+  final behind = <Event>{};
+  for (var back = windowDays; back >= 1; back--) {
+    final day = reading.day(end, -back);
+    if (!on.contains(day.weekday)) continue;
+    final start = DateTime(day.year, day.month, day.day, 0, from);
+    final finish = DateTime(day.year, day.month, day.day, 0, from + length);
+    bool inside(DateTime t) => !t.isBefore(start) && !t.isAfter(finish);
+    switch (measure) {
+      case 'starts' || 'ends':
+        final hit = [
+          for (final e in events)
+            if (inside(measure == 'starts' ? e.start : e.end)) e,
+        ];
+        behind.addAll(hit);
+        scores.add(hit.isEmpty ? 0 : 100);
+      default: // covered
+        final spans = <(DateTime, DateTime)>[
+          for (final e in events)
+            if (e.start.isBefore(finish) && e.end.isAfter(start))
+              (
+                e.start.isBefore(start) ? start : e.start,
+                e.end.isAfter(finish) ? finish : e.end,
+              ),
+        ]..sort((a, b) => a.$1.compareTo(b.$1));
+        behind.addAll([
+          for (final e in events)
+            if (e.start.isBefore(finish) && e.end.isAfter(start)) e,
+        ]);
+        // Overlapping events cover their time once.
+        var covered = Duration.zero;
+        DateTime? reached;
+        for (final (s, f) in spans) {
+          final from = reached != null && s.isBefore(reached) ? reached : s;
+          if (f.isAfter(from)) covered += f.difference(from);
+          if (reached == null || f.isAfter(reached)) reached = f;
+        }
+        final needed = length - slack;
+        scores.add(math.min(100, 100 * covered.inSeconds / 60 / needed));
+    }
+  }
+  final window = '${part['from']}–${part['to']}';
+  final over = windowDays == 1 ? 'the last day' : 'the last $windowDays days';
+  if (scores.isEmpty) {
+    return (null, "No day it's on in $over", const []);
+  }
+  final mean = scores.reduce((a, b) => a + b) / scores.length;
+  final said = switch (measure) {
+    'covered' =>
+      '${mean.round()}% of $window covered'
+          '${slack > 0 ? ' (${formatMinutes(slack)} slack)' : ''}, on '
+          'average over ${scores.length} '
+          'day${scores.length == 1 ? '' : 's'} in $over',
+    _ =>
+      '${measure == 'starts' ? 'Started' : 'Ended'} in $window on '
+          '${scores.where((s) => s > 0).length} of ${scores.length} '
+          'day${scores.length == 1 ? '' : 's'} in $over',
+  };
+  return (mean.round(), said, [...behind]);
 }
 
 /// A count or duration part's score, how it was reached, and the events
