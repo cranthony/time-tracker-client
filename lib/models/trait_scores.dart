@@ -13,8 +13,11 @@
 /// its `engagement_type`.
 ///
 /// **A habit's events** are Self's with its action, or with any action
-/// under its group, worked out from the action tree as it is now. Its
-/// judgments are those under `habit:<id>`. The user is at every one, so
+/// under its group, worked out from the action tree as it is now -- or,
+/// for a recurring goal's habit, those tagged with its goals. Its
+/// judgments are those under `habit:<id>`. A recurring goal's habit is
+/// scored by its [goalRate] too, as a trait of its own ([goalRateId]),
+/// beside any traits it's given. The user is at every one, so
 /// its parts that read events done for someone are left out; a trait
 /// with no others isn't scored for it.
 ///
@@ -61,10 +64,11 @@ import 'dart:math' as math;
 
 import 'event.dart';
 import 'facts.dart';
+import 'goal.dart';
 import 'habit.dart';
 import 'person.dart';
+import 'recurring_goal.dart';
 import 'scoring.dart';
-import 'share.dart';
 import 'trait.dart';
 import '../widgets/durations.dart' show formatMinutes;
 
@@ -188,6 +192,8 @@ class Subject {
     this.cancelledEvents = const [],
     this.active = true,
     this.scope,
+    this.recurring,
+    this.goals = const [],
   });
 
   factory Subject.person(Person person) => Subject(
@@ -197,12 +203,20 @@ class Subject {
     active: person.active,
   );
 
-  factory Subject.habit(Habit habit) => Subject(
+  /// [habit], with [goals] -- the user's -- for a recurring goal's.
+  factory Subject.habit(Habit habit, {List<Goal> goals = const []}) => Subject(
     id: habit.subject,
     traits: habit.traits,
     cancelledEvents: habit.cancelledEvents,
     active: habit.active,
     scope: habit.actionId,
+    recurring: habit.recurringGoal,
+    goals: habit.isGoal
+        ? [
+            for (final g in goals)
+              if (g.habitId == habit.id) g,
+          ]
+        : const [],
   );
 
   /// Who it is: what its ratings are kept under.
@@ -236,6 +250,11 @@ class Subject {
   final String? scope;
 
   bool get isHabit => scope != null;
+
+  /// For a recurring goal's habit, its recurring goal, and its goals:
+  /// its events are those tagged with them.
+  final RecurringGoal? recurring;
+  final List<Goal> goals;
 
   /// Whether [part] reads their events: a habit's are all "with".
   bool reads(Part part) => !isHabit || part['engagement_type'] != 'for';
@@ -335,6 +354,8 @@ List<TraitScore> _scoreSubject(
 }) {
   final combined = traitsAggregation(subject, defaults);
   return [
+    if (subject.recurring case final recurring?)
+      _goalRateScore(subject, recurring, end, combined),
     for (final (trait, parts) in traitsFor(subject, traits))
       if (_read(subject, parts) case final read when read.isNotEmpty)
         () {
@@ -367,6 +388,40 @@ List<TraitScore> _scoreSubject(
           );
         }(),
   ];
+}
+
+/// The id a recurring goal's habit's goal rate is scored under, as a
+/// trait's would be.
+const goalRateId = 'goal_rate';
+
+/// [subject]'s goal rate as of the day ending at [end], as a trait's
+/// score: one part, its own.
+TraitScore _goalRateScore(
+  Subject subject,
+  RecurringGoal recurring,
+  DateTime end,
+  Aggregation combined,
+) {
+  final rate = goalRate(
+    habitIdOf(subject.id) ?? subject.id,
+    recurring,
+    subject.goals,
+    end,
+  );
+  return TraitScore(
+    traitId: goalRateId,
+    name: 'Goal rate',
+    weight: combined.weightOf(goalRateId),
+    score: rate.score,
+    parts: [
+      PartScore(
+        key: goalRateId,
+        kind: goalRateId,
+        score: rate.score,
+        said: rate.said,
+      ),
+    ],
+  );
 }
 
 /// Scores [parts] -- the trait [traitId]'s for [subject], as they're
@@ -414,6 +469,18 @@ List<Event> _engaged(
   _Reading reading,
 ) {
   final personId = subject.who;
+  if (subject.recurring != null) {
+    if (engagement != 'with') return const [];
+    final habitId = habitIdOf(subject.id);
+    return reading.engaged(
+      events,
+      ('goals', subject.id),
+      () => [
+        for (final e in events)
+          if (e.goals.any((g) => habitOfGoalId(g.goalId) == habitId)) e,
+      ],
+    );
+  }
   if (subject.scope case final scope?) {
     if (engagement != 'with' || scope.isEmpty) return const [];
     return _ofAction(events, scope, reading);
@@ -1027,6 +1094,7 @@ class TraitScores {
     required List<Person> people,
     List<Habit> habits = const [],
     List<Circle> circles = const [],
+    List<Goal> goals = const [],
     required List<Event> events,
     required DateTime today,
     String? Function(String id)? parentOf,
@@ -1079,7 +1147,7 @@ class TraitScores {
           circle.scoring ?? defaults.circles ?? Aggregation.mean,
         ));
       } else {
-        scored.add((Subject.habit(habit), const [], null));
+        scored.add((Subject.habit(habit, goals: goals), const [], null));
       }
     }
     TraitsRating rate(

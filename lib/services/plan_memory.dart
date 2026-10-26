@@ -141,6 +141,7 @@ class PlanMemory extends ChangeNotifier {
       DateTime(now.year, now.month, now.day),
       _signature(habits, _habitsSignature),
       jsonEncode(scoringDefaults.toJson()),
+      _signature(goals, _habitGoalsSignature),
     );
     if (_scores case (final kept, final scores) when kept == key) return scores;
     if (_rescoring == null && _failed != key) {
@@ -211,6 +212,10 @@ class PlanMemory extends ChangeNotifier {
       people: people.withSelf,
       habits: habits ?? const [],
       circles: people.circles,
+      goals: [
+        for (final g in goals ?? const <Goal>[])
+          if (g.habitId != null) g,
+      ],
       events: store.between(
         span?.$1 ?? today,
         span == null ? today : span.$2.add(const Duration(days: 1)),
@@ -261,6 +266,7 @@ class PlanMemory extends ChangeNotifier {
     required List<Person> people,
     required List<Habit> habits,
     required List<Circle> circles,
+    required List<Goal> goals,
     required List<Event> events,
     required DateTime today,
     required Map<String, String?> parents,
@@ -272,6 +278,7 @@ class PlanMemory extends ChangeNotifier {
         people: people,
         habits: habits,
         circles: circles,
+        goals: goals,
         events: events,
         today: today,
         parentOf: (id) => parents[id],
@@ -292,6 +299,7 @@ class PlanMemory extends ChangeNotifier {
       if (was.$5 != now.$5) 'day',
       if (was.$6 != now.$6) 'habits',
       if (was.$7 != now.$7) 'scoring',
+      if (was.$8 != now.$8) 'goals',
     ].join(', ');
   }
 
@@ -342,6 +350,13 @@ class PlanMemory extends ChangeNotifier {
 
   static String _habitsSignature(List<Habit> habits) =>
       jsonEncode([for (final h in habits) h.toJson()]);
+
+  /// What of the goals the scores are from: habits' goals, as they're
+  /// rated.
+  static String _habitGoalsSignature(List<Goal> goals) => jsonEncode([
+    for (final g in goals)
+      if (g.habitId != null) [g.id, g.status, g.closedAt?.toIso8601String()],
+  ]);
 
   /// The saved notes not yet compacted; null until they're loaded.
   List<Note>? notes;
@@ -669,7 +684,8 @@ class PlanMemoryScope extends InheritedWidget {
 }
 
 /// What the scores are from: the events' version, the traits', people's,
-/// actions' and habits' signatures, the day, and the scoring defaults.
+/// actions' and habits' signatures, the day, the scoring defaults, and
+/// habits' goals' signature.
 typedef _ScoresKey = (
   int,
   String?,
@@ -678,4 +694,5 @@ typedef _ScoresKey = (
   DateTime,
   String?,
   String,
+  String?,
 );

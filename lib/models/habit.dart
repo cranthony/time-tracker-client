@@ -1,4 +1,5 @@
 import 'person.dart';
+import 'recurring_goal.dart';
 import 'trait.dart';
 
 /// A habit of the user's (Self's), mirroring the Time Tracker MCP
@@ -15,6 +16,11 @@ import 'trait.dart';
 /// Or a person's or circle's habit ([personId], [circleId]): some of
 /// their traits, as they're scored for them -- a layer of the
 /// relationship on the habit graph. Its traits only pick which.
+///
+/// Or a recurring goal's ([recurringGoal]): a goal for each day, week or
+/// month, made by the server; its events are those tagged with its goals,
+/// and it's scored by its goal rate, and by its traits once it's given
+/// some.
 class Habit {
   const Habit({
     required this.id,
@@ -22,6 +28,7 @@ class Habit {
     required this.actionId,
     this.personId,
     this.circleId,
+    this.recurringGoal,
     this.defaultName,
     this.actionPath,
     this.status = 'active',
@@ -43,6 +50,12 @@ class Habit {
 
   /// For a circle's habit, its.
   final String? circleId;
+
+  /// For a recurring goal's habit, the goal made for each period.
+  final RecurringGoal? recurringGoal;
+
+  /// Whether it's a recurring goal's habit.
+  bool get isGoal => recurringGoal != null;
 
   /// For a person's or circle's habit, the name it has without its own,
   /// as the server last said: [name], unless it has its own.
@@ -90,6 +103,7 @@ class Habit {
     actionId: actionId,
     personId: personId,
     circleId: circleId,
+    recurringGoal: recurringGoal,
     defaultName: defaultName,
     actionPath: actionPath,
     status: status,
@@ -105,6 +119,7 @@ class Habit {
     actionId: json['action_id'] as String? ?? '',
     personId: _id(json['person_id']),
     circleId: _id(json['circle_id']),
+    recurringGoal: RecurringGoal.fromJson(json['recurring_goal']),
     defaultName: _id(json['default_name']),
     actionPath: json['action_path'] as String?,
     status: json['status'] as String? ?? 'active',
@@ -128,9 +143,10 @@ class Habit {
     'id': id,
     // A person's or circle's habit given its default has none of its own.
     'name': name,
-    if (!isRelationship) 'action_id': actionId,
+    if (!isRelationship && !isGoal) 'action_id': actionId,
     'person_id': ?personId,
     'circle_id': ?circleId,
+    if (recurringGoal case final goal?) 'recurring_goal': goal.toJson(),
     'status': status,
     'note': ?note,
     if (!traits.isDefault) 'traits': traits.toJson(),
