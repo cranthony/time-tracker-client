@@ -96,15 +96,10 @@ void main() {
     );
   });
 
-  test('foundations can be anything but itself and what is built on it', () {
-    final choices = foundationChoices(_graph, const [
-      Person(id: 'fam', name: 'Family'),
-      Person(id: 'pal', name: 'Pal'),
-    ], id: 'habit:gym');
-    expect(
-      [for (final c in choices) c.id],
-      ['habit:eat', 'habit:sleep', 'pal'],
-    );
+  test('foundations can be anything on it but itself and what is built on '
+      'it', () {
+    final choices = foundationChoices(_graph, id: 'habit:gym');
+    expect([for (final c in choices) c.id], ['habit:eat', 'habit:sleep']);
   });
 
   testWidgets('consistency is shown under the rating, to 30 days', (

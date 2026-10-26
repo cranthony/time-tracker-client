@@ -9,6 +9,19 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.194.0
+
+- A habit can be a person's or a circle's: some of their traits, as
+  they're scored for them, on the habit graph -- so being reliable for
+  someone can sit in a layer under the rest of the relationship. The
+  person button on the Habits pane adds one (in place of putting people
+  on the graph), as does "Add habit" on a person's page and under a
+  circle picked on the People pane. It's named for them and its traits
+  ("Sam · Reliable", "Sam · except Reliable") until you name it, and so
+  again whenever its traits change; with all but two or fewer traits
+  picked, traits added later are on it too. A circle's combines its
+  people as the circle's scoring says.
+
 ## 7.193.0
 
 - The Plan page's tabs are Goals, Habits, Traits and Library

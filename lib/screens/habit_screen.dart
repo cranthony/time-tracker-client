@@ -23,6 +23,9 @@ import 'subject_sections.dart';
 /// a button opening each lot on a page of its own. Claude judges its
 /// events; past ones only when asked. Pulling down loads the events
 /// again. [onEdit] edits it, returning it as saved.
+///
+/// A person's or circle's habit says whose it is, in place of its action,
+/// and has their traits -- those it picks -- as they're scored for them.
 class HabitScreen extends StatefulWidget {
   const HabitScreen({
     super.key,
@@ -97,6 +100,14 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
     final action = widget.actions
         .where((a) => a.id == _habit.actionId)
         .firstOrNull;
+    final people = widget.memory?.people;
+    final person = people?.withSelf
+        .where((p) => p.id == _habit.personId)
+        .firstOrNull;
+    final circle = people?.circles
+        .where((c) => c.id == _habit.circleId)
+        .firstOrNull;
+    final relationship = _habit.isRelationship;
     final sections = SubjectSections(
       context,
       memory: widget.memory,
@@ -105,8 +116,11 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
       name: habitName(_habit),
       healthTitle: 'Health',
       scale: HealthScale.action,
-      traits: _habit.traits,
-      cancelled: _habit.cancelledEvents,
+      traits: switch (person) {
+        final p? => p.traits.narrowedTo(_habit.traits),
+        null => _habit.traits,
+      },
+      cancelled: person?.cancelledEvents ?? _habit.cancelledEvents,
       traitList: widget.traits,
       whom: 'it',
       whose: 'its',
@@ -131,32 +145,55 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
             ...sections.health(),
-            ListTile(
-              leading: actionDot(action, size: 16),
-              title: Text(
-                action?.path ??
-                    _habit.actionPath ??
-                    (action == null ? _habit.actionId : actionName(action)),
+            if (relationship)
+              ListTile(
+                leading: Icon(
+                  _habit.personId != null ? Icons.person : Icons.groups,
+                ),
+                title: Text(switch ((person, circle)) {
+                  (final p?, _) => personName(p),
+                  (_, final c?) => c.name,
+                  _ => _habit.personId ?? _habit.circleId ?? '',
+                }),
+                subtitle: Text(
+                  [
+                    if (_habit.personId != null)
+                      'Their traits, as they are scored for them'
+                    else
+                      "Its people's traits, combined as the circle's are",
+                    if (!_habit.active)
+                      habitStatuses[_habit.status] ?? _habit.status,
+                  ].join(' · '),
+                ),
+              )
+            else
+              ListTile(
+                leading: actionDot(action, size: 16),
+                title: Text(
+                  action?.path ??
+                      _habit.actionPath ??
+                      (action == null ? _habit.actionId : actionName(action)),
+                ),
+                subtitle: Text(
+                  [
+                    if (action?.isGroup ?? false)
+                      'Your events with any action in it'
+                    else
+                      'Your events with it',
+                    if (!_habit.active)
+                      habitStatuses[_habit.status] ?? _habit.status,
+                  ].join(' · '),
+                ),
               ),
-              subtitle: Text(
-                [
-                  if (action?.isGroup ?? false)
-                    'Your events with any action in it'
-                  else
-                    'Your events with it',
-                  if (!_habit.active)
-                    habitStatuses[_habit.status] ?? _habit.status,
-                ].join(' · '),
-              ),
-            ),
-            sectionHeading(theme, "What it's for"),
-            sectionPadded(switch (_habit.note) {
-              final note? => Text(note),
-              null => Text(
-                'Nothing yet: a note helps Claude judge its events.',
-                style: TextStyle(color: theme.hintColor),
-              ),
-            }),
+            if (!relationship) sectionHeading(theme, "What it's for"),
+            if (!relationship)
+              sectionPadded(switch (_habit.note) {
+                final note? => Text(note),
+                null => Text(
+                  'Nothing yet: a note helps Claude judge its events.',
+                  style: TextStyle(color: theme.hintColor),
+                ),
+              }),
             sectionHeading(theme, 'Built on'),
             sectionPadded(switch (_habit.foundations) {
               [] => Text(
@@ -173,13 +210,14 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
               ),
             }),
             ...sections.traitSection(),
-            sectionPadded(
-              Text(
-                'Claude judges its events as they happen. To judge past ones, '
-                'ask Claude to judge past events for this habit.',
-                style: theme.textTheme.bodySmall,
+            if (!relationship)
+              sectionPadded(
+                Text(
+                  'Claude judges its events as they happen. To judge past ones, '
+                  'ask Claude to judge past events for this habit.',
+                  style: theme.textTheme.bodySmall,
+                ),
               ),
-            ),
             ...sections.events(),
             ...sections.cancelledSection(),
           ],

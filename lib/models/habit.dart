@@ -11,11 +11,18 @@ import 'trait.dart';
 /// done for someone (`engagement_type: for`) don't apply to it. Claude's
 /// judgments for it are kept on events beside everyone's, under
 /// [subject].
+///
+/// Or a person's or circle's habit ([personId], [circleId]): some of
+/// their traits, as they're scored for them -- a layer of the
+/// relationship on the habit graph. Its traits only pick which.
 class Habit {
   const Habit({
     required this.id,
     required this.name,
     required this.actionId,
+    this.personId,
+    this.circleId,
+    this.defaultName,
     this.actionPath,
     this.status = 'active',
     this.note,
@@ -27,8 +34,25 @@ class Habit {
   final String id;
   final String name;
 
-  /// The action, or group of actions, whose events it's about.
+  /// The action, or group of actions, whose events it's about; empty for
+  /// a person's or circle's habit.
   final String actionId;
+
+  /// For a person's habit, theirs.
+  final String? personId;
+
+  /// For a circle's habit, its.
+  final String? circleId;
+
+  /// For a person's or circle's habit, the name it has without its own,
+  /// as the server last said: [name], unless it has its own.
+  final String? defaultName;
+
+  /// Whether it's a person's or circle's habit.
+  bool get isRelationship => personId != null || circleId != null;
+
+  /// Whether its name is its own, not the default.
+  bool get ownName => !isRelationship || name != defaultName;
 
   /// Its action's or group's name, under its groups, as the server last
   /// said: "Creative › Guitar". Not sent back.
@@ -64,6 +88,9 @@ class Habit {
     id: id,
     name: name,
     actionId: actionId,
+    personId: personId,
+    circleId: circleId,
+    defaultName: defaultName,
     actionPath: actionPath,
     status: status,
     note: note,
@@ -76,6 +103,9 @@ class Habit {
     id: json['id'] as String,
     name: json['name'] as String? ?? '',
     actionId: json['action_id'] as String? ?? '',
+    personId: _id(json['person_id']),
+    circleId: _id(json['circle_id']),
+    defaultName: _id(json['default_name']),
     actionPath: json['action_path'] as String?,
     status: json['status'] as String? ?? 'active',
     note: switch (json['note']) {
@@ -96,13 +126,51 @@ class Habit {
   /// keeps.
   Map<String, Object?> toJson() => {
     'id': id,
+    // A person's or circle's habit given its default has none of its own.
     'name': name,
-    'action_id': actionId,
+    if (!isRelationship) 'action_id': actionId,
+    'person_id': ?personId,
+    'circle_id': ?circleId,
     'status': status,
     'note': ?note,
     if (!traits.isDefault) 'traits': traits.toJson(),
     if (foundations.isNotEmpty) 'foundations': foundations,
   };
+}
+
+String? _id(Object? value) => switch (value) {
+  final String s when s.isNotEmpty => s,
+  _ => null,
+};
+
+/// The most traits a relationship habit's name lists before "+N", as
+/// the server names them.
+const _namedTraits = 2;
+
+/// The name a person's or circle's habit has without its own, as the
+/// server gives it: [whose], then the traits [traits] picks, by
+/// [traitNames] -- "Sam", "Sam · Reliable", "Sam · Reliable, Kind +1",
+/// "Sam · except Reliable".
+String relationshipHabitName(
+  String whose,
+  PersonTraits traits,
+  Map<String, String> traitNames,
+) {
+  String listed(List<String> ids) {
+    final named = ids.take(_namedTraits).map((id) => traitNames[id] ?? id);
+    final more = ids.length - _namedTraits;
+    return '${named.join(', ')}${more > 0 ? ' +$more' : ''}';
+  }
+
+  if (traits.select case final picked?) {
+    final on = [
+      for (final id in picked)
+        if (!traits.except.contains(id)) id,
+    ];
+    return '$whose · ${listed(on)}';
+  }
+  if (traits.except.isEmpty) return whose;
+  return '$whose · except ${listed(traits.except)}';
 }
 
 /// Who a habit's judgments are of, on an event: `habit:<id>`.

@@ -1,28 +1,18 @@
 import 'package:flutter/material.dart';
 
 import '../models/habit_graph.dart';
-import '../models/person.dart';
 import 'picker_sheet.dart';
 import 'tree_picker.dart';
 
 /// What a habit, or a person, can be built on: every habit and person in
-/// [graph], and everyone else of [people] not deleted -- but not [id]
-/// itself, nor anything built on it, which would make a cycle. Habits
-/// first, then people, each by name.
-List<GraphNode> foundationChoices(
-  HabitGraph graph,
-  List<Person> people, {
-  String? id,
-}) {
+/// [graph] -- a person by their habits, but for those on it themselves
+/// as before people had habits -- but not [id] itself, nor anything
+/// built on it, which would make a cycle. Habits first, then people,
+/// each by name.
+List<GraphNode> foundationChoices(HabitGraph graph, {String? id}) {
   final excluded = {?id, if (id != null) ...graph.builtOn(id)};
-  final nodes = {
-    ...graph.nodes,
-    for (final p in people)
-      if (p.status != 'deleted' && !graph.nodes.containsKey(p.id))
-        p.id: GraphNode.person(p),
-  };
   return [
-    for (final n in nodes.values)
+    for (final n in graph.nodes.values)
       if (!excluded.contains(n.id)) n,
   ]..sort(
     (a, b) => switch ((a.isPerson, b.isPerson)) {

@@ -210,6 +210,7 @@ class PlanMemory extends ChangeNotifier {
       traits: traits,
       people: people.withSelf,
       habits: habits ?? const [],
+      circles: people.circles,
       events: store.between(
         span?.$1 ?? today,
         span == null ? today : span.$2.add(const Duration(days: 1)),
@@ -259,6 +260,7 @@ class PlanMemory extends ChangeNotifier {
     required List<Trait> traits,
     required List<Person> people,
     required List<Habit> habits,
+    required List<Circle> circles,
     required List<Event> events,
     required DateTime today,
     required Map<String, String?> parents,
@@ -269,6 +271,7 @@ class PlanMemory extends ChangeNotifier {
         traits: traits,
         people: people,
         habits: habits,
+        circles: circles,
         events: events,
         today: today,
         parentOf: (id) => parents[id],
@@ -328,6 +331,8 @@ class PlanMemory extends ChangeNotifier {
             c.source,
           ],
       ],
+    // What a circle's habit is scored by.
+    for (final c in people.circles) [c.id, c.memberIds, c.scoring?.toJson()],
   ]);
 
   /// What of the actions the scores are from: what each is in.

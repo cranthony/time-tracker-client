@@ -17,6 +17,7 @@ import '../widgets/error_sheet.dart';
 import '../widgets/fact_prompts_dialog.dart';
 import '../widgets/goal_editor.dart' show deadlineLabel;
 import '../widgets/health.dart';
+import '../widgets/relationship_habits.dart';
 import 'goal_screen.dart';
 import 'person_history.dart';
 import 'subject_sections.dart';
@@ -258,6 +259,12 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
               ),
             ..._goals(theme),
             ...sections.traitSection(),
+            if (widget.memory case final memory?) ...[
+              sectionHeading(theme, 'Habits'),
+              sectionPadded(
+                RelationshipHabits(memory: memory, person: _person),
+              ),
+            ],
             if (_scored) ...[
               sectionHeading(theme, 'History'),
               ..._history(theme),

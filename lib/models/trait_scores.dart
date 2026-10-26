@@ -18,6 +18,11 @@
 /// its parts that read events done for someone are left out; a trait
 /// with no others isn't scored for it.
 ///
+/// **A person's or circle's habit** is scored as they are -- their events,
+/// judgments, parts and cancellations -- by the traits it picks of theirs
+/// alone; a circle's, each of its people so, combined as the circle's
+/// scoring says.
+///
 /// **Their cancellations** aren't read off the calendar: they're the ones
 /// the server recorded for each person, or habit, when the user cancelled
 /// an event they were to be at, or for ([Person.cancelledEvents],
@@ -151,6 +156,7 @@ List<Part> withPartIds(List<Part> parts, {bool fresh = false}) {
 PersonTraits traitsWithPartIds(PersonTraits traits, {bool fresh = false}) =>
     PersonTraits(
       select: traits.select,
+      except: traits.except,
       parts: {
         for (final MapEntry(:key, :value) in traits.parts.entries)
           key: withPartIds(value, fresh: fresh),
@@ -177,6 +183,7 @@ Aggregation traitsAggregation(Subject subject, ScoringDefaults defaults) =>
 class Subject {
   const Subject({
     required this.id,
+    this.of,
     this.traits = const PersonTraits(),
     this.cancelledEvents = const [],
     this.active = true,
@@ -198,8 +205,26 @@ class Subject {
     scope: habit.actionId,
   );
 
-  /// Who their judgments on an event are of.
+  /// Who it is: what its ratings are kept under.
   final String id;
+
+  /// For a person's habit, the person, by id.
+  final String? of;
+
+  /// Whose events and judgments it's scored by: a person's habit's are
+  /// theirs.
+  String get who => of ?? id;
+
+  /// [habit], [person]'s, scored as they are by the traits it picks of
+  /// theirs: kept under [id] (by default the habit's).
+  factory Subject.relationship(Habit habit, Person person, {String? id}) =>
+      Subject(
+        id: id ?? habit.subject,
+        of: person.id,
+        traits: person.traits.narrowedTo(habit.traits),
+        cancelledEvents: person.cancelledEvents,
+        active: habit.active && person.active,
+      );
   final PersonTraits traits;
   final List<CancelledEvent> cancelledEvents;
 
@@ -388,7 +413,7 @@ List<Event> _engaged(
   List<Event> events,
   _Reading reading,
 ) {
-  final personId = subject.id;
+  final personId = subject.who;
   if (subject.scope case final scope?) {
     if (engagement != 'with' || scope.isEmpty) return const [];
     return _ofAction(events, scope, reading);
@@ -550,7 +575,7 @@ PartScore _part(
       for (final e in engaged) {
         if (e.start.isBefore(from) || !e.start.isBefore(end)) continue;
         for (final j in _judgments(e)) {
-          if (j.personId == subject.id &&
+          if (j.personId == subject.who &&
               j.traitId == traitId &&
               j.part == key &&
               (j.scale ?? 0) > 0) {
@@ -633,7 +658,7 @@ PartScore _part(
     case 'spacing':
       // The user was at every event of Self's, and a habit's, but its
       // exceptions -- sleep, say -- needn't be in a habit's scope.
-      final theirs = subject.isHabit || subject.id == selfPersonId
+      final theirs = subject.isHabit || subject.who == selfPersonId
           ? events
           : engaged;
       final (rating, said, behind) = _spacing(part, end, theirs, reading);
@@ -932,13 +957,13 @@ double _minutesIn(
 /// people's shares say ([Event.withFractions], [Event.forFractions]):
 /// all of it for the user, or a habit.
 double _personShare(Event event, Subject subject, String engagement) {
-  if (subject.scope != null || subject.id == selfPersonId) return 1;
+  if (subject.scope != null || subject.who == selfPersonId) return 1;
   final facts = _facts(event);
   final fractions = shareFractions(
     (engagement == 'with' ? facts?.withShares : facts?.forShares) ?? const [],
     event.end.difference(event.start),
   );
-  return fractions[subject.id] ?? 1;
+  return fractions[subject.who] ?? 1;
 }
 
 /// The part of [event] that's of the action [actionId] -- or of any in
@@ -989,7 +1014,8 @@ class TraitScores {
   );
 
   /// Scores [people] (Self among them), and Self's [habits], by [traits]
-  /// for the [days] days before [today]'s, from [events]. [parentOf]
+  /// for the [days] days before [today]'s, from [events]: a circle's
+  /// habit by [circles]' people. [parentOf]
   /// gives an action's group, as it is now: a habit's events are worked
   /// out from it. [windowDays] is how far back [events] go, for [digest]
   /// to say. Each one's consistency is counted back from the last of
@@ -1000,6 +1026,7 @@ class TraitScores {
     required List<Trait> traits,
     required List<Person> people,
     List<Habit> habits = const [],
+    List<Circle> circles = const [],
     required List<Event> events,
     required DateTime today,
     String? Function(String id)? parentOf,
@@ -1022,15 +1049,67 @@ class TraitScores {
     final ratings = <String, List<TraitsRating>>{};
     final consistency = <String, int>{};
     final eventsOf = <String, List<Event>>{};
-    final subjects = [
-      for (final person in people) Subject.person(person),
-      for (final habit in habits) Subject.habit(habit),
-    ];
-    for (final subject in subjects) {
+    final byId = {for (final p in people) p.id: p};
+    final circlesById = {for (final c in circles) c.id: c};
+    // What each is rated by, for a day: one subject, or for a circle's
+    // habit, each of its people's.
+    final scored = <(Subject, List<Subject>, Aggregation?)>[];
+    for (final person in people) {
+      scored.add((Subject.person(person), const [], null));
+    }
+    for (final habit in habits) {
+      if (habit.personId case final id?) {
+        if (byId[id] case final person?) {
+          scored.add((Subject.relationship(habit, person), const [], null));
+        }
+      } else if (habit.circleId case final id?) {
+        final circle = circlesById[id];
+        if (circle == null) continue;
+        scored.add((
+          Subject(id: habit.subject, active: habit.active),
+          [
+            for (final m in circle.memberIds)
+              if (byId[m] case final person? when person.active)
+                Subject.relationship(
+                  habit,
+                  person,
+                  id: '${habit.subject}@${person.id}',
+                ),
+          ],
+          circle.scoring ?? defaults.circles ?? Aggregation.mean,
+        ));
+      } else {
+        scored.add((Subject.habit(habit), const [], null));
+      }
+    }
+    TraitsRating rate(
+      (Subject, List<Subject>, Aggregation?) of,
+      DateTime start,
+      String day,
+    ) => switch (of) {
+      (final subject, [], _) => _rate(
+        subject,
+        traits,
+        start,
+        day,
+        kept,
+        reading,
+        defaults,
+      ),
+      (_, final members, final scoring) => _combined(
+        [
+          for (final m in members)
+            (m.who, _rate(m, traits, start, day, kept, reading, defaults)),
+        ],
+        scoring!,
+        day,
+      ),
+    };
+    for (final of in scored) {
+      final (subject, members, _) = of;
       if (!subject.active) continue;
       ratings[subject.id] = [
-        for (var i = 0; i < starts.length; i++)
-          _rate(subject, traits, starts[i], keys[i], kept, reading, defaults),
+        for (var i = 0; i < starts.length; i++) rate(of, starts[i], keys[i]),
       ];
       bool healthy(int? rating) => rating != null && rating >= healthyRating;
       var streak = 0;
@@ -1045,23 +1124,19 @@ class TraitScores {
         back++
       ) {
         final start = reading.day(midnight, -back);
-        final rated = _rate(
-          subject,
-          traits,
-          start,
-          _dayKey(start),
-          kept,
-          reading,
-          defaults,
-        );
+        final rated = rate(of, start, _dayKey(start));
         if (healthy(rated.rating)) streak++;
       }
       consistency[subject.id] = math.min(streak, maxConsistencyDays + 1);
+      final whose = {for (final m in members) m.who};
       final involved = subject.isHabit
           ? _engaged(subject, 'with', kept, reading)
           : [
               for (final e in kept)
-                if (_involves(subject.id, e)) e,
+                if (members.isEmpty
+                    ? _involves(subject.who, e)
+                    : whose.any((who) => _involves(who, e)))
+                  e,
             ];
       eventsOf[subject.id] = [
         for (final e in involved)
@@ -1102,6 +1177,35 @@ class TraitScores {
       eventsOf,
       kept,
       consistency,
+    );
+  }
+
+  /// A circle's habit's rating of [day]: its people's [rated] combined
+  /// by [scoring], and each trait's score, theirs combined so.
+  static TraitsRating _combined(
+    List<(String, TraitsRating)> rated,
+    Aggregation scoring,
+    String day,
+  ) {
+    final names = <String, String>{};
+    final byTrait = <String, List<(String, int?)>>{};
+    for (final (who, r) in rated) {
+      for (final t in r.traits) {
+        names[t.traitId] = t.name;
+        (byTrait[t.traitId] ??= []).add((who, t.score));
+      }
+    }
+    return TraitsRating(
+      rating: scoring.combine([for (final (who, r) in rated) (who, r.rating)]),
+      traits: [
+        for (final MapEntry(key: id, value: scores) in byTrait.entries)
+          TraitScore(
+            traitId: id,
+            name: names[id]!,
+            score: scoring.combine(scores),
+          ),
+      ],
+      day: day,
     );
   }
 

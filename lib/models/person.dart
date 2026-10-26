@@ -255,11 +255,12 @@ class CancelledEvent {
 
 /// Which traits apply to a person, and their own parts for any, as the
 /// server's `traits` field has it: {"select": "all" or [trait ids],
-/// "parts": {trait id: [parts]}, "facts": {trait id: {fact id:
-/// prompts}}}.
+/// "except": [trait ids], "parts": {trait id: [parts]}, "facts": {trait
+/// id: {fact id: prompts}}}.
 class PersonTraits {
   const PersonTraits({
     this.select,
+    this.except = const [],
     this.parts = const {},
     this.partScoring = const {},
     this.scoring,
@@ -290,6 +291,7 @@ class PersonTraits {
     }
     return PersonTraits(
       select: select,
+      except: except,
       parts: parts,
       partScoring: partScoring,
       scoring: scoring,
@@ -303,6 +305,10 @@ class PersonTraits {
 
   /// The traits that apply to them, by id; null for every active one.
   final List<String>? select;
+
+  /// Traits that don't apply to them, by id, though [select] has them:
+  /// with every one selected, those added later apply.
+  final List<String> except;
 
   /// Their own parts for a trait, replacing the trait's for them alone:
   /// their own cadence, say.
@@ -321,13 +327,33 @@ class PersonTraits {
   /// combined as everyone's are.
   bool get isDefault =>
       select == null &&
+      except.isEmpty &&
       parts.isEmpty &&
       partScoring.isEmpty &&
       scoring == null &&
       facts.isEmpty;
 
   /// Whether [traitId] applies to them, if it's active.
-  bool applies(String traitId) => select?.contains(traitId) ?? true;
+  bool applies(String traitId) =>
+      (select?.contains(traitId) ?? true) && !except.contains(traitId);
+
+  /// These, with only the traits [filter] picks of them applying -- a
+  /// person's, for one of their habits.
+  PersonTraits narrowedTo(PersonTraits filter) => PersonTraits(
+    select: switch ((select, filter.select)) {
+      (null, final picked) => picked,
+      (final mine?, null) => mine,
+      (final mine?, final picked?) => [
+        for (final id in mine)
+          if (picked.contains(id)) id,
+      ],
+    },
+    except: {...except, ...filter.except}.toList(),
+    parts: parts,
+    partScoring: partScoring,
+    scoring: scoring,
+    facts: facts,
+  );
 
   factory PersonTraits.fromJson(Object? json) {
     if (json is! Map) return const PersonTraits();
@@ -336,6 +362,7 @@ class PersonTraits {
         final List ids => [for (final id in ids) '$id'],
         _ => null,
       },
+      except: [for (final id in json['except'] as List? ?? const []) '$id'],
       parts: {
         for (final MapEntry(:key, :value)
             in (json['parts'] as Map? ?? const {}).entries)
@@ -370,6 +397,7 @@ class PersonTraits {
 
   Map<String, Object?> toJson() => {
     'select': select ?? 'all',
+    if (except.isNotEmpty) 'except': except,
     if (parts.isNotEmpty) 'parts': parts,
     if (partScoring.isNotEmpty)
       'part_scoring': {

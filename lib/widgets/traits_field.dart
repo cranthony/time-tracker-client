@@ -74,6 +74,7 @@ class _TraitsFieldState extends State<TraitsField> {
     widget.onChanged(
       PersonTraits(
         select: _select,
+        except: widget.value.except,
         parts: {
           for (final MapEntry(:key, :value) in _parts.entries)
             if (picked(key)) key: value,

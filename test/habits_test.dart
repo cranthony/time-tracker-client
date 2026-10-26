@@ -543,47 +543,42 @@ void main() {
       expect(spans.last.style, isNull);
     });
 
-    testWidgets('puts people on it, and takes them off', (tester) async {
+    testWidgets("adds a person's habit, and takes one put on it before "
+        'people had habits off', (tester) async {
       final people = InMemoryPeopleRepository(
         people: const [
           Person(id: 'fam', name: 'Family'),
           Person(id: 'pal', name: 'Pal', foundations: ['habit:h1']),
         ],
       );
-      await pump(
-        tester,
-        habits: InMemoryHabitsRepository([_mindfully]),
-        people: people,
-      );
+      final habits = InMemoryHabitsRepository([_mindfully]);
+      await pump(tester, habits: habits, people: people);
       expect(find.text('Pal'), findsOneWidget);
       expect(find.text('Family'), findsNothing);
       double top(String text) => tester.getTopLeft(find.text(text)).dy;
       expect(top('Pal'), lessThan(top('Practice mindfully')));
 
-      await tester.tap(find.byTooltip('Put people on the graph'));
+      await tester.tap(find.byTooltip('New habit for a person or circle'));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(CheckboxListTile, 'Family'));
-      await tester.tap(find.text('Done'));
+      await tester.tap(find.widgetWithText(ListTile, 'Family'));
       await tester.pumpAndSettle();
-      expect(
-        (await people.people()).people
-            .firstWhere((p) => p.id == 'fam')
-            .foundations,
-        isEmpty,
-      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      final added = (await habits.habits()).firstWhere((h) => h.isRelationship);
+      expect((added.personId, added.name), ('fam', 'Family'));
       expect(find.text('Family'), findsOneWidget);
 
-      await tester.longPress(find.text('Family'));
+      await tester.longPress(find.text('Pal'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Take off the graph'));
       await tester.pumpAndSettle();
       expect(
         (await people.people()).people
-            .firstWhere((p) => p.id == 'fam')
+            .firstWhere((p) => p.id == 'pal')
             .foundations,
         isNull,
       );
-      expect(find.text('Family'), findsNothing);
+      expect(find.text('Pal'), findsNothing);
     });
 
     testWidgets('picks what one is built on from its menu', (tester) async {

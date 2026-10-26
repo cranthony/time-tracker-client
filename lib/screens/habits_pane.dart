@@ -19,25 +19,28 @@ import '../widgets/hotkeys.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
 import '../widgets/refreshing_bar.dart';
+import '../widgets/relationship_habits.dart';
 import 'habit_screen.dart';
 import 'person_screen.dart';
 
 /// The Plan page's Habits pane -- what the user builds: Self's habits,
-/// and the people they've put here, as a graph in layers by what each is
-/// built on ([HabitGraph]). Layer 0, at the bottom, has those built on
+/// people's and circles' -- some of their traits, a layer of the
+/// relationship -- and any people put here as they were before people
+/// had habits, as a graph in layers by what each is built on
+/// ([HabitGraph]). Layer 0, at the bottom, has those built on
 /// nothing; each layer above, those built on the ones below. Each layer
 /// has its own trend: each day, its habits' and people's ratings
 /// combined as the scoring defaults' habit layers say -- by default, the
 /// lowest.
 ///
 /// Each habit or person is a chip: a habit's in its action's color, a
-/// person's plain, with a person by its name. It has their name, their
+/// person's or circle's habit plain, marked as theirs. It has their name, their
 /// trend (a person's too in a habit's red, yellow and green, as they're
 /// rated alongside habits here), how many days in a row they've been healthy (see
 /// [consistencyLabel]). Each layer is sorted by name. Tapping one opens their
 /// page; holding it offers what it's built on, archiving a habit, or
-/// taking a person off the graph. "+" adds a habit; the person button
-/// puts people on the graph.
+/// taking a person off the graph. "+" adds a habit; the person button, a
+/// habit for a person or circle.
 ///
 /// By default only what's unlocked is shown: those built on nothing, and
 /// those whose every foundation is shown and on track (or not rated
@@ -191,12 +194,22 @@ class HabitsPaneState extends State<HabitsPane> {
   /// or null if nothing was.
   Future<Habit?> _edit(Habit? habit) async {
     final repository = widget.repository;
+    if (habit != null && habit.isRelationship) {
+      final saved = await editRelationshipHabit(
+        context,
+        memory: widget.memory,
+        repository: repository,
+        habit: habit,
+      );
+      if (saved != null) await reload();
+      return saved;
+    }
     final saved = await showHabitEditor(
       context,
       habit: habit,
       actions: widget.actions,
       traits: [..._traits.values],
-      foundationChoices: foundationChoices(_graph, _people, id: habit?.subject),
+      foundationChoices: foundationChoices(_graph, id: habit?.subject),
       foundationNames: _names,
       scoreParts: widget.memory.scoreDraftParts,
       save: (fields) => habit == null
@@ -230,7 +243,7 @@ class HabitsPaneState extends State<HabitsPane> {
     final picked = await showFoundationsPicker(
       context,
       title: '${node.name} is built on',
-      choices: foundationChoices(_graph, _people, id: node.id),
+      choices: foundationChoices(_graph, id: node.id),
       selected: node.foundations,
     );
     if (picked == null || !mounted) return;
@@ -249,27 +262,47 @@ class HabitsPaneState extends State<HabitsPane> {
     });
   }
 
-  /// Puts people picked from those not on it on the graph, built on
-  /// nothing to start with.
-  Future<void> _addPeople() async {
-    final people = _peopleRepository;
-    if (people == null) return;
-    final graph = _graph;
-    final picked = await showFoundationsPicker(
-      context,
-      title: 'Put people on the graph',
-      choices: [
-        for (final p in _people)
-          if (p.active && !graph.nodes.containsKey(p.id)) GraphNode.person(p),
-      ],
-      selected: const [],
+  /// Adds a habit for a person or circle, picked from those active.
+  Future<void> _addRelationshipHabit() async {
+    final circles = widget.memory.people?.circles ?? const <Circle>[];
+    final picked = await showModalBottomSheet<Object>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            ListTile(
+              title: Text(
+                'A habit for…',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final c in circles)
+              ListTile(
+                leading: const Icon(Icons.groups_outlined),
+                title: Text(c.name),
+                onTap: () => Navigator.of(context).pop(c),
+              ),
+            for (final p in _people)
+              if (p.active)
+                ListTile(
+                  leading: const Icon(Icons.person_outline),
+                  title: Text(personName(p)),
+                  onTap: () => Navigator.of(context).pop(p),
+                ),
+          ],
+        ),
+      ),
     );
-    if (picked == null || picked.isEmpty || !mounted) return;
-    await _save("Couldn't put them on the graph", () async {
-      for (final id in picked) {
-        await people.updatePerson(id, {'foundations': <String>[]});
-      }
-    });
+    if (picked == null || !mounted) return;
+    final saved = await editRelationshipHabit(
+      context,
+      memory: widget.memory,
+      repository: widget.repository,
+      person: picked is Person ? picked : null,
+      circle: picked is Circle ? picked : null,
+    );
+    if (saved != null) await reload();
   }
 
   Future<void> _menu(GraphNode node) async {
@@ -435,12 +468,11 @@ class HabitsPaneState extends State<HabitsPane> {
           ),
           onPressed: () => setState(() => _archived = !_archived),
         ),
-        if (_peopleRepository != null)
-          IconButton(
-            tooltip: 'Put people on the graph',
-            icon: const Icon(Icons.person_add_alt),
-            onPressed: habits == null ? null : _addPeople,
-          ),
+        IconButton(
+          tooltip: 'New habit for a person or circle',
+          icon: const Icon(Icons.person_add_alt),
+          onPressed: habits == null ? null : _addRelationshipHabit,
+        ),
         NewHotkey(
           child: IconButton(
             tooltip: 'New habit',
@@ -610,8 +642,11 @@ class HabitsPaneState extends State<HabitsPane> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (node.isPerson) ...[
+                if (node.isPerson || (node.habit?.personId != null)) ...[
                   Icon(Icons.person, size: 14, color: foreground),
+                  const SizedBox(width: 4),
+                ] else if (node.habit?.circleId != null) ...[
+                  Icon(Icons.groups, size: 14, color: foreground),
                   const SizedBox(width: 4),
                 ],
                 Flexible(
