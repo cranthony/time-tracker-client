@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../models/goal.dart';
 import '../models/goal_activation.dart';
+import '../models/habit.dart';
+import '../models/recurring_goal.dart';
 import '../services/goals_repository.dart';
 import '../services/plan_memory.dart';
 import '../widgets/app_menu.dart' show RefreshButton;
@@ -195,6 +197,7 @@ class _GoalScreenState extends State<GoalScreen> {
             padding: const EdgeInsets.only(bottom: 24),
             children: [
               _fields(context, goal, tree, spent[goal.id]),
+              if (goal.habitId case final habitId?) _fromHabit(habitId),
               const Divider(height: 24),
               Padding(
                 padding: const EdgeInsetsDirectional.fromSTEB(16, 0, 4, 0),
@@ -287,6 +290,26 @@ class _GoalScreenState extends State<GoalScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// That it's one of habit [habitId]'s recurring goal's goals.
+  Widget _fromHabit(String habitId) {
+    final habit = widget.memory.habits
+        ?.where((h) => h.id == habitId)
+        .firstOrNull;
+    final period = goalPeriods[habit?.recurringGoal?.period]?.$1;
+    return ListTile(
+      leading: const Icon(Icons.repeat),
+      title: Text(
+        'From the habit ${habit == null ? habitId : habitName(habit)}',
+      ),
+      subtitle: Text(
+        period == null
+            ? 'One of its goals, one each period'
+            : 'One of its goals: one each ${period.toLowerCase()}, the next '
+                  'made once this one is done',
       ),
     );
   }

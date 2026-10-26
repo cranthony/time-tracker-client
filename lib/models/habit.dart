@@ -196,6 +196,13 @@ String habitSubject(String habitId) => 'habit:$habitId';
 String? habitIdOf(String subject) =>
     subject.startsWith('habit:') ? subject.substring('habit:'.length) : null;
 
+/// What a recurring goal's habit is about -- "A goal each week" -- or
+/// null for another.
+String? goalHabitLabel(Habit habit) => switch (habit.recurringGoal) {
+  final goal? => goalEachLabel(goal),
+  null => null,
+};
+
 /// The statuses a habit can have, as the server names them, and as the
 /// app shows them.
 const habitStatuses = {

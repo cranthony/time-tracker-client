@@ -86,6 +86,10 @@ const goalPeriods = {
   'month': ('Month', 'months'),
 };
 
+/// "A goal each week", for [recurring].
+String goalEachLabel(RecurringGoal recurring) =>
+    'A goal each ${(goalPeriods[recurring.period]?.$1 ?? 'period').toLowerCase()}';
+
 /// How many periods a goal rate counts back unless its habit says.
 const defaultRatePeriods = 6;
 
