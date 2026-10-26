@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.198.0
+
+- People are on the habit graph only by their habits: a person is no
+  longer put on it by themselves, nor taken off it from the Habits
+  pane, and what a habit is built on is picked from habits alone.
+
 ## 7.197.0
 
 - A recurring goal's habit shows its goal in place of an action -- in

@@ -906,8 +906,6 @@ class SampleData {
             'thoughtful': {'what_matters': p.whatMatters},
           },
         'traits': _personTraits[p.id]?.toJson(),
-        // Dinners together: on the habit graph, built on cooking.
-        if (p.id == 'sam') 'foundations': [habitSubject('cook-from-scratch')],
         'cancelled_events': _cancelled[p.id],
       }),
   ];
@@ -1050,6 +1048,14 @@ class SampleData {
       'action_path': 'Creative › Cooking › Cook lunch or dinner',
       'note': 'Real meals, not reheating.',
       'foundations': [habitSubject('eat-well')],
+    }),
+    // Dinners with Sam: on the habit graph, built on cooking.
+    Habit.fromJson({
+      'id': 'sam',
+      'name': 'Sam',
+      'default_name': 'Sam',
+      'person_id': 'sam',
+      'foundations': [habitSubject('cook-from-scratch')],
     }),
   ];
 

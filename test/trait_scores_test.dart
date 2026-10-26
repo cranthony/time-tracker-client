@@ -1125,7 +1125,11 @@ void main() {
     );
     final subjects = [
       for (final p in sample.people) Subject.person(p),
-      for (final h in sample.habits) Subject.habit(h),
+      for (final h in sample.habits)
+        if (h.personId case final id?)
+          Subject.relationship(h, sample.people.firstWhere((p) => p.id == id))
+        else
+          Subject.habit(h),
     ];
     var rated = 0;
     for (final subject in subjects.where((s) => s.active)) {

@@ -9,7 +9,6 @@ import '../models/trait_scores.dart';
 import '../services/habits_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
-import '../services/traits_repository.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/foundations_field.dart';
@@ -21,26 +20,21 @@ import '../widgets/plan_summaries.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/relationship_habits.dart';
 import 'habit_screen.dart';
-import 'person_screen.dart';
 
 /// The Plan page's Habits pane -- what the user builds: Self's habits,
-/// people's and circles' -- some of their traits, a layer of the
-/// relationship -- and any people put here as they were before people
-/// had habits, as a graph in layers by what each is built on
+/// people's and circles' among them -- some of their traits, a layer of
+/// the relationship -- as a graph in layers by what each is built on
 /// ([HabitGraph]). Layer 0, at the bottom, has those built on
 /// nothing; each layer above, those built on the ones below. Each layer
-/// has its own trend: each day, its habits' and people's ratings
-/// combined as the scoring defaults' habit layers say -- by default, the
-/// lowest.
+/// has its own trend: each day, its habits' ratings combined as the
+/// scoring defaults' habit layers say -- by default, the lowest.
 ///
-/// Each habit or person is a chip: a habit's in its action's color, a
-/// person's or circle's habit plain, marked as theirs. It has their name, their
-/// trend (a person's too in a habit's red, yellow and green, as they're
-/// rated alongside habits here), how many days in a row they've been healthy (see
-/// [consistencyLabel]). Each layer is sorted by name. Tapping one opens their
-/// page; holding it offers what it's built on, archiving a habit, or
-/// taking a person off the graph. "+" adds a habit; the person button, a
-/// habit for a person or circle.
+/// Each habit is a chip: in its action's color, or a person's or
+/// circle's plain, marked as theirs. It has its name, its trend, and how
+/// many days in a row it's been healthy (see [consistencyLabel]). Each
+/// layer is sorted by name. Tapping one opens its page; holding it offers
+/// what it's built on, or archiving it. "+" adds a habit; the person
+/// button, a habit for a person or circle.
 ///
 /// By default only what's unlocked is shown: those built on nothing, and
 /// those whose every foundation is shown and on track (or not rated
@@ -49,7 +43,7 @@ import 'person_screen.dart';
 /// marked -- with everything it's built on. It opens scrolled to the
 /// highest layer that's on track with every layer below it.
 ///
-/// Archived habits and people are shown only when asked for; deleted
+/// Archived habits are shown only when asked for; deleted
 /// ones never. Above it all, with a [summary] to measure, the time in its
 /// window on the active habits' events: by habit, and by each one's
 /// health, those of no habit together as "No habit". It shows what
@@ -152,41 +146,24 @@ class HabitsPaneState extends State<HabitsPane> {
     if (mounted) setState(() => _failed = _habits == null);
   }
 
-  HabitGraph get _graph =>
-      HabitGraph(habits: _habits ?? const [], people: _people);
+  HabitGraph get _graph => HabitGraph(habits: _habits ?? const []);
 
-  /// Every habit's and person's name, by id, as foundations name them.
+  /// Every habit's name, by id, as foundations name them.
   Map<String, String> get _names => {
-    for (final p in _people) p.id: GraphNode.person(p).name,
     for (final h in _habits ?? const <Habit>[]) h.subject: habitName(h),
   };
 
   void _open(GraphNode node) {
-    final page = switch ((node.habit, node.person)) {
-      (final habit?, _) => HabitScreen(
-        habit: habit,
-        actions: widget.actions,
-        traits: _traits,
-        memory: widget.memory,
-        personNames: widget.personNames,
-        locationNames: widget.locationNames,
-        foundationNames: _names,
-        onEdit: _edit,
-      ),
-      (_, final person?) => PersonScreen(
-        person: person,
-        traits: TraitsScope.of(context),
-        memory: widget.memory,
-        circles: widget.memory.people?.circles ?? const [],
-        personNames: widget.personNames,
-        actionNames: {
-          for (final a in widget.actions) a.id: a.path ?? actionName(a),
-        },
-        locationNames: widget.locationNames,
-      ),
-      _ => null,
-    };
-    if (page == null) return;
+    final page = HabitScreen(
+      habit: node.habit,
+      actions: widget.actions,
+      traits: _traits,
+      memory: widget.memory,
+      personNames: widget.personNames,
+      locationNames: widget.locationNames,
+      foundationNames: _names,
+      onEdit: _edit,
+    );
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
   }
 
@@ -247,19 +224,12 @@ class HabitsPaneState extends State<HabitsPane> {
       selected: node.foundations,
     );
     if (picked == null || !mounted) return;
-    await _save("Couldn't save ${node.name}", () async {
-      if (node.habit case final habit?) {
-        await widget.repository.updateHabit(habit.id, {
-          'foundations': picked.isEmpty ? null : picked,
-        });
-      } else if ((node.person, _peopleRepository) case (
-        final person?,
-        final people?,
-      )) {
-        // Empty, not cleared: they stay on the graph.
-        await people.updatePerson(person.id, {'foundations': picked});
-      }
-    });
+    await _save(
+      "Couldn't save ${node.name}",
+      () => widget.repository.updateHabit(node.habit.id, {
+        'foundations': picked.isEmpty ? null : picked,
+      }),
+    );
   }
 
   /// Adds a habit for a person or circle, picked from those active.
@@ -328,22 +298,15 @@ class HabitsPaneState extends State<HabitsPane> {
               title: const Text('Built on…'),
               onTap: () => Navigator.of(context).pop('foundations'),
             ),
-            if (node.habit case final habit?)
-              ListTile(
-                leading: Icon(
-                  habit.active ? Icons.archive_outlined : Icons.unarchive,
-                ),
-                title: Text(habit.active ? 'Archive' : 'Restore'),
-                onTap: () =>
-                    Navigator.of(context)
-                        .pop(habit.active ? 'archived' : 'active'),
-              )
-            else if (node.person?.onHabitGraph ?? false)
-              ListTile(
-                leading: const Icon(Icons.person_remove_outlined),
-                title: const Text('Take off the graph'),
-                onTap: () => Navigator.of(context).pop('remove'),
+            ListTile(
+              leading: Icon(
+                node.habit.active ? Icons.archive_outlined : Icons.unarchive,
               ),
+              title: Text(node.habit.active ? 'Archive' : 'Restore'),
+              onTap: () =>
+                  Navigator.of(context)
+                      .pop(node.habit.active ? 'archived' : 'active'),
+            ),
           ],
         ),
       ),
@@ -355,31 +318,22 @@ class HabitsPaneState extends State<HabitsPane> {
       case 'foundations':
         await _pickFoundations(node);
       case 'archived' || 'active':
-        await _setStatus(node.habit!, picked!);
-      case 'remove':
-        if ((node.person, _peopleRepository) case (final p?, final people?)) {
-          await _save(
-            "Couldn't take ${node.name} off the graph",
-            () => people.updatePerson(p.id, {'foundations': null}),
-          );
-        }
+        await _setStatus(node.habit, picked!);
     }
   }
 
-  /// Whether [id]'s last rating is on track (or healthy, for a person),
-  /// or they've none yet.
+  /// Whether [id]'s last rating is on track, or it has none yet.
   bool _onTrack(String id) => switch (_scores?.health(id)) {
     final rating? => rating >= healthyRating,
     null => true,
   };
 
   /// What a search looks through, for [node].
-  List<String?> _searched(GraphNode node, Map<String?, PlanAction> byId) =>
-      switch ((node.habit, node.person)) {
-        (final h?, _) => [node.name, h.note, _path(h, byId)],
-        (_, final p?) => [node.name, p.context],
-        _ => const [],
-      };
+  List<String?> _searched(GraphNode node, Map<String?, PlanAction> byId) => [
+    node.name,
+    node.habit.note,
+    if (!node.isRelationship) _path(node.habit, byId),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -614,7 +568,7 @@ class HabitsPaneState extends State<HabitsPane> {
     Map<String?, PlanAction> byId,
   ) {
     final theme = Theme.of(context);
-    final action = byId[node.habit?.actionId];
+    final action = byId[node.habit.actionId];
     final background =
         parseColor(action?.backgroundColor ?? action?.effectiveColor) ??
         theme.colorScheme.surfaceContainerHighest;
@@ -622,7 +576,7 @@ class HabitsPaneState extends State<HabitsPane> {
         ThemeData.estimateBrightnessForColor(background) == Brightness.dark
         ? Colors.white
         : Colors.black87;
-    final active = node.habit?.active ?? node.person!.active;
+    final active = node.habit.active;
     final trend = active
         ? _scores?.healthTrend(node.id) ?? const <int?>[]
         : const <int?>[];
@@ -643,10 +597,10 @@ class HabitsPaneState extends State<HabitsPane> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (node.isPerson || (node.habit?.personId != null)) ...[
+                if (node.habit.personId != null) ...[
                   Icon(Icons.person, size: 14, color: foreground),
                   const SizedBox(width: 4),
-                ] else if (node.habit?.circleId != null) ...[
+                ] else if (node.habit.circleId != null) ...[
                   Icon(Icons.groups, size: 14, color: foreground),
                   const SizedBox(width: 4),
                 ],

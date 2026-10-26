@@ -544,20 +544,13 @@ void main() {
       expect(spans.last.style, isNull);
     });
 
-    testWidgets("adds a person's habit, and takes one put on it before "
-        'people had habits off', (tester) async {
+    testWidgets("adds a person's habit, as a chip of theirs", (tester) async {
       final people = InMemoryPeopleRepository(
-        people: const [
-          Person(id: 'fam', name: 'Family'),
-          Person(id: 'pal', name: 'Pal', foundations: ['habit:h1']),
-        ],
+        people: const [Person(id: 'fam', name: 'Family')],
       );
       final habits = InMemoryHabitsRepository([_mindfully]);
       await pump(tester, habits: habits, people: people);
-      expect(find.text('Pal'), findsOneWidget);
       expect(find.text('Family'), findsNothing);
-      double top(String text) => tester.getTopLeft(find.text(text)).dy;
-      expect(top('Pal'), lessThan(top('Practice mindfully')));
 
       await tester.tap(find.byTooltip('New habit for a person or circle'));
       await tester.pumpAndSettle();
@@ -568,18 +561,16 @@ void main() {
       final added = (await habits.habits()).firstWhere((h) => h.isRelationship);
       expect((added.personId, added.name), ('fam', 'Family'));
       expect(find.text('Family'), findsOneWidget);
-
-      await tester.longPress(find.text('Pal'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Take off the graph'));
-      await tester.pumpAndSettle();
       expect(
-        (await people.people()).people
-            .firstWhere((p) => p.id == 'pal')
-            .foundations,
-        isNull,
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('Family'),
+            matching: find.byType(Row),
+          ),
+          matching: find.byIcon(Icons.person),
+        ),
+        findsOneWidget,
       );
-      expect(find.text('Pal'), findsNothing);
     });
 
     testWidgets('picks what one is built on from its menu', (tester) async {

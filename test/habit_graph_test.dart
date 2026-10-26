@@ -2,57 +2,54 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/habit.dart';
 import 'package:time_tracker_client/models/habit_graph.dart';
-import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/widgets/foundations_field.dart';
 import 'package:time_tracker_client/widgets/health.dart';
 
 Habit _habit(String id, [List<String> foundations = const []]) =>
     Habit(id: id, name: id, actionId: 'a', foundations: foundations);
 
-/// Sleep and eat; exercise on both; family on exercise; read on family.
+/// Sleep and eat; exercise on both; family's on exercise; read on
+/// family's.
 final _graph = HabitGraph(
   habits: [
     _habit('sleep'),
     _habit('eat'),
     _habit('gym', ['habit:sleep', 'habit:eat']),
-    _habit('read', ['fam', 'habit:gone']),
+    const Habit(
+      id: 'fam',
+      name: 'Family',
+      actionId: '',
+      personId: 'fam',
+      foundations: ['habit:gym'],
+    ),
+    _habit('read', ['habit:fam', 'habit:gone', 'pal']),
     const Habit(id: 'gone', name: 'Gone', actionId: 'a', status: 'deleted'),
-  ],
-  people: const [
-    Person(id: 'fam', name: 'Family', foundations: ['habit:gym']),
-    Person(id: 'pal', name: 'Pal'),
-    Person(id: 'old', name: 'Old', status: 'deleted', foundations: []),
   ],
 );
 
 void main() {
-  test('its nodes are the habits and the people on it, not deleted', () {
+  test('its nodes are the habits, not deleted: people by theirs', () {
     expect(_graph.nodes.keys.toSet(), {
       'habit:sleep',
       'habit:eat',
       'habit:gym',
+      'habit:fam',
       'habit:read',
-      'fam',
     });
-    expect(_graph.nodes['fam']!.isPerson, isTrue);
-    expect(_graph.foundationsOf('habit:read'), ['fam']);
-  });
-
-  test('a person built on, though not on it, is a node too', () {
-    final graph = HabitGraph(
-      habits: [
-        _habit('call', ['pal']),
-      ],
-      people: const [Person(id: 'pal', name: 'Pal')],
-    );
-    expect(graph.nodes.keys, containsAll(['habit:call', 'pal']));
-    expect(graph.layerOf('habit:call'), 1);
+    expect(_graph.nodes['habit:fam']!.isRelationship, isTrue);
+    // A person, deleted habit or anything else is no node.
+    expect(_graph.foundationsOf('habit:read'), ['habit:fam']);
   });
 
   test('a layer is one above the highest of its foundations', () {
     expect(
       [
-        for (final id in ['habit:sleep', 'habit:gym', 'fam', 'habit:read'])
+        for (final id in [
+          'habit:sleep',
+          'habit:gym',
+          'habit:fam',
+          'habit:read',
+        ])
           _graph.layerOf(id),
       ],
       [0, 1, 2, 3],
@@ -71,13 +68,17 @@ void main() {
   });
 
   test('says what each is built on, and what is built on it', () {
-    expect(_graph.withFoundations(['fam']), {
-      'fam',
+    expect(_graph.withFoundations(['habit:fam']), {
+      'habit:fam',
       'habit:gym',
       'habit:sleep',
       'habit:eat',
     });
-    expect(_graph.builtOn('habit:eat'), {'habit:gym', 'fam', 'habit:read'});
+    expect(_graph.builtOn('habit:eat'), {
+      'habit:gym',
+      'habit:fam',
+      'habit:read',
+    });
   });
 
   test('unlocks what has every foundation shown and on track', () {
