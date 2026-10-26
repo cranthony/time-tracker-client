@@ -41,13 +41,17 @@ class FactLog {
 /// [changes] to person [id] as `update_person` takes them: their trait
 /// facts' summaries (`facts`, {trait id: {fact id: summary}}) beside the
 /// person, the rest under "person" -- a null going in clear_fields --
-/// with the [version] last seen.
+/// with the [version] last seen. Foundations, which a person had before
+/// they were on the habit graph by their habits, are let go of: one
+/// still waiting to be sent from then isn't sent.
 Map<String, Object?> personUpdate(
   String id,
   Map<String, Object?> changes, {
   int? version,
 }) {
-  final fields = {...changes}..remove('facts');
+  final fields = {...changes}
+    ..remove('facts')
+    ..remove('foundations');
   final clear = [
     for (final MapEntry(:key, :value) in fields.entries)
       if (value == null) key,

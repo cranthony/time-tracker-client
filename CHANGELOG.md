@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.198.1
+
+- A change to a person's place on the habit graph made in an older
+  version, and still waiting to be sent, no longer fails to save: people
+  are on the graph by their habits, so it's let go of.
+
 ## 7.198.0
 
 - People are on the habit graph only by their habits: a person is no
