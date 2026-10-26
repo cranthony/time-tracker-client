@@ -716,6 +716,44 @@ void main() {
       expect(find.text('Practice mindfully'), findsOneWidget);
     });
 
+    testWidgets("adds a recurring goal's, with no action", (tester) async {
+      final repository = InMemoryHabitsRepository();
+      await pump(tester, habits: repository);
+
+      await tester.tap(find.byTooltip('New habit'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Name'),
+        'Call Mom',
+      );
+      await tester.tap(find.text('A recurring goal'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pick an action or group'), findsNothing);
+      await tester.tap(find.text('Month'));
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Done when (optional)'),
+        'We talked for 20 minutes',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Goal rate counts the last'),
+        '4',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      final habit = (await repository.habits()).single;
+      expect(habit.isGoal, isTrue);
+      expect(habit.actionId, '');
+      expect(habit.recurringGoal!.toJson(), {
+        'period': 'month',
+        'definition_of_done': 'We talked for 20 minutes',
+        'rate_periods': 4,
+      });
+      // Scored by its goal rate alone, till it's given traits.
+      expect(habit.traits.select, isEmpty);
+    });
+
     testWidgets('warns of its own parts that count nothing', (tester) async {
       await pump(
         tester,

@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.196.0
+
+- A new habit can be about a recurring goal in place of an action: pick
+  its period (day, week or month), what done looks like, which events
+  are its, and how many periods its goal rate counts.
+
 ## 7.195.0
 
 - A habit can be a recurring goal's: the server makes a goal for each
