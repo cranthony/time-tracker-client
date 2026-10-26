@@ -721,6 +721,10 @@ void main() {
       await tester.tap(find.text('A recurring goal'));
       await tester.pumpAndSettle();
       expect(find.text('Pick an action or group'), findsNothing);
+      // Its goal rate's span follows the period till it's typed.
+      await tester.tap(find.text('Year'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(TextField, '2'), findsOneWidget);
       await tester.tap(find.text('Month'));
       await tester.enterText(
         find.widgetWithText(TextField, 'Done when (optional)'),
@@ -728,7 +732,7 @@ void main() {
       );
       await tester.enterText(
         find.widgetWithText(TextField, 'Goal rate counts the last'),
-        '4',
+        '3',
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Save'));
@@ -740,7 +744,7 @@ void main() {
       expect(habit.recurringGoal!.toJson(), {
         'period': 'month',
         'definition_of_done': 'We talked for 20 minutes',
-        'rate_periods': 4,
+        'rate_periods': 3,
       });
       // Scored by its goal rate alone, till it's given traits.
       expect(habit.traits.select, isEmpty);

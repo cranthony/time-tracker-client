@@ -35,6 +35,18 @@ void main() {
       DateTime(2026, 12),
       DateTime(2027, 1),
     ));
+    expect(periodOf(DateTime(2026, 11, 30), 'quarter'), (
+      DateTime(2026, 10),
+      DateTime(2027, 1),
+    ));
+    expect(periodOf(DateTime(2026, 2, 14), 'quarter'), (
+      DateTime(2026, 1),
+      DateTime(2026, 4),
+    ));
+    expect(periodOf(DateTime(2026, 7, 4), 'year'), (
+      DateTime(2026),
+      DateTime(2027),
+    ));
     expect(periodOf(DateTime(2026, 12, 9, 8), 'day'), (
       DateTime(2026, 12, 9),
       DateTime(2026, 12, 10),
@@ -65,7 +77,12 @@ void main() {
       'status': 'active',
       'traits': {'select': <String>[]},
     });
-    expect(const RecurringGoal().ratedPeriods, defaultRatePeriods);
+    expect(const RecurringGoal().ratedPeriods, 6);
+    expect(const RecurringGoal(period: 'year').ratedPeriods, 2);
+    expect(
+      [for (final p in goalPeriods.keys) defaultRatePeriods(p)],
+      [7, 6, 4, 4, 2],
+    );
     final goal = Goal.fromJson({'id': 'h1_2026-10-25', 'habit_id': 'h1'});
     expect(goal.habitId, 'h1');
     expect(goalWire(goal.toJson()).containsKey('habit_id'), isFalse);

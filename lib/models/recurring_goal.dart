@@ -2,7 +2,8 @@ import 'goal.dart';
 
 /// A habit's recurring goal, mirroring the Time Tracker MCP server's
 /// `RecurringGoal`: the goal the server makes for each of its periods on
-/// the calendar -- a day, a week (Sunday to Saturday) or a month -- as
+/// the calendar -- a day, a week (Sunday to Saturday), a month, a quarter
+/// (from January, April, July or October) or a year -- as
 /// each begins, once the one before is done or obsolete, and tries again
 /// through the next period when it's missed. Its goals are the habit's
 /// ([Goal.habitId]); the habit is scored by its [goalRate].
@@ -34,11 +35,11 @@ class RecurringGoal {
   final List<String> withIds;
   final List<String> forIds;
 
-  /// How many periods its goal rate counts back; null,
-  /// [defaultRatePeriods].
+  /// How many periods its goal rate counts back; null, its period's
+  /// default ([defaultRatePeriods]).
   final int? ratePeriods;
 
-  int get ratedPeriods => ratePeriods ?? defaultRatePeriods;
+  int get ratedPeriods => ratePeriods ?? defaultRatePeriods(period);
 
   static RecurringGoal? fromJson(Object? json) => switch (json) {
     final Map json => RecurringGoal(
@@ -84,14 +85,22 @@ const goalPeriods = {
   'day': ('Day', 'days'),
   'week': ('Week', 'weeks'),
   'month': ('Month', 'months'),
+  'quarter': ('Quarter', 'quarters'),
+  'year': ('Year', 'years'),
 };
 
 /// "A goal each week", for [recurring].
 String goalEachLabel(RecurringGoal recurring) =>
     'A goal each ${(goalPeriods[recurring.period]?.$1 ?? 'period').toLowerCase()}';
 
-/// How many periods a goal rate counts back unless its habit says.
-const defaultRatePeriods = 6;
+/// How many [period]s a goal rate counts back unless its habit says:
+/// fewer of the longer ones -- a week of days, a year of months.
+int defaultRatePeriods(String period) => switch (period) {
+  'day' => 7,
+  'month' || 'quarter' => 4,
+  'year' => 2,
+  _ => 6,
+};
 
 /// The habit a goal's [id] says it's from -- `<habit id>_2026-11-01` --
 /// if it's one made from a habit: no other goal's id has a "_".
@@ -110,6 +119,11 @@ String? habitOfGoalId(String id) {
   return switch (period) {
     'day' => (d, DateTime(d.year, d.month, d.day + 1)),
     'month' => (DateTime(d.year, d.month), DateTime(d.year, d.month + 1)),
+    'quarter' => () {
+      final first = d.month - (d.month - 1) % 3;
+      return (DateTime(d.year, first), DateTime(d.year, first + 3));
+    }(),
+    'year' => (DateTime(d.year), DateTime(d.year + 1)),
     _ => () {
       final start = DateTime(d.year, d.month, d.day - d.weekday % 7);
       return (start, DateTime(start.year, start.month, start.day + 7));
