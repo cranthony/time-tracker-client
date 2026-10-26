@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.199.0
+
+- A recurring goal can be quarterly (from January, April, July or
+  October) or yearly, as well as daily, weekly or monthly.
+- Its goal rate counts back further for shorter periods by default: 7
+  days, 6 weeks, 4 months, 4 quarters or 2 years. The editor's count
+  follows the period picked till you type your own.
+
 ## 7.198.1
 
 - A change to a person's place on the habit graph made in an older

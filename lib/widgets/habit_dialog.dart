@@ -101,8 +101,13 @@ class _HabitEditorState extends State<_HabitEditor> {
     text: widget.habit?.recurringGoal?.attributionHints,
   );
   late final _ratePeriods = TextEditingController(
-    text: '${widget.habit?.recurringGoal?.ratedPeriods ?? defaultRatePeriods}',
+    text:
+        '${widget.habit?.recurringGoal?.ratedPeriods ?? defaultRatePeriods(_period)}',
   );
+
+  /// Whether its goal rate's span is its own, not its period's default,
+  /// which it follows as the period's changed till it's typed.
+  late bool _ownRate = widget.habit?.recurringGoal?.ratePeriods != null;
   late PersonTraits _traits = widget.habit?.traits ?? const PersonTraits();
   late final PersonTraits _actionTraits = _traits;
   late List<String> _foundations = widget.habit?.foundations ?? const [];
@@ -142,11 +147,16 @@ class _HabitEditorState extends State<_HabitEditor> {
       attributionHints: _text(_attributionHints),
       withIds: was.withIds,
       forIds: was.forIds,
-      ratePeriods: _rateValue == defaultRatePeriods && was.ratePeriods == null
-          ? null
-          : _rateValue,
+      ratePeriods: _ownRate ? _rateValue : null,
     );
   }
+
+  /// Picks [period], its goal rate's span following it unless it's
+  /// been given one.
+  void _pickPeriod(String period) => setState(() {
+    _period = period;
+    if (!_ownRate) _ratePeriods.text = '${defaultRatePeriods(period)}';
+  });
 
   /// Switches a new habit between an action's and a recurring goal's: a
   /// goal's is scored by its goal rate alone till it's given traits.
@@ -415,8 +425,7 @@ class _HabitEditorState extends State<_HabitEditor> {
     ),
     FieldHotkey(
       'P',
-      onPressed: () =>
-          setState(() => _period = nextOf(goalPeriods.keys.toList(), _period)),
+      onPressed: () => _pickPeriod(nextOf(goalPeriods.keys.toList(), _period)),
       child: SegmentedButton<String>(
         showSelectedIcon: false,
         segments: [
@@ -424,7 +433,7 @@ class _HabitEditorState extends State<_HabitEditor> {
             ButtonSegment(value: key, label: Text(value.$1)),
         ],
         selected: {_period},
-        onSelectionChanged: (picked) => setState(() => _period = picked.single),
+        onSelectionChanged: (picked) => _pickPeriod(picked.single),
       ),
     ),
     Padding(
@@ -497,7 +506,7 @@ class _HabitEditorState extends State<_HabitEditor> {
           border: const OutlineInputBorder(),
           isDense: true,
         ),
-        onChanged: (_) => setState(() {}),
+        onChanged: (_) => setState(() => _ownRate = true),
       ),
     ),
   ];
