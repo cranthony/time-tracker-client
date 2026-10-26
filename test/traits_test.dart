@@ -286,6 +286,71 @@ void main() {
       );
     });
 
+    test('checks a schedule whole', () {
+      Part schedule(Map<String, Object?> changes) => {
+        'kind': 'schedule',
+        'action': 'work',
+        'from': '10:00',
+        'to': '18:00',
+        'measure': 'covered',
+        ...changes,
+      };
+
+      expect(partProblem(schedule({})), isNull);
+      expect(
+        partProblem(
+          schedule({
+            'slack_minutes': 60,
+            'days': ['mon', 'fri'],
+            'window_days': 14,
+          }),
+        ),
+        isNull,
+      );
+      expect(partProblem(schedule({'action': null})), 'action is needed.');
+      expect(
+        partProblem(schedule({'from': '9:00'})),
+        'from must be a time of day.',
+      );
+      expect(
+        partProblem(schedule({'to': '18:00:00'})),
+        'to must be a time of day.',
+      );
+      expect(
+        partProblem(schedule({'to': '10:00'})),
+        'its window must end at another time.',
+      );
+      expect(partProblem(schedule({'measure': null})), 'measure is needed.');
+      expect(
+        partProblem(schedule({'measure': 'during'})),
+        'pick what it measures.',
+      );
+      expect(
+        partProblem(schedule({'days': <String>[]})),
+        'pick the days it is on.',
+      );
+      expect(
+        partProblem(
+          schedule({
+            'days': ['monday'],
+          }),
+        ),
+        'pick the days it is on.',
+      );
+      expect(
+        partProblem(schedule({'measure': 'starts', 'slack_minutes': 30})),
+        'only what it covers can have slack.',
+      );
+      expect(
+        partProblem(schedule({'slack_minutes': 480})),
+        'its slack must be shorter than its window.',
+      );
+      expect(
+        partProblem(schedule({'window_days': 0})),
+        'over, in days must be above 0.',
+      );
+    });
+
     test('checks a judgment whole', () {
       Part judgment(Map<String, Object?> changes) => {..._novelty, ...changes};
 
@@ -390,6 +455,35 @@ void main() {
           'interval_days': 7,
         }),
         '1h of events every 7 days',
+      );
+      expect(
+        describePart(
+          const {
+            'kind': 'schedule',
+            'action': 'sleep',
+            'from': '06:30',
+            'to': '07:30',
+            'measure': 'ends',
+          },
+          {'sleep': 'Sleep'},
+        ),
+        'sleep ending 06:30–07:30, every day (over 7 days)',
+      );
+      expect(
+        describePart(
+          const {
+            'kind': 'schedule',
+            'action': 'work',
+            'from': '10:00',
+            'to': '18:00',
+            'measure': 'covered',
+            'days': ['mon', 'tue', 'wed', 'thu', 'fri'],
+            'slack_minutes': 60,
+          },
+          {'work': 'Work'},
+        ),
+        'work covering 10:00–18:00, Mon, Tue, Wed, Thu, Fri (over 7 days, '
+        '1h slack)',
       );
       expect(
         describePart(const {
