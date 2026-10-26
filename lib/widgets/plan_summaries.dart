@@ -260,9 +260,10 @@ Set<String> _habitsOf(
   List<Habit> habits,
   Map<String?, PlanAction> byId,
 ) {
+  // A person's or circle's habit has no events of its own.
   final active = [
     for (final h in habits)
-      if (h.active) h,
+      if (h.active && !h.isRelationship) h,
   ];
   final habitsById = {for (final h in active) h.id: h};
   final (day, week) = window.split<String>(
@@ -362,9 +363,10 @@ const _unscored = '\u0000unscored';
   Map<String?, PlanAction> byId,
   int? Function(Habit habit) health,
 ) {
+  // A person's or circle's habit has no events of its own.
   final active = [
     for (final h in habits)
-      if (h.active) h,
+      if (h.active && !h.isRelationship) h,
   ];
   final bands = {
     for (final h in active)

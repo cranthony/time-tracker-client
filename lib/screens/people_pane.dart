@@ -19,6 +19,7 @@ import 'person_pages.dart';
 import '../services/client_health.dart';
 import '../services/work_timing.dart';
 import '../widgets/refreshing_bar.dart';
+import '../widgets/relationship_habits.dart';
 import '../models/time_split.dart';
 
 /// The Plan page's People pane -- who the user wants to be with:
@@ -384,6 +385,11 @@ class PeoplePaneState extends State<PeoplePane> {
                 ),
             ],
           ),
+        ),
+      if (circle != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: RelationshipHabits(memory: widget.memory, circle: circle),
         ),
       if (circle != null)
         Padding(
