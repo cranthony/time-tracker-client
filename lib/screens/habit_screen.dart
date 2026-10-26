@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../models/goal.dart';
 import '../models/habit.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
+import '../models/recurring_goal.dart';
 import '../models/trait.dart';
 import '../services/plan_memory.dart';
 import '../widgets/habit_dialog.dart';
@@ -26,6 +28,10 @@ import 'subject_sections.dart';
 ///
 /// A person's or circle's habit says whose it is, in place of its action,
 /// and has their traits -- those it picks -- as they're scored for them.
+///
+/// A recurring goal's habit says what its goal is, in place of its
+/// action, and lists its goals, newest first: done, missed (and tried
+/// again), or under way.
 class HabitScreen extends StatefulWidget {
   const HabitScreen({
     super.key,
@@ -92,6 +98,48 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
     final saved = await widget.onEdit!(_habit);
     if (saved == null || !mounted) return;
     setState(() => _habit = saved);
+  }
+
+  /// Its goals, newest first, each with its period and how it went.
+  List<Widget> _goals(BuildContext context) {
+    final theme = Theme.of(context);
+    final goals = [
+      for (final g in widget.memory?.goals ?? const <Goal>[])
+        if (g.habitId == _habit.id) g,
+    ]..sort((a, b) => b.id.compareTo(a.id));
+    final locale = MaterialLocalizations.of(context);
+    return [
+      sectionHeading(theme, 'Its goals'),
+      if (goals.isEmpty)
+        sectionPadded(
+          Text(
+            'None yet: the first is made as its period starts.',
+            style: TextStyle(color: theme.hintColor),
+          ),
+        ),
+      for (final g in goals)
+        ListTile(
+          dense: true,
+          leading: Icon(switch (g.status) {
+            'done' => Icons.check_circle_outline,
+            'missed' => Icons.cancel_outlined,
+            'obsolete' => Icons.remove_circle_outline,
+            _ => g.misses.isEmpty ? Icons.radio_button_unchecked : Icons.replay,
+          }, size: 20),
+          title: Text(switch (DateTime.tryParse(g.id.split('_').last)) {
+            final start? => 'From ${locale.formatMediumDate(start)}',
+            null => goalTitle(g),
+          }),
+          subtitle: Text(
+            [
+              goalStatuses[g.status] ?? g.status,
+              if (g.misses.isNotEmpty && g.open) 'tried again',
+              if (g.due case final due? when g.open)
+                'due ${locale.formatMediumDate(due.subtract(const Duration(minutes: 1)))}',
+            ].join(' · '),
+          ),
+        ),
+    ];
   }
 
   @override
@@ -166,6 +214,22 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
                   ].join(' · '),
                 ),
               )
+            else if (_habit.recurringGoal case final goal?)
+              ListTile(
+                leading: const Icon(Icons.repeat),
+                title: Text(
+                  '${goalEachLabel(goal)}: ${goal.title ?? habitName(_habit)}',
+                ),
+                subtitle: Text(
+                  [
+                    goal.definitionOfDone ?? 'Done when its goal is',
+                    'goal rate over the last ${goal.ratedPeriods} '
+                        '${goalPeriods[goal.period]?.$2 ?? 'periods'}',
+                    if (!_habit.active)
+                      habitStatuses[_habit.status] ?? _habit.status,
+                  ].join(' · '),
+                ),
+              )
             else
               ListTile(
                 leading: actionDot(action, size: 16),
@@ -194,6 +258,7 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
                   style: TextStyle(color: theme.hintColor),
                 ),
               }),
+            if (_habit.isGoal) ..._goals(context),
             sectionHeading(theme, 'Built on'),
             sectionPadded(switch (_habit.foundations) {
               [] => Text(

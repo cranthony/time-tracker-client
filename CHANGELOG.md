@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.197.0
+
+- A recurring goal's habit shows its goal in place of an action -- in
+  the Habits pane ("A goal each week") and on its page, which lists its
+  goals, newest first, each done, missed or tried again. A goal made
+  from a habit says so on its page.
+
 ## 7.196.0
 
 - A new habit can be about a recurring goal in place of an action: pick

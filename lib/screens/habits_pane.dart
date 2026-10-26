@@ -563,6 +563,7 @@ class HabitsPaneState extends State<HabitsPane> {
 
   /// [habit]'s action or group, under its groups.
   static String _path(Habit habit, Map<String?, PlanAction> byId) =>
+      goalHabitLabel(habit) ??
       byId[habit.actionId]?.path ??
       habit.actionPath ??
       switch (byId[habit.actionId]) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/facts.dart';
+import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/habit.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/person.dart';
@@ -818,6 +819,50 @@ void main() {
         findsOneWidget,
       );
     });
+  });
+
+  testWidgets("a recurring goal's habit's page shows its goal and its goals", (
+    tester,
+  ) async {
+    final habit = Habit.fromJson({
+      'id': 'h1',
+      'name': 'Call Mom',
+      'recurring_goal': {'period': 'week', 'definition_of_done': 'We talked'},
+      'traits': {'select': <String>[]},
+      'status': 'active',
+    });
+    Goal goal(String start, String status, List<String> changes) =>
+        Goal.fromJson({
+          'id': 'h1_$start',
+          'title': 'Call Mom',
+          'habit_id': 'h1',
+          'status': status,
+          'deadline': {'at': '2026-12-31'},
+          'due': '2026-12-31',
+          'history': [
+            for (final c in changes)
+              {'status': c, 'at': '${start}T00:00:00-04:00'},
+          ],
+        });
+    final memory = PlanMemory()
+      ..goals = [
+        goal('2026-10-11', 'done', ['active', 'done']),
+        goal('2026-10-18', 'active', ['active', 'missed', 'active']),
+        Goal.fromJson({'id': 'other', 'title': 'Other'}),
+      ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HabitScreen(habit: habit, memory: memory),
+      ),
+    );
+
+    expect(find.text('A goal each week: Call Mom'), findsOneWidget);
+    expect(find.textContaining('We talked'), findsOneWidget);
+    expect(find.text('Its goals'), findsOneWidget);
+    expect(find.text('From Sun, Oct 18'), findsOneWidget);
+    expect(find.textContaining('tried again'), findsOneWidget);
+    expect(find.text('From Sun, Oct 11'), findsOneWidget);
+    expect(find.text('Other'), findsNothing);
   });
 
   testWidgets("a habit's page shows what it's built on", (tester) async {
