@@ -690,5 +690,9 @@ String personName(Person person, {bool context = false}) {
   return context && person.context != null ? '$name (${person.context})' : name;
 }
 
+/// [circle]'s name, or "(no name)".
+String circleName(Circle circle) =>
+    circle.name.isEmpty ? '(no name)' : circle.name;
+
 String? _text(Object? value) =>
     value is String && value.trim().isNotEmpty ? value : null;

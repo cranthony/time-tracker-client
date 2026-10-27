@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/people_times.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/time_split.dart';
 import 'package:time_tracker_client/models/trait.dart';
+import 'package:time_tracker_client/screens/circle_screen.dart';
 import 'package:time_tracker_client/screens/locations_pane.dart';
 import 'package:time_tracker_client/screens/people_pane.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
@@ -18,7 +20,10 @@ import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/widgets/edit_page.dart';
 import 'package:time_tracker_client/widgets/health.dart';
+import 'package:time_tracker_client/widgets/people_picker.dart';
+import 'package:time_tracker_client/widgets/person_tile.dart';
 import 'package:time_tracker_client/widgets/plan_summaries.dart';
+import 'package:time_tracker_client/widgets/tree_picker.dart';
 
 const _circles = [
   Circle(id: 'family', name: 'Family'),
@@ -272,6 +277,25 @@ void main() {
       expect(times.nearest('sam')!.id, 'dinner');
     });
 
+    test("measure a circle's time with any of its people, each event once", () {
+      final times = PeopleTimes.compute(
+        window: SummaryWindow(asOf: asOf),
+        windowEvents: events,
+        known: events,
+        circles: {
+          'pair': ['sam', 'mom'],
+          'jos': ['jo'],
+        },
+      );
+
+      // The dinner was two hours with both: two hours with the pair.
+      expect(times.circleDay('pair'), const Duration(hours: 2));
+      expect(times.circleWeek('pair'), const Duration(hours: 3));
+      expect(times.circleNearest('pair')!.id, 'dinner');
+      expect(times.circleWeek('jos'), Duration.zero);
+      expect(times.circleNearest('jos'), isNull);
+    });
+
     test('sort people either way, those with nothing to sort by last, Self '
         'first', () {
       final times = PeopleTimes.compute(
@@ -409,15 +433,17 @@ void main() {
         'them, as the summary measures it', (tester) async {
       await pump(tester);
 
-      expect(find.text('24h 2h · 7d 2h'), findsOneWidget);
-      expect(find.textContaining('Last: Visit Mom · '), findsOneWidget);
+      // Mom's, and her circle's.
+      expect(find.text('24h 2h · 7d 2h'), findsNWidgets(2));
+      expect(find.textContaining('Last: Visit Mom · '), findsNWidgets(2));
     });
 
     testWidgets('as shares, and the next time, looking on', (tester) async {
       await pump(tester, forward: true, durations: false);
 
-      expect(find.text('+24h 4% · +7d 1%'), findsOneWidget);
-      expect(find.textContaining('Next: Call Mom · '), findsOneWidget);
+      // Mom's, and her circle's.
+      expect(find.text('+24h 4% · +7d 1%'), findsNWidgets(2));
+      expect(find.textContaining('Next: Call Mom · '), findsNWidgets(2));
     });
 
     testWidgets('shows Self even when no one else is there', (tester) async {
@@ -478,13 +504,23 @@ void main() {
       expect(find.text('Self'), findsOneWidget);
       expect(find.text('from salsa · Family, Dance friends'), findsOneWidget);
       // Mom's, worked out from her events; no one else has any judged.
-      expect(find.text('90'), findsOneWidget);
-      expect(find.byType(HealthDot), findsOneWidget);
-      // Her circle's too.
       expect(
-        find.byTooltip('Family: health 90, ${relationshipBand(90)}'),
+        find.descendant(
+          of: find.widgetWithText(PersonTile, 'Mom'),
+          matching: find.byType(HealthDot),
+        ),
         findsOneWidget,
       );
+      expect(find.byType(HealthDot), findsNWidgets(2));
+      // Her circle's too: hers alone, as no one else in it is rated.
+      expect(
+        find.descendant(
+          of: find.widgetWithText(CircleTile, 'Family'),
+          matching: find.byType(HealthDot),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('2 people · Thursday salsa'), findsOneWidget);
       expect(find.text('Casey'), findsNothing);
 
       await tester.tap(find.byTooltip('Show archived people'));
@@ -503,17 +539,68 @@ void main() {
       expect(find.byType(HealthDot), findsNothing);
     });
 
-    testWidgets('shows only the people in a circle picked', (tester) async {
+    testWidgets('lists the circles among everyone, sorted with them', (
+      tester,
+    ) async {
       await pump(tester);
 
-      await tester.tap(find.widgetWithText(FilterChip, 'Dance friends'));
+      double top(String name) => tester
+          .getTopLeft(
+            find
+                .descendant(
+                  of: find.byType(ListTile),
+                  matching: find.text(name),
+                )
+                .first,
+          )
+          .dy;
+      // Listed, after Self.
+      expect(top('Self'), lessThan(top('Family')));
+      expect(top('Dance friends'), lessThan(top('Mom')));
+
+      await tester.tap(find.byTooltip('Sort people'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Time in 7d'));
+      await tester.pumpAndSettle();
+      // Mom's two hours, and Family's; then no one's.
+      expect(top('Mom'), lessThan(top('Dance friends')));
+      expect(top('Family'), lessThan(top('Dance friends')));
+
+      await tester.enterText(find.byType(TextField).first, 'Thursday');
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(CircleTile, 'Dance friends'), findsOneWidget);
+      expect(find.widgetWithText(CircleTile, 'Family'), findsNothing);
+    });
+
+    testWidgets("a circle's page has its health, time together, habits, "
+        'goals and people, each opening theirs', (tester) async {
+      final (_, memory) = await pump(tester);
+      memory.goals = const [
+        Goal(id: 'g1', title: 'Plan the reunion', withIds: ['mom', 'jordan']),
+        Goal(id: 'g2', title: 'Salsa lessons', withIds: ['jordan']),
+      ];
+
+      await tester.tap(find.widgetWithText(CircleTile, 'Family'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Sam'), findsOneWidget);
-      expect(find.text('Jordan'), findsOneWidget);
-      expect(find.text('Mom'), findsNothing);
-      expect(find.text('Self'), findsNothing);
-      expect(find.text('Dance friends: 2 people'), findsOneWidget);
+      expect(find.byType(CircleScreen), findsOneWidget);
+      expect(find.text('Relationship health'), findsOneWidget);
+      expect(find.textContaining(relationshipBand(90)), findsOneWidget);
+      expect(
+        find.textContaining('24h 2h · 7d 2h\nLast: Visit Mom'),
+        findsOneWidget,
+      );
+      expect(find.text('Habits'), findsOneWidget);
+      expect(find.text('Plan the reunion'), findsOneWidget);
+      expect(find.text('With Mom'), findsOneWidget);
+      expect(find.text('Salsa lessons'), findsNothing);
+      expect(find.text('2 people'), findsOneWidget);
+      expect(find.widgetWithText(PersonTile, 'Sam'), findsOneWidget);
+      expect(find.widgetWithText(PersonTile, 'Jordan'), findsNothing);
+
+      await tester.tap(find.widgetWithText(PersonTile, 'Mom'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PersonScreen), findsOneWidget);
     });
 
     testWidgets('adds a person to circles, with the traits that apply and '
@@ -529,18 +616,35 @@ void main() {
         find.widgetWithText(TextField, 'Context (optional)'),
         'college',
       );
-      await tester.tap(find.widgetWithText(FilterChip, 'Family').last);
-      await tester.pump();
+      // Picked from the circles, searched.
+      await tester.tap(find.byType(CirclesField));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(TreePicker),
+          matching: find.byType(TextField),
+        ),
+        'fam',
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.widgetWithText(CheckboxListTile, 'Dance friends'),
+        findsNothing,
+      );
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'Family'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      Finder picked() => find.descendant(
+        of: find.byType(CirclesField),
+        matching: find.widgetWithText(InputChip, 'Family'),
+      );
+      expect(picked(), findsOneWidget);
       // The rest on the full page, with what's typed in the sheet.
       await tester.tap(find.text('More'));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextField, 'Priya'), findsOneWidget);
-      expect(
-        tester
-            .widget<FilterChip>(find.widgetWithText(FilterChip, 'Family'))
-            .selected,
-        isTrue,
-      );
+      expect(picked(), findsOneWidget);
       // How the traits combine is above them, edited by its sigma.
       expect(
         tester.getTopLeft(find.text('How the traits combine')).dy,
@@ -638,16 +742,20 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
-      expect(find.widgetWithText(FilterChip, 'Work'), findsOneWidget);
+      expect(find.widgetWithText(CircleTile, 'Work'), findsOneWidget);
+      expect(find.text('0 people'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(FilterChip, 'Dance friends'));
+      // From its page, which closes once it's gone.
+      await tester.tap(find.widgetWithText(CircleTile, 'Dance friends'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Edit Dance friends'));
+      await tester.tap(find.byTooltip('Edit Dance friends'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Delete').last);
       await tester.pumpAndSettle();
+      expect(find.byType(CircleScreen), findsNothing);
+      expect(find.widgetWithText(CircleTile, 'Dance friends'), findsNothing);
 
       final people = await repository.people();
       expect(people.circles.map((c) => c.id), ['family', 'work']);

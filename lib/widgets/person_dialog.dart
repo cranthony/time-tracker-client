@@ -7,6 +7,7 @@ import '../models/trait_scores.dart';
 import 'hotkeys.dart';
 import 'edit_page.dart';
 import 'error_sheet.dart';
+import 'people_picker.dart';
 import 'quick_add_sheet.dart';
 import 'scoring_editor.dart';
 import 'traits_field.dart';
@@ -222,38 +223,20 @@ class _PersonEditorState extends State<_PersonEditor> {
               ),
             ),
           ),
-        if (!_isSelf) ...[
+        if (!_isSelf)
           Padding(
-            padding: const EdgeInsets.only(top: 16, bottom: 4),
-            child: Text('Circles', style: theme.textTheme.titleSmall),
-          ),
-          if (widget.circles.isEmpty)
-            Text(
-              'No circles yet: add one from the People section.',
-              style: theme.textTheme.bodySmall,
-            )
-          else
-            FieldHotkey(
-              'I',
-              focusOnly: true,
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final circle in widget.circles)
-                    FilterChip(
-                      label: Text(circle.name),
-                      selected: _circleIds.contains(circle.id),
-                      onSelected: (on) => setState(
-                        () => on
-                            ? _circleIds.add(circle.id)
-                            : _circleIds.remove(circle.id),
-                      ),
-                    ),
-                ],
+            padding: const EdgeInsets.only(top: 16),
+            child: CirclesField(
+              circles: widget.circles,
+              picked: [..._circleIds],
+              hotkey: 'I',
+              onChanged: (ids) => setState(
+                () => _circleIds
+                  ..clear()
+                  ..addAll(ids),
               ),
             ),
-        ],
+          ),
         FieldHotkey(
           'T',
           focusOnly: true,
@@ -339,13 +322,15 @@ class _PersonEditorState extends State<_PersonEditor> {
   }
 }
 
-/// Adds a circle (with no [circle]) or edits one: its name, note, and
-/// how its people's scores combine -- its [members], by id, named --
-/// in place of [defaultScoring]. Saves with [save]; "Delete", asked
-/// first, calls [delete]. Returns true if anything was saved or deleted.
+/// Adds a circle (with no [circle]), named [name] to start with, or edits
+/// one: its name, note, and how its people's scores combine -- its
+/// [members], by id, named -- in place of [defaultScoring]. Saves with
+/// [save]; "Delete", asked first, calls [delete]. Returns true if
+/// anything was saved or deleted.
 Future<bool> showCircleDialog(
   BuildContext context, {
   Circle? circle,
+  String? name,
   Map<String, String> members = const {},
   Aggregation? defaultScoring,
   required Future<void> Function(Map<String, Object?> fields) save,
@@ -356,6 +341,7 @@ Future<bool> showCircleDialog(
       builder: (_) => _NamedDialog(
         noun: 'circle',
         name: circle?.name,
+        typed: name,
         detail: circle?.note,
         detailField: 'note',
         detailLabel: 'Note (optional)',

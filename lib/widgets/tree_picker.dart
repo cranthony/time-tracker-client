@@ -64,7 +64,8 @@ typedef PickerAdd = ({String noun, IconData icon, ValueChanged<String> onAdd});
 /// Its [search] can be given, to start with words typed or outlive it;
 /// [autofocus] takes the keyboard at once, what's typed selected.
 /// Long-pressing a row calls [onEdit]; with [add], a row under the search
-/// adds one. [marker] goes before each name -- an action's diamond, say.
+/// adds one, and with [adds], one each for more kinds -- a person, and a
+/// circle, say. [marker] goes before each name -- an action's diamond, say.
 /// With [onChipTap], each chip can be tapped as well as removed -- to set
 /// how much of an event a goal takes, say -- and [chipDetail] says, after
 /// its label, what's set.
@@ -89,6 +90,7 @@ class TreePicker extends StatefulWidget {
     this.chipAvatar,
     this.onEdit,
     this.add,
+    this.adds = const [],
     this.maxListHeight,
     this.onChipTap,
     this.chipDetail,
@@ -116,6 +118,7 @@ class TreePicker extends StatefulWidget {
   final Widget? Function(int index, PickerNode? node)? chipAvatar;
   final ValueChanged<PickerNode>? onEdit;
   final PickerAdd? add;
+  final List<PickerAdd> adds;
   final double? maxListHeight;
 
   /// Called with a chip's id as it's tapped; null, a chip only removes.
@@ -276,7 +279,7 @@ class _TreePickerState extends State<TreePicker> {
           ),
         ),
         // Above the list, not in it: always to hand.
-        if (widget.add case (:final noun, :final icon, :final onAdd))
+        for (final (:noun, :icon, :onAdd) in [?widget.add, ...widget.adds])
           PickerAddTile(noun: noun, search: _search, icon: icon, onAdd: onAdd),
         switch (widget.maxListHeight) {
           null => Expanded(

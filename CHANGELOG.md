@@ -9,6 +9,19 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.202.0
+
+- Circles are rows among the people on the People pane, sorted with them,
+  each with its health, its people's time together and the last time you
+  saw any of them. Tapping one opens its page: its health, time together,
+  habits, the open goals with its people, and its people, each opening
+  theirs. A circle's habit page opens it too.
+- The person button on the Habits pane picks from the people picker:
+  searched, with people and circles as rows, shown all together or only
+  people or only circles, and a person or circle can be added from it.
+- A person's circles are picked from the same picker, circles only, in
+  the New person sheet and on their page, where a circle can be added.
+
 ## 7.201.0
 
 - Tapping the person on a person's habit page opens their page, to tweak

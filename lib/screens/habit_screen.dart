@@ -28,7 +28,8 @@ import 'subject_sections.dart';
 ///
 /// A person's or circle's habit says whose it is, in place of its action,
 /// and has their traits -- those it picks -- as they're scored for them.
-/// Tapping the person opens their page, with [onOpenPerson].
+/// Tapping the person opens their page, with [onOpenPerson]; the circle,
+/// its page, with [onOpenCircle].
 ///
 /// A recurring goal's habit says what its goal is, in place of its
 /// action, and lists its goals, newest first: done, missed (and tried
@@ -45,6 +46,7 @@ class HabitScreen extends StatefulWidget {
     this.foundationNames = const {},
     this.onEdit,
     this.onOpenPerson,
+    this.onOpenCircle,
   });
 
   final Habit habit;
@@ -69,6 +71,9 @@ class HabitScreen extends StatefulWidget {
 
   /// Opens a person's page: theirs, for a person's habit.
   final void Function(Person person)? onOpenPerson;
+
+  /// Opens a circle's page: its, for a circle's habit.
+  final void Function(Circle circle)? onOpenCircle;
 
   @override
   State<HabitScreen> createState() => _HabitScreenState();
@@ -161,8 +166,15 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
         .where((c) => c.id == _habit.circleId)
         .firstOrNull;
     final relationship = _habit.isRelationship;
-    final open = switch ((person, widget.onOpenPerson)) {
-      (final p?, final onOpen?) => () => onOpen(p),
+    final open = switch ((person, circle)) {
+      (final p?, _) => switch (widget.onOpenPerson) {
+        final onOpen? => () => onOpen(p),
+        null => null,
+      },
+      (_, final c?) => switch (widget.onOpenCircle) {
+        final onOpen? => () => onOpen(c),
+        null => null,
+      },
       _ => null,
     };
     final sections = SubjectSections(
@@ -209,7 +221,7 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
                 ),
                 title: Text(switch ((person, circle)) {
                   (final p?, _) => personName(p),
-                  (_, final c?) => c.name,
+                  (_, final c?) => circleName(c),
                   _ => _habit.personId ?? _habit.circleId ?? '',
                 }),
                 subtitle: Text(
