@@ -1243,6 +1243,96 @@ class _EventsScreenState extends State<EventsScreen> {
   bool _reviews(DateTime start, DateTime end) =>
       _editedProposal?.covers(start, end) ?? false;
 
+  /// Whether a write of [events] (those it changes or cancels) to [spans]
+  /// (what it leaves them, and any it creates, covering) goes through the
+  /// open proposal, as an edit of what happened: one of [events] is in
+  /// it, or a span is in its window -- or, [events] all being among its
+  /// events, a span overlaps one it changed, there or where the calendar
+  /// has it. The calendar would refuse that write for overlapping where
+  /// the proposal moved it from, and the app shows where it's moved to.
+  bool _throughProposal(
+    Iterable<Event> events,
+    Iterable<(DateTime, DateTime)> spans,
+  ) {
+    if (events.any(_inReview) || spans.any((s) => _reviews(s.$1, s.$2))) {
+      return true;
+    }
+    final proposal = _editedProposal;
+    if (proposal == null || events.any((e) => proposal.event(e.id) == null)) {
+      return false;
+    }
+    final ids = {for (final e in events) e.id};
+    bool overlaps((DateTime, DateTime) s, DateTime start, DateTime end) =>
+        s.$1.isBefore(end) && s.$2.isAfter(start);
+    return [
+      for (final e in proposal.events ?? const <ProposalEvent>[])
+        if (!ids.contains(e.id) && e.changed) e,
+    ].any(
+      (e) => spans.any(
+        (s) =>
+            overlaps(s, e.start, e.end) ||
+            overlaps(s, e.plannedStart ?? e.start, e.plannedEnd ?? e.end),
+      ),
+    );
+  }
+
+  /// What [event] covers with [changes] made to it.
+  static (DateTime, DateTime) _spanWith(
+    Event event,
+    Map<String, Object?> changes,
+  ) => (
+    _timeIn(changes['start']) ?? event.start,
+    _timeIn(changes['end']) ?? event.end,
+  );
+
+  /// What [fields], an event's as `create_event` takes them, cover.
+  static (DateTime, DateTime)? _spanOf(Map<String, Object?> fields) =>
+      switch ((_timeIn(fields['start']), _timeIn(fields['end']))) {
+        (final start?, final end?) => (start, end),
+        _ => null,
+      };
+
+  static DateTime? _timeIn(Object? value) =>
+      value is String ? DateTime.tryParse(value) : null;
+
+  /// The events [over] changes or cancels, and what it leaves them, and
+  /// those it creates, covering.
+  static (List<Event>, List<(DateTime, DateTime)>) _written(Overwrite over) => (
+    [for (final (e, _) in over.updates) e, ...over.cancels],
+    [
+      for (final (e, changes) in over.updates) _spanWith(e, changes),
+      for (final e in over.cancels) (e.start, e.end),
+      for (final c in over.creates) ?_spanOf(c),
+    ],
+  );
+
+  /// Whether writing [over] -- with [events] and [spans] besides -- goes
+  /// through the open proposal (see [_throughProposal]).
+  bool _overThroughProposal(
+    Overwrite over, {
+    Iterable<Event> events = const [],
+    Iterable<(DateTime, DateTime)> spans = const [],
+  }) {
+    final (written, covered) = _written(over);
+    return _throughProposal([...events, ...written], [...spans, ...covered]);
+  }
+
+  /// Records [changes] to [event] in what the open proposal says happened.
+  Future<Proposal> _amendUpdate(Event event, Map<String, Object?> changes) =>
+      _amend(
+        ProposalEdits(updates: [proposalUpdate(event, changes)]),
+        label: 'Change ${_named(event)}, in what happened',
+      );
+
+  /// Records in what the open proposal says happened that [event] didn't
+  /// happen, [counts] saying whether that counts against follow-through.
+  Future<Proposal> _amendCancel(Event event, bool counts) => _amend(
+    ProposalEdits(
+      cancels: [(eventId: event.id!, countsAgainstFollowThrough: counts)],
+    ),
+    label: 'Cancel ${_named(event)}, in what happened',
+  );
+
   /// The events changed since the user last looked at the proposal.
   Set<String> get _changedSince => {
     ...(_proposal?.changedSince ?? const {}).difference(_editedHere),
@@ -2223,25 +2313,39 @@ class _EventsScreenState extends State<EventsScreen> {
   Future<void> _openEvent(Event event) async {
     if (_saidReadOnly()) return;
     if (_inReview(event)) return _openReviewed(event);
+    // Edited in what happened, if it runs into what the proposal changed.
+    Proposal? amended;
     final outcome = await showEventSummaryDialog(
       context,
       event,
       // What a proposal adds, named by its ref until it's made.
       additions: _proposal?.additions ?? const [],
-      save: (changes) => _approvingHistory(
-        at: event.start,
-        (allow) => _writes.update(event, changes, allowHistory: allow),
-      ),
+      save: (changes) async {
+        if (_throughProposal([event], [_spanWith(event, changes)])) {
+          amended = await _amendUpdate(event, changes);
+          return const [];
+        }
+        return _approvingHistory(
+          at: event.start,
+          (allow) => _writes.update(event, changes, allowHistory: allow),
+        );
+      },
       cancel: _waitingOn(event).isNotEmpty
           ? null
-          : (counts) => _approvingHistory(
-              at: event.start,
-              (allow) => _writes.cancel(
-                event,
-                countsAgainstFollowThrough: counts,
-                allowHistory: allow,
-              ),
-            ),
+          : (counts) async {
+              if (_throughProposal([event], [(event.start, event.end)])) {
+                amended = await _amendCancel(event, counts);
+                return const [];
+              }
+              return _approvingHistory(
+                at: event.start,
+                (allow) => _writes.cancel(
+                  event,
+                  countsAgainstFollowThrough: counts,
+                  allowHistory: allow,
+                ),
+              );
+            },
       waiting: _waitingOn(event),
       otherEvents: _otherEvents(event),
       actions: _actionsById,
@@ -2252,7 +2356,11 @@ class _EventsScreenState extends State<EventsScreen> {
     if (!mounted) return;
     switch (outcome) {
       case SummarySaved(:final value):
-        await _saved(event, value);
+        if (amended case final amended?) {
+          _amended(amended, 'Changed in what happened, to confirm.');
+        } else {
+          await _saved(event, value);
+        }
       case SummaryDetails():
         await _openEventDetails(event);
       case null:
@@ -2271,23 +2379,13 @@ class _EventsScreenState extends State<EventsScreen> {
       // What a proposal adds, named by its ref until it's made.
       additions: _proposal?.additions ?? const [],
       save: (changes) async {
-        amended = await _amend(
-          ProposalEdits(updates: [proposalUpdate(event, changes)]),
-          label: 'Change ${_named(event)}, in what happened',
-        );
+        amended = await _amendUpdate(event, changes);
         return const [];
       },
       cancel: _waitingOn(event).isNotEmpty
           ? null
           : (counts) async {
-              amended = await _amend(
-                ProposalEdits(
-                  cancels: [
-                    (eventId: event.id!, countsAgainstFollowThrough: counts),
-                  ],
-                ),
-                label: 'Cancel ${_named(event)}, in what happened',
-              );
+              amended = await _amendCancel(event, counts);
               return const [];
             },
       waiting: _waitingOn(event),
@@ -2314,23 +2412,13 @@ class _EventsScreenState extends State<EventsScreen> {
       context,
       event,
       save: (event, changes) async {
-        amended = await _amend(
-          ProposalEdits(updates: [proposalUpdate(event, changes)]),
-          label: 'Change ${_named(event)}, in what happened',
-        );
+        amended = await _amendUpdate(event, changes);
         return const [];
       },
       cancel: _waitingOn(event).isNotEmpty
           ? null
           : (event, counts) async {
-              amended = await _amend(
-                ProposalEdits(
-                  cancels: [
-                    (eventId: event.id!, countsAgainstFollowThrough: counts),
-                  ],
-                ),
-                label: 'Cancel ${_named(event)}, in what happened',
-              );
+              amended = await _amendCancel(event, counts);
               return const [];
             },
       waiting: _waitingOn(event),
@@ -3411,7 +3499,11 @@ class _EventsScreenState extends State<EventsScreen> {
       'end': localIsoTimestamp(end),
     };
     // In what happened, to confirm: the proposal's changed.
-    final review = _inReview(event) || _reviews(start, end);
+    final review = _overThroughProposal(
+      writing,
+      events: [event],
+      spans: [span, for (final c in commutes) ?_spanOf(c)],
+    );
     var changed = const <Event>[];
     Proposal? amended;
     try {
@@ -3850,27 +3942,23 @@ class _EventsScreenState extends State<EventsScreen> {
       },
       // Overwriting, its times needn't keep clear of anything.
       otherEvents: overwrite ? const OtherEvents.none() : others,
-      create: review
-          ? (fields) async {
-              amended = await _amend(
-                ProposalEdits.over(
-                  overwrite ? await askedInTheWayOf(fields) : const Overwrite(),
-                  creates: [proposalCreate(fields)],
-                ),
-                label: 'Add ${_nameOf(fields)}, to what happened',
-              );
-              return const [];
-            }
-          : overwrite
-          ? (fields) async {
-              final over = await askedInTheWayOf(fields);
-              return _approvingHistory(
-                at: start,
-                (allow) =>
-                    _writes.createOver(fields, over, allowHistory: allow),
-              );
-            }
-          : _writes.create,
+      create: (fields) async {
+        final over = overwrite
+            ? await askedInTheWayOf(fields)
+            : const Overwrite();
+        if (review || _overThroughProposal(over, spans: [?_spanOf(fields)])) {
+          amended = await _amend(
+            ProposalEdits.over(over, creates: [proposalCreate(fields)]),
+            label: 'Add ${_nameOf(fields)}, to what happened',
+          );
+          return const [];
+        }
+        if (!overwrite) return _writes.create(fields);
+        return _approvingHistory(
+          at: start,
+          (allow) => _writes.createOver(fields, over, allowHistory: allow),
+        );
+      },
       // Overwriting events, the trash makes no new event, but just
       // clears the time of them.
       clear: !overwrite || inTheWay.isEmpty
@@ -3908,7 +3996,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 if (asked == null) throw const CalledOff();
                 final over = inTheWay.counting(asked);
                 cleared = true;
-                if (review) {
+                if (review || _overThroughProposal(over)) {
                   amended = await _amend(
                     ProposalEdits.over(over),
                     label: 'Clear time in what happened',
@@ -4151,7 +4239,8 @@ class _EventsScreenState extends State<EventsScreen> {
     final label = 'Cancel ${_events(cancels.length)}';
     final said = 'Cancelled ${_events(cancels.length)}';
     try {
-      if (_reviews(at, at.add(const Duration(minutes: 1)))) {
+      if (_reviews(at, at.add(const Duration(minutes: 1))) ||
+          _overThroughProposal(over)) {
         final amended = await _amend(
           ProposalEdits.over(over),
           label: '$label, in what happened',
@@ -4279,29 +4368,48 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Opens every one of [event]'s properties.
   Future<void> _openEventDetails(Event event) async {
+    // Edited in what happened, if it runs into what the proposal changed.
+    Proposal? amended;
     final updated = await showEventDialog(
       context,
       event,
-      save: (event, changes) => _approvingHistory(
-        at: event.start,
-        (allow) => _writes.update(event, changes, allowHistory: allow),
-      ),
+      save: (event, changes) async {
+        if (_throughProposal([event], [_spanWith(event, changes)])) {
+          amended = await _amendUpdate(event, changes);
+          return const [];
+        }
+        return _approvingHistory(
+          at: event.start,
+          (allow) => _writes.update(event, changes, allowHistory: allow),
+        );
+      },
       cancel: _waitingOn(event).isNotEmpty
           ? null
-          : (event, counts) => _approvingHistory(
-              at: event.start,
-              (allow) => _writes.cancel(
-                event,
-                countsAgainstFollowThrough: counts,
-                allowHistory: allow,
-              ),
-            ),
+          : (event, counts) async {
+              if (_throughProposal([event], [(event.start, event.end)])) {
+                amended = await _amendCancel(event, counts);
+                return const [];
+              }
+              return _approvingHistory(
+                at: event.start,
+                (allow) => _writes.cancel(
+                  event,
+                  countsAgainstFollowThrough: counts,
+                  allowHistory: allow,
+                ),
+              );
+            },
       waiting: _waitingOn(event),
       otherEvents: _otherEvents(event),
       actions: _actions,
       openSeries: (seriesId) => _openSeries(seriesId, event),
     );
-    if (updated != null) await _saved(event, updated);
+    if (updated == null || !mounted) return;
+    if (amended case final amended?) {
+      _amended(amended, 'Changed in what happened, to confirm.');
+    } else {
+      await _saved(event, updated);
+    }
   }
 
   /// Says what saving [event] did, [updated] being what the server
