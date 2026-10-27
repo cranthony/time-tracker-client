@@ -6,16 +6,13 @@ import '../models/habit.dart';
 import '../models/habit_graph.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
-import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../services/habits_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
-import '../services/traits_repository.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/foundations_field.dart';
-import '../widgets/habit_dialog.dart';
 import '../widgets/health.dart';
 import '../widgets/people_picker.dart';
 import '../widgets/hotkeys.dart';
@@ -23,8 +20,7 @@ import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/relationship_habits.dart';
-import 'habit_screen.dart';
-import 'person_pages.dart';
+import 'habit_pages.dart';
 
 /// The Plan page's Habits pane -- what the user builds: Self's habits,
 /// people's and circles' among them -- some of their traits, a layer of
@@ -108,12 +104,6 @@ class HabitsPaneState extends State<HabitsPane> {
   /// Each habit's and person's health, worked out from the events.
   TraitScores? get _scores => widget.memory.scores;
 
-  /// Every trait, by id, to name those that apply to a habit.
-  Map<String, Trait> get _traits => {
-    for (final t in widget.memory.traits ?? const <Trait>[])
-      if (t.id != null) t.id!: t,
-  };
-
   PeopleRepository? get _peopleRepository => PeopleScope.of(context);
 
   @override
@@ -152,81 +142,21 @@ class HabitsPaneState extends State<HabitsPane> {
 
   HabitGraph get _graph => HabitGraph(habits: _habits ?? const []);
 
-  /// Every habit's name, by id, as foundations name them.
-  Map<String, String> get _names => {
-    for (final h in _habits ?? const <Habit>[]) h.subject: habitName(h),
-  };
+  /// Opens habits' pages, and adds and edits them.
+  HabitPages get _pages => HabitPages(
+    repository: widget.repository,
+    memory: widget.memory,
+    actions: widget.actions,
+    personNames: widget.personNames,
+    locationNames: widget.locationNames,
+    onSaved: reload,
+  );
 
-  /// Opens people's pages, from their habits'; null with no people.
-  PersonPages? get _personPages => switch (_peopleRepository) {
-    final people? => PersonPages(
-      repository: people,
-      memory: widget.memory,
-      traits: TraitsScope.of(context),
-      actionNames: {for (final a in widget.actions) a.id: actionName(a)},
-      actions: {
-        for (final a in widget.actions)
-          if (a.id != null && a.status != 'deleted')
-            a.id!: a.path ?? actionName(a),
-      },
-      locationNames: widget.locationNames,
-      onSaved: reload,
-    ),
-    null => null,
-  };
-
-  void _open(GraphNode node) {
-    final pages = _personPages;
-    final page = HabitScreen(
-      habit: node.habit,
-      actions: widget.actions,
-      traits: _traits,
-      memory: widget.memory,
-      personNames: widget.personNames,
-      locationNames: widget.locationNames,
-      foundationNames: _names,
-      onEdit: _edit,
-      onOpenPerson: pages == null
-          ? null
-          : (person) => pages.open(context, person),
-      onOpenCircle: pages == null
-          ? null
-          : (circle) => pages.openCircle(context, circle),
-    );
-    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
-  }
+  void _open(GraphNode node) => _pages.open(context, node.habit);
 
   /// Adds a habit (with no [habit]) or edits one; returns it as saved,
   /// or null if nothing was.
-  Future<Habit?> _edit(Habit? habit) async {
-    final repository = widget.repository;
-    if (habit != null && habit.isRelationship) {
-      final saved = await editRelationshipHabit(
-        context,
-        memory: widget.memory,
-        repository: repository,
-        habit: habit,
-      );
-      if (saved != null) await reload();
-      return saved;
-    }
-    final saved = await showHabitEditor(
-      context,
-      habit: habit,
-      actions: widget.actions,
-      traits: [..._traits.values],
-      foundationChoices: foundationChoices(_graph, id: habit?.subject),
-      foundationNames: _names,
-      scoreParts: widget.memory.scoreDraftParts,
-      save: (fields) => habit == null
-          ? repository.createHabit(
-              Habit.fromJson({'id': '', 'action_id': '', ...fields}),
-            )
-          : repository.updateHabit(habit.id, fields),
-    );
-    if (saved != null) await reload();
-    return saved;
-  }
+  Future<Habit?> _edit(Habit? habit) => _pages.edit(context, habit);
 
   /// Saves [action], saying so if it fails, then loads afresh.
   Future<void> _save(String title, Future<void> Function() action) =>

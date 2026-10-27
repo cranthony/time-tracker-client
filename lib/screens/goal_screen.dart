@@ -18,6 +18,7 @@ import '../widgets/goal_starts.dart';
 import '../widgets/goal_tile.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/priority_chip.dart';
+import 'habit_pages.dart';
 
 /// A goal's page, the same for a goal at any depth: read only, with the
 /// pencil in its bar to edit it. Its title has its path (its parents'
@@ -294,12 +295,14 @@ class _GoalScreenState extends State<GoalScreen> {
     );
   }
 
-  /// That it's one of habit [habitId]'s recurring goal's goals.
+  /// That it's one of habit [habitId]'s recurring goal's goals; tapped,
+  /// it opens the habit's page.
   Widget _fromHabit(String habitId) {
     final habit = widget.memory.habits
         ?.where((h) => h.id == habitId)
         .firstOrNull;
     final period = goalPeriods[habit?.recurringGoal?.period]?.$1;
+    final pages = habit == null ? null : HabitPages.of(context, widget.memory);
     return ListTile(
       leading: const Icon(Icons.repeat),
       title: Text(
@@ -311,6 +314,8 @@ class _GoalScreenState extends State<GoalScreen> {
             : 'One of its goals: one each ${period.toLowerCase()}, the next '
                   'made once this one is done',
       ),
+      trailing: pages == null ? null : const Icon(Icons.chevron_right),
+      onTap: pages == null ? null : () => pages.open(context, habit!),
     );
   }
 

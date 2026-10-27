@@ -9,6 +9,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.206.0
+
+- A recurring goal's goal's page opens its habit's: "From the habit ..."
+  has a chevron, as a person's habit's page has to their page.
+
 ## 7.205.0
 
 - A community is a subject in its own right, as a person is. It has
