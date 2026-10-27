@@ -144,6 +144,13 @@ class ProposalEvent {
       status != ProposalEventStatus.cancelled &&
       status != ProposalEventStatus.merged;
 
+  /// Whether the proposal changes it: what happened at it isn't as
+  /// planned, or it's moved from where the plan had it.
+  bool get changed =>
+      moved ||
+      (status != ProposalEventStatus.planned &&
+          status != ProposalEventStatus.onSchedule);
+
   /// Whether the proposal moves it from where the plan had it.
   bool get moved =>
       (plannedStart != null && !plannedStart!.isAtSameMomentAs(start)) ||

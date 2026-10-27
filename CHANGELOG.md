@@ -9,6 +9,18 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.200.1
+
+- An edit of an event that runs into one the open proposal changed -- its
+  new times overlapping an event moved, added or cancelled in what
+  happened, where the proposal has it or the calendar does -- edits the
+  proposal, to confirm with it, rather than the calendar, which would
+  refuse it for overlapping where the proposal moved that event from.
+  So does a cancel of one, a new event made over one, and room made
+  around one, from the summary, the details, the move box or the cursor.
+  Edits of untouched events after what happened still save straight to
+  the calendar.
+
 ## 7.200.0
 
 - A trait part can score when things happen: a schedule. Each day it's

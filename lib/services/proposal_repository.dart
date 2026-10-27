@@ -695,13 +695,12 @@ class InMemoryProposalRepository implements ProposalRepository {
     calls.add('amend_proposal');
     final current = _open();
     final events = [...?current.events];
+    // Any of its events, as the server takes them: those still planned,
+    // after what happened, too -- moved aside, say.
     int indexOf(String id) {
-      final i = events.indexWhere((e) => e.id == id && e.reviewed);
+      final i = events.indexWhere((e) => e.id == id);
       if (i < 0) {
-        throw McpException(
-          "amend_proposal: $id isn't in what happened, from "
-          '${current.windowStart} to ${current.through}.',
-        );
+        throw McpException("amend_proposal: $id isn't one of its events.");
       }
       return i;
     }

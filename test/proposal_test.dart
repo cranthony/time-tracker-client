@@ -1025,13 +1025,14 @@ void main() {
       bool hidden = false,
       ProposalProblemStatus? problem,
       List<Goal>? goals,
+      List<Event> also = const [],
     }) async {
       // A phone's height: the bar and its details, and the morning, in
       // view.
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      events = _HeldEvents(calendar());
+      events = _HeldEvents([...calendar(), ...also]);
       proposals = _Proposals(
         Proposal.fromJson(json ?? proposalJson()),
         events: events,
@@ -1675,6 +1676,120 @@ void main() {
       );
       expect(find.text('Admin'), findsOneWidget);
       expect(find.text('Renamed · you'), findsOneWidget);
+    });
+
+    group('an edit of a planned event', () {
+      // Reading, after what happened, up to the talk: the proposal moves
+      // the talk a quarter hour later, or leaves it as planned.
+      final reading = Event(
+        id: 'read',
+        start: at(13),
+        end: at(13, 45),
+        summary: 'Reading',
+      );
+      Map<String, Object?> json({required bool talkMoved, int readEnd = 45}) {
+        final base = proposalJson();
+        return {
+          ...base,
+          'events': [
+            for (final e in base['events'] as List)
+              if ((e as Map)['id'] != 'talk') e,
+            {
+              'id': 'read',
+              'summary': 'Reading',
+              'start': iso(13),
+              'end': readEnd == 75 ? iso(14, 15) : iso(13, readEnd),
+              'status': 'planned',
+            },
+            if (talkMoved)
+              {
+                'id': 'talk',
+                'summary': 'Talk',
+                'start': iso(14, 15),
+                'end': iso(15, 15),
+                'status': 'adjusted',
+                'planned_start': iso(14),
+                'planned_end': iso(15),
+                'decided_by': 'user',
+              }
+            else
+              {
+                'id': 'talk',
+                'summary': 'Talk',
+                'start': iso(14),
+                'end': iso(15),
+                'status': 'planned',
+              },
+          ],
+        };
+      }
+
+      /// Opens Reading and moves its end [steps] quarter hours later.
+      Future<void> later(WidgetTester tester, int steps) async {
+        await tap(tester, find.text('Reading'));
+        await tap(tester, inDialog(find.byIcon(Icons.schedule)).first);
+        for (var i = 0; i < steps; i++) {
+          await tap(tester, find.byTooltip('End 15 min later'));
+        }
+      }
+
+      testWidgets('that runs into an event the proposal changed edits the '
+          'proposal: the calendar would refuse it', (tester) async {
+        await open(tester, json: json(talkMoved: true), also: [reading]);
+        await later(tester, 2);
+        await tap(tester, find.text('Save'));
+
+        expect(proposals.amends.single.toJson(), {
+          'updates': [
+            {
+              'event': {'id': 'read', 'end': iso(14, 15)},
+            },
+          ],
+        });
+        expect(
+          (await onCalendar('read')).end.isAtSameMomentAs(at(13, 45)),
+          isTrue,
+        );
+        expect(
+          find.text('Changed in what happened, to confirm.'),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('with nothing changed in its way saves to the calendar', (
+        tester,
+      ) async {
+        await open(tester, json: json(talkMoved: false), also: [reading]);
+        await later(tester, 1);
+        await tap(tester, find.text('Save'));
+
+        expect(proposals.amends, isEmpty);
+        expect((await onCalendar('read')).end.isAtSameMomentAs(at(14)), isTrue);
+      });
+
+      testWidgets('cancelling one over an event the proposal changed cancels '
+          'it in the proposal', (tester) async {
+        await open(
+          tester,
+          json: json(talkMoved: true, readEnd: 75),
+          also: [
+            Event(
+              id: 'read',
+              start: at(13),
+              end: at(14, 15),
+              summary: 'Reading',
+            ),
+          ],
+        );
+        await tap(tester, find.text('Reading'));
+        await tap(tester, find.byTooltip('Cancel event'));
+        await tap(tester, find.widgetWithText(FilledButton, 'Cancel event'));
+
+        expect(proposals.amends.single.toJson()['cancels'], [
+          {'event_id': 'read', 'counts_against_follow_through': true},
+        ]);
+        expect((await onCalendar('read')).isCancelled, isFalse);
+      });
     });
 
     testWidgets("an event's priority and whole description are "
