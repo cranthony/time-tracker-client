@@ -9,6 +9,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.202.1
+
+- Events no longer read whether they're the day's last sleep, which the
+  server no longer sends.
+
 ## 7.202.0
 
 - Circles are rows among the people on the People pane, sorted with them,

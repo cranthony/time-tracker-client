@@ -77,7 +77,6 @@ class ProposalEvent {
     this.plannedEnd,
     this.decidedBy,
     this.historyUntil,
-    this.isEndOfDaySleep = false,
     this.countsAgainstFollowThrough,
     this.followThrough = const [],
     this.revisited = false,
@@ -116,7 +115,6 @@ class ProposalEvent {
   /// Where history ends inside it, for one that starts before the
   /// proposal's window: the part before can't change.
   final DateTime? historyUntil;
-  final bool isEndOfDaySleep;
 
   /// For a cancelled one, whether it counts against the follow-through of
   /// whoever a follow-through trait tracks it for -- a commitment dropped
@@ -187,7 +185,6 @@ class ProposalEvent {
         _ => null,
       },
       historyUntil: time(json['history_until']),
-      isEndOfDaySleep: json['is_end_of_day_sleep'] == true,
       countsAgainstFollowThrough:
           json['counts_against_follow_through'] as bool?,
       followThrough: [

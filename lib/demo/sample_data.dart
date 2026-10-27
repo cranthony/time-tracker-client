@@ -1330,7 +1330,6 @@ class SampleData {
             _at(23, 0, day),
             _at(7, 0, day + 1),
             actions: ['sleep'],
-            sleep: true,
             priority: 3,
           ),
         _event(
@@ -1417,7 +1416,6 @@ class SampleData {
       _at(23, 0, -1),
       _at(7, 0),
       actions: ['sleep'],
-      sleep: true,
       priority: 3,
     ),
     _event(
@@ -1605,7 +1603,6 @@ class SampleData {
     DateTime start,
     DateTime end, {
     List<String> actions = const [],
-    bool sleep = false,
     String? series,
     bool fromLabel = false,
     int? priority,
@@ -1620,7 +1617,6 @@ class SampleData {
     'is_cancelled': false,
     'action_ids': actions,
     'action_names': [for (final a in actions) _names[a]],
-    if (sleep) 'is_end_of_day_sleep': true,
     'recurring_event_id': ?series,
     if (fromLabel) 'actions_from_label': true,
     'effective_priority': ?priority,
