@@ -414,6 +414,31 @@ void main() {
       return memory;
     }
 
+    testWidgets("a person's habit's page opens theirs, a tap away", (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        habits: InMemoryHabitsRepository([
+          const Habit(
+            id: 'h4',
+            name: 'Close to Ana',
+            actionId: '',
+            personId: 'ana',
+          ),
+        ]),
+        people: InMemoryPeopleRepository(
+          people: const [Person(id: 'ana', name: 'Ana')],
+        ),
+      );
+      await tester.tap(find.text('Close to Ana'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Ana'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(AppBar, 'Ana'), findsOneWidget);
+    });
+
     testWidgets('shows them by name, archived ones when asked', (tester) async {
       await pump(
         tester,

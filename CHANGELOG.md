@@ -9,6 +9,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.201.0
+
+- Tapping the person on a person's habit page opens their page, to tweak
+  their traits there.
+
 ## 7.200.1
 
 - An edit of an event that runs into one the open proposal changed -- its
