@@ -94,6 +94,7 @@ class PersonPages {
       circle: circle,
       repository: repository,
       memory: memory,
+      traits: traits,
     );
     if (saved != null) await onSaved?.call();
   }
@@ -113,6 +114,10 @@ class PersonPages {
           memory: memory,
           times: times,
           durations: durations,
+          traits: traits,
+          personNames: personNames,
+          actionNames: actionNames,
+          locationNames: locationNames,
           onOpenPerson: (person) => open(pageContext, person),
           onEdit: (circle) => editCircle(pageContext, circle),
         ),

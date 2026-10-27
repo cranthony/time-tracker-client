@@ -146,6 +146,14 @@ class WriteKind {
   static Map<String, Object?> _circle(Map<String, Object?> item) =>
       Circle.fromJson({'id': '', ...item}).toJson();
 
+  /// A circle's update: a community's trait facts' summaries (`facts`)
+  /// beside it, the rest under "circle".
+  static Map<String, Object?> _circleUpdate(
+    String id,
+    Map<String, Object?> changes,
+    int? version,
+  ) => circleUpdate(id, changes, version: version);
+
   static Map<String, Object?> _locationGroup(Map<String, Object?> item) =>
       LocationGroup.fromJson({'id': '', ...item}).toJson();
 
@@ -287,6 +295,7 @@ class WriteKind {
     deleteTool: 'delete_circle',
     deleteArgument: 'circle_id',
     writable: _circle,
+    updateArguments: _circleUpdate,
   );
 
   static const locationGroup = WriteKind(

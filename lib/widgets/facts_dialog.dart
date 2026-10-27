@@ -263,7 +263,7 @@ class _FactsDialogState extends State<_FactsDialog> {
                       ),
                       for (final (person, fact, log) in logs)
                         Text(
-                          '${_name(everyone, person, _habits)} · '
+                          '${_name(everyone, circles, person, _habits)} · '
                           '${widget.factNames[fact] ?? fact}: $log',
                           style: theme.textTheme.bodySmall,
                         ),
@@ -278,7 +278,7 @@ class _FactsDialogState extends State<_FactsDialog> {
                       ),
                       for (final j in widget.judgments)
                         Text(
-                          '${_name(everyone, j.personId, _habits)} · '
+                          '${_name(everyone, circles, j.personId, _habits)} · '
                           '${widget.traitNames[j.traitId] ?? j.traitId}: '
                           '${j.rating}${j.scale == null ? '' : ' of ${j.scale}'}'
                           '${j.reasoning == null ? '' : ' — ${j.reasoning}'}',
@@ -334,9 +334,14 @@ class _FactsDialogState extends State<_FactsDialog> {
   List<Habit> get _habits =>
       PlanMemoryScope.of(context)?.habits ?? const <Habit>[];
 
-  /// Who [id] names, among [people], or which of [habits]: "Practice
-  /// guitar (habit)".
-  static String _name(List<Person> people, String id, List<Habit> habits) {
+  /// Who [id] names, among [people] or [circles] (a community, judged
+  /// as a person is), or which of [habits]: "Practice guitar (habit)".
+  static String _name(
+    List<Person> people,
+    List<Circle> circles,
+    String id,
+    List<Habit> habits,
+  ) {
     if (habitIdOf(id) case final habitId?) {
       return switch (habits.where((h) => h.id == habitId).firstOrNull) {
         final h? => '${habitName(h)} (habit)',
@@ -345,7 +350,10 @@ class _FactsDialogState extends State<_FactsDialog> {
     }
     return switch (people.where((p) => p.id == id).firstOrNull) {
       final p? => personName(p),
-      null => id,
+      null => switch (circles.where((c) => c.id == id).firstOrNull) {
+        final c? => circleName(c),
+        null => id,
+      },
     };
   }
 

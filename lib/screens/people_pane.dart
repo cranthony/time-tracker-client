@@ -190,10 +190,23 @@ class PeoplePaneState extends State<PeoplePane> {
     };
   });
 
-  int? _circleHealth(Circle c) => _scores?.groupHealth(
-    _people?.inCircle(c.id).map((p) => p.id) ?? [],
-    scoring: c.scoring,
-  );
+  /// [c]'s health: a community's own; a plain circle's people's,
+  /// combined as it says.
+  int? _circleHealth(Circle c) => c.isCommunity
+      ? _scores?.health(c.id)
+      : _scores?.groupHealth(
+          _people?.inCircle(c.id).map((p) => p.id) ?? [],
+          scoring: c.scoring,
+        );
+
+  /// [c]'s trend, as [_circleHealth] is.
+  List<int?> _circleTrend(Circle c) =>
+      (c.isCommunity
+          ? _scores?.healthTrend(c.id)
+          : _scores?.groupTrend([
+              for (final p in _people?.inCircle(c.id) ?? const <Person>[]) p.id,
+            ], scoring: c.scoring)) ??
+      const [];
 
   @override
   Widget build(BuildContext context) {
@@ -302,7 +315,12 @@ class PeoplePaneState extends State<PeoplePane> {
         people.circles.where((c) => c.id == id).firstOrNull?.name;
     final circles = [
       for (final c in people.circles)
-        if (matchesSearch(_query, [c.name, c.note])) c,
+        if (matchesSearch(_query, [
+          c.name,
+          c.note,
+          for (final byFact in c.facts.values) ...byFact.values,
+        ]))
+          c,
     ];
     final everyone = [
       for (final person in people.withSelf)
@@ -357,8 +375,7 @@ class PeoplePaneState extends State<PeoplePane> {
             circle: c,
             members: members(c).length,
             health: _circleHealth(c),
-            trend:
-                _scores?.groupTrend(members(c), scoring: c.scoring) ?? const [],
+            trend: _circleTrend(c),
             times: times,
             durations: widget.summary?.durations ?? true,
             onTap: () => _pages.openCircle(

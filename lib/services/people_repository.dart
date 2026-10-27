@@ -33,10 +33,17 @@ abstract class PeopleRepository {
   /// trait [traitId], if given -- newest first.
   Future<List<FactLog>> factLogs(String personId, {String? traitId});
 
-  /// Creates a circle from [circle]'s fields; returns it with its id.
-  Future<Circle> createCircle(Circle circle);
+  /// Creates a circle from [circle]'s fields -- a community's with
+  /// [facts], its summaries of trait facts, as `create_circle` takes
+  /// them; returns it with its id.
+  Future<Circle> createCircle(
+    Circle circle, {
+    Map<String, Map<String, String>>? facts,
+  });
 
-  /// Saves [changes] to circle [id]; a null clears its note.
+  /// Saves [changes] to circle [id]; a null clears its note, or a
+  /// community's traits. `facts` sets a community's summaries of the
+  /// trait facts it names ("" clears one), as `update_circle` takes them.
   Future<Circle> updateCircle(String id, Map<String, Object?> changes);
 
   /// Deletes circle [id]: everyone in it just leaves it.
@@ -268,18 +275,25 @@ class McpPeopleRepository implements PeopleRepository {
       );
 
   @override
-  Future<Circle> createCircle(Circle circle) async => switch (_writes) {
+  Future<Circle> createCircle(
+    Circle circle, {
+    Map<String, Map<String, String>>? facts,
+  }) async => switch (_writes) {
     final writes? => Circle.fromJson(
       writes.created(WriteKind.circle, circle.toJson()).cast(),
     ),
-    null => await _createCircle(circle),
+    null => await _createCircle(circle, facts),
   };
 
-  Future<Circle> _createCircle(Circle circle) async => Circle.fromJson(
+  Future<Circle> _createCircle(
+    Circle circle,
+    Map<String, Map<String, String>>? facts,
+  ) async => Circle.fromJson(
     _map(
       _map(
         await _client.callTool('create_circle', {
           'circle': circle.toJson()..remove('id'),
+          'facts': ?facts,
         }),
       )['circle'],
     ),
@@ -297,10 +311,7 @@ class McpPeopleRepository implements PeopleRepository {
   Future<Circle> _updateCircle(String id, Map<String, Object?> changes) async =>
       Circle.fromJson(
         _map(
-          await _client.callTool(
-            'update_circle',
-            _update('circle', id, changes),
-          ),
+          await _client.callTool('update_circle', circleUpdate(id, changes)),
         ),
       );
 
@@ -564,6 +575,9 @@ class InMemoryPeopleRepository implements PeopleRepository {
             for (final p in _people)
               if (p.circleIds.contains(c.id)) p.id,
           ],
+          traits: c.traits,
+          facts: c.facts,
+          cancelledEvents: c.cancelledEvents,
         ),
     ],
   );
@@ -642,30 +656,62 @@ class InMemoryPeopleRepository implements PeopleRepository {
   }
 
   @override
-  Future<Circle> createCircle(Circle circle) async {
+  Future<Circle> createCircle(
+    Circle circle, {
+    Map<String, Map<String, String>>? facts,
+  }) async {
     if (circle.name.trim().isEmpty) throw McpException('Give it a name.');
-    _checkCircle(circle);
+    _checkCircle(circle, facts: facts);
     final created = Circle(
       id: _id(circle.name, _circles.map((c) => c.id)),
       name: circle.name,
       kind: circle.kind,
       note: circle.note,
       scoring: circle.scoring,
+      traits: traitsWithPartIds(circle.traits, fresh: true),
+      facts: _facts(const {}, facts),
     );
     _circles.add(created);
     return created;
   }
 
   /// Like the server: a community's score is its own, so it takes no
-  /// scoring.
-  static void _checkCircle(Circle circle) {
+  /// scoring; a plain circle is scored as its members are, so it takes
+  /// no traits, and has no trait facts of its own.
+  static void _checkCircle(
+    Circle circle, {
+    Map<String, Map<String, String>>? facts,
+  }) {
     if (circle.isCommunity && circle.scoring != null) {
       throw McpException(
         "${circle.name} is a community: its score is its own, not its "
         "members', so it takes no scoring",
       );
     }
+    if (!circle.isCommunity && !circle.traits.isDefault) {
+      throw McpException(
+        'circle ${circle.id} is a plain circle: it stands for its members, '
+        'scored as they are, so it takes no traits (a community does)',
+      );
+    }
+    if (!circle.isCommunity && facts != null && facts.isNotEmpty) {
+      throw McpException(
+        'only a community has trait facts of its own: a plain circle stands '
+        'for its members, who have theirs',
+      );
+    }
   }
+
+  /// [before], with [given] summaries set over them: "" clears one.
+  static Map<String, Map<String, String>> _facts(
+    Map<String, Map<String, String>> before,
+    Map<String, Map<String, String>>? given,
+  ) => {
+    for (final MapEntry(:key, :value) in before.entries) key: {...value},
+    if (given != null)
+      for (final MapEntry(:key, :value) in given.entries)
+        key: {...?before[key], ...value},
+  };
 
   @override
   Future<Circle> updateCircle(String id, Map<String, Object?> changes) async {
@@ -680,6 +726,13 @@ class InMemoryPeopleRepository implements PeopleRepository {
         "set when it's made, and never changed",
       );
     }
+    final facts = switch (changes['facts']) {
+      final Map given => {
+        for (final MapEntry(:key, :value) in given.entries)
+          '$key': (value as Map).cast<String, String>(),
+      },
+      _ => null,
+    };
     final updated = Circle(
       id: id,
       name: changes['name'] as String? ?? before.name,
@@ -690,9 +743,18 @@ class InMemoryPeopleRepository implements PeopleRepository {
       scoring: changes.containsKey('scoring')
           ? Aggregation.fromJson(changes['scoring'])
           : before.scoring,
+      memberIds: before.memberIds,
+      traits: changes.containsKey('traits')
+          ? traitsWithPartIds(
+              PersonTraits.fromJson(changes['traits']),
+              fresh: true,
+            )
+          : before.traits,
+      facts: _facts(before.facts, facts),
+      cancelledEvents: before.cancelledEvents,
     );
     if (updated.name.trim().isEmpty) throw McpException('Give it a name.');
-    _checkCircle(updated);
+    _checkCircle(updated, facts: facts);
     _circles[i] = updated;
     return updated;
   }

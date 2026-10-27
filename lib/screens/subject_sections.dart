@@ -82,7 +82,7 @@ class SubjectSections {
     required this.why,
     this.trends = false,
     this.noteOf,
-    this.person,
+    this.judged,
     this.factLogs,
     this.onFactPrompts,
     this.actionNames = const {},
@@ -113,9 +113,10 @@ class SubjectSections {
   /// Whose notes on its events are shown.
   final String? noteOf;
 
-  /// The person it is, if it's a person: each trait's score shows what it
-  /// keeps about them, and [factLogs] (by trait id) what changed in it.
-  final Person? person;
+  /// Who it is, if it's a person or a community: each trait's score
+  /// shows what it keeps about them, and [factLogs] (by trait id) what
+  /// changed in it.
+  final Judged? judged;
   final Future<List<FactLog>> Function(String traitId)? factLogs;
 
   /// Edits their own prompts for a trait's fact -- or, with reset, lets
@@ -190,7 +191,7 @@ class SubjectSections {
             scale: scale,
             personNames: personNames,
             locationNames: locationNames,
-            person: person,
+            judged: judged,
             traitList: traitList,
             factLogs: factLogs,
             onFactPrompts: onFactPrompts,

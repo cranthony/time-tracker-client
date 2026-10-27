@@ -191,10 +191,11 @@ Aggregation partsAggregation(Subject subject, Trait trait) =>
 Aggregation traitsAggregation(Subject subject, ScoringDefaults defaults) =>
     subject.traits.scoring ?? defaults.traits ?? Aggregation.mean;
 
-/// Who or what is scored: a person (Self among them), by their id, or
-/// one of Self's habits, by `habit:<id>` -- which traits apply to them,
-/// with their own parts for any, the cancellations recorded against
-/// them, and, for a habit, the action or group whose events are its.
+/// Who or what is scored: a person (Self among them) or a community,
+/// by their id, or one of Self's habits, by `habit:<id>` -- which traits
+/// apply to them, with their own parts for any, the cancellations
+/// recorded against them, and, for a habit, the action or group whose
+/// events are its.
 class Subject {
   const Subject({
     required this.id,
@@ -207,12 +208,21 @@ class Subject {
     this.goals = const [],
   });
 
-  factory Subject.person(Person person) => Subject(
-    id: person.id,
-    traits: person.traits,
-    cancelledEvents: person.cancelledEvents,
-    active: person.active,
+  /// [judged] -- a person, or a community -- as they're scored by the
+  /// traits: by the judgments under their id, over the events naming
+  /// them ([Attendance]).
+  factory Subject.judged(Judged judged) => Subject(
+    id: judged.id,
+    traits: judged.traits,
+    cancelledEvents: judged.cancelledEvents,
+    active: judged.active,
   );
+
+  factory Subject.person(Person person) => Subject.judged(person);
+
+  /// [community], scored as a person is, by its own traits and judgments
+  /// -- never its members'.
+  factory Subject.community(Circle community) => Subject.judged(community);
 
   /// [habit], with [goals] -- the user's -- for a recurring goal's.
   factory Subject.habit(Habit habit, {List<Goal> goals = const []}) => Subject(
@@ -240,15 +250,16 @@ class Subject {
   /// theirs.
   String get who => of ?? id;
 
-  /// [habit], [person]'s, scored as they are by the traits it picks of
-  /// theirs: kept under [id] (by default the habit's).
-  factory Subject.relationship(Habit habit, Person person, {String? id}) =>
+  /// [habit], [judged]'s -- a person's, or a community's -- scored as
+  /// they are by the traits it picks of theirs: kept under [id] (by
+  /// default the habit's).
+  factory Subject.relationship(Habit habit, Judged judged, {String? id}) =>
       Subject(
         id: id ?? habit.subject,
-        of: person.id,
-        traits: person.traits.narrowedTo(habit.traits),
-        cancelledEvents: person.cancelledEvents,
-        active: habit.active && person.active,
+        of: judged.id,
+        traits: judged.traits.narrowedTo(habit.traits),
+        cancelledEvents: judged.cancelledEvents,
+        active: habit.active && judged.active,
       );
   final PersonTraits traits;
   final List<CancelledEvent> cancelledEvents;
@@ -1199,10 +1210,12 @@ class TraitScores {
     this._consistency,
   );
 
-  /// Scores [people] (Self among them), and Self's [habits], by [traits]
-  /// for the [days] days before [today]'s, from [events]: a circle's
-  /// habit by [circles]' people, and an event naming a plain circle
-  /// counted as each of its people's ([Attendance]). [parentOf]
+  /// Scores [people] (Self among them), the communities among [circles]
+  /// -- each by its own traits, as a person is -- and Self's [habits], by
+  /// [traits] for the [days] days before [today]'s, from [events]: a
+  /// plain circle's habit by its people, a community's as it is, and an
+  /// event naming a plain circle counted as each of its people's, one
+  /// naming a community as its own ([Attendance]). [parentOf]
   /// gives an action's group, as it is now: a habit's events are worked
   /// out from it. [windowDays] is how far back [events] go, for [digest]
   /// to say. Each one's consistency is counted back from the last of
@@ -1245,6 +1258,11 @@ class TraitScores {
     for (final person in people) {
       scored.add((Subject.person(person), const [], null));
     }
+    for (final circle in circles) {
+      if (circle.isCommunity) {
+        scored.add((Subject.community(circle), const [], null));
+      }
+    }
     for (final habit in habits) {
       if (habit.personId case final id?) {
         if (byId[id] case final person?) {
@@ -1253,6 +1271,11 @@ class TraitScores {
       } else if (habit.circleId case final id?) {
         final circle = circlesById[id];
         if (circle == null) continue;
+        if (circle.isCommunity) {
+          // Its own, as a person's habit is theirs.
+          scored.add((Subject.relationship(habit, circle), const [], null));
+          continue;
+        }
         scored.add((
           Subject(id: habit.subject, active: habit.active),
           [

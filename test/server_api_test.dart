@@ -342,6 +342,67 @@ void main() {
       expect(client.calls[6].$2, {'location_id': 'l1'});
     });
 
+    test("sends a community's traits with it and its facts beside it, as "
+        "a person's", () async {
+      final client = _Client(
+        (name, _) => switch (name) {
+          'create_circle' => {
+            'circle': {
+              'id': 'c3',
+              'name': 'Club',
+              'kind': 'community',
+              'facts': {
+                'kind': {'what_matters': 'Jazz'},
+              },
+            },
+            'created_id': 'c3',
+          },
+          _ => {'id': 'c3', 'name': 'Club', 'kind': 'community'},
+        },
+      );
+      final repository = McpPeopleRepository(client);
+
+      final created = await repository.createCircle(
+        const Circle(
+          id: '',
+          name: 'Club',
+          kind: CircleKind.community,
+          traits: PersonTraits(select: ['kind']),
+        ),
+        facts: {
+          'kind': {'what_matters': 'Jazz'},
+        },
+      );
+      expect(created.summary('kind', 'what_matters'), 'Jazz');
+      await repository.updateCircle('c3', {
+        'traits': null,
+        'facts': {
+          'kind': {'what_matters': ''},
+        },
+      });
+
+      expect(client.calls.map((c) => c.$1), ['create_circle', 'update_circle']);
+      expect(client.calls[0].$2, {
+        'circle': {
+          'name': 'Club',
+          'kind': 'community',
+          'traits': {
+            'select': ['kind'],
+          },
+        },
+        'facts': {
+          'kind': {'what_matters': 'Jazz'},
+        },
+      });
+      expect(client.calls[1].$2, {
+        'circle': {'id': 'c3'},
+        'clear_fields': ['traits'],
+        'facts': {
+          'kind': {'what_matters': ''},
+        },
+      });
+    });
+
     test('location groups are listed with their paths, made, changed and '
         'deleted', () async {
       final client = _Client(

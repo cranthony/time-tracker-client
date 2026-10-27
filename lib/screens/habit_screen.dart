@@ -169,6 +169,10 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
         .where((c) => c.id == _habit.circleId)
         .firstOrNull;
     final relationship = _habit.isRelationship;
+    // Whose traits and cancellations it's scored by: a person's, or a
+    // community's; a plain circle's habit has its own.
+    final Judged? judged =
+        person ?? (circle?.isCommunity ?? false ? circle : null);
     final open = switch ((person, circle)) {
       (final p?, _) => switch (widget.onOpenPerson) {
         final onOpen? => () => onOpen(p),
@@ -188,11 +192,8 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
       name: habitName(_habit),
       healthTitle: 'Health',
       scale: HealthScale.action,
-      traits: switch (person) {
-        final p? => p.traits.narrowedTo(_habit.traits),
-        null => _habit.traits,
-      },
-      cancelled: person?.cancelledEvents ?? _habit.cancelledEvents,
+      traits: judged?.traits.narrowedTo(_habit.traits) ?? _habit.traits,
+      cancelled: judged?.cancelledEvents ?? _habit.cancelledEvents,
       traitList: widget.traits,
       whom: 'it',
       whose: 'its',
