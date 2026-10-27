@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../models/people_times.dart';
 import '../models/person.dart';
-import '../models/scoring.dart';
 import '../models/trait_scores.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/status_message.dart';
@@ -10,8 +9,6 @@ import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import '../widgets/error_sheet.dart';
-import '../widgets/health.dart';
-import '../widgets/person_dialog.dart';
 import '../widgets/person_tile.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
@@ -19,23 +16,24 @@ import 'person_pages.dart';
 import '../services/client_health.dart';
 import '../services/work_timing.dart';
 import '../widgets/refreshing_bar.dart';
-import '../widgets/relationship_habits.dart';
 import '../models/time_split.dart';
 
 /// The Plan page's People pane -- who the user wants to be with:
 /// everyone, Self first, each with their circles, health, time with the
 /// user in the summary's 24 hours and 7 days, and the last event with
-/// them -- or, with the summary looking on, the next ([PersonTile]).
-/// Above them, the circles, each with its own health: tapping one shows
-/// only the people in it, and "Edit" beside it edits it. Archived people
-/// are shown only when asked for. The search finds people by name,
-/// context, circle and what matters to them. Sorted as listed, or either
-/// way by relationship health, when last (or next) seen, or time in the
-/// summary's 24 hours or 7 days -- those with nothing to sort by last.
-/// "+" adds a person or a circle.
+/// them -- or, with the summary looking on, the next ([PersonTile]) --
+/// and among them the circles, each with the same of its people
+/// together ([CircleTile]). Archived people are shown only when asked
+/// for. The search finds people by name, context, circle and what
+/// matters to them, and circles by name and note. Listed, the circles
+/// come after Self; sorted, either way by relationship health, when last
+/// (or next) seen, or time in the summary's 24 hours or 7 days, people
+/// and circles together -- those with nothing to sort by last. "+" adds
+/// a person or a circle.
 ///
 /// Tapping a person opens their page; their menu edits or archives
-/// them. Above it all, with a [summary] to measure, the time with people
+/// them. Tapping a circle opens its page ([CircleScreen]), its people and
+/// how they're doing together. Above it all, with a [summary] to measure, the time with people
 /// in its window: by person, and by circle, those in none together as
 /// "Individuals". It shows what [memory] has, while it loads afresh.
 /// [onPeople] is told who's there each time they load.
@@ -81,7 +79,6 @@ class PeoplePaneState extends State<PeoplePane> {
 
   String _query = '';
   bool _archived = false;
-  String? _circle;
   PeopleSort _sort = PeopleSort.listed;
   bool _ascending = false;
 
@@ -126,7 +123,8 @@ class PeoplePaneState extends State<PeoplePane> {
     if (view == null) return null;
     final store = widget.memory.eventStore;
     final span = store?.span;
-    final key = (view.window, store?.version, view.events == null);
+    final people = _people;
+    final key = (view.window, store?.version, view.events == null, people);
     if (_timesKept case (final kept, final times) when kept == key) {
       return times;
     }
@@ -138,13 +136,17 @@ class PeoplePaneState extends State<PeoplePane> {
         known: span == null
             ? const []
             : store!.between(span.$1, span.$2.add(const Duration(days: 1))),
+        circles: {
+          for (final c in people?.circles ?? const <Circle>[])
+            c.id: [for (final p in people!.inCircle(c.id)) p.id],
+        },
       ),
     );
     _timesKept = (key, times);
     return times;
   }
 
-  ((SummaryWindow, int?, bool), PeopleTimes)? _timesKept;
+  ((SummaryWindow, int?, bool, PeopleList?), PeopleTimes)? _timesKept;
 
   /// Loads everyone afresh, and the events around today they're scored
   /// from.
@@ -163,33 +165,6 @@ class PeoplePaneState extends State<PeoplePane> {
     } catch (e) {
       if (mounted) setState(() => _error = e);
     }
-  }
-
-  Future<void> _editCircle(Circle? circle) async {
-    final repository = widget.repository;
-    final saved = await showCircleDialog(
-      context,
-      circle: circle,
-      members: {
-        if (circle != null)
-          for (final p
-              in widget.memory.people?.inCircle(circle.id) ?? <Person>[])
-            p.id: personName(p),
-      },
-      defaultScoring: widget.memory.scoringDefaults.circles,
-      save: (fields) async => circle == null
-          ? await repository.createCircle(
-              Circle(
-                id: '',
-                name: fields['name'] as String,
-                note: fields['note'] as String?,
-                scoring: Aggregation.fromJson(fields['scoring']),
-              ),
-            )
-          : await repository.updateCircle(circle.id, fields),
-      delete: circle == null ? null : () => repository.deleteCircle(circle.id),
-    );
-    if (saved) await reload();
   }
 
   Future<void> _setStatus(Person person, String status) async {
@@ -279,7 +254,7 @@ class PeoplePaneState extends State<PeoplePane> {
             tooltip: 'Add a person or circle',
             icon: const Icon(Icons.add),
             onSelected: (choice) => choice == 'circle'
-                ? _editCircle(null)
+                ? _pages.editCircle(context, null)
                 : _pages.edit(context, null),
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'person', child: Text('New person')),
@@ -324,107 +299,86 @@ class PeoplePaneState extends State<PeoplePane> {
     );
   }
 
+  /// Everyone shown, and the circles among them, as [_sort] sorts them.
   List<Widget> _list(BuildContext context, PeopleList people) {
-    final theme = Theme.of(context);
-    final circle = people.circles.where((c) => c.id == _circle).firstOrNull;
     String? circleName(String id) =>
         people.circles.where((c) => c.id == id).firstOrNull?.name;
-    final inCircle = [
+    final circles = [
+      for (final c in people.circles)
+        if (matchesSearch(_query, [c.name, c.note])) c,
+    ];
+    final everyone = [
       for (final person in people.withSelf)
         if ((_archived || person.active) &&
-            (circle == null || person.circleIds.contains(circle.id)))
+            matchesSearch(_query, [
+              person.name,
+              person.context,
+              for (final byFact in person.facts.values) ...byFact.values,
+              if (person.isSelf) 'you',
+              for (final id in person.circleIds) circleName(id),
+            ]))
           person,
     ];
-    final shown = sortPeople(
+    List<String> members(Circle c) => [
+      for (final p in people.inCircle(c.id)) p.id,
+    ];
+    final times = _times;
+    final shown = sortByPeopleSort<Object>(
       [
-        for (final person in inCircle)
-          if (matchesSearch(_query, [
-            person.name,
-            person.context,
-            for (final byFact in person.facts.values) ...byFact.values,
-            if (person.isSelf) 'you',
-            for (final id in person.circleIds) circleName(id),
-          ]))
-            person,
+        ...everyone.where((p) => p.isSelf),
+        ...circles,
+        ...everyone.where((p) => !p.isSelf),
       ],
       _sort,
       ascending: _ascending,
-      health: (id) => _scores?.health(id),
-      times: _times,
+      first: (row) => row is Person && row.isSelf,
+      health: (row) => switch (row) {
+        final Circle c => _circleHealth(c),
+        final Person p => _scores?.health(p.id),
+        _ => null,
+      },
+      seen: (row) => switch (row) {
+        final Circle c => times?.circleNearest(c.id)?.start,
+        final Person p => times?.nearest(p.id)?.start,
+        _ => null,
+      },
+      day: (row) => switch (row) {
+        final Circle c => times?.circleDay(c.id),
+        final Person p => times?.day(p.id),
+        _ => null,
+      },
+      week: (row) => switch (row) {
+        final Circle c => times?.circleWeek(c.id),
+        final Person p => times?.week(p.id),
+        _ => null,
+      },
     );
     return [
-      if (people.circles.isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-          child: Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              for (final c in people.circles)
-                FilterChip(
-                  avatar: switch (_circleHealth(c)) {
-                    final h? => HealthRing(health: h),
-                    null => null,
-                  },
-                  label: Text(c.name),
-                  tooltip: switch (_circleHealth(c)) {
-                    final h? => '${c.name}: health $h, ${relationshipBand(h)}',
-                    null => c.note ?? c.name,
-                  },
-                  selected: _circle == c.id,
-                  showCheckmark: false,
-                  onSelected: (on) =>
-                      setState(() => _circle = on ? c.id : null),
-                ),
-              if (circle != null)
-                TextButton.icon(
-                  onPressed: () => _editCircle(circle),
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: Text('Edit ${circle.name}'),
-                ),
-            ],
+      for (final row in shown)
+        switch (row) {
+          final Circle c => CircleTile(
+            circle: c,
+            members: members(c).length,
+            health: _circleHealth(c),
+            trend:
+                _scores?.groupTrend(members(c), scoring: c.scoring) ?? const [],
+            times: times,
+            durations: widget.summary?.durations ?? true,
+            onTap: () => _pages.openCircle(
+              context,
+              c,
+              times: times,
+              durations: widget.summary?.durations ?? true,
+            ),
           ),
-        ),
-      if (circle != null)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: RelationshipHabits(memory: widget.memory, circle: circle),
-        ),
-      if (circle != null)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${circle.name}: ${people.inCircle(circle.id).length} '
-                  '${people.inCircle(circle.id).length == 1 ? 'person' : 'people'}',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-              if (_scores?.groupTrend(
-                    people.inCircle(circle.id).map((p) => p.id),
-                    scoring: circle.scoring,
-                  )
-                  case final trend? when trend.nonNulls.isNotEmpty) ...[
-                TrendSparkline(trend: trend, scale: HealthScale.relationship),
-                const SizedBox(width: 8),
-              ],
-              if (_circleHealth(circle) case final health?)
-                HealthDot(rating: health, scale: HealthScale.relationship),
-            ],
-          ),
-        ),
-      for (final person in shown) _tile(context, person),
-      if (circle != null && inCircle.isEmpty)
-        const Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('No one in this circle yet.'),
-        )
-      else if (shown.isEmpty)
+          final person as Person => _tile(context, person),
+        },
+      if (shown.isEmpty)
         NoMatches(query: _query)
-      else if (shown.length == 1 && shown.single.isSelf && _query.isEmpty)
+      else if (shown.length == 1 &&
+          shown.single is Person &&
+          (shown.single as Person).isSelf &&
+          _query.isEmpty)
         const Padding(
           padding: EdgeInsets.all(16),
           child: Text('Tap + to add the people you want to spend time with.'),
@@ -464,21 +418,4 @@ class PeoplePaneState extends State<PeoplePane> {
       ),
     );
   }
-}
-
-/// A circle's relationship health, as a ring in its color.
-class HealthRing extends StatelessWidget {
-  const HealthRing({super.key, required this.health});
-
-  final int health;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 14,
-    height: 14,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      border: Border.all(color: relationshipColor(health), width: 3),
-    ),
-  );
 }

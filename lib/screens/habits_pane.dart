@@ -15,6 +15,7 @@ import '../widgets/error_sheet.dart';
 import '../widgets/foundations_field.dart';
 import '../widgets/habit_dialog.dart';
 import '../widgets/health.dart';
+import '../widgets/people_picker.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
@@ -34,10 +35,11 @@ import 'person_pages.dart';
 /// Each habit is a chip: in its action's color, or a person's or
 /// circle's plain, marked as theirs. It has its name, its trend, and how
 /// many days in a row it's been healthy (see [consistencyLabel]). Each
-/// layer is sorted by name. Tapping one opens its page -- a person's
-/// habit's page opens theirs, to tweak their traits; holding it offers
-/// what it's built on, or archiving it. "+" adds a habit; the person
-/// button, a habit for a person or circle.
+/// layer is sorted by name. Tapping one opens its page -- a person's or
+/// circle's habit's page opens theirs, to tweak their traits; holding it
+/// offers what it's built on, or archiving it. "+" adds a habit; the
+/// person button, a habit for a person or circle, picked from them all
+/// ([pickPersonOrCircle]).
 ///
 /// By default only what's unlocked is shown: those built on nothing, and
 /// those whose every foundation is shown and on track (or not rated
@@ -100,9 +102,6 @@ class HabitsPaneState extends State<HabitsPane> {
   final _layerKeys = <int, GlobalKey>{};
 
   List<Habit>? get _habits => widget.memory.habits;
-
-  List<Person> get _people =>
-      widget.memory.people?.withSelf ?? const <Person>[];
 
   /// Each habit's and person's health, worked out from the events.
   TraitScores? get _scores => widget.memory.scores;
@@ -188,6 +187,9 @@ class HabitsPaneState extends State<HabitsPane> {
       onOpenPerson: pages == null
           ? null
           : (person) => pages.open(context, person),
+      onOpenCircle: pages == null
+          ? null
+          : (circle) => pages.openCircle(context, circle),
     );
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
   }
@@ -259,35 +261,10 @@ class HabitsPaneState extends State<HabitsPane> {
 
   /// Adds a habit for a person or circle, picked from those active.
   Future<void> _addRelationshipHabit() async {
-    final circles = widget.memory.people?.circles ?? const <Circle>[];
-    final picked = await showModalBottomSheet<Object>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            ListTile(
-              title: Text(
-                'A habit for…',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            for (final c in circles)
-              ListTile(
-                leading: const Icon(Icons.groups_outlined),
-                title: Text(c.name),
-                onTap: () => Navigator.of(context).pop(c),
-              ),
-            for (final p in _people)
-              if (p.active)
-                ListTile(
-                  leading: const Icon(Icons.person_outline),
-                  title: Text(personName(p)),
-                  onTap: () => Navigator.of(context).pop(p),
-                ),
-          ],
-        ),
-      ),
+    final picked = await pickPersonOrCircle(
+      context,
+      title: 'A habit for…',
+      memory: widget.memory,
     );
     if (picked == null || !mounted) return;
     final saved = await editRelationshipHabit(

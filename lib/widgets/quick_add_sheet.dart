@@ -8,6 +8,7 @@ import '../models/plan_action.dart';
 import 'action_icon.dart';
 import 'actions_picker.dart';
 import 'hotkeys.dart';
+import 'people_picker.dart';
 import 'picker_sheet.dart';
 
 // Quick ways to add a person, a location, a location group or an action:
@@ -398,7 +399,6 @@ class _PersonSheetState<T> extends State<_PersonSheet<T>>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return _Frame(
       title: 'New person',
       saving: saving,
@@ -429,34 +429,16 @@ class _PersonSheetState<T> extends State<_PersonSheet<T>>
             onSubmitted: (_) => add(),
           ),
         ),
-        if (widget.circles.isNotEmpty)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Circles', style: theme.textTheme.titleSmall),
-              const SizedBox(height: 4),
-              FieldHotkey(
-                'I',
-                focusOnly: true,
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final circle in widget.circles)
-                      FilterChip(
-                        label: Text(circle.name),
-                        selected: _circleIds.contains(circle.id),
-                        onSelected: (on) => setState(
-                          () => on
-                              ? _circleIds.add(circle.id)
-                              : _circleIds.remove(circle.id),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
+        CirclesField(
+          circles: widget.circles,
+          picked: [..._circleIds],
+          hotkey: 'I',
+          onChanged: (ids) => setState(
+            () => _circleIds
+              ..clear()
+              ..addAll(ids),
           ),
+        ),
       ],
     );
   }

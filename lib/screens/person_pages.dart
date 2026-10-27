@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
 
+import '../models/people_times.dart';
 import '../models/person.dart';
 import '../models/trait.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import '../widgets/person_dialog.dart';
+import '../widgets/picker_edits.dart' as edits;
 import '../widgets/quick_add_sheet.dart';
+import 'circle_screen.dart';
 import 'person_screen.dart';
 
-/// Opens people's pages ([PersonScreen]) and edits them, for the panes
-/// that show people -- People, and Traits with Self: whom [memory] has,
-/// saved with [repository]. [onSaved] is told once someone is, to load
+/// Opens people's pages ([PersonScreen]) and circles' ([CircleScreen]),
+/// and edits them, for the panes that show people -- People, Traits with
+/// Self, and Habits: whom [memory] has, saved with [repository]. [onSaved] is told once someone is, to load
 /// everyone afresh.
 class PersonPages {
   const PersonPages({
@@ -85,6 +88,39 @@ class PersonPages {
           )
         : await page(const {});
     if (saved != null) await onSaved?.call();
+  }
+
+  /// Adds a circle (with no [circle]) or edits [circle], in its dialog.
+  Future<void> editCircle(BuildContext context, Circle? circle) async {
+    final saved = await edits.editCircle(
+      context,
+      circle: circle,
+      repository: repository,
+      memory: memory,
+    );
+    if (saved != null) await onSaved?.call();
+  }
+
+  /// Opens [circle]'s page: with [times], its time together, as
+  /// [durations] says.
+  void openCircle(
+    BuildContext context,
+    Circle circle, {
+    PeopleTimes? times,
+    bool durations = true,
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (pageContext) => CircleScreen(
+          circle: circle,
+          memory: memory,
+          times: times,
+          durations: durations,
+          onOpenPerson: (person) => open(pageContext, person),
+          onEdit: (circle) => editCircle(pageContext, circle),
+        ),
+      ),
+    );
   }
 
   /// Opens [person]'s page.

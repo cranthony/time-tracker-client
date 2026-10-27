@@ -21,6 +21,7 @@ import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/screens/background_updates_screen.dart';
 import 'package:time_tracker_client/screens/diagnostics_screen.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
+import 'package:time_tracker_client/screens/people_pane.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
 import 'package:time_tracker_client/screens/plan_screen.dart';
 import 'package:time_tracker_client/screens/notes_screen.dart';
@@ -39,6 +40,7 @@ import 'package:time_tracker_client/widgets/day_summary.dart';
 import 'package:time_tracker_client/widgets/time_summary.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/actions_picker.dart';
+import 'package:time_tracker_client/widgets/person_tile.dart';
 import 'package:time_tracker_client/widgets/error_sheet.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
 import 'package:time_tracker_client/widgets/event_outbox_status.dart';
@@ -223,8 +225,8 @@ void main() {
       });
     }
 
-    // Everyone, as listed and sorted by the time in the last 7 days; and
-    // one circle's people.
+    // Everyone, circles among them, as listed and sorted by the time in
+    // the last 7 days; and one circle's page.
     for (final (name, sort, circle) in [
       ('people_all', null, null),
       ('people_sorted', 'Time in 7d', null),
@@ -245,7 +247,7 @@ void main() {
               await tester.pumpAndSettle();
             }
             if (circle != null) {
-              await tester.tap(find.widgetWithText(FilterChip, circle));
+              await tester.tap(find.widgetWithText(CircleTile, circle));
               await tester.pumpAndSettle();
             }
           },
@@ -262,6 +264,17 @@ void main() {
         scoped: true,
         then: () async {
           await openPane(tester, 'People');
+          // Under the circles.
+          await tester.scrollUntilVisible(
+            find.byTooltip('More for Sam'),
+            200,
+            scrollable: find
+                .descendant(
+                  of: find.byType(PeoplePane),
+                  matching: find.byType(Scrollable),
+                )
+                .last,
+          );
           await tester.tap(find.byTooltip('More for Sam'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('Edit'));

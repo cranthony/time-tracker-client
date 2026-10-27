@@ -280,45 +280,10 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
   /// The open goals done with them or for them, soonest due first --
   /// nothing, without any.
   List<Widget> _goals(ThemeData theme) {
-    final memory = widget.memory;
-    final id = _person.id;
-    final goals = [
-      for (final g in memory?.goals ?? const <Goal>[])
-        if (g.open && g.involves(id)) g,
-    ]..sort(compareByDeadline);
-    if (goals.isEmpty) return const [];
-    final repository = GoalsScope.of(context);
     final them = _person.isSelf ? 'you' : 'them';
-    return [
-      sectionHeading(theme, 'Goals'),
-      for (final g in goals)
-        ListTile(
-          dense: true,
-          leading: Icon(
-            g.forIds.contains(id) ? Icons.card_giftcard : Icons.group_outlined,
-          ),
-          title: Text(goalTitle(g)),
-          subtitle: Text(
-            [
-              g.forIds.contains(id) ? 'For $them' : 'With $them',
-              if (g.deadline != null)
-                'Due ${deadlineLabel(context, g.deadline)}',
-              if (g.inactive) 'Inactive',
-            ].join(' · '),
-          ),
-          onTap: repository == null || memory == null
-              ? null
-              : () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => GoalScreen(
-                      goalId: g.id,
-                      repository: repository,
-                      memory: memory,
-                    ),
-                  ),
-                ),
-        ),
-    ];
+    return openGoalTiles(context, widget.memory, {
+      _person.id,
+    }, who: (_, isFor) => isFor ? 'For $them' : 'With $them');
   }
 
   List<Widget> _history(ThemeData theme) {
@@ -351,6 +316,53 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
       ),
     ];
   }
+}
+
+/// The open goals done with or for any of [ids], soonest due first,
+/// under a heading -- nothing, without any: each saying [who] of them
+/// it's for ([isFor]) or done with, when it's due, and whether it's
+/// inactive, and opening its page.
+List<Widget> openGoalTiles(
+  BuildContext context,
+  PlanMemory? memory,
+  Set<String> ids, {
+  required String Function(Goal goal, bool isFor) who,
+}) {
+  final goals = [
+    for (final g in memory?.goals ?? const <Goal>[])
+      if (g.open && ids.any(g.involves)) g,
+  ]..sort(compareByDeadline);
+  if (goals.isEmpty) return const [];
+  final repository = GoalsScope.of(context);
+  return [
+    sectionHeading(Theme.of(context), 'Goals'),
+    for (final g in goals)
+      if (g.forIds.any(ids.contains) case final isFor)
+        ListTile(
+          dense: true,
+          leading: Icon(isFor ? Icons.card_giftcard : Icons.group_outlined),
+          title: Text(goalTitle(g)),
+          subtitle: Text(
+            [
+              who(g, isFor),
+              if (g.deadline != null)
+                'Due ${deadlineLabel(context, g.deadline)}',
+              if (g.inactive) 'Inactive',
+            ].join(' · '),
+          ),
+          onTap: repository == null || memory == null
+              ? null
+              : () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => GoalScreen(
+                      goalId: g.id,
+                      repository: repository,
+                      memory: memory,
+                    ),
+                  ),
+                ),
+        ),
+  ];
 }
 
 /// How the traits combine -- [traits.scoring], or else [defaults] --

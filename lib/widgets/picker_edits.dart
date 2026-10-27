@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/person.dart';
 import '../models/plan_action.dart';
+import '../models/scoring.dart';
 import '../models/trait.dart';
 import '../services/actions_repository.dart';
 import '../services/people_repository.dart';
@@ -12,9 +13,9 @@ import 'person_dialog.dart';
 import 'quick_add_sheet.dart';
 
 // Adding to, and editing, what the Events page's pickers pick from --
-// actions, people and locations -- from the pickers themselves, as the
-// Plan page does: each added in its quick sheet (and its More, the same
-// dialog or page), and edited in the same dialog or page, with what the
+// actions, people, circles and locations -- from the pickers themselves,
+// as the Plan page does: each added in its quick sheet (and its More, the
+// same dialog or page), and edited in the same dialog or page, with what the
 // app has from [ActionsScope], [PeopleScope] and [PlanMemoryScope]. One
 // added is made at once, rather than in the background, so it has its id
 // to be picked by.
@@ -170,6 +171,49 @@ Future<Person?> editPerson(
     await _reload(() => memory?.loadPeople(repository, again: true));
   }
   return saved;
+}
+
+/// Adds a circle (with no [circle]), named [name] to start with, or edits
+/// [circle], in its dialog -- or deletes it, keeping its people -- saved
+/// with [repository] (by default, the [PeopleScope]'s) and loaded again
+/// into [memory] (by default, the [PlanMemoryScope]'s). Returns it as
+/// saved, or [circle] once it's deleted; null if it was called off.
+Future<Circle?> editCircle(
+  BuildContext context, {
+  Circle? circle,
+  String? name,
+  PeopleRepository? repository,
+  PlanMemory? memory,
+}) async {
+  final people = repository ?? PeopleScope.of(context);
+  if (people == null) return null;
+  final plan = memory ?? PlanMemoryScope.of(context);
+  Circle? saved;
+  final done = await showCircleDialog(
+    context,
+    circle: circle,
+    name: name == null || name.isEmpty ? null : name,
+    members: {
+      if (circle != null)
+        for (final p in plan?.people?.inCircle(circle.id) ?? <Person>[])
+          p.id: personName(p),
+    },
+    defaultScoring: plan?.scoringDefaults.circles,
+    save: (fields) async => saved = circle == null
+        ? await people.createCircle(
+            Circle(
+              id: '',
+              name: fields['name'] as String,
+              note: fields['note'] as String?,
+              scoring: Aggregation.fromJson(fields['scoring']),
+            ),
+          )
+        : await people.updateCircle(circle.id, fields),
+    delete: circle == null ? null : () => people.deleteCircle(circle.id),
+  );
+  if (!done) return null;
+  await _reload(() => plan?.loadPeople(people, again: true));
+  return saved ?? circle;
 }
 
 /// Adds a location (with no [location]), named [name] and with [hint] to

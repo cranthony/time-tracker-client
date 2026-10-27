@@ -9,6 +9,7 @@ import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/time_split.dart';
 import 'package:time_tracker_client/models/trait.dart';
+import 'package:time_tracker_client/screens/circle_screen.dart';
 import 'package:time_tracker_client/screens/habit_screen.dart';
 import 'package:time_tracker_client/screens/habits_pane.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
@@ -439,6 +440,35 @@ void main() {
       expect(find.widgetWithText(AppBar, 'Ana'), findsOneWidget);
     });
 
+    testWidgets("a circle's habit's page opens its, a tap away", (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        habits: InMemoryHabitsRepository([
+          const Habit(
+            id: 'h5',
+            name: 'Close to the pals',
+            actionId: '',
+            circleId: 'pals',
+          ),
+        ]),
+        people: InMemoryPeopleRepository(
+          people: const [
+            Person(id: 'ana', name: 'Ana', circleIds: ['pals']),
+          ],
+          circles: const [Circle(id: 'pals', name: 'Pals')],
+        ),
+      );
+      await tester.tap(find.text('Close to the pals'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Pals'));
+      await tester.pumpAndSettle();
+      expect(find.byType(CircleScreen), findsOneWidget);
+      expect(find.text('1 person'), findsOneWidget);
+    });
+
     testWidgets('shows them by name, archived ones when asked', (tester) async {
       await pump(
         tester,
@@ -596,6 +626,42 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+
+    testWidgets("adds a circle's habit, picked from the circles alone", (
+      tester,
+    ) async {
+      final people = InMemoryPeopleRepository(
+        people: const [
+          Person(id: 'ana', name: 'Ana', circleIds: ['pals']),
+        ],
+        circles: const [Circle(id: 'pals', name: 'Pals')],
+      );
+      final habits = InMemoryHabitsRepository([_mindfully]);
+      await pump(tester, habits: habits, people: people);
+
+      await tester.tap(find.byTooltip('New habit for a person or circle'));
+      await tester.pumpAndSettle();
+      // Everyone, searched; a circle marked as one.
+      expect(find.widgetWithText(ListTile, 'Ana'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.widgetWithText(ListTile, 'Pals'),
+          matching: find.byIcon(Icons.groups_outlined),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Circles'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ListTile, 'Ana'), findsNothing);
+      expect(find.text('Add circle…'), findsOneWidget);
+      expect(find.text('Add person…'), findsNothing);
+      await tester.tap(find.widgetWithText(ListTile, 'Pals'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      final added = (await habits.habits()).firstWhere((h) => h.isRelationship);
+      expect((added.circleId, added.name), ('pals', 'Pals'));
     });
 
     testWidgets('picks what one is built on from its menu', (tester) async {
