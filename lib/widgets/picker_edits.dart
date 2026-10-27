@@ -176,18 +176,29 @@ Future<Person?> editPerson(
 /// Adds a circle (with no [circle]), named [name] to start with, or edits
 /// [circle], in its dialog -- or deletes it, keeping its people -- saved
 /// with [repository] (by default, the [PeopleScope]'s) and loaded again
-/// into [memory] (by default, the [PlanMemoryScope]'s). Returns it as
-/// saved, or [circle] once it's deleted; null if it was called off.
+/// into [memory] (by default, the [PlanMemoryScope]'s). A community's
+/// traits are offered from [traits] (by default, the [TraitsScope]'s).
+/// Returns it as saved, or [circle] once it's deleted; null if it was
+/// called off.
 Future<Circle?> editCircle(
   BuildContext context, {
   Circle? circle,
   String? name,
   PeopleRepository? repository,
   PlanMemory? memory,
+  TraitsRepository? traits,
 }) async {
   final people = repository ?? PeopleScope.of(context);
   if (people == null) return null;
   final plan = memory ?? PlanMemoryScope.of(context);
+  final traitsRepository = traits ?? TraitsScope.of(context);
+  var all = const <Trait>[];
+  try {
+    all = await traitsRepository?.traits() ?? const [];
+  } catch (_) {
+    // Which apply can wait.
+  }
+  if (!context.mounted) return null;
   Circle? saved;
   final done = await showCircleDialog(
     context,
@@ -199,6 +210,13 @@ Future<Circle?> editCircle(
           p.id: personName(p),
     },
     defaultScoring: plan?.scoringDefaults.circles,
+    traits: all,
+    actions: {
+      for (final action in plan?.actions?.actions ?? const <PlanAction>[])
+        if (action.id != null && action.status != 'deleted')
+          action.id!: action.path ?? actionName(action),
+    },
+    scoreParts: plan?.scoreDraftParts,
     save: (fields) async => saved = circle == null
         ? await people.createCircle(
             Circle(
@@ -207,7 +225,15 @@ Future<Circle?> editCircle(
               kind: CircleKind.fromJson(fields['kind']),
               note: fields['note'] as String?,
               scoring: Aggregation.fromJson(fields['scoring']),
+              traits: PersonTraits.fromJson(fields['traits']),
             ),
+            facts: switch (fields['facts']) {
+              final Map facts => {
+                for (final MapEntry(:key, :value) in facts.entries)
+                  '$key': (value as Map).cast<String, String>(),
+              },
+              _ => null,
+            },
           )
         : await people.updateCircle(circle.id, fields),
     delete: circle == null ? null : () => people.deleteCircle(circle.id),

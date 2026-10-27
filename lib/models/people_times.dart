@@ -36,11 +36,14 @@ class PeopleTimes {
     List<Circle> circles = const [],
   }) {
     final attendance = Attendance(circles: circles);
+    // Whose events are each circle's, besides those naming it: a plain
+    // circle's people's; a community's, none of its members'.
     final members = {
       for (final c in circles)
         c.id: {
-          for (final id in c.memberIds)
-            if (id != selfPersonId) id,
+          if (!c.isCommunity)
+            for (final id in c.memberIds)
+              if (id != selfPersonId) id,
         },
     };
     List<String> withIds(Event e) => attendance.withAt(e.facts);
@@ -85,7 +88,9 @@ class PeopleTimes {
         keep(nearest, id, e);
       }
       for (final MapEntry(key: id, value: people) in members.entries) {
-        if (ids.any(people.contains)) keep(circleNearest, id, e);
+        if (ids.contains(id) || ids.any(people.contains)) {
+          keep(circleNearest, id, e);
+        }
       }
     }
     return PeopleTimes._(

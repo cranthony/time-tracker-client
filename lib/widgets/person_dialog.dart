@@ -326,15 +326,24 @@ class _PersonEditorState extends State<_PersonEditor> {
 /// one: its name, note, whether it's a community -- set only as it's
 /// made, shown as it is after -- and, for a plain circle, how its
 /// people's scores combine -- its [members], by id, named -- in place of
-/// [defaultScoring]. Saves with [save], a new one's fields with its
-/// `kind`; "Delete", asked first, calls [delete]. Returns true if
-/// anything was saved or deleted.
+/// [defaultScoring]; for a community, which of [traits] apply to it --
+/// every active one, or those picked -- with its own parts for any
+/// ([actions] naming the actions and groups a part can count, and
+/// [scoreParts] scoring the parts of one already there as they're
+/// edited), and its summary of each of those traits' facts (one already
+/// there). Saves with [save], a new one's fields with its `kind`, a
+/// community's with its `traits` and, when one changed, its `facts`;
+/// "Delete", asked first, calls [delete]. Returns true if anything was
+/// saved or deleted.
 Future<bool> showCircleDialog(
   BuildContext context, {
   Circle? circle,
   String? name,
   Map<String, String> members = const {},
   Aggregation? defaultScoring,
+  List<Trait> traits = const [],
+  Map<String, String> actions = const {},
+  PartsScorer? scoreParts,
   required Future<void> Function(Map<String, Object?> fields) save,
   Future<void> Function()? delete,
 }) async =>
@@ -351,6 +360,15 @@ Future<bool> showCircleDialog(
         nameHint: 'e.g. Family',
         deleteExplanation: 'Everyone in it stays; they just leave the circle.',
         community: (value: circle?.isCommunity ?? false, fixed: circle != null),
+        traits: traits.isEmpty
+            ? null
+            : (
+                all: traits,
+                value: circle?.traits ?? const PersonTraits(),
+                actions: actions,
+                of: circle,
+                scoreParts: scoreParts,
+              ),
         scoring: (
           value: circle?.scoring,
           items: members,
@@ -475,6 +493,7 @@ class _NamedDialog extends StatefulWidget {
     required this.delete,
     this.scoring,
     this.community,
+    this.traits,
     this.map,
     this.group,
     this.addGroup,
@@ -510,6 +529,20 @@ class _NamedDialog extends StatefulWidget {
   /// [fixed] -- set when it was made, never changed.
   final ({bool value, bool fixed})? community;
 
+  /// A community's traits, for a circle: every trait that could apply
+  /// ([all]), which do as it stands ([value]), the actions and groups a
+  /// part can count, and, for one already there ([of]), its summary of
+  /// each trait fact and what scores its parts as they're edited. Shown
+  /// only while it's a community.
+  final ({
+    List<Trait> all,
+    PersonTraits value,
+    Map<String, String> actions,
+    Circle? of,
+    PartsScorer? scoreParts,
+  })?
+  traits;
+
   /// Where it is on a map, for a location: as it is, and what it starts
   /// as, if not that.
   final ({String? value, String? typed})? map;
@@ -540,11 +573,49 @@ class _NamedDialogState extends State<_NamedDialog> {
   bool _scoringChanged = false;
   late bool _community = widget.community?.value ?? false;
 
+  /// Which traits apply to a community, and its own parts for any.
+  late PersonTraits _traits = widget.traits?.value ?? const PersonTraits();
+  bool _traitsChanged = false;
+
+  /// A community's summary of each trait fact, by "trait id/fact id",
+  /// for every trait's -- those shown being those of the traits that
+  /// apply.
+  late final _summaries = {
+    for (final trait in widget.traits?.all ?? const <Trait>[])
+      if (trait.id case final traitId?)
+        for (final fact in trait.facts)
+          '$traitId/${fact.id}': TextEditingController(
+            text: widget.traits?.of?.summary(traitId, fact.id),
+          ),
+  };
+
+  /// The active traits that apply to a community already there, as its
+  /// traits stand, each with its facts: those whose summaries are shown.
+  List<(Trait, List<TraitFact>)> get _shownFacts => [
+    if (widget.traits case final traits? when traits.of != null)
+      for (final trait in traits.all)
+        if (trait.id != null &&
+            trait.status == 'active' &&
+            trait.facts.isNotEmpty &&
+            (_traits.select?.contains(trait.id) ?? true))
+          (trait, trait.facts),
+  ];
+
+  bool get _summariesChanged => [
+    for (final (trait, facts) in _shownFacts)
+      for (final fact in facts)
+        _summaries['${trait.id}/${fact.id}']!.text.trim() !=
+            (widget.traits?.of?.summary(trait.id!, fact.id) ?? ''),
+  ].any((changed) => changed);
+
   @override
   void dispose() {
     _name.dispose();
     _detail.dispose();
     _map.dispose();
+    for (final summary in _summaries.values) {
+      summary.dispose();
+    }
     super.dispose();
   }
 
@@ -619,6 +690,22 @@ class _NamedDialogState extends State<_NamedDialog> {
                     ? CircleKind.community.json
                     : CircleKind.circle.json,
               if (_scoringChanged && !_community) 'scoring': _scoring?.toJson(),
+              // A community's traits, as it's made or they're changed,
+              // and its summaries, when one changed; a plain circle
+              // takes neither.
+              if (widget.traits case final traits? when _community) ...{
+                if (traits.of == null || _traitsChanged)
+                  'traits': _traits.isDefault ? null : _traits.toJson(),
+                if (_summariesChanged)
+                  'facts': {
+                    for (final (trait, facts) in _shownFacts)
+                      trait.id!: {
+                        for (final fact in facts)
+                          fact.id: _summaries['${trait.id}/${fact.id}']!.text
+                              .trim(),
+                      },
+                  },
+              },
             }),
           )
         : null;
@@ -628,6 +715,7 @@ class _NamedDialogState extends State<_NamedDialog> {
       if (widget.map != null) 'map',
       ?widget.group?.label,
       if (widget.community != null) 'community',
+      if (widget.traits != null) 'traits',
       if (widget.scoring != null) 'combine',
       if (widget.extra != null) 'travel',
     ]);
@@ -639,10 +727,12 @@ class _NamedDialogState extends State<_NamedDialog> {
               (widget.map?.typed ?? widget.map?.value ?? '').trim() ||
           _group != widget.group?.value ||
           _community != (widget.community?.value ?? false) ||
-          _scoringChanged,
+          _scoringChanged ||
+          _traitsChanged ||
+          _summariesChanged,
       onSave: save,
       child: AlertDialog(
-        scrollable: widget.extra != null,
+        scrollable: widget.extra != null || widget.traits != null,
         title: Text(
           widget.name == null ? 'New ${widget.noun}' : 'Edit ${widget.noun}',
         ),
@@ -749,6 +839,70 @@ class _NamedDialogState extends State<_NamedDialog> {
                         : (on) => setState(() => _community = on),
                   ),
                 ),
+              ],
+              if (widget.traits case final traits? when _community) ...[
+                const SizedBox(height: 8),
+                FieldHotkey(
+                  letters['traits'],
+                  focusOnly: true,
+                  child: TraitsField(
+                    traits: traits.all,
+                    value: _traits,
+                    actions: traits.actions,
+                    own: 'Its own',
+                    partsTitle: (trait) =>
+                        '${trait.name} for '
+                        '${_name.text.trim().isEmpty ? 'it' : _name.text.trim()}',
+                    partsExplanation: (trait) =>
+                        "Its own parts for ${trait.name}, in place of the "
+                        "trait's.",
+                    preview: switch ((traits.scoreParts, traits.of)) {
+                      (final score?, final of?) => (trait, parts) => score(
+                        Subject.community(of),
+                        trait.id!,
+                        parts,
+                      ),
+                      _ => null,
+                    },
+                    onChanged: (picked) => setState(() {
+                      _traits = picked;
+                      _traitsChanged = true;
+                    }),
+                  ),
+                ),
+                if (_shownFacts.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16, bottom: 4),
+                    child: Text(
+                      'Facts',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                  Text(
+                    'What each trait keeps about it, for its judgments. '
+                    'Compaction rewrites these as notes show something '
+                    "new; what you change here isn't logged.",
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  for (final (trait, facts) in _shownFacts)
+                    for (final fact in facts)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: TextField(
+                          controller: _summaries['${trait.id}/${fact.id}'],
+                          minLines: 3,
+                          maxLines: null,
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: InputDecoration(
+                            labelText: '${fact.name} · ${trait.name}',
+                            helperText: fact.summaryPrompt,
+                            helperMaxLines: 3,
+                            border: const OutlineInputBorder(),
+                            floatingLabelBehavior: FloatingLabelBehavior.always,
+                          ),
+                        ),
+                      ),
+                ],
               ],
               if (widget.scoring case final scoring? when !_community)
                 FieldHotkey(

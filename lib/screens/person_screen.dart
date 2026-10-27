@@ -209,7 +209,7 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
       withWhom: _person.isSelf ? null : 'with them',
       why: 'off, archived, or not theirs',
       noteOf: _person.id,
-      person: _person,
+      judged: _person,
       factLogs: switch (PeopleScope.of(context)) {
         final people? => (traitId) => people.factLogs(
           _person.id,
@@ -269,7 +269,13 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
             ],
             if (_scored) ...[
               sectionHeading(theme, 'History'),
-              ..._history(theme),
+              ...historyTiles(
+                context,
+                _scores,
+                _person.id,
+                actionNames: widget.actionNames,
+                locationNames: widget.locationNames,
+              ),
             ],
             ...sections.events(),
             ...sections.cancelledSection(),
@@ -287,37 +293,49 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
       _person.id,
     }, who: (_, isFor) => isFor ? 'For $them' : 'With $them');
   }
+}
 
-  List<Widget> _history(ThemeData theme) {
-    final digest = _scores?.digest(_person.id);
-    if (digest == null) return [sectionPadded(const LinearProgressIndicator())];
-    String entries(List<DigestEntry> list) => list.isEmpty
-        ? 'None recorded'
-        : [
-            for (final e in list)
-              '${widget.actionNames[e.label] ?? widget.locationNames[e.label] ?? e.label} ×${e.count} '
-                  '(${e.first == e.last ? e.first : '${e.first} – ${e.last}'})',
-          ].join('\n');
-    return [
-      sectionPadded(
-        Text(
-          '${digest.eventsCounted} events in the last ${digest.windowDays} '
-          'days.',
-          style: theme.textTheme.bodySmall,
-        ),
+/// [subjectId]'s history from [scores] -- a person's, or a community's:
+/// how many of its events are in the window, then the actions done at
+/// them and their locations (named from [actionNames] and
+/// [locationNames]), each with how often and when; a progress bar until
+/// they're scored.
+List<Widget> historyTiles(
+  BuildContext context,
+  TraitScores? scores,
+  String subjectId, {
+  required Map<String?, String> actionNames,
+  required Map<String?, String> locationNames,
+}) {
+  final theme = Theme.of(context);
+  final digest = scores?.digest(subjectId);
+  if (digest == null) return [sectionPadded(const LinearProgressIndicator())];
+  String entries(List<DigestEntry> list) => list.isEmpty
+      ? 'None recorded'
+      : [
+          for (final e in list)
+            '${actionNames[e.label] ?? locationNames[e.label] ?? e.label} ×${e.count} '
+                '(${e.first == e.last ? e.first : '${e.first} – ${e.last}'})',
+        ].join('\n');
+  return [
+    sectionPadded(
+      Text(
+        '${digest.eventsCounted} events in the last ${digest.windowDays} '
+        'days.',
+        style: theme.textTheme.bodySmall,
       ),
-      ListTile(
-        dense: true,
-        title: const Text('Actions'),
-        subtitle: Text(entries(digest.actions)),
-      ),
-      ListTile(
-        dense: true,
-        title: const Text('Locations'),
-        subtitle: Text(entries(digest.locations)),
-      ),
-    ];
-  }
+    ),
+    ListTile(
+      dense: true,
+      title: const Text('Actions'),
+      subtitle: Text(entries(digest.actions)),
+    ),
+    ListTile(
+      dense: true,
+      title: const Text('Locations'),
+      subtitle: Text(entries(digest.locations)),
+    ),
+  ];
 }
 
 /// The open goals done with or for any of [ids] -- named themself, or by
@@ -613,18 +631,19 @@ List<Widget> traitScoreTiles(
   HealthScale scale = HealthScale.relationship,
   Map<String?, String> personNames = const {},
   Map<String?, String> locationNames = const {},
-  Person? person,
+  Judged? judged,
   Map<String, Trait> traitList = const {},
   Future<List<FactLog>> Function(String traitId)? factLogs,
   Future<void> Function(Trait trait, TraitFact fact, {bool reset})?
   onFactPrompts,
 }) {
   final theme = Theme.of(context);
-  // A person's summary of each of a trait's facts, null for none yet.
+  // A person's or community's summary of each of a trait's facts, null
+  // for none yet.
   List<(TraitFact, String?)> factsOf(String traitId) => [
-    if (person != null)
+    if (judged != null)
       for (final fact in traitList[traitId]?.facts ?? const <TraitFact>[])
-        (fact, person.summary(traitId, fact.id)),
+        (fact, judged.summary(traitId, fact.id)),
   ];
   Widget padded(Widget child) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -719,9 +738,13 @@ List<Widget> traitScoreTiles(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      person?.traits.factPrompts(score.traitId, fact.id) == null
+                      judged?.traits.factPrompts(score.traitId, fact.id) == null
                           ? fact.name
-                          : '${fact.name} · ${whom == 'you' ? 'your' : 'their'} own prompts',
+                          : '${fact.name} · ${whom == 'you'
+                                ? 'your'
+                                : whom == 'it'
+                                ? 'its'
+                                : 'their'} own prompts',
                       style: theme.textTheme.labelLarge,
                     ),
                     Text(
@@ -747,7 +770,7 @@ List<Widget> traitScoreTiles(
                   icon: const Icon(Icons.tune),
                   onPressed: () => edit(trait, fact),
                 ),
-                if (person?.traits.factPrompts(score.traitId, fact.id) != null)
+                if (judged?.traits.factPrompts(score.traitId, fact.id) != null)
                   IconButton(
                     tooltip: "Use ${trait.name}'s prompts",
                     visualDensity: VisualDensity.compact,

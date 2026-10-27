@@ -321,27 +321,36 @@ class PlanMemory extends ChangeNotifier {
       jsonEncode([for (final t in traits) t.toJson()]);
 
   /// What of the people the scores are from: each, with what they
-  /// cancelled.
+  /// cancelled; and of the circles -- a plain one's people and scoring,
+  /// a community's traits and cancellations.
   static String _peopleSignature(PeopleList people) => jsonEncode([
     for (final p in people.withSelf)
+      [p.toJson(), _cancelledSignature(p.cancelledEvents)],
+    for (final c in people.circles)
       [
-        p.toJson(),
-        for (final c in p.cancelledEvents)
-          [
-            c.eventId,
-            c.summary,
-            c.start.toIso8601String(),
-            c.end.toIso8601String(),
-            c.actionIds,
-            c.engagement,
-            c.parts,
-            c.cancelledAt?.toIso8601String(),
-            c.source,
-          ],
+        c.id,
+        c.kind.json,
+        c.memberIds,
+        c.scoring?.toJson(),
+        c.traits.toJson(),
+        _cancelledSignature(c.cancelledEvents),
       ],
-    // What a circle's habit is scored by.
-    for (final c in people.circles) [c.id, c.memberIds, c.scoring?.toJson()],
   ]);
+
+  static List<Object?> _cancelledSignature(List<CancelledEvent> cancelled) => [
+    for (final c in cancelled)
+      [
+        c.eventId,
+        c.summary,
+        c.start.toIso8601String(),
+        c.end.toIso8601String(),
+        c.actionIds,
+        c.engagement,
+        c.parts,
+        c.cancelledAt?.toIso8601String(),
+        c.source,
+      ],
+  ];
 
   /// What of the actions the scores are from: what each is in.
   static String _actionsSignature(ActionList actions) => jsonEncode([

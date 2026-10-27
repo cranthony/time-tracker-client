@@ -1,7 +1,8 @@
 // Circles and communities: a plain circle named on an event or goal
 // stands for its members but those its except leaves out; a community
-// stands for itself. Read and sent as the server has them, picked, named
-// and scored.
+// stands for itself, a subject of its own with traits, facts, judgments
+// and cancellations as a person has. Read and sent as the server has
+// them, picked, named and scored.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,18 +11,27 @@ import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/facts.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/note.dart';
+import 'package:time_tracker_client/models/people_times.dart';
 import 'package:time_tracker_client/models/person.dart';
 import 'package:time_tracker_client/models/recurring_goal.dart';
 import 'package:time_tracker_client/models/scoring.dart';
+import 'package:time_tracker_client/models/time_split.dart';
 import 'package:time_tracker_client/models/trait.dart';
+import 'package:time_tracker_client/models/habit.dart';
 import 'package:time_tracker_client/models/trait_scores.dart';
+import 'package:time_tracker_client/screens/circle_screen.dart';
+import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/goal_drafts.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
+import 'package:time_tracker_client/services/plan_memory.dart';
+import 'package:time_tracker_client/services/traits_repository.dart';
+import 'package:time_tracker_client/widgets/facts_dialog.dart';
 import 'package:time_tracker_client/widgets/goal_editor.dart';
 import 'package:time_tracker_client/widgets/person_dialog.dart';
 import 'package:time_tracker_client/widgets/picker_sheet.dart';
+import 'package:time_tracker_client/widgets/traits_field.dart';
 
 const _self = Person(id: selfPersonId, name: 'Self', circleIds: ['fam']);
 const _sam = Person(id: 'sam', name: 'Sam', circleIds: ['fam']);
@@ -48,6 +58,52 @@ const _names = {
   'fam': 'Family',
   'club': 'Club',
 };
+
+/// How kind an event was, judged out of 5, with one fact kept about
+/// whoever it judges.
+const _kind = Trait(
+  id: 'kind',
+  name: 'Kind',
+  parts: [
+    {
+      'kind': 'judgment',
+      'rubric': 'Was it kind?',
+      'ratings': {'0': 'Not at all', '5': 'Entirely'},
+      'facts': ['general_notes'],
+    },
+  ],
+  facts: [
+    TraitFact(
+      id: 'what_matters',
+      name: 'What matters',
+      summaryPrompt: 'What matters to them.',
+    ),
+  ],
+);
+
+/// A club night on [day], judged 4 of 5 for the club -- and 1 of 5 under
+/// Jo, who wasn't named, which counts for no one.
+Event _clubNight(DateTime day) => Event.fromJson({
+  'id': 'night',
+  'summary': 'Club night',
+  'start': localIsoTimestamp(DateTime(day.year, day.month, day.day, 19)),
+  'end': localIsoTimestamp(DateTime(day.year, day.month, day.day, 21)),
+  'facts': {
+    'with_ids': ['club'],
+  },
+  'judgments': {
+    'club': {
+      'kind': {
+        'judgment': {'rating': 4, 'scale': 5, 'reasoning': 'Warm'},
+      },
+    },
+    'jo': {
+      'kind': {
+        'judgment': {'rating': 1, 'scale': 5},
+      },
+    },
+  },
+});
 
 /// An event at noon on [day], with [facts].
 Event _event(String id, DateTime day, Map<String, Object?> facts) =>
@@ -268,12 +324,22 @@ void main() {
   });
 
   group('a circle', () {
-    test('has a kind, a plain circle unless it says, and a community\'s own '
-        'traits and facts are passed over', () {
-      final plain = Circle.fromJson({'id': 'fam', 'name': 'Family'});
+    test("has a kind, a plain circle unless it says; a community's own "
+        "traits, facts and cancelled events are read as a person's, and "
+        'sent as a person\'s are', () {
+      final plain = Circle.fromJson({
+        'id': 'fam',
+        'name': 'Family',
+        'traits': null,
+        'facts': null,
+        'cancelled_events': null,
+      });
       expect(plain.kind, CircleKind.circle);
       expect(plain.isCommunity, isFalse);
-      expect(plain.toJson()['kind'], 'circle');
+      expect(plain.traits.isDefault, isTrue);
+      expect(plain.facts, isEmpty);
+      expect(plain.cancelledEvents, isEmpty);
+      expect(plain.toJson(), {'id': 'fam', 'name': 'Family', 'kind': 'circle'});
 
       final community = Circle.fromJson({
         'id': 'club',
@@ -282,18 +348,135 @@ void main() {
         'member_ids': ['jo'],
         'traits': {
           'select': ['kind'],
+          'parts': {
+            'kind': [
+              {'kind': 'follow_through'},
+            ],
+          },
         },
         'facts': {
-          'kind': {'what_matters': 'x'},
+          'kind': {'what_matters': 'Jazz', 'other': ''},
         },
         'cancelled_events': [
-          {'start': '2026-10-01T12:00:00'},
+          {
+            'start': '2026-10-01T12:00:00',
+            'engagement': 'with',
+            'parts': ['kind/follow_through'],
+          },
         ],
       });
       expect(community.kind, CircleKind.community);
       expect(community.isCommunity, isTrue);
       expect(community.memberIds, ['jo']);
-      expect(community.toJson()['kind'], 'community');
+      expect(community.traits.select, ['kind']);
+      expect(community.traits.applies('other'), isFalse);
+      expect(community.summary('kind', 'what_matters'), 'Jazz');
+      expect(community.summary('kind', 'other'), isNull);
+      expect(community.cancelledEvents.single.traitIds, ['kind']);
+      // Its traits go with it; its facts beside it, as a person's do.
+      expect(community.toJson(), {
+        'id': 'club',
+        'name': 'Club',
+        'kind': 'community',
+        'traits': {
+          'select': ['kind'],
+          'parts': {
+            'kind': [
+              {'kind': 'follow_through'},
+            ],
+          },
+        },
+      });
+      expect(
+        circleUpdate('club', {
+          'traits': null,
+          'note': 'Tuesdays',
+          'facts': {
+            'kind': {'what_matters': ''},
+          },
+        }, version: 2),
+        {
+          'circle': {'id': 'club', 'note': 'Tuesdays', 'version': 2},
+          'clear_fields': ['traits'],
+          'facts': {
+            'kind': {'what_matters': ''},
+          },
+        },
+      );
+    });
+
+    test("in memory, a plain circle takes no traits or facts, and a "
+        "community's facts round trip, as the server says", () async {
+      final people = InMemoryPeopleRepository(circles: const [_family]);
+      await expectLater(
+        people.updateCircle('fam', {
+          'traits': {
+            'select': ['kind'],
+          },
+        }),
+        throwsA(
+          isA<McpException>().having(
+            (e) => e.message,
+            'message',
+            'circle fam is a plain circle: it stands for its members, scored '
+                'as they are, so it takes no traits (a community does)',
+          ),
+        ),
+      );
+      await expectLater(
+        people.updateCircle('fam', {
+          'facts': {
+            'kind': {'what_matters': 'x'},
+          },
+        }),
+        throwsA(
+          isA<McpException>().having(
+            (e) => e.message,
+            'message',
+            'only a community has trait facts of its own: a plain circle '
+                'stands for its members, who have theirs',
+          ),
+        ),
+      );
+
+      final club = await people.createCircle(
+        const Circle(
+          id: '',
+          name: 'Club',
+          kind: CircleKind.community,
+          traits: PersonTraits(select: ['kind']),
+        ),
+        facts: {
+          'kind': {'what_matters': 'Jazz'},
+        },
+      );
+      expect(club.traits.select, ['kind']);
+      expect(club.summary('kind', 'what_matters'), 'Jazz');
+      // A summary set keeps the others; "" clears one.
+      final updated = await people.updateCircle(club.id, {
+        'facts': {
+          'kind': {'other': 'Loud'},
+        },
+      });
+      expect(updated.summary('kind', 'what_matters'), 'Jazz');
+      expect(updated.summary('kind', 'other'), 'Loud');
+      expect(
+        (await people.people()).circles.last.summary('kind', 'other'),
+        'Loud',
+      );
+      expect(
+        (await people.updateCircle(club.id, {
+          'facts': {
+            'kind': {'other': ''},
+          },
+        })).summary('kind', 'other'),
+        isNull,
+      );
+      // Its traits are replaced whole, and cleared with a null.
+      expect(
+        (await people.updateCircle(club.id, {'traits': null})).traits.isDefault,
+        isTrue,
+      );
     });
 
     test("in memory, its kind is set when it's made, and a community takes "
@@ -427,6 +610,44 @@ void main() {
       expect(scores.digest('jo').eventsCounted, 0);
     });
 
+    test("scores a community by the judgments under its id, by its own "
+        "traits, never its members'; its habit as it is, a plain circle's "
+        'by its people', () {
+      final today = DateTime(2026, 10, 2);
+      final events = [_clubNight(DateTime(2026, 10, 1))];
+      expect(
+        scoreSubject(
+          Subject.community(_club),
+          const [_kind],
+          DateTime(2026, 10, 1),
+          today,
+          events,
+          circles: const [_family, _club],
+        ).single.score,
+        80,
+      );
+
+      final scores = TraitScores.compute(
+        traits: const [_kind],
+        people: const [_self, _sam, _uly, _jo],
+        circles: const [_family, _club],
+        habits: const [
+          Habit(id: 'h1', name: 'Club nights', actionId: '', circleId: 'club'),
+          Habit(id: 'h2', name: 'Family time', actionId: '', circleId: 'fam'),
+        ],
+        events: events,
+        today: today,
+      );
+      expect(scores.health('club'), 80);
+      expect(scores.digest('club').eventsCounted, 1);
+      // Jo, a member, wasn't named: the night was with the club, not
+      // them, and the judgment under their id counts for no one.
+      expect(scores.health('jo'), isNull);
+      expect(scores.digest('jo').eventsCounted, 0);
+      expect(scores.health('habit:h1'), 80);
+      expect(scores.health('habit:h2'), isNull);
+    });
+
     test("in memory, a person's events are those naming a circle they're "
         'in, as list_events has them', () async {
       final repository = InMemoryEventsRepository([
@@ -453,6 +674,127 @@ void main() {
       expect(await of('sam'), ['fam']);
       expect(await of('uly'), isEmpty);
       expect(await of('jo'), isEmpty);
+      // A community's are those naming it.
+      expect(await of('club'), ['club']);
+    });
+
+    test("a community's time together is the events naming it, never "
+        "its members'", () {
+      final events = [
+        _event('jo', DateTime(2026, 10, 1), {
+          'with_ids': ['jo'],
+        }),
+        _event('club', DateTime(2026, 10, 2), {
+          'with_ids': ['club'],
+        }),
+      ];
+      final times = PeopleTimes.compute(
+        window: SummaryWindow(asOf: DateTime(2026, 10, 3)),
+        windowEvents: events,
+        known: events,
+        circles: const [_family, _club],
+      );
+      expect(times.circleWeek('club'), const Duration(hours: 1));
+      expect(times.circleNearest('club')!.id, 'club');
+      expect(times.week('jo'), const Duration(hours: 1));
+    });
+  });
+
+  group('a community', () {
+    testWidgets("is named for a judgment under its id, as a person is", (
+      tester,
+    ) async {
+      await _open(
+        tester,
+        (context) => showFactsDialog(
+          context,
+          null,
+          judgments: judgmentsFromJson(
+            _clubNight(DateTime(2026, 10, 1)).properties['judgments'],
+          ),
+          traitNames: const {'kind': 'Kind'},
+          pickers: false,
+        ),
+        people: InMemoryPeopleRepository(
+          people: const [_jo],
+          circles: const [_club],
+        ),
+      );
+
+      expect(find.text('Club · Kind: 4 of 5 — Warm'), findsOneWidget);
+      expect(find.text('Jo · Kind: 1 of 5'), findsOneWidget);
+    });
+
+    testWidgets('has its own page: its health, traits and their scores with '
+        'its facts, its history, events and cancellations, and its people '
+        'as a roster; a plain circle keeps its people combined', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(900, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final now = DateTime.now();
+      final events = [_clubNight(DateTime(now.year, now.month, now.day - 1))];
+      const club = Circle(
+        id: 'club',
+        name: 'Club',
+        kind: CircleKind.community,
+        memberIds: ['jo'],
+        facts: {
+          'kind': {'what_matters': 'Jazz, loud'},
+        },
+      );
+      final people = InMemoryPeopleRepository(
+        people: const [_jo],
+        circles: const [_family, club],
+      );
+      final traits = InMemoryTraitsRepository(traits: const [_kind]);
+      final memory = PlanMemory(
+        eventStore: EventStore(repository: InMemoryEventsRepository(events)),
+      );
+      await memory.loadTraits(traits);
+      await memory.loadPeople(people);
+      await memory.eventStore!.warm();
+      Future<void> open(Circle circle) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PeopleScope(
+              repository: people,
+              child: CircleScreen(
+                circle: circle,
+                memory: memory,
+                traits: traits,
+                personNames: _names,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await open(club);
+      expect(find.text('Relationship health'), findsOneWidget);
+      expect(find.textContaining('Its people combined'), findsNothing);
+      expect(find.text('Traits'), findsOneWidget);
+      expect(find.text('History'), findsOneWidget);
+      expect(find.text('Events'), findsOneWidget);
+      expect(find.text('Cancelled'), findsOneWidget);
+      expect(find.text('1 person'), findsOneWidget);
+      expect(find.text('Jo'), findsOneWidget);
+      // Scored by its own judgment: 80, of its one trait.
+      expect(find.text('80'), findsWidgets);
+      // Each trait's score shows what it keeps about it; tapped, the
+      // sheet of how it was reached says it again, with the parts.
+      expect(find.text('Jazz, loud'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ListTile, 'Kind'));
+      await tester.pumpAndSettle();
+      expect(find.text('Jazz, loud'), findsNWidgets(2));
+      expect(find.text('Parts'), findsOneWidget);
+
+      await open(_family);
+      expect(find.textContaining('Its people combined'), findsOneWidget);
+      expect(find.text('Traits'), findsNothing);
+      expect(find.text('Cancelled'), findsNothing);
     });
   });
 
@@ -544,6 +886,64 @@ void main() {
       await tester.pumpAndSettle();
       expect(fields!['kind'], 'community');
       expect(fields!.containsKey('scoring'), isFalse);
+    });
+
+    testWidgets("offers a community its traits, and its facts once it's "
+        'there; a plain circle neither', (tester) async {
+      Map<String, Object?>? fields;
+      await _open(
+        tester,
+        (context) => showCircleDialog(
+          context,
+          name: 'Club',
+          traits: const [_kind],
+          save: (saved) async => fields = saved,
+        ),
+      );
+      expect(find.byType(TraitsField), findsNothing);
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      expect(find.byType(TraitsField), findsOneWidget);
+      // Not there yet: no facts to sum up.
+      expect(find.text('Facts'), findsNothing);
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(fields!['kind'], 'community');
+      // As for everyone, until picked.
+      expect(fields!.containsKey('traits'), isTrue);
+      expect(fields!['traits'], isNull);
+      expect(fields!.containsKey('facts'), isFalse);
+
+      fields = null;
+      await _open(
+        tester,
+        (context) => showCircleDialog(
+          context,
+          circle: const Circle(
+            id: 'club',
+            name: 'Club',
+            kind: CircleKind.community,
+            facts: {
+              'kind': {'what_matters': 'Jazz'},
+            },
+          ),
+          traits: const [_kind],
+          save: (saved) async => fields = saved,
+        ),
+      );
+      expect(find.byType(TraitsField), findsOneWidget);
+      expect(find.text('Facts'), findsOneWidget);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'What matters · Kind'),
+        'Jazz, loud',
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      // Its traits, unchanged, aren't sent again; the summary is.
+      expect(fields!.containsKey('traits'), isFalse);
+      expect(fields!['facts'], {
+        'kind': {'what_matters': 'Jazz, loud'},
+      });
     });
 
     testWidgets("shows a circle's kind as it is, which can't change", (

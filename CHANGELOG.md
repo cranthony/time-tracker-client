@@ -9,6 +9,27 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.205.0
+
+- A community is a subject in its own right, as a person is. It has
+  traits of its own -- which apply to it, with its own parts for any,
+  picked in the circle dialog as a person's are, shown for a community
+  alone -- and its summary of each trait fact, edited there once it's
+  made and sent beside it, as a person's are. A plain circle takes
+  neither: it stands for its people, scored as they are.
+- A community is scored by its own traits and the judgments made under
+  its own id, over the events naming it, never by its members; so is
+  its habit. A plain circle's habit is still its people's, combined.
+  Its time together is the events naming it, not its members'.
+- A community's page is a person's: its own relationship health, its
+  traits' scores, each with what it keeps about it (and its own prompts
+  for a fact, set from there), its history, the timeline of the events
+  naming it (all of them loaded on request), and the events the user
+  cancelled that count against its follow-through -- its people a
+  roster. On the People pane, its health and trend are its own, and its
+  facts are searched. A judgment under a community's id is named for it
+  wherever judgments are shown.
+
 ## 7.204.0
 
 - A recurring goal's habit's definition of done and note are HTML, as a

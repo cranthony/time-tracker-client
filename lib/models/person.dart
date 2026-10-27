@@ -67,6 +67,68 @@ Map<String, Object?> personUpdate(
   };
 }
 
+/// [changes] to circle [id] as `update_circle` takes them: a community's
+/// trait facts' summaries (`facts`, {trait id: {fact id: summary}})
+/// beside the circle, the rest under "circle" -- a null going in
+/// clear_fields -- with the [version] last seen.
+Map<String, Object?> circleUpdate(
+  String id,
+  Map<String, Object?> changes, {
+  int? version,
+}) {
+  final fields = {...changes}..remove('facts');
+  final clear = [
+    for (final MapEntry(:key, :value) in fields.entries)
+      if (value == null) key,
+  ];
+  return {
+    'circle': {
+      'id': id,
+      for (final MapEntry(:key, :value) in fields.entries) key: ?value,
+      'version': ?version,
+    },
+    if (clear.isNotEmpty) 'clear_fields': clear,
+    'facts': ?changes['facts'],
+  };
+}
+
+/// Whom the traits judge and score as a subject of their own -- a
+/// person, or a community: which traits apply to them, their summary of
+/// each trait fact, and the events the user cancelled that count
+/// against their follow-through. The server keeps judgments, trait facts
+/// and cancellations by their id alike.
+abstract interface class Judged {
+  String get id;
+
+  /// Whether they're scored.
+  bool get active;
+
+  /// Which traits apply to them, and their own parts for any.
+  PersonTraits get traits;
+
+  /// Their summary of each trait fact, by trait id and then fact id.
+  Map<String, Map<String, String>> get facts;
+
+  /// Their summary of [trait]'s fact [factId], if they have one.
+  String? summary(String trait, String factId);
+
+  /// The events the user cancelled that count against their
+  /// follow-through, newest first.
+  List<CancelledEvent> get cancelledEvents;
+}
+
+/// `facts` as the server lists a person's or a community's: {trait id:
+/// {fact id: summary}}; empty for none.
+Map<String, Map<String, String>> factsFromJson(Object? json) => {
+  if (json case final Map byTrait)
+    for (final MapEntry(:key, :value) in byTrait.entries)
+      if (value is Map)
+        '$key': {
+          for (final MapEntry(key: fact, value: text) in value.entries)
+            if (text is String) '$fact': text,
+        },
+};
+
 /// Who the user wants to be with, mirroring the Time Tracker MCP server's
 /// `ListedPerson` (its utilities/people.py): a person, who can belong to
 /// any number of [Circle]s. "Self" is always one of them ([selfPersonId]),
@@ -74,7 +136,7 @@ Map<String, Object?> personUpdate(
 ///
 /// Unlike actions, people don't take up the calendar's event labels: an
 /// event says who it was with and for in its facts (see facts.dart).
-class Person {
+class Person implements Judged {
   const Person({
     required this.id,
     required this.name,
@@ -86,6 +148,7 @@ class Person {
     this.cancelledEvents = const [],
   });
 
+  @override
   final String id;
   final String name;
 
@@ -104,21 +167,23 @@ class Person {
   /// judgments, as compaction (or the user) last wrote it. Markdown. Only
   /// those that say anything; edited apart from them, with
   /// `update_person`'s `facts`.
+  @override
   final Map<String, Map<String, String>> facts;
 
-  /// Their summary of [trait]'s fact [factId], if they have one.
+  @override
   String? summary(String trait, String factId) =>
       switch (facts[trait]?[factId]) {
         final text? when text.trim().isNotEmpty => text,
         _ => null,
       };
 
-  /// Which traits apply to them, and their own parts for any.
+  @override
   final PersonTraits traits;
 
   /// The events the user cancelled that count against their
   /// follow-through, newest first, as the server recorded them: not sent
   /// back.
+  @override
   final List<CancelledEvent> cancelledEvents;
 
   /// Them, with [events] as their cancellations: what the server keeps
@@ -135,6 +200,8 @@ class Person {
   );
 
   bool get isSelf => id == selfPersonId;
+
+  @override
   bool get active => status == 'active';
 
   factory Person.fromJson(Map<String, dynamic> json) => Person(
@@ -143,15 +210,7 @@ class Person {
     context: _text(json['context']),
     status: json['status'] as String? ?? 'active',
     circleIds: [for (final id in json['circles'] as List? ?? const []) '$id'],
-    facts: {
-      if (json['facts'] case final Map byTrait)
-        for (final MapEntry(:key, :value) in byTrait.entries)
-          if (value is Map)
-            '$key': {
-              for (final MapEntry(key: fact, value: text) in value.entries)
-                if (text is String) '$fact': text,
-            },
-    },
+    facts: factsFromJson(json['facts']),
     traits: PersonTraits.fromJson(json['traits']),
     cancelledEvents: [
       for (final e in json['cancelled_events'] as List? ?? const [])
@@ -499,8 +558,10 @@ enum CircleKind {
 
 /// A named group of people -- family, dance friends, work -- mirroring
 /// the server's `ListedCircle`. People can be in more than one. Its
-/// [kind] says whether it stands for its people or for itself.
-class Circle {
+/// [kind] says whether it stands for its people or for itself: a
+/// community is [Judged] as a person is, by its own [traits], with its
+/// own [facts] and [cancelledEvents]; a plain circle has none of them.
+class Circle implements Judged {
   const Circle({
     required this.id,
     required this.name,
@@ -508,8 +569,12 @@ class Circle {
     this.note,
     this.scoring,
     this.memberIds = const [],
+    this.traits = const PersonTraits(),
+    this.facts = const {},
+    this.cancelledEvents = const [],
   });
 
+  @override
   final String id;
   final String name;
 
@@ -518,6 +583,11 @@ class Circle {
 
   bool get isCommunity => kind == CircleKind.community;
 
+  /// A circle is always scored: a plain one as its people combined, a
+  /// community as itself.
+  @override
+  bool get active => true;
+
   final String? note;
 
   /// How its people's scores combine into its own, in place of the
@@ -525,11 +595,51 @@ class Circle {
   /// it takes none.
   final Aggregation? scoring;
 
-  /// The people in it, as the server lists them.
+  /// The people in it, as the server lists them: whom a plain circle
+  /// stands for; a community's roster.
   final List<String> memberIds;
 
+  /// A community's: which traits apply to it, and its own parts for
+  /// any, as a person's. A plain circle takes none: it's scored by its
+  /// people.
+  @override
+  final PersonTraits traits;
+
+  /// A community's summary of each trait fact, by trait id and then
+  /// fact id, as a person's (see [Person.facts]); edited apart from it,
+  /// with `update_circle`'s `facts`. A plain circle has none.
+  @override
+  final Map<String, Map<String, String>> facts;
+
+  @override
+  String? summary(String trait, String factId) =>
+      switch (facts[trait]?[factId]) {
+        final text? when text.trim().isNotEmpty => text,
+        _ => null,
+      };
+
+  /// The events the user cancelled that count against a community's
+  /// follow-through, newest first, as the server recorded them: not sent
+  /// back. A plain circle has none.
+  @override
+  final List<CancelledEvent> cancelledEvents;
+
+  /// It, with [events] as its cancellations: what the server keeps apart
+  /// from it, kept through an edit.
+  Circle withCancelledEvents(List<CancelledEvent> events) => Circle(
+    id: id,
+    name: name,
+    kind: kind,
+    note: note,
+    scoring: scoring,
+    memberIds: memberIds,
+    traits: traits,
+    facts: facts,
+    cancelledEvents: events,
+  );
+
   /// One from the server: a community's own `traits`, `facts` and
-  /// `cancelled_events` are passed over here.
+  /// `cancelled_events` read as a person's, null for a plain circle's.
   factory Circle.fromJson(Map<String, dynamic> json) => Circle(
     id: json['id'] as String,
     name: json['name'] as String? ?? '',
@@ -539,16 +649,24 @@ class Circle {
     memberIds: [
       for (final id in json['member_ids'] as List? ?? const []) '$id',
     ],
+    traits: PersonTraits.fromJson(json['traits']),
+    facts: factsFromJson(json['facts']),
+    cancelledEvents: [
+      for (final e in json['cancelled_events'] as List? ?? const [])
+        ?CancelledEvent.fromJson(e),
+    ],
   );
 
   /// As `create_circle` and `update_circle` take it: its kind too, which
-  /// an update may repeat but never change.
+  /// an update may repeat but never change, and a community's traits
+  /// (its facts go beside it, as a person's do).
   Map<String, Object?> toJson() => {
     'id': id,
     'name': name,
     'kind': kind.json,
     'note': ?note,
     'scoring': ?scoring?.toJson(),
+    if (!traits.isDefault) 'traits': traits.toJson(),
   };
 }
 
