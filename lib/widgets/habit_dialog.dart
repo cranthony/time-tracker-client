@@ -1,4 +1,4 @@
-import 'goal_editor.dart' show goalPeopleLabel, goalPeopleNames;
+import 'goal_editor.dart' show HtmlField, goalPeopleLabel, goalPeopleNames;
 import 'picker_sheet.dart' show showWhoWhereSheet;
 import '../services/plan_memory.dart';
 import '../models/named.dart';
@@ -19,6 +19,7 @@ import 'color_picker.dart';
 import 'edit_page.dart';
 import 'error_sheet.dart';
 import 'foundations_field.dart';
+import 'html_editor.dart';
 import 'traits_field.dart';
 
 /// Adds a habit (with no [habit]) or edits one, on a page of its own
@@ -100,9 +101,10 @@ class _HabitEditorState extends State<_HabitEditor> {
   late final _goalTitle = TextEditingController(
     text: widget.habit?.recurringGoal?.title,
   );
-  late final _definitionOfDone = TextEditingController(
-    text: widget.habit?.recurringGoal?.definitionOfDone,
-  );
+
+  /// Its goals' definition of done, HTML, as a goal's is.
+  late String? _definitionOfDone =
+      widget.habit?.recurringGoal?.definitionOfDone;
   late final _attributionHints = TextEditingController(
     text: widget.habit?.recurringGoal?.attributionHints,
   );
@@ -133,7 +135,6 @@ class _HabitEditorState extends State<_HabitEditor> {
     _name.dispose();
     _note.dispose();
     _goalTitle.dispose();
-    _definitionOfDone.dispose();
     _attributionHints.dispose();
     _ratePeriods.dispose();
     super.dispose();
@@ -154,7 +155,7 @@ class _HabitEditorState extends State<_HabitEditor> {
       priority: was.priority,
       expectedMinutes: was.expectedMinutes,
       description: was.description,
-      definitionOfDone: _text(_definitionOfDone),
+      definitionOfDone: _definitionOfDone,
       attributionHints: _text(_attributionHints),
       withWhom: _with,
       forWhom: _for,
@@ -192,6 +193,38 @@ class _HabitEditorState extends State<_HabitEditor> {
   });
 
   String? get _noteText => _note.text.trim().isEmpty ? null : _note.text.trim();
+
+  /// Edits [text], HTML, on a page of its own, setting it with [set]
+  /// (null for nothing) unless that's called off.
+  Future<void> _editHtml(
+    String title,
+    String? text,
+    ValueChanged<String?> set,
+  ) async {
+    final edited = await showHtmlEditor(context, title: title, text: text);
+    if (edited == null || !mounted) return;
+    setState(() => set(edited.trim().isEmpty ? null : edited.trim()));
+  }
+
+  /// An HTML field, [label] over it as it reads, tapped to edit, with
+  /// [helper] beneath.
+  Widget _htmlField(
+    ThemeData theme,
+    String label,
+    String? text,
+    String helper,
+    ValueChanged<String?> set,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      HtmlField(
+        label: label,
+        text: text,
+        onTap: () => _editHtml(label, text, set),
+      ),
+      Text(helper, style: theme.textTheme.bodySmall),
+    ],
+  );
 
   String _actionName(String id) => switch (_byId[id]) {
     final a? => a.path ?? actionName(a),
@@ -300,22 +333,35 @@ class _HabitEditorState extends State<_HabitEditor> {
           padding: const EdgeInsets.only(top: 16),
           child: FieldHotkey(
             'O',
-            child: TextField(
-              controller: _note,
-              minLines: 4,
-              maxLines: null,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                labelText: 'Note (optional)',
-                hintText:
-                    'What it is for, and what doing it well looks '
-                    'like',
-                helperText: 'Claude judges its events with this in mind.',
-                helperMaxLines: 2,
-                border: OutlineInputBorder(),
-                floatingLabelBehavior: FloatingLabelBehavior.always,
-              ),
-            ),
+            onPressed: _isGoal
+                ? () =>
+                      _editHtml('Note', _noteText, (v) => _note.text = v ?? '')
+                : null,
+            child: _isGoal
+                ? _htmlField(
+                    theme,
+                    'Note',
+                    _noteText,
+                    'What it is for. Claude judges its events with this in '
+                        'mind.',
+                    (v) => _note.text = v ?? '',
+                  )
+                : TextField(
+                    controller: _note,
+                    minLines: 4,
+                    maxLines: null,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: const InputDecoration(
+                      labelText: 'Note (optional)',
+                      hintText:
+                          'What it is for, and what doing it well looks '
+                          'like',
+                      helperText: 'Claude judges its events with this in mind.',
+                      helperMaxLines: 2,
+                      border: OutlineInputBorder(),
+                      floatingLabelBehavior: FloatingLabelBehavior.always,
+                    ),
+                  ),
           ),
         ),
         if (widget.foundationChoices case final choices?)
@@ -490,18 +536,12 @@ class _HabitEditorState extends State<_HabitEditor> {
     ),
     Padding(
       padding: const EdgeInsets.only(top: 16),
-      child: TextField(
-        controller: _definitionOfDone,
-        minLines: 2,
-        maxLines: null,
-        textCapitalization: TextCapitalization.sentences,
-        decoration: const InputDecoration(
-          labelText: 'Done when (optional)',
-          hintText: 'e.g. I talked with Mom for at least 20 minutes',
-          helperText: 'Compaction marks each goal done or missed by this.',
-          border: OutlineInputBorder(),
-          floatingLabelBehavior: FloatingLabelBehavior.always,
-        ),
+      child: _htmlField(
+        theme,
+        'Definition of done',
+        _definitionOfDone,
+        'Compaction marks each goal done or missed by this.',
+        (v) => _definitionOfDone = v,
       ),
     ),
     Padding(

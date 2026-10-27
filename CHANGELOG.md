@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.204.0
+
+- A recurring goal's habit's definition of done and note are HTML, as a
+  goal's are: the habit editor shows each as it reads, tapped to edit on
+  a page of its own, and the habit's page shows its note formatted.
+
 ## 7.203.0
 
 - A circle is one of two kinds, set as it's made and never changed: a

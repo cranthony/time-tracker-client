@@ -9,6 +9,7 @@ import '../models/plan_action.dart';
 import '../models/recurring_goal.dart';
 import '../models/trait.dart';
 import '../services/plan_memory.dart';
+import '../widgets/event_description.dart';
 import '../widgets/habit_dialog.dart';
 import '../widgets/health.dart';
 import 'subject_sections.dart';
@@ -249,7 +250,12 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
                 ),
                 subtitle: Text(
                   [
-                    goal.definitionOfDone ?? 'Done when its goal is',
+                    switch (goal.definitionOfDone) {
+                      final done? => descriptionText(
+                        done,
+                      ).replaceAll('\n', ' '),
+                      null => 'Done when its goal is',
+                    },
                     'goal rate over the last ${goal.ratedPeriods} '
                         '${goalPeriods[goal.period]?.$2 ?? 'periods'}',
                     if (!_habit.active)
@@ -279,6 +285,8 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
             if (!relationship) sectionHeading(theme, "What it's for"),
             if (!relationship)
               sectionPadded(switch (_habit.note) {
+                // A recurring goal's habit's note is HTML, as a goal's is.
+                final note? when _habit.isGoal => EventDescription(note),
                 final note? => Text(note),
                 null => Text(
                   'Nothing yet: a note helps Claude judge its events.',

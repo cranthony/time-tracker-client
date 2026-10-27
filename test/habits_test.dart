@@ -817,10 +817,24 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextField, '2'), findsOneWidget);
       await tester.tap(find.text('Month'));
+      // Its definition of done and note are HTML, edited as a goal's.
+      await tester.tap(find.text('Add definition of done'));
+      await tester.pumpAndSettle();
       await tester.enterText(
-        find.widgetWithText(TextField, 'Done when (optional)'),
-        'We talked for 20 minutes',
+        find.byType(TextField).last,
+        '<p>We talked for <b>20</b> minutes</p>',
       );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('Add definition of done'), findsNothing);
+      await tester.tap(find.text('Add note'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextField).last,
+        '<p>Keep in touch</p>',
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
       await tester.enterText(
         find.widgetWithText(TextField, 'Goal rate counts the last'),
         '3',
@@ -834,9 +848,10 @@ void main() {
       expect(habit.actionId, '');
       expect(habit.recurringGoal!.toJson(), {
         'period': 'month',
-        'definition_of_done': 'We talked for 20 minutes',
+        'definition_of_done': '<p>We talked for <b>20</b> minutes</p>',
         'rate_periods': 3,
       });
+      expect(habit.note, '<p>Keep in touch</p>');
       // Scored by its goal rate alone, till it's given traits.
       expect(habit.traits.select, isEmpty);
     });
