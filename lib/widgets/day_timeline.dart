@@ -641,19 +641,21 @@ class DayTimeline extends StatelessWidget {
   DateTime get dayEnd => DateTime(day.year, day.month, day.day + 1);
 
   /// The names of the locations [event]'s facts name, then of the people
-  /// with the user, then of those it was for, each kind apart: never
-  /// Self, who's at every event.
+  /// and circles with the user, then of those it was for, each kind
+  /// apart -- a circle with those its except leaves out, "Family (except
+  /// Ulyssie)": never Self, who's at every event.
   List<(_Detail, List<String>)> _details(Event event) => switch (event.facts) {
     null => const [],
     final facts => [
-      for (final (kind, ids, names) in [
-        (_Detail.location, facts.locationIds, locationNames),
-        (_Detail.withPerson, facts.withIds, personNames),
-        (_Detail.forPerson, facts.forIds, personNames),
+      for (final (kind, named, names) in [
+        (_Detail.location, namedFrom(facts.locationIds), locationNames),
+        (_Detail.withPerson, facts.withWhom, personNames),
+        (_Detail.forPerson, facts.forWhom, personNames),
       ])
         if ([
-              for (final id in ids)
-                if (id != selfPersonId) names[id] ?? id,
+              for (final n in named)
+                if (n.id != selfPersonId)
+                  namedLabel(n, (id) => names[id] ?? id),
             ]
             case final shown when shown.isNotEmpty)
           (kind, shown),

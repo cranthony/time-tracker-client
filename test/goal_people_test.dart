@@ -31,9 +31,15 @@ void main() {
 
   test('says who a goal is with and for, by name', () {
     String name(String id) => {'ana': 'Ana', 'sam': 'Sam'}[id] ?? id;
-    expect(goalPeopleLabel(['ana'], ['sam'], name), 'With Ana · For Sam');
-    expect(goalPeopleLabel([], ['sam', 'bo'], name), 'For Sam, bo');
-    expect(goalPeopleLabel([], [], name), isNull);
+    expect(
+      goalPeopleLabel(const [Named('ana')], const [Named('sam')], name),
+      'With Ana · For Sam',
+    );
+    expect(
+      goalPeopleLabel(const [], const [Named('sam'), Named('bo')], name),
+      'For Sam, bo',
+    );
+    expect(goalPeopleLabel(const [], const [], name), isNull);
   });
 
   ProposalAddition goalAddition() => ProposalAddition.allFrom({

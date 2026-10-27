@@ -82,8 +82,8 @@ Future<Goal?> addGoalInSheet(
     deadline: result.deadline,
     description: result.description,
     priority: result.priority,
-    withIds: result.withIds,
-    forIds: result.forIds,
+    withWhom: result.withWhom,
+    forWhom: result.forWhom,
   );
 }
 
@@ -257,16 +257,16 @@ class GoalActions {
 
   /// Adds a goal under [parent] (the top level, if null), starting with
   /// [title], [deadline], [description] and [priority], and the
-  /// people it's done with ([withIds]) and for ([forIds]), if they're
-  /// given. Returns it as saved; null if it wasn't.
+  /// people and circles it's done with ([withWhom]) and for ([forWhom]),
+  /// if they're given. Returns it as saved; null if it wasn't.
   Future<Goal?> add({
     Goal? parent,
     String? title,
     String? deadline,
     String? description,
     int? priority,
-    List<String> withIds = const [],
-    List<String> forIds = const [],
+    List<Named> withWhom = const [],
+    List<Named> forWhom = const [],
   }) async {
     final fields = await showGoalEditor(
       context,
@@ -276,8 +276,8 @@ class GoalActions {
       deadline: deadline,
       description: description,
       priority: priority,
-      withIds: withIds,
-      forIds: forIds,
+      withWhom: withWhom,
+      forWhom: forWhom,
       now: now,
     );
     if (fields == null || !context.mounted) return null;

@@ -642,12 +642,12 @@ void main() {
 
       await tester.tap(find.byTooltip('New habit for a person or circle'));
       await tester.pumpAndSettle();
-      // Everyone, searched; a circle marked as one.
+      // Everyone, searched; a circle marked as one (a plain one, a ring).
       expect(find.widgetWithText(ListTile, 'Ana'), findsOneWidget);
       expect(
         find.descendant(
           of: find.widgetWithText(ListTile, 'Pals'),
-          matching: find.byIcon(Icons.groups_outlined),
+          matching: find.byIcon(Icons.circle_outlined),
         ),
         findsOneWidget,
       );

@@ -1,3 +1,5 @@
+import '../widgets/circle_icon.dart';
+
 import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
@@ -217,7 +219,7 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
             if (relationship)
               ListTile(
                 leading: Icon(
-                  _habit.personId != null ? Icons.person : Icons.groups,
+                  _habit.personId != null ? Icons.person : circleIconOf(circle),
                 ),
                 title: Text(switch ((person, circle)) {
                   (final p?, _) => personName(p),
@@ -228,6 +230,8 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
                   [
                     if (_habit.personId != null)
                       'Their traits, as they are scored for them'
+                    else if (circle?.isCommunity ?? false)
+                      'Its own traits, as they are scored for it'
                     else
                       "Its people's traits, combined as the circle's are",
                     if (!_habit.active)

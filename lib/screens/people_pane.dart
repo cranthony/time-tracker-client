@@ -136,10 +136,7 @@ class PeoplePaneState extends State<PeoplePane> {
         known: span == null
             ? const []
             : store!.between(span.$1, span.$2.add(const Duration(days: 1))),
-        circles: {
-          for (final c in people?.circles ?? const <Circle>[])
-            c.id: [for (final p in people!.inCircle(c.id)) p.id],
-        },
+        circles: people?.circles ?? const <Circle>[],
       ),
     );
     _timesKept = (key, times);

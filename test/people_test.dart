@@ -282,10 +282,10 @@ void main() {
         window: SummaryWindow(asOf: asOf),
         windowEvents: events,
         known: events,
-        circles: {
-          'pair': ['sam', 'mom'],
-          'jos': ['jo'],
-        },
+        circles: const [
+          Circle(id: 'pair', name: 'Pair', memberIds: ['sam', 'mom']),
+          Circle(id: 'jos', name: 'Jos', memberIds: ['jo']),
+        ],
       );
 
       // The dinner was two hours with both: two hours with the pair.
@@ -576,8 +576,12 @@ void main() {
         'goals and people, each opening theirs', (tester) async {
       final (_, memory) = await pump(tester);
       memory.goals = const [
-        Goal(id: 'g1', title: 'Plan the reunion', withIds: ['mom', 'jordan']),
-        Goal(id: 'g2', title: 'Salsa lessons', withIds: ['jordan']),
+        Goal(
+          id: 'g1',
+          title: 'Plan the reunion',
+          withWhom: [Named('mom'), Named('jordan')],
+        ),
+        Goal(id: 'g2', title: 'Salsa lessons', withWhom: [Named('jordan')]),
       ];
 
       await tester.tap(find.widgetWithText(CircleTile, 'Family'));
@@ -592,7 +596,8 @@ void main() {
       );
       expect(find.text('Habits'), findsOneWidget);
       expect(find.text('Plan the reunion'), findsOneWidget);
-      expect(find.text('With Mom'), findsOneWidget);
+      // Everyone it's with, named: not only the circle's own.
+      expect(find.text('With Mom, Jordan'), findsOneWidget);
       expect(find.text('Salsa lessons'), findsNothing);
       expect(find.text('2 people'), findsOneWidget);
       expect(find.widgetWithText(PersonTile, 'Sam'), findsOneWidget);

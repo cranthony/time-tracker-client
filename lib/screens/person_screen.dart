@@ -1,3 +1,5 @@
+import '../models/attendance.dart';
+
 import 'package:flutter/material.dart';
 
 import '../models/facts.dart';
@@ -318,26 +320,30 @@ class _PersonScreenState extends State<PersonScreen> with Rescored {
   }
 }
 
-/// The open goals done with or for any of [ids], soonest due first,
-/// under a heading -- nothing, without any: each saying [who] of them
-/// it's for ([isFor]) or done with, when it's due, and whether it's
-/// inactive, and opening its page.
+/// The open goals done with or for any of [ids] -- named themself, or by
+/// a plain circle they're in ([Attendance]) -- soonest due first, under a
+/// heading -- nothing, without any: each saying [who] of them it's for
+/// ([isFor]) or done with, when it's due, and whether it's inactive, and
+/// opening its page.
 List<Widget> openGoalTiles(
   BuildContext context,
   PlanMemory? memory,
   Set<String> ids, {
   required String Function(Goal goal, bool isFor) who,
 }) {
+  final attendance = Attendance(circles: memory?.people?.circles ?? const []);
+  bool any(List<Named> named) =>
+      ids.any((id) => attendance.includes(named, id));
   final goals = [
     for (final g in memory?.goals ?? const <Goal>[])
-      if (g.open && ids.any(g.involves)) g,
+      if (g.open && (any(g.withWhom) || any(g.forWhom))) g,
   ]..sort(compareByDeadline);
   if (goals.isEmpty) return const [];
   final repository = GoalsScope.of(context);
   return [
     sectionHeading(Theme.of(context), 'Goals'),
     for (final g in goals)
-      if (g.forIds.any(ids.contains) case final isFor)
+      if (any(g.forWhom) case final isFor)
         ListTile(
           dense: true,
           leading: Icon(isFor ? Icons.card_giftcard : Icons.group_outlined),

@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
+import 'attendance.dart';
 import 'event.dart';
-import 'facts.dart';
 import 'person.dart';
 import 'time_split.dart';
 
@@ -25,25 +25,32 @@ class PeopleTimes {
 
   /// Measures [window] from [windowEvents] (null until they're loaded),
   /// and finds the nearest event with each person among [known]: every
-  /// event the app has. Each of [circles] -- its people's ids, by its id
-  /// -- is measured as well: the time with any of its people, each
-  /// event's counted once, their shares of it together, up to all of it.
+  /// event the app has. Each of [circles] is measured as well: the time
+  /// with any of its people, each event's counted once, their shares of
+  /// it together, up to all of it. An event naming a plain circle is with
+  /// each of its people ([Attendance]); one naming a community, with it.
   factory PeopleTimes.compute({
     required SummaryWindow window,
     required List<Event>? windowEvents,
     required List<Event> known,
-    Map<String, Iterable<String>> circles = const {},
+    List<Circle> circles = const [],
   }) {
-    List<String> withIds(Event e) =>
-        Facts.fromJson(e.properties['facts'])?.withIds ?? const [];
+    final attendance = Attendance(circles: circles);
     final members = {
-      for (final MapEntry(:key, :value) in circles.entries) key: {...value},
+      for (final c in circles)
+        c.id: {
+          for (final id in c.memberIds)
+            if (id != selfPersonId) id,
+        },
     };
+    List<String> withIds(Event e) => attendance.withAt(e.facts);
     Map<String, double> circleFractions(Event e) {
-      final fractions = e.withFractions;
+      final fractions = attendance.withFractions(e);
       return {
         for (final MapEntry(key: id, value: people) in members.entries)
-          if (people.any(fractions.containsKey))
+          if (fractions.containsKey(id))
+            id: fractions[id]!
+          else if (people.any(fractions.containsKey))
             id: math.min(
               1.0,
               people.fold(0.0, (sum, p) => sum + (fractions[p] ?? 0)),
@@ -53,7 +60,7 @@ class PeopleTimes {
 
     final (day, week) = windowEvents == null
         ? (null, null)
-        : window.splitParts<String>(windowEvents, (e) => e.withFractions, '');
+        : window.splitParts<String>(windowEvents, attendance.withFractions, '');
     final (circleDay, circleWeek) = windowEvents == null
         ? (null, null)
         : window.splitParts<String>(windowEvents, circleFractions, '');

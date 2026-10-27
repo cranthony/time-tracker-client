@@ -1,7 +1,9 @@
 import 'event.dart';
+import 'named.dart';
 import 'note.dart';
 import 'share.dart';
 
+export 'named.dart';
 export 'share.dart';
 
 /// A goal of the user's, mirroring the Time Tracker MCP server's
@@ -29,8 +31,8 @@ class Goal {
     this.description,
     this.definitionOfDone,
     this.attributionHints,
-    this.withIds = const [],
-    this.forIds = const [],
+    this.withWhom = const [],
+    this.forWhom = const [],
     this.path = const [],
     this.habitId,
     this.version,
@@ -100,16 +102,26 @@ class Goal {
   /// A guide, for Claude, to telling which events are for it.
   final String? attributionHints;
 
-  /// The people the user does it with, by id.
-  final List<String> withIds;
+  /// The people and circles the user does it with: a plain circle stands
+  /// for its members, but those its except leaves out.
+  final List<Named> withWhom;
 
-  /// The people it's done for, who aren't part of doing it -- a promise
-  /// to them, a favor -- by id. No one is in both [withIds] and this.
-  final List<String> forIds;
+  /// The people and circles it's done for, who aren't part of doing it --
+  /// a promise to them, a favor. No one is in both [withWhom] and this.
+  final List<Named> forWhom;
 
-  /// Whether it's done with or for [personId].
-  bool involves(String personId) =>
-      withIds.contains(personId) || forIds.contains(personId);
+  /// The ids of [withWhom] and [forWhom]: people's, and circles'.
+  List<String> get withIds => namedIds(withWhom);
+  List<String> get forIds => namedIds(forWhom);
+
+  /// Whether it's done with or for [id] -- a person's, or a circle's --
+  /// named themself, or by a plain circle of [inCircles] (a person's
+  /// plain circles, by id) that doesn't leave them out.
+  bool involves(String id, {Iterable<String> inCircles = const []}) =>
+      [...withWhom, ...forWhom].any(
+        (n) =>
+            n.id == id || (inCircles.contains(n.id) && !n.except.contains(id)),
+      );
 
   /// Its parents' titles, outermost first, as the server last said. Not
   /// sent back.
@@ -183,8 +195,8 @@ class Goal {
     description: _text(json['description']),
     definitionOfDone: _text(json['definition_of_done']),
     attributionHints: _text(json['attribution_hints']),
-    withIds: [for (final id in json['with_ids'] as List? ?? const []) '$id'],
-    forIds: [for (final id in json['for_ids'] as List? ?? const []) '$id'],
+    withWhom: Named.listFromJson(json['with_ids']),
+    forWhom: Named.listFromJson(json['for_ids']),
     path: [for (final p in json['path'] as List? ?? const []) '$p'],
     habitId: _text(json['habit_id']),
     version: (json['version'] as num?)?.toInt(),
@@ -212,8 +224,8 @@ class Goal {
     'attribution_hints': ?attributionHints,
     // Only when there are some: a server from before goals named people
     // still saves the rest.
-    if (withIds.isNotEmpty) 'with_ids': withIds,
-    if (forIds.isNotEmpty) 'for_ids': forIds,
+    if (withWhom.isNotEmpty) 'with_ids': namedToJson(withWhom),
+    if (forWhom.isNotEmpty) 'for_ids': namedToJson(forWhom),
     // Kept through an edit made here; never sent (see goalWire).
     'habit_id': ?habitId,
     'version': ?version,

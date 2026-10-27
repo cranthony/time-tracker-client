@@ -204,6 +204,7 @@ Future<Circle?> editCircle(
             Circle(
               id: '',
               name: fields['name'] as String,
+              kind: CircleKind.fromJson(fields['kind']),
               note: fields['note'] as String?,
               scoring: Aggregation.fromJson(fields['scoring']),
             ),

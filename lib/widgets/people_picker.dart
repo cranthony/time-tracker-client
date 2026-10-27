@@ -1,3 +1,5 @@
+import 'circle_icon.dart';
+
 import 'package:flutter/material.dart';
 
 import '../models/person.dart';
@@ -124,12 +126,10 @@ Future<Object?> pickPersonOrCircle(
                     WhoShown.circles => 'No circles yet.',
                     _ => 'No one yet.',
                   },
-                  marker: (node) => Icon(
-                    circles.containsKey(node.id)
-                        ? Icons.groups_outlined
-                        : Icons.person_outline,
-                    size: 20,
-                  ),
+                  marker: (node) => Icon(switch (circles[node.id]) {
+                    final c? => circleIcon(c.kind, outlined: true),
+                    null => Icons.person_outline,
+                  }, size: 20),
                   onChanged: (ids) => picked(
                     circles[ids.firstOrNull] ?? everyone[ids.firstOrNull],
                   ),
@@ -209,6 +209,8 @@ Future<List<String>?> pickCircles(
             search: search,
             searchHint: 'Search circles',
             empty: 'No circles yet.',
+            marker: (node) =>
+                Icon(circleIconOf(circles[node.id], outlined: true), size: 20),
             onChanged: (changed) => setState(() => ids = changed),
             onEdit: repository == null
                 ? null
@@ -304,7 +306,10 @@ class CirclesField extends StatelessWidget {
                 children: [
                   for (final id in picked)
                     InputChip(
-                      avatar: const Icon(Icons.groups_outlined, size: 18),
+                      avatar: Icon(
+                        circleIconOf(byId[id], outlined: true),
+                        size: 18,
+                      ),
                       label: Text(switch (byId[id]) {
                         final c? => circleName(c),
                         null => id,

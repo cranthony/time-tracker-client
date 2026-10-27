@@ -557,7 +557,9 @@ class InMemoryPeopleRepository implements PeopleRepository {
         Circle(
           id: c.id,
           name: c.name,
+          kind: c.kind,
           note: c.note,
+          scoring: c.scoring,
           memberIds: [
             for (final p in _people)
               if (p.circleIds.contains(c.id)) p.id,
@@ -642,9 +644,11 @@ class InMemoryPeopleRepository implements PeopleRepository {
   @override
   Future<Circle> createCircle(Circle circle) async {
     if (circle.name.trim().isEmpty) throw McpException('Give it a name.');
+    _checkCircle(circle);
     final created = Circle(
       id: _id(circle.name, _circles.map((c) => c.id)),
       name: circle.name,
+      kind: circle.kind,
       note: circle.note,
       scoring: circle.scoring,
     );
@@ -652,14 +656,34 @@ class InMemoryPeopleRepository implements PeopleRepository {
     return created;
   }
 
+  /// Like the server: a community's score is its own, so it takes no
+  /// scoring.
+  static void _checkCircle(Circle circle) {
+    if (circle.isCommunity && circle.scoring != null) {
+      throw McpException(
+        "${circle.name} is a community: its score is its own, not its "
+        "members', so it takes no scoring",
+      );
+    }
+  }
+
   @override
   Future<Circle> updateCircle(String id, Map<String, Object?> changes) async {
     final i = _circles.indexWhere((c) => c.id == id);
     if (i < 0) throw McpException("'$id' isn't a circle");
     final before = _circles[i];
+    // Like the server: a circle's kind is set when it's made.
+    if (changes['kind'] case final kind?
+        when CircleKind.fromJson(kind) != before.kind) {
+      throw McpException(
+        "${before.name}'s kind is '${before.kind.json}': a circle's kind is "
+        "set when it's made, and never changed",
+      );
+    }
     final updated = Circle(
       id: id,
       name: changes['name'] as String? ?? before.name,
+      kind: before.kind,
       note: changes.containsKey('note')
           ? changes['note'] as String?
           : before.note,
@@ -668,6 +692,7 @@ class InMemoryPeopleRepository implements PeopleRepository {
           : before.scoring,
     );
     if (updated.name.trim().isEmpty) throw McpException('Give it a name.');
+    _checkCircle(updated);
     _circles[i] = updated;
     return updated;
   }

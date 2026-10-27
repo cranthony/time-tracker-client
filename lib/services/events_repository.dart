@@ -1,3 +1,5 @@
+import '../models/person.dart';
+import '../models/attendance.dart';
 import '../models/event.dart';
 import '../models/note.dart';
 import '../models/recurrence.dart';
@@ -400,20 +402,27 @@ class InMemoryEventsRepository implements EventsRepository {
           .toList()
         ..sort((a, b) => a.start.compareTo(b.start));
 
-  /// Like the server, those of [events] whose facts name [personId].
+  /// Like the server, those of [events] whose facts name [personId] --
+  /// themself, or a plain circle of [circles] they're in, unless its
+  /// except leaves them out.
   @override
   Future<List<Event>> personEvents(
     String personId,
     DateTime from,
     DateTime to,
-  ) async => [
-    for (final e in await events(from, to))
-      if (e.facts case final facts?
-          when facts.withIds.contains(personId) ||
-              facts.forIds.contains(personId) ||
-              facts.notes.containsKey(personId))
-        e,
-  ];
+  ) async {
+    final attendance = Attendance(circles: circles);
+    return [
+      for (final e in await events(from, to))
+        if (e.facts case final facts?
+            when attendance.involves(facts, personId) ||
+                facts.notes.containsKey(personId))
+          e,
+    ];
+  }
+
+  /// The circles the server would stand for, in [personEvents].
+  List<Circle> circles = const [];
 
   /// The ids [createEvent] has given, to give the next a new one.
   int _created = 0;

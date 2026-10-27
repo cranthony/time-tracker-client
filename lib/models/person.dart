@@ -473,12 +473,38 @@ class FactPromptOverride {
   int get hashCode => Object.hash(summaryPrompt, logPrompt);
 }
 
+/// What a circle is, set when it's made and never changed: a plain
+/// circle, or a community.
+enum CircleKind {
+  /// Its members, named together: an event or goal naming it is with or
+  /// for each of its current members (but any its except leaves out). It
+  /// has no traits or judgments of its own; its score is its members',
+  /// combined.
+  circle,
+
+  /// A subject in its own right -- a team, a club -- with traits, facts
+  /// and judgments of its own, scored by them alone; its members are a
+  /// roster, never stood for. An event or goal naming it is with or for
+  /// it, not them.
+  community;
+
+  /// As the server names it.
+  String get json => name;
+
+  /// "circle" or "community"; anything else, a plain circle, as every
+  /// circle was before kinds.
+  static CircleKind fromJson(Object? json) =>
+      json == 'community' ? community : circle;
+}
+
 /// A named group of people -- family, dance friends, work -- mirroring
-/// the server's `ListedCircle`. People can be in more than one.
+/// the server's `ListedCircle`. People can be in more than one. Its
+/// [kind] says whether it stands for its people or for itself.
 class Circle {
   const Circle({
     required this.id,
     required this.name,
+    this.kind = CircleKind.circle,
     this.note,
     this.scoring,
     this.memberIds = const [],
@@ -486,18 +512,28 @@ class Circle {
 
   final String id;
   final String name;
+
+  /// A plain circle, or a community: given when it's made, never changed.
+  final CircleKind kind;
+
+  bool get isCommunity => kind == CircleKind.community;
+
   final String? note;
 
   /// How its people's scores combine into its own, in place of the
-  /// defaults': weights by person id.
+  /// defaults': weights by person id. A community's score is its own, so
+  /// it takes none.
   final Aggregation? scoring;
 
   /// The people in it, as the server lists them.
   final List<String> memberIds;
 
+  /// One from the server: a community's own `traits`, `facts` and
+  /// `cancelled_events` are passed over here.
   factory Circle.fromJson(Map<String, dynamic> json) => Circle(
     id: json['id'] as String,
     name: json['name'] as String? ?? '',
+    kind: CircleKind.fromJson(json['kind']),
     note: _text(json['note']),
     scoring: Aggregation.fromJson(json['scoring']),
     memberIds: [
@@ -505,10 +541,12 @@ class Circle {
     ],
   );
 
-  /// As `create_circle` and `update_circle` take it.
+  /// As `create_circle` and `update_circle` take it: its kind too, which
+  /// an update may repeat but never change.
   Map<String, Object?> toJson() => {
     'id': id,
     'name': name,
+    'kind': kind.json,
     'note': ?note,
     'scoring': ?scoring?.toJson(),
   };
@@ -667,6 +705,17 @@ class PeopleList {
     for (final person in people)
       if (person.circleIds.contains(circleId)) person,
   ];
+
+  /// The circle [id] names, if any.
+  Circle? circle(String? id) =>
+      id == null ? null : circles.where((c) => c.id == id).firstOrNull;
+
+  /// Everyone's name by id, Self among them, and every circle's: for
+  /// naming whom events and goals are with and for.
+  Map<String, String> get names => {
+    for (final p in withSelf) p.id: personName(p),
+    for (final c in circles) c.id: circleName(c),
+  };
 }
 
 /// The id of the user themself, who's always among the people.

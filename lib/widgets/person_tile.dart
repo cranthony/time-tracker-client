@@ -1,3 +1,5 @@
+import 'circle_icon.dart';
+
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
@@ -203,7 +205,7 @@ class CircleTile extends StatelessWidget {
                 final h? => relationshipColor(h),
                 null => theme.colorScheme.onSurfaceVariant,
               },
-              child: const Icon(Icons.groups),
+              child: Icon(circleIcon(circle.kind)),
             ),
             title: Text(circleName(circle), overflow: TextOverflow.ellipsis),
             subtitle: Text(

@@ -323,9 +323,11 @@ class _PersonEditorState extends State<_PersonEditor> {
 }
 
 /// Adds a circle (with no [circle]), named [name] to start with, or edits
-/// one: its name, note, and how its people's scores combine -- its
-/// [members], by id, named -- in place of [defaultScoring]. Saves with
-/// [save]; "Delete", asked first, calls [delete]. Returns true if
+/// one: its name, note, whether it's a community -- set only as it's
+/// made, shown as it is after -- and, for a plain circle, how its
+/// people's scores combine -- its [members], by id, named -- in place of
+/// [defaultScoring]. Saves with [save], a new one's fields with its
+/// `kind`; "Delete", asked first, calls [delete]. Returns true if
 /// anything was saved or deleted.
 Future<bool> showCircleDialog(
   BuildContext context, {
@@ -348,6 +350,7 @@ Future<bool> showCircleDialog(
         detailHint: 'Who they are to you',
         nameHint: 'e.g. Family',
         deleteExplanation: 'Everyone in it stays; they just leave the circle.',
+        community: (value: circle?.isCommunity ?? false, fixed: circle != null),
         scoring: (
           value: circle?.scoring,
           items: members,
@@ -471,6 +474,7 @@ class _NamedDialog extends StatefulWidget {
     required this.save,
     required this.delete,
     this.scoring,
+    this.community,
     this.map,
     this.group,
     this.addGroup,
@@ -502,6 +506,10 @@ class _NamedDialog extends StatefulWidget {
   })?
   scoring;
 
+  /// Whether it's a community, for a circle: as it is, and whether that's
+  /// [fixed] -- set when it was made, never changed.
+  final ({bool value, bool fixed})? community;
+
   /// Where it is on a map, for a location: as it is, and what it starts
   /// as, if not that.
   final ({String? value, String? typed})? map;
@@ -530,6 +538,7 @@ class _NamedDialogState extends State<_NamedDialog> {
   late var _groups = widget.group?.choices ?? const <LocationGroup>[];
   late Aggregation? _scoring = widget.scoring?.value;
   bool _scoringChanged = false;
+  late bool _community = widget.community?.value ?? false;
 
   @override
   void dispose() {
@@ -604,7 +613,12 @@ class _NamedDialogState extends State<_NamedDialog> {
                     : _map.text.trim(),
               if (widget.group case final group? when _group != group.value)
                 'group_id': _group,
-              if (_scoringChanged) 'scoring': _scoring?.toJson(),
+              // Set as it's made: an update never sends it.
+              if (widget.community case (value: _, fixed: false))
+                'kind': _community
+                    ? CircleKind.community.json
+                    : CircleKind.circle.json,
+              if (_scoringChanged && !_community) 'scoring': _scoring?.toJson(),
             }),
           )
         : null;
@@ -613,6 +627,7 @@ class _NamedDialogState extends State<_NamedDialog> {
       widget.detailLabel,
       if (widget.map != null) 'map',
       ?widget.group?.label,
+      if (widget.community != null) 'community',
       if (widget.scoring != null) 'combine',
       if (widget.extra != null) 'travel',
     ]);
@@ -623,6 +638,7 @@ class _NamedDialogState extends State<_NamedDialog> {
           _map.text.trim() !=
               (widget.map?.typed ?? widget.map?.value ?? '').trim() ||
           _group != widget.group?.value ||
+          _community != (widget.community?.value ?? false) ||
           _scoringChanged,
       onSave: save,
       child: AlertDialog(
@@ -704,7 +720,37 @@ class _NamedDialogState extends State<_NamedDialog> {
                   ),
                 ),
               ],
-              if (widget.scoring case final scoring?)
+              if (widget.community case final community?) ...[
+                const SizedBox(height: 8),
+                FieldHotkey(
+                  letters['community'],
+                  onPressed: community.fixed
+                      ? null
+                      : () => setState(() => _community = !_community),
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('This circle is a community'),
+                    subtitle: Text(
+                      community.fixed
+                          ? "Set when it was made: a circle's kind can't "
+                                'change.'
+                          : _community
+                          ? 'A subject of its own -- a team, a club -- with '
+                                'traits and judgments of its own, scored by '
+                                'them alone. An event or goal with it is '
+                                'with it, not each of its people.'
+                          : 'Off, it stands for its people: an event or '
+                                'goal with it is with each of them, and its '
+                                'score is theirs combined.',
+                    ),
+                    value: _community,
+                    onChanged: community.fixed
+                        ? null
+                        : (on) => setState(() => _community = on),
+                  ),
+                ),
+              ],
+              if (widget.scoring case final scoring? when !_community)
                 FieldHotkey(
                   letters['combine'],
                   child: AggregationTile(

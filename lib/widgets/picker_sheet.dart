@@ -1,3 +1,7 @@
+import 'people_picker.dart' show circleNode, personNode;
+import 'circle_icon.dart';
+import '../models/named.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -395,8 +399,11 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
   var people = knownPeople(repository, memory);
   var locations = _locations(repository, memory);
 
-  // Who it was with, or for: everyone to pick from, [picked] picked;
-  // picking one takes them out of [other], since no one is both.
+  // Who it was with, or for: everyone to pick from -- the circles, then
+  // the people -- [picked] picked; picking one takes them out of [other],
+  // since no one is both. A plain circle picked stands for its people:
+  // tapping its chip picks those of them who weren't (its except); a
+  // community stands for itself.
   Widget pick(
     StateSetter setState,
     PickerSearch search,
@@ -414,16 +421,95 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
             p,
       ];
       final byId = {for (final p in known) p.id: p};
+      final circles = {
+        for (final c in snapshot.data?.circles ?? const <Circle>[]) c.id: c,
+      };
+      final isWith = identical(picked, with_);
+      Map<String, WhoShare> splits() => isWith ? withSplits : forSplits;
+      void setSplits(Map<String, WhoShare> set) {
+        if (isWith) {
+          withSplits = set;
+        } else {
+          forSplits = set;
+        }
+      }
+
+      // Their share, or none: a circle's always given as a circle's.
+      WhoShare shareOf(String id) =>
+          splits()[id] ??
+          (circles.containsKey(id) ? CircleShare(id) : PersonShare(id));
+      String name(String id) => switch ((byId[id], circles[id])) {
+        (final p?, _) => personName(p),
+        (_, final c?) => circleName(c),
+        _ => id,
+      };
       void picking(Iterable<String> ids) => setState(() {
         picked
           ..clear()
           ..addAll(ids);
         other.removeAll(ids);
+        for (final id in ids) {
+          if (circles.containsKey(id) && !splits().containsKey(id)) {
+            setSplits(Facts.withSplit(splits(), CircleShare(id)));
+          }
+        }
       });
-      final isWith = identical(picked, with_);
-      Map<String, PersonShare> splits() => isWith ? withSplits : forSplits;
+
+      Future<void> setTheirShare(String id) async {
+        if (minutes == null) return;
+        final set = await setShare(
+          shareOf(id),
+          name(id),
+          'person',
+          "They take the time the others' durations and percents "
+              'leave, as everyone given neither does.',
+          (minutes, percent, remaining) => switch (shareOf(id)) {
+            final CircleShare c => CircleShare(
+              id,
+              except: c.except,
+              minutes: minutes,
+              percent: percent,
+              remaining: remaining,
+            ),
+            _ => PersonShare(
+              id,
+              minutes: minutes,
+              percent: percent,
+              remaining: remaining,
+            ),
+          },
+        );
+        if (set == null) return;
+        setState(() => setSplits(Facts.withSplit(splits(), set)));
+      }
+
+      Future<void> setExcept(Circle circle) async {
+        final share = shareOf(circle.id);
+        final except = await pickExcept(
+          context,
+          circle: circle,
+          members: [
+            for (final id in circle.memberIds)
+              if (id != selfPersonId) byId[id] ?? Person(id: id, name: id),
+          ],
+          except: share.named.except,
+          isWith: isWith,
+          onShare: minutes == null ? null : () => setTheirShare(circle.id),
+        );
+        if (except == null) return;
+        setState(
+          () => setSplits(
+            Facts.withSplit(
+              splits(),
+              share.withNamed(Named(circle.id, except: except)),
+            ),
+          ),
+        );
+      }
+
       return TreePicker(
         nodes: [
+          for (final c in circles.values) circleNode(c),
           for (final p in [
             ...known,
             // Without the list, at least who's already there.
@@ -439,44 +525,35 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
         caption: hint,
         empty: 'No one yet.',
         search: search,
+        marker: circles.isEmpty
+            ? null
+            : (node) => Icon(switch (circles[node.id]) {
+                final c? => circleIcon(c.kind, outlined: true),
+                null => Icons.person_outline,
+              }, size: 20),
         onChanged: picking,
-        chipDetail: minutes == null
+        chipDetail: (id) => [
+          if (shareOf(id).named.except case final except when except.isNotEmpty)
+            'except ${except.map(name).join(', ')}',
+          if (minutes != null) splits()[id]?.label ?? 'The rest',
+        ].join(' · '),
+        onChipTap: minutes == null && circles.isEmpty
             ? null
-            : (id) => splits()[id]?.label ?? 'The rest',
-        onChipTap: minutes == null
-            ? null
-            : (id) async {
-                final set = await setShare(
-                  splits()[id] ?? PersonShare(id),
-                  switch (byId[id]) {
-                    final p? => personName(p),
-                    null => id,
-                  },
-                  'person',
-                  "They take the time the others' durations and percents "
-                      'leave, as everyone given neither does.',
-                  (minutes, percent, remaining) => PersonShare(
-                    id,
-                    minutes: minutes,
-                    percent: percent,
-                    remaining: remaining,
-                  ),
-                );
-                if (set == null) return;
-                setState(() {
-                  if (isWith) {
-                    withSplits = Facts.withSplit(withSplits, set);
-                  } else {
-                    forSplits = Facts.withSplit(forSplits, set);
-                  }
-                });
+            : (id) => switch (circles[id]) {
+                final c? when !c.isCommunity => setExcept(c),
+                _ => setTheirShare(id),
               },
         onEdit: repository == null
             ? null
             : (node) async {
                 final p = byId[node.id];
-                if (p == null) return;
-                if (await editPerson(context, person: p) == null) return;
+                final c = circles[node.id];
+                final edited = p != null
+                    ? await editPerson(context, person: p)
+                    : c != null
+                    ? await editCircle(context, circle: c, memory: memory)
+                    : null;
+                if (edited == null) return;
                 setState(() => people = knownPeople(repository, memory));
               },
         add: repository == null
@@ -492,6 +569,24 @@ Future<({Facts facts, String? mapLocation})?> showWhoWhereSheet(
                   picking({...picked, added.id});
                 },
               ),
+        adds: [
+          if (repository != null)
+            (
+              noun: 'circle',
+              icon: Icons.group_add_outlined,
+              onAdd: (name) async {
+                final added = await editCircle(
+                  context,
+                  name: name,
+                  memory: memory,
+                );
+                if (added == null) return;
+                search.controller.clear();
+                people = knownPeople(repository, memory);
+                picking({...picked, added.id});
+              },
+            ),
+        ],
       );
     },
   );
@@ -1037,6 +1132,57 @@ class PickerField extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Picks which of [circle]'s [members] -- its people, the user aside --
+/// an event or goal leaves out, [except] to start with: who wasn't there
+/// ([isWith]), or who it wasn't for. Each is a row, checked to leave
+/// them out, over [onShare], if given: a row that sets the circle's
+/// share of the event. Done returns the ids left out; null if it's
+/// dismissed.
+Future<List<String>?> pickExcept(
+  BuildContext context, {
+  required Circle circle,
+  required List<Person> members,
+  required List<String> except,
+  bool isWith = true,
+  Future<void> Function()? onShare,
+}) {
+  var ids = [...except];
+  return showPickerSheet<List<String>>(
+    context,
+    title: circleName(circle),
+    result: () => ids,
+    body: (context, setState) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: TreePicker(
+            nodes: [
+              for (final p in members) personNode(p),
+              for (final id in ids)
+                if (!members.any((p) => p.id == id))
+                  PickerNode(id: id, label: id),
+            ],
+            picked: ids,
+            caption: isWith
+                ? "Who of ${circleName(circle)} wasn't there"
+                : "Who of ${circleName(circle)} it wasn't for",
+            empty: 'No one in it yet.',
+            searchHint: 'Search its people',
+            onChanged: (changed) => setState(() => ids = changed),
+          ),
+        ),
+        if (onShare != null)
+          ListTile(
+            leading: const Icon(Icons.pie_chart_outline),
+            title: const Text('Its share of the event'),
+            subtitle: const Text('What each of its people takes'),
+            onTap: onShare,
+          ),
+      ],
+    ),
+  );
 }
 
 /// Picks one of [nodes] in a [showPickerSheet] under [title], searched as

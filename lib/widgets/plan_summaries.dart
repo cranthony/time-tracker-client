@@ -1,3 +1,5 @@
+import '../models/attendance.dart';
+
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
@@ -176,9 +178,10 @@ SummarySlice actionSlice(PlanAction? action, String id, Duration time) =>
 const individuals = '\u0000individuals';
 
 /// [window]'s time by the circles of who was there: each person's part
-/// of an event (as [personTime] splits it) split evenly among their
-/// circles, those in none together as "Individuals"; events with no
-/// one, "With no one".
+/// of an event (as [personTime] splits it; a circle named standing for
+/// its people, [Attendance]) split evenly among their circles, those in
+/// none together as "Individuals"; a community named, its own; events
+/// with no one, "With no one".
 (List<SummarySlice>, List<SummarySlice>) circleTime(
   List<Event> events,
   SummaryWindow window,
@@ -186,15 +189,17 @@ const individuals = '\u0000individuals';
 ) {
   final byId = {for (final p in people.withSelf) p.id: p};
   final circles = {for (final c in people.circles) c.id: c};
+  final attendance = Attendance(circles: people.circles);
   final (day, week) = window.splitParts<String>(events, (event) {
     final parts = <String, double>{};
     for (final MapEntry(key: id, value: f) in scaledDown(
-      event.withFractions,
+      attendance.withFractions(event),
     ).entries) {
       final theirs = switch (byId[id]?.circleIds) {
         final ids? when ids.any(circles.containsKey) => [
           ...ids.where(circles.containsKey),
         ],
+        _ when circles.containsKey(id) => [id],
         _ => const [individuals],
       };
       for (final circle in theirs) {

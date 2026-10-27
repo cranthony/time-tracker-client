@@ -328,7 +328,7 @@ void main() {
         'delete_location',
       ]);
       expect(client.calls[0].$2, {
-        'circle': {'name': 'Work'},
+        'circle': {'name': 'Work', 'kind': 'circle'},
       });
       expect(client.calls[1].$2, {
         'circle': {'id': 'c2'},

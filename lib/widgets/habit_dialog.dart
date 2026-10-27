@@ -1,3 +1,9 @@
+import 'goal_editor.dart' show goalPeopleLabel, goalPeopleNames;
+import 'picker_sheet.dart' show showWhoWhereSheet;
+import '../services/plan_memory.dart';
+import '../models/named.dart';
+import '../models/facts.dart';
+
 import 'package:flutter/material.dart';
 
 import 'hotkeys.dart';
@@ -108,6 +114,11 @@ class _HabitEditorState extends State<_HabitEditor> {
   /// Whether its goal rate's span is its own, not its period's default,
   /// which it follows as the period's changed till it's typed.
   late bool _ownRate = widget.habit?.recurringGoal?.ratePeriods != null;
+
+  /// Whom its goals are done with and for: people and circles, a plain
+  /// circle with those of its people it leaves out.
+  late List<Named> _with = [...?widget.habit?.recurringGoal?.withWhom];
+  late List<Named> _for = [...?widget.habit?.recurringGoal?.forWhom];
   late PersonTraits _traits = widget.habit?.traits ?? const PersonTraits();
   late final PersonTraits _actionTraits = _traits;
   late List<String> _foundations = widget.habit?.foundations ?? const [];
@@ -145,10 +156,25 @@ class _HabitEditorState extends State<_HabitEditor> {
       description: was.description,
       definitionOfDone: _text(_definitionOfDone),
       attributionHints: _text(_attributionHints),
-      withIds: was.withIds,
-      forIds: was.forIds,
+      withWhom: _with,
+      forWhom: _for,
       ratePeriods: _ownRate ? _rateValue : null,
     );
+  }
+
+  /// Picks whom its goals are done with and for, as a goal's are.
+  Future<void> _pickGoalPeople() async {
+    final picked = await showWhoWhereSheet(
+      context,
+      Facts.named(with_: _with, for_: _for),
+      withCaption: 'Who you’ll do its goals with',
+      forCaption: 'Who they’re for, who won’t be part of doing them',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _with = picked.facts.withWhom;
+      _for = picked.facts.forWhom;
+    });
   }
 
   /// Picks [period], its goal rate's span following it unless it's
@@ -491,6 +517,32 @@ class _HabitEditorState extends State<_HabitEditor> {
           helperText: 'Which events compaction tags with its goals.',
           border: OutlineInputBorder(),
           floatingLabelBehavior: FloatingLabelBehavior.always,
+        ),
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: _pickGoalPeople,
+        child: InputDecorator(
+          isEmpty: _with.isEmpty && _for.isEmpty,
+          decoration: const InputDecoration(
+            labelText: 'With and for (optional)',
+            hintText: 'No one: a goal of your own',
+            helperText: 'Whom each goal is done with, and for.',
+            isDense: true,
+            border: OutlineInputBorder(),
+            suffixIcon: Icon(Icons.arrow_drop_down),
+          ),
+          child: Text(
+            goalPeopleLabel(
+                  _with,
+                  _for,
+                  goalPeopleNames(PlanMemoryScope.of(context)),
+                ) ??
+                '',
+          ),
         ),
       ),
     ),

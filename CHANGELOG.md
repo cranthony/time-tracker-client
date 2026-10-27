@@ -9,6 +9,27 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.203.0
+
+- A circle is one of two kinds, set as it's made and never changed: a
+  plain circle, which stands for its people, or a community -- a team, a
+  club -- which stands for itself, a subject of its own. The circle
+  dialog has the switch, read-only once it's made; a community takes no
+  scoring, its score being its own. A plain circle is shown as a ring,
+  a community as three people: in the pickers, on the People pane and a
+  circle's page, and on the habit graph and a habit's page.
+- An event's facts and a goal can name a circle, with or for: the Who
+  sheet, the New goal sheet, the goal editor and the recurring-goal
+  editor offer the circles among the people, marked by kind, and a
+  plain circle's chip picks which of its people it leaves out ("Family
+  (except Ulyssie)", as the timeline says it). Wherever who an event or
+  goal was with or for is named -- event tiles, the event dialog, the
+  proposal's timeline, goal pages, a person's history -- a circle is
+  named, with its except.
+- Scoring, a person's history and their time together count an event
+  naming a plain circle they're in as theirs, unless its except leaves
+  them out; a community named is never taken for its members.
+
 ## 7.202.1
 
 - Events no longer read whether they're the day's last sleep, which the
