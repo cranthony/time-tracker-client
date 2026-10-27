@@ -10,11 +10,13 @@ import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/time_split.dart';
 import 'package:time_tracker_client/models/trait.dart';
 import 'package:time_tracker_client/screens/circle_screen.dart';
+import 'package:time_tracker_client/screens/goal_screen.dart';
 import 'package:time_tracker_client/screens/habit_screen.dart';
 import 'package:time_tracker_client/screens/habits_pane.dart';
 import 'package:time_tracker_client/screens/person_screen.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/habits_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
@@ -964,6 +966,54 @@ void main() {
     expect(find.textContaining('tried again'), findsOneWidget);
     expect(find.text('From Sun, Oct 11'), findsOneWidget);
     expect(find.text('Other'), findsNothing);
+  });
+
+  testWidgets("a recurring goal's goal's page opens its habit's", (
+    tester,
+  ) async {
+    final habit = Habit.fromJson({
+      'id': 'h1',
+      'name': 'Call Mom',
+      'recurring_goal': {'period': 'week'},
+      'traits': {'select': <String>[]},
+      'status': 'active',
+    });
+    final goal = Goal.fromJson({
+      'id': 'h1_2026-10-18',
+      'title': 'Call Mom',
+      'habit_id': 'h1',
+      'status': 'active',
+      'deadline': {'at': '2026-10-24'},
+      'history': [
+        {'status': 'active', 'at': '2026-10-18T00:00:00-04:00'},
+      ],
+    });
+    final memory = PlanMemory()
+      ..habits = [habit]
+      ..goals = [goal];
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      HabitsScope(
+        repository: InMemoryHabitsRepository([habit]),
+        child: MaterialApp(
+          home: GoalScreen(
+            goalId: goal.id,
+            repository: InMemoryGoalsRepository([goal]),
+            memory: memory,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('From the habit Call Mom'));
+    // Its page doesn't settle here, with no events to score it from.
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(HabitScreen), findsOneWidget);
+    expect(find.text('A goal each week: Call Mom'), findsOneWidget);
   });
 
   testWidgets("a habit's page shows what it's built on", (tester) async {
