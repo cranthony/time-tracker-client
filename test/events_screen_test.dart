@@ -399,7 +399,7 @@ void main() {
         'location': null,
         'priority': 1,
         'is_cancelled': false,
-        'is_end_of_day_sleep': true,
+        'some_later_field': true,
       }),
     ]);
     await tester.pumpWidget(app(repo));
@@ -438,7 +438,7 @@ void main() {
     expect(valueOf('priority'), '1');
     expect(valueOf('is_cancelled'), 'false');
     // Ones the app doesn't know about yet too.
-    expect(valueOf('is_end_of_day_sleep'), 'true');
+    expect(valueOf('some_later_field'), 'true');
 
     await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
