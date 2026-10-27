@@ -1,3 +1,7 @@
+import 'circle_icon.dart';
+import '../models/share.dart';
+import '../models/named.dart';
+
 import 'package:flutter/material.dart';
 
 import '../models/facts.dart';
@@ -200,6 +204,7 @@ class _FactsDialogState extends State<_FactsDialog> {
                             _for.contains(p.id)))
                       p,
                 ];
+                final circles = snapshot.data?.circles ?? const <Circle>[];
                 final there = [
                   everyone.firstWhere(
                     (p) => p.isSelf,
@@ -223,6 +228,7 @@ class _FactsDialogState extends State<_FactsDialog> {
                         'With',
                         'Who was there',
                         others,
+                        circles,
                         _with,
                         _for,
                       ),
@@ -232,6 +238,7 @@ class _FactsDialogState extends State<_FactsDialog> {
                         'For',
                         "Who it was for, who wasn't there",
                         others,
+                        circles,
                         _for,
                         _with,
                       ),
@@ -342,14 +349,17 @@ class _FactsDialogState extends State<_FactsDialog> {
     };
   }
 
-  /// Everyone in [people], as chips, those in [picked] selected; picking
-  /// one takes them out of [other], since no one is both there and not.
+  /// Everyone in [people], then each of [circles] (marked by its kind,
+  /// a plain one with those its except leaves out), as chips, those in
+  /// [picked] selected; picking one takes them out of [other], since no
+  /// one is both there and not.
   Widget _chips(
     ThemeData theme,
     String letter,
     String label,
     String hint,
     List<Person> people,
+    List<Circle> circles,
     Set<String> picked,
     Set<String> other,
   ) => Padding(
@@ -363,7 +373,7 @@ class _FactsDialogState extends State<_FactsDialog> {
           Text(label, style: theme.textTheme.labelLarge),
           Text(hint, style: theme.textTheme.bodySmall),
           const SizedBox(height: 4),
-          if (people.isEmpty)
+          if (people.isEmpty && circles.isEmpty)
             Text(
               'No one yet: add people on the Plan page.',
               style: TextStyle(color: theme.hintColor),
@@ -382,6 +392,25 @@ class _FactsDialogState extends State<_FactsDialog> {
                       other.remove(person.id);
                     } else {
                       picked.remove(person.id);
+                    }
+                  }),
+                ),
+              for (final circle in circles)
+                FilterChip(
+                  avatar: Icon(circleIcon(circle.kind, outlined: true)),
+                  label: Text(
+                    namedLabel(
+                      _splits(picked)[circle.id]?.named ?? Named(circle.id),
+                      (id) => _personName(people, circle, id),
+                    ),
+                  ),
+                  selected: picked.contains(circle.id),
+                  onSelected: (on) => setState(() {
+                    if (on) {
+                      picked.add(circle.id);
+                      other.remove(circle.id);
+                    } else {
+                      picked.remove(circle.id);
                     }
                   }),
                 ),
@@ -449,6 +478,20 @@ class _FactsDialogState extends State<_FactsDialog> {
       },
     ),
   );
+
+  /// The shares behind [picked]: with, or for.
+  Map<String, WhoShare> _splits(Set<String> picked) => identical(picked, _with)
+      ? widget.facts.withSplits
+      : widget.facts.forSplits;
+
+  /// [id]'s name among [people], or [circle]'s.
+  static String _personName(List<Person> people, Circle circle, String id) =>
+      id == circle.id
+      ? circleName(circle)
+      : switch (people.where((p) => p.id == id).firstOrNull) {
+          final p? => personName(p),
+          null => id,
+        };
 
   /// [person]'s note, which [letter] goes to.
   Widget _note(String? letter, Person person, String hint) => Padding(

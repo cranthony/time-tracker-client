@@ -16,8 +16,8 @@ class RecurringGoal {
     this.description,
     this.definitionOfDone,
     this.attributionHints,
-    this.withIds = const [],
-    this.forIds = const [],
+    this.withWhom = const [],
+    this.forWhom = const [],
     this.ratePeriods,
   });
 
@@ -32,8 +32,10 @@ class RecurringGoal {
   final String? description;
   final String? definitionOfDone;
   final String? attributionHints;
-  final List<String> withIds;
-  final List<String> forIds;
+
+  /// Whom its goals are done with and for, as a goal's ([Goal.withWhom]).
+  final List<Named> withWhom;
+  final List<Named> forWhom;
 
   /// How many periods its goal rate counts back; null, its period's
   /// default ([defaultRatePeriods]).
@@ -53,8 +55,8 @@ class RecurringGoal {
       description: _text(json['description']),
       definitionOfDone: _text(json['definition_of_done']),
       attributionHints: _text(json['attribution_hints']),
-      withIds: [for (final id in json['with_ids'] as List? ?? const []) '$id'],
-      forIds: [for (final id in json['for_ids'] as List? ?? const []) '$id'],
+      withWhom: Named.listFromJson(json['with_ids']),
+      forWhom: Named.listFromJson(json['for_ids']),
       ratePeriods: (json['rate_periods'] as num?)?.toInt(),
     ),
     _ => null,
@@ -68,8 +70,8 @@ class RecurringGoal {
     'description': ?description,
     'definition_of_done': ?definitionOfDone,
     'attribution_hints': ?attributionHints,
-    if (withIds.isNotEmpty) 'with_ids': withIds,
-    if (forIds.isNotEmpty) 'for_ids': forIds,
+    if (withWhom.isNotEmpty) 'with_ids': namedToJson(withWhom),
+    if (forWhom.isNotEmpty) 'for_ids': namedToJson(forWhom),
     'rate_periods': ?ratePeriods,
   };
 

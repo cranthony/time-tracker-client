@@ -823,10 +823,8 @@ class _PlanScreenState extends State<PlanScreen> {
     final people = PeopleScope.of(context);
     final habits = HabitsScope.of(context);
     final goals = GoalsScope.of(context);
-    final personNames = {
-      for (final person in _people?.withSelf ?? const [defaultSelf])
-        person.id: personName(person),
-    };
+    final personNames =
+        _people?.names ?? {selfPersonId: personName(defaultSelf)};
     // What grows without end, together: who, what and where.
     final library = <(String, Widget)>[
       if (people != null)

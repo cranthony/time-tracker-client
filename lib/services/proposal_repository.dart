@@ -941,8 +941,8 @@ class InMemoryProposalRepository implements ProposalRepository {
                   ...addition.fields,
                   'id': '',
                   'title': name,
-                  'with_ids': _settledPeople(addition.withIds, settled, all),
-                  'for_ids': _settledPeople(addition.forIds, settled, all),
+                  'with_ids': _settledPeople(addition.withWhom, settled, all),
+                  'for_ids': _settledPeople(addition.forWhom, settled, all),
                   'status': edit.deadline == null ? 'inactive' : 'active',
                   if (edit.deadline != null) 'deadline': edit.deadline,
                 }),
@@ -1096,11 +1096,12 @@ class InMemoryProposalRepository implements ProposalRepository {
   /// [ids] -- a new goal's people -- each named by its id, a person
   /// [settled] already by theirs (one dropped left out). Refused while
   /// one of [all] the proposal adds isn't settled.
-  static List<String> _settledPeople(
-    List<String> ids,
+  static List<Object> _settledPeople(
+    List<Named> named,
     List<AdditionSettled> settled,
     Map<String, ProposalAddition> all,
   ) {
+    final ids = namedIds(named);
     final waiting = [
       for (final id in ids)
         if (all.containsKey(id) && !settled.any((s) => s.ref == id)) id,
@@ -1112,11 +1113,11 @@ class InMemoryProposalRepository implements ProposalRepository {
       );
     }
     return [
-      for (final id in ids)
-        if (settled.where((s) => s.ref == id).firstOrNull case final s?)
-          ?s.id
+      for (final n in named)
+        if (settled.where((s) => s.ref == n.id).firstOrNull case final s?)
+          ?(s.id == null ? null : Named(s.id!, except: n.except).toJson())
         else
-          id,
+          n.toJson(),
     ];
   }
 

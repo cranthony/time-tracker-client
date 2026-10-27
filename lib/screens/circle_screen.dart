@@ -1,3 +1,5 @@
+import '../models/named.dart';
+
 import 'package:flutter/material.dart';
 
 import '../models/people_times.dart';
@@ -70,7 +72,7 @@ class _CircleScreenState extends State<CircleScreen> with Rescored {
     final circle = _circle ?? widget.circle;
     final members = memory.people?.inCircle(circle.id) ?? const <Person>[];
     final ids = [for (final p in members) p.id];
-    final names = {for (final p in members) p.id: personName(p)};
+    final names = memory.people?.names ?? const <String, String>{};
     final health = _scores?.groupHealth(ids, scoring: circle.scoring);
     final trend = _scores?.groupTrend(ids, scoring: circle.scoring);
     final times = widget.times;
@@ -136,13 +138,10 @@ class _CircleScreenState extends State<CircleScreen> with Rescored {
           ...openGoalTiles(
             context,
             memory,
-            {...ids},
-            who: (goal, isFor) {
-              final who = [
-                for (final id in isFor ? goal.forIds : goal.withIds) ?names[id],
-              ];
-              return '${isFor ? 'For' : 'With'} ${who.join(', ')}';
-            },
+            {circle.id, ...ids},
+            who: (goal, isFor) =>
+                '${isFor ? 'For' : 'With'} '
+                '${namedList(isFor ? goal.forWhom : goal.withWhom, (id) => names[id] ?? id)}',
           ),
           sectionHeading(
             theme,

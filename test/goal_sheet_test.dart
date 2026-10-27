@@ -521,8 +521,8 @@ void main() {
       GoalDraft(
         title: 'Help Sam move',
         day: now,
-        withIds: const ['ana'],
-        forIds: const ['sam'],
+        withWhom: const [Named('ana')],
+        forWhom: const [Named('sam')],
       ),
     );
     await open(tester, withDrafts: withDraft, people: people);
@@ -548,8 +548,8 @@ void main() {
         home: GoalEditorPage(
           goals: const [],
           title: 'Help Sam move',
-          withIds: const ['ana'],
-          forIds: const ['sam'],
+          withWhom: const [Named('ana')],
+          forWhom: const [Named('sam')],
           now: () => now,
         ),
       ),
@@ -563,8 +563,8 @@ void main() {
     final draft = GoalDraft(
       title: 'Help Sam move',
       day: now,
-      withIds: const ['ana'],
-      forIds: const ['sam'],
+      withWhom: const [Named('ana')],
+      forWhom: const [Named('sam')],
     );
     final json = draft.toJson();
     expect(json['with_ids'], ['ana']);

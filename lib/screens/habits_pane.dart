@@ -1,3 +1,5 @@
+import '../widgets/circle_icon.dart';
+
 import 'package:flutter/material.dart';
 
 import '../models/habit.dart';
@@ -602,8 +604,12 @@ class HabitsPaneState extends State<HabitsPane> {
                 if (node.habit.personId != null) ...[
                   Icon(Icons.person, size: 14, color: foreground),
                   const SizedBox(width: 4),
-                ] else if (node.habit.circleId != null) ...[
-                  Icon(Icons.groups, size: 14, color: foreground),
+                ] else if (node.habit.circleId case final circleId?) ...[
+                  Icon(
+                    circleIconOf(widget.memory.people?.circle(circleId)),
+                    size: 14,
+                    color: foreground,
+                  ),
                   const SizedBox(width: 4),
                 ],
                 Flexible(

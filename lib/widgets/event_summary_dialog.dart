@@ -490,9 +490,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     List<Location>? locations,
     List<Trait>? traits,
   ) {
-    if (people != null) {
-      _personNames = {for (final p in people.withSelf) p.id: personName(p)};
-    }
+    if (people != null) _personNames = people.names;
     if (locations != null) {
       _locationNames = {for (final l in locations) l.id: l.name};
       _locationMaps = {for (final l in locations) l.id: ?l.mapLocation};
@@ -2037,6 +2035,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         : Facts(
             withIds: facts.withIds,
             forIds: facts.forIds,
+            withSplits: facts.withSplits,
+            forSplits: facts.forSplits,
           ).describe(_personNames);
     return _row(
       context,

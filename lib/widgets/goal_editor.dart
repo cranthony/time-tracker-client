@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../models/facts.dart';
 import '../models/goal.dart';
 import '../models/goal_changes.dart';
-import '../models/person.dart';
 import '../services/plan_memory.dart';
 import 'color_picker.dart' show priorityColor;
 import 'duration_field.dart';
@@ -36,9 +35,9 @@ import 'tree_picker.dart';
 /// Saving is off while the change breaks a rule (see [planned]) against
 /// [goals], every goal there is, saying which -- a change of status
 /// checked with what it takes ([editing]). A new one starts with [title]
-/// and [deadline], [description] and [priority], and the people
-/// it's done with ([withIds]) and for ([forIds]), if they're given --
-/// from the New goal sheet, say.
+/// and [deadline], [description] and [priority], and the people and
+/// circles it's done with ([withWhom]) and for ([forWhom]), if they're
+/// given -- from the New goal sheet, say.
 /// Gives a new goal's fields, or an edit's changes (a null clearing a
 /// field) -- null if nothing's saved.
 Future<Map<String, Object?>?> showGoalEditor(
@@ -50,8 +49,8 @@ Future<Map<String, Object?>?> showGoalEditor(
   String? deadline,
   String? description,
   int? priority,
-  List<String> withIds = const [],
-  List<String> forIds = const [],
+  List<Named> withWhom = const [],
+  List<Named> forWhom = const [],
   String? status,
   Map<String, Object?>? activateWhen,
   Map<String, Object?>? deadlineRule,
@@ -67,8 +66,8 @@ Future<Map<String, Object?>?> showGoalEditor(
       deadline: deadline,
       description: description,
       priority: priority,
-      withIds: withIds,
-      forIds: forIds,
+      withWhom: withWhom,
+      forWhom: forWhom,
       status: status,
       activateWhen: activateWhen,
       deadlineRule: deadlineRule,
@@ -87,8 +86,8 @@ class GoalEditorPage extends StatefulWidget {
     this.deadline,
     this.description,
     this.priority,
-    this.withIds = const [],
-    this.forIds = const [],
+    this.withWhom = const [],
+    this.forWhom = const [],
     this.status,
     this.activateWhen,
     this.deadlineRule,
@@ -105,9 +104,10 @@ class GoalEditorPage extends StatefulWidget {
   final String? description;
   final int? priority;
 
-  /// A new goal's people, to begin with: who it's done with, and for.
-  final List<String> withIds;
-  final List<String> forIds;
+  /// A new goal's people and circles, to begin with: who it's done with,
+  /// and for.
+  final List<Named> withWhom;
+  final List<Named> forWhom;
 
   /// A new goal's status, what it waits for, and what its deadline is
   /// measured from, to begin with.
@@ -179,8 +179,8 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   late int? _priority = _goal?.priority ?? widget.priority;
   late String? _description = _goal?.description ?? widget.description;
   late String? _definitionOfDone = _goal?.definitionOfDone;
-  late List<String> _with = [...(_goal?.withIds ?? widget.withIds)];
-  late List<String> _for = [...(_goal?.forIds ?? widget.forIds)];
+  late List<Named> _with = [...(_goal?.withWhom ?? widget.withWhom)];
+  late List<Named> _for = [...(_goal?.forWhom ?? widget.forWhom)];
 
   @override
   void dispose() {
@@ -256,11 +256,11 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     'attribution_hints': _text(_hints),
   };
 
-  /// The people it's done with and for, keyed as the server takes them:
-  /// null for none.
+  /// The people and circles it's done with and for, keyed as the server
+  /// takes them: null for none.
   Map<String, Object?> get _people => {
-    'with_ids': _with.isEmpty ? null : [..._with],
-    'for_ids': _for.isEmpty ? null : [..._for],
+    'with_ids': _with.isEmpty ? null : namedToJson(_with),
+    'for_ids': _for.isEmpty ? null : namedToJson(_for),
   };
 
   /// A new goal's fields, or what an edit changes.
@@ -275,7 +275,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
         'status': _status,
       }..removeWhere((_, v) => v == null);
     }
-    bool same(List<String> a, List<String> b) =>
+    bool same(List<Named> a, List<Named> b) =>
         a.length == b.length && a.every(b.contains);
     final before = {
       'title': goal.title,
@@ -295,8 +295,8 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
       for (final MapEntry(:key, :value) in fields.entries)
         if (jsonEncode(value) != jsonEncode(before[key])) key: value,
       if (_status != goal.status) 'status': _status,
-      if (!same(_with, goal.withIds)) 'with_ids': _people['with_ids'],
-      if (!same(_for, goal.forIds)) 'for_ids': _people['for_ids'],
+      if (!same(_with, goal.withWhom)) 'with_ids': _people['with_ids'],
+      if (!same(_for, goal.forWhom)) 'for_ids': _people['for_ids'],
     };
   }
 
@@ -304,14 +304,14 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   Future<void> _pickPeople() async {
     final picked = await showWhoWhereSheet(
       context,
-      Facts(withIds: _with, forIds: _for),
+      Facts.named(with_: _with, for_: _for),
       withCaption: 'Who you’ll do it with',
       forCaption: 'Who it’s for, who won’t be part of doing it',
     );
     if (picked == null || !mounted) return;
     setState(() {
-      _with = [...picked.facts.withIds];
-      _for = [...picked.facts.forIds];
+      _with = picked.facts.withWhom;
+      _for = picked.facts.forWhom;
     });
   }
 
@@ -792,25 +792,23 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
       : EventDescription(text, maxLines: 4, expandable: false);
 }
 
-/// Names people by id from [memory]: an id it doesn't know, as itself.
+/// Names people and circles by id from [memory]: an id it doesn't know,
+/// as itself.
 String Function(String id) goalPeopleNames(PlanMemory? memory) {
-  final byId = {
-    for (final p in memory?.people?.withSelf ?? const <Person>[])
-      p.id: personName(p),
-  };
+  final byId = memory?.people?.names ?? const <String, String>{};
   return (id) => byId[id] ?? id;
 }
 
-/// Who a goal is done with and for, named by [names]: "With Ana · For
-/// Sam"; null if no one.
+/// Who a goal is done with and for, named by [names]: "With Ana, Family
+/// (except Sam) · For Sam"; null if no one.
 String? goalPeopleLabel(
-  List<String> withIds,
-  List<String> forIds,
+  List<Named> withWhom,
+  List<Named> forWhom,
   String Function(String id) names,
 ) {
   final parts = [
-    if (withIds.isNotEmpty) 'With ${withIds.map(names).join(', ')}',
-    if (forIds.isNotEmpty) 'For ${forIds.map(names).join(', ')}',
+    if (withWhom.isNotEmpty) 'With ${namedList(withWhom, names)}',
+    if (forWhom.isNotEmpty) 'For ${namedList(forWhom, names)}',
   ];
   return parts.isEmpty ? null : parts.join(' · ');
 }

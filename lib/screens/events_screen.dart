@@ -321,12 +321,11 @@ class _EventsScreenState extends State<EventsScreen> {
       ?action.id: action,
   };
 
-  /// Everyone's names by id, and those the shown proposal adds by ref,
-  /// for the people events' facts name.
+  /// Everyone's names by id, every circle's, and those the shown proposal
+  /// adds by ref, for the people and circles events' facts name.
   Map<String, String> get _personNames => {
     ...?_shownProposal?.addedNames,
-    for (final p in _memory.people?.withSelf ?? const <Person>[])
-      p.id: personName(p),
+    ...?_memory.people?.names,
   };
 
   /// Every location's name by id, and those the shown proposal adds by
@@ -887,7 +886,7 @@ class _EventsScreenState extends State<EventsScreen> {
     String name(String id) => added[id] ?? known(id);
     return [
       if (a.deadline case final d?) 'Due ${deadlineLabel(context, d)}',
-      ?goalPeopleLabel(a.withIds, a.forIds, name),
+      ?goalPeopleLabel(a.withWhom, a.forWhom, name),
     ].join(' · ');
   }
 

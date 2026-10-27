@@ -836,15 +836,13 @@ class ProposalAddition {
     AdditionKind.action || AdditionKind.goal => null,
   };
 
-  /// A goal's: when it's due, and who it's done with and for, by id or
-  /// ref.
+  /// A goal's: when it's due, and who it's done with and for -- people
+  /// and circles, by id or ref, a plain circle with its except.
   String? get deadline => fields['deadline'] as String?;
-  List<String> get withIds => [
-    for (final id in fields['with_ids'] as List? ?? const []) '$id',
-  ];
-  List<String> get forIds => [
-    for (final id in fields['for_ids'] as List? ?? const []) '$id',
-  ];
+  List<Named> get withWhom => Named.listFromJson(fields['with_ids']);
+  List<Named> get forWhom => Named.listFromJson(fields['for_ids']);
+  List<String> get withIds => namedIds(withWhom);
+  List<String> get forIds => namedIds(forWhom);
 
   /// The proposal's `additions`, people first, then actions, then
   /// locations, then goals.

@@ -1,3 +1,6 @@
+import 'people_picker.dart' show circleNode;
+import 'circle_icon.dart';
+
 import 'dart:async';
 import 'dart:math';
 
@@ -113,8 +116,8 @@ final class MoreGoal extends GoalSheetResult {
     this.description,
     this.priority,
     this.parentId,
-    this.withIds = const [],
-    this.forIds = const [],
+    this.withWhom = const [],
+    this.forWhom = const [],
   });
   final String title;
   final String deadline;
@@ -126,9 +129,14 @@ final class MoreGoal extends GoalSheetResult {
   /// The goal it goes under; null for the top level.
   final String? parentId;
 
-  /// Who it's done with, and who it's for, by person id.
-  final List<String> withIds;
-  final List<String> forIds;
+  /// Who it's done with, and who it's for: people and circles, a plain
+  /// circle with its except.
+  final List<Named> withWhom;
+  final List<Named> forWhom;
+
+  /// Their ids.
+  List<String> get withIds => namedIds(withWhom);
+  List<String> get forIds => namedIds(forWhom);
 }
 
 class _GoalSheet extends StatefulWidget {
@@ -194,9 +202,10 @@ class _GoalSheetState extends State<_GoalSheet> {
     _ => null,
   };
 
-  /// Who it's done with, and who it's for: no one in both.
-  late final List<String> _with = [...?widget.drafts?.draft?.withIds];
-  late final List<String> _for = [...?widget.drafts?.draft?.forIds];
+  /// Who it's done with, and who it's for -- people and circles, a plain
+  /// circle with those of its people it leaves out: no one in both.
+  late final List<Named> _with = [...?widget.drafts?.draft?.withWhom];
+  late final List<Named> _for = [...?widget.drafts?.draft?.forWhom];
 
   /// Everyone, once they've loaded -- what the app had, till then; null
   /// without that, or with no one to pick from.
@@ -285,8 +294,8 @@ class _GoalSheetState extends State<_GoalSheet> {
           description: _description,
           priority: _priority,
           parentId: _parentId,
-          withIds: [..._with],
-          forIds: [..._for],
+          withWhom: [..._with],
+          forWhom: [..._for],
         ),
       );
     }
@@ -370,14 +379,23 @@ class _GoalSheetState extends State<_GoalSheet> {
   List<Person> get _pickable => [
     for (final p in _people?.withSelf ?? const <Person>[])
       if (!p.isSelf &&
-          (p.active || _with.contains(p.id) || _for.contains(p.id)))
+          (p.active || _ids(_with).contains(p.id) || _ids(_for).contains(p.id)))
         p,
   ];
+
+  /// The circles that can be picked, too: each stands for its people, or
+  /// a community for itself.
+  List<Circle> get _circles => _people?.circles ?? const <Circle>[];
+
+  static List<String> _ids(List<Named> named) => namedIds(named);
 
   /// [id]'s name, or the id itself, till they've loaded.
   String _name(String id) => switch (_pickable.where((p) => p.id == id)) {
     final found when found.isNotEmpty => personName(found.first),
-    _ => id,
+    _ => switch (_people?.circle(id)) {
+      final c? => circleName(c),
+      null => id,
+    },
   };
 
   /// Picks its priority from a menu below [chip]: its parent's, or one
@@ -429,15 +447,26 @@ class _GoalSheetState extends State<_GoalSheet> {
   /// for one takes them off the other, since no one is both.
   Future<void> _pickPerson({required bool with_}) async {
     final (mine, other) = with_ ? (_with, _for) : (_for, _with);
+    final circles = {for (final c in _circles) c.id: c};
     final picked = await pickNode(
       context,
       title: with_ ? 'With' : 'For',
       nodes: [
+        for (final c in _circles)
+          if (!_ids(mine).contains(c.id)) circleNode(c),
         for (final p in _pickable)
-          if (!mine.contains(p.id))
+          if (!_ids(mine).contains(p.id))
             PickerNode(id: p.id, label: personName(p, context: true)),
       ],
-      searchHint: 'Search people',
+      marker: circles.isEmpty
+          ? null
+          : (node) => Icon(switch (circles[node.id]) {
+              final c? => circleIcon(c.kind, outlined: true),
+              null => Icons.person_outline,
+            }, size: 20),
+      searchHint: circles.isEmpty
+          ? 'Search people'
+          : 'Search people and circles',
       query: _title.text,
       add: (
         noun: 'person',
@@ -454,8 +483,8 @@ class _GoalSheetState extends State<_GoalSheet> {
     final id = picked?.id;
     if (id == null || !mounted) return;
     setState(() {
-      other.remove(id);
-      if (!mine.contains(id)) mine.add(id);
+      other.removeWhere((n) => n.id == id);
+      if (!_ids(mine).contains(id)) mine.add(Named(id));
     });
     _keepDraft();
   }
@@ -463,8 +492,31 @@ class _GoalSheetState extends State<_GoalSheet> {
   /// Takes [id] off whichever of with and for they're in.
   void _removePerson(String id) {
     setState(() {
-      _with.remove(id);
-      _for.remove(id);
+      _with.removeWhere((n) => n.id == id);
+      _for.removeWhere((n) => n.id == id);
+    });
+    _keepDraft();
+  }
+
+  /// Picks which of plain circle [circle]'s people [named] leaves out,
+  /// among [mine].
+  Future<void> _pickExcept(List<Named> mine, Named named, Circle circle) async {
+    final except = await pickExcept(
+      context,
+      circle: circle,
+      members: [
+        for (final id in circle.memberIds)
+          if (id != selfPersonId)
+            _pickable.where((p) => p.id == id).firstOrNull ??
+                Person(id: id, name: id),
+      ],
+      except: named.except,
+      isWith: identical(mine, _with),
+    );
+    if (except == null || !mounted) return;
+    setState(() {
+      final at = mine.indexOf(named);
+      if (at >= 0) mine[at] = named.withExcept(except);
     });
     _keepDraft();
   }
@@ -488,8 +540,8 @@ class _GoalSheetState extends State<_GoalSheet> {
     'parent_id': ?_parentId,
     'description': ?_description,
     'priority': ?_priority,
-    if (_with.isNotEmpty) 'with_ids': [..._with],
-    if (_for.isNotEmpty) 'for_ids': [..._for],
+    if (_with.isNotEmpty) 'with_ids': namedToJson(_with),
+    if (_for.isNotEmpty) 'for_ids': namedToJson(_for),
   };
 
   /// Why it can't be added, besides having no title; null if it can.
@@ -535,13 +587,14 @@ class _GoalSheetState extends State<_GoalSheet> {
       description: _description,
       priority: _priority,
       parentId: _parentId,
-      withIds: [..._with],
-      forIds: [..._for],
+      withWhom: [..._with],
+      forWhom: [..._for],
     ),
   );
 
   /// Who it's done with ([with_]), or for, as chips: one to add someone,
-  /// then one each for those picked, tapped to take them off.
+  /// then one each for those picked, tapped to take them off -- a plain
+  /// circle's, tapped to pick which of its people it leaves out.
   List<Widget> _peopleChips({required bool with_}) {
     final ids = with_ ? _with : _for;
     return [
@@ -556,13 +609,28 @@ class _GoalSheetState extends State<_GoalSheet> {
           onPressed: _keeping ? null : () => _pickPerson(with_: with_),
         ),
       ),
-      for (final id in ids)
-        InputChip(
-          label: Text(_name(id)),
-          tooltip: 'Take ${_name(id)} off',
-          onPressed: _keeping ? null : () => _removePerson(id),
-          onDeleted: _keeping ? null : () => _removePerson(id),
-        ),
+      for (final named in ids)
+        if (_people?.circle(named.id) case final circle?)
+          InputChip(
+            avatar: Icon(circleIcon(circle.kind, outlined: true), size: 18),
+            label: Text(namedLabel(named, _name)),
+            tooltip: circle.isCommunity
+                ? 'Take ${_name(named.id)} off'
+                : 'Pick who of ${_name(named.id)} it leaves out',
+            onPressed: _keeping
+                ? null
+                : circle.isCommunity
+                ? () => _removePerson(named.id)
+                : () => _pickExcept(ids, named, circle),
+            onDeleted: _keeping ? null : () => _removePerson(named.id),
+          )
+        else
+          InputChip(
+            label: Text(_name(named.id)),
+            tooltip: 'Take ${_name(named.id)} off',
+            onPressed: _keeping ? null : () => _removePerson(named.id),
+            onDeleted: _keeping ? null : () => _removePerson(named.id),
+          ),
     ];
   }
 

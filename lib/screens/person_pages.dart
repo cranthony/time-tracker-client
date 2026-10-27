@@ -45,11 +45,8 @@ class PersonPages {
 
   List<Circle> get _circles => memory.people?.circles ?? const [];
 
-  /// Everyone's names, by id, Self among them.
-  Map<String?, String> get personNames => {
-    for (final p in memory.people?.withSelf ?? const <Person>[])
-      p.id: personName(p),
-  };
+  /// Everyone's names, by id, Self among them, and every circle's.
+  Map<String?, String> get personNames => {...?memory.people?.names};
 
   /// The traits that could apply to someone: active, and off.
   Future<List<Trait>> _traits() async {

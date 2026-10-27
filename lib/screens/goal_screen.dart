@@ -403,8 +403,8 @@ class _GoalScreenState extends State<GoalScreen> {
     final theme = Theme.of(context);
     final parent = tree[goal.parentId];
     final people = goalPeopleLabel(
-      goal.withIds,
-      goal.forIds,
+      goal.withWhom,
+      goal.forWhom,
       goalPeopleNames(widget.memory),
     );
     final minutes = spent?.inMinutes ?? 0;

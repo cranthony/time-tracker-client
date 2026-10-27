@@ -1,4 +1,5 @@
 import '../widgets/durations.dart';
+import 'named.dart';
 
 /// How much of an event one of the things it's tagged with -- a goal
 /// ([GoalShare]) or an action ([ActionShare]) -- takes: [minutes] (a fixed
@@ -175,15 +176,32 @@ Map<String, double> shareFractions(
 
 /// [shares] read from a list the server sent, each its bare id -- as ids
 /// always were -- or an object with its id under [key] and its share;
-/// [make] makes each.
+/// [make] makes each. With [circles], an object with a `circle_id` makes a
+/// [CircleShare] instead, with its except.
 List<S> sharesFromJson<S extends Share>(
   Object? json,
   String key,
-  S Function(String id, {int? minutes, int? percent, bool remaining}) make,
-) => [
+  S Function(String id, {int? minutes, int? percent, bool remaining}) make, {
+  S Function(
+    String id,
+    List<String> except, {
+    int? minutes,
+    int? percent,
+    bool remaining,
+  })?
+  circles,
+}) => [
   for (final item in json as List? ?? const [])
     if (item is Map)
-      if (item[key] case final String id when id.isNotEmpty)
+      if (_circleId(item, circles != null) case final String id)
+        circles!(
+          id,
+          [for (final e in item['except'] as List? ?? const []) '$e'],
+          minutes: (item['minutes'] as num?)?.toInt(),
+          percent: (item['percent'] as num?)?.toInt(),
+          remaining: item['remaining'] == true,
+        )
+      else if (item[key] case final String id when id.isNotEmpty)
         make(
           id,
           minutes: (item['minutes'] as num?)?.toInt(),
@@ -195,6 +213,12 @@ List<S> sharesFromJson<S extends Share>(
     else if (item != null)
       make('$item'),
 ];
+
+/// [item]'s `circle_id`, if [circles] are read and it has one.
+String? _circleId(Map item, bool circles) => switch (item['circle_id']) {
+  final String id when circles && id.isNotEmpty => id,
+  _ => null,
+};
 
 /// [share] as the server takes it, its id under [key]: its bare id with
 /// neither minutes nor percent, so a list without shares is sent as
@@ -235,16 +259,136 @@ class ActionShare extends Share {
   Object toJson() => shareToJson(this, 'action_id');
 }
 
+/// Someone an event was with or for -- a person ([PersonShare]) or a
+/// circle ([CircleShare]) -- and how much of it they take (see [Share]):
+/// with neither minutes nor percent, the remaining time -- all of it, as
+/// everyone else given neither takes it too. A plain circle's members
+/// each take the circle's part, as a person.
+sealed class WhoShare extends Share {
+  const WhoShare(super.id, {super.minutes, super.percent, super.remaining});
+
+  /// Whether it's sent as its bare id: a person's with neither minutes nor
+  /// percent. A circle's is always an object, so the server knows it as a
+  /// circle's.
+  bool get bare;
+
+  /// Whom it names: a circle's, with its except.
+  Named get named;
+
+  /// These, naming [named] -- the same person or circle, with its except
+  /// as given.
+  WhoShare withNamed(Named named);
+
+  Object toJson();
+}
+
 /// A person an event was with or for, and how much of it they take (see
-/// [Share]): with neither minutes nor percent, the remaining time -- all
-/// of it, as everyone else given neither takes it too.
-class PersonShare extends Share {
+/// [WhoShare]). The server sends one with neither minutes nor percent as
+/// its bare id, as it sent everyone before shares -- a circle's id given
+/// bare reads so too.
+class PersonShare extends WhoShare {
   const PersonShare(super.id, {super.minutes, super.percent, super.remaining});
 
   String get personId => id;
 
+  @override
+  bool get bare => whole;
+
+  @override
+  Named get named => Named(id);
+
+  @override
+  WhoShare withNamed(Named named) => named.except.isEmpty
+      ? PersonShare(
+          named.id,
+          minutes: minutes,
+          percent: percent,
+          remaining: plusRemaining,
+        )
+      : CircleShare(
+          named.id,
+          except: named.except,
+          minutes: minutes,
+          percent: percent,
+          remaining: plusRemaining,
+        );
+
+  @override
   Object toJson() => shareToJson(this, 'person_id');
 }
+
+/// A circle an event was with or for, given as one (`{circle_id, except?,
+/// minutes?, percent?, remaining?}`): a plain circle's members but those
+/// in [except] each take its part; a community takes it itself, and takes
+/// no except.
+class CircleShare extends WhoShare {
+  const CircleShare(
+    super.id, {
+    this.except = const [],
+    super.minutes,
+    super.percent,
+    super.remaining,
+  });
+
+  String get circleId => id;
+
+  /// Of a plain circle's members, who weren't, by person id.
+  final List<String> except;
+
+  @override
+  bool get bare => false;
+
+  @override
+  Named get named => Named(id, except: except);
+
+  @override
+  WhoShare withNamed(Named named) => CircleShare(
+    named.id,
+    except: named.except,
+    minutes: minutes,
+    percent: percent,
+    remaining: plusRemaining,
+  );
+
+  @override
+  Object toJson() => {
+    'circle_id': id,
+    if (except.isNotEmpty) 'except': except,
+    'minutes': ?minutes,
+    'percent': ?percent,
+    if (plusRemaining) 'remaining': true,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      super == other &&
+      other is CircleShare &&
+      other.except.length == except.length &&
+      [for (var i = 0; i < except.length; i++) other.except[i] == except[i]]
+          .every((same) => same);
+
+  @override
+  int get hashCode => Object.hash(super.hashCode, Object.hashAll(except));
+
+  @override
+  String toString() => 'CircleShare($id, except: $except, $label)';
+}
+
+/// [shares] of who an event was with or for, as the server sends them:
+/// each a bare id, `{person_id, ...}` or `{circle_id, except?, ...}`.
+List<WhoShare> whoSharesFromJson(Object? json) => sharesFromJson<WhoShare>(
+  json,
+  'person_id',
+  PersonShare.new,
+  circles: (id, except, {int? minutes, int? percent, bool remaining = false}) =>
+      CircleShare(
+        id,
+        except: except,
+        minutes: minutes,
+        percent: percent,
+        remaining: remaining,
+      ),
+);
 
 /// A place an event was at, and how much of it it takes (see [Share]):
 /// with neither minutes nor percent, an even part of the remaining time,

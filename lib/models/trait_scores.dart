@@ -9,8 +9,10 @@
 /// **A person's events.** The user ([selfPersonId]) was at every event.
 /// Anyone else's "with" events are those whose facts name them in
 /// `with_ids`; their "for" events, those naming them in `for_ids` (done
-/// for them while they weren't there). A part reads one or the other by
-/// its `engagement_type`.
+/// for them while they weren't there) -- themself, or a plain circle
+/// they're in, unless its except leaves them out ([Attendance]); a
+/// community named is never taken for its members. A part reads one or
+/// the other by its `engagement_type`.
 ///
 /// **A habit's events** are Self's with its action, or with any action
 /// under its group, worked out from the action tree as it is now -- or,
@@ -70,6 +72,7 @@ library;
 
 import 'dart:math' as math;
 
+import 'attendance.dart';
 import 'event.dart';
 import 'facts.dart';
 import 'goal.dart';
@@ -313,7 +316,8 @@ List<(Trait, List<Part>)> traitsFor(Subject subject, List<Trait> traits) => [
 
 /// [person]'s score of each trait that applies to them, for the day from
 /// [start] to [end], from [events] (none cancelled). [parentOf] gives an
-/// action's group, to count the actions in a group a part names.
+/// action's group, to count the actions in a group a part names;
+/// [circles] are stood for, for the events naming one they're in.
 List<TraitScore> scorePerson(
   Person person,
   List<Trait> traits,
@@ -321,6 +325,7 @@ List<TraitScore> scorePerson(
   DateTime end,
   List<Event> events, {
   String? Function(String id)? parentOf,
+  List<Circle> circles = const [],
 }) => scoreSubject(
   Subject.person(person),
   traits,
@@ -328,6 +333,7 @@ List<TraitScore> scorePerson(
   end,
   events,
   parentOf: parentOf,
+  circles: circles,
 );
 
 /// [subject]'s score of each trait that applies to them, as
@@ -342,12 +348,13 @@ List<TraitScore> scoreSubject(
   List<Event> events, {
   String? Function(String id)? parentOf,
   ScoringDefaults defaults = const ScoringDefaults(),
+  List<Circle> circles = const [],
 }) => _scoreSubject(
   subject,
   traits,
   end,
   events,
-  _Reading(parentOf),
+  _Reading(parentOf, Attendance(circles: circles)),
   defaults: defaults,
 );
 
@@ -444,9 +451,10 @@ List<PartScore?> scoreParts(
   DateTime end,
   List<Event> events, {
   String? Function(String id)? parentOf,
+  List<Circle> circles = const [],
 }) {
   final keys = partKeys(parts);
-  final reading = _Reading(parentOf);
+  final reading = _Reading(parentOf, Attendance(circles: circles));
   return [
     for (final (i, part) in parts.indexed)
       subject.reads(part)
@@ -495,15 +503,16 @@ List<Event> _engaged(
     return _ofAction(events, scope, reading);
   }
   if (engagement == 'with' && personId == selfPersonId) return events;
+  final attendance = reading.attendance;
   return reading.engaged(
     events,
     (engagement, personId),
     () => [
       for (final e in events)
         if (_facts(e) case final facts?)
-          if ((engagement == 'with' ? facts.withIds : facts.forIds).contains(
-            personId,
-          ))
+          if (engagement == 'with'
+              ? attendance.isWith(facts, personId)
+              : attendance.isFor(facts, personId))
             e,
     ],
   );
@@ -532,13 +541,18 @@ bool _isOf(List<String> actionIds, String? actionId, _Reading reading) {
 
 /// What scoring works out from a list of events, kept for the next
 /// subject, part and day scored from the same list -- which is never
-/// changed while it's scored from: which events each person took part in,
-/// which are of each action, and each action's groups by [parentOf].
+/// changed while it's scored from: which events each person took part in
+/// (the circles stood for by [attendance]), which are of each action, and
+/// each action's groups by [parentOf].
 class _Reading {
-  _Reading(this.parentOf);
+  _Reading(this.parentOf, [Attendance? attendance])
+    : attendance = attendance ?? Attendance.none;
 
   /// An action's group, as [_isOf] reads it.
   final String? Function(String id)? parentOf;
+
+  /// Who the circles events name stand for.
+  final Attendance attendance;
 
   final _engaged = Expando<Map<(String, String), List<Event>>>();
   final _ofAction = Expando<Map<String, List<Event>>>();
@@ -728,7 +742,7 @@ PartScore _part(
         engaged,
         (e) =>
             _actionShare(e, action, reading) *
-            _personShare(e, subject, engagement),
+            _personShare(e, subject, engagement, reading),
       );
       return score(rating, said, behind);
     case 'spacing':
@@ -1120,12 +1134,18 @@ double _minutesIn(
 });
 
 /// The part of [event] that's [subject]'s, by [engagement], as its
-/// people's shares say ([Event.withFractions], [Event.forFractions]):
-/// all of it for the user, or a habit.
-double _personShare(Event event, Subject subject, String engagement) {
+/// people's shares say ([Event.withFractions], [Event.forFractions]), a
+/// circle's going to each it stands for: all of it for the user, or a
+/// habit.
+double _personShare(
+  Event event,
+  Subject subject,
+  String engagement,
+  _Reading reading,
+) {
   if (subject.scope != null || subject.who == selfPersonId) return 1;
   final facts = _facts(event);
-  final fractions = shareFractions(
+  final fractions = reading.attendance.fractions(
     (engagement == 'with' ? facts?.withShares : facts?.forShares) ?? const [],
     event.end.difference(event.start),
   );
@@ -1181,7 +1201,8 @@ class TraitScores {
 
   /// Scores [people] (Self among them), and Self's [habits], by [traits]
   /// for the [days] days before [today]'s, from [events]: a circle's
-  /// habit by [circles]' people. [parentOf]
+  /// habit by [circles]' people, and an event naming a plain circle
+  /// counted as each of its people's ([Attendance]). [parentOf]
   /// gives an action's group, as it is now: a habit's events are worked
   /// out from it. [windowDays] is how far back [events] go, for [digest]
   /// to say. Each one's consistency is counted back from the last of
@@ -1212,7 +1233,7 @@ class TraitScores {
         if (!e.isCancelled) e,
     ];
     // What's worked out from them once, for every subject and day.
-    final reading = _Reading(parentOf);
+    final reading = _Reading(parentOf, Attendance(circles: circles));
     final ratings = <String, List<TraitsRating>>{};
     final consistency = <String, int>{};
     final eventsOf = <String, List<Event>>{};
@@ -1301,8 +1322,8 @@ class TraitScores {
           : [
               for (final e in kept)
                 if (members.isEmpty
-                    ? _involves(subject.who, e)
-                    : whose.any((who) => _involves(who, e)))
+                    ? _involves(subject.who, e, reading)
+                    : whose.any((who) => _involves(who, e, reading)))
                   e,
             ];
       eventsOf[subject.id] = [
@@ -1537,13 +1558,13 @@ class TraitScores {
     );
   }
 
-  /// Whether [e] was with or for [personId]: for Self, whether it says
-  /// anything of who or where.
-  static bool _involves(String personId, Event e) {
+  /// Whether [e] was with or for [personId], the circles stood for: for
+  /// Self, whether it says anything of who or where.
+  static bool _involves(String personId, Event e, _Reading reading) {
     final facts = _facts(e);
     if (facts == null) return false;
     if (personId == selfPersonId) return !facts.isEmpty;
-    return facts.withIds.contains(personId) || facts.forIds.contains(personId);
+    return reading.attendance.involves(facts, personId);
   }
 }
 

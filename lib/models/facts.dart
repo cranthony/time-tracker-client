@@ -1,3 +1,4 @@
+import 'named.dart';
 import 'person.dart';
 import 'share.dart';
 
@@ -11,10 +12,13 @@ import 'share.dart';
 /// What was done at it isn't here: that's its actions, which set its
 /// label. They're saved whole through `update_event`.
 ///
-/// A person or place can take a share of the event ([PersonShare],
-/// [LocationShare]): the ids are in [withIds], [forIds] and
-/// [locationIds] all the same, and those with a share have it in
-/// [withSplits], [forSplits] or [locationSplits].
+/// Who it was with or for is a person or a circle ([Named]): a plain
+/// circle stands for its members but those its except leaves out, a
+/// community for itself. A person, circle or place can take a share of
+/// the event ([WhoShare], [LocationShare]): the ids are in [withIds],
+/// [forIds] and [locationIds] all the same, and those with a share -- or
+/// given as a circle's, with its except -- have it in [withSplits],
+/// [forSplits] or [locationSplits].
 class Facts {
   const Facts({
     this.locationIds = const [],
@@ -29,25 +33,56 @@ class Facts {
   });
 
   /// The shares of those in [locationIds], [withIds] and [forIds] that
-  /// have one -- minutes or a percent -- by id.
+  /// have one -- minutes or a percent, or a circle's except -- by id.
   final Map<String, LocationShare> locationSplits;
-  final Map<String, PersonShare> withSplits;
-  final Map<String, PersonShare> forSplits;
+  final Map<String, WhoShare> withSplits;
+  final Map<String, WhoShare> forSplits;
+
+  /// [from] (or none), with or for [with_] and [for_] -- each a person or
+  /// a circle, a circle with its except -- keeping the share each had.
+  factory Facts.named({
+    List<Named> with_ = const [],
+    List<Named> for_ = const [],
+    Facts? from,
+  }) {
+    final facts = from ?? const Facts();
+    Map<String, WhoShare> splits(
+      Map<String, WhoShare> had,
+      List<Named> named,
+    ) => {
+      for (final n in named)
+        if ((had[n.id] ?? PersonShare(n.id)).withNamed(n) case final share
+            when !share.bare)
+          n.id: share,
+    };
+    return facts.copyWith(
+      withIds: namedIds(with_),
+      forIds: namedIds(for_),
+      withSplits: splits(facts.withSplits, with_),
+      forSplits: splits(facts.forSplits, for_),
+    );
+  }
 
   /// The places it was, and how much of it each takes.
   List<LocationShare> get locationShares => [
     for (final id in locationIds) locationSplits[id] ?? LocationShare(id),
   ];
 
-  /// The people with the user, and how much of it each takes.
-  List<PersonShare> get withShares => [
+  /// The people and circles with the user, and how much of it each takes.
+  List<WhoShare> get withShares => [
     for (final id in withIds) withSplits[id] ?? PersonShare(id),
   ];
 
-  /// The people it was for, and how much of it each takes.
-  List<PersonShare> get forShares => [
+  /// The people and circles it was for, and how much of it each takes.
+  List<WhoShare> get forShares => [
     for (final id in forIds) forSplits[id] ?? PersonShare(id),
   ];
+
+  /// Whom it was with, each with their except, if a circle's.
+  List<Named> get withWhom => [for (final s in withShares) s.named];
+
+  /// Whom it was for, as [withWhom].
+  List<Named> get forWhom => [for (final s in forShares) s.named];
 
   /// These, with what's given changed: each place and person kept keeps
   /// the share it had.
@@ -58,8 +93,8 @@ class Facts {
     Map<String, String>? notes,
     bool? commute,
     Map<String, LocationShare>? locationSplits,
-    Map<String, PersonShare>? withSplits,
-    Map<String, PersonShare>? forSplits,
+    Map<String, WhoShare>? withSplits,
+    Map<String, WhoShare>? forSplits,
   }) {
     Map<String, S> kept<S>(Map<String, S> splits, List<String> ids) => {
       for (final MapEntry(:key, :value) in splits.entries)
@@ -88,27 +123,32 @@ class Facts {
     );
   }
 
-  /// [splits] with [share] set: kept if it has minutes or a percent, left
-  /// out if it has neither.
+  /// [splits] with [share] set: kept if it has minutes or a percent, or
+  /// is a circle's ([WhoShare.bare]), left out otherwise.
   static Map<String, S> withSplit<S extends Share>(
     Map<String, S> splits,
     S share,
   ) => {
     for (final MapEntry(:key, :value) in splits.entries)
       if (key != share.id) key: value,
-    if (!share.whole) share.id: share,
+    if (!_bare(share)) share.id: share,
+  };
+
+  static bool _bare(Share share) => switch (share) {
+    final WhoShare who => who.bare,
+    _ => share.whole,
   };
 
   /// Where it was: the ids of the locations it was at, usually one;
   /// several when it moved between them.
   final List<String> locationIds;
 
-  /// The people there with the user: never [selfPersonId], who's at every
-  /// event.
+  /// The people and circles there with the user: never [selfPersonId],
+  /// who's at every event.
   final List<String> withIds;
 
-  /// The people it was done for, who weren't there: never also in
-  /// [withIds].
+  /// The people and circles it was done for, who weren't there: never
+  /// also in [withIds].
   final List<String> forIds;
 
   /// A subjective note on each person who was there, by person id:
@@ -147,15 +187,11 @@ class Facts {
       'location_id',
       LocationShare.new,
     );
-    final with_ = sharesFromJson(
-      json['with_ids'],
-      'person_id',
-      PersonShare.new,
-    );
-    final for_ = sharesFromJson(json['for_ids'], 'person_id', PersonShare.new);
+    final with_ = whoSharesFromJson(json['with_ids']);
+    final for_ = whoSharesFromJson(json['for_ids']);
     Map<String, S> splits<S extends Share>(List<S> shares) => {
       for (final s in shares)
-        if (!s.whole) s.id: s,
+        if (!_bare(s)) s.id: s,
     };
     String? text(Object? value) =>
         value is String && value.trim().isNotEmpty ? value : null;
@@ -215,17 +251,18 @@ class Facts {
     return null;
   }
 
-  /// In a line, e.g. "With Sam · For Priya · @ Home, Park"; people named
-  /// from [personNames], and the locations from [locationNames].
+  /// In a line, e.g. "With Sam, Family (except Ulyssie) · For Priya · @
+  /// Home, Park"; people and circles named from [personNames], and the
+  /// locations from [locationNames].
   String describe([
     Map<String?, String> personNames = const {},
     Map<String?, String> locationNames = const {},
   ]) {
-    String names(List<String> ids) =>
-        ids.map((id) => personNames[id] ?? id).join(', ');
+    String names(List<Named> named) =>
+        namedList(named, (id) => personNames[id] ?? id);
     return [
-      if (withIds.isNotEmpty) 'With ${names(withIds)}',
-      if (forIds.isNotEmpty) 'For ${names(forIds)}',
+      if (withIds.isNotEmpty) 'With ${names(withWhom)}',
+      if (forIds.isNotEmpty) 'For ${names(forWhom)}',
       if (locationIds.isNotEmpty)
         '@ ${locationIds.map((id) => locationNames[id] ?? id).join(', ')}',
     ].join(' · ');
