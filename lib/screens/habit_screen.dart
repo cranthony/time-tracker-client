@@ -28,6 +28,7 @@ import 'subject_sections.dart';
 ///
 /// A person's or circle's habit says whose it is, in place of its action,
 /// and has their traits -- those it picks -- as they're scored for them.
+/// Tapping the person opens their page, with [onOpenPerson].
 ///
 /// A recurring goal's habit says what its goal is, in place of its
 /// action, and lists its goals, newest first: done, missed (and tried
@@ -43,6 +44,7 @@ class HabitScreen extends StatefulWidget {
     this.locationNames = const {},
     this.foundationNames = const {},
     this.onEdit,
+    this.onOpenPerson,
   });
 
   final Habit habit;
@@ -64,6 +66,9 @@ class HabitScreen extends StatefulWidget {
   /// Names habits and people by id, for what it's built on.
   final Map<String, String> foundationNames;
   final Future<Habit?> Function(Habit habit)? onEdit;
+
+  /// Opens a person's page: theirs, for a person's habit.
+  final void Function(Person person)? onOpenPerson;
 
   @override
   State<HabitScreen> createState() => _HabitScreenState();
@@ -156,6 +161,10 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
         .where((c) => c.id == _habit.circleId)
         .firstOrNull;
     final relationship = _habit.isRelationship;
+    final open = switch ((person, widget.onOpenPerson)) {
+      (final p?, final onOpen?) => () => onOpen(p),
+      _ => null,
+    };
     final sections = SubjectSections(
       context,
       memory: widget.memory,
@@ -213,6 +222,8 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
                       habitStatuses[_habit.status] ?? _habit.status,
                   ].join(' · '),
                 ),
+                trailing: open == null ? null : const Icon(Icons.chevron_right),
+                onTap: open,
               )
             else if (_habit.recurringGoal case final goal?)
               ListTile(

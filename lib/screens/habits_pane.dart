@@ -9,6 +9,7 @@ import '../models/trait_scores.dart';
 import '../services/habits_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
+import '../services/traits_repository.dart';
 import '../widgets/color_picker.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/foundations_field.dart';
@@ -20,6 +21,7 @@ import '../widgets/plan_summaries.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/relationship_habits.dart';
 import 'habit_screen.dart';
+import 'person_pages.dart';
 
 /// The Plan page's Habits pane -- what the user builds: Self's habits,
 /// people's and circles' among them -- some of their traits, a layer of
@@ -32,7 +34,8 @@ import 'habit_screen.dart';
 /// Each habit is a chip: in its action's color, or a person's or
 /// circle's plain, marked as theirs. It has its name, its trend, and how
 /// many days in a row it's been healthy (see [consistencyLabel]). Each
-/// layer is sorted by name. Tapping one opens its page; holding it offers
+/// layer is sorted by name. Tapping one opens its page -- a person's
+/// habit's page opens theirs, to tweak their traits; holding it offers
 /// what it's built on, or archiving it. "+" adds a habit; the person
 /// button, a habit for a person or circle.
 ///
@@ -153,7 +156,26 @@ class HabitsPaneState extends State<HabitsPane> {
     for (final h in _habits ?? const <Habit>[]) h.subject: habitName(h),
   };
 
+  /// Opens people's pages, from their habits'; null with no people.
+  PersonPages? get _personPages => switch (_peopleRepository) {
+    final people? => PersonPages(
+      repository: people,
+      memory: widget.memory,
+      traits: TraitsScope.of(context),
+      actionNames: {for (final a in widget.actions) a.id: actionName(a)},
+      actions: {
+        for (final a in widget.actions)
+          if (a.id != null && a.status != 'deleted')
+            a.id!: a.path ?? actionName(a),
+      },
+      locationNames: widget.locationNames,
+      onSaved: reload,
+    ),
+    null => null,
+  };
+
   void _open(GraphNode node) {
+    final pages = _personPages;
     final page = HabitScreen(
       habit: node.habit,
       actions: widget.actions,
@@ -163,6 +185,9 @@ class HabitsPaneState extends State<HabitsPane> {
       locationNames: widget.locationNames,
       foundationNames: _names,
       onEdit: _edit,
+      onOpenPerson: pages == null
+          ? null
+          : (person) => pages.open(context, person),
     );
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
   }
