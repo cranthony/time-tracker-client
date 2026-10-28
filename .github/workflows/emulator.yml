@@ -26,6 +26,12 @@
 #                                   the home screen calendar shows the
 #                                   sample events and goals, and its taps
 #                                   open Events, and the New note dialog.
+#   tool/emulator/goals_widget_test.sh
+#                                   the home screen goals widget shows the
+#                                   sample's active goals, soonest due
+#                                   first, and its taps open a goal's
+#                                   page, Plan's Goals, and the New goal
+#                                   sheet.
 name: Emulator tests
 
 on:
@@ -51,9 +57,9 @@ jobs:
         :!.github/workflows/version.yml :!.github/workflows/visual.yml
 
   # The release app, for real start-up timing. Without MCP_URL it's the
-  # offline demo, with the sample data for the calendar widget to show,
-  # and its menu offering to add the widget to the home screen, which
-  # there's no adb command for.
+  # offline demo, with the sample data for the calendar and goals widgets
+  # to show, and its menu offering to add each widget to the home screen,
+  # which there's no adb command for.
   apk:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
@@ -75,6 +81,7 @@ jobs:
           tool/emulator/sdk_retry.sh
           flutter build apk --release --target-platform android-x64
           --dart-define=SAMPLE_DATA=true --dart-define=CALENDAR_PIN=true
+          --dart-define=GOALS_PIN=true
       - uses: actions/upload-artifact@v4
         with:
           name: apk
@@ -158,6 +165,44 @@ jobs:
           name: emulator-calendar
           path: build/emulator
 
+  goals:
+    needs: apk
+    if: ${{ !cancelled() && needs.apk.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: build/app/outputs/flutter-apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # The emulator runner installs these too, but fails at the first
+      # broken download; here they're tried again (see sdk_retry.sh).
+      - name: Install the emulator
+        run: |
+          sdkmanager=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          tool/emulator/sdk_retry.sh "$sdkmanager" --install emulator \
+            'system-images;android-36;google_apis;x86_64'
+      - name: Home screen goals show the active goals, and its taps open the app
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          script: tool/emulator/goals_widget_test.sh build/app/outputs/flutter-apk/app-release.apk
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-goals
+          path: build/emulator
+
   # Its own debug build, of integration_test/: the background task runs
   # in an isolate of its own, as on a phone. So it doesn't wait for the
   # APK.
@@ -214,7 +259,7 @@ jobs:
   # The check the main branch's rules require: passes once every test
   # has, or was skipped (nothing it tests changed).
   android-emulator:
-    needs: [changes, apk, keyboard, calendar, handoff]
+    needs: [changes, apk, keyboard, calendar, goals, handoff]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -223,6 +268,7 @@ jobs:
             apk=${{ needs.apk.result }}
             keyboard=${{ needs.keyboard.result }}
             calendar=${{ needs.calendar.result }}
+            goals=${{ needs.goals.result }}
             handoff=${{ needs.handoff.result }}
         run: |
           for r in $RESULTS; do

@@ -9,6 +9,19 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.213.0
+
+- A Goals widget for the Android home screen, beside the calendar: every
+  active goal, the soonest due first, each with when it's due -- "Today",
+  "Tomorrow", a weekday within the week, or the date, and its time if it
+  has one -- the overdue ones' in red. Its button opens the New goal
+  sheet, as the goal button does; tapping a goal opens its page in the
+  app, and "Goals" the Plan page's Goals. The app keeps it up to date as
+  the goals change, in the background too, and it's drawn again as each
+  falls due and at midnight, so the days' names keep up. Its header is
+  thinner than the calendar's, to leave the goals the room; like the
+  calendar's, it can go at the bottom, from the widget's settings.
+
 ## 7.212.0
 
 - Marking a goal done, missed or obsolete asks for a note to keep with the
@@ -20,6 +33,7 @@ on. Add the new version's section here at the same time; CI checks both.
   with when it closed and in its history, where a pencil on each entry
   adds or changes a note, or takes it off. Sub-goals closed along with
   the goal get no note.
+
 ## 7.211.1
 
 - The home screen calendar no longer keeps listing a goal closed in the

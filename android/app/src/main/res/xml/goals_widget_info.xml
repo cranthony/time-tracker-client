@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drawn by Glance (GoalsWidget.kt): again whenever the app has new
+     goals for it, as each falls due and at midnight, so never by period.
+     Its settings (GoalsWidgetConfigureActivity) are opened from the
+     widget once it's placed (reconfigurable), not as it's added
+     (configuration_optional); before Android 12, as it's added. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/goals_widget_description"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="80dp"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen"
+    android:configure="com.cranthony.timetracker.GoalsWidgetConfigureActivity"
+    android:widgetFeatures="reconfigurable|configuration_optional" />

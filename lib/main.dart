@@ -21,6 +21,7 @@ import 'outbox/outbox_store.dart';
 import 'outbox/write_queue.dart';
 import 'platform/add_note_shortcut.dart';
 import 'platform/calendar_widget.dart';
+import 'platform/goals_widget.dart';
 import 'screens/home_screen.dart';
 import 'screens/sheet_warnings_screen.dart';
 import 'services/app_settings.dart';
@@ -127,6 +128,7 @@ Future<void> main() async {
         goalsRepository: sample?.goalsRepository() ?? InMemoryGoalsRepository(),
         diagnosticsRepository: sample?.diagnosticsRepository(),
         calendarWidget: CalendarWidget(),
+        goalsWidget: GoalsWidget(),
         googleCalendars: sample == null
             ? null
             : GoogleCalendars(
@@ -227,6 +229,7 @@ Future<void> main() async {
       ),
       diagnosticsRepository: McpDiagnosticsRepository(client, cache: cache),
       calendarWidget: CalendarWidget(),
+      goalsWidget: GoalsWidget(),
       // Read on the phone, from Android's calendar provider: nowhere else
       // has the Google calendars synced to it.
       googleCalendars:
@@ -383,11 +386,14 @@ Future<void> _refreshInBackground() async {
   await record.save();
   // The home screen calendar, from what was just fetched -- or, if that
   // failed, what was kept.
+  final keptGoals = await goals.cachedGoals();
   await CalendarWidget().publish(
     events,
     actions: (await actions.cachedActions())?.actions ?? const [],
-    goals: await goals.cachedGoals() ?? const [],
+    goals: keptGoals ?? const [],
   );
+  // The home screen goals, likewise.
+  await GoalsWidget().publish(keptGoals);
   final now = DateTime.now();
   final next = nextRefresh(
     now,
@@ -439,6 +445,7 @@ class TimeTrackerApp extends StatefulWidget {
     this.proposalsRepository,
     this.settings,
     this.calendarWidget,
+    this.goalsWidget,
     this.googleCalendars,
     this.weather,
   });
@@ -491,6 +498,10 @@ class TimeTrackerApp extends StatefulWidget {
   /// The Android home screen calendar, kept up to date with the events,
   /// and its taps shown on Events; without it, it isn't.
   final CalendarWidget? calendarWidget;
+
+  /// The Android home screen goals, kept up to date with the goals, and
+  /// its taps shown on Plan; without it, it isn't.
+  final GoalsWidget? goalsWidget;
   final EventsRepository eventsRepository;
   final ActionsRepository actionsRepository;
 
@@ -576,6 +587,8 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     );
     _addNoteShortcut.start();
     _startCalendarWidget();
+    _startGoalsWidget();
+    _prefetchGoalsForWidgets();
     _loadVersion();
   }
 
@@ -588,13 +601,6 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     if (calendar == null || !calendar.enabled) return;
     _planMemory.addListener(_calendarChanged);
     _calendarChanged();
-    // The goals due each day, for it: what was kept, then afresh. Not
-    // otherwise loaded till a page that names them opens.
-    if (widget.goalsRepository case final goals?) {
-      unawaited(
-        _planMemory.prefetchNames(goals: goals, onLoaded: _calendarChanged),
-      );
-    }
     if (widget.weather case final weather?) {
       _calendarWeather = CalendarWeatherLink(
         widget: calendar,
@@ -622,6 +628,51 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
           goals: _planMemory.goals ?? const [],
         ),
       );
+    });
+  }
+
+  Timer? _goalsTimer;
+
+  /// Keeps the home screen goals up to date with the goals, and listens
+  /// for its taps.
+  void _startGoalsWidget() {
+    final goals = widget.goalsWidget;
+    if (goals == null || !goals.enabled) return;
+    _planMemory.addListener(_goalsChanged);
+    _goalsChanged();
+    goals.start();
+  }
+
+  /// Loads the goals for the home screen widgets -- the calendar's goals
+  /// due each day, and the goals widget's -- what was kept, then afresh,
+  /// if either's there to show them: not otherwise loaded till a page
+  /// that names them opens.
+  void _prefetchGoalsForWidgets() {
+    final wanted =
+        (widget.calendarWidget?.enabled ?? false) ||
+        (widget.goalsWidget?.enabled ?? false);
+    if (!wanted) return;
+    if (widget.goalsRepository case final goals?) {
+      unawaited(
+        _planMemory.prefetchNames(
+          goals: goals,
+          onLoaded: () {
+            _calendarChanged();
+            _goalsChanged();
+          },
+        ),
+      );
+    }
+  }
+
+  /// Publishes the goals to the home screen goals a moment after they
+  /// change: a run of changes, once. Not till they're loaded.
+  void _goalsChanged() {
+    _goalsTimer?.cancel();
+    _goalsTimer = Timer(const Duration(seconds: 1), () {
+      final goals = _planMemory.goals;
+      if (goals == null) return;
+      unawaited(widget.goalsWidget?.publish(goals));
     });
   }
 
@@ -701,6 +752,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     _planMemory.removeListener(_calendarChanged);
     _calendarWeather?.dispose();
     widget.calendarWidget?.dispose();
+    _goalsTimer?.cancel();
+    _planMemory.removeListener(_goalsChanged);
+    widget.goalsWidget?.dispose();
     _savedWrites?.cancel();
     widget.eventOutbox?.dispose();
     _writeQueue.dispose();
@@ -786,6 +840,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         noteDrafts: _noteDrafts,
         goalDrafts: _goalDrafts,
         calendarTaps: widget.calendarWidget?.taps,
+        goalsTaps: widget.goalsWidget?.taps,
         onAddNoteFieldFocused: _addNoteShortcut.fieldReady,
         version: _version,
       ),

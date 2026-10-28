@@ -98,6 +98,7 @@ class PlanScreen extends StatefulWidget {
     this.version,
     this.loads,
     this.onQuickAddGoal,
+    this.showGoalsRequests,
   });
 
   final ActionsRepository repository;
@@ -133,6 +134,10 @@ class PlanScreen extends StatefulWidget {
 
   /// Opens the quick New goal sheet, from the Goals pane's round "+".
   final VoidCallback? onQuickAddGoal;
+
+  /// Asks to show the Goals pane, from the home screen goals: each
+  /// switches to it, if there is one.
+  final Stream<void>? showGoalsRequests;
 
   @override
   State<PlanScreen> createState() => _PlanScreenState();
@@ -211,9 +216,18 @@ class _PlanScreenState extends State<PlanScreen> {
   /// The loads this visit waits on, before it's done.
   final _visitLoads = <Future<void>>[];
 
+  /// The panes' tabs, while they're shown; Goals, if it's there, is the
+  /// first.
+  TabController? _tabs;
+  bool _goalsShown = false;
+  StreamSubscription<void>? _showGoals;
+
   @override
   void initState() {
     super.initState();
+    _showGoals = widget.showGoalsRequests?.listen((_) {
+      if (_goalsShown) _tabs?.animateTo(0);
+    });
     PlanVisitTimer.open++;
     _memory.newVisit();
     // On its own, without the app's: the summaries' events go in one of
@@ -419,6 +433,7 @@ class _PlanScreenState extends State<PlanScreen> {
 
   @override
   void dispose() {
+    _showGoals?.cancel();
     for (final node in _paneFocus.values) {
       node.dispose();
     }
@@ -823,6 +838,9 @@ class _PlanScreenState extends State<PlanScreen> {
     final people = PeopleScope.of(context);
     final habits = HabitsScope.of(context);
     final goals = GoalsScope.of(context);
+    // Set again below, as the panes are built; none while they aren't.
+    _goalsShown = goals != null;
+    _tabs = null;
     final personNames =
         _people?.names ?? {selfPersonId: personName(defaultSelf)};
     // What grows without end, together: who, what and where.
@@ -994,9 +1012,11 @@ class _PlanScreenState extends State<PlanScreen> {
               (_, true) => _reorderable(actions!),
               _ => Builder(
                 builder: (context) => HotkeyBindings(
-                  bindings: _paneKeys(DefaultTabController.of(context), [
-                    for (final (title, _, _) in panes) title,
-                  ], libraryTitles),
+                  bindings: _paneKeys(
+                    _tabs = DefaultTabController.of(context),
+                    [for (final (title, _, _) in panes) title],
+                    libraryTitles,
+                  ),
                   child: panes.length == 1
                       ? Focus(
                           focusNode: _paneNode(panes.single.$1),

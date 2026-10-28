@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../auth/sign_in_mode.dart';
 import '../platform/calendar_widget.dart';
+import '../platform/goals_widget.dart';
 import '../screens/background_updates_screen.dart';
 import '../screens/diagnostics_screen.dart';
 import '../screens/settings_screen.dart';
@@ -17,9 +18,9 @@ import 'status_bar.dart';
 /// a [StatusScope] or a [DiagnosticsScope] above), Hotkeys, on the web
 /// or once a keyboard's been used ([hotkeysOffered]), About, and Sign
 /// out when [onSignOut] is set. Ctrl+B, then S, opens it; while a dialog
-/// is open, the screen shakes instead. Builds for the emulator test offer
-/// to add
-/// the home screen calendar too ([CalendarWidget.pinOffered]). With
+/// is open, the screen shakes instead. Builds for the emulator tests offer
+/// to add the home screen calendar ([CalendarWidget.pinOffered]) and
+/// goals ([GoalsWidget.pinOffered]) too. With
 /// [onRefresh], a refresh button comes before it, for refreshing the page
 /// with a mouse rather than by pulling it down.
 class AppMenu extends StatefulWidget {
@@ -143,6 +144,7 @@ class _AppMenuState extends State<AppMenu> {
         ),
         _MenuItem.signOut => onSignOut!(),
         _MenuItem.pinCalendar => CalendarWidget.pin(),
+        _MenuItem.pinGoals => GoalsWidget.pin(),
         _MenuItem.hotkeys => showHotkeysDialog(context),
       },
       itemBuilder: (_) => [
@@ -169,6 +171,11 @@ class _AppMenuState extends State<AppMenu> {
           const PopupMenuItem(
             value: _MenuItem.pinCalendar,
             child: Text('Add calendar to home screen'),
+          ),
+        if (GoalsWidget.pinOffered)
+          const PopupMenuItem(
+            value: _MenuItem.pinGoals,
+            child: Text('Add goals to home screen'),
           ),
         if (hotkeysOffered(context))
           const PopupMenuItem(value: _MenuItem.hotkeys, child: Text('Hotkeys')),
@@ -225,6 +232,7 @@ enum _MenuItem {
   outbox,
   diagnostics,
   pinCalendar,
+  pinGoals,
   hotkeys,
   about,
   signOut,
