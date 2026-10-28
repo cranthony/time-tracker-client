@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.217.0
+
+- The home screen goals widget's text size is a setting, in the widget's
+  settings under its title's place: Small, as it has been, with six
+  goals in two cells; Medium, one and a half times that; or Large,
+  twice, the rows growing with the text. The header stays as it is.
+- The home screen calendar has no padding above or below its header and
+  days, as the goals widget hasn't, so its days have the room.
+
 ## 7.216.0
 
 - The people on a goal's page are chips now, under With and For: tap a

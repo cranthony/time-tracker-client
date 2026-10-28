@@ -55,7 +55,9 @@ import java.util.Calendar
  * sheet, as AddGoalWidget does.
  *
  * Each widget's header -- "Goals", and the button -- is at its top, or,
- * set so in its settings (GoalsWidgetConfigureActivity), its bottom.
+ * set so in its settings (GoalsWidgetConfigureActivity), its bottom; and
+ * its goals' text is small, as six rows fit, or, set there, 1.5 or 2
+ * times that (TextSize), the rows growing with it.
  */
 class GoalsWidget : GlanceAppWidget() {
     override val stateDefinition = HomeWidgetGlanceStateDefinition()
@@ -70,7 +72,8 @@ class GoalsWidget : GlanceAppWidget() {
             val state = currentState<HomeWidgetGlanceState>()
             val goals = WidgetGoal.parse(state.preferences.getString(SNAPSHOT_KEY, null))
             val atBottom = title.atBottom(context, widgetId)
-            GlanceTheme { Content(context, goals, System.currentTimeMillis(), atBottom) }
+            val scale = textSize.of(context, widgetId).scale
+            GlanceTheme { Content(context, goals, System.currentTimeMillis(), atBottom, scale) }
         }
     }
 
@@ -83,6 +86,9 @@ class GoalsWidget : GlanceAppWidget() {
 
         /** Each widget's "title at the bottom" setting. */
         val title = TitleSetting("goals_widget_settings")
+
+        /** Each widget's text size: small, as its rows are drawn, or 1.5 or 2 times that. */
+        val textSize = TextSizeSetting("goals_widget_settings")
 
         /**
          * Opens the app on the goal [goal]'s page, or, with none, on the
@@ -111,6 +117,7 @@ class GoalsWidgetReceiver : HomeWidgetGlanceWidgetReceiver<GoalsWidget>() {
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         super.onDeleted(context, appWidgetIds)
         GoalsWidget.title.forget(context, appWidgetIds)
+        GoalsWidget.textSize.forget(context, appWidgetIds)
     }
 }
 
@@ -156,6 +163,7 @@ private fun Content(
     goals: List<WidgetGoal>?,
     now: Long,
     titleAtBottom: Boolean,
+    scale: Float,
 ) {
     Column(
         modifier = GlanceModifier
@@ -188,7 +196,7 @@ private fun Content(
             modifier = GlanceModifier.fillMaxWidth().defaultWeight().padding(horizontal = 12.dp),
         ) {
             for (goal in goals) {
-                item(itemId = goal.id.hashCode().toLong()) { GoalRow(context, goal, now) }
+                item(itemId = goal.id.hashCode().toLong()) { GoalRow(context, goal, now, scale) }
             }
         }
         if (titleAtBottom) Header(context)
@@ -231,24 +239,25 @@ private fun Header(context: Context) {
 
 /**
  * A goal: its title, and when it's due ([dueLabel]) at the end -- in
- * red, and bold, once it's overdue. Opens its page. [ROW_DP] high, with
- * small text, so six fit in a widget two cells high (150dp on a phone)
- * under the header.
+ * red, and bold, once it's overdue. Opens its page. At the small text
+ * size, [ROW_DP] high with 12sp text, so six fit in a widget two cells
+ * high (150dp on a phone) under the header; at a bigger one, [scale]
+ * times that, text and row alike.
  */
 @Composable
-private fun GoalRow(context: Context, goal: WidgetGoal, now: Long) {
+private fun GoalRow(context: Context, goal: WidgetGoal, now: Long, scale: Float) {
     val overdue = goal.due != null && goal.due <= now
     Row(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .height(ROW_DP.dp)
+            .height((ROW_DP * scale).dp)
             .clickable(open(context, goal = goal.id)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = goal.title.ifBlank { "(no title)" },
             modifier = GlanceModifier.defaultWeight(),
-            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 12.sp),
+            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = (12 * scale).sp),
             maxLines = 1,
         )
         val due = dueLabel(context, goal, now)
@@ -258,7 +267,7 @@ private fun GoalRow(context: Context, goal: WidgetGoal, now: Long) {
                 text = due,
                 style = TextStyle(
                     color = if (overdue) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 11.sp,
+                    fontSize = (11 * scale).sp,
                     fontWeight = if (overdue) FontWeight.Medium else FontWeight.Normal,
                 ),
                 maxLines = 1,

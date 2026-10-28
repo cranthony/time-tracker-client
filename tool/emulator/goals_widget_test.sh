@@ -25,6 +25,9 @@
 #   add_goal   its goal button tapped: the New goal sheet
 #   title_bottom its settings opened, as the launcher does, and "Title at
 #              the bottom" picked: its "Goals" header below its goals
+#   text_large its settings opened again, and "Large" picked for its text
+#              size: its rows twice as high, so the second goal starts
+#              twice as far below the first
 #
 # Writes the device log, the widget's views and a screenshot per case to
 # $OUT (build/emulator). Used by .github/workflows/emulator.yml.
@@ -302,6 +305,33 @@ elif [ -n "$before_title" ] && [ -n "$before_goal" ] &&
   pass title_bottom
 else
   fail title_bottom "\"Goals\" wasn't moved below the goals (before $before_title/$before_goal, after ${after_title:-?}/${after_goal:-?})"
+fi
+
+# Its text size, from the same settings: "Large" doubles its rows, so
+# the second goal starts twice as far below the first as before.
+second=$(shown_goals "$OUT/goals_shown.txt" 2>/dev/null | cut -d'|' -f2)
+row_gap() {
+  local a b
+  a=$(top_of "$goal")
+  b=$(top_of "$second")
+  [ -n "$a" ] && [ -n "$b" ] && echo $((b - a))
+}
+widget_home
+before_gap=$(row_gap)
+rows_doubled() {
+  after_gap=$(row_gap)
+  [ -n "$after_gap" ] && [ "$after_gap" -ge $((before_gap * 2 - 2)) ]
+}
+if [ -z "$before_gap" ] || [ "$before_gap" -le 0 ]; then
+  fail text_large "couldn't measure the rows (gap ${before_gap:-?})"
+elif ! adb shell am start -W -n "$PKG/.GoalsWidgetConfigureActivity" \
+  --ei appWidgetId "$widget_id" >/dev/null || ! wait_for Large 20; then
+  fail text_large "its settings didn't offer the text size"
+elif tap_view Large && sleep 1 && tap_view Done && poll 20 rows_doubled; then
+  adb exec-out screencap -p > "$OUT/goals_text_large.png"
+  pass text_large
+else
+  fail text_large "the rows weren't doubled (gap before $before_gap, after ${after_gap:-?})"
 fi
 
 kill $logcat
