@@ -339,8 +339,16 @@ else
 fi
 
 # A goal at that size, the app in the background: its page, as at the
-# first size -- the rows' height makes no odds to their taps.
-if on_screen "$goal" "$WIDGET" && tap_view "$goal" "$WIDGET" && poll 30 goal_opened; then
+# first size -- the rows' height makes no odds to their taps. The New
+# goal sheet the add_goal case left open closes first: a goal tapped
+# while a sheet is open shakes it instead, so a draft isn't lost.
+launch
+wait_for '(Notes|Dismiss|Back)' 30
+if on_screen Dismiss || on_screen Back; then
+  adb shell input keyevent KEYCODE_BACK
+  sleep 1
+fi
+if widget_home && tap_view "$goal" "$WIDGET" && poll 30 goal_opened; then
   adb exec-out screencap -p > "$OUT/goals_goal_large.png"
   pass "goal_large ($goal)"
 else
