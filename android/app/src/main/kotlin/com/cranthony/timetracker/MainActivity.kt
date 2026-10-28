@@ -17,6 +17,7 @@ class MainActivity : FlutterActivity() {
     private var oauthChannel: MethodChannel? = null
     private var addNoteChannel: MethodChannel? = null
     private var calendarChannel: MethodChannel? = null
+    private var goalsChannel: MethodChannel? = null
     private var googleCalendar: GoogleCalendarReader? = null
 
     /**
@@ -24,6 +25,9 @@ class MainActivity : FlutterActivity() {
      * the Dart side collects it with "takeLaunchRequest", as for the "+".
      */
     private var launchCalendarTap: Map<String, Any?>? = null
+
+    /** When a tap on the home screen goals launched the app from scratch, likewise. */
+    private var launchGoalsTap: Map<String, Any?>? = null
 
     /**
      * When the home screen "+" launched the app from scratch: the Dart side
@@ -69,6 +73,10 @@ class MainActivity : FlutterActivity() {
             Log.d(TAG, "onCreate: show events")
             launchCalendarTap = CalendarWidget.tapOf(intent)
         }
+        if (savedInstanceState == null && isShowGoals(intent)) {
+            Log.d(TAG, "onCreate: show goals")
+            launchGoalsTap = GoalsWidget.tapOf(intent)
+        }
         super.onCreate(savedInstanceState)
     }
 
@@ -100,6 +108,16 @@ class MainActivity : FlutterActivity() {
                 if (call.method == "takeLaunchRequest") {
                     result.success(launchCalendarTap)
                     launchCalendarTap = null
+                } else {
+                    result.notImplemented()
+                }
+            }
+        }
+        goalsChannel = MethodChannel(messenger, GoalsWidget.CHANNEL).apply {
+            setMethodCallHandler { call, result ->
+                if (call.method == "takeLaunchRequest") {
+                    result.success(launchGoalsTap)
+                    launchGoalsTap = null
                 } else {
                     result.notImplemented()
                 }
@@ -137,6 +155,12 @@ class MainActivity : FlutterActivity() {
         if (isShowEvents(intent)) {
             Log.d(TAG, "onNewIntent: show events")
             calendarChannel?.invokeMethod("show", CalendarWidget.tapOf(intent))
+            return
+        }
+        // A tap on the home screen goals, likewise.
+        if (isShowGoals(intent)) {
+            Log.d(TAG, "onNewIntent: show goals")
+            goalsChannel?.invokeMethod("show", GoalsWidget.tapOf(intent))
             return
         }
         // The browser's sign-in redirect (com.cranthony.timetracker://oauth/callback?...)
@@ -220,6 +244,11 @@ class MainActivity : FlutterActivity() {
     /** Ignores relaunching from Recents, as [isAddNote] does. */
     private fun isShowEvents(intent: Intent?): Boolean =
         intent?.action == CalendarWidget.ACTION_SHOW_EVENTS &&
+            (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+
+    /** Ignores relaunching from Recents, as [isAddNote] does. */
+    private fun isShowGoals(intent: Intent?): Boolean =
+        intent?.action == GoalsWidget.ACTION_SHOW_GOALS &&
             (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
 
     private companion object {

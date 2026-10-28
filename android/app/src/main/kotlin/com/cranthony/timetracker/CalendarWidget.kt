@@ -2,13 +2,6 @@ package com.cranthony.timetracker
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.PointF
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
 import android.net.Uri
 import android.text.format.DateFormat
 import android.text.format.DateUtils
@@ -49,8 +42,6 @@ import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import androidx.glance.semantics.contentDescription
-import androidx.glance.semantics.semantics
 import androidx.glance.unit.ColorProvider
 import es.antonborri.home_widget.HomeWidgetGlanceState
 import es.antonborri.home_widget.HomeWidgetGlanceStateDefinition
@@ -93,7 +84,7 @@ class CalendarWidget : GlanceAppWidget() {
             val state = currentState<HomeWidgetGlanceState>()
             val days = CalendarDay.parse(state.preferences.getString(SNAPSHOT_KEY, null))
             val weather = DayWeather.parse(state.preferences.getString(WEATHER_KEY, null))
-            val atBottom = titleAtBottom(context, widgetId)
+            val atBottom = title.atBottom(context, widgetId)
             GlanceTheme { Content(context, days, weather, System.currentTimeMillis(), atBottom) }
         }
     }
@@ -108,28 +99,8 @@ class CalendarWidget : GlanceAppWidget() {
         const val ACTION_SHOW_EVENTS = "com.cranthony.timetracker.SHOW_EVENTS"
         const val CHANNEL = "time_tracker/calendar_widget"
 
-        /** Where each widget's settings are kept, by its id. */
-        private const val SETTINGS = "calendar_widget_settings"
-
-        private fun titleAtBottomKey(widgetId: Int) = "title_at_bottom_$widgetId"
-
-        /** Whether widget [widgetId]'s header is at its bottom. */
-        fun titleAtBottom(context: Context, widgetId: Int): Boolean =
-            context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE)
-                .getBoolean(titleAtBottomKey(widgetId), false)
-
-        fun setTitleAtBottom(context: Context, widgetId: Int, atBottom: Boolean) {
-            context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE).edit()
-                .putBoolean(titleAtBottomKey(widgetId), atBottom)
-                .apply()
-        }
-
-        /** Forgets the settings of the widgets [widgetIds], removed. */
-        fun forget(context: Context, widgetIds: IntArray) {
-            val edit = context.getSharedPreferences(SETTINGS, Context.MODE_PRIVATE).edit()
-            for (widgetId in widgetIds) edit.remove(titleAtBottomKey(widgetId))
-            edit.apply()
-        }
+        /** Each widget's "title at the bottom" setting. */
+        val title = TitleSetting("calendar_widget_settings")
 
         /**
          * Opens Events at [at] (milliseconds since the epoch), on [event] if
@@ -163,7 +134,7 @@ class CalendarWidgetReceiver : HomeWidgetGlanceWidgetReceiver<CalendarWidget>() 
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         super.onDeleted(context, appWidgetIds)
-        CalendarWidget.forget(context, appWidgetIds)
+        CalendarWidget.title.forget(context, appWidgetIds)
     }
 }
 
@@ -367,37 +338,6 @@ private fun Header(context: Context) {
 }
 
 /**
- * A round button in the [Header], [icon] on it, doing [action]: a 32dp
- * circle in a 48dp tap target, as Android asks for, so the two side by
- * side are each easy to hit.
- */
-@Composable
-private fun HeaderButton(icon: Int, label: String, action: Action) {
-    Box(
-        modifier = GlanceModifier
-            .size(48.dp)
-            .clickable(action)
-            .semantics { contentDescription = label },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = GlanceModifier
-                .size(32.dp)
-                .cornerRadius(16.dp)
-                .background(GlanceTheme.colors.primary),
-            contentAlignment = Alignment.Center,
-        ) {
-            Image(
-                provider = ImageProvider(icon),
-                contentDescription = null,
-                modifier = GlanceModifier.size(20.dp),
-                colorFilter = ColorFilter.tint(GlanceTheme.colors.onPrimary),
-            )
-        }
-    }
-}
-
-/**
  * "Today", "Tomorrow", or the date; then its [weather], if there is any:
  * its chance of rain, its high and low, and its sky. Where they don't all
  * fit, the day's named shorter ("Thu"), then the high and low compact,
@@ -561,69 +501,6 @@ private fun GoalRow(context: Context, day: CalendarDay, goal: CalendarGoal, more
 
 /** A goal's row's height: half an event's, its 32dp bar and padding. */
 private const val GOAL_ROW_DP = 19
-
-/**
- * The app's goal icon (GoalPainter, lib/widgets/goal_icon.dart), in white
- * to be tinted: a bullseye with an arrow stuck in the middle, come in
- * from the upper right, a gap cut round the arrow where it crosses the
- * rings. Drawn once, on a 24-unit square as the app's is.
- */
-private val goalIcon: Bitmap by lazy { drawGoalIcon() }
-
-private fun drawGoalIcon(): Bitmap {
-    val px = 64
-    val bitmap = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    canvas.scale(px / 24f, px / 24f)
-    val center = PointF(10f, 14f)
-    val tail = PointF(21.6f, 2.4f)
-    val length = Math.hypot((tail.x - center.x).toDouble(), (tail.y - center.y).toDouble()).toFloat()
-    val along = PointF((tail.x - center.x) / length, (tail.y - center.y) / length)
-    val across = PointF(-along.y, along.x)
-    // [a] along the arrow from [from], and [b] across it.
-    fun at(from: PointF, a: Float, b: Float = 0f) =
-        PointF(from.x + along.x * a + across.x * b, from.y + along.y * a + across.y * b)
-    val shaft = 1.5f
-    val halo = 0.9f
-    val vaneLength = 4.8f
-    val vaneReach = 1.9f
-    val back = at(tail, -0.9f)
-    val front = at(back, -vaneLength)
-    val vanes = listOf(1f, -1f).map { side ->
-        val outerFront = at(back, -(vaneLength - 1.8f), side * vaneReach)
-        val outerBack = at(back, 0.5f, side * vaneReach)
-        Path().apply {
-            moveTo(front.x, front.y)
-            lineTo(outerFront.x, outerFront.y)
-            lineTo(outerBack.x, outerBack.y)
-            lineTo(back.x, back.y)
-            close()
-        }
-    }
-    fun paint(clear: Boolean = false, stroke: Float? = null) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = android.graphics.Color.WHITE
-        if (clear) xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
-        if (stroke != null) {
-            style = Paint.Style.STROKE
-            strokeWidth = stroke
-            strokeCap = Paint.Cap.ROUND
-            strokeJoin = Paint.Join.ROUND
-        }
-    }
-    canvas.drawCircle(center.x, center.y, 9f, paint(stroke = 2.2f))
-    canvas.drawCircle(center.x, center.y, 5.1f, paint(stroke = 2.2f))
-    canvas.drawCircle(center.x, center.y, 2.2f, paint())
-    // A gap round the arrow where it crosses the rings, then the arrow.
-    val haloFrom = at(center, 2.6f)
-    canvas.drawLine(haloFrom.x, haloFrom.y, tail.x, tail.y, paint(clear = true, stroke = shaft + halo * 2))
-    for (vane in vanes) {
-        canvas.drawPath(vane, paint(clear = true, stroke = halo * 2))
-        canvas.drawPath(vane, paint(clear = true))
-    }
-    canvas.drawLine(center.x, center.y, tail.x, tail.y, paint(stroke = shaft))
-    for (vane in vanes) canvas.drawPath(vane, paint())
-    return bitmap
-}
 
 /** Its color, times and summary; opens Events on it. */
 @Composable

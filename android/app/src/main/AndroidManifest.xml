@@ -105,11 +105,36 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/calendar_widget_info" />
         </receiver>
-        <!-- Draws the calendar again as each event starts or ends, at the
-             times the app sets (HomeWidget.scheduleWidgetUpdates), and sets
-             them again after a restart or an update. Inexact: the app
-             doesn't ask for exact alarms, so a redraw may come a few
-             minutes late. -->
+        <!-- A home screen goals widget's settings, as the calendar's; see
+             GoalsWidgetConfigureActivity. -->
+        <activity
+            android:name=".GoalsWidgetConfigureActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:label="@string/goals_widget_settings_title"
+            android:theme="@style/WidgetSettingsTheme">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+        <!-- The home screen goals; see GoalsWidget. -->
+        <receiver
+            android:name=".GoalsWidgetReceiver"
+            android:exported="false"
+            android:label="@string/goals_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/goals_widget_info" />
+        </receiver>
+        <!-- Draws the calendar again as each event starts or ends, and the
+             goals as each falls due, at the times the app sets
+             (HomeWidget.scheduleWidgetUpdates), and sets them again after
+             a restart or an update. Inexact: the app doesn't ask for exact
+             alarms, so a redraw may come a few minutes late. -->
         <receiver
             android:name="es.antonborri.home_widget.HomeWidgetScheduledUpdateReceiver"
             android:exported="false">

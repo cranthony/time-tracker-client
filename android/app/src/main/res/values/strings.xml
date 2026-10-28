@@ -12,4 +12,7 @@
     <string name="calendar_widget_title_top">Title at the top</string>
     <string name="calendar_widget_title_bottom">Title at the bottom</string>
     <string name="calendar_widget_settings_done">Done</string>
+    <string name="goals_widget_label">Goals</string>
+    <string name="goals_widget_description">Your active goals, the soonest due first</string>
+    <string name="goals_widget_settings_title">Goals widget</string>
 </resources>

@@ -12,6 +12,7 @@ import '../services/goal_drafts.dart';
 import '../services/goals_repository.dart';
 import '../services/note_drafts.dart';
 import '../platform/calendar_widget.dart';
+import '../platform/goals_widget.dart';
 import '../services/actions_repository.dart';
 import '../services/event_store.dart';
 import '../services/events_place.dart';
@@ -32,6 +33,7 @@ import '../widgets/outbox_status.dart';
 import '../widgets/proposal_problem_status.dart';
 import '../widgets/status_bar.dart';
 import 'events_screen.dart';
+import 'goal_screen.dart';
 import 'notes_screen.dart';
 import 'plan_screen.dart';
 
@@ -57,6 +59,7 @@ class HomeScreen extends StatefulWidget {
     this.goalDrafts,
     this.onAddNoteFieldFocused,
     this.calendarTaps,
+    this.goalsTaps,
     this.version,
   });
 
@@ -104,6 +107,10 @@ class HomeScreen extends StatefulWidget {
   /// Taps on the home screen calendar: each switches to Events and shows
   /// what it was on there.
   final Stream<CalendarTap>? calendarTaps;
+
+  /// Taps on the home screen goals: each switches to Plan, on Goals, and
+  /// opens the page of the goal it was on, if it was on one.
+  final Stream<GoalsTap>? goalsTaps;
   final String? version;
 
   @override
@@ -121,10 +128,15 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<DateTime>? _addNoteRequests;
   StreamSubscription<DateTime>? _addGoalRequests;
   StreamSubscription<CalendarTap>? _calendarTaps;
+  StreamSubscription<GoalsTap>? _goalsTaps;
 
   /// Passes [HomeScreen.addNoteRequests] on to whichever NotesScreen is
   /// showing; broadcast, since each one listens anew.
   final _toNotes = StreamController<DateTime>.broadcast();
+
+  /// Asks whichever PlanScreen is showing to show Goals, from the home
+  /// screen goals; broadcast, since each one listens anew.
+  final _toPlanGoals = StreamController<void>.broadcast();
 
   /// Events to show on the Events page, from a refusal naming them.
   final _toEvents = StreamController<Event>.broadcast();
@@ -157,6 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
       (_) => _setGoal(onFieldFocused: widget.onAddNoteFieldFocused),
     );
     _calendarTaps = widget.calendarTaps?.listen(_showCalendarTap);
+    _goalsTaps = widget.goalsTaps?.listen(_showGoalsTap);
   }
 
   /// Loads the week either side of today's events, and the traits,
@@ -193,12 +206,39 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// Switches to Plan, on Goals, and opens the page of the goal [tap] on
+  /// the home screen goals was on, if it was on one that's still there:
+  /// once the goals are loaded, as the tap may have launched the app.
+  Future<void> _showGoalsTap(GoalsTap tap) async {
+    setState(() => _tab = _Tab.plan);
+    // Once the Plan page is built and listening.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _toPlanGoals.add(null));
+    final repository = GoalsScope.of(context);
+    final id = tap.goalId;
+    if (id == null || repository == null) return;
+    try {
+      await _planMemory.loadGoals(repository);
+    } catch (_) {
+      // What's kept, if anything is.
+    }
+    if (!mounted) return;
+    if (!(_planMemory.goals?.any((g) => g.id == id) ?? false)) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            GoalScreen(goalId: id, repository: repository, memory: _planMemory),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _addNoteRequests?.cancel();
     _addGoalRequests?.cancel();
     _calendarTaps?.cancel();
+    _goalsTaps?.cancel();
     _toNotes.close();
+    _toPlanGoals.close();
     if (widget.noteDrafts == null) _noteDrafts.dispose();
     if (widget.goalDrafts == null) _goalDrafts.dispose();
     _toEvents.close();
@@ -355,6 +395,7 @@ class _HomeScreenState extends State<HomeScreen> {
           version: widget.version,
           loads: _actionsLoads,
           onQuickAddGoal: _setGoal,
+          showGoalsRequests: _toPlanGoals.stream,
         ),
       },
       bottomNavigationBar: Column(

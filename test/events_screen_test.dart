@@ -6,6 +6,7 @@ import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/widgets/mode_stack.dart';
 import 'package:time_tracker_client/outbox/action_writes.dart';
 import 'package:time_tracker_client/models/event.dart';
+import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/recurrence.dart';
@@ -14,10 +15,14 @@ import 'package:time_tracker_client/outbox/note_writes.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/outbox/write_queue.dart';
 import 'package:time_tracker_client/platform/calendar_widget.dart';
+import 'package:time_tracker_client/platform/goals_widget.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
+import 'package:time_tracker_client/screens/goal_screen.dart';
 import 'package:time_tracker_client/screens/home_screen.dart';
+import 'package:time_tracker_client/screens/plan_screen.dart';
 import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
+import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
@@ -3338,20 +3343,29 @@ void main() {
     Widget home({
       Stream<DateTime>? addNoteRequests,
       Stream<CalendarTap>? calendarTaps,
+      Stream<GoalsTap>? goalsTaps,
       List<Event> events = const [],
+      List<Goal>? goals,
     }) {
       notes = InMemoryNotesRepository();
       outbox = NoteWrites.local(notes)..start();
+      final screen = HomeScreen(
+        notesRepository: notes,
+        eventsRepository: InMemoryEventsRepository(events),
+        actionsRepository: InMemoryActionsRepository(),
+        outbox: outbox,
+        actionWrites: ActionWrites.local(InMemoryActionsRepository()),
+        addNoteRequests: addNoteRequests,
+        calendarTaps: calendarTaps,
+        goalsTaps: goalsTaps,
+      );
       return MaterialApp(
-        home: HomeScreen(
-          notesRepository: notes,
-          eventsRepository: InMemoryEventsRepository(events),
-          actionsRepository: InMemoryActionsRepository(),
-          outbox: outbox,
-          actionWrites: ActionWrites.local(InMemoryActionsRepository()),
-          addNoteRequests: addNoteRequests,
-          calendarTaps: calendarTaps,
-        ),
+        home: goals == null
+            ? screen
+            : GoalsScope(
+                repository: InMemoryGoalsRepository(goals),
+                child: screen,
+              ),
       );
     }
 
@@ -3415,6 +3429,64 @@ void main() {
       expect(find.text('New note'), findsOneWidget);
       outbox.stop();
       await taps.close();
+    });
+
+    group('a tap on the home screen goals', () {
+      final ship = Goal.fromJson({
+        'id': 'ship',
+        'title': 'Ship the app',
+        'status': 'active',
+        'deadline': '2026-12-01',
+      });
+
+      Future<StreamController<GoalsTap>> openOnNotes(
+        WidgetTester tester,
+      ) async {
+        final taps = StreamController<GoalsTap>();
+        await tester.pumpWidget(home(goalsTaps: taps.stream, goals: [ship]));
+        await tester.pumpAndSettle();
+        expect(find.byType(PlanScreen), findsNothing);
+        return taps;
+      }
+
+      testWidgets("on a goal: its page, over Plan's Goals", (tester) async {
+        final taps = await openOnNotes(tester);
+        taps.add((goalId: 'ship'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(GoalScreen), findsOneWidget);
+        expect(find.text('Ship the app'), findsWidgets);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        expect(find.byType(PlanScreen), findsOneWidget);
+        outbox.stop();
+        await taps.close();
+      });
+
+      testWidgets("on a goal that's gone: Plan's Goals, nothing over it", (
+        tester,
+      ) async {
+        final taps = await openOnNotes(tester);
+        taps.add((goalId: 'gone'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(GoalScreen), findsNothing);
+        expect(find.byType(PlanScreen), findsOneWidget);
+        outbox.stop();
+        await taps.close();
+      });
+
+      testWidgets("on its header: Plan's Goals", (tester) async {
+        final taps = await openOnNotes(tester);
+        taps.add((goalId: null));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(GoalScreen), findsNothing);
+        expect(find.byType(PlanScreen), findsOneWidget);
+        expect(find.text('Ship the app'), findsOneWidget);
+        outbox.stop();
+        await taps.close();
+      });
     });
 
     group('a tap on the home screen calendar', () {
