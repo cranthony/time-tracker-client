@@ -84,11 +84,17 @@ class McpGoalsRepository implements GoalsRepository {
 
   @override
   Future<List<Goal>> goals() async {
+    // The goals' writes saved before this are let go of once it's in and
+    // they're made to it: a goal just marked done stays so meanwhile,
+    // whatever else is fetched.
+    final fetched = _writes?.fetchingKinds(const [WriteKind.goal]);
     final result = await _client.callTool('get_goals', {
       'statuses': goalStatuses.keys.toList(),
     });
     await _cache?.write(_goalsKey, result);
-    return _decode(_shown(result));
+    final goals = _decode(_shown(result));
+    fetched?.call();
+    return goals;
   }
 
   @override

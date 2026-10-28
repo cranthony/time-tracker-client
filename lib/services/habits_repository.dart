@@ -65,11 +65,16 @@ class McpHabitsRepository implements HabitsRepository {
 
   @override
   Future<List<Habit>> habits() async {
+    // The habits' writes saved before this are let go of once it's in
+    // and they're made to it.
+    final fetched = _writes?.fetchingKinds(const [WriteKind.habit]);
     final result = await _client.callTool('get_habits', {
       'statuses': habitStatuses.keys.toList(),
     });
     await _cache?.write(_habitsKey, result);
-    return _decode(_shown(result));
+    final habits = _decode(_shown(result));
+    fetched?.call();
+    return habits;
   }
 
   @override

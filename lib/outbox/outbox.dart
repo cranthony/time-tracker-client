@@ -72,7 +72,9 @@ abstract interface class OutboxItem<T extends OutboxItem<T>> {
 /// What's saved, here or by the background task, stays in [justSaved]
 /// until a fetch of what the server has, started after it was saved, is
 /// in (see [fetching]), so whatever shows the items can show it until
-/// then, rather than it going missing in between.
+/// then, rather than it going missing in between. A fetch of some of the
+/// items only (one kind's, say) lets go of those alone: the rest stay
+/// till a fetch of theirs is in, however many others are.
 abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   Outbox({
     required this._store,
@@ -124,7 +126,10 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   List<T> _stored = [];
   final _justSaved = <({T item, R? result, int seq})>[];
   int _seq = 0;
-  int _fetchedSeq = 0;
+
+  /// The [_justSaved] entries (by [seq]) a fetch covering them has
+  /// started for, and not yet let go of.
+  final _fetchStarted = <int>{};
   bool _disposed = false;
   String? _sendingId;
   bool _needsSignIn = false;
@@ -143,18 +148,29 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
     for (final e in _justSaved) (item: e.item, result: e.result),
   ];
 
-  /// Whether something was saved since the last fetch started, and
+  /// Whether something was saved that no fetch has started for since, and
   /// nothing is being sent: it's time to fetch what's saved, once.
-  bool get wantsFetch =>
-      _flushing == null && _justSaved.any((e) => e.seq > _fetchedSeq);
+  bool get wantsFetch => wantsFetchOf((_) => true);
 
-  /// Call as a fetch of what's saved starts; call what it gives once it's
-  /// in, and shown, to let go of what was saved before it started.
-  void Function() fetching() {
-    final seq = _fetchedSeq = _seq;
+  /// [wantsFetch], of the items [of] is true of only.
+  bool wantsFetchOf(bool Function(T item) of) =>
+      _flushing == null &&
+      _justSaved.any((e) => !_fetchStarted.contains(e.seq) && of(e.item));
+
+  /// Call as a fetch of what's saved starts -- of the items [of] is true
+  /// of, or all of them; call what it gives once it's in, and shown, to
+  /// let go of those saved before it started. Those not fetched stay,
+  /// for a fetch of theirs.
+  void Function() fetching({bool Function(T item)? of}) {
+    final covered = {
+      for (final e in _justSaved)
+        if (of == null || of(e.item)) e.seq,
+    };
+    _fetchStarted.addAll(covered);
     return () {
       final before = _justSaved.length;
-      _justSaved.removeWhere((e) => e.seq <= seq);
+      _justSaved.removeWhere((e) => covered.contains(e.seq));
+      _fetchStarted.removeAll(covered);
       if (_justSaved.length != before) _notify();
     };
   }

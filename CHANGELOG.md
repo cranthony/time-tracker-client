@@ -9,6 +9,17 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.209.1
+
+- A goal marked done (or changed any other way) no longer slips back to
+  how it was for a moment after being saved: the saved change was let go
+  of as soon as anything else was fetched -- the notes or actions, say --
+  even while the goals asked for before it were still on their way, so a
+  reply from before the change could show the goal without it until the
+  goals were next loaded. A saved change now stays shown until the goals
+  themselves have been fetched again since it was saved; the same holds
+  for habits, traits, people, circles, locations and travel times.
+
 ## 7.209.0
 
 - In a compaction proposal, what it does to an event -- new, moved,

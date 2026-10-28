@@ -99,8 +99,14 @@ class NoteWrites implements Listenable {
   bool isSending(PendingNote note) => queue.isSending(note.write);
   String? sendingBy(PendingNote note) => queue.sendingBy(note.write);
   bool get needsSignIn => queue.needsSignIn;
-  bool get wantsFetch => queue.wantsFetch;
-  void Function() fetching() => queue.fetching();
+
+  /// Whether a note was saved that no fetch of the notes has started for
+  /// since.
+  bool get wantsFetch => queue.wantsFetchOfKinds(const [_kind]);
+
+  /// Call as a fetch of the notes starts; call what it gives once they're
+  /// in, and shown ([WriteQueue.fetchingKinds]).
+  void Function() fetching() => queue.fetchingKinds(const [_kind]);
   Future<FlushResult> retryNow() => queue.retryNow();
 
   /// Queues [note], a new one, with an id of its own. Gives it, waiting.
