@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.218.1
+
+- A goal closed before its deadline shows among the goals due on Events
+  on the day it closed, not the day it was due: one due Saturday and
+  done Monday shows on Monday. One closed after its deadline still shows
+  on the day it was due.
+
 ## 7.218.0
 
 - The home screen goals widget has a bar beside each goal in its color,

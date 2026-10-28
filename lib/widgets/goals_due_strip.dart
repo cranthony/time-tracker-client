@@ -6,17 +6,30 @@ import 'color_picker.dart';
 import 'goal_icon.dart';
 import 'goal_tile.dart';
 
-/// The goals due on [day], from [goals]: by status -- active, inactive,
-/// done, missed, then obsolete -- then each status's as [byPriority] has
-/// them in [tree] (by default, [goals] themselves): the highest priority
-/// first, then those due at a time, by time, then those due by its end,
-/// by title.
+/// The goals due on [day], from [goals] -- a closed one on the day it
+/// closed instead, if that's sooner, so one done early shows when it was
+/// done: by status -- active, inactive, done, missed, then obsolete --
+/// then each status's as [byPriority] has them in [tree] (by default,
+/// [goals] themselves): the highest priority first, then those due at a
+/// time, by time, then those due by its end, by title.
 List<Goal> goalsDueOn(Iterable<Goal> goals, DateTime day, [GoalTree? tree]) {
   final date = deadlineOf(day);
   return [
     for (final g in goals)
-      if (g.deadline?.trim().split('T').first == date && g.due != null) g,
+      if (_shownOn(g) == date) g,
   ]..sort(_byStatus(tree ?? GoalTree(goals)));
+}
+
+/// The day [goal] is among [goalsDueOn]'s: the day it's due or, if it's
+/// closed, the day it closed, whichever is sooner. Null if it isn't due.
+String? _shownOn(Goal goal) {
+  final due = dueDay(goal);
+  if (due == null) return null;
+  final closed = switch (goal.closedAt) {
+    final at? => deadlineOf(at.toLocal()),
+    null => null,
+  };
+  return closed != null && closed.compareTo(due) < 0 ? closed : due;
 }
 
 /// The goals overdue on [day], from [goals]: the open ones -- active or
