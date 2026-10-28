@@ -201,6 +201,39 @@ void main() {
     expect(find.textContaining('From '), findsOneWidget);
   });
 
+  testWidgets('Deactivate until for a while waits until that many days '
+      'and hours on, at a time', (tester) async {
+    await pumpSubGoal(tester);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Deactivate until…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('For a while…'));
+    await tester.pumpAndSettle();
+    expect(find.text('For how long'), findsOneWidget);
+
+    // None at all isn't a while.
+    await tester.tap(find.byKey(const ValueKey('while-days')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('0 days').last);
+    await tester.pumpAndSettle();
+    final ok = find.widgetWithText(FilledButton, 'OK');
+    expect(tester.widget<FilledButton>(ok).onPressed, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('while-hours')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('3 hours').last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Until '), findsOneWidget);
+    await tester.tap(ok);
+    await tester.pumpAndSettle();
+    // A time, not just a day.
+    expect(find.textContaining(RegExp(r'^From .*\d:\d\d')), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Deactivate'));
+    await tester.pumpAndSettle();
+    expect(status(tester), 'Inactive');
+    expect(find.textContaining(RegExp(r'^From .*\d:\d\d')), findsOneWidget);
+  });
+
   testWidgets('Deactivate until, cancelled, leaves the goal active', (
     tester,
   ) async {

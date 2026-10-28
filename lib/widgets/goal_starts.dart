@@ -262,6 +262,19 @@ class GoalStartsEditor extends StatelessWidget {
     );
   }
 
+  /// Adds a time [now] plus a while picked, in days and hours
+  /// ([pickWhile]): "For a while…".
+  Future<void> _pickWhile(BuildContext context) async {
+    final at = await pickWhile(context, now: now);
+    if (at == null) return;
+    _set(
+      after: [
+        ..._after,
+        {'at': deadlineOf(at, time: true)},
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -320,6 +333,11 @@ class GoalStartsEditor extends StatelessWidget {
               avatar: const Icon(Icons.event, size: 18),
               label: const Text('From a day…'),
               onPressed: () => _pickDay(context),
+            ),
+            ActionChip(
+              avatar: const Icon(Icons.hourglass_empty, size: 18),
+              label: const Text('For a while…'),
+              onPressed: () => _pickWhile(context),
             ),
           ],
         ),
@@ -390,6 +408,97 @@ class GoalStartsEditor extends StatelessWidget {
               ),
             ],
           ),
+      ],
+    );
+  }
+}
+
+/// Asks for a while, in days and hours, and returns when it's over from
+/// [now]: the same time of day that many days on, then those hours. Null
+/// if it's cancelled.
+Future<DateTime?> pickWhile(
+  BuildContext context, {
+  DateTime Function() now = DateTime.now,
+}) => showDialog<DateTime>(
+  context: context,
+  builder: (context) => _WhileDialog(now: now()),
+);
+
+class _WhileDialog extends StatefulWidget {
+  const _WhileDialog({required this.now});
+
+  final DateTime now;
+
+  @override
+  State<_WhileDialog> createState() => _WhileDialogState();
+}
+
+class _WhileDialogState extends State<_WhileDialog> {
+  var _days = 1;
+  var _hours = 0;
+
+  DateTime get _until {
+    final n = widget.now;
+    return DateTime(n.year, n.month, n.day + _days, n.hour + _hours, n.minute);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final none = _days == 0 && _hours == 0;
+    return AlertDialog(
+      title: const Text('For how long'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              DropdownButton<int>(
+                key: const ValueKey('while-days'),
+                value: _days,
+                items: [
+                  for (var d = 0; d <= 30; d++)
+                    DropdownMenuItem(
+                      value: d,
+                      child: Text('$d day${d == 1 ? '' : 's'}'),
+                    ),
+                ],
+                onChanged: (d) => setState(() => _days = d ?? _days),
+              ),
+              DropdownButton<int>(
+                key: const ValueKey('while-hours'),
+                value: _hours,
+                items: [
+                  for (var h = 0; h < 24; h++)
+                    DropdownMenuItem(
+                      value: h,
+                      child: Text('$h hour${h == 1 ? '' : 's'}'),
+                    ),
+                ],
+                onChanged: (h) => setState(() => _hours = h ?? _hours),
+              ),
+            ],
+          ),
+          if (!none)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Until ${startLabel(context, deadlineOf(_until, time: true))}',
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: none ? null : () => Navigator.of(context).pop(_until),
+          child: const Text('OK'),
+        ),
       ],
     );
   }

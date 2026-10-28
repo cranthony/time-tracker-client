@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.220.0
+
+- A goal's "Deactivate until" (and its editor's Starts) has a "For a
+  while…" chip: pick days and hours, and it waits until that time, the
+  same time of day that many days on, then those hours.
+
 ## 7.219.0
 
 - A goal can have a color of its own, picked on its page's editor as
