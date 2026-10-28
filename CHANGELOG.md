@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.216.0
+
+- The people on a goal's page are chips now, under With and For: tap a
+  person's to go straight to their page, or a circle's to its page.
+  Someone the app doesn't know is still named, just not tappable.
+
 ## 7.215.1
 
 - The home screen goals widget's goal button sits in its top right

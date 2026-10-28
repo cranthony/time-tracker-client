@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/people_times.dart';
 import '../models/person.dart';
+import '../models/plan_action.dart';
 import '../models/trait.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
@@ -26,6 +27,29 @@ class PersonPages {
     this.locationNames = const {},
     this.onSaved,
   });
+
+  /// Its pages as [context] has them, for whom [memory] has, loading
+  /// everyone again once someone's saved; null with no people to save to.
+  static PersonPages? of(BuildContext context, PlanMemory memory) {
+    final repository = PeopleScope.of(context);
+    if (repository == null) return null;
+    final actions = memory.shownActions?.actions ?? const <PlanAction>[];
+    return PersonPages(
+      repository: repository,
+      memory: memory,
+      traits: TraitsScope.of(context),
+      actionNames: {for (final a in actions) a.id: actionName(a)},
+      actions: {
+        for (final a in actions)
+          if (a.id != null && a.status != 'deleted')
+            a.id!: a.path ?? actionName(a),
+      },
+      locationNames: {
+        for (final l in memory.locations ?? const []) l.id: l.name,
+      },
+      onSaved: () => memory.loadPeople(repository, again: true),
+    );
+  }
 
   final PeopleRepository repository;
   final PlanMemory memory;

@@ -8,6 +8,7 @@ import '../models/recurring_goal.dart';
 import '../services/goals_repository.dart';
 import '../services/plan_memory.dart';
 import '../widgets/app_menu.dart' show RefreshButton;
+import '../widgets/circle_icon.dart';
 import '../widgets/event_description.dart';
 import '../widgets/durations.dart';
 import '../widgets/goal_editor.dart';
@@ -19,6 +20,7 @@ import '../widgets/goal_tile.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/priority_chip.dart';
 import 'habit_pages.dart';
+import 'person_pages.dart';
 
 /// A goal's page, the same for a goal at any depth: read only, with the
 /// pencil in its bar to edit it. Its title has its path (its parents'
@@ -29,8 +31,8 @@ import 'habit_pages.dart';
 /// its status, with what can change it, and when it
 /// started and closed; its deadline, and how it follows its parent's;
 /// its priority, its own or where it's inherited from; its expected time
-/// and the time spent; whether its parent needs it; its people; its
-/// description, definition of done and attribution hints. Then the goals
+/// and the time spent; whether its parent needs it; its people, each
+/// tapped to open their page (a circle, its page); its description, definition of done and attribution hints. Then the goals
 /// directly under it (as [byPriority] lists them, filtered by status),
 /// each opening its own page, held and dragged to reorder it
 /// ([GoalReorderList]), with "+" to add one; and its history, each
@@ -424,11 +426,6 @@ class _GoalScreenState extends State<GoalScreen> {
   ) {
     final theme = Theme.of(context);
     final parent = tree[goal.parentId];
-    final people = goalPeopleLabel(
-      goal.withWhom,
-      goal.forWhom,
-      goalPeopleNames(widget.memory),
-    );
     final minutes = spent?.inMinutes ?? 0;
     final spentText = minutes > 0 ? ' · ${formatMinutes(minutes)} spent' : '';
     Widget html(String? text) => text == null
@@ -555,9 +552,9 @@ class _GoalScreenState extends State<GoalScreen> {
             ),
           GoalField(
             label: 'People',
-            child: people == null
+            child: goal.withWhom.isEmpty && goal.forWhom.isEmpty
                 ? const GoalFieldEmpty('No one')
-                : Text(people),
+                : _people(context, goal),
           ),
           GoalField(label: 'Description', child: html(goal.description)),
           GoalField(
@@ -573,6 +570,51 @@ class _GoalScreenState extends State<GoalScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Who [goal] is done with, and for, a chip each: a person's tapped to
+  /// open their page, a circle's its page -- one the app doesn't know,
+  /// or with no people to open, just named.
+  Widget _people(BuildContext context, Goal goal) {
+    final pages = PersonPages.of(context, widget.memory);
+    final people = widget.memory.people;
+    final names = goalPeopleNames(widget.memory);
+    Widget chip(Named named) {
+      final person = people?.withSelf
+          .where((p) => p.id == named.id)
+          .firstOrNull;
+      final circle = people?.circle(named.id);
+      final avatar = Icon(
+        circle == null
+            ? Icons.person_outline
+            : circleIcon(circle.kind, outlined: true),
+        size: 16,
+      );
+      final label = Text(namedLabel(named, names));
+      final open = switch ((pages, person, circle)) {
+        (final pages?, final p?, _) => () => pages.open(context, p),
+        (final pages?, _, final c?) => () => pages.openCircle(context, c),
+        _ => null,
+      };
+      return open == null
+          ? Chip(avatar: avatar, label: label)
+          : ActionChip(avatar: avatar, label: label, onPressed: open);
+    }
+
+    Widget line(String title, List<Named> named) => Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [Text(title), for (final n in named) chip(n)],
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: 4,
+      children: [
+        if (goal.withWhom.isNotEmpty) line('With', goal.withWhom),
+        if (goal.forWhom.isNotEmpty) line('For', goal.forWhom),
+      ],
     );
   }
 
