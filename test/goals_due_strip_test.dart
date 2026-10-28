@@ -84,6 +84,41 @@ void main() {
     );
   });
 
+  test('goalsDueOn: a goal closed before its deadline, on the day it '
+      'closed; one closed after, on the day it was due', () {
+    Goal closed(String id, String deadline, DateTime at, {String? status}) =>
+        Goal(
+          id: id,
+          title: id,
+          deadline: deadline,
+          status: status ?? 'done',
+          history: [
+            StatusChange('active', DateTime(2026, 10, 1)),
+            StatusChange(status ?? 'done', at),
+          ],
+        );
+    final early = closed('early', '2026-10-24', DateTime(2026, 10, 19, 15));
+    final late = closed(
+      'late',
+      '2026-10-19',
+      DateTime(2026, 10, 21, 9),
+      status: 'missed',
+    );
+    final onTime = closed(
+      'on time',
+      '2026-10-19T17:00',
+      DateTime(2026, 10, 19, 12),
+    );
+    final all = [early, late, onTime];
+    expect(goalsDueOn(all, DateTime(2026, 10, 19)).map((g) => g.id), [
+      'on time',
+      'early',
+      'late',
+    ]);
+    expect(goalsDueOn(all, DateTime(2026, 10, 24)), isEmpty);
+    expect(goalsDueOn(all, DateTime(2026, 10, 21)), isEmpty);
+  });
+
   test('overdueGoalsOn: the open goals due before the day, active first, '
       'then the highest priority, then the longest overdue', () {
     final mixed = [
