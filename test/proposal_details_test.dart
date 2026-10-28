@@ -408,8 +408,11 @@ void main() {
         'it back', (tester) async {
       await open(tester);
       expect(
-        find.text('Cancelled, counts against Mom (Reliable) · Claude'),
-        findsOneWidget,
+        tester
+            .widget<DayTimeline>(find.byType(DayTimeline))
+            .marks['call']!
+            .label,
+        'Cancelled, counts against Mom (Reliable) · Claude',
       );
       await tester.ensureVisible(find.text('Call Mom').last);
       await tester.pumpAndSettle();

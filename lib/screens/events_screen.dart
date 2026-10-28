@@ -444,13 +444,7 @@ class _EventsScreenState extends State<EventsScreen> {
   double _drawnPast(DateTime day) => switch (_eventsOn(day)) {
     null => 0,
     final events =>
-      timelineDrawnHeight(
-            context,
-            events: events,
-            day: day,
-            scale: _scale,
-            marks: _marks,
-          ) -
+      timelineDrawnHeight(context, events: events, day: day, scale: _scale) -
           timelineHeight(day, _scale),
   };
 

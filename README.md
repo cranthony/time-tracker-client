@@ -739,10 +739,10 @@ Changes to events -- editing, cancelling, adding or moving one -- and
 what's done to the open compaction proposal -- editing it, leaving or
 withdrawing a note for Claude, confirming, finishing or abandoning it --
 don't wait for the server: they're
-kept on the device, shown at once as made, marked **Waiting to save**,
-and sent in the background, strictly in the order they were made. They
-survive closing the app, and Android's background task sends them too,
-as it does notes.
+kept on the device, shown at once as made, marked with a cloud icon
+(**Waiting to save**, for accessibility), and sent in the background,
+strictly in the order they were made. They survive closing the app, and
+Android's background task sends them too, as it does notes.
 
 While any are waiting, a line at the foot of every page says so: saving,
 paused, trying again later, or stopped. Tap it to see them, oldest
@@ -880,10 +880,13 @@ Claude can't apply one; only confirming it in the app does.
 
 - **The band.** On the Events page, the proposal's window is tinted and
   outlined, headed "What happened -- to confirm" and ending at a
-  "through" line. Each event in it says what the proposal does to it --
-  moved (and from where), new, cancelled, renamed, new actions or facts
-  -- and whether Claude or you decided it; one as planned is plain. Those
-  changed since the revision you last saw (kept on the device) have a dot.
+  "through" line. Each event in it is marked with what the proposal does
+  to it, on its summary's line, so it takes no more room than its time
+  gives it: + before a new one, ✕ before a cancelled or merged one, and
+  a dot before one changed since the revision you last saw (kept on the
+  device); one as planned is plain. The whole of it -- moved (and from
+  where), new, cancelled, renamed, new actions or facts -- and whether
+  Claude or you decided it is said for accessibility.
   Its notes are lines across it, each with a badge: ↳ added to an event,
   ⇕ setting an event's start or end, ⊘ left out. Under the bar is one of
   them -- its time, text and what became of it -- highlighted on the
