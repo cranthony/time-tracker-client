@@ -15,4 +15,8 @@
     <string name="goals_widget_label">Goals</string>
     <string name="goals_widget_description">Your active goals, the soonest due first</string>
     <string name="goals_widget_settings_title">Goals widget</string>
+    <string name="widget_text_size">Text size</string>
+    <string name="widget_text_small">Small</string>
+    <string name="widget_text_medium">Medium</string>
+    <string name="widget_text_large">Large</string>
 </resources>

@@ -251,7 +251,9 @@ private fun Content(
             .appWidgetBackground()
             .background(GlanceTheme.colors.widgetBackground)
             .cornerRadius(16.dp)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            // No padding above or below: the header's buttons leave 8dp
+            // round their circles, and the rows have their own.
+            .padding(horizontal = 12.dp),
     ) {
         if (!titleAtBottom) Header(context)
         if (shown.isEmpty()) {

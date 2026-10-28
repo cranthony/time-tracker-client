@@ -19,6 +19,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
+import android.widget.TextView
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.glance.ColorFilter
@@ -169,18 +170,57 @@ class TitleSetting(private val prefs: String) {
     }
 }
 
+/** A widget's text size: how much bigger than its smallest. */
+enum class TextSize(val scale: Float, val label: Int) {
+    SMALL(1f, R.string.widget_text_small),
+    MEDIUM(1.5f, R.string.widget_text_medium),
+    LARGE(2f, R.string.widget_text_large),
+}
+
+/**
+ * Each widget of a kind's text size, kept by the widget's id in the
+ * preferences file [prefs], as [TitleSetting] keeps its title's place;
+ * [TextSize.SMALL] until it's set.
+ */
+class TextSizeSetting(private val prefs: String) {
+    private fun key(widgetId: Int) = "text_size_$widgetId"
+
+    fun of(context: Context, widgetId: Int): TextSize {
+        val name = context.getSharedPreferences(prefs, Context.MODE_PRIVATE)
+            .getString(key(widgetId), null)
+        return TextSize.values().firstOrNull { it.name == name } ?: TextSize.SMALL
+    }
+
+    fun set(context: Context, widgetId: Int, size: TextSize) {
+        context.getSharedPreferences(prefs, Context.MODE_PRIVATE).edit()
+            .putString(key(widgetId), size.name)
+            .apply()
+    }
+
+    /** Forgets the settings of the widgets [widgetIds], removed. */
+    fun forget(context: Context, widgetIds: IntArray) {
+        val edit = context.getSharedPreferences(prefs, Context.MODE_PRIVATE).edit()
+        for (widgetId in widgetIds) edit.remove(key(widgetId))
+        edit.apply()
+    }
+}
+
 /**
  * One home screen widget's settings: whether its title -- and the
- * buttons beside it -- is at its top or its bottom ([setting]). Android
- * opens it from the widget's settings (from Android 12, holding it
- * down), and, before that, as it's added. Done keeps the choice, for
- * that widget alone, and has [receiver] draw it again; backed out of,
- * it's left as it was. Each widget's own activity gives its [titleRes].
+ * buttons beside it -- is at its top or its bottom ([setting]), and,
+ * for a widget with one ([textSize]), its text size. Android opens it
+ * from the widget's settings (from Android 12, holding it down), and,
+ * before that, as it's added. Done keeps the choices, for that widget
+ * alone, and has [receiver] draw it again; backed out of, it's left as
+ * it was. Each widget's own activity gives its [titleRes].
  */
 abstract class WidgetConfigureActivity : Activity() {
     protected abstract val titleRes: Int
     protected abstract val setting: TitleSetting
     protected abstract val receiver: Class<out BroadcastReceiver>
+
+    /** The widget's text size setting; null for a widget without one. */
+    protected open val textSize: TextSizeSetting? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -210,6 +250,27 @@ abstract class WidgetConfigureActivity : Activity() {
             addView(bottom)
             check(if (atBottom) bottom.id else top.id)
         }
+        // The text size, for a widget with one: a button for each, the
+        // one set checked.
+        val sizeSetting = textSize
+        val sizeButtons = if (sizeSetting == null) {
+            null
+        } else {
+            TextSize.values().associateWith { size ->
+                RadioButton(this).apply {
+                    id = View.generateViewId()
+                    setText(size.label)
+                }
+            }
+        }
+        val sizes = if (sizeSetting == null || sizeButtons == null) {
+            null
+        } else {
+            RadioGroup(this).apply {
+                for (button in sizeButtons.values) addView(button)
+                check(sizeButtons.getValue(sizeSetting.of(this@WidgetConfigureActivity, widgetId)).id)
+            }
+        }
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
@@ -225,6 +286,11 @@ abstract class WidgetConfigureActivity : Activity() {
                         widgetId,
                         choice.checkedRadioButtonId == bottom.id,
                     )
+                    if (sizeSetting != null && sizes != null && sizeButtons != null) {
+                        val picked = sizeButtons.entries
+                            .firstOrNull { it.value.id == sizes.checkedRadioButtonId }?.key
+                        if (picked != null) sizeSetting.set(this@WidgetConfigureActivity, widgetId, picked)
+                    }
                     redraw(widgetId)
                     setResult(
                         RESULT_OK,
@@ -239,6 +305,13 @@ abstract class WidgetConfigureActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad / 2, pad, pad / 3)
             addView(choice)
+            if (sizes != null) {
+                addView(TextView(this@WidgetConfigureActivity).apply {
+                    setText(R.string.widget_text_size)
+                    setPadding(0, pad / 2, 0, 0)
+                })
+                addView(sizes)
+            }
             addView(buttons)
         })
     }
