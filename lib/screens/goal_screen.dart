@@ -9,9 +9,11 @@ import '../services/goals_repository.dart';
 import '../services/plan_memory.dart';
 import '../widgets/app_menu.dart' show RefreshButton;
 import '../widgets/circle_icon.dart';
+import '../widgets/color_picker.dart' show ColorDot;
 import '../widgets/event_description.dart';
 import '../widgets/durations.dart';
 import '../widgets/goal_editor.dart';
+import '../widgets/goal_color.dart';
 import '../widgets/goal_fields.dart';
 import '../widgets/goal_flows.dart';
 import '../widgets/goal_reorder_list.dart';
@@ -534,6 +536,21 @@ class _GoalScreenState extends State<GoalScreen> {
                     inheritedPriorityLabel(tree, goal.parentId),
                     style: theme.textTheme.bodySmall,
                   ),
+              ],
+            ),
+          ),
+          GoalField(
+            label: 'Color',
+            child: Row(
+              children: [
+                ColorDot(color: colorOfGoal(goal, tree: tree)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    goalColorSource(tree, goal),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
               ],
             ),
           ),

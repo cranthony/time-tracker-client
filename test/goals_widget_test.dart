@@ -15,6 +15,7 @@ Goal _goal(
   String? deadline,
   String? parentId,
   int? priority,
+  String? backgroundColor,
 }) => Goal.fromJson({
   'id': id,
   'title': id,
@@ -22,6 +23,7 @@ Goal _goal(
   'deadline': ?deadline,
   'parent_id': ?parentId,
   'priority': ?priority,
+  'background_color': ?backgroundColor,
 });
 
 /// The snapshot's goals' ids, in order.
@@ -105,12 +107,15 @@ void main() {
 
     test("each colored by its priority: its own, or its nearest parent's "
         'that has one, though the parent is not active itself', () {
-      final shown = (goalsSnapshot([
-        _goal('project', priority: 1, status: 'done'),
-        _goal('piece', parentId: 'project'),
-        _goal('step', parentId: 'piece'),
-        _goal('urgent', parentId: 'project', priority: 0),
-      ], now: _now)['goals'] as List).cast<Map>();
+      final shown =
+          (goalsSnapshot([
+                    _goal('project', priority: 1, status: 'done'),
+                    _goal('piece', parentId: 'project'),
+                    _goal('step', parentId: 'piece'),
+                    _goal('urgent', parentId: 'project', priority: 0),
+                  ], now: _now)['goals']
+                  as List)
+              .cast<Map>();
       expect(
         {for (final g in shown) g['id']: g['color']},
         {
@@ -120,6 +125,32 @@ void main() {
         },
       );
       expect(priorityColor(0), isNot(priorityColor(1)));
+    });
+
+    test("each colored by its own color, or its nearest parent's that "
+        "has one, else its priority's", () {
+      final shown =
+          (goalsSnapshot([
+                    _goal('project', priority: 1, backgroundColor: '#123456'),
+                    _goal('piece', parentId: 'project'),
+                    _goal(
+                      'step',
+                      parentId: 'piece',
+                      backgroundColor: '#654321',
+                    ),
+                    _goal('plain', priority: 0),
+                  ], now: _now)['goals']
+                  as List)
+              .cast<Map>();
+      expect(
+        {for (final g in shown) g['id']: g['color']},
+        {
+          'project': 0xFF123456,
+          'piece': 0xFF123456,
+          'step': 0xFF654321,
+          'plain': priorityColor(0).toARGB32(),
+        },
+      );
     });
 
     test('is as of the day, so it changes with it', () {

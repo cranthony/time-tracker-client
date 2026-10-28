@@ -19,6 +19,8 @@ class Goal {
     this.parentId,
     this.required = false,
     this.priority,
+    this.backgroundColor,
+    this.effectiveColor,
     this.sortOrder,
     this.expectedMinutes,
     this.deadline,
@@ -50,6 +52,15 @@ class Goal {
   /// How much it matters, 0 the most, as actions' priorities; null, it
   /// takes its nearest parent's ([GoalTree.priorityOf]).
   final int? priority;
+
+  /// Its color, "#rrggbb"; null, it takes its nearest parent's that has
+  /// one ([GoalTree.colorSourceOf]), or else its priority's.
+  final String? backgroundColor;
+
+  /// The color it shows, as the server last said: its own, or its
+  /// nearest parent's that has one; null for its priority's. Not sent
+  /// back.
+  final String? effectiveColor;
 
   /// Where it's listed among goals that otherwise list alike -- the same
   /// priority, due the same day ([GoalTree.listAlike]): the lowest first,
@@ -170,6 +181,8 @@ class Goal {
     parentId: _text(json['parent_id']),
     required: json['required'] == true,
     priority: (json['priority'] as num?)?.toInt(),
+    backgroundColor: _text(json['background_color']),
+    effectiveColor: _text(json['effective_color']),
     sortOrder: (json['sort_order'] as num?)?.toInt(),
     expectedMinutes: (json['expected_minutes'] as num?)?.toInt(),
     deadline: _deadline(json),
@@ -210,6 +223,8 @@ class Goal {
     'parent_id': ?parentId,
     if (required) 'required': true,
     'priority': ?priority,
+    'background_color': ?backgroundColor,
+    'effective_color': ?effectiveColor,
     'sort_order': ?sortOrder,
     'expected_minutes': ?expectedMinutes,
     'deadline': ?deadline,
@@ -265,6 +280,7 @@ Map<String, Object?> goalWire(Map<String, Object?> changes) {
     ..remove('deadline_rule')
     ..remove('deadline_offset_minutes')
     ..remove('expected_start')
+    ..remove('effective_color')
     ..remove('due')
     ..remove('path')
     ..remove('habit_id');
@@ -558,6 +574,16 @@ class GoalTree {
       this[id]?.priority ??
       ancestorsOf(id).reversed.map((g) => g.priority).nonNulls.firstOrNull ??
       defaultGoalPriority;
+
+  /// The goal whose own color [id] shows: itself, or its nearest parent
+  /// with one; null, it shows its priority's ([priorityOf]).
+  Goal? colorSourceOf(String id) => switch (this[id]) {
+    null => null,
+    final own when own.backgroundColor != null => own,
+    _ => ancestorsOf(
+      id,
+    ).reversed.where((g) => g.backgroundColor != null).firstOrNull,
+  };
 
   /// [byPriority]'s order: the highest priority (the lowest number) first,
   /// each one's as [priorityOf] has it; then by the day it's due, soonest

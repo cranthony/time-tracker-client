@@ -1238,7 +1238,6 @@ class _StatusNoteField extends StatelessWidget {
     autofocus: true,
     decoration: const InputDecoration(
       labelText: 'Note',
-      hintText: 'Why, say (optional)',
       border: OutlineInputBorder(),
     ),
     textInputAction: TextInputAction.done,

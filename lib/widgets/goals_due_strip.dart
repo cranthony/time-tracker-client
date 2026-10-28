@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
 import '../models/goal_activation.dart';
-import 'color_picker.dart';
+import 'goal_color.dart';
 import 'goal_icon.dart';
 import 'goal_tile.dart';
 
@@ -305,7 +305,7 @@ class GoalsDueStrip extends StatelessWidget {
     }) => _Pill(
       goal: g,
       path: tree?.pathOf(g.id) ?? g.path,
-      priority: tree?.priorityOf(g.id) ?? g.priority ?? defaultGoalPriority,
+      color: colorOfGoal(g, tree: tree),
       dueDay: late ? _dueDayLabel(context, g) : null,
       upcomingDay: ahead ? _upcomingLabel(context, g) : null,
       startsOn: ahead && g.inactive && g.expectedStart != null
@@ -456,7 +456,7 @@ class GoalsDueStrip extends StatelessWidget {
           .formatTimeOfDay(TimeOfDay.fromDateTime(goal.due!));
 }
 
-/// [goal] as a pill, filled in its [priority]'s color: its title, its
+/// [goal] as a pill, filled in its [color]: its title, its
 /// time if it's due at one, and what's [left] of its expected time, or,
 /// closed, greyed and struck through with what it came to, just outlined
 /// in that color. Overdue -- [dueDay] given -- it's outlined in the error
@@ -465,13 +465,13 @@ class GoalsDueStrip extends StatelessWidget {
 /// is given. [missed] given, it's a ghost of a goal missed from the day:
 /// greyed and struck through like a closed one, saying those notes
 /// instead of a time. Upcoming -- [upcomingDay] given -- it's just
-/// outlined in its priority's color, saying when it's due instead. Its
+/// outlined in its color, saying when it's due instead. Its
 /// parents are in its tooltip.
 class _Pill extends StatelessWidget {
   const _Pill({
     required this.goal,
     required this.path,
-    required this.priority,
+    required this.color,
     this.dueDay,
     this.upcomingDay,
     this.startsOn,
@@ -484,8 +484,8 @@ class _Pill extends StatelessWidget {
   final Goal goal;
   final List<String> path;
 
-  /// The priority that applies to it ([GoalTree.priorityOf]).
-  final int priority;
+  /// The color it's filled, or outlined, in ([colorOfGoal]).
+  final Color color;
 
   /// The day it was due, when it's overdue; null when it's the day's own.
   final String? dueDay;
@@ -512,7 +512,7 @@ class _Pill extends StatelessWidget {
     final done = !ghost && goal.status == 'done';
     final overdue = dueDay != null;
     final ahead = upcomingDay != null;
-    final tint = priorityColor(priority);
+    final tint = color;
     final ink = closed
         ? colors.onSurfaceVariant
         : ahead
