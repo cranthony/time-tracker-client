@@ -724,7 +724,9 @@ void main() {
 
       expect(find.byType(AlertDialog), findsNothing);
       expect(find.text('Long lunch'), findsOneWidget);
-      expect(find.textContaining('Waiting to save'), findsWidgets);
+      // Marked on its line by a cloud; what it waits for said for
+      // accessibility.
+      expect(find.byIcon(Icons.cloud_upload_outlined), findsOneWidget);
       expect(find.text('Paused: 1 change waiting to save'), findsOneWidget);
       expect(server.calls, isEmpty);
       expect(outbox.pending.single.label, 'Change “Lunch”');
@@ -795,7 +797,7 @@ void main() {
       Navigator.of(tester.element(find.byType(EventsScreen))).pop();
       await tester.pumpAndSettle();
       expect(find.text('Long lunch'), findsOneWidget);
-      expect(find.textContaining('Waiting to save'), findsNothing);
+      expect(find.byIcon(Icons.cloud_upload_outlined), findsNothing);
     });
 
     testWidgets("made a series, the days after are loaded again: the "

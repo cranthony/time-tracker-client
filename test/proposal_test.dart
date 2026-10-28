@@ -30,6 +30,14 @@ import 'package:time_tracker_client/widgets/proposal_review.dart';
 
 import 'hold_drag.dart';
 
+/// What the timeline's marks say, for those that say anything: said for
+/// accessibility, not drawn.
+Iterable<String> markLabels(WidgetTester tester) => [
+  for (final mark
+      in tester.widget<DayTimeline>(find.byType(DayTimeline)).marks.values)
+    ?mark.label,
+];
+
 void main() {
   final now = DateTime(2026, 9, 30, 12);
   DateTime at(int hour, [int minute = 0]) =>
@@ -1134,7 +1142,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('Breakfast'), findsOneWidget);
-        expect(find.textContaining('Revisited · Claude'), findsOneWidget);
+        expect(markLabels(tester), contains('Revisited · Claude'));
       },
     );
 
@@ -1392,12 +1400,19 @@ void main() {
       expect(find.byType(ProposalBar), findsOneWidget);
       expect(find.text('What happened — to confirm'), findsOneWidget);
       expect(find.text('through 12:00 PM'), findsOneWidget);
-      expect(find.text('Moved, was 9:00 AM–10:00 AM · Claude'), findsOneWidget);
-      expect(find.text('New · Claude'), findsOneWidget);
+      // Each change marked on its event's own line -- its icon, what it
+      // is said for accessibility -- not on a line of its own.
+      final marks = timeline.marks;
+      expect(marks['tea']!.label, 'Moved, was 9:00 AM–10:00 AM · Claude');
+      expect(marks['abc123def456c1']!.label, 'New · Claude');
+      expect(marks['abc123def456c1']!.icon, Icons.add);
       expect(
-        find.text('Cancelled, counts against follow-through · Claude'),
-        findsOneWidget,
+        marks['walk']!.label,
+        'Cancelled, counts against follow-through · Claude',
       );
+      expect(marks['walk']!.icon, Icons.close);
+      expect(find.text('Moved, was 9:00 AM–10:00 AM · Claude'), findsNothing);
+      expect(find.text('New · Claude'), findsNothing);
       // As the proposal has it, not the calendar.
       final tea = timeline.events.firstWhere((e) => e.id == 'tea');
       expect(tea.start.isAtSameMomentAs(at(9, 15)), isTrue);
@@ -1675,7 +1690,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Admin'), findsOneWidget);
-      expect(find.text('Renamed · you'), findsOneWidget);
+      expect(markLabels(tester), contains('Renamed · you'));
     });
 
     group('an edit of a planned event', () {
@@ -2155,7 +2170,7 @@ void main() {
         hasLength(calendar().length),
       );
       expect(find.text('Added to what happened, to confirm.'), findsOneWidget);
-      expect(find.text('New · you'), findsOneWidget);
+      expect(markLabels(tester), contains('New · you'));
     });
 
     testWidgets('an event after the band is the plan: changed on the '
@@ -2285,8 +2300,11 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.text('Cancelled, counts against follow-through · Claude'),
-        findsNothing,
+        tester
+            .widget<DayTimeline>(find.byType(DayTimeline))
+            .marks['walk']
+            ?.label,
+        isNot(contains('Cancelled')),
       );
       expect(find.byType(ProposalBar), findsOneWidget);
     });

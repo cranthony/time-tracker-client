@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.209.0
+
+- In a compaction proposal, what it does to an event -- new, moved,
+  cancelled -- no longer takes a line of its own under the event's
+  summary, so each event fits its time in one line where there's no
+  room for more: a new, cancelled or revisited one has its icon before
+  its summary, one changed since you looked its dot, and what was done
+  is said for accessibility. A change waiting to save is marked by its
+  cloud icon the same way.
+
 ## 7.208.0
 
 - A habit's page says what's built on it: "Builds to", after "Built

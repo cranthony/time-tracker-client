@@ -92,6 +92,13 @@ const _goalIconSize = 14.0;
 const _commuteIconSize = 14.0;
 const _commuteIconGap = 4.0;
 
+/// A proposal's mark on an event, before its summary: its dot, marking
+/// it changed since the user last looked, and its icon.
+const _dotSize = 7.0;
+const _dotGap = 4.0;
+const _markIconSize = 14.0;
+const _markIconGap = 4.0;
+
 /// The time labels' and priority labels' text, and how tall they are.
 const _labelFontSize = 11.0;
 const _bandFontSize = 10.0;
@@ -182,22 +189,15 @@ double timelineHeight(DateTime day, double scale) {
   return timelineOffset(dayEnd, day: day, dayEnd: dayEnd, scale: scale) + _pad;
 }
 
-/// How tall a [DayTimeline] of [events] on [day] at [scale], with
-/// [marks], is drawn in [context]: as [timelineHeight], or taller, to the
-/// foot of an event drawn on past midnight, pushed down by those above.
+/// How tall a [DayTimeline] of [events] on [day] at [scale] is drawn in
+/// [context]: as [timelineHeight], or taller, to the foot of an event
+/// drawn on past midnight, pushed down by those above.
 double timelineDrawnHeight(
   BuildContext context, {
   required List<Event> events,
   required DateTime day,
   required double scale,
-  Map<String, EventMark> marks = const {},
-}) => _layOut(
-  context,
-  events: events,
-  day: day,
-  scale: scale,
-  marks: marks,
-).height;
+}) => _layOut(context, events: events, day: day, scale: scale).height;
 
 /// How a [DayTimeline] lays out [events] on [day] in [context]: its cards'
 /// text, where each is drawn, and how tall it all is.
@@ -207,7 +207,6 @@ _layOut(
   required List<Event> events,
   required DateTime day,
   required double scale,
-  required Map<String, EventMark> marks,
 }) {
   final text = Theme.of(context).textTheme;
   final scaler = MediaQuery.textScalerOf(context);
@@ -227,16 +226,14 @@ _layOut(
     summary: text.titleSmall,
     action: text.bodySmall,
     chip: text.labelSmall,
-    mark: text.labelSmall?.copyWith(fontWeight: FontWeight.w500),
   );
   final summaryLine = lineHeight(styles.summary);
-  final markLine = lineHeight(styles.mark);
   // Its actions' names aren't made room for: they're listed as far as
   // its time leaves room, its diamonds by its chips standing for them.
+  // Nor is a proposal's mark: it's on its summary's line.
   double minHeight(Event event) =>
       _cardPadding.vertical +
       summaryLine +
-      (marks[event.id]?.label == null ? 0 : markLine) +
       // Slack for rounding, so the text never overflows.
       2;
 
@@ -700,7 +697,6 @@ class DayTimeline extends StatelessWidget {
       events: events,
       day: day,
       scale: scale,
-      marks: marks,
     );
     final runs = weather == null
         ? priorityRuns(events, day: day, dayEnd: dayEnd)
@@ -1774,9 +1770,11 @@ reviewColors(ColorScheme colors) => (
 );
 
 /// What a compaction proposal says of an event in it: a [label] of what
-/// it does to it, if it does anything -- "Moved, was 7:45–8:15" -- after
-/// an [icon], if it has one; and whether that's [changed] since the user
-/// last looked, marked with a dot.
+/// it does to it, if it does anything -- "Moved, was 7:45–8:15" -- said
+/// for accessibility, not drawn, so the event takes no more room than
+/// its time gives it; an [icon], if it has one, before its summary; and
+/// whether that's [changed] since the user last looked, marked with a
+/// dot there.
 class EventMark {
   const EventMark({
     this.label,
@@ -1802,8 +1800,8 @@ class _Dot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    width: 7,
-    height: 7,
+    width: _dotSize,
+    height: _dotSize,
     decoration: BoxDecoration(color: color, shape: BoxShape.circle),
   );
 }
@@ -1864,13 +1862,11 @@ class _CardStyles {
     required this.summary,
     required this.action,
     required this.chip,
-    required this.mark,
   });
 
   final TextStyle? summary;
   final TextStyle? action;
   final TextStyle? chip;
-  final TextStyle? mark;
 }
 
 /// An event: its summary, its actions' diamonds stacked by its chips --
@@ -2008,7 +2004,6 @@ class _EventCard extends StatelessWidget {
                         final listed = _actionsThatFit(
                           context,
                           constraints.maxHeight,
-                          labelled: mark?.label != null,
                           count: ids.length,
                         );
                         // Its goals, under its actions, as many as fit.
@@ -2016,7 +2011,6 @@ class _EventCard extends StatelessWidget {
                             _actionsThatFit(
                               context,
                               constraints.maxHeight,
-                              labelled: mark?.label != null,
                               count: ids.length + goalTitles.length,
                             ) -
                             listed;
@@ -2042,7 +2036,6 @@ class _EventCard extends StatelessWidget {
                             _actionsThatFit(
                                   context,
                                   constraints.maxHeight,
-                                  labelled: mark?.label != null,
                                   count: packed.length,
                                 ) >=
                                 locationLines;
@@ -2055,7 +2048,6 @@ class _EventCard extends StatelessWidget {
                         final detailed = _actionsThatFit(
                           context,
                           constraints.maxHeight,
-                          labelled: mark?.label != null,
                           count: detailLines.length,
                         );
                         final summaryStyle = styles.summary?.copyWith(
@@ -2088,6 +2080,23 @@ class _EventCard extends StatelessWidget {
                           children: [
                             Row(
                               children: [
+                                if (mark case EventMark(
+                                  :final icon,
+                                  :final changed,
+                                )) ...[
+                                  if (changed) ...[
+                                    _Dot(color: colors.tertiary),
+                                    const SizedBox(width: _dotGap),
+                                  ],
+                                  if (icon != null) ...[
+                                    Icon(
+                                      icon,
+                                      size: _markIconSize,
+                                      color: colors.tertiary,
+                                    ),
+                                    const SizedBox(width: _markIconGap),
+                                  ],
+                                ],
                                 if (event.isCommute) ...[
                                   Icon(
                                     Icons.directions_walk,
@@ -2159,39 +2168,6 @@ class _EventCard extends StatelessWidget {
                                   ),
                               ],
                             ),
-                            if (mark case EventMark(
-                              :final label?,
-                              :final icon,
-                              :final changed,
-                            ))
-                              Row(
-                                children: [
-                                  if (changed) ...[
-                                    _Dot(color: colors.tertiary),
-                                    const SizedBox(width: 4),
-                                  ],
-                                  if (icon != null) ...[
-                                    Icon(
-                                      icon,
-                                      size: 12,
-                                      color: colors.tertiary,
-                                    ),
-                                    const SizedBox(width: 2),
-                                  ],
-                                  Expanded(
-                                    child: Text(
-                                      label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: styles.mark?.copyWith(
-                                        color: changed
-                                            ? colors.onTertiaryContainer
-                                            : colors.tertiary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
                             if (listed > 0 || goalsListed > 0 || detailed > 0)
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2364,6 +2340,15 @@ extension on _EventCard {
     return width;
   }
 
+  /// What its mark takes at the start of its summary's line: its dot and
+  /// its icon, those it has.
+  double get _markWidth => switch (mark) {
+    null => 0,
+    EventMark(:final changed, :final icon) =>
+      (changed ? _dotSize + _dotGap : 0) +
+          (icon == null ? 0 : _markIconSize + _markIconGap),
+  };
+
   /// How its summary's line, [width] wide, fits its [location] (if
   /// it's there) between its summary and its diamonds: as much of it as
   /// fits once its summary has whatever it needs of half the line. If
@@ -2385,6 +2370,7 @@ extension on _EventCard {
     final ids = placement.event.actionIds;
     final room =
         width -
+        _markWidth -
         (placement.event.isCommute ? _commuteIconSize + _commuteIconGap : 0) -
         (ids.isEmpty ? 0 : _DiamondStack.widthOf(ids.length)) -
         (duration == null ? 0 : chip(duration, styles.chip));
@@ -2407,11 +2393,10 @@ extension on _EventCard {
   }
 
   /// How many of its [count] actions' lines fit whole in [height], under
-  /// its summary and chips -- and its mark's line, if it's [labelled].
+  /// its summary and chips.
   int _actionsThatFit(
     BuildContext context,
     double height, {
-    required bool labelled,
     required int count,
   }) {
     if (count == 0 || !height.isFinite) return count;
@@ -2424,8 +2409,7 @@ extension on _EventCard {
       maxLines: 1,
     )..layout()).height;
     // A chip's text, and its border above and below.
-    final top = math.max(line(styles.summary), line(styles.chip) + 2);
-    final above = top + (labelled ? line(styles.mark) : 0);
+    final above = math.max(line(styles.summary), line(styles.chip) + 2);
     // As tall as its diamond, at least.
     final each = math.max(line(styles.action), 10.0);
     return ((height - above) / each).floor().clamp(0, count);
