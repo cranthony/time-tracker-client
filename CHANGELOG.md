@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.207.0
+
+- A habit's page opens what it names: each of a recurring goal's
+  habit's goals opens the goal's page, with a chevron, and each habit
+  it's built on opens that habit's page, tapped.
+
 ## 7.206.0
 
 - A recurring goal's goal's page opens its habit's: "From the habit ..."
