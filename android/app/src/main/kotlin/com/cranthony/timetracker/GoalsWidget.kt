@@ -162,10 +162,12 @@ private fun Content(
             .fillMaxSize()
             .appWidgetBackground()
             .background(GlanceTheme.colors.widgetBackground)
-            .cornerRadius(16.dp)
-            // No padding above or below: the header's button leaves 2dp
-            // round its circle, and the rows have their own room.
-            .padding(horizontal = 12.dp),
+            // No padding of its own: the header runs to the edge, for
+            // its button to sit in the corner (its target leaves 2dp
+            // round its circle); the goals and the header's title keep
+            // 12dp from the sides, and the rows have their own room
+            // above and below.
+            .cornerRadius(16.dp),
     ) {
         if (!titleAtBottom) Header(context)
         if (goals.isNullOrEmpty()) {
@@ -178,11 +180,13 @@ private fun Content(
                 modifier = GlanceModifier
                     .fillMaxWidth()
                     .defaultWeight()
-                    .padding(vertical = 12.dp)
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
                     .clickable(open(context)),
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 14.sp),
             )
-        } else LazyColumn(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
+        } else LazyColumn(
+            modifier = GlanceModifier.fillMaxWidth().defaultWeight().padding(horizontal = 12.dp),
+        ) {
             for (goal in goals) {
                 item(itemId = goal.id.hashCode().toLong()) { GoalRow(context, goal, now) }
             }
@@ -200,9 +204,10 @@ private fun Content(
 @Composable
 private fun Header(context: Context) {
     Row(
-        // No gap from the goals: the button's tap target leaves 2dp
-        // above and below its circle.
-        modifier = GlanceModifier.fillMaxWidth(),
+        // No gap from the goals, and none from the widget's edge: the
+        // button's tap target leaves 2dp above and below its circle, and
+        // 6dp beside it, so the circle sits in the corner.
+        modifier = GlanceModifier.fillMaxWidth().padding(start = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.215.1
+
+- The home screen goals widget's goal button sits in its top right
+  corner, 6dp from the sides, where it had been 24dp in from the right:
+  the header runs to the widget's edge, and the button's tap target is
+  narrower. The goals and the "Goals" title keep their 12dp from the
+  sides.
+
 ## 7.215.0
 
 - The home screen goals widget fits six goals in its two cells: no

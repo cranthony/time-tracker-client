@@ -49,14 +49,14 @@ import androidx.glance.semantics.semantics
  * A round button in a widget's header, [icon] on it, doing [action]: a
  * 32dp circle in a 48dp tap target, as Android asks for, so two side by
  * side are each easy to hit. [compact], as the goals widget's is, a 24dp
- * circle in a target 48dp wide but 28dp high, so its header takes well
- * under half as much of the widget.
+ * circle in a 36dp by 28dp target, so its header takes well under half
+ * as much of the widget, and the circle sits near its corner.
  */
 @Composable
 internal fun HeaderButton(icon: Int, label: String, action: Action, compact: Boolean = false) {
     Box(
         modifier = GlanceModifier
-            .width(48.dp)
+            .width(if (compact) 36.dp else 48.dp)
             .height(if (compact) 28.dp else 48.dp)
             .clickable(action)
             .semantics { contentDescription = label },
