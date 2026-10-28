@@ -18,9 +18,8 @@
 #              (5:00 PM), then "Draw the goal icon" (by the day's end) --
 #              then "Add a Goals pane", "Ship the time tracker app" and
 #              "Run a half marathon"; as many as fit its two cells, in
-#              that order, each after the goal icon ("Goal") and before
-#              "Today" or its date; not "Sketch the Goals pane", which is
-#              done, nor the inactive ones
+#              that order, each before "Today" or its date; not "Sketch
+#              the Goals pane", which is done, nor the inactive ones
 #   goal_cold  a goal tapped, the app's process gone: its page
 #   goals_warm "Goals" tapped, the app in the background: Plan, on Goals
 #   add_goal   its goal button tapped: the New goal sheet
@@ -173,8 +172,6 @@ else
     missing+=(Goals)
   grep -qE '(text|content-desc)="Add goal"' "$OUT/goals_shown.txt" ||
     missing+=('the goal button')
-  grep -qE 'content-desc="Goal"' "$OUT/goals_shown.txt" ||
-    missing+=('the goal icon')
   grep -qE 'text="Today' "$OUT/goals_shown.txt" ||
     missing+=('"Today"')
   [ "$goals" = yes ] ||

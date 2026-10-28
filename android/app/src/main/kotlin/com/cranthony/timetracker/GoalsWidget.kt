@@ -8,12 +8,9 @@ import android.text.format.DateUtils
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
-import androidx.glance.Image
-import androidx.glance.ImageProvider
 import androidx.glance.action.Action
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
@@ -33,7 +30,6 @@ import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.padding
-import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
@@ -226,8 +222,8 @@ private fun Header(context: Context) {
 }
 
 /**
- * A goal: the goal icon, its title, and when it's due ([dueLabel]) at
- * the end -- in red, and bold, once it's overdue. Opens its page.
+ * A goal: its title, and when it's due ([dueLabel]) at the end -- in
+ * red, and bold, once it's overdue. Opens its page.
  */
 @Composable
 private fun GoalRow(context: Context, goal: WidgetGoal, now: Long) {
@@ -239,13 +235,6 @@ private fun GoalRow(context: Context, goal: WidgetGoal, now: Long) {
             .clickable(open(context, goal = goal.id)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Image(
-            provider = ImageProvider(goalIcon),
-            contentDescription = "Goal",
-            modifier = GlanceModifier.size(16.dp),
-            colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurface),
-        )
-        Spacer(modifier = GlanceModifier.width(8.dp))
         Text(
             text = goal.title.ifBlank { "(no title)" },
             modifier = GlanceModifier.defaultWeight(),
