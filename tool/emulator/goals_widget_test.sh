@@ -28,6 +28,8 @@
 #   text_large its settings opened again, and "Large" picked for its text
 #              size: its rows twice as high, so the second goal starts
 #              twice as far below the first
+#   goal_large a goal tapped at that size, the app in the background: its
+#              page, as at the first size
 #
 # Writes the device log, the widget's views and a screenshot per case to
 # $OUT (build/emulator). Used by .github/workflows/emulator.yml.
@@ -334,6 +336,23 @@ elif tap_view Large && sleep 1 && tap_view Done && poll 20 rows_doubled; then
   pass text_large
 else
   fail text_large "the rows weren't doubled (gap before $before_gap, after ${after_gap:-?})"
+fi
+
+# A goal at that size, the app in the background: its page, as at the
+# first size -- the rows' height makes no odds to their taps. The New
+# goal sheet the add_goal case left open closes first: a goal tapped
+# while a sheet is open shakes it instead, so a draft isn't lost.
+launch
+wait_for '(Notes|Dismiss|Back)' 30
+if on_screen Dismiss || on_screen Back; then
+  adb shell input keyevent KEYCODE_BACK
+  sleep 1
+fi
+if widget_home && tap_view "$goal" "$WIDGET" && poll 30 goal_opened; then
+  adb exec-out screencap -p > "$OUT/goals_goal_large.png"
+  pass "goal_large ($goal)"
+else
+  fail goal_large "tapping \"$goal\" at Large didn't open its page"
 fi
 
 kill $logcat

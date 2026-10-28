@@ -9,12 +9,27 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
-## 7.217.1
+## 7.218.1
 
 - A goal closed before its deadline shows among the goals due on Events
   on the day it closed, not the day it was due: one due Saturday and
   done Monday shows on Monday. One closed after its deadline still shows
   on the day it was due.
+
+## 7.218.0
+
+- The home screen goals widget has a bar beside each goal in its color,
+  as the calendar's events have: the color of the priority that applies
+  to it -- its own, or its nearest parent's -- as the app's lists color
+  it. A color of a goal's own, and one inherited from its parent, as
+  actions have, are to come.
+- The widget's Medium text size is a little smaller: 1.4 times Small,
+  not 1.5.
+- A goal tapped on the home screen goals opens its page from the goals
+  the app has, or kept from the last time the server answered, without
+  waiting on a fetch: with no connection, or a slow one, the tap had
+  opened Plan's Goals alone, the page only once the server answered, if
+  it did. Plan's Goals shows the kept goals, too, when a fetch fails.
 
 ## 7.217.0
 

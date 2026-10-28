@@ -462,13 +462,21 @@ class PlanMemory extends ChangeNotifier {
   }
 
   /// Loads the user's goals, this visit; [again] asks again. Best effort,
-  /// as habits are: goals are never what stops a page.
+  /// as habits are: goals are never what stops a page. Should the server
+  /// not answer -- no connection, say -- and none are in yet, those kept
+  /// from the last time it did ([GoalsRepository.cachedGoals]), so a
+  /// goal's page opens from the home screen offline.
   Future<void> loadGoals(GoalsRepository repository, {bool again = false}) =>
       load('goals', () async {
         try {
           goals = await repository.goals();
         } catch (_) {
-          // None, or what's kept.
+          if (goals != null) return;
+          try {
+            goals = await repository.cachedGoals();
+          } catch (_) {
+            // None.
+          }
         }
       }, again: again);
 

@@ -6,6 +6,7 @@ import android.net.Uri
 import android.text.format.DateFormat
 import android.text.format.DateUtils
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -24,6 +25,7 @@ import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.currentState
 import androidx.glance.layout.Alignment
+import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
@@ -35,6 +37,7 @@ import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import androidx.glance.unit.ColorProvider
 import es.antonborri.home_widget.HomeWidgetGlanceState
 import es.antonborri.home_widget.HomeWidgetGlanceStateDefinition
 import es.antonborri.home_widget.HomeWidgetGlanceWidgetReceiver
@@ -133,6 +136,8 @@ private class WidgetGoal(
     val title: String,
     val due: Long?,
     val hasTime: Boolean,
+    /** Its bar's color, ARGB: its priority's, as the app colors it. */
+    val color: Int,
 ) {
     companion object {
         /**
@@ -150,6 +155,7 @@ private class WidgetGoal(
                         title = g.optString("title", ""),
                         due = if (g.isNull("due")) null else g.getLong("due"),
                         hasTime = g.optBoolean("has_time", false),
+                        color = g.optLong("color", DEFAULT_COLOR).toInt(),
                     )
                 }
             } catch (e: JSONException) {
@@ -256,6 +262,16 @@ private fun GoalRow(context: Context, goal: WidgetGoal, now: Long, scale: Float)
             .clickable(open(context, goal = goal.id)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Its color, as the calendar's events have theirs: a bar, the
+        // row's height less a gap from the rows beside it.
+        Box(
+            modifier = GlanceModifier
+                .width(BAR_DP.dp)
+                .height((ROW_DP * scale - 2 * BAR_GAP_DP).dp)
+                .cornerRadius((BAR_DP / 2).dp)
+                .background(ColorProvider(Color(goal.color))),
+        ) {}
+        Spacer(modifier = GlanceModifier.width(8.dp))
         Text(
             text = goal.title.ifBlank { "(no title)" },
             modifier = GlanceModifier.defaultWeight(),
@@ -286,6 +302,13 @@ private fun GoalRow(context: Context, goal: WidgetGoal, now: Long, scale: Float)
  * 150dp of two cells, with a few dp over for a launcher that gives less.
  */
 private const val ROW_DP = 19
+
+/** A goal's bar's width, and the gap above and below it in its row. */
+private const val BAR_DP = 4
+private const val BAR_GAP_DP = 2
+
+/** A goal's bar's color when the snapshot gives none: priority 3's. */
+private const val DEFAULT_COLOR = 0xFF7AE7BFL
 
 /**
  * When [goal] is due, as of [now]: its day as "Today", "Tomorrow" or

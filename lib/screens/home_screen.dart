@@ -208,7 +208,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Switches to Plan, on Goals, and opens the page of the goal [tap] on
   /// the home screen goals was on, if it was on one that's still there:
-  /// once the goals are loaded, as the tap may have launched the app.
+  /// among the goals the app has, or kept, or else once they're loaded,
+  /// as the tap may have launched the app.
   /// Pages open over this one close first, as for a hotkey ([_goTo]), so
   /// Goals, or the goal's page, is what's seen; not while a dialog is
   /// open, waiting to be saved or discarded: the screen shakes instead.
@@ -226,13 +227,19 @@ class _HomeScreenState extends State<HomeScreen> {
     final repository = GoalsScope.of(context);
     final id = tap.goalId;
     if (id == null || repository == null) return;
-    try {
-      await _planMemory.loadGoals(repository);
-    } catch (_) {
-      // What's kept, if anything is.
+    bool known() => _planMemory.goals?.any((g) => g.id == id) ?? false;
+    // The goals kept from the last fetch first, if none are in yet: the
+    // widget showed the goal from them, and a fetch may be slow to
+    // answer, or not answer at all, with no connection.
+    if (!known()) await _planMemory.loadKept(goals: repository);
+    if (!known()) {
+      try {
+        await _planMemory.loadGoals(repository);
+      } catch (_) {
+        // What's kept, if anything is.
+      }
     }
-    if (!mounted) return;
-    if (!(_planMemory.goals?.any((g) => g.id == id) ?? false)) return;
+    if (!mounted || !known()) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) =>
