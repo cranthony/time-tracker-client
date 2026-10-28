@@ -109,6 +109,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(OutlinedButton, 'Mark done'));
     await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Mark done'));
+    await tester.pumpAndSettle();
     expect(find.text('“Send the plan” is now active'), findsOneWidget);
     final started = (await repository.goals()).firstWhere(
       (g) => g.id == next.id,

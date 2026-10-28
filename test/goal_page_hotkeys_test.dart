@@ -145,9 +145,19 @@ void main() {
     expect(status(tester), 'Active');
   }
 
-  testWidgets("D on a goal's page marks it done", (tester) async {
+  testWidgets("D on a goal's page marks it done, once its note is in", (
+    tester,
+  ) async {
     await pumpSubGoal(tester);
     await press(tester, LogicalKeyboardKey.keyD);
+    expect(find.text('Mark Write the pane done'), findsOneWidget);
+    expect(status(tester), 'Active');
+    // Typed in the note, D is a letter, not the hotkey.
+    await tester.enterText(find.byType(TextField), 'Drafted');
+    await press(tester, LogicalKeyboardKey.keyD);
+    expect(status(tester), 'Active');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
     expect(status(tester), 'Done');
     // Done, it can't be again.
     await press(tester, LogicalKeyboardKey.keyD);
@@ -157,6 +167,8 @@ void main() {
   testWidgets("M on a goal's page marks it missed", (tester) async {
     await pumpSubGoal(tester);
     await press(tester, LogicalKeyboardKey.keyM);
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
     expect(status(tester), 'Missed');
   });
 

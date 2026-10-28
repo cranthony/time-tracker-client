@@ -464,10 +464,10 @@ class GoalActions {
     await deactivate(goal, also: {'activate_when': when});
   }
 
-  /// Marks [goal] [status] ("done", "missed" or "obsolete"), asking what
-  /// becomes of each sub-goal left open: done, missed, obsolete, or moved
-  /// elsewhere. Done waits for its required sub-goals. With [also]
-  /// changed in it too.
+  /// Marks [goal] [status] ("done", "missed" or "obsolete"), asking for a
+  /// note to keep with the change (why, say) and what becomes of each
+  /// sub-goal left open: done, missed, obsolete, or moved elsewhere. Done
+  /// waits for its required sub-goals. With [also] changed in it too.
   Future<void> close(
     Goal goal,
     String status, {
@@ -493,10 +493,15 @@ class GoalActions {
     ];
     var leftovers = const <String, Leftover>{};
     Goal? made;
+    String? note;
     if (open.isNotEmpty) {
       final decided = await _decideLeftovers(goal, status, open, tree);
       if (decided == null || !context.mounted) return;
-      (leftovers, made) = decided;
+      (leftovers, made, note) = decided;
+    } else {
+      final asked = await _askNote(goal, status);
+      if (asked == null || !context.mounted) return;
+      note = asked.note;
     }
     await save(
       "Couldn't mark ${goalTitle(goal)} $status",
@@ -507,6 +512,7 @@ class GoalActions {
         status: status,
         leftovers: leftovers,
         made: made,
+        note: note,
       ),
     );
   }
@@ -616,7 +622,45 @@ class GoalActions {
         'history': [
           for (final (i, c) in goal.history.indexed)
             (i == index
-                    ? StatusChange(c.status, when, deadline: c.deadline)
+                    ? StatusChange(
+                        c.status,
+                        when,
+                        deadline: c.deadline,
+                        note: c.note,
+                      )
+                    : c)
+                .toJson(),
+        ],
+      }),
+    ]);
+  }
+
+  /// Changes the note on [goal]'s history entry [index]: adds one, or,
+  /// left blank, takes it off.
+  Future<void> annotate(Goal goal, int index) async {
+    final entry = goal.history[index];
+    final asked = await showDialog<({String? note})>(
+      context: context,
+      builder: (context) => _NoteDialog(
+        title:
+            'Note on “${goalTitle(goal)}” '
+            '${goalStatuses[entry.status]?.toLowerCase() ?? entry.status}',
+        action: 'Save',
+        initial: entry.note,
+      ),
+    );
+    if (asked == null || !context.mounted) return;
+    await save("Couldn't change the note", [
+      GoalUpdate(goal.id, {
+        'history': [
+          for (final (i, c) in goal.history.indexed)
+            (i == index
+                    ? StatusChange(
+                        c.status,
+                        c.at,
+                        deadline: c.deadline,
+                        note: asked.note,
+                      )
                     : c)
                 .toJson(),
         ],
@@ -683,12 +727,23 @@ class GoalActions {
   /// What becomes of each of [open], [goal]'s sub-goals left open as it's
   /// closed as [status]: by id, with a new top-level goal for some to move
   /// under, if one's made -- or null if it's called off.
-  Future<(Map<String, Leftover>, Goal?)?> _decideLeftovers(
+  /// Asks for a note to keep with marking [goal] [status] -- why, say.
+  /// Gives it (none, left blank), or null if it's called off.
+  Future<({String? note})?> _askNote(Goal goal, String status) =>
+      showDialog<({String? note})>(
+        context: context,
+        builder: (context) => _NoteDialog(
+          title: 'Mark ${goalTitle(goal)} $status',
+          action: 'Mark $status',
+        ),
+      );
+
+  Future<(Map<String, Leftover>, Goal?, String?)?> _decideLeftovers(
     Goal goal,
     String status,
     List<Goal> open,
     GoalTree tree,
-  ) => showDialog<(Map<String, Leftover>, Goal?)>(
+  ) => showDialog<(Map<String, Leftover>, Goal?, String?)>(
     context: context,
     builder: (context) => _LeftoversDialog(
       goal: goal,
@@ -990,7 +1045,8 @@ class _DeadlinesDialogState extends State<_DeadlinesDialog> {
 
 /// What becomes of each of [open], [goal]'s sub-goals left open, as it's
 /// closed as [status]: done, missed, obsolete or moved -- picked where to with
-/// [pick]. Gives them by id, with any new top-level goal made for them.
+/// [pick] -- and a note to keep with the change. Gives them by id, with
+/// any new top-level goal made for them, and the note (null for none).
 class _LeftoversDialog extends StatefulWidget {
   const _LeftoversDialog({
     required this.goal,
@@ -1015,6 +1071,24 @@ class _LeftoversDialogState extends State<_LeftoversDialog> {
     for (final c in widget.open) c.id: CloseLeftover(widget.status),
   };
   Goal? _made;
+  final _note = TextEditingController();
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  /// The goal made for sub-goals to move under, while any still does.
+  Goal? get _madeUsed =>
+      _chosen.values.whereType<MoveLeftover>().any(
+        (m) => m.to != null && m.to == _made?.id,
+      )
+      ? _made
+      : null;
+
+  void _submit() =>
+      Navigator.of(context).pop((_chosen, _madeUsed, _statusNote(_note)));
 
   Future<void> _move(Goal child) async {
     final picked = await widget.pick(child);
@@ -1042,10 +1116,6 @@ class _LeftoversDialogState extends State<_LeftoversDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final moving = _chosen.values.whereType<MoveLeftover>();
-    final made = moving.any((m) => m.to != null && m.to == _made?.id)
-        ? _made
-        : null;
     return AlertDialog(
       title: Text('Mark ${goalTitle(widget.goal)} ${widget.status}'),
       content: SizedBox(
@@ -1095,6 +1165,8 @@ class _LeftoversDialogState extends State<_LeftoversDialog> {
                   Text(_fitText(move.fit), style: theme.textTheme.bodySmall),
               ],
             ],
+            const SizedBox(height: 16),
+            _StatusNoteField(controller: _note, onSubmitted: _submit),
           ],
         ),
       ),
@@ -1103,11 +1175,79 @@ class _LeftoversDialogState extends State<_LeftoversDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop((_chosen, made)),
-          child: Text('Mark ${widget.status}'),
-        ),
+        FilledButton(onPressed: _submit, child: Text('Mark ${widget.status}')),
       ],
     );
   }
 }
+
+/// A note to keep with a goal's status change -- why it's done, say --
+/// asked for under [title], [action] going on with it (none, left
+/// blank) and Cancel calling it off: gives `(note: ...)`, or null.
+/// [initial] is the note as it is, to change.
+class _NoteDialog extends StatefulWidget {
+  const _NoteDialog({required this.title, required this.action, this.initial});
+
+  final String title;
+  final String action;
+  final String? initial;
+
+  @override
+  State<_NoteDialog> createState() => _NoteDialogState();
+}
+
+class _NoteDialogState extends State<_NoteDialog> {
+  late final _note = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop((note: _statusNote(_note)));
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.title),
+    content: SizedBox(
+      width: 440,
+      child: _StatusNoteField(controller: _note, onSubmitted: _submit),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(onPressed: _submit, child: Text(widget.action)),
+    ],
+  );
+}
+
+/// The field for a note on a goal's status change, focused as it's
+/// shown: optional, and Enter in it calls [onSubmitted].
+class _StatusNoteField extends StatelessWidget {
+  const _StatusNoteField({required this.controller, required this.onSubmitted});
+
+  final TextEditingController controller;
+  final VoidCallback onSubmitted;
+
+  @override
+  Widget build(BuildContext context) => TextField(
+    controller: controller,
+    autofocus: true,
+    decoration: const InputDecoration(
+      labelText: 'Note',
+      hintText: 'Why, say (optional)',
+      border: OutlineInputBorder(),
+    ),
+    textInputAction: TextInputAction.done,
+    onSubmitted: (_) => onSubmitted(),
+  );
+}
+
+/// What [note] holds, trimmed; null for nothing.
+String? _statusNote(TextEditingController note) => switch (note.text.trim()) {
+  '' => null,
+  final text => text,
+};

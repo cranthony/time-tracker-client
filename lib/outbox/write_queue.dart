@@ -35,15 +35,30 @@ class WriteKind {
     this.nameOf,
     this.batchTool,
     this.wire,
+    this.beside = const {},
   });
 
   /// An item, or changes to one, as the server takes them, when that isn't
   /// as they're kept here (a goal's deadline, say): what's sent.
   final Map<String, Object?> Function(Map<String, Object?> changes)? wire;
 
-  /// [changes] as they're sent ([wire]).
-  Map<String, Object?> sent(Map<String, Object?> changes) =>
-      wire?.call(changes) ?? changes;
+  /// The keys of an update's changes its tool takes beside [argument]
+  /// rather than in it (a goal's status_note): sent there, and left out
+  /// of the item.
+  final Set<String> beside;
+
+  /// [changes] as they're sent ([wire]), without those [beside] the item.
+  Map<String, Object?> sent(Map<String, Object?> changes) {
+    final own = beside.isEmpty
+        ? changes
+        : ({...changes}..removeWhere((key, _) => beside.contains(key)));
+    return wire?.call(own) ?? own;
+  }
+
+  /// Those of [changes] sent [beside] the item, with the values they have.
+  Map<String, Object?> besideItem(Map<String, Object?> changes) => {
+    for (final key in beside) key: ?changes[key],
+  };
 
   /// The tool that makes, changes and deletes several at once, checked
   /// whole ([WriteQueue.batch]): taking `creates` (each as [createTool]
@@ -345,6 +360,7 @@ class WriteKind {
     nameOf: _goalTitle,
     batchTool: 'update_goals',
     wire: goalWire,
+    beside: {'status_note'},
   );
 
   static Map<String, Object?> _goal(Map<String, Object?> item) =>
@@ -1316,6 +1332,9 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
                       ]
                       case final cleared when cleared.isNotEmpty)
                     'clear_fields': cleared,
+                  ...kind.besideItem(
+                    (u['changes'] as Map? ?? const {}).cast<String, Object?>(),
+                  ),
                 },
             ],
           if (write.parts('deletes') case final deletes when deletes.isNotEmpty)
@@ -1364,6 +1383,7 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
           if (kind.sent(write.changes).entries.where((c) => c.value == null)
               case final cleared when cleared.isNotEmpty)
             'clear_fields': [for (final c in cleared) c.key],
+          ...kind.besideItem(write.changes),
         },
       ),
       WriteOp.delete => (

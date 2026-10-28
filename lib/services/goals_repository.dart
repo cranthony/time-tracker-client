@@ -130,6 +130,7 @@ class McpGoalsRepository implements GoalsRepository {
             for (final MapEntry(:key, :value) in goalWire(changes).entries)
               key: ?value,
           },
+          'status_note': ?changes['status_note'],
           if ([
                 for (final MapEntry(:key, :value) in goalWire(changes).entries)
                   if (value == null) key,
@@ -185,6 +186,7 @@ class McpGoalsRepository implements GoalsRepository {
                   ).entries)
                     key: ?value,
                 },
+                'status_note': ?changes['status_note'],
                 if ([
                       for (final MapEntry(:key, :value) in goalWire(
                         changes,
@@ -313,6 +315,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
     final before = _goals[i];
     final json = {...before.toJson(), ...changes}
       ..removeWhere((_, v) => v == null);
+    final note = json.remove('status_note') as String?;
     // A deadline of its own unties it from what it was measured from.
     if (changes.containsKey('deadline') &&
         !changes.containsKey('deadline_offset_minutes') &&
@@ -332,6 +335,7 @@ class InMemoryGoalsRepository implements GoalsRepository {
           json['status'] as String,
           _now,
           deadline: json['deadline'] as String?,
+          note: note,
         ).toJson(),
       ];
     }

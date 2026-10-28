@@ -290,4 +290,33 @@ void main() {
       'update a {title: A!}',
     ]);
   });
+
+  test('a close keeps the note left with it on the history entry it adds, '
+      'beside the goal on the wire', () {
+    final changes = closing(tree, tree['a']!, 'done', note: 'Shipped');
+    expect(_described(changes), [
+      'update a1 {status: done}',
+      'update a {status: done, status_note: Shipped}',
+    ]);
+    expect(goalWire({'status': 'done', 'status_note': 'Shipped'}), {
+      'status': 'done',
+    });
+
+    final after = applied(goals, changes, now: _now);
+    final a = after.firstWhere((g) => g.id == 'a');
+    expect(a.history.last.note, 'Shipped');
+    expect(a.history.last.toJson()['note'], 'Shipped');
+    expect(a.toJson().containsKey('status_note'), isFalse);
+    // A sub-goal closed with it gets no note, and its entry says none.
+    final a1 = after.firstWhere((g) => g.id == 'a1');
+    expect(a1.history.last.note, isNull);
+    expect(a1.history.last.toJson().containsKey('note'), isFalse);
+    // Without one, neither does the goal's own.
+    final plain = applied(
+      goals,
+      closing(tree, tree['a']!, 'done'),
+      now: _now,
+    ).firstWhere((g) => g.id == 'a');
+    expect(plain.history.last.toJson().containsKey('note'), isFalse);
+  });
 }

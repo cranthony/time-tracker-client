@@ -9,6 +9,17 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.212.0
+
+- Marking a goal done, missed or obsolete asks for a note to keep with the
+  change -- why it's done, say -- in the dialog that asks what becomes of
+  its open sub-goals, or one of its own when there are none; left blank,
+  the goal closes as before, and Enter in the note closes it too. The note
+  is kept on the goal's history entry (the server's new `note` on a status
+  change, sent as an update's `status_note`), shown on the goal's page
+  with when it closed and in its history, where a pencil on each entry
+  adds or changes a note, or takes it off. Sub-goals closed along with
+  the goal get no note.
 ## 7.211.1
 
 - The home screen calendar no longer keeps listing a goal closed in the

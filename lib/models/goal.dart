@@ -257,9 +257,11 @@ class Goal {
 /// the server takes them: its deadline as what it's measured from
 /// (`{before_parent}` for a [Goal.deadlineOffsetMinutes], or a
 /// [Goal.deadlineRule]) or the date given (`{at}`), with null clearing
-/// it; and without what the server works out.
+/// it; and without what the server works out, nor a `status_note`, which
+/// goes beside the goal in an update, not in it.
 Map<String, Object?> goalWire(Map<String, Object?> changes) {
   final out = {...changes}
+    ..remove('status_note')
     ..remove('deadline_rule')
     ..remove('deadline_offset_minutes')
     ..remove('expected_start')
@@ -285,10 +287,10 @@ Map<String, Object?> goalWire(Map<String, Object?> changes) {
   return out;
 }
 
-/// One change of a goal's status: what it became, when, and the
-/// deadline it had then.
+/// One change of a goal's status: what it became, when, the deadline it
+/// had then, and a note left with it.
 class StatusChange {
-  const StatusChange(this.status, this.at, {this.deadline});
+  const StatusChange(this.status, this.at, {this.deadline, this.note});
 
   final String status;
   final DateTime at;
@@ -299,6 +301,12 @@ class StatusChange {
   /// have none.
   final String? deadline;
 
+  /// A note left with the change: why the goal was marked done, say.
+  /// Sent as an update's `status_note`, beside the goal, when the server
+  /// records the change ([goalWire]); in the history, when that's given
+  /// whole.
+  final String? note;
+
   static StatusChange? fromJson(Object? json) => switch (json) {
     {'status': final String status, 'at': final String at} =>
       switch (DateTime.tryParse(at)) {
@@ -306,6 +314,7 @@ class StatusChange {
           status,
           moment,
           deadline: Goal._text((json as Map)['deadline']),
+          note: Goal._text(json['note']),
         ),
         null => null,
       },
@@ -318,6 +327,7 @@ class StatusChange {
     // Only when there is one: a server from before history entries kept
     // deadlines still saves the rest.
     'deadline': ?deadline,
+    'note': ?note,
   };
 }
 

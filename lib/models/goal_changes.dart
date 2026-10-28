@@ -98,6 +98,7 @@ List<Goal> applied(
         final before = out[i];
         final json = {...before.toJson(), ...changes}
           ..removeWhere((_, v) => v == null);
+        final note = json.remove('status_note') as String?;
         // A deadline of its own unties it from what it was measured from.
         if (changes.containsKey('deadline') &&
             !changes.containsKey('deadline_offset_minutes') &&
@@ -118,6 +119,7 @@ List<Goal> applied(
               json['status'] as String,
               now,
               deadline: json['deadline'] as String?,
+              note: note,
             ).toJson(),
           ];
         }
@@ -209,13 +211,15 @@ List<GoalChange> closingAll(GoalTree tree, Goal goal, String status) => [
 /// open sub-goals ending as [leftovers] says, by id -- and [made], a goal
 /// made for some of them to move under, made first. In the order the
 /// server takes them: what's made, then what's moved, then what's
-/// closed, deepest first, [goal] last.
+/// closed, deepest first, [goal] last -- its change with [note], kept on
+/// the history entry it adds ([StatusChange.note]).
 List<GoalChange> closing(
   GoalTree tree,
   Goal goal,
   String status, {
   Map<String, Leftover> leftovers = const {},
   Goal? made,
+  String? note,
 }) {
   final moves = <GoalChange>[];
   final closes = <GoalChange>[];
@@ -232,7 +236,7 @@ List<GoalChange> closing(
     if (made != null) GoalCreate(made),
     ...moves,
     ...closes,
-    GoalUpdate(goal.id, {'status': status}),
+    GoalUpdate(goal.id, {'status': status, 'status_note': ?note}),
   ];
 }
 
@@ -335,7 +339,8 @@ List<GoalChange> withFields(
 /// [goal] edited: [fields] changed, and its status set to [status], with
 /// what that takes ([activating], [deactivating] or [closing]) -- each
 /// inactive parent given the deadline [deadlines] says, and each open
-/// sub-goal ending as [leftovers] says (closed as it is, by default).
+/// sub-goal ending as [leftovers] says (closed as it is, by default),
+/// with [note] kept on a close.
 List<GoalChange> editing(
   GoalTree tree,
   Goal goal,
@@ -344,13 +349,21 @@ List<GoalChange> editing(
   Map<String, String> deadlines = const {},
   Map<String, Leftover> leftovers = const {},
   Goal? made,
+  String? note,
 }) => withFields(
   switch (status) {
     null => const [],
     final s when s == goal.status => const [],
     'active' => activating(tree, [goal], deadlines: deadlines),
     'inactive' => deactivating(tree, goal),
-    final s => closing(tree, goal, s, leftovers: leftovers, made: made),
+    final s => closing(
+      tree,
+      goal,
+      s,
+      leftovers: leftovers,
+      made: made,
+      note: note,
+    ),
   },
   goal.id,
   fields,
