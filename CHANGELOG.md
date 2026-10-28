@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.214.0
+
+- A goal's page has its title as its first field, above its status, in
+  full and wrapping over as many lines as it needs. The bar still has it
+  too, with its parent's under it, but there it's often cut short on a
+  phone.
+
 ## 7.213.0
 
 - A Goals widget for the Android home screen, beside the calendar: every

@@ -44,7 +44,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Ship the app'), findsOneWidget);
+    // In its bar and its Title field.
+    expect(find.text('Ship the app'), findsNWidgets(2));
     repository.title = 'Ship it';
   }
 
@@ -54,7 +55,7 @@ void main() {
     await tester.tap(find.byTooltip('Refresh'));
     await tester.pumpAndSettle();
     expect(repository.asked, before + 1);
-    expect(find.text('Ship it'), findsOneWidget);
+    expect(find.text('Ship it'), findsNWidgets(2));
   });
 
   testWidgets("pulling a goal's page down loads it again", (tester) async {
@@ -63,6 +64,6 @@ void main() {
     await tester.fling(find.byType(ListView), const Offset(0, 400), 1000);
     await tester.pumpAndSettle();
     expect(repository.asked, before + 1);
-    expect(find.text('Ship it'), findsOneWidget);
+    expect(find.text('Ship it'), findsNWidgets(2));
   });
 }

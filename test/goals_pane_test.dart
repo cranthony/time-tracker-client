@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/goal.dart';
@@ -8,6 +9,7 @@ import 'package:time_tracker_client/services/event_store.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
+import 'package:time_tracker_client/widgets/goal_fields.dart';
 import 'package:time_tracker_client/widgets/goal_tile.dart';
 import 'package:time_tracker_client/widgets/html_editor.dart';
 import 'package:time_tracker_client/widgets/priority_chip.dart';
@@ -59,12 +61,14 @@ void main() {
     WidgetTester tester, {
     List<Event> events = const [],
     VoidCallback? onQuickAdd,
+    List<Goal>? goals,
+    Size size = const Size(800, 1600),
   }) async {
-    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     repository = InMemoryGoalsRepository(
-      _goals,
+      goals ?? _goals,
       () => DateTime(2026, 10, 17, 9),
     );
     final now = DateTime.now();
@@ -170,6 +174,38 @@ void main() {
     final bars = tester.widget<DepthBars>(find.byType(DepthBars).last);
     expect(bars.depth, 1);
     expect(find.text('Draw the icon'), findsOneWidget);
+  });
+
+  testWidgets("a goal's page has its title in full, above its status", (
+    tester,
+  ) async {
+    const title =
+        'Sign up for the community garden plot before the spring waitlist '
+        'closes';
+    // A phone's width, where the bar cuts the title short.
+    await pump(
+      tester,
+      goals: [_goal('garden', title)],
+      size: const Size(360, 1600),
+    );
+    await tester.tap(find.text(title));
+    await tester.pumpAndSettle();
+    expect(find.byType(GoalScreen), findsOneWidget);
+
+    final field = find.ancestor(
+      of: find.text('Title'),
+      matching: find.byType(GoalField),
+    );
+    final text = find.descendant(of: field, matching: find.text(title));
+    expect(text, findsOneWidget);
+    final paragraph = tester.renderObject<RenderParagraph>(text);
+    expect(paragraph.didExceedMaxLines, isFalse);
+    // Wrapped over several lines, not cut to one.
+    expect(tester.getSize(text).height, greaterThan(40));
+    expect(
+      tester.getTopLeft(find.text('Title')).dy,
+      lessThan(tester.getTopLeft(find.text('Status')).dy),
+    );
   });
 
   testWidgets('marking a goal done asks what becomes of what is left open', (
