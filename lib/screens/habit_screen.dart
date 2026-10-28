@@ -27,7 +27,9 @@ import 'subject_sections.dart';
 /// brief -- how many, their time, the most recent and the oldest -- with
 /// a button opening each lot on a page of its own. Claude judges its
 /// events; past ones only when asked. Pulling down loads the events
-/// again. [onEdit] edits it, returning it as saved.
+/// again. [onEdit] edits it, returning it as saved. Tapping what it's
+/// built on opens that habit's page, with [onOpenHabit], or that
+/// person's, with [onOpenPerson].
 ///
 /// A person's or circle's habit says whose it is, in place of its action,
 /// and has their traits -- those it picks -- as they're scored for them.
@@ -36,7 +38,7 @@ import 'subject_sections.dart';
 ///
 /// A recurring goal's habit says what its goal is, in place of its
 /// action, and lists its goals, newest first: done, missed (and tried
-/// again), or under way.
+/// again), or under way -- each opening its page, with [onOpenGoal].
 class HabitScreen extends StatefulWidget {
   const HabitScreen({
     super.key,
@@ -50,6 +52,8 @@ class HabitScreen extends StatefulWidget {
     this.onEdit,
     this.onOpenPerson,
     this.onOpenCircle,
+    this.onOpenHabit,
+    this.onOpenGoal,
   });
 
   final Habit habit;
@@ -77,6 +81,12 @@ class HabitScreen extends StatefulWidget {
 
   /// Opens a circle's page: its, for a circle's habit.
   final void Function(Circle circle)? onOpenCircle;
+
+  /// Opens a habit's page: one it's built on.
+  final void Function(Habit habit)? onOpenHabit;
+
+  /// Opens a goal's page: one of a recurring goal's habit's.
+  final void Function(Goal goal)? onOpenGoal;
 
   @override
   State<HabitScreen> createState() => _HabitScreenState();
@@ -113,6 +123,26 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
     setState(() => _habit = saved);
   }
 
+  /// Opens what [id] names, of what it's built on: a habit's page, or a
+  /// person's; null if there's none to open.
+  VoidCallback? _openFoundation(String id) {
+    final memory = widget.memory;
+    if (habitIdOf(id) case final habitId?) {
+      final habit = memory?.habits?.where((h) => h.id == habitId).firstOrNull;
+      return switch ((habit, widget.onOpenHabit)) {
+        (final h?, final onOpen?) => () => onOpen(h),
+        _ => null,
+      };
+    }
+    final person = memory?.people?.withSelf
+        .where((p) => p.id == id)
+        .firstOrNull;
+    return switch ((person, widget.onOpenPerson)) {
+      (final p?, final onOpen?) => () => onOpen(p),
+      _ => null,
+    };
+  }
+
   /// Its goals, newest first, each with its period and how it went.
   List<Widget> _goals(BuildContext context) {
     final theme = Theme.of(context);
@@ -133,6 +163,13 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
       for (final g in goals)
         ListTile(
           dense: true,
+          trailing: widget.onOpenGoal == null
+              ? null
+              : const Icon(Icons.chevron_right),
+          onTap: switch (widget.onOpenGoal) {
+            final onOpen? => () => onOpen(g),
+            null => null,
+          },
           leading: Icon(switch (g.status) {
             'done' => Icons.check_circle_outline,
             'missed' => Icons.cancel_outlined,
@@ -306,7 +343,15 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
                 runSpacing: 6,
                 children: [
                   for (final id in foundations)
-                    Chip(label: Text(widget.foundationNames[id] ?? id)),
+                    switch (_openFoundation(id)) {
+                      final open? => ActionChip(
+                        label: Text(widget.foundationNames[id] ?? id),
+                        onPressed: open,
+                      ),
+                      null => Chip(
+                        label: Text(widget.foundationNames[id] ?? id),
+                      ),
+                    },
                 ],
               ),
             }),

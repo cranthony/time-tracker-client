@@ -5,6 +5,7 @@ import '../models/habit_graph.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/trait.dart';
+import '../services/goals_repository.dart';
 import '../services/habits_repository.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
@@ -12,6 +13,7 @@ import '../services/traits_repository.dart';
 import '../widgets/foundations_field.dart';
 import '../widgets/habit_dialog.dart';
 import '../widgets/relationship_habits.dart';
+import 'goal_screen.dart';
 import 'habit_screen.dart';
 import 'person_pages.dart';
 
@@ -20,7 +22,8 @@ import 'person_pages.dart';
 /// page: those [memory] has, saved with [repository]. [actions] names and
 /// colors their actions; [personNames] and [locationNames] name who their
 /// events were with, and where. [onSaved] is told once one is, to load
-/// them afresh -- by default, the habits.
+/// them afresh -- by default, the habits. A habit's page opens those it's
+/// built on, its goals' and its people's.
 class HabitPages {
   const HabitPages({
     required this.repository,
@@ -110,6 +113,16 @@ class HabitPages {
       onOpenCircle: pages == null
           ? null
           : (circle) => pages.openCircle(context, circle),
+      onOpenHabit: (habit) => open(context, habit),
+      onOpenGoal: switch (GoalsScope.of(context)) {
+        final goals? => (goal) => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                GoalScreen(goalId: goal.id, repository: goals, memory: memory),
+          ),
+        ),
+        null => null,
+      },
     );
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
   }

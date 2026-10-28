@@ -1016,6 +1016,77 @@ void main() {
     expect(find.text('A goal each week: Call Mom'), findsOneWidget);
   });
 
+  testWidgets("a habit's page opens its goals' and what it's built on", (
+    tester,
+  ) async {
+    final sleep = Habit.fromJson({
+      'id': 'sleep',
+      'name': 'Sleep well',
+      'action_id': 'bed',
+      'traits': {'select': <String>[]},
+      'status': 'active',
+    });
+    final habit = Habit.fromJson({
+      'id': 'h1',
+      'name': 'Call Mom',
+      'recurring_goal': {'period': 'week'},
+      'traits': {'select': <String>[]},
+      'foundations': ['habit:sleep'],
+      'status': 'active',
+    });
+    final goal = Goal.fromJson({
+      'id': 'h1_2026-10-18',
+      'title': 'Call Mom',
+      'habit_id': 'h1',
+      'status': 'active',
+      'deadline': {'at': '2026-10-24'},
+      'history': [
+        {'status': 'active', 'at': '2026-10-18T00:00:00-04:00'},
+      ],
+    });
+    final memory = PlanMemory()
+      ..habits = [sleep, habit]
+      ..goals = [goal];
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      GoalsScope(
+        repository: InMemoryGoalsRepository([goal]),
+        child: HabitsScope(
+          repository: InMemoryHabitsRepository([sleep, habit]),
+          child: MaterialApp(
+            home: GoalScreen(
+              goalId: goal.id,
+              repository: InMemoryGoalsRepository([goal]),
+              memory: memory,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('From the habit Call Mom'));
+    // Habits' pages don't settle here, with no events to score them from.
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    // Its goal's page: back where it started, a page further on.
+    await tester.tap(find.text('From Sun, Oct 18'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(GoalScreen, skipOffstage: false), findsNWidgets(2));
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    await tester.tap(find.widgetWithText(ActionChip, 'Sleep well'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(HabitScreen, skipOffstage: false), findsNWidgets(2));
+    expect(find.text('Your events with it'), findsOneWidget);
+  });
+
   testWidgets("a habit's page shows what it's built on", (tester) async {
     final builtOn = Habit.fromJson({
       'id': 'h1',
