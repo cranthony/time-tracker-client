@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.210.2
+
+- On the day the clocks fall back, J and K once more move a cursor on the
+  timeline to the grid's next line, earlier or later. After the repeated
+  hour, both had jumped it an hour later: the grid's lines were counted
+  from midnight by the time since it, which runs an hour ahead of the
+  clock that day, and then placed by the clock. They're now counted by
+  the clock as well.
+
 ## 7.210.1
 
 - A goal change applied from a compaction proposal shows on the Goals

@@ -44,6 +44,31 @@ void main() {
       expect(stops(grid: null).next(at(9), later: true), at(9, 1));
       expect(stops().next(at(0), later: false), isNull);
     });
+
+    // The day the clocks fall back, where this machine's zone has one:
+    // 25 hours long, so after the repeated hour the time since midnight
+    // runs an hour ahead of the clock. Lines are by the clock.
+    final fallBack = [DateTime(2026, 10, 25), DateTime(2026, 11, 1)]
+        .where(
+          (d) =>
+              DateTime(d.year, d.month, d.day + 1).difference(d) ==
+              const Duration(hours: 25),
+        )
+        .firstOrNull;
+    test('by the clock, on the day the clocks fall back', () {
+      final day = fallBack!;
+      final s = CursorStops(
+        from: day,
+        to: DateTime(day.year, day.month, day.day + 1),
+        grid: const Duration(minutes: 15),
+      );
+      final ten = DateTime(day.year, day.month, day.day, 10);
+      expect(s.next(ten, later: true), ten.add(const Duration(minutes: 15)));
+      expect(
+        s.next(ten, later: false),
+        ten.subtract(const Duration(minutes: 15)),
+      );
+    }, skip: fallBack == null ? 'no fall-back day in this time zone' : false);
   });
 
   group('nearest', () {

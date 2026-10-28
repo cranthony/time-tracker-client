@@ -52,8 +52,10 @@ class CursorStops {
   /// The grid's line on or past [time], [later] or earlier.
   DateTime _line(DateTime time, {required bool later}) {
     final step = (grid?.inMinutes ?? 1).clamp(1, 24 * 60);
-    final midnight = DateTime(time.year, time.month, time.day);
-    final minutes = time.difference(midnight).inSeconds / 60;
+    // By the clock, as the lines are drawn -- not the time since
+    // midnight, which runs an hour ahead of it once the clocks have
+    // fallen back, or behind once they've sprung forward.
+    final minutes = time.hour * 60 + time.minute + time.second / 60;
     final n = later ? (minutes / step).ceil() : (minutes / step).floor();
     return DateTime(time.year, time.month, time.day, 0, n * step);
   }
