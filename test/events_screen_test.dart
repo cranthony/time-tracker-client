@@ -2259,6 +2259,127 @@ void main() {
       expect(find.byType(PendingEventBoxView), findsNothing);
     });
 
+    /// Opens [name]'s details and makes its end 2:30 PM, typed into the
+    /// time picker -- its summary [also] changed first -- and saves.
+    Future<void> endAtHalfPastTwo(
+      WidgetTester tester,
+      String name, {
+      String? also,
+    }) async {
+      await tester.tap(find.text(name));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Details'));
+      await tester.pumpAndSettle();
+      final dialog = find.byType(AlertDialog);
+      Future<void> edit(Finder value) async {
+        await tester.ensureVisible(value);
+        await tester.pumpAndSettle();
+        await tester.tap(value);
+        await tester.pumpAndSettle();
+      }
+
+      if (also != null) {
+        // The summary's row, not the title.
+        await edit(find.descendant(of: dialog, matching: find.text(name)).last);
+        await tester.enterText(find.byType(TextField), also);
+        await tester.tap(find.byTooltip('Keep edit'));
+        await tester.pumpAndSettle();
+      }
+      await edit(
+        find.descendant(
+          of: dialog,
+          matching: find.text('Wednesday, September 30, 2026, 1:00 PM'),
+        ),
+      );
+      // Said under it: new times go to the timeline.
+      expect(find.textContaining("puts the event's box up"), findsOneWidget);
+      await tester.tap(
+        find.descendant(of: dialog, matching: find.text('1:00 PM')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.keyboard_outlined));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(0), '2');
+      await tester.enterText(find.byType(TextField).at(1), '30');
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Keep edit'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text(also == null ? 'Save 1 change' : 'Save 2 changes'),
+      );
+      // The box's shadow pulses: settled by hand.
+      await settle(tester);
+    }
+
+    testWidgets("new times from an event's Details aren't saved as they are, "
+        'every other event kept: the box goes up at them, to move it there '
+        'as the lists say', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 't', start: at(30, 12), end: at(30, 13), summary: 'Tea'),
+        Event(id: 'w', start: at(30, 14), end: at(30, 15), summary: 'Walk'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await endAtHalfPastTwo(tester, 'Tea');
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(repo.saved, isEmpty);
+      expect(box(tester).span, (at(30, 12), at(30, 14, 30)));
+      expect(find.text('Moving “Tea”'), findsOneWidget);
+      expect(
+        find.text('The box is up at its new times: ✓ moves it there.'),
+        findsOneWidget,
+      );
+      // Walk, in its way, pushed down with it rather than kept.
+      await pickInto(tester, 'Push down', ['Walk']);
+      expect(pushed(tester), [
+        (start: at(30, 14, 30), end: at(30, 15, 30), label: 'Walk'),
+      ]);
+      await tester.tap(find.byTooltip('Move it here'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {
+          'start': localIsoTimestamp(at(30, 12)),
+          'end': localIsoTimestamp(at(30, 14, 30)),
+        },
+        {
+          'start': localIsoTimestamp(at(30, 14, 30)),
+          'end': localIsoTimestamp(at(30, 15, 30)),
+        },
+      ]);
+      expect(find.byType(PendingEventBoxView), findsNothing);
+    });
+
+    testWidgets('the rest of what was changed with new times is saved at '
+        'once; the times wait on the move', (tester) async {
+      final repo = _RecordingRepository([
+        Event(id: 't', start: at(30, 12), end: at(30, 13), summary: 'Tea'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      await endAtHalfPastTwo(tester, 'Tea', also: 'Coffee');
+      expect(repo.saved, [
+        {'summary': 'Coffee'},
+      ]);
+      expect(find.text('Saved.'), findsOneWidget);
+      expect(
+        find.text('The box is up at its new times: ✓ moves it there.'),
+        findsNothing,
+      );
+      expect(box(tester).span, (at(30, 12), at(30, 14, 30)));
+      await tester.tap(find.byTooltip('Move it here'));
+      await tester.pumpAndSettle();
+      expect(repo.saved, [
+        {'summary': 'Coffee'},
+        {
+          'start': localIsoTimestamp(at(30, 12)),
+          'end': localIsoTimestamp(at(30, 14, 30)),
+        },
+      ]);
+      expect(find.byType(PendingEventBoxView), findsNothing);
+      expect(find.text('Coffee'), findsOneWidget);
+    });
+
     testWidgets('while the box is up, the days either side are stacked '
         'above and below, without moving what is on screen; a new event '
         'can cross midnight', (tester) async {
