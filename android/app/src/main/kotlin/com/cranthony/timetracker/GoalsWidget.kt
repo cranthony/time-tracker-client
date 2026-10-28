@@ -163,7 +163,9 @@ private fun Content(
             .appWidgetBackground()
             .background(GlanceTheme.colors.widgetBackground)
             .cornerRadius(16.dp)
-            .padding(horizontal = 12.dp, vertical = 5.dp),
+            // No padding above or below: the header's button leaves 2dp
+            // round its circle, and the rows have their own room.
+            .padding(horizontal = 12.dp),
     ) {
         if (!titleAtBottom) Header(context)
         if (goals.isNullOrEmpty()) {
@@ -225,8 +227,8 @@ private fun Header(context: Context) {
 /**
  * A goal: its title, and when it's due ([dueLabel]) at the end -- in
  * red, and bold, once it's overdue. Opens its page. [ROW_DP] high, with
- * small text, so six fit in a widget two cells high (about 140dp on a
- * phone) under the header.
+ * small text, so six fit in a widget two cells high (150dp on a phone)
+ * under the header.
  */
 @Composable
 private fun GoalRow(context: Context, goal: WidgetGoal, now: Long) {
@@ -241,7 +243,7 @@ private fun GoalRow(context: Context, goal: WidgetGoal, now: Long) {
         Text(
             text = goal.title.ifBlank { "(no title)" },
             modifier = GlanceModifier.defaultWeight(),
-            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 11.sp),
+            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 12.sp),
             maxLines = 1,
         )
         val due = dueLabel(context, goal, now)
@@ -251,7 +253,7 @@ private fun GoalRow(context: Context, goal: WidgetGoal, now: Long) {
                 text = due,
                 style = TextStyle(
                     color = if (overdue) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     fontWeight = if (overdue) FontWeight.Medium else FontWeight.Normal,
                 ),
                 maxLines = 1,
@@ -260,8 +262,11 @@ private fun GoalRow(context: Context, goal: WidgetGoal, now: Long) {
     }
 }
 
-/** A goal's row's height: six of them, and the header, in two cells. */
-private const val ROW_DP = 17
+/**
+ * A goal's row's height: six of them, under the 28dp header, in the
+ * 150dp of two cells, with a few dp over for a launcher that gives less.
+ */
+private const val ROW_DP = 19
 
 /**
  * When [goal] is due, as of [now]: its day as "Today", "Tomorrow" or
