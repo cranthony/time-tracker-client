@@ -2483,14 +2483,17 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Opens every one of [event]'s properties, as [_openEventDetails]
   /// does, for one in what the open proposal says happened: its changes
-  /// edit the proposal.
+  /// edit the proposal -- its new times once the box is moved.
   Future<void> _openReviewedDetails(Event event) async {
     Proposal? amended;
+    (DateTime, DateTime)? placing;
     final updated = await showEventDialog(
       context,
       event,
       save: (event, changes) async {
-        amended = await _amendUpdate(event, changes);
+        final (rest, span) = _timesApart(event, changes);
+        placing = span;
+        if (rest.isNotEmpty) amended = await _amendUpdate(event, rest);
         return const [];
       },
       cancel: _waitingOn(event).isNotEmpty
@@ -2500,11 +2503,14 @@ class _EventsScreenState extends State<EventsScreen> {
               return const [];
             },
       waiting: _waitingOn(event),
-      otherEvents: _otherEvents(event),
       actions: _actions,
     );
-    if (updated != null && mounted) {
-      _amended(amended!, 'Changed in what happened, to confirm.');
+    if (updated == null || !mounted) return;
+    if (placing case final span?) {
+      _placeFromDetails(event, span, saved: amended != null);
+    }
+    if (amended case final amended?) {
+      _amended(amended, 'Changed in what happened, to confirm.');
     }
   }
 
@@ -2977,19 +2983,28 @@ class _EventsScreenState extends State<EventsScreen> {
     });
   }
 
-  /// Starts moving [event]: the box around it, pushing the events in its
-  /// way to start with.
-  void _startMoving(Event event) {
+  /// Starts moving [event]: the box around it -- or [at] its new times,
+  /// scrolled into view -- pushing the events in its way to start with.
+  void _startMoving(Event event, {(DateTime, DateTime)? at}) {
     if (event.isCancelled || _saidReadOnly()) return;
+    final (start, end) = at ?? (event.start, event.end);
+    // On another day, that day's shown first, for the box to be on it.
+    if (at != null && _midnight(start) != _day) _goToDay(_midnight(start));
     setState(() {
       _moving = event;
       _commutes.clear();
-      _setBox(PendingEventBox(event.start, other: event.end));
+      _setBox(PendingEventBox(start, other: end));
       _clearLists();
-      _keepByRules(from: event.start, to: event.end, except: event.id);
+      _keepByRules(from: start, to: end, except: event.id);
       _pushCommutes(event);
       _selected = CursorRole.anchor;
     });
+    // Once the day before's stacked above it (see _setBox).
+    if (at != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _goToBox();
+      });
+    }
   }
 
   /// Puts the commutes right before [event] in the Push up list, and right
@@ -4444,26 +4459,39 @@ class _EventsScreenState extends State<EventsScreen> {
         _ => 'an event',
       };
 
-  /// Opens every one of [event]'s properties.
+  /// Opens every one of [event]'s properties. New times aren't saved from
+  /// there, every other event kept out of their way: the rest of its
+  /// changes saved, the box goes up at them, to move the event there as
+  /// pressing and holding it does -- the events in its way kept, pushed
+  /// or cancelled from the lists (see [_placeFromDetails]).
   Future<void> _openEventDetails(Event event) async {
     // Edited in what happened, if it runs into what the proposal changed.
     Proposal? amended;
+    // Its new times, for the box once the dialog's closed; and whether
+    // anything else was saved -- or it was cancelled.
+    (DateTime, DateTime)? placing;
+    var saved = false;
     final updated = await showEventDialog(
       context,
       event,
       save: (event, changes) async {
-        if (_throughProposal([event], [_spanWith(event, changes)])) {
-          amended = await _amendUpdate(event, changes);
+        final (rest, span) = _timesApart(event, changes);
+        placing = span;
+        if (rest.isEmpty) return const [];
+        saved = true;
+        if (_throughProposal([event], [_spanWith(event, rest)])) {
+          amended = await _amendUpdate(event, rest);
           return const [];
         }
         return _approvingHistory(
           at: event.start,
-          (allow) => _writes.update(event, changes, allowHistory: allow),
+          (allow) => _writes.update(event, rest, allowHistory: allow),
         );
       },
       cancel: _waitingOn(event).isNotEmpty
           ? null
           : (event, counts) async {
+              saved = true;
               if (_throughProposal([event], [(event.start, event.end)])) {
                 amended = await _amendCancel(event, counts);
                 return const [];
@@ -4478,16 +4506,52 @@ class _EventsScreenState extends State<EventsScreen> {
               );
             },
       waiting: _waitingOn(event),
-      otherEvents: _otherEvents(event),
       actions: _actions,
       openSeries: (seriesId) => _openSeries(seriesId, event),
     );
     if (updated == null || !mounted) return;
+    if (placing case final span?) _placeFromDetails(event, span, saved: saved);
     if (amended case final amended?) {
       _amended(amended, 'Changed in what happened, to confirm.');
-    } else {
+    } else if (saved) {
       await _saved(event, updated);
     }
+  }
+
+  /// [changes] to [event] without its times, and the span its new times
+  /// make with the ones it has, in local time: null if neither time's
+  /// changed.
+  static (Map<String, Object?>, (DateTime, DateTime)?) _timesApart(
+    Event event,
+    Map<String, Object?> changes,
+  ) => (
+    {
+      for (final MapEntry(:key, :value) in changes.entries)
+        if (key != 'start' && key != 'end') key: value,
+    },
+    switch (_spanWith(event, changes)) {
+      (final start, final end)
+          when changes.containsKey('start') || changes.containsKey('end') =>
+        (start.toLocal(), end.toLocal()),
+      _ => null,
+    },
+  );
+
+  /// Puts the box up at [span], [event]'s new times from its details, to
+  /// move it there (see [_startMoving]) -- and says so, unless something
+  /// else of it was [saved], which is said instead.
+  void _placeFromDetails(
+    Event event,
+    (DateTime, DateTime) span, {
+    required bool saved,
+  }) {
+    _startMoving(event, at: span);
+    if (saved || _box == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('The box is up at its new times: ✓ moves it there.'),
+      ),
+    );
   }
 
   /// Says what saving [event] did, [updated] being what the server

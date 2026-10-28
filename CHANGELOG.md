@@ -9,6 +9,17 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.211.0
+
+- In an event's Details, changing its start or end no longer saves the
+  new times straight away with every other event kept out of their way,
+  which refused any that would overlap one. Saving now puts the event's
+  box up at the new times on the timeline, as pressing and holding the
+  event does, the events in its way to keep, push or cancel from the
+  lists as usual, and "Move it here" moves it; a hint under the times
+  says so as they're edited. Whatever else was changed with them is
+  saved at once.
+
 ## 7.210.2
 
 - On the day the clocks fall back, J and K once more move a cursor on the

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/plan_action.dart';
-import 'other_events.dart';
 import 'properties_dialog.dart';
 
 /// Shows every property of [event], as the server sent it, under its
@@ -18,7 +17,10 @@ import 'properties_dialog.dart';
 /// that saved a change to the series (returning true), this closes,
 /// returning null.
 ///
-/// New times that would overlap an event in [otherEvents] can't be saved.
+/// New times aren't checked against other events here, beyond the end
+/// coming after the start: [save] gets them with the rest, for the Events
+/// page to put the event's box up at, to move it there (see [timesHint],
+/// under them as they're edited).
 ///
 /// With [cancel] too, "Cancel event" cancels it after asking -- and asks
 /// whether that counts against follow-through (see
@@ -32,15 +34,11 @@ Future<List<Event>?> showEventDialog(
   Future<List<Event>> Function(Event event, Map<String, Object?> changes)? save,
   Future<List<Event>> Function(Event event, bool countsAgainstFollowThrough)?
   cancel,
-  OtherEvents otherEvents = const OtherEvents.none(),
   Future<List<PlanAction>> Function()? actions,
   Future<bool> Function(String seriesId)? openSeries,
   Set<String> waiting = const {},
 }) {
   final typed = event.toJson();
-  final strings = MaterialLocalizations.of(context);
-  String time(DateTime t) =>
-      strings.formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal()));
   return showPropertiesDialog<List<Event>>(
     context,
     title: (values) => switch (values['summary']) {
@@ -65,6 +63,8 @@ Future<List<Event>?> showEventDialog(
       'action_ids':
           'Actions shown "from its label" were never set: they come from the '
           "event's label. Keep or change them to set them.",
+      'start': timesHint,
+      'end': timesHint,
     },
     links: {
       if ((openSeries, event.properties['recurring_event_id']) case (
@@ -89,20 +89,7 @@ Future<List<Event>?> showEventDialog(
     validate: (values) {
       final start = DateTime.parse(values['start'] as String);
       final end = DateTime.parse(values['end'] as String);
-      if (!end.isAfter(start)) return 'The end has to be after the start.';
-      // Overlaps it had already are left alone.
-      if (start.isAtSameMomentAs(event.start) &&
-          end.isAtSameMomentAs(event.end)) {
-        return null;
-      }
-      return switch (otherEvents.overlapping(start, end)) {
-        final other? =>
-          'It would overlap ${switch (other.summary) {
-            final s? when s.isNotEmpty => '"$s"',
-            _ => 'another event',
-          }}, ${time(other.start)} – ${time(other.end)}.',
-        null => null,
-      };
+      return end.isAfter(start) ? null : 'The end has to be after the start.';
     },
     actions: actions,
     oneWayAction: event.isCancelled || cancel == null
@@ -121,6 +108,12 @@ Future<List<Event>?> showEventDialog(
     waiting: waiting,
   );
 }
+
+/// Under the start and end as they're edited: what saving new times does.
+const timesHint =
+    "Saving new times puts the event's box up at them on the timeline, "
+    'rather than writing them: ✓ there moves it, the events in its way '
+    'kept, pushed or cancelled from the lists.';
 
 /// The switch cancelling an event offers: whether it counts against the
 /// follow-through of whoever a follow-through trait tracks it for, rather
