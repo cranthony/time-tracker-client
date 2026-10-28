@@ -4,17 +4,25 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/platform/goals_widget.dart';
+import 'package:time_tracker_client/widgets/color_picker.dart';
 
 /// Today, at noon.
 final _now = DateTime(2026, 10, 8, 12);
 
-Goal _goal(String id, {String status = 'active', String? deadline}) =>
-    Goal.fromJson({
-      'id': id,
-      'title': id,
-      'status': status,
-      'deadline': ?deadline,
-    });
+Goal _goal(
+  String id, {
+  String status = 'active',
+  String? deadline,
+  String? parentId,
+  int? priority,
+}) => Goal.fromJson({
+  'id': id,
+  'title': id,
+  'status': status,
+  'deadline': ?deadline,
+  'parent_id': ?parentId,
+  'priority': ?priority,
+});
 
 /// The snapshot's goals' ids, in order.
 List<String> _ids(Map<String, Object?> snapshot) => [
@@ -78,18 +86,40 @@ void main() {
         'title': 'today-at-five',
         'due': DateTime(2026, 10, 8, 17).millisecondsSinceEpoch,
         'has_time': true,
+        'color': priorityColor(defaultGoalPriority).toARGB32(),
       });
       expect(shown[2], {
         'id': 'today',
         'title': 'today',
         'due': DateTime(2026, 10, 9).millisecondsSinceEpoch,
         'has_time': false,
+        'color': priorityColor(defaultGoalPriority).toARGB32(),
       });
       expect(shown[4], {
         'id': 'undated',
         'title': 'undated',
         'has_time': false,
+        'color': priorityColor(defaultGoalPriority).toARGB32(),
       });
+    });
+
+    test("each colored by its priority: its own, or its nearest parent's "
+        'that has one, though the parent is not active itself', () {
+      final shown = (goalsSnapshot([
+        _goal('project', priority: 1, status: 'done'),
+        _goal('piece', parentId: 'project'),
+        _goal('step', parentId: 'piece'),
+        _goal('urgent', parentId: 'project', priority: 0),
+      ], now: _now)['goals'] as List).cast<Map>();
+      expect(
+        {for (final g in shown) g['id']: g['color']},
+        {
+          'piece': priorityColor(1).toARGB32(),
+          'step': priorityColor(1).toARGB32(),
+          'urgent': priorityColor(0).toARGB32(),
+        },
+      );
+      expect(priorityColor(0), isNot(priorityColor(1)));
     });
 
     test('is as of the day, so it changes with it', () {
