@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
 import '../models/goal_activation.dart';
+import 'duration_field.dart';
 import 'durations.dart';
 import 'goal_icon.dart';
 import 'picker_sheet.dart';
@@ -413,9 +414,9 @@ class GoalStartsEditor extends StatelessWidget {
   }
 }
 
-/// Asks for a while, in days and hours, and returns when it's over from
-/// [now]: the same time of day that many days on, then those hours. Null
-/// if it's cancelled.
+/// Asks for a while, in days and hours ([DurationField]), and returns
+/// when it's over from [now]: the same time of day that many days on,
+/// then those hours. Null if it's cancelled.
 Future<DateTime?> pickWhile(
   BuildContext context, {
   DateTime Function() now = DateTime.now,
@@ -434,61 +435,55 @@ class _WhileDialog extends StatefulWidget {
 }
 
 class _WhileDialogState extends State<_WhileDialog> {
-  var _days = 1;
-  var _hours = 0;
+  final _minutes = TextEditingController(text: '${Duration.minutesPerDay}');
 
-  DateTime get _until {
+  @override
+  void dispose() {
+    _minutes.dispose();
+    super.dispose();
+  }
+
+  /// When the while typed is over, if it's one: null if it isn't, or is
+  /// none at all.
+  DateTime? get _until {
+    final minutes = int.tryParse(_minutes.text.trim());
+    if (minutes == null || minutes <= 0) return null;
     final n = widget.now;
-    return DateTime(n.year, n.month, n.day + _days, n.hour + _hours, n.minute);
+    return DateTime(
+      n.year,
+      n.month,
+      n.day + minutes ~/ Duration.minutesPerDay,
+      n.hour,
+      n.minute + minutes % Duration.minutesPerDay,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final none = _days == 0 && _hours == 0;
+    final until = _until;
     return AlertDialog(
       title: const Text('For how long'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              DropdownButton<int>(
-                key: const ValueKey('while-days'),
-                value: _days,
-                items: [
-                  for (var d = 0; d <= 30; d++)
-                    DropdownMenuItem(
-                      value: d,
-                      child: Text('$d day${d == 1 ? '' : 's'}'),
-                    ),
-                ],
-                onChanged: (d) => setState(() => _days = d ?? _days),
-              ),
-              DropdownButton<int>(
-                key: const ValueKey('while-hours'),
-                value: _hours,
-                items: [
-                  for (var h = 0; h < 24; h++)
-                    DropdownMenuItem(
-                      value: h,
-                      child: Text('$h hour${h == 1 ? '' : 's'}'),
-                    ),
-                ],
-                onChanged: (h) => setState(() => _hours = h ?? _hours),
-              ),
-            ],
-          ),
-          if (!none)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                'Until ${startLabel(context, deadlineOf(_until, time: true))}',
-              ),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DurationField(
+              controller: _minutes,
+              label: 'For',
+              days: true,
+              onChanged: () => setState(() {}),
             ),
-        ],
+            if (until != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Until ${startLabel(context, deadlineOf(until, time: true))}',
+                ),
+              ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -496,7 +491,9 @@ class _WhileDialogState extends State<_WhileDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: none ? null : () => Navigator.of(context).pop(_until),
+          onPressed: until == null
+              ? null
+              : () => Navigator.of(context).pop(until),
           child: const Text('OK'),
         ),
       ],

@@ -9,6 +9,7 @@ import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
+import 'package:time_tracker_client/widgets/duration_field.dart';
 import 'package:time_tracker_client/widgets/goal_editor.dart';
 import 'package:time_tracker_client/widgets/goal_tile.dart';
 import 'package:time_tracker_client/widgets/hotkeys.dart';
@@ -210,18 +211,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('For how long'), findsOneWidget);
 
+    // A day, to start with.
+    expect(find.textContaining('Until '), findsOneWidget);
+    final field = find.descendant(
+      of: find.byType(DurationField),
+      matching: find.byType(TextField),
+    );
     // None at all isn't a while.
-    await tester.tap(find.byKey(const ValueKey('while-days')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('0 days').last);
-    await tester.pumpAndSettle();
+    await tester.enterText(field, '0');
+    await tester.pump();
     final ok = find.widgetWithText(FilledButton, 'OK');
     expect(tester.widget<FilledButton>(ok).onPressed, isNull);
 
-    await tester.tap(find.byKey(const ValueKey('while-hours')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('3 hours').last);
-    await tester.pumpAndSettle();
+    await tester.enterText(field, '1d 3h');
+    await tester.pump();
     expect(find.textContaining('Until '), findsOneWidget);
     await tester.tap(ok);
     await tester.pumpAndSettle();
