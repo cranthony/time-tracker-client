@@ -33,8 +33,9 @@ import 'habit_pages.dart';
 /// directly under it (as [byPriority] lists them, filtered by status),
 /// each opening its own page, held and dragged to reorder it
 /// ([GoalReorderList]), with "+" to add one; and its history, each
-/// change's time tapped to change it, or deleted. D marks it done, M
-/// missed, and T missed to try again, whenever it can be.
+/// change's time tapped to change it, its note added or changed, or
+/// deleted. D marks it done, M missed, and T missed to try again,
+/// whenever it can be -- each close asking for a note to keep with it.
 class GoalScreen extends StatefulWidget {
   const GoalScreen({
     super.key,
@@ -274,19 +275,34 @@ class _GoalScreenState extends State<GoalScreen> {
                   leading: const Icon(Icons.history, size: 20),
                   title: Text(goalStatuses[change.status] ?? change.status),
                   subtitle: Text(
-                    change.deadline == null
-                        ? _when(context, change.at)
-                        : '${_when(context, change.at)} · '
-                              'due ${deadlineLabel(context, change.deadline)}',
+                    [
+                      change.deadline == null
+                          ? _when(context, change.at)
+                          : '${_when(context, change.at)} · '
+                                'due ${deadlineLabel(context, change.deadline)}',
+                      ?change.note,
+                    ].join('\n'),
                   ),
+                  isThreeLine: change.note != null,
                   onTap: () => _actions.retime(goal, i),
-                  trailing: goal.history.length < 2
-                      ? null
-                      : IconButton(
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: change.note == null
+                            ? 'Add a note'
+                            : 'Change the note',
+                        icon: const Icon(Icons.edit_note, size: 20),
+                        onPressed: () => _actions.annotate(goal, i),
+                      ),
+                      if (goal.history.length >= 2)
+                        IconButton(
                           tooltip: 'Delete this change',
                           icon: const Icon(Icons.delete_outline, size: 20),
                           onPressed: () => _actions.forget(goal, i),
                         ),
+                    ],
+                  ),
                 ),
             ],
           ),
@@ -428,7 +444,10 @@ class _GoalScreenState extends State<GoalScreen> {
           if (goal.closedAt case final at?)
             GoalField(
               label: goalStatuses[goal.status] ?? goal.status,
-              child: Text(_when(context, at)),
+              child: Text(switch (goal.history.last.note) {
+                null => _when(context, at),
+                final note => '${_when(context, at)}\n$note',
+              }),
             ),
           if (goal.misses case [..., final last] && final misses when goal.open)
             GoalField(

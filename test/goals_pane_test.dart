@@ -179,14 +179,85 @@ void main() {
     await tester.tap(find.text('Learn Rust'));
     await tester.pumpAndSettle();
 
-    // Nothing under it: done at once.
+    // Nothing under it: just a note asked for, and done without one.
     await tester.tap(find.widgetWithText(OutlinedButton, 'Mark done'));
     await tester.pumpAndSettle();
     expect(
-      (await repository.goals()).firstWhere((g) => g.id == 'learn').status,
-      'done',
+      find.text("What becomes of what's still open under it?"),
+      findsNothing,
     );
+    expect(find.text('Mark Learn Rust done'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Mark done'));
+    await tester.pumpAndSettle();
+    final learn = (await repository.goals()).firstWhere((g) => g.id == 'learn');
+    expect(learn.status, 'done');
+    expect(learn.history.last.note, isNull);
     expect(memory.goals!.firstWhere((g) => g.id == 'learn').closed, isTrue);
+  });
+
+  testWidgets('marking a goal done keeps the note left with it, shown on its '
+      'page and changed from its history', (tester) async {
+    await pump(tester);
+    await tester.tap(find.text('Learn Rust'));
+    await tester.pumpAndSettle();
+
+    // Enter in the note marks it done with the note.
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Mark done'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), ' Read the book through ');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    var learn = (await repository.goals()).firstWhere((g) => g.id == 'learn');
+    expect(learn.status, 'done');
+    expect(learn.history.last.note, 'Read the book through');
+    // With when it was done, and on its history entry.
+    expect(find.textContaining('Read the book through'), findsNWidgets(2));
+
+    // The history entry's note can be changed, or taken off.
+    await tester.tap(find.byTooltip('Change the note'));
+    await tester.pumpAndSettle();
+    expect(find.text('Note on “Learn Rust” done'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'Skimmed it');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    learn = (await repository.goals()).firstWhere((g) => g.id == 'learn');
+    expect(learn.history.last.note, 'Skimmed it');
+    expect(learn.history.map((c) => c.status), ['active', 'done']);
+    expect(find.textContaining('Skimmed it'), findsNWidgets(2));
+
+    await tester.tap(find.byTooltip('Change the note'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    learn = (await repository.goals()).firstWhere((g) => g.id == 'learn');
+    expect(learn.history.last.note, isNull);
+    expect(find.textContaining('Skimmed it'), findsNothing);
+    expect(find.byTooltip('Add a note'), findsNWidgets(2));
+  });
+
+  testWidgets('the note goes with what becomes of the open sub-goals', (
+    tester,
+  ) async {
+    await pump(tester);
+    await tester.tap(find.text('Ship the app'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Mark missed'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text("What becomes of what's still open under it?"),
+      findsOneWidget,
+    );
+    await tester.enterText(find.byType(TextField), 'Ran out of time');
+    await tester.tap(find.widgetWithText(FilledButton, 'Mark missed'));
+    await tester.pumpAndSettle();
+
+    final saved = {for (final g in await repository.goals()) g.id: g};
+    expect(saved['ship']!.status, 'missed');
+    expect(saved['ship']!.history.last.note, 'Ran out of time');
+    // Its sub-goals, closed with it, get none.
+    expect(saved['pane']!.status, 'missed');
+    expect(saved['pane']!.history.last.note, isNull);
   });
 
   testWidgets('closing a goal closes or moves its open sub-goals first', (

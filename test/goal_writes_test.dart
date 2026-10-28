@@ -189,9 +189,11 @@ void main() {
     expect(queue.justSaved, hasLength(1));
 
     // Fetched again, after the save: as the server has it.
-    server.answers.add((_, _) => [
-      {...before, 'status': 'done', 'version': 2},
-    ]);
+    server.answers.add(
+      (_, _) => [
+        {...before, 'status': 'done', 'version': 2},
+      ],
+    );
     expect((await goals.goals()).single.status, 'done');
     expect(queue.justSaved, isEmpty);
   });
@@ -216,6 +218,36 @@ void main() {
       server.calls.where((c) => (c.arguments['goal'] as Map?)?['id'] == 'top'),
       isEmpty,
     );
+  });
+
+  test("a status change's note goes beside the goal, as update_goal and "
+      'update_goals take it', () async {
+    queue.shown(WriteKind.goal, [
+      {'id': 'top', 'title': 'Top', 'status': 'active', 'version': 1},
+      {'id': 'sub', 'title': 'Sub', 'status': 'active', 'version': 1},
+    ]);
+    await goals.updateGoal('sub', {'status': 'done', 'status_note': 'Early'});
+    await queue.flush();
+    expect(server.calls.single.tool, 'update_goal');
+    expect(server.calls.single.arguments, {
+      'goal': {'id': 'sub', 'status': 'done', 'version': 1},
+      'status_note': 'Early',
+    });
+
+    server.calls.clear();
+    await goals.changeGoals([
+      const GoalUpdate('top', {'status': 'done', 'status_note': 'All in'}),
+    ]);
+    await queue.flush();
+    expect(server.calls.single.tool, 'update_goals');
+    expect(server.calls.single.arguments, {
+      'updates': [
+        {
+          'goal': {'id': 'top', 'status': 'done', 'version': 1},
+          'status_note': 'All in',
+        },
+      ],
+    });
   });
 
   group('several goals at once', () {
