@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:home_widget/home_widget.dart';
 
 import '../models/goal.dart';
-import '../widgets/color_picker.dart' show priorityColor;
+import '../widgets/goal_color.dart';
 
 /// A tap on the Android home screen goals: on a goal, its id; on the
 /// widget's own header, none.
@@ -126,10 +126,9 @@ class GoalsWidget {
 /// ([compareByDeadline]; those with no deadline last, by title): each's
 /// id and title, when it's due (milliseconds since the epoch; a date's
 /// at the midnight after it), whether that's a time of day, not just a
-/// date, and its color (ARGB), for the bar beside it: the color of the
-/// priority that applies to it -- its own, or its nearest parent's among
-/// [goals] ([GoalTree.priorityOf]) -- as the app's lists color it
-/// ([priorityColor]). With the day it's as of ([now]'s), so it's
+/// date, and its color (ARGB), for the bar beside it: its own, or its
+/// nearest parent's among [goals] that has one, or else its priority's
+/// -- as the app's lists color it ([colorOfGoal]). With the day it's as of ([now]'s), so it's
 /// published anew each day, which sets the redraws at the midnights
 /// ahead again.
 Map<String, Object?> goalsSnapshot(
@@ -150,7 +149,7 @@ Map<String, Object?> goalsSnapshot(
           'title': g.title,
           if (g.due case final due?) 'due': due.millisecondsSinceEpoch,
           'has_time': deadlineHasTime(g.deadline),
-          'color': priorityColor(tree.priorityOf(g.id)).toARGB32(),
+          'color': colorOfGoal(g, tree: tree).toARGB32(),
         },
     ],
   };

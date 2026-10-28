@@ -6,10 +6,11 @@ import '../models/facts.dart';
 import '../models/goal.dart';
 import '../models/goal_changes.dart';
 import '../services/plan_memory.dart';
-import 'color_picker.dart' show priorityColor;
+import 'color_picker.dart';
 import 'duration_field.dart';
 import 'edit_page.dart';
 import 'event_description.dart';
+import 'goal_color.dart';
 import 'goal_fields.dart';
 import 'goal_icon.dart';
 import 'goal_starts.dart';
@@ -177,6 +178,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   late String _status = _goal?.status ?? widget.status ?? 'active';
   late bool _required = _goal?.required ?? false;
   late int? _priority = _goal?.priority ?? widget.priority;
+  late String? _color = _goal?.backgroundColor;
   late String? _description = _goal?.description ?? widget.description;
   late String? _definitionOfDone = _goal?.definitionOfDone;
   late List<Named> _with = [...(_goal?.withWhom ?? widget.withWhom)];
@@ -249,6 +251,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     'deadline_rule': _deadlineRule,
     'activate_when': _status == 'inactive' ? _activateWhen : null,
     'priority': _priority,
+    'background_color': _color,
     'expected_minutes': _expected,
     'required': widget.parent == null ? null : _required,
     'description': _description,
@@ -285,6 +288,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
       // Activated, what it waited for is cleared anyway.
       'activate_when': _status == 'inactive' ? goal.activateWhen : null,
       'priority': goal.priority,
+      'background_color': goal.backgroundColor,
       'expected_minutes': goal.expectedMinutes,
       'required': goal.parentId == null ? null : goal.required,
       'description': goal.description,
@@ -726,6 +730,35 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
                   selected: _priority == p,
                   onSelected: (_) => setState(() => _priority = p),
                 ),
+            ],
+          ),
+        ),
+        GoalField(
+          label: 'Color',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_color == null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    inheritedColorLabel(
+                      tree,
+                      parent?.id,
+                      _priority ??
+                          (parent == null
+                              ? defaultGoalPriority
+                              : tree.priorityOf(parent.id)),
+                    ),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+              ColorPicker(
+                color: parseColor(_color),
+                onChanged: (color) => setState(
+                  () => _color = color == null ? null : colorToHex(color),
+                ),
+              ),
             ],
           ),
         ),

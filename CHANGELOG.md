@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.219.0
+
+- A goal can have a color of its own, picked on its page's editor as
+  an action's is. A sub-goal with none takes its nearest parent's that
+  has one, and a goal with none up its tree its priority's, as before.
+  Its page says where its color comes from, and the due strip's pills
+  and the home screen goals widget's bars are colored by it.
+- Marking a goal done, missed or obsolete no longer suggests "Why,
+  say" in its note field.
+
 ## 7.218.1
 
 - A goal closed before its deadline shows among the goals due on Events
