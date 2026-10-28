@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.210.1
+
+- A goal change applied from a compaction proposal shows on the Goals
+  pane, a goal's page and a habit's page open at the time, not only once
+  they next load: the goals loaded again after it are announced to every
+  page showing them, as a change made in the app is.
+
 ## 7.210.0
 
 - A compaction proposal's Goals tab now shows every goal the proposal
