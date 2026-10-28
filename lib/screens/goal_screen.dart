@@ -25,7 +25,8 @@ import 'habit_pages.dart';
 /// titles) under it, and lines to its left, one for each level deep it
 /// is -- as its edit page's bar has them ([GoalBarTitle]). Below, its
 /// fields as its edit page lays them out ([GoalField]), each said even
-/// with nothing in it: its status, with what can change it, and when it
+/// with nothing in it: its title in full, as the bar may cut it short;
+/// its status, with what can change it, and when it
 /// started and closed; its deadline, and how it follows its parent's;
 /// its priority, its own or where it's inherited from; its expected time
 /// and the time spent; whether its parent needs it; its people; its
@@ -412,8 +413,8 @@ class _GoalScreenState extends State<GoalScreen> {
       hotkey == null ? button : HotkeyHint(hotkey, child: button);
 
   /// [goal]'s fields, in the order its edit page has them and under the
-  /// same labels ([GoalField]), each said even with nothing in it; after
-  /// its status, when it started and closed, and how often it's been
+  /// same labels ([GoalField]), each said even with nothing in it; its
+  /// title first, in full, and after its status, when it started and closed, and how often it's been
   /// missed.
   Widget _fields(
     BuildContext context,
@@ -438,6 +439,8 @@ class _GoalScreenState extends State<GoalScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // In full, wrapping as it needs: the bar's is often cut short.
+          GoalField(label: 'Title', child: Text(goalTitle(goal))),
           GoalField(label: 'Status', child: _status(goal)),
           if (goal.startedAt case final at?)
             GoalField(label: 'Started', child: Text(_when(context, at))),
