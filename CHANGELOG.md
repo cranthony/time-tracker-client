@@ -9,12 +9,22 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
-## 7.220.0
+## 7.221.0
 
 - A goal's "Deactivate until" (and its editor's Starts) has a "For a
   while…" chip: a length of time in days and hours, typed ("1d 3h") or
   stepped as other lengths of time are, and it waits until then -- the
   same time of day that many days on, then those hours.
+
+## 7.220.0
+
+- The quick New action sheet has a Note field (hotkey O), as the full
+  dialog has, so an action's note can be set without going on to More.
+- An action's group picker -- in the quick New action sheet and the
+  full action dialog -- can add a group, as the location group picker
+  can: type its name and tap "Add group", and it opens in the quick New
+  group sheet (its own group picker can add one in turn), then it's
+  picked.
 
 ## 7.219.0
 
