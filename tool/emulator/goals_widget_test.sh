@@ -316,7 +316,9 @@ row_gap() {
   b=$(top_of "$second")
   [ -n "$a" ] && [ -n "$b" ] && echo $((b - a))
 }
-widget_home
+# On the home screen already, left there by Done: not Home again, which,
+# pressed there, goes to its first page, without the widget.
+on_screen 'Add goal' "$WIDGET" || widget_home
 before_gap=$(row_gap)
 rows_doubled() {
   after_gap=$(row_gap)
