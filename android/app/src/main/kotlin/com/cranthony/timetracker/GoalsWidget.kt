@@ -194,13 +194,15 @@ private fun Content(
 
 /**
  * "Goals", which opens the Plan page's Goals, then the button for a new
- * goal: above the goals, or below them.
+ * goal: above the goals, or below them. Thinner than the calendar's: a
+ * compact button, 32dp high, and a smaller title, to leave the goals
+ * the room.
  */
 @Composable
 private fun Header(context: Context) {
     Row(
-        // No gap from the goals: the button's tap target leaves 8dp
-        // round its circle.
+        // No gap from the goals: the button's tap target leaves 3dp
+        // above and below its circle.
         modifier = GlanceModifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -209,7 +211,7 @@ private fun Header(context: Context) {
             modifier = GlanceModifier.defaultWeight().clickable(open(context)),
             style = TextStyle(
                 color = GlanceTheme.colors.onSurface,
-                fontSize = 16.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
             ),
             maxLines = 1,
@@ -218,6 +220,7 @@ private fun Header(context: Context) {
             R.drawable.ic_add_goal,
             context.getString(R.string.add_goal_widget_label),
             AddGoalWidget.addGoal(context),
+            compact = true,
         )
     }
 }

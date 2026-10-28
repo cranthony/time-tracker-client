@@ -18,8 +18,9 @@ on. Add the new version's section here at the same time; CI checks both.
   sheet, as the goal button does; tapping a goal opens its page in the
   app, and "Goals" the Plan page's Goals. The app keeps it up to date as
   the goals change, in the background too, and it's drawn again as each
-  falls due and at midnight, so the days' names keep up. Like the
-  calendar, it can have its title at the bottom, from its settings.
+  falls due and at midnight, so the days' names keep up. Its header is
+  thinner than the calendar's, to leave the goals the room; like the
+  calendar's, it can go at the bottom, from the widget's settings.
 
 ## 7.212.0
 

@@ -32,7 +32,9 @@ import androidx.glance.appwidget.cornerRadius
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
+import androidx.glance.layout.height
 import androidx.glance.layout.size
+import androidx.glance.layout.width
 import androidx.glance.semantics.contentDescription
 import androidx.glance.semantics.semantics
 
@@ -46,20 +48,23 @@ import androidx.glance.semantics.semantics
 /**
  * A round button in a widget's header, [icon] on it, doing [action]: a
  * 32dp circle in a 48dp tap target, as Android asks for, so two side by
- * side are each easy to hit.
+ * side are each easy to hit. [compact], as the goals widget's is, a 26dp
+ * circle in a target 48dp wide but 32dp high, so its header takes a
+ * third less of the widget.
  */
 @Composable
-internal fun HeaderButton(icon: Int, label: String, action: Action) {
+internal fun HeaderButton(icon: Int, label: String, action: Action, compact: Boolean = false) {
     Box(
         modifier = GlanceModifier
-            .size(48.dp)
+            .width(48.dp)
+            .height(if (compact) 32.dp else 48.dp)
             .clickable(action)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = GlanceModifier
-                .size(32.dp)
+                .size(if (compact) 26.dp else 32.dp)
                 .cornerRadius(16.dp)
                 .background(GlanceTheme.colors.primary),
             contentAlignment = Alignment.Center,
@@ -67,7 +72,7 @@ internal fun HeaderButton(icon: Int, label: String, action: Action) {
             Image(
                 provider = ImageProvider(icon),
                 contentDescription = null,
-                modifier = GlanceModifier.size(20.dp),
+                modifier = GlanceModifier.size(if (compact) 16.dp else 20.dp),
                 colorFilter = ColorFilter.tint(GlanceTheme.colors.onPrimary),
             )
         }
