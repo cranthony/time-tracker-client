@@ -16,8 +16,9 @@ import 'subject_sections.dart';
 
 /// One of Self's habits on a page: the action or group whose events it's
 /// about, in its color, its status, what it's for, what it's built on
-/// ([Habit.foundations], named by [foundationNames]), which traits apply to
-/// it and its own parts for any, and the events the user cancelled that
+/// ([Habit.foundations], named by [foundationNames]) and what is built on it
+/// (the habits [memory] has whose foundations name it), which traits apply
+/// to it and its own parts for any, and the events the user cancelled that
 /// count against its follow-through ([Habit.cancelledEvents]). Once
 /// [memory] has scored it from the events (see [PlanMemory.scores]),
 /// also its health -- on track, needing attention or off track -- with
@@ -28,8 +29,8 @@ import 'subject_sections.dart';
 /// a button opening each lot on a page of its own. Claude judges its
 /// events; past ones only when asked. Pulling down loads the events
 /// again. [onEdit] edits it, returning it as saved. Tapping what it's
-/// built on opens that habit's page, with [onOpenHabit], or that
-/// person's, with [onOpenPerson].
+/// built on, or built on it, opens that habit's page, with [onOpenHabit];
+/// a person it's built on, their page, with [onOpenPerson].
 ///
 /// A person's or circle's habit says whose it is, in place of its action,
 /// and has their traits -- those it picks -- as they're scored for them.
@@ -82,7 +83,7 @@ class HabitScreen extends StatefulWidget {
   /// Opens a circle's page: its, for a circle's habit.
   final void Function(Circle circle)? onOpenCircle;
 
-  /// Opens a habit's page: one it's built on.
+  /// Opens a habit's page: one it's built on, or one built on it.
   final void Function(Habit habit)? onOpenHabit;
 
   /// Opens a goal's page: one of a recurring goal's habit's.
@@ -142,6 +143,13 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
       _ => null,
     };
   }
+
+  /// The habits built on it, directly: those [memory] has, not deleted,
+  /// whose foundations name it, by name.
+  List<Habit> get _builtOn => [
+    for (final h in widget.memory?.habits ?? const <Habit>[])
+      if (h.status != 'deleted' && h.foundations.contains(_habit.subject)) h,
+  ]..sort((a, b) => habitName(a).compareTo(habitName(b)));
 
   /// Its goals, newest first, each with its period and how it went.
   List<Widget> _goals(BuildContext context) {
@@ -351,6 +359,27 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
                       null => Chip(
                         label: Text(widget.foundationNames[id] ?? id),
                       ),
+                    },
+                ],
+              ),
+            }),
+            sectionHeading(theme, 'Builds to'),
+            sectionPadded(switch (_builtOn) {
+              [] => Text(
+                'Nothing: it sits at the top of the habit graph.',
+                style: TextStyle(color: theme.hintColor),
+              ),
+              final habits => Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final h in habits)
+                    switch (widget.onOpenHabit) {
+                      final onOpen? => ActionChip(
+                        label: Text(habitName(h)),
+                        onPressed: () => onOpen(h),
+                      ),
+                      null => Chip(label: Text(habitName(h))),
                     },
                 ],
               ),
