@@ -35,6 +35,31 @@ Future<List<PlanAction>> _allActions(
   }
 }
 
+/// Makes a group from [fields], from a group picker, as the actions are
+/// made: its id and every action as they are now, with it.
+Future<AddedAction> _addGroup(
+  ActionsRepository repository,
+  PlanMemory? memory,
+  Map<String, Object?> fields,
+) async {
+  final id = await repository.createAction({...fields, 'kind': 'group'});
+  final List<PlanAction> actions;
+  if (memory == null) {
+    actions = (await repository.actions()).actions;
+  } else {
+    await memory.loadActions(repository, again: true);
+    actions = memory.shownActions?.actions ?? const [];
+  }
+  final made =
+      id ??
+      actions
+          .where((a) => a.name == fields['name'] && a.isGroup)
+          .lastOrNull
+          ?.id;
+  if (made == null) throw StateError("Couldn't find the group just made");
+  return (id: made, actions: actions);
+}
+
 /// Whether actions can be added and edited here.
 bool canEditActions(BuildContext context) => ActionsScope.of(context) != null;
 
@@ -53,7 +78,7 @@ Future<String?> addAction(
   if (scope == null) return null;
   final memory = PlanMemoryScope.of(context);
   String? made;
-  final actions = await _allActions(scope.repository, memory);
+  var actions = await _allActions(scope.repository, memory);
   if (!context.mounted) return null;
   Future<ActionList> make(Map<String, Object?> fields) async {
     final id = await (create ?? scope.repository.createAction)(fields);
@@ -73,18 +98,27 @@ Future<String?> addAction(
     return list;
   }
 
+  Future<AddedAction> addGroup(Map<String, Object?> fields) async {
+    final added = await _addGroup(scope.repository, memory, fields);
+    actions = added.actions;
+    return added;
+  }
+
   final listed = await showAddActionSheet<ActionList>(
     context,
     name: name.isEmpty ? null : name,
     parentId: parentId,
     actions: actions,
     save: make,
+    addGroup: addGroup,
     more: (fields) => showNewActionDialog(
       context,
       fields: fields,
       parentId: fields['parent_id'] as String?,
+      // With any group added in the sheet.
       actions: actions,
       create: make,
+      addGroup: addGroup,
     ),
   );
   return listed == null ? null : made;
@@ -107,6 +141,7 @@ Future<bool> editAction(BuildContext context, PlanAction action) async {
       scope.outbox.update(action.id!, changes, group: action.isGroup);
       return memory?.shownActions ?? await scope.repository.actions();
     },
+    addGroup: (fields) => _addGroup(scope.repository, memory, fields),
   );
   return saved != null;
 }

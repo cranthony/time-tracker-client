@@ -566,6 +566,13 @@ class _PlanScreenState extends State<PlanScreen> {
     return _actions!;
   }
 
+  /// Creates a group from [fields], in the background, from a group
+  /// picker. Gives its id and the actions as they're shown now, with it.
+  Future<AddedAction> _addGroup(Map<String, Object?> fields) async {
+    final id = widget.outbox.create({...fields, 'kind': 'group'});
+    return (id: id, actions: _actions?.actions ?? const <PlanAction>[]);
+  }
+
   /// Drops the saves that failed for the action shown as [id].
   void _discard(String id) => widget.outbox.discard(id);
 
@@ -595,6 +602,7 @@ class _PlanScreenState extends State<PlanScreen> {
           parentId: changes['parent_id'] as String?,
           fields: changes,
           actions: actions,
+          addGroup: _addGroup,
         );
       case final failed:
         // As the server has it, with what wasn't saved as changes.
@@ -626,6 +634,7 @@ class _PlanScreenState extends State<PlanScreen> {
             _ => Future.value(true),
           },
           actions: actions,
+          addGroup: _addGroup,
         );
     }
   }
@@ -658,13 +667,16 @@ class _PlanScreenState extends State<PlanScreen> {
       group: group,
       actions: actions,
       save: _create,
+      addGroup: _addGroup,
       more: (fields) => showNewActionDialog(
         context,
         create: _create,
         parentId: fields['parent_id'] as String?,
         group: group,
         fields: fields,
-        actions: actions,
+        // With any group added in the sheet.
+        actions: _actions?.actions ?? actions,
+        addGroup: _addGroup,
       ),
     );
   }
