@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.208.0
+
+- A habit's page says what's built on it: "Builds to", after "Built
+  on", lists the habits whose foundations name it, each opening its
+  page, tapped.
+
 ## 7.207.0
 
 - A habit's page opens what it names: each of a recurring goal's

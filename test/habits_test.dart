@@ -1120,6 +1120,86 @@ void main() {
     );
   });
 
+  testWidgets(
+    "a habit's page shows what's built on it, each opening its page",
+    (tester) async {
+      final sleep = Habit.fromJson({
+        'id': 'sleep',
+        'name': 'Sleep well',
+        'action_id': 'bed',
+        'status': 'active',
+      });
+      Habit on(String id, String name, {String status = 'active'}) =>
+          Habit.fromJson({
+            'id': id,
+            'name': name,
+            'action_id': 'guitar',
+            'status': status,
+            'foundations': ['habit:sleep'],
+          });
+      final memory = PlanMemory()
+        ..habits = [
+          sleep,
+          on('p', 'Practice mindfully'),
+          on('c', 'Cook from scratch'),
+          on('gone', 'Gone', status: 'deleted'),
+          on('rest', 'Rest', status: 'archived'),
+          _mindfully,
+        ];
+      final opened = <Habit>[];
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HabitScreen(
+            habit: sleep,
+            memory: memory,
+            onOpenHabit: opened.add,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Builds to'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(ActionChip),
+          matching: find.byType(Text),
+        ),
+        findsNWidgets(3),
+      );
+      // By name, deleted ones left out; archived ones still on the graph.
+      expect(
+        find.widgetWithText(ActionChip, 'Cook from scratch'),
+        findsOneWidget,
+      );
+      expect(
+        find.widgetWithText(ActionChip, 'Practice mindfully'),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(ActionChip, 'Rest'), findsOneWidget);
+      expect(find.text('Gone'), findsNothing);
+      await tester.tap(find.widgetWithText(ActionChip, 'Cook from scratch'));
+      expect(opened.map((h) => h.id), ['c']);
+
+      // Nothing built on it, nor a way to open one: plain text.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HabitScreen(
+            key: const ValueKey('p'),
+            habit: on('p', 'P'),
+            memory: memory,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.text('Nothing: it sits at the top of the habit graph.'),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('its cancelled events are in brief, the lot a tap away', (
     tester,
   ) async {

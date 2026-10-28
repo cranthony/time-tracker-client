@@ -23,7 +23,7 @@ import 'person_pages.dart';
 /// colors their actions; [personNames] and [locationNames] name who their
 /// events were with, and where. [onSaved] is told once one is, to load
 /// them afresh -- by default, the habits. A habit's page opens those it's
-/// built on, its goals' and its people's.
+/// built on and those built on it, its goals' and its people's.
 class HabitPages {
   const HabitPages({
     required this.repository,
