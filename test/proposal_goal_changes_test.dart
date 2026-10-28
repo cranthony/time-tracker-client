@@ -236,6 +236,7 @@ void main() {
   group('on the Events page', () {
     late InMemoryGoalsRepository store;
     late _Proposals proposals;
+    late PlanMemory memory;
 
     Future<void> open(
       WidgetTester tester, {
@@ -256,7 +257,7 @@ void main() {
       );
       await tester.pumpWidget(
         PlanMemoryScope(
-          memory: PlanMemory()..goals = all,
+          memory: memory = PlanMemory()..goals = all,
           child: GoalsScope(
             repository: store,
             child: MaterialApp(
@@ -341,6 +342,8 @@ void main() {
         'the change marked applied', (tester) async {
       await open(tester);
       await page(tester, 'Goals (2)');
+      var told = 0;
+      memory.addListener(() => told++);
       await tester.tap(find.byTooltip('Apply it now'));
       await tester.pumpAndSettle();
       expect(lastSent(), {
@@ -350,6 +353,13 @@ void main() {
       });
       final recipe = (await store.goals()).singleWhere((g) => g.id == 'recipe');
       expect(recipe.status, 'done');
+      // Loaded again where every page keeps them, and each told, so one
+      // showing the goal shows it done without loading them itself.
+      expect(
+        memory.goals!.singleWhere((g) => g.id == 'recipe').status,
+        'done',
+      );
+      expect(told, greaterThan(0));
       expect(find.textContaining('Applied now · you'), findsOneWidget);
       // Settled: it can't be applied again, or dropped.
       expect(find.byTooltip('Apply it now'), findsNothing);

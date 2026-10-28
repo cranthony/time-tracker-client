@@ -5726,15 +5726,13 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// Loads the goals again, after one's changed outside the app's own
-  /// goal flows. Best effort.
+  /// goal flows -- through the memory, so every page showing them is
+  /// told. Best effort: without them, they're shown as they were, till
+  /// they're next loaded.
   Future<void> _reloadGoals() async {
     final repository = GoalsScope.of(context);
     if (repository == null) return;
-    try {
-      _memory.goals = await repository.goals();
-    } catch (_) {
-      // Shown as they were, till they're next loaded.
-    }
+    await _memory.loadGoals(repository, again: true);
   }
 
   /// Asks what's to become of [added], and amends the proposal so: made
