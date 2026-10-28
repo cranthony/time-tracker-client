@@ -18,6 +18,7 @@ import '../models/trait.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/legacy_writes.dart' show actionWriteFields;
 import '../outbox/note_writes.dart';
+import '../outbox/action_writes.dart';
 import '../outbox/write_queue.dart';
 import '../services/keep_rules.dart';
 import '../services/app_settings.dart';
@@ -1564,20 +1565,23 @@ class _EventsScreenState extends State<EventsScreen> {
   void _outboxChanged() {
     if (!mounted) return;
     setState(() {});
-    final outbox = widget.outbox!;
-    if (!outbox.wantsFetch) return;
-    final saved = {for (final s in outbox.queue.justSaved) s.item.kind};
-    bool any(List<WriteKind> kinds) => kinds.any((k) => saved.contains(k.name));
-    final actions = any(const [WriteKind.action, WriteKind.actionGroup]);
-    final people = any(const [WriteKind.person, WriteKind.circle]);
-    final locations = any(const [WriteKind.location, WriteKind.locationGroup]);
+    final queue = widget.outbox!.queue;
+    bool any(List<WriteKind> kinds) => queue.wantsFetchOfKinds(kinds);
+    final actions = any(ActionWrites.fetchedKinds);
+    final people = any(_peopleKinds);
+    final locations = any(_locationKinds);
+    final notes = any(const [WriteKind.note]);
+    if (!(notes || actions || people || locations)) return;
     _loadNotes(
-      notes: any(const [WriteKind.note]) || !(actions || people || locations),
+      notes: notes,
       actions: actions,
       people: people,
       locations: locations,
     );
   }
+
+  static const _peopleKinds = [WriteKind.person, WriteKind.circle];
+  static const _locationKinds = [WriteKind.location, WriteKind.locationGroup];
 
   /// Loads the saved notes not yet compacted, after those kept from last
   /// time if [cached], and when notes were last compacted -- unless not
@@ -1610,9 +1614,15 @@ class _EventsScreenState extends State<EventsScreen> {
             .catchError((Object _) {}),
       );
     }
-    // What was saved is let go of once all are in, so none shows without
-    // it in the meantime.
-    final fetched = widget.outbox?.fetching();
+    // What was saved of what's fetched is let go of once all are in, so
+    // none shows without it in the meantime; the rest (a goal's, say)
+    // stays for a fetch of its own.
+    final fetched = widget.outbox?.queue.fetchingKinds([
+      if (repository != null) WriteKind.note,
+      if (actionsRepository != null) ...ActionWrites.fetchedKinds,
+      if (peopleRepository != null && people) ..._peopleKinds,
+      if (peopleRepository != null && locations) ..._locationKinds,
+    ]);
     try {
       await Future.wait([
         if (repository != null) _memory.loadNotes(repository, again: true),

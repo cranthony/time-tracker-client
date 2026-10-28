@@ -82,11 +82,16 @@ class McpTraitsRepository implements TraitsRepository {
 
   @override
   Future<List<Trait>> traits({List<String>? statuses}) async {
+    // The traits' writes saved before this are let go of once it's in
+    // and they're made to it.
+    final fetched = _writes?.fetchingKinds(const [WriteKind.trait]);
     final result = await _client.callTool('get_traits', {
       'statuses': ?statuses,
     });
     await _cache?.write(_cacheKey(statuses), result);
-    return _decode(_shown(result));
+    final traits = _decode(_shown(result));
+    fetched?.call();
+    return traits;
   }
 
   @override
@@ -101,6 +106,7 @@ class McpTraitsRepository implements TraitsRepository {
 
   @override
   Future<ScoringDefaults> scoringDefaults() async {
+    final fetched = _writes?.fetchingKinds(const [WriteKind.scoringDefaults]);
     final Object? result;
     try {
       result = await _client.callTool('get_scoring_defaults');
@@ -108,7 +114,9 @@ class McpTraitsRepository implements TraitsRepository {
       return const ScoringDefaults(); // A server from before them.
     }
     await _cache?.write(_defaultsKey, result);
-    return ScoringDefaults.fromJson(_shownDefaults(result));
+    final defaults = ScoringDefaults.fromJson(_shownDefaults(result));
+    fetched?.call();
+    return defaults;
   }
 
   @override

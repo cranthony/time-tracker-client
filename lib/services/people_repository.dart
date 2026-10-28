@@ -228,13 +228,21 @@ class McpPeopleRepository implements PeopleRepository {
   ];
 
   Future<PeopleList> _fetchPeople() async {
+    // Their writes saved before this are let go of once it's in and
+    // they're made to it.
+    final fetched = _writes?.fetchingKinds(const [
+      WriteKind.person,
+      WriteKind.circle,
+    ]);
     final people = await _client.callTool('get_people', {
       'statuses': personStatuses.keys.toList(),
     });
     final circles = await _client.callTool('get_circles', {});
     final result = {'people': people, 'circles': circles};
     await _cache?.write(_peopleKey, result);
-    return _decodePeople(_withPeopleWrites(result));
+    final list = _decodePeople(_withPeopleWrites(result));
+    fetched?.call();
+    return list;
   }
 
   @override
@@ -329,9 +337,12 @@ class McpPeopleRepository implements PeopleRepository {
       _orKept(WriteKind.location, _fetchLocations, cachedLocations);
 
   Future<List<Location>> _fetchLocations() async {
+    final fetched = _writes?.fetchingKinds(const [WriteKind.location]);
     final result = await _client.callTool('get_locations', {});
     await _cache?.write(_locationsKey, result);
-    return _decodeLocations(_shown(WriteKind.location, result));
+    final locations = _decodeLocations(_shown(WriteKind.location, result));
+    fetched?.call();
+    return locations;
   }
 
   @override
@@ -389,13 +400,18 @@ class McpPeopleRepository implements PeopleRepository {
   }
 
   @override
-  Future<List<LocationGroup>> locationGroups() async => [
-    for (final g in _shown(
-      WriteKind.locationGroup,
-      await _client.callTool('get_location_groups', {}),
-    ))
-      LocationGroup.fromJson((g as Map).cast<String, dynamic>()),
-  ];
+  Future<List<LocationGroup>> locationGroups() async {
+    final fetched = _writes?.fetchingKinds(const [WriteKind.locationGroup]);
+    final groups = [
+      for (final g in _shown(
+        WriteKind.locationGroup,
+        await _client.callTool('get_location_groups', {}),
+      ))
+        LocationGroup.fromJson((g as Map).cast<String, dynamic>()),
+    ];
+    fetched?.call();
+    return groups;
+  }
 
   @override
   Future<LocationGroup> createLocationGroup(LocationGroup group) async =>
@@ -450,13 +466,18 @@ class McpPeopleRepository implements PeopleRepository {
       _client.callTool('delete_location_group', {'group_id': id});
 
   @override
-  Future<List<TravelTime>> travelTimes() async => [
-    for (final t in _shown(
-      WriteKind.travelTime,
-      await _client.callTool('get_travel_times', {}),
-    ))
-      TravelTime.fromJson((t as Map).cast<String, dynamic>()),
-  ];
+  Future<List<TravelTime>> travelTimes() async {
+    final fetched = _writes?.fetchingKinds(const [WriteKind.travelTime]);
+    final times = [
+      for (final t in _shown(
+        WriteKind.travelTime,
+        await _client.callTool('get_travel_times', {}),
+      ))
+        TravelTime.fromJson((t as Map).cast<String, dynamic>()),
+    ];
+    fetched?.call();
+    return times;
+  }
 
   @override
   Future<TravelTime> createTravelTime(TravelTime travel) async =>

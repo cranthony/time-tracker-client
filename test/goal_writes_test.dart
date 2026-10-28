@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/goal_changes.dart';
+import 'package:time_tracker_client/outbox/action_writes.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
 import 'package:time_tracker_client/outbox/write_queue.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
@@ -156,6 +159,41 @@ void main() {
     server.offline = false;
     final listed = await goals.goals();
     expect(listed.single.title, 'Offline');
+  });
+
+  test("a change saved while the goals were being fetched stays shown till "
+      "they're fetched again, whatever else is fetched meanwhile", () async {
+    const before = {
+      'id': 'g1',
+      'title': 'Text',
+      'status': 'active',
+      'version': 1,
+    };
+    queue.shown(WriteKind.goal, [before]);
+    // The goals asked for just before the change: answered without it,
+    // after it's saved.
+    final answer = Completer<Object?>();
+    server.answers.add((_, _) => answer.future);
+    final asked = goals.goals();
+    await goals.updateGoal('g1', {'status': 'done'});
+    await queue.flush();
+    expect(queue.items, isEmpty);
+    expect(queue.justSaved, hasLength(1));
+
+    // The actions fetched and in meanwhile: not the goals' concern.
+    queue.fetchingKinds(ActionWrites.fetchedKinds)();
+    expect(queue.justSaved, hasLength(1));
+
+    answer.complete([before]);
+    expect((await asked).single.status, 'done');
+    expect(queue.justSaved, hasLength(1));
+
+    // Fetched again, after the save: as the server has it.
+    server.answers.add((_, _) => [
+      {...before, 'status': 'done', 'version': 2},
+    ]);
+    expect((await goals.goals()).single.status, 'done');
+    expect(queue.justSaved, isEmpty);
   });
 
   test('an ordered change waits for an earlier write that failed', () async {

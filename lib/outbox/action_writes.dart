@@ -88,8 +88,22 @@ class ActionWrites implements Listenable {
   );
 
   bool isSending(ActionSave save) => queue.isSending(save.write);
-  bool get wantsFetch => queue.wantsFetch;
-  void Function() fetching() => queue.fetching();
+
+  /// What a fetch of the actions brings: them, their groups and the
+  /// priorities' colors.
+  static const fetchedKinds = [
+    WriteKind.action,
+    WriteKind.actionGroup,
+    WriteKind.priorityColors,
+  ];
+
+  /// Whether an action, group or color was saved that no fetch of the
+  /// actions has started for since.
+  bool get wantsFetch => queue.wantsFetchOfKinds(fetchedKinds);
+
+  /// Call as a fetch of the actions starts; call what it gives once
+  /// they're in, and shown ([WriteQueue.fetchingKinds]).
+  void Function() fetching() => queue.fetchingKinds(fetchedKinds);
   Future<FlushResult> retryNow() => queue.retryNow();
 
   /// Makes an action -- or, its kind "group", a group -- from [fields],

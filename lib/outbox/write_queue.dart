@@ -1013,6 +1013,25 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
 
   // -- Showing -----------------------------------------------------------
 
+  /// Whether one of [kinds] was saved that no fetch of it has started for
+  /// since ([Outbox.wantsFetch]).
+  bool wantsFetchOfKinds(Iterable<WriteKind> kinds) =>
+      wantsFetchOf(_ofKinds(kinds));
+
+  /// Call as a fetch of [kinds] starts; call what it gives once they're
+  /// in, and shown, to let go of those of them saved before it started
+  /// ([Outbox.fetching]). What's saved of other kinds stays, for a fetch
+  /// of theirs: a fetch of the actions, say, leaves a goal just marked
+  /// done shown so until the goals are fetched, even one asked for
+  /// before it was saved.
+  void Function() fetchingKinds(Iterable<WriteKind> kinds) =>
+      fetching(of: _ofKinds(kinds));
+
+  static bool Function(PendingWrite) _ofKinds(Iterable<WriteKind> kinds) {
+    final names = {for (final k in kinds) k.name};
+    return (w) => names.contains(w.kind);
+  }
+
   /// [fromServer], the [kind]s the server gave, with the writes waiting --
   /// and those just saved -- made to them. Kept as what changes are made
   /// to.
