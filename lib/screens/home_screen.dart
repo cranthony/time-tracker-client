@@ -209,7 +209,17 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Switches to Plan, on Goals, and opens the page of the goal [tap] on
   /// the home screen goals was on, if it was on one that's still there:
   /// once the goals are loaded, as the tap may have launched the app.
+  /// Pages open over this one close first, as for a hotkey ([_goTo]), so
+  /// Goals, or the goal's page, is what's seen; not while a dialog is
+  /// open, waiting to be saved or discarded: the screen shakes instead.
   Future<void> _showGoalsTap(GoalsTap tap) async {
+    final hotkeys = HotkeyScope.maybeOf(context);
+    if (hotkeys != null) {
+      if (hotkeys.dialogOpen) return hotkeys.shake();
+      hotkeys.closePages();
+    } else {
+      Navigator.of(context).popUntil((r) => r.isFirst);
+    }
     setState(() => _tab = _Tab.plan);
     // Once the Plan page is built and listening.
     WidgetsBinding.instance.addPostFrameCallback((_) => _toPlanGoals.add(null));

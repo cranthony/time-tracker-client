@@ -221,11 +221,12 @@ while [ $SECONDS -lt $end ]; do
   sleep 1
 done
 # The goal's page, once the app's started and the goals have loaded: its
-# title, with its Edit button -- not Plan's Goals, which has none.
+# title -- read with its parent's under it, on a line of its own -- with
+# its Edit button; not Plan's Goals, which has none.
 goal_opened() {
   local nodes
   nodes=$(ui_nodes) || return 1
-  grep -qE "(text|content-desc)=\"$goal\"" <<<"$nodes" &&
+  grep -qE "(text|content-desc)=\"$goal(\"|&#10;)" <<<"$nodes" &&
     grep -qE '(text|content-desc)="Edit"' <<<"$nodes"
 }
 if [ -z "$goal" ]; then
@@ -241,9 +242,15 @@ else
   fail goal_cold "tapping \"$goal\" didn't open its page"
 fi
 
-# "Goals", with the app in the background, on Notes: Plan, on its Goals
-# pane -- "Plan" over it, and the pane's New goal button.
+# "Goals", with the app in the background, on Notes -- left on the goal's
+# page by the cold case, Back goes to the page under it first: Plan, on
+# its Goals pane -- "Plan" over it, and the pane's New goal button.
 launch
+wait_for '(Notes|Back)' 30
+if on_screen Back; then
+  adb shell input keyevent KEYCODE_BACK
+  sleep 1
+fi
 wait_for Notes 30 && tap_view Notes >/dev/null
 sleep 1
 goals_pane_opened() { on_screen Plan && on_screen 'New goal'; }

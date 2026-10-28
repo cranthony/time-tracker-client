@@ -3463,6 +3463,25 @@ void main() {
         await taps.close();
       });
 
+      testWidgets('pages open over the home screen close first: a goal '
+          "tapped twice has one page, and the header's tap shows Goals", (
+        tester,
+      ) async {
+        final taps = await openOnNotes(tester);
+        taps.add((goalId: 'ship'));
+        await tester.pumpAndSettle();
+        taps.add((goalId: 'ship'));
+        await tester.pumpAndSettle();
+        expect(find.byType(GoalScreen), findsOneWidget);
+
+        taps.add((goalId: null));
+        await tester.pumpAndSettle();
+        expect(find.byType(GoalScreen), findsNothing);
+        expect(find.byType(PlanScreen), findsOneWidget);
+        outbox.stop();
+        await taps.close();
+      });
+
       testWidgets("on a goal that's gone: Plan's Goals, nothing over it", (
         tester,
       ) async {
