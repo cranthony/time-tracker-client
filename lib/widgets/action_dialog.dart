@@ -7,6 +7,7 @@ import 'action_icon.dart';
 import 'actions_picker.dart';
 import 'color_picker.dart';
 import 'error_sheet.dart';
+import 'quick_add_sheet.dart';
 
 /// The priorities offered as chips; "…" takes any other.
 const _priorities = [0, 1, 2, 3];
@@ -29,7 +30,8 @@ typedef SaveAction = Future<ActionList> Function(
 /// as they're to be shown now), or null if nothing was saved. [actions]
 /// are every action and group, for the group it's in and what it
 /// inherits. [changes] opens it with those already made: ones that
-/// couldn't be saved before.
+/// couldn't be saved before. With [addGroup], a new group can be added
+/// from its group picker (see [ActionGroupField]).
 Future<ActionList?> showActionDialog(
   BuildContext context,
   PlanAction action, {
@@ -37,6 +39,7 @@ Future<ActionList?> showActionDialog(
   required SaveAction save,
   Future<bool> Function(Map<String, Object?> changes)? confirmSave,
   Map<String, Object?> changes = const {},
+  Future<AddedAction> Function(Map<String, Object?> fields)? addGroup,
 }) => showDialog<ActionList>(
   context: context,
   builder: (_) => _ActionDialog(
@@ -46,6 +49,7 @@ Future<ActionList?> showActionDialog(
     changes: changes,
     confirmSave: confirmSave,
     save: (changes) => save(action, changes),
+    addGroup: addGroup,
   ),
 );
 
@@ -54,6 +58,7 @@ Future<ActionList?> showActionDialog(
 /// [create] on "Save". Returns what [create] returned (every action, as
 /// they're to be shown now), or null if nothing was made. [fields] opens
 /// it with those already filled in: one that couldn't be made before.
+/// With [addGroup], a new group can be added from its group picker.
 Future<ActionList?> showNewActionDialog(
   BuildContext context, {
   required Future<ActionList> Function(Map<String, Object?> fields) create,
@@ -61,6 +66,7 @@ Future<ActionList?> showNewActionDialog(
   String? parentId,
   bool group = false,
   Map<String, Object?> fields = const {},
+  Future<AddedAction> Function(Map<String, Object?> fields)? addGroup,
 }) {
   final isGroup = group || fields['kind'] == 'group';
   return showDialog<ActionList>(
@@ -81,6 +87,7 @@ Future<ActionList?> showNewActionDialog(
         if (isGroup) 'kind': 'group',
         for (final MapEntry(:key, :value) in changes.entries) key: ?value,
       }),
+      addGroup: addGroup,
     ),
   );
 }
@@ -93,6 +100,7 @@ class _ActionDialog extends StatefulWidget {
     required this.changes,
     required this.save,
     this.confirmSave,
+    this.addGroup,
   });
 
   final PlanAction action;
@@ -101,6 +109,7 @@ class _ActionDialog extends StatefulWidget {
   final Map<String, Object?> changes;
   final Future<ActionList> Function(Map<String, Object?> changes) save;
   final Future<bool> Function(Map<String, Object?> changes)? confirmSave;
+  final Future<AddedAction> Function(Map<String, Object?> fields)? addGroup;
 
   @override
   State<_ActionDialog> createState() => _ActionDialogState();
@@ -123,6 +132,9 @@ class _ActionDialogState extends State<_ActionDialog> {
   );
 
   bool _saving = false;
+
+  /// Every action and group, with any added from its group picker.
+  late var _actions = widget.actions;
 
   PlanAction get _action => widget.action;
 
@@ -170,7 +182,7 @@ class _ActionDialogState extends State<_ActionDialog> {
 
   /// The listed action with [id], if it's listed.
   PlanAction? _byId(String? id) =>
-      id == null ? null : widget.actions.where((g) => g.id == id).firstOrNull;
+      id == null ? null : _actions.where((g) => g.id == id).firstOrNull;
 
   /// The groups it's in, nearest first, as far as they're listed: in the
   /// group picked, if it's been moved.
@@ -290,27 +302,18 @@ class _ActionDialogState extends State<_ActionDialog> {
                 _Section(
                   label: 'Group',
                   letter: 'G',
-                  child: ActionField(
-                    actions: widget.actions,
+                  child: ActionGroupField(
+                    actions: _actions,
                     value: _parentId,
-                    title: 'Pick its group',
-                    noneLabel: 'None (top-level)',
+                    // Not under itself.
                     exclude: {
-                      // Not under itself, nor under an action -- only groups
-                      // hold anything -- or one put away, unless it's there
-                      // already.
                       if (_action.id case final id?)
-                        ...actionAndSubActions(widget.actions, id),
-                      for (final action in widget.actions)
-                        if ((!action.isGroup ||
-                                const {
-                                  'archived',
-                                  'deleted',
-                                }.contains(action.status)) &&
-                            action.id != _parentId)
-                          ?action.id,
+                        ...actionAndSubActions(_actions, id),
                     },
-                    marker: (action) => ActionIcon(action, size: 18),
+                    addGroup: widget.addGroup,
+                    onAdded: (actions) {
+                      if (mounted) setState(() => _actions = actions);
+                    },
                     onChanged: (id) => _set('parent_id', id),
                   ),
                 ),

@@ -26,7 +26,8 @@ import 'tree_picker.dart';
 ///
 /// Its [search] can be given, to start it with words typed, or keep
 /// them past it. Long-pressing an action or group calls [onEdit] with it;
-/// with [onAdd], a row over the list adds one, given what's typed.
+/// with [onAdd], a row over the list adds one, given what's typed: an
+/// [addNoun], with [addIcon].
 class ActionsPicker extends StatelessWidget {
   const ActionsPicker({
     super.key,
@@ -44,6 +45,8 @@ class ActionsPicker extends StatelessWidget {
     this.search,
     this.onEdit,
     this.onAdd,
+    this.addNoun = 'action',
+    this.addIcon = Icons.add,
   });
 
   final List<PlanAction> actions;
@@ -62,6 +65,8 @@ class ActionsPicker extends StatelessWidget {
   final PickerSearch? search;
   final ValueChanged<PlanAction>? onEdit;
   final ValueChanged<String>? onAdd;
+  final String addNoun;
+  final IconData addIcon;
 
   /// Drawn before each action's name, e.g. a dot in its color.
   final Widget Function(PlanAction action) marker;
@@ -114,7 +119,7 @@ class ActionsPicker extends StatelessWidget {
         null => null,
       },
       add: switch (onAdd) {
-        final add? => (noun: 'action', icon: Icons.add, onAdd: add),
+        final add? => (noun: addNoun, icon: addIcon, onAdd: add),
         null => null,
       },
     );
@@ -146,7 +151,8 @@ Set<String> actionAndSubActions(List<PlanAction> actions, String id) {
 /// One action, shown by its whole path, picked by tapping it: a sheet up
 /// from the foot searches [actions] or browses their tree (see
 /// [showActionPicker]). With [noneLabel], the sheet can pick no action
-/// too, which [value] null shows as; without, null shows [hint].
+/// too, which [value] null shows as; without, null shows [hint]. With
+/// [add], a new one can be added there, as [showActionPicker] adds.
 class ActionField extends StatelessWidget {
   const ActionField({
     super.key,
@@ -158,6 +164,7 @@ class ActionField extends StatelessWidget {
     this.hint = 'Pick an action',
     this.noneLabel,
     this.exclude = const {},
+    this.add,
   });
 
   final List<PlanAction> actions;
@@ -168,6 +175,7 @@ class ActionField extends StatelessWidget {
   final String hint;
   final String? noneLabel;
   final Set<String> exclude;
+  final ActionAdd? add;
 
   @override
   Widget build(BuildContext context) {
@@ -184,6 +192,7 @@ class ActionField extends StatelessWidget {
           title: title,
           noneLabel: noneLabel,
           exclude: exclude,
+          add: add,
         );
         if (picked != null) onChanged(picked.id);
       },
@@ -217,8 +226,10 @@ class ActionField extends StatelessWidget {
 /// [showPickerSheet] under [title]: an [ActionsPicker] of them, every
 /// group open and the keyboard up to search. Tapping an action picks it
 /// and closes the sheet; with [noneLabel], a row over the list picks
-/// none. Null if called off; otherwise the action picked, its id null
-/// for none.
+/// none. With [add], a row over the list adds one, named as it's typed:
+/// what its `onAdd` returns -- the new one's id, or null if it was called
+/// off -- is picked. Null if called off; otherwise the action picked, its
+/// id null for none.
 Future<({String? id})?> showActionPicker(
   BuildContext context, {
   required List<PlanAction> actions,
@@ -227,6 +238,7 @@ Future<({String? id})?> showActionPicker(
   String title = 'Pick an action',
   String? noneLabel,
   Set<String> exclude = const {},
+  ActionAdd? add,
 }) => showPickerSheet<({String? id})>(
   context,
   title: title,
@@ -242,5 +254,25 @@ Future<({String? id})?> showActionPicker(
     maxListHeight: null,
     marker: marker,
     onChanged: (ids) => Navigator.of(context).pop((id: ids.firstOrNull)),
+    addNoun: add?.noun ?? 'action',
+    addIcon: add?.icon ?? Icons.add,
+    onAdd: switch (add) {
+      (:final onAdd, noun: _, icon: _) => (name) async {
+        final id = await onAdd(name);
+        if (id != null && context.mounted) {
+          Navigator.of(context).pop((id: id));
+        }
+      },
+      null => null,
+    },
   ),
 );
+
+/// What an [ActionField]'s picker adds: what it's called, its icon, and
+/// how, given the name typed -- giving the new one's id, or null if it
+/// was called off.
+typedef ActionAdd = ({
+  String noun,
+  IconData icon,
+  Future<String?> Function(String name) onAdd,
+});

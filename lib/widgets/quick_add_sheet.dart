@@ -83,13 +83,15 @@ Future<LocationGroup?> showAddLocationGroupSheet(
   null,
 );
 
-/// Asks for a new action's name and the group it's in (of [actions]) --
-/// or, with [group], a group's -- in a sheet, starting with [name] and in
-/// [parentId] if given, and saves it with [save], given the fields as
-/// `create_action` takes them; if [save] fails, it stays open, saying so,
-/// to try again. Its More button closes it to go on with [more], given
-/// what's typed, for its priority, color and the rest. Returns what
-/// [save] (or [more]) returned, or null if it was called off.
+/// Asks for a new action's name, the group it's in (of [actions]) and
+/// its note -- or, with [group], a group's -- in a sheet, starting with
+/// [name] and in [parentId] if given, and saves it with [save], given the
+/// fields as `create_action` takes them; if [save] fails, it stays open,
+/// saying so, to try again. Its More button closes it to go on with
+/// [more], given what's typed, for its priority, color and the rest. With
+/// [addGroup], a new group can be added from its group picker (see
+/// [ActionGroupField]). Returns what [save] (or [more]) returned, or null
+/// if it was called off.
 Future<T?> showAddActionSheet<T extends Object>(
   BuildContext context, {
   String? name,
@@ -98,6 +100,7 @@ Future<T?> showAddActionSheet<T extends Object>(
   required List<PlanAction> actions,
   required Future<T> Function(Map<String, Object?> fields) save,
   Future<T?> Function(Map<String, Object?> fields)? more,
+  Future<AddedAction> Function(Map<String, Object?> fields)? addGroup,
 }) => _show(
   context,
   _ActionSheet(
@@ -107,9 +110,14 @@ Future<T?> showAddActionSheet<T extends Object>(
     actions: actions,
     save: save,
     hasMore: more != null,
+    addGroup: addGroup,
   ),
   more,
 );
+
+/// An action or group just added: its id, and every action and group as
+/// they're to be shown now, it among them.
+typedef AddedAction = ({String id, List<PlanAction> actions});
 
 /// What a quick add sheet was closed with: what it saved, or what's typed
 /// to go on with in More.
@@ -329,6 +337,76 @@ class LocationGroupField extends StatelessWidget {
               onAdded?.call(added);
               return added;
             },
+          );
+          return added?.id;
+        },
+      ),
+      null => null,
+    },
+  );
+}
+
+/// The action group something's in, of [actions]: none (top-level), or
+/// one picked in a sheet, as [ActionField] picks -- never an action, a
+/// group put away (unless it's [value]), or one in [exclude]. With
+/// [addGroup], a new one can be added there, named as it's typed, in the
+/// quick New group sheet: [onAdded] is told of every action as they are
+/// with it -- and with any group added inside that sheet in turn -- so it
+/// can be shown, then it's picked.
+class ActionGroupField extends StatelessWidget {
+  const ActionGroupField({
+    super.key,
+    required this.actions,
+    required this.value,
+    required this.onChanged,
+    this.exclude = const {},
+    this.addGroup,
+    this.onAdded,
+  });
+
+  final List<PlanAction> actions;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  final Set<String> exclude;
+  final Future<AddedAction> Function(Map<String, Object?> fields)? addGroup;
+  final ValueChanged<List<PlanAction>>? onAdded;
+
+  @override
+  Widget build(BuildContext context) => ActionField(
+    actions: actions,
+    value: value,
+    title: 'Pick its group',
+    noneLabel: 'None (top-level)',
+    // Only groups hold anything; not one put away, unless it's there
+    // already.
+    exclude: {
+      ...exclude,
+      for (final action in actions)
+        if ((!action.isGroup ||
+                const {'archived', 'deleted'}.contains(action.status)) &&
+            action.id != value)
+          ?action.id,
+    },
+    marker: (action) => ActionIcon(action, size: 18),
+    onChanged: onChanged,
+    add: switch (addGroup) {
+      final addGroup? => (
+        noun: 'group',
+        icon: Icons.create_new_folder_outlined,
+        onAdd: (name) async {
+          Future<AddedAction> add(Map<String, Object?> fields) async {
+            final added = await addGroup(fields);
+            onAdded?.call(added.actions);
+            return added;
+          }
+
+          final added = await showAddActionSheet<AddedAction>(
+            context,
+            name: name.isEmpty ? null : name,
+            group: true,
+            actions: actions,
+            save: add,
+            addGroup: add,
           );
           return added?.id;
         },
@@ -657,6 +735,7 @@ class _ActionSheet<T> extends StatefulWidget {
     required this.actions,
     required this.save,
     required this.hasMore,
+    required this.addGroup,
   });
 
   final String? name;
@@ -665,6 +744,7 @@ class _ActionSheet<T> extends StatefulWidget {
   final List<PlanAction> actions;
   final Future<T> Function(Map<String, Object?> fields) save;
   final bool hasMore;
+  final Future<AddedAction> Function(Map<String, Object?> fields)? addGroup;
 
   @override
   State<_ActionSheet<T>> createState() => _ActionSheetState<T>();
@@ -673,11 +753,14 @@ class _ActionSheet<T> extends StatefulWidget {
 class _ActionSheetState<T> extends State<_ActionSheet<T>>
     with _Adding<_ActionSheet<T>, T> {
   late final _name = TextEditingController(text: widget.name);
+  final _note = TextEditingController();
   late String? _parentId = widget.parentId;
+  late var _actions = widget.actions;
 
   @override
   void dispose() {
     _name.dispose();
+    _note.dispose();
     super.dispose();
   }
 
@@ -691,6 +774,7 @@ class _ActionSheetState<T> extends State<_ActionSheet<T>>
   Map<String, Object?> get fields => {
     'name': _name.text.trim(),
     'parent_id': _parentId,
+    'note': ?_trimmed(_note.text),
     if (widget.group) 'kind': 'group',
   };
 
@@ -719,20 +803,26 @@ class _ActionSheetState<T> extends State<_ActionSheet<T>>
       Text('Group', style: Theme.of(context).textTheme.titleSmall),
       FieldHotkey(
         'G',
-        child: ActionField(
-          actions: widget.actions,
+        child: ActionGroupField(
+          actions: _actions,
           value: _parentId,
-          title: 'Pick its group',
-          noneLabel: 'None (top-level)',
-          // Only groups hold anything; not one put away.
-          exclude: {
-            for (final action in widget.actions)
-              if (!action.isGroup ||
-                  const {'archived', 'deleted'}.contains(action.status))
-                ?action.id,
+          addGroup: widget.addGroup,
+          onAdded: (actions) {
+            if (mounted) setState(() => _actions = actions);
           },
-          marker: (action) => ActionIcon(action, size: 18),
           onChanged: (id) => setState(() => _parentId = id),
+        ),
+      ),
+      FieldHotkey(
+        'O',
+        child: TextField(
+          controller: _note,
+          minLines: 1,
+          maxLines: 4,
+          decoration: _decoration(
+            'Note (optional)',
+            hint: widget.group ? 'What it covers' : 'What counts as it',
+          ),
         ),
       ),
     ],

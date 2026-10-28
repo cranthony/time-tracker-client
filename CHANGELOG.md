@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.220.0
+
+- The quick New action sheet has a Note field (hotkey O), as the full
+  dialog has, so an action's note can be set without going on to More.
+- An action's group picker -- in the quick New action sheet and the
+  full action dialog -- can add a group, as the location group picker
+  can: type its name and tap "Add group", and it opens in the quick New
+  group sheet (its own group picker can add one in turn), then it's
+  picked.
+
 ## 7.219.0
 
 - A goal can have a color of its own, picked on its page's editor as
