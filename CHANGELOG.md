@@ -9,6 +9,18 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.210.0
+
+- A compaction proposal's Goals tab now shows every goal the proposal
+  concerns, not only those it changes: each goal with the events tagged
+  with it in what happened (and their shares), so the tags can be checked
+  -- a goal closed in the window, or one marked done, that nothing is
+  tagged with says "No events tagged", which is where the work on it went
+  unrecorded. Its button lists the tagged events, to go to one, or tags
+  another event with the goal, picked from what happened. On the Goals
+  tab, the events tagged with the goal shown are outlined on the timeline,
+  and a changed event whose goals the proposal sets is marked "New goals".
+
 ## 7.209.1
 
 - A goal marked done (or changed any other way) no longer slips back to
