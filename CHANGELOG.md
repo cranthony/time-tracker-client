@@ -14,7 +14,10 @@ on. Add the new version's section here at the same time; CI checks both.
 - The home screen goals widget's text size is a setting, in the widget's
   settings under its title's place: Small, as it has been, with six
   goals in two cells; Medium, one and a half times that; or Large,
-  twice, the rows growing with the text. The header stays as it is.
+  twice, the rows growing with the text, and when each goal is due
+  growing half as much, to leave its title the room. The header stays
+  as it is. A goal due today at a time now shows just the time, as a
+  calendar does, since any other day's is named.
 - The home screen calendar has no padding above or below its header and
   days, as the goals widget hasn't, so its days have the room.
 

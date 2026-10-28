@@ -45,7 +45,8 @@ import java.util.Calendar
 /**
  * The home screen goals: every active goal, the soonest due first, each
  * with when it's due -- "Today", "Tomorrow", a weekday within the week,
- * or the date, and its time if it has one -- the overdue ones' in red.
+ * or the date, and its time if it has one (today's, the time alone) --
+ * the overdue ones' in red.
  * The app keeps them for it as a snapshot (lib/platform/goals_widget.dart),
  * and has it drawn again as they change, as each falls due, and at each
  * midnight, so the days' names keep up.
@@ -57,7 +58,8 @@ import java.util.Calendar
  * Each widget's header -- "Goals", and the button -- is at its top, or,
  * set so in its settings (GoalsWidgetConfigureActivity), its bottom; and
  * its goals' text is small, as six rows fit, or, set there, 1.5 or 2
- * times that (TextSize), the rows growing with it.
+ * times that (TextSize), the rows growing with it; when each is due
+ * grows half as much, to leave the title its room.
  */
 class GoalsWidget : GlanceAppWidget() {
     override val stateDefinition = HomeWidgetGlanceStateDefinition()
@@ -262,12 +264,15 @@ private fun GoalRow(context: Context, goal: WidgetGoal, now: Long, scale: Float)
         )
         val due = dueLabel(context, goal, now)
         if (due != null) {
+            // Grows half as fast as the title, which keeps the room: at
+            // twice the size, a date and time would take a row's width.
+            val dueScale = 1 + (scale - 1) / 2
             Spacer(modifier = GlanceModifier.width(8.dp))
             Text(
                 text = due,
                 style = TextStyle(
                     color = if (overdue) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = (11 * scale).sp,
+                    fontSize = (11 * dueScale).sp,
                     fontWeight = if (overdue) FontWeight.Medium else FontWeight.Normal,
                 ),
                 maxLines = 1,
@@ -286,14 +291,15 @@ private const val ROW_DP = 19
  * When [goal] is due, as of [now]: its day as "Today", "Tomorrow" or
  * "Yesterday", a weekday ("Thu") within the week ahead, or else the date
  * ("Nov 3", with the year when it's another year's); then its time
- * ("5:00 PM", in the phone's clock) if it has one. Null with no
- * deadline.
+ * ("5:00 PM", in the phone's clock) if it has one -- today's, the time
+ * alone, as a calendar has it. Null with no deadline.
  */
 private fun dueLabel(context: Context, goal: WidgetGoal, now: Long): String? {
     val due = goal.due ?: return null
     // The day it's due: a date's is the one before its midnight.
     val day = if (goal.hasTime) due else due - 1
     val days = epochDay(day) - epochDay(now)
+    if (goal.hasTime && days == 0L) return DateFormat.getTimeFormat(context).format(due)
     val dayLabel = when {
         days == 0L -> "Today"
         days == 1L -> "Tomorrow"
