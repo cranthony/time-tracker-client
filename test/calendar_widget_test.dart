@@ -68,6 +68,11 @@ class _FakeHost implements CalendarWidgetHost {
   @override
   Future<void> save(String? snapshot) async => saved.add(snapshot);
 
+  /// What was saved last -- by the widget under test, or added to [saved]
+  /// by a test, as the background task would save it from its isolate.
+  @override
+  Future<String?> kept() async => saved.lastOrNull;
+
   final weathers = <String?>[];
 
   @override
@@ -222,6 +227,22 @@ void main() {
 
       store.putDay(_day(0), [_event('later', 0, hour: 16)]);
       await widget.publish(store, now: _now);
+      expect(host.redraws, 2);
+    });
+
+    test('publishes again when what is kept was saved elsewhere: by the '
+        'background task, from its own isolate', () async {
+      final host = _FakeHost();
+      final widget = CalendarWidget(host: host, enabled: true);
+      final store = _store([_event('later', 0, hour: 15)], days: 1);
+      await widget.publish(store, now: _now);
+      final own = host.saved.single;
+
+      // The task, having fetched the goals before a change to them was
+      // sent, kept a snapshot of its own.
+      host.saved.add('{"days":[]}');
+      await widget.publish(store, now: _now);
+      expect(host.saved, [own, '{"days":[]}', own]);
       expect(host.redraws, 2);
     });
 

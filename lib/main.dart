@@ -357,7 +357,17 @@ Future<void> _refreshInBackground() async {
     repository: McpEventsRepository(client),
     cache: cache,
   );
-  final goals = McpGoalsRepository(client, cache: cache);
+  // The goals with the changes waiting to be sent made to them, as the
+  // app shows them: a goal closed there stays closed on the home screen
+  // calendar, though the server still has it open till its change is
+  // sent. Best effort: without them, the goals as the server has them.
+  final writes = WriteQueue(
+    store: PrefsOutboxStore.writes(),
+    call: WriteQueue.callOn(client),
+    sender: Outbox.backgroundSender,
+  );
+  await writes.refresh().catchError((_) {});
+  final goals = McpGoalsRepository(client, cache: cache, writes: writes);
   final record = await refreshCaches(
     hints: hints,
     notes: McpNotesRepository(client, cache: cache),

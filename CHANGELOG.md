@@ -9,6 +9,17 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.211.1
+
+- The home screen calendar no longer keeps listing a goal closed in the
+  app, under the day it was due, after the background refresh has drawn
+  it. The refresh draws the calendar from the goals as the server has
+  them, which can still have one the app has closed, as its change is on
+  its way; and the app, finding its own calendar as it last drew it, left
+  the refresh's. The app now compares with what is kept for the calendar,
+  whichever drew it, and the refresh draws it with the changes on their
+  way made, as the app does.
+
 ## 7.211.0
 
 - In an event's Details, changing its start or end no longer saves the

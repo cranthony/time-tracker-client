@@ -32,6 +32,13 @@ typedef CalendarTap = ({DateTime? at, String? eventId});
 /// Above each day's events are the active goals due that day: the two
 /// due soonest, and how many more there are.
 ///
+/// The background refresh task publishes too, from its own isolate, so
+/// what's kept for the widget may not be what this instance last kept:
+/// [publish] compares with what's kept ([CalendarWidgetHost.kept]), not
+/// with what it kept last, so the app's view wins once it's looked at
+/// again -- a goal closed in the app that the task, fetching the goals
+/// before the change was sent, still had open, say.
+///
 /// Each day's header also gives its weather, if it's on: its sky's icon,
 /// its chance of rain -- today's from now -- and its high and low, the
 /// rest of today's for today. [publishWeather] keeps those apart from the
@@ -82,14 +89,10 @@ class CalendarWidget {
   final bool enabled;
   final _taps = StreamController<CalendarTap>();
 
-  /// What was last published, to publish again only when it changes;
-  /// [_unpublished] until the first.
-  Object? _published = _unpublished;
-  static const _unpublished = Object();
-
   /// The weather last published, to publish again only when it changes;
   /// [_unpublished] until the first.
   Object? _weatherPublished = _unpublished;
+  static const _unpublished = Object();
 
   /// Taps on the widget, a tap that launched the app among them, buffered
   /// until the first listener.
@@ -97,7 +100,8 @@ class CalendarWidget {
 
   /// Keeps [store]'s events from [now] to [days] days ahead -- the
   /// colors from [actions] -- and the [goals] due those days for the
-  /// widget, and has it drawn again, unless they're as they were.
+  /// widget, and has it drawn again, unless they're as what's kept for
+  /// it -- by this instance, or by the background task's.
   Future<void> publish(
     EventStore store, {
     Iterable<PlanAction> actions = const [],
@@ -113,12 +117,11 @@ class CalendarWidget {
       now: now ?? DateTime.now(),
     );
     final json = snapshot == null ? null : jsonEncode(snapshot);
-    if (json == _published) return;
     try {
+      if (json == await _host.kept()) return;
       await _host.save(json);
       await _host.schedule(redrawTimes(snapshot));
       await _host.redraw();
-      _published = json;
     } on Exception catch (e) {
       debugPrint('Home screen calendar unavailable: $e');
     }
@@ -336,6 +339,10 @@ abstract class CalendarWidgetHost {
   /// Keeps [snapshot] (JSON) for the widget; null for none.
   Future<void> save(String? snapshot);
 
+  /// The snapshot kept for the widget, by whichever isolate [save]d it
+  /// last; null for none.
+  Future<String?> kept();
+
   /// Keeps [weather] (JSON, see [calendarWeather]) for the widget's
   /// headers; null for none.
   Future<void> saveWeather(String? weather);
@@ -365,6 +372,9 @@ class HomeWidgetHost implements CalendarWidgetHost {
   @override
   Future<void> save(String? snapshot) =>
       HomeWidget.saveWidgetData<String>(snapshotKey, snapshot);
+
+  @override
+  Future<String?> kept() => HomeWidget.getWidgetData<String>(snapshotKey);
 
   @override
   Future<void> saveWeather(String? weather) =>
