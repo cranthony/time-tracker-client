@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.215.0
+
+- The home screen goals widget fits six goals in its two cells: its rows
+  are 17dp, with the title at 11sp and when it's due at 10sp, under a
+  header 28dp high, where four rows of larger text fit before.
+
 ## 7.214.0
 
 - A goal's page has its title as its first field, above its status, in

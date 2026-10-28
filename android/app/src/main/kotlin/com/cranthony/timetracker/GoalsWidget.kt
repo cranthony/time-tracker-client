@@ -29,6 +29,7 @@ import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
+import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
@@ -162,7 +163,7 @@ private fun Content(
             .appWidgetBackground()
             .background(GlanceTheme.colors.widgetBackground)
             .cornerRadius(16.dp)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 5.dp),
     ) {
         if (!titleAtBottom) Header(context)
         if (goals.isNullOrEmpty()) {
@@ -191,13 +192,13 @@ private fun Content(
 /**
  * "Goals", which opens the Plan page's Goals, then the button for a new
  * goal: above the goals, or below them. Thinner than the calendar's: a
- * compact button, 32dp high, and a smaller title, to leave the goals
- * the room.
+ * compact button, 28dp high, and a smaller title, to leave the goals
+ * the room -- six rows in two cells (see [GoalRow]).
  */
 @Composable
 private fun Header(context: Context) {
     Row(
-        // No gap from the goals: the button's tap target leaves 3dp
+        // No gap from the goals: the button's tap target leaves 2dp
         // above and below its circle.
         modifier = GlanceModifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -207,7 +208,7 @@ private fun Header(context: Context) {
             modifier = GlanceModifier.defaultWeight().clickable(open(context)),
             style = TextStyle(
                 color = GlanceTheme.colors.onSurface,
-                fontSize = 15.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
             ),
             maxLines = 1,
@@ -223,7 +224,9 @@ private fun Header(context: Context) {
 
 /**
  * A goal: its title, and when it's due ([dueLabel]) at the end -- in
- * red, and bold, once it's overdue. Opens its page.
+ * red, and bold, once it's overdue. Opens its page. [ROW_DP] high, with
+ * small text, so six fit in a widget two cells high (about 140dp on a
+ * phone) under the header.
  */
 @Composable
 private fun GoalRow(context: Context, goal: WidgetGoal, now: Long) {
@@ -231,14 +234,14 @@ private fun GoalRow(context: Context, goal: WidgetGoal, now: Long) {
     Row(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .padding(vertical = 5.dp)
+            .height(ROW_DP.dp)
             .clickable(open(context, goal = goal.id)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = goal.title.ifBlank { "(no title)" },
             modifier = GlanceModifier.defaultWeight(),
-            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp),
+            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 11.sp),
             maxLines = 1,
         )
         val due = dueLabel(context, goal, now)
@@ -248,7 +251,7 @@ private fun GoalRow(context: Context, goal: WidgetGoal, now: Long) {
                 text = due,
                 style = TextStyle(
                     color = if (overdue) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     fontWeight = if (overdue) FontWeight.Medium else FontWeight.Normal,
                 ),
                 maxLines = 1,
@@ -256,6 +259,9 @@ private fun GoalRow(context: Context, goal: WidgetGoal, now: Long) {
         }
     }
 }
+
+/** A goal's row's height: six of them, and the header, in two cells. */
+private const val ROW_DP = 17
 
 /**
  * When [goal] is due, as of [now]: its day as "Today", "Tomorrow" or
