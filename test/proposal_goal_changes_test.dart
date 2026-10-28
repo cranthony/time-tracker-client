@@ -240,11 +240,13 @@ void main() {
     Future<void> open(
       WidgetTester tester, {
       Map<String, Object?> extra = const {},
+      List<Goal> more = const [],
     }) async {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      store = InMemoryGoalsRepository(goals(), () => now);
+      final all = [...goals(), ...more];
+      store = InMemoryGoalsRepository(all, () => now);
       proposals = _Proposals(
         Proposal.fromJson({...proposalJson(), ...extra}),
         events: InMemoryEventsRepository([
@@ -254,7 +256,7 @@ void main() {
       );
       await tester.pumpWidget(
         PlanMemoryScope(
-          memory: PlanMemory()..goals = goals(),
+          memory: PlanMemory()..goals = all,
           child: GoalsScope(
             repository: store,
             child: MaterialApp(
@@ -313,18 +315,18 @@ void main() {
       expect(
         find.text(
           'Kitchen · from the 10:30 AM note · To settle: made when it’s '
-          'confirmed',
+          'confirmed · No events tagged',
         ),
         findsOneWidget,
       );
-      await tester.tap(find.byTooltip('Next goal change'));
+      await tester.tap(find.byTooltip('Next goal'));
       await tester.pumpAndSettle();
       expect(
         find.text('Goal  Fence fixed · missed', findRichText: true),
         findsOneWidget,
       );
       expect(find.text('To settle: made when it’s confirmed'), findsOneWidget);
-      expect(find.byTooltip('Next goal change'), findsOneWidget);
+      expect(find.byTooltip('Next goal'), findsOneWidget);
       expect(
         tester
             .widget<IconButton>(
@@ -362,7 +364,7 @@ void main() {
         'missed and tried again by a day picked', (tester) async {
       await open(tester);
       await page(tester, 'Goals (2)');
-      await tester.tap(find.byTooltip('Next goal change'));
+      await tester.tap(find.byTooltip('Next goal'));
       await tester.pumpAndSettle();
 
       await settle(tester, 'Drop it');
@@ -431,6 +433,106 @@ void main() {
         (await store.goals()).singleWhere((g) => g.id == 'fence').status,
         'inactive',
       );
+    });
+
+    testWidgets('lists a goal the events are tagged with, with each event '
+        'and its share, and goes to one from its sheet', (tester) async {
+      await open(
+        tester,
+        extra: {
+          'events': [
+            {
+              'id': 'tea',
+              'summary': 'Tea',
+              'start': iso(9),
+              'end': iso(10),
+              'status': 'on_schedule',
+              'goals': [
+                {'goal_id': 'kitchen', 'minutes': 30},
+              ],
+            },
+          ],
+        },
+      );
+      await page(tester, 'Goals (3)');
+      // After the two changes: a goal only tagged.
+      await tester.tap(find.byTooltip('Next goal'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Next goal'));
+      await tester.pumpAndSettle();
+      expect(find.text('Goal  Kitchen', findRichText: true), findsOneWidget);
+      expect(find.text('Tagged: Tea, 9:00 AM (30m)'), findsOneWidget);
+      expect(find.byTooltip('Settle it'), findsNothing);
+      await tester.tap(find.byTooltip('Tagged events'));
+      await tester.pumpAndSettle();
+      expect(find.text('Events tagged with “Kitchen”'), findsOneWidget);
+      expect(
+        find.widgetWithText(ListTile, 'Tea, 9:00 AM (30m)'),
+        findsOneWidget,
+      );
+      // Tagged already: nothing else in the window to tag with it.
+      expect(find.text('Tag another event…'), findsNothing);
+      await tester.tap(find.widgetWithText(ListTile, 'Tea, 9:00 AM (30m)'));
+      await tester.pumpAndSettle();
+      expect(find.text('Events tagged with “Kitchen”'), findsNothing);
+    });
+
+    testWidgets('a goal closed in the window that nothing is tagged with '
+        'says so, and an event is tagged with it from its sheet', (
+      tester,
+    ) async {
+      await open(
+        tester,
+        more: [
+          Goal.fromJson({
+            'id': 'robot',
+            'title': 'Fix the robot',
+            'status': 'done',
+            'deadline': '2026-10-05',
+            'history': [
+              {'status': 'active', 'at': '2026-09-29T09:00:00'},
+              {'status': 'done', 'at': '2026-09-30T10:00:00'},
+            ],
+          }),
+        ],
+      );
+      await page(tester, 'Goals (3)');
+      await tester.tap(find.byTooltip('Next goal'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Next goal'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Goal  Fix the robot', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.text('closed in it: done 10:00 AM · No events tagged'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byTooltip('Tag an event'));
+      await tester.pumpAndSettle();
+      // The sheet's; the strip's is part of its line.
+      expect(find.text('No events tagged'), findsOneWidget);
+      await tester.tap(find.text('Tag another event…'));
+      await tester.pumpAndSettle();
+      expect(find.text('Tag an event with “Fix the robot”'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ListTile, 'Tea, 9:00 AM'));
+      await tester.pumpAndSettle();
+      expect(lastSent()['updates'], [
+        {
+          'event': {
+            'id': 'tea',
+            'goals': [
+              {'goal_id': 'robot'},
+            ],
+          },
+        },
+      ]);
+      expect(
+        find.text('closed in it: done 10:00 AM · Tagged: Tea, 9:00 AM'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Tagged Tea, 9:00 AM with'), findsOneWidget);
     });
 
     testWidgets('asks Claude about one, in a note naming the goal', (

@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/facts.dart';
-import '../models/goal.dart' show deadlineEnd, deadlineOf, goalStatuses;
+import '../models/goal.dart'
+    show EventGoals, deadlineEnd, deadlineOf, goalStatuses;
 import '../models/proposal.dart';
 import '../outbox/proposal_notices.dart';
 import 'hotkeys.dart';
@@ -69,6 +71,8 @@ EventMark proposalMark(
             Facts.fromJson(calendar.properties['facts']) !=
                 Facts.fromJson(event.facts))
           'New facts',
+        if (calendar != null && !listEquals(calendar.goals, event.goals))
+          'New goals',
         if (calendar == null && !event.moved) 'Changed',
       ],
       ProposalEventStatus.onSchedule || ProposalEventStatus.planned => [
@@ -1304,46 +1308,77 @@ IconData goalChangeIcon(String status) => switch (status) {
   _ => Icons.flag_outlined,
 };
 
-/// A change the proposal makes to a goal there is -- the [index]th of
-/// [count] -- the goal, and what the change marks it, where it sits
-/// ([path]) and the notes it came [from]; and, once the user's [settled]
-/// it, how: applied now, dropped, or changed. Tapping it, or its button,
-/// calls [onSettle], to settle it, or say otherwise; [onApply] applies it
-/// now; with buttons to go to the one before it ([onPrevious]) and after
-/// it ([onNext]).
-class ProposalGoalChangeStrip extends StatelessWidget {
-  const ProposalGoalChangeStrip({
+/// A goal the proposal concerns -- the [index]th of [count]: its [title],
+/// where it sits ([path]), and what the proposal has of it. A [change] it
+/// makes to the goal: what it marks it, the notes it came [from] and, once
+/// the user's [settled] it, how (applied now, dropped, or changed). The
+/// events [tagged] with the goal in what happened, named with their
+/// shares -- or, with none, "No events tagged" when some might be
+/// expected: the goal was [closed] in the window ("done 9:30 AM": the
+/// user finished it, so the work on it is likely among the events), or
+/// the change marks it done. Tapping it, or its button, calls
+/// [onSettle], to settle its change, or say otherwise; [onApply] applies
+/// the change now; [onTagged] shows the events tagged with it, to go to
+/// one or tag another; with buttons to go to the one before it
+/// ([onPrevious]) and after it ([onNext]).
+class ProposalGoalStrip extends StatelessWidget {
+  const ProposalGoalStrip({
     super.key,
-    required this.change,
+    required this.title,
     required this.index,
     required this.count,
+    this.change,
     this.settled,
+    this.path = const [],
     this.from = const [],
+    this.tagged = const [],
+    this.closed,
     this.onSettle,
     this.onApply,
+    this.onTagged,
     this.onPrevious,
     this.onNext,
   });
 
-  final ProposalGoalChange change;
+  final String title;
   final int index;
   final int count;
+  final ProposalGoalChange? change;
   final GoalChangeSettled? settled;
+  final List<String> path;
 
-  /// The notes it came from, named: "10:30 AM note".
+  /// The notes its change came from, named: "10:30 AM note".
   final List<String> from;
+
+  /// The events tagged with it, named with their shares: "Robot, 9:00 AM
+  /// (30m)".
+  final List<String> tagged;
+
+  /// How and when it was closed in the window, if it was: "done 9:30 AM".
+  final String? closed;
   final VoidCallback? onSettle;
   final VoidCallback? onApply;
+  final VoidCallback? onTagged;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
+
+  /// Whether events tagged with it are to be expected: it was closed in
+  /// the window, or the change marks it done.
+  bool get expectsTagged => closed != null || change?.status == 'done';
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final change = this.change;
     final dropped = settled?.use == GoalChangeUse.drop;
+    final untagged = tagged.isEmpty && expectsTagged;
     return _DetailRow(
-      badge: dropped ? Icons.block : goalChangeIcon(change.status),
-      what: 'goal change',
+      badge: dropped
+          ? Icons.block
+          : change == null
+          ? Icons.flag_outlined
+          : goalChangeIcon(change.status),
+      what: 'goal',
       index: index,
       count: count,
       title: TextSpan(
@@ -1353,12 +1388,12 @@ class ProposalGoalChangeStrip extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           TextSpan(
-            text: change.name,
+            text: title,
             style: dropped
                 ? const TextStyle(decoration: TextDecoration.lineThrough)
                 : null,
           ),
-          if (!dropped)
+          if (change != null && !dropped)
             TextSpan(
               text:
                   ' · ${goalChangeLabel(context, change.status, change.retryDeadline)}',
@@ -1366,11 +1401,18 @@ class ProposalGoalChangeStrip extends StatelessWidget {
         ],
       ),
       says: [
-        if (change.path.isNotEmpty) change.path.join(' › '),
+        if (path.isNotEmpty) path.join(' › '),
         if (from.isNotEmpty) 'from the ${from.join(', ')}',
-        goalChangeState(settled),
+        if (closed case final closed?) 'closed in it: $closed',
+        if (change != null) goalChangeState(settled),
+        if (tagged.isNotEmpty)
+          'Tagged: ${tagged.join(', ')}'
+        else if (expectsTagged)
+          'No events tagged',
       ].join(' · '),
-      saysColor: settled == null ? colors.secondary : null,
+      saysColor: (change != null && settled == null) || untagged
+          ? colors.secondary
+          : null,
       actions: [
         if (onApply != null)
           IconButton(
@@ -1386,13 +1428,129 @@ class ProposalGoalChangeStrip extends StatelessWidget {
             onPressed: onSettle,
             icon: const Icon(Icons.rule),
           ),
+        if (onTagged != null)
+          IconButton(
+            tooltip: tagged.isEmpty ? 'Tag an event' : 'Tagged events',
+            visualDensity: VisualDensity.compact,
+            onPressed: onTagged,
+            icon: Icon(tagged.isEmpty ? Icons.flag_outlined : Icons.flag),
+          ),
       ],
       onPrevious: onPrevious,
       onNext: onNext,
-      onTap: onSettle,
+      onTap: onSettle ?? onTagged,
     );
   }
 }
+
+/// What the user chose in [showTaggedEventsSheet].
+sealed class TaggedEventsChoice {
+  const TaggedEventsChoice();
+}
+
+/// Go to the event [eventId], tagged with the goal.
+final class GoToTaggedEvent extends TaggedEventsChoice {
+  const GoToTaggedEvent(this.eventId);
+  final String eventId;
+}
+
+/// Tag another event with the goal.
+final class TagAnotherEvent extends TaggedEventsChoice {
+  const TagAnotherEvent();
+}
+
+/// Shows the events [tagged] with the goal [title] in what happened --
+/// each by id and name, with its share -- to go to one, or, if [canTag],
+/// to tag another with it. Gives what was chosen; null if it's dismissed.
+Future<TaggedEventsChoice?> showTaggedEventsSheet(
+  BuildContext context, {
+  required String title,
+  required List<(String, String)> tagged,
+  bool canTag = true,
+}) => showModalBottomSheet<TaggedEventsChoice>(
+  context: context,
+  showDragHandle: true,
+  builder: (context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: ListView(
+        shrinkWrap: true,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              'Events tagged with “$title”',
+              style: theme.textTheme.titleMedium,
+            ),
+          ),
+          if (tagged.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                'No events tagged',
+                style: TextStyle(color: theme.hintColor),
+              ),
+            ),
+          for (final (id, name) in tagged)
+            ListTile(
+              leading: const Icon(Icons.event),
+              title: Text(name),
+              onTap: () => Navigator.of(context).pop(GoToTaggedEvent(id)),
+            ),
+          if (canTag)
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('Tag another event…'),
+              subtitle: const Text(
+                'An event in what happened, as work on this goal',
+              ),
+              onTap: () => Navigator.of(context).pop(const TagAnotherEvent()),
+            ),
+        ],
+      ),
+    );
+  },
+);
+
+/// Picks one of [events] -- each by id and name -- to tag with a goal,
+/// under [title]. Gives its id; null if it's dismissed.
+Future<String?> showPickEventSheet(
+  BuildContext context, {
+  required String title,
+  required List<(String, String)> events,
+}) => showModalBottomSheet<String>(
+  context: context,
+  showDragHandle: true,
+  builder: (context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: ListView(
+        shrinkWrap: true,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(title, style: theme.textTheme.titleMedium),
+          ),
+          if (events.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                'No event in what happened can be tagged with it: none '
+                'started before it closed, or all are tagged already.',
+                style: TextStyle(color: theme.hintColor),
+              ),
+            ),
+          for (final (id, name) in events)
+            ListTile(
+              leading: const Icon(Icons.event),
+              title: Text(name),
+              onTap: () => Navigator.of(context).pop(id),
+            ),
+        ],
+      ),
+    );
+  },
+);
 
 /// What the user said is to become of a goal change, from
 /// [showGoalChangeSheet].

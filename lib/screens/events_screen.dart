@@ -690,7 +690,7 @@ class _EventsScreenState extends State<EventsScreen> {
       if (_note != null) ProposalDetailPage.notes,
       if (_cancel != null) ProposalDetailPage.followThrough,
       if (_addition != null) ProposalDetailPage.added,
-      if (_goalChange != null) ProposalDetailPage.goals,
+      if (_goalInReview != null) ProposalDetailPage.goals,
     ];
     return pages.contains(_detailPage) ? _detailPage : pages.firstOrNull;
   }
@@ -757,8 +757,8 @@ class _EventsScreenState extends State<EventsScreen> {
     ];
   }
 
-  /// Which of the proposal's goal changes is shown.
-  int _goalChangeIndex = 0;
+  /// Which of the goals the proposal concerns ([_goalsInReview]) is shown.
+  int _goalIndex = 0;
 
   /// Every goal change the app's seen the open proposal make, by goal id,
   /// as Claude first made it: one the user settled leaves the proposal's
@@ -810,21 +810,87 @@ class _EventsScreenState extends State<EventsScreen> {
     ];
   }
 
-  /// The goal change shown under the proposal's bar, if it makes any.
-  _GoalChanged? get _goalChange => switch (_goalChanges) {
-    final changes when changes.isNotEmpty =>
-      changes[_goalChangeIndex.clamp(0, changes.length - 1)],
+  /// The goals the open proposal concerns, for its Goals page: those it
+  /// changes (first, in the order it made them), those closed in its
+  /// window -- the user marked one done as they finished, usually, so the
+  /// work on it should be among the events -- and those its events are
+  /// tagged with; each with the events tagged with it, in time order, so
+  /// the tags can be checked, and a goal with none seen.
+  List<_GoalInReview> get _goalsInReview {
+    final proposal = _proposal;
+    if (proposal == null) return const [];
+    final strings = MaterialLocalizations.of(context);
+    final goals = _memory.goals ?? const <Goal>[];
+    final tree = GoalTree(goals);
+    Goal? goalOf(String id) => goals.where((g) => g.id == id).firstOrNull;
+    final reviewed = [...proposal.reviewed]
+      ..sort((a, b) => a.start.compareTo(b.start));
+    final tagged = <String, List<(ProposalEvent, GoalShare)>>{};
+    for (final e in reviewed) {
+      // A cancelled or merged event's tags don't count.
+      if (!e.live) continue;
+      for (final s in e.goals) {
+        (tagged[s.goalId] ??= []).add((e, s));
+      }
+    }
+    final changes = {for (final c in _goalChanges) c.change.goalId: c};
+    final closed = [
+      for (final g in goals)
+        if (g.closedAt case final at?
+            when !at.isBefore(proposal.windowStart) &&
+                !at.isAfter(proposal.through))
+          g,
+    ]..sort((a, b) => a.closedAt!.compareTo(b.closedAt!));
+    String closedLabel(Goal g) =>
+        '${goalStatuses[g.status]?.toLowerCase() ?? g.status} '
+        '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(g.closedAt!.toLocal()))}';
+    final ids = <String>{
+      ...changes.keys,
+      for (final g in closed) g.id,
+      ...tagged.keys,
+    };
+    return [
+      for (final id in ids)
+        (
+          goalId: id,
+          title: switch ((changes[id], goalOf(id))) {
+            (final c?, _) => c.change.name,
+            (null, final g?) => goalTitle(g),
+            _ => id,
+          },
+          path: switch ((changes[id], goalOf(id))) {
+            (final c?, _) => c.change.path,
+            (null, final g?) => tree.pathOf(g.id),
+            _ => const <String>[],
+          },
+          change: changes[id],
+          tagged: tagged[id] ?? const [],
+          closed: switch (closed.where((g) => g.id == id).firstOrNull) {
+            final g? => closedLabel(g),
+            null => null,
+          },
+        ),
+    ];
+  }
+
+  /// The goal shown under the proposal's bar, if it concerns any.
+  _GoalInReview? get _goalInReview => switch (_goalsInReview) {
+    final goals when goals.isNotEmpty =>
+      goals[_goalIndex.clamp(0, goals.length - 1)],
     _ => null,
   };
 
-  /// Shows the [index]th of the proposal's goal changes under its bar.
-  void _goToGoalChange(int index) {
-    final changes = _goalChanges;
-    if (changes.isEmpty) return;
+  /// Shows the [index]th of the goals the proposal concerns under its
+  /// bar, and scrolls the timeline to the first event tagged with it.
+  void _goToGoal(int index) {
+    final goals = _goalsInReview;
+    if (goals.isEmpty) return;
+    final i = index.clamp(0, goals.length - 1);
     setState(() {
-      _goalChangeIndex = index.clamp(0, changes.length - 1);
+      _goalIndex = i;
       _detailPage = ProposalDetailPage.goals;
     });
+    if (goals[i].tagged.firstOrNull case (final e, _)) _scrollToTime(e.start);
   }
 
   /// The events of what happened that [added] is used at, given as an
@@ -903,7 +969,12 @@ class _EventsScreenState extends State<EventsScreen> {
       final a? => {for (final e in _usesOf(a)) e.id},
       null => const {},
     },
-    ProposalDetailPage.notes || ProposalDetailPage.goals || null => const {},
+    ProposalDetailPage.goals => {
+      for (final (e, _)
+          in _goalInReview?.tagged ?? const <(ProposalEvent, GoalShare)>[])
+        e.id,
+    },
+    ProposalDetailPage.notes || null => const {},
   };
 
   /// The proposal's notes, after the latest one an earlier compaction
@@ -981,8 +1052,8 @@ class _EventsScreenState extends State<EventsScreen> {
       _detailPage = ProposalDetailPage.claude;
     });
     if (goalId != null) {
-      final at = _goalChanges.indexWhere((c) => c.change.goalId == goalId);
-      if (at >= 0) _goToGoalChange(at);
+      final at = _goalsInReview.indexWhere((g) => g.goalId == goalId);
+      if (at >= 0) _goToGoal(at);
       return;
     }
     final point = points[i];
@@ -1093,7 +1164,11 @@ class _EventsScreenState extends State<EventsScreen> {
         final a? => _usesOf(a).firstOrNull?.start,
         null => null,
       },
-      ProposalDetailPage.claude || ProposalDetailPage.goals => null,
+      ProposalDetailPage.goals => switch (_goalInReview?.tagged.firstOrNull) {
+        (final e, _) => e.start,
+        null => null,
+      },
+      ProposalDetailPage.claude => null,
     };
     if (time != null) _scrollToTime(time);
   }
@@ -5369,7 +5444,7 @@ class _EventsScreenState extends State<EventsScreen> {
       _note != null ||
       _cancel != null ||
       _addition != null ||
-      _goalChange != null;
+      _goalInReview != null;
 
   /// Says why the open proposal can't be confirmed, if it can't, at the
   /// foot of the page ([ProposalProblemStatus]): once the frame's built,
@@ -5412,14 +5487,11 @@ class _EventsScreenState extends State<EventsScreen> {
     final additionAt = addition == null
         ? -1
         : indexOf(added, (a) => a.addition.ref == addition.addition.ref);
-    final goalChanges = _goalChanges;
-    final goalChange = _goalChange;
-    final goalChangeAt = goalChange == null
+    final goalsInReview = _goalsInReview;
+    final goal = _goalInReview;
+    final goalAt = goal == null
         ? -1
-        : indexOf(
-            goalChanges,
-            (c) => c.change.goalId == goalChange.change.goalId,
-          );
+        : indexOf(goalsInReview, (g) => g.goalId == goal.goalId);
     final goalNames = _recapGoalNames;
     // Its pages, as it'll have them: those with something on.
     final pages = [
@@ -5427,7 +5499,7 @@ class _EventsScreenState extends State<EventsScreen> {
       if (note != null) ProposalDetailPage.notes,
       if (cancel != null) ProposalDetailPage.followThrough,
       if (addition != null) ProposalDetailPage.added,
-      if (goalChange != null) ProposalDetailPage.goals,
+      if (goal != null) ProposalDetailPage.goals,
     ];
     return ProposalDetails(
       initialPage: switch (pages.indexOf(_detailPage)) {
@@ -5523,33 +5595,45 @@ class _EventsScreenState extends State<EventsScreen> {
                   : null,
             ),
       addCount: added.length,
-      goals: goalChange == null
+      goals: goal == null
           ? null
-          : ProposalGoalChangeStrip(
-              change: goalChange.change,
-              settled: goalChange.settled,
-              index: goalChangeAt,
-              count: goalChanges.length,
+          : ProposalGoalStrip(
+              title: goal.title,
+              path: goal.path,
+              change: goal.change?.change,
+              settled: goal.change?.settled,
+              index: goalAt,
+              count: goalsInReview.length,
               from: [
-                for (final id in goalChange.change.noteIds) ?noteNames[id],
+                for (final id
+                    in goal.change?.change.noteIds ?? const <String>[])
+                  ?noteNames[id],
               ],
-              onSettle: _proposalBusy
-                  ? null
-                  : () => _settleGoalChange(goalChange),
-              onApply:
-                  _proposalBusy ||
-                      goalChange.settled != null &&
-                          goalChange.settled!.use != GoalChangeUse.change
-                  ? null
-                  : () => _settleGoalChange(goalChange, apply: true),
-              onPrevious: goalChangeAt > 0
-                  ? () => _goToGoalChange(goalChangeAt - 1)
-                  : null,
-              onNext: goalChangeAt < goalChanges.length - 1
-                  ? () => _goToGoalChange(goalChangeAt + 1)
+              tagged: [
+                for (final (e, s) in goal.tagged)
+                  '${_reviewedNames[e.id] ?? e.id}'
+                      '${s.label.isEmpty ? '' : ' (${s.label})'}',
+              ],
+              closed: goal.closed,
+              onSettle: switch (goal.change) {
+                final c? when !_proposalBusy => () => _settleGoalChange(c),
+                _ => null,
+              },
+              onApply: switch (goal.change) {
+                final c?
+                    when !_proposalBusy &&
+                        (c.settled == null ||
+                            c.settled!.use == GoalChangeUse.change) =>
+                  () => _settleGoalChange(c, apply: true),
+                _ => null,
+              },
+              onTagged: _proposalBusy ? null : () => _openTagged(goal),
+              onPrevious: goalAt > 0 ? () => _goToGoal(goalAt - 1) : null,
+              onNext: goalAt < goalsInReview.length - 1
+                  ? () => _goToGoal(goalAt + 1)
                   : null,
             ),
-      goalCount: goalChanges.length,
+      goalCount: goalsInReview.length,
       collapsed: _detailsCollapsed,
       onCollapsed: _setDetailsCollapsed,
       onPage: _turnDetailsTo,
@@ -5858,6 +5942,81 @@ class _EventsScreenState extends State<EventsScreen> {
                 ? 'It counts against follow-through.'
                 : "A change of plan: it doesn't count against follow-through.",
           );
+        }
+      },
+    );
+  }
+
+  /// Shows the events tagged with [goal] in what happened, and goes to the
+  /// one the user picks, or tags another with it ([_tagEvent]).
+  Future<void> _openTagged(_GoalInReview goal) async {
+    final names = _reviewedNames;
+    final choice = await showTaggedEventsSheet(
+      context,
+      title: goal.title,
+      tagged: [
+        for (final (e, s) in goal.tagged)
+          (
+            e.id,
+            '${names[e.id] ?? e.id}${s.label.isEmpty ? '' : ' (${s.label})'}',
+          ),
+      ],
+      canTag: _taggable(goal).isNotEmpty,
+    );
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case GoToTaggedEvent(:final eventId):
+        if (_proposal?.event(eventId) case final e?) _scrollToTime(e.start);
+      case TagAnotherEvent():
+        await _tagEvent(goal);
+    }
+  }
+
+  /// The proposal's events that can be tagged with [goal]: those that
+  /// happened, in its window, not tagged with it already -- and, for a
+  /// goal that's closed, started before it closed, as the server takes
+  /// them.
+  List<ProposalEvent> _taggable(_GoalInReview goal) {
+    final proposal = _proposal;
+    if (proposal == null) return const [];
+    final closedAt = _memory.goals
+        ?.where((g) => g.id == goal.goalId)
+        .firstOrNull
+        ?.closedAt;
+    final taggedIds = {for (final (e, _) in goal.tagged) e.id};
+    return [
+      for (final e in proposal.reviewed)
+        if (e.live &&
+            !taggedIds.contains(e.id) &&
+            e.start.isBefore(proposal.through) &&
+            (closedAt == null || e.start.isBefore(closedAt)))
+          e,
+    ]..sort((a, b) => a.start.compareTo(b.start));
+  }
+
+  /// Tags an event the user picks with [goal], for all of it, in what the
+  /// proposal says happened; its share can be changed on the event.
+  Future<void> _tagEvent(_GoalInReview goal) async {
+    final names = _reviewedNames;
+    final candidates = _taggable(goal);
+    final id = await showPickEventSheet(
+      context,
+      title: 'Tag an event with “${goal.title}”',
+      events: [for (final e in candidates) (e.id, names[e.id] ?? e.id)],
+    );
+    if (id == null || !mounted) return;
+    final chosen = candidates.where((e) => e.id == id).firstOrNull;
+    if (chosen == null) return;
+    final shares = [...chosen.goals, GoalShare(goal.goalId)];
+    await runOrShowError(
+      context,
+      title: "Couldn't tag it",
+      action: () async {
+        final amended = await _amendUpdate(chosen.toEvent(), {
+          'goals': [for (final s in shares) s.toJson()],
+        });
+        if (mounted) {
+          _amended(amended, 'Tagged ${names[id] ?? id} with “${goal.title}”.');
         }
       },
     );
@@ -6454,6 +6613,20 @@ typedef _GoalChanged = ({
   ProposalGoalChange change,
   GoalChangeSettled? settled,
   ProposalGoalChange? claudes,
+});
+
+/// A goal the open proposal concerns (see `_goalsInReview`): its [title]
+/// and [path], the [change] the proposal makes to it, if any, the events
+/// [tagged] with it in what happened, each with its share, and, if it was
+/// closed in the proposal's window, how and when ([closed]: "done 9:30
+/// AM").
+typedef _GoalInReview = ({
+  String goalId,
+  String title,
+  List<String> path,
+  _GoalChanged? change,
+  List<(ProposalEvent, GoalShare)> tagged,
+  String? closed,
 });
 
 /// Where whether a proposal's details are folded away is kept.
