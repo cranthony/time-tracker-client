@@ -173,7 +173,7 @@ class TitleSetting(private val prefs: String) {
 /** A widget's text size: how much bigger than its smallest. */
 enum class TextSize(val scale: Float, val label: Int) {
     SMALL(1f, R.string.widget_text_small),
-    MEDIUM(1.5f, R.string.widget_text_medium),
+    MEDIUM(1.4f, R.string.widget_text_medium),
     LARGE(2f, R.string.widget_text_large),
 }
 

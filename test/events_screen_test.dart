@@ -39,6 +39,22 @@ import 'package:time_tracker_client/widgets/note_cursor.dart';
 
 import 'hold_drag.dart';
 
+/// Goals the server can't give -- no connection -- so a fetch fails, or,
+/// if it [hangs], never answers; only those [kept] from the last fetch.
+class _OfflineGoals extends InMemoryGoalsRepository {
+  _OfflineGoals(this.kept, {this.hangs = false}) : super(kept);
+
+  final List<Goal> kept;
+  final bool hangs;
+
+  @override
+  Future<List<Goal>?> cachedGoals() async => kept;
+
+  @override
+  Future<List<Goal>> goals() =>
+      hangs ? Completer<List<Goal>>().future : Future.error(StateError('off'));
+}
+
 void main() {
   final now = DateTime(2026, 9, 30, 12);
   DateTime at(int day, int hour, [int minute = 0]) =>
@@ -3346,7 +3362,9 @@ void main() {
       Stream<GoalsTap>? goalsTaps,
       List<Event> events = const [],
       List<Goal>? goals,
+      GoalsRepository? goalsRepository,
     }) {
+      goalsRepository ??= goals == null ? null : InMemoryGoalsRepository(goals);
       notes = InMemoryNotesRepository();
       outbox = NoteWrites.local(notes)..start();
       final screen = HomeScreen(
@@ -3360,12 +3378,9 @@ void main() {
         goalsTaps: goalsTaps,
       );
       return MaterialApp(
-        home: goals == null
+        home: goalsRepository == null
             ? screen
-            : GoalsScope(
-                repository: InMemoryGoalsRepository(goals),
-                child: screen,
-              ),
+            : GoalsScope(repository: goalsRepository, child: screen),
       );
     }
 
@@ -3440,10 +3455,17 @@ void main() {
       });
 
       Future<StreamController<GoalsTap>> openOnNotes(
-        WidgetTester tester,
-      ) async {
+        WidgetTester tester, {
+        GoalsRepository? repository,
+      }) async {
         final taps = StreamController<GoalsTap>();
-        await tester.pumpWidget(home(goalsTaps: taps.stream, goals: [ship]));
+        await tester.pumpWidget(
+          home(
+            goalsTaps: taps.stream,
+            goals: [ship],
+            goalsRepository: repository,
+          ),
+        );
         await tester.pumpAndSettle();
         expect(find.byType(PlanScreen), findsNothing);
         return taps;
@@ -3459,6 +3481,41 @@ void main() {
         await tester.pageBack();
         await tester.pumpAndSettle();
         expect(find.byType(PlanScreen), findsOneWidget);
+        outbox.stop();
+        await taps.close();
+      });
+
+      testWidgets('on a goal with no connection, the goals kept from the '
+          'last fetch: its page, from them', (tester) async {
+        final taps = await openOnNotes(
+          tester,
+          repository: _OfflineGoals([ship]),
+        );
+        taps.add((goalId: 'ship'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(GoalScreen), findsOneWidget);
+        expect(find.text('Ship the app'), findsWidgets);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        // Plan's Goals shows the kept goals too.
+        expect(find.byType(PlanScreen), findsOneWidget);
+        expect(find.text('Ship the app'), findsOneWidget);
+        outbox.stop();
+        await taps.close();
+      });
+
+      testWidgets('on a goal while a fetch of the goals is slow to answer: '
+          'its page, from the goals kept, without waiting', (tester) async {
+        final taps = await openOnNotes(
+          tester,
+          repository: _OfflineGoals([ship], hangs: true),
+        );
+        taps.add((goalId: 'ship'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(GoalScreen), findsOneWidget);
+        expect(find.text('Ship the app'), findsWidgets);
         outbox.stop();
         await taps.close();
       });
