@@ -53,6 +53,18 @@ String formatDays(Duration duration) {
   return parts.isEmpty ? '0d' : parts.join(' ');
 }
 
+/// [duration] in days, hours and minutes, as one would write it: "8d 3h",
+/// "5h"; "0h" for none.
+String formatDaysHours(Duration duration) {
+  final minutes = duration.inMinutes;
+  final parts = [
+    if (minutes ~/ Duration.minutesPerDay case final d when d > 0) '${d}d',
+    if (minutes ~/ 60 % 24 case final h when h > 0) '${h}h',
+    if (minutes % 60 case final m when m > 0) '${m}m',
+  ];
+  return parts.isEmpty ? '0h' : parts.join(' ');
+}
+
 /// A duration as one would type it: "1h 30m", "1h", "90m", "90" (minutes),
 /// "1:30", with weeks and days too ("1w 2d", "1d 3h"), or ISO 8601
 /// ("PT1H30M"). Null if [text] is none of those.

@@ -472,7 +472,7 @@ class _WhileDialogState extends State<_WhileDialog> {
             DurationField(
               controller: _minutes,
               label: 'For',
-              days: true,
+              units: DurationUnits.daysHours,
               onChanged: () => setState(() {}),
             ),
             if (until != null)
