@@ -9,6 +9,7 @@ import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/notes_repository.dart';
+import 'package:time_tracker_client/widgets/duration_field.dart';
 import 'package:time_tracker_client/widgets/goal_editor.dart';
 import 'package:time_tracker_client/widgets/goal_tile.dart';
 import 'package:time_tracker_client/widgets/hotkeys.dart';
@@ -199,6 +200,41 @@ void main() {
     expect(status(tester), 'Inactive');
     expect(find.text('Starts'), findsOneWidget);
     expect(find.textContaining('From '), findsOneWidget);
+  });
+
+  testWidgets('Deactivate until for a while waits until that many days '
+      'and hours on, at a time', (tester) async {
+    await pumpSubGoal(tester);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Deactivate until…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('For a while…'));
+    await tester.pumpAndSettle();
+    expect(find.text('For how long'), findsOneWidget);
+
+    // A day, to start with.
+    expect(find.textContaining('Until '), findsOneWidget);
+    final field = find.descendant(
+      of: find.byType(DurationField),
+      matching: find.byType(TextField),
+    );
+    // None at all isn't a while.
+    await tester.enterText(field, '0');
+    await tester.pump();
+    final ok = find.widgetWithText(FilledButton, 'OK');
+    expect(tester.widget<FilledButton>(ok).onPressed, isNull);
+
+    await tester.enterText(field, '1d 3h');
+    await tester.pump();
+    expect(find.textContaining('Until '), findsOneWidget);
+    await tester.tap(ok);
+    await tester.pumpAndSettle();
+    // A time, not just a day.
+    expect(find.textContaining(RegExp(r'^From .*\d:\d\d')), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Deactivate'));
+    await tester.pumpAndSettle();
+    expect(status(tester), 'Inactive');
+    expect(find.textContaining(RegExp(r'^From .*\d:\d\d')), findsOneWidget);
   });
 
   testWidgets('Deactivate until, cancelled, leaves the goal active', (

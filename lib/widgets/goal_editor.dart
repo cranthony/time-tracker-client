@@ -602,7 +602,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
                   label: _from == _DeadlineFrom.start
                       ? 'How long after it starts'
                       : "How long after that goal's",
-                  days: true,
+                  units: DurationUnits.weeksDays,
                   onChanged: () => setState(() {}),
                 ),
               ],
@@ -631,7 +631,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
                   key: ValueKey(_offsetPicks),
                   controller: _offset,
                   label: "How long before its parent's",
-                  days: true,
+                  units: DurationUnits.weeksDays,
                   onChanged: () => setState(() {}),
                 ),
               ] else if (_from == _DeadlineFrom.date) ...[

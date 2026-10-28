@@ -32,7 +32,7 @@ void main() {
             body: DurationField(
               controller: controller,
               label: 'Before',
-              days: true,
+              units: DurationUnits.weeksDays,
             ),
           ),
         ),
@@ -44,6 +44,34 @@ void main() {
       await tester.tap(find.byTooltip('A week less'));
       await tester.pump();
       expect(controller.text, '${24 * 60}');
+      await tester.enterText(find.byType(TextField), '1d 3h');
+      expect(controller.text, '${27 * 60}');
+    });
+
+    testWidgets('in days and hours, steps a day or an hour', (tester) async {
+      final controller = TextEditingController(text: '${8 * 24 * 60 + 180}');
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DurationField(
+              controller: controller,
+              label: 'For',
+              units: DurationUnits.daysHours,
+            ),
+          ),
+        ),
+      );
+
+      // Days, not weeks.
+      expect(find.text('8d 3h'), findsOneWidget);
+      expect(find.text('8 d'), findsOneWidget);
+      expect(find.text('3 h'), findsOneWidget);
+      await tester.tap(find.byTooltip('A day less'));
+      await tester.tap(find.byTooltip('An hour more'));
+      await tester.pump();
+      expect(controller.text, '${7 * 24 * 60 + 240}');
+      expect(find.text('7d 4h'), findsOneWidget);
       await tester.enterText(find.byType(TextField), '1d 3h');
       expect(controller.text, '${27 * 60}');
     });

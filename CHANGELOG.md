@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.221.0
+
+- A goal's "Deactivate until" (and its editor's Starts) has a "For a
+  while…" chip: a length of time in days and hours, typed ("1d 3h") or
+  stepped a day or an hour at a time, and it waits until then -- the
+  same time of day that many days on, then those hours.
+- Lengths of time can be in days and hours: written "8d 3h", not "1w
+  1d 3h", with steppers a day and an hour at a time.
+
 ## 7.220.0
 
 - The quick New action sheet has a Note field (hotkey O), as the full

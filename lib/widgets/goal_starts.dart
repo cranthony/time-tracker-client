@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
 import '../models/goal_activation.dart';
+import 'duration_field.dart';
 import 'durations.dart';
 import 'goal_icon.dart';
 import 'picker_sheet.dart';
@@ -262,6 +263,19 @@ class GoalStartsEditor extends StatelessWidget {
     );
   }
 
+  /// Adds a time [now] plus a while picked, in days and hours
+  /// ([pickWhile]): "For a while…".
+  Future<void> _pickWhile(BuildContext context) async {
+    final at = await pickWhile(context, now: now);
+    if (at == null) return;
+    _set(
+      after: [
+        ..._after,
+        {'at': deadlineOf(at, time: true)},
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -320,6 +334,11 @@ class GoalStartsEditor extends StatelessWidget {
               avatar: const Icon(Icons.event, size: 18),
               label: const Text('From a day…'),
               onPressed: () => _pickDay(context),
+            ),
+            ActionChip(
+              avatar: const Icon(Icons.hourglass_empty, size: 18),
+              label: const Text('For a while…'),
+              onPressed: () => _pickWhile(context),
             ),
           ],
         ),
@@ -390,6 +409,93 @@ class GoalStartsEditor extends StatelessWidget {
               ),
             ],
           ),
+      ],
+    );
+  }
+}
+
+/// Asks for a while, in days and hours ([DurationField]), and returns
+/// when it's over from [now]: the same time of day that many days on,
+/// then those hours. Null if it's cancelled.
+Future<DateTime?> pickWhile(
+  BuildContext context, {
+  DateTime Function() now = DateTime.now,
+}) => showDialog<DateTime>(
+  context: context,
+  builder: (context) => _WhileDialog(now: now()),
+);
+
+class _WhileDialog extends StatefulWidget {
+  const _WhileDialog({required this.now});
+
+  final DateTime now;
+
+  @override
+  State<_WhileDialog> createState() => _WhileDialogState();
+}
+
+class _WhileDialogState extends State<_WhileDialog> {
+  final _minutes = TextEditingController(text: '${Duration.minutesPerDay}');
+
+  @override
+  void dispose() {
+    _minutes.dispose();
+    super.dispose();
+  }
+
+  /// When the while typed is over, if it's one: null if it isn't, or is
+  /// none at all.
+  DateTime? get _until {
+    final minutes = int.tryParse(_minutes.text.trim());
+    if (minutes == null || minutes <= 0) return null;
+    final n = widget.now;
+    return DateTime(
+      n.year,
+      n.month,
+      n.day + minutes ~/ Duration.minutesPerDay,
+      n.hour,
+      n.minute + minutes % Duration.minutesPerDay,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final until = _until;
+    return AlertDialog(
+      title: const Text('For how long'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DurationField(
+              controller: _minutes,
+              label: 'For',
+              units: DurationUnits.daysHours,
+              onChanged: () => setState(() {}),
+            ),
+            if (until != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Until ${startLabel(context, deadlineOf(until, time: true))}',
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: until == null
+              ? null
+              : () => Navigator.of(context).pop(until),
+          child: const Text('OK'),
+        ),
       ],
     );
   }
