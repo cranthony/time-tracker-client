@@ -49,20 +49,70 @@ abstract class GoalsRepository {
 class McpGoalsRepository implements GoalsRepository {
   /// With [writes], goals are written through it: queued, kept on the
   /// device and sent once -- and what's read is shown with them made.
-  McpGoalsRepository(this._client, {this._cache, this._writes});
+  McpGoalsRepository(this._client, {this._cache, this._writes, this.now});
 
   final McpClient _client;
   final ResponseCache? _cache;
   final WriteQueue? _writes;
 
+  /// The clock a status change written is stamped with, till the server
+  /// stamps it; the real one by default.
+  final DateTime Function()? now;
+
+  DateTime get _now => (now ?? DateTime.now)();
+
+  /// When each goal's status was last changed here, by its id.
+  final _statusChanged = <String, DateTime>{};
+
   static const _goalsKey = 'goals';
 
   /// [result], `get_goals`', with the writes waiting made to it.
-  Object? _shown(Object? result) =>
-      _writes?.shown(WriteKind.goal, [
-        for (final g in result as List) (g as Map).cast<String, Object?>(),
-      ]) ??
-      result;
+  Object? _shown(Object? result) {
+    final writes = _writes;
+    if (writes == null) return result;
+    final fetched = [
+      for (final g in result as List) (g as Map).cast<String, Object?>(),
+    ];
+    final before = {for (final g in fetched) g['id']: g};
+    return [
+      for (final g in writes.shown(WriteKind.goal, fetched))
+        _withStatusChange(g, before[g['id']]),
+    ];
+  }
+
+  /// [goal], with a status change waiting to be written that [fetched]
+  /// doesn't have yet, given the history entry the server will add for
+  /// it: stamped when it was made here, with its note. Not when the write
+  /// gives its history whole.
+  Map<String, Object?> _withStatusChange(
+    Map<String, Object?> goal,
+    Map<String, Object?>? fetched,
+  ) {
+    if (fetched == null ||
+        goal['status'] == fetched['status'] ||
+        !identical(goal['history'], fetched['history'])) {
+      return goal;
+    }
+    return {
+      ...goal,
+      'history': [
+        ...?fetched['history'] as List?,
+        StatusChange(
+          goal['status'] as String,
+          _statusChanged[goal['id']] ?? _now,
+          deadline: Goal.fromJson(goal.cast()).deadline,
+          note: goal['status_note'] as String?,
+        ).toJson(),
+      ],
+    };
+  }
+
+  /// Keeps when goal [id]'s status is changed by [changes], if it is.
+  void _stamp(String id, Map<String, Object?> changes) {
+    if (changes.containsKey('status') && !changes.containsKey('history')) {
+      _statusChanged[id] = _now;
+    }
+  }
 
   static List<Goal> _decode(Object? result) => [
     for (final g in result as List)
@@ -118,29 +168,34 @@ class McpGoalsRepository implements GoalsRepository {
     String id,
     Map<String, Object?> changes, {
     bool ordered = true,
-  }) async => switch (_writes) {
-    final writes? => Goal.fromJson(
-      writes.update(WriteKind.goal, id, changes, ordered: ordered).cast(),
-    ),
-    null => Goal.fromJson(
-      _map(
-        await _client.callTool('update_goal', {
-          'goal': {
-            'id': id,
-            for (final MapEntry(:key, :value) in goalWire(changes).entries)
-              key: ?value,
-          },
-          'status_note': ?changes['status_note'],
-          if ([
-                for (final MapEntry(:key, :value) in goalWire(changes).entries)
-                  if (value == null) key,
-              ]
-              case final clear when clear.isNotEmpty)
-            'clear_fields': clear,
-        }),
+  }) async {
+    _stamp(id, changes);
+    return switch (_writes) {
+      final writes? => Goal.fromJson(
+        writes.update(WriteKind.goal, id, changes, ordered: ordered).cast(),
       ),
-    ),
-  };
+      null => Goal.fromJson(
+        _map(
+          await _client.callTool('update_goal', {
+            'goal': {
+              'id': id,
+              for (final MapEntry(:key, :value) in goalWire(changes).entries)
+                key: ?value,
+            },
+            'status_note': ?changes['status_note'],
+            if ([
+                  for (final MapEntry(:key, :value) in goalWire(
+                    changes,
+                  ).entries)
+                    if (value == null) key,
+                ]
+                case final clear when clear.isNotEmpty)
+              'clear_fields': clear,
+          }),
+        ),
+      ),
+    };
+  }
 
   @override
   Future<Map<String, String>> changeGoals(List<GoalChange> changes) async {
@@ -162,6 +217,9 @@ class McpGoalsRepository implements GoalsRepository {
       for (final c in named)
         if (c is GoalDelete) c.id,
     ];
+    for (final (id, changes) in updates) {
+      _stamp(id, changes);
+    }
     if (writes != null) {
       writes.batch(
         WriteKind.goal,

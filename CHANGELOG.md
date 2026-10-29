@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.225.1
+
+- A goal's status changed on its page shows in its history at once, with
+  its note, rather than only once the change reached the server and the
+  page was reloaded.
+
 ## 7.225.0
 
 - An event's color is its primary action's only if that action, or a
