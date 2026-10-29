@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/goal.dart';
@@ -6,6 +7,7 @@ import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
+import 'package:time_tracker_client/widgets/hotkeys.dart';
 
 Goal _goal(String id, String title, {String status = 'active'}) =>
     Goal.fromJson({
@@ -37,6 +39,7 @@ void main() {
     repository = InMemoryGoalsRepository(goals);
     memory = PlanMemory()..goals = await repository.goals();
     Map<String, Object?>? saved;
+    final hotkeys = Hotkeys();
     await tester.pumpWidget(
       PlanMemoryScope(
         memory: memory,
@@ -45,6 +48,9 @@ void main() {
           child: PeopleScope(
             repository: InMemoryPeopleRepository(),
             child: MaterialApp(
+              navigatorObservers: [hotkeys],
+              builder: (context, child) =>
+                  HotkeyScope(hotkeys: hotkeys, child: child!),
               home: Builder(
                 builder: (context) => TextButton(
                   onPressed: () => showEventSummaryDialog(
@@ -120,5 +126,15 @@ void main() {
     expect(saved()?['goals'], [
       {'goal_id': 'read'},
     ]);
+  });
+
+  testWidgets('G opens its goals', (tester) async {
+    await open(tester, focus());
+    expect(find.text('Ship the app'), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.text('Ship the app'), findsOneWidget);
   });
 }

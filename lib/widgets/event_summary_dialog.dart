@@ -725,6 +725,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyA), () {
       if (_canEdit('action_ids')) _pickActions?.call();
     }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyG), () {
+      if (GoalsScope.of(context) != null && _canEdit('goals')) _pickGoals();
+    }),
     HotkeyBinding(
       const HotkeyTrigger.key(LogicalKeyboardKey.keyS),
       _selectSummary,
@@ -1863,6 +1866,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       context,
       glyph: const GoalIcon(),
       changedKey: 'goals',
+      hotkey: Hotkey.goals,
       onTap: _pickGoals,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
