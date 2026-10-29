@@ -27,7 +27,9 @@ class Event {
 
   /// The priority it's treated as: its own, else the highest (lowest
   /// numbered) among all its actions, each action's own or its nearest
-  /// ancestor's; null if none of them has one.
+  /// ancestor's, and all its goals, each goal's own or its nearest
+  /// parent's, else 3; null if it has no goals and none of its actions has
+  /// one.
   int? get effectivePriority =>
       properties['effective_priority'] as int? ??
       properties['priority'] as int?;

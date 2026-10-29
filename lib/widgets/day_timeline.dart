@@ -311,8 +311,8 @@ List<TimelinePlacement> placeEvents(
 
 /// The priority of the most important event going on (the lowest
 /// number) through the day from [day] to [dayEnd], in runs: none where
-/// nothing is. An event with no priority, of its own or from its actions,
-/// counts as [defaultPriority]. Cancelled events don't count.
+/// nothing is. An event with no priority, of its own or from its actions
+/// and goals, counts as [defaultPriority]. Cancelled events don't count.
 List<PriorityRun> priorityRuns(
   List<Event> events, {
   required DateTime day,

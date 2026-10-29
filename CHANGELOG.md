@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.224.1
+
+- An event's priority, when it hasn't one of its own, is the highest of
+  its actions' and its goals' (a goal with none counts as P3); its
+  dialog says "From actions & goals". Needs the server's matching
+  change.
+
 ## 7.224.0
 
 - On Events, an event's actions and then its goals sit side by side
