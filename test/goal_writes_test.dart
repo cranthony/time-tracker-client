@@ -198,6 +198,70 @@ void main() {
     expect(queue.justSaved, isEmpty);
   });
 
+  test("a status change waiting is in the goal's history as it's listed, "
+      'stamped when it was made, with its note', () async {
+    final made = DateTime(2026, 10, 29, 9, 30);
+    goals = McpGoalsRepository(_Client(server), writes: queue, now: () => made);
+    final started = {'status': 'active', 'at': '2026-10-01T08:00:00'};
+    final before = {
+      'id': 'g1',
+      'title': 'Ship',
+      'status': 'active',
+      'history': [started],
+      'version': 1,
+    };
+    queue.shown(WriteKind.goal, [before]);
+    server.offline = true;
+    await goals.updateGoal('g1', {'status': 'done', 'status_note': 'Early'});
+    await goals.changeGoals([
+      const GoalUpdate('g2', {'status': 'missed'}),
+    ]);
+    await queue.flush();
+    server.offline = false;
+    server.answers.add(
+      (_, _) => [
+        before,
+        {
+          'id': 'g2',
+          'title': 'Write',
+          'status': 'active',
+          'history': [started],
+          'version': 1,
+        },
+      ],
+    );
+
+    final [g1, g2] = await goals.goals();
+    expect(g1.history.map((c) => (c.status, c.at.toLocal(), c.note)), [
+      ('active', DateTime(2026, 10, 1, 8), null),
+      ('done', made, 'Early'),
+    ]);
+    expect(g2.history.map((c) => (c.status, c.at.toLocal())), [
+      ('active', DateTime(2026, 10, 1, 8)),
+      ('missed', made),
+    ]);
+
+    // Once the server has it, as the server has it.
+    await queue.retryNow();
+    server.answers.add(
+      (_, _) => [
+        {
+          ...before,
+          'status': 'done',
+          'history': [
+            started,
+            {'status': 'done', 'at': '2026-10-29T09:31:00', 'note': 'Early'},
+          ],
+          'version': 2,
+        },
+      ],
+    );
+    expect((await goals.goals()).single.history.map((c) => c.at.toLocal()), [
+      DateTime(2026, 10, 1, 8),
+      DateTime(2026, 10, 29, 9, 31),
+    ]);
+  });
+
   test('an ordered change waits for an earlier write that failed', () async {
     queue.shown(WriteKind.goal, [
       {'id': 'top', 'title': 'Top', 'status': 'active', 'version': 1},
