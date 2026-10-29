@@ -430,16 +430,18 @@ void main() {
         ),
       );
       double top(String text) => tester.getTopLeft(find.text(text)).dy;
-      // A listed action by its name now; another by the event's.
+      double left(String text) => tester.getTopLeft(find.text(text)).dx;
+      // A listed action by its name now; another by the event's, beside it.
       expect(top('Dinner'), lessThan(top('Host friends weekly')));
-      expect(top('Host friends weekly'), lessThan(top('Tofu tikka')));
+      expect(top('Tofu tikka'), top('Host friends weekly'));
+      expect(left('Host friends weekly'), lessThan(left('Tofu tikka')));
       // How long it is; no goals, so no goal icons -- nor a priority.
       expect(find.text('1h 50m'), findsOneWidget);
       expect(find.byType(GoalIcon), findsNothing);
       expect(find.text('P2'), findsNothing);
     });
 
-    testWidgets("lists an event's goals under its actions, and stacks their "
+    testWidgets("lists an event's goals after its actions, and stacks their "
         'icons by its chips', (tester) async {
       await tester.pumpWidget(
         timeline([
@@ -454,12 +456,41 @@ void main() {
         ]),
       );
       double top(String text) => tester.getTopLeft(find.text(text)).dy;
-      expect(top('Code'), lessThan(top('Ship the app')));
-      expect(top('Ship the app'), lessThan(top('Learn Rust')));
+      double left(String text) => tester.getTopLeft(find.text(text)).dx;
+      expect(top('Ship the app'), top('Code'));
+      expect(top('Learn Rust'), top('Code'));
+      expect(left('Code'), lessThan(left('Ship the app')));
+      expect(left('Ship the app'), lessThan(left('Learn Rust')));
       // Each counted, even one deleted since: two targets, for more than
       // one, and no number.
       expect(tester.widget<GoalStack>(find.byType(GoalStack)).count, 3);
       expect(find.text('3'), findsNothing);
+    });
+
+    testWidgets("puts an event's actions and goals that don't fit beside "
+        'the others on the next line', (tester) async {
+      await tester.pumpWidget(
+        timeline([
+          event(
+            'Work on it',
+            at(0, 10),
+            at(2),
+            actions: ['code', 'test'],
+            names: ['Code', 'Test'],
+            goals: ['ship', 'learn'],
+          ),
+        ], width: 320),
+      );
+      double top(String text) => tester.getTopLeft(find.text(text)).dy;
+      final tops = {
+        for (final text in ['Code', 'Test', 'Ship the app', 'Learn Rust'])
+          top(text),
+      };
+      expect(tops.length, greaterThan(1));
+      expect(tops.length, lessThan(4));
+      expect(top('Code'), lessThanOrEqualTo(top('Test')));
+      expect(top('Test'), lessThanOrEqualTo(top('Ship the app')));
+      expect(top('Ship the app'), lessThanOrEqualTo(top('Learn Rust')));
     });
 
     testWidgets('says how long an event too short for its text is', (

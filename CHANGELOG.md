@@ -9,6 +9,12 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.224.0
+
+- On Events, an event's actions and then its goals sit side by side
+  while they fit on a line, each after its diamond or target, rather
+  than one to a line, so more of them show.
+
 ## 7.223.0
 
 - G opens an event's goals, in its dialog, as A opens its actions. Held
