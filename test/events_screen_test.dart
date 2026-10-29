@@ -1126,7 +1126,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(inDialog(find.text('From its actions')));
       await tester.pumpAndSettle();
-      expect(inDialog(find.text('From actions')), findsOneWidget);
+      expect(inDialog(find.text('From actions & goals')), findsOneWidget);
 
       await tester.tap(inDialog(find.text('Deep work')));
       await tester.pumpAndSettle();
@@ -2968,7 +2968,7 @@ void main() {
       await tester.tap(find.text('From its actions'));
       await tester.pumpAndSettle();
       expect(
-        find.descendant(of: dialog, matching: find.text('From actions')),
+        find.descendant(of: dialog, matching: find.text('From actions & goals')),
         findsOneWidget,
       );
       await tester.tap(find.text('Save'));

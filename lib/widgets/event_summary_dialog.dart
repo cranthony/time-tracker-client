@@ -917,12 +917,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   Widget _topRow(BuildContext context) {
     final theme = Theme.of(context);
     final own = _value('priority') as int?;
-    // Its actions' priority, while its own isn't set or changed.
+    // Its actions' and goals' priority, while its own isn't set or changed.
     final fromActions = _changes.containsKey('priority')
         ? null
         : widget.values['effective_priority'] as int?;
     final shown = own ?? fromActions;
-    // Neither its own nor its actions': not a priority's color.
+    // Neither its own nor its actions' or goals': not a priority's color.
     final color = shown == null
         ? theme.colorScheme.outline
         : priorityColor(shown);
@@ -937,8 +937,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       child: Text(
         switch (shown) {
           final p? => 'P$p',
-          // Cleared, and so to follow its actions' once saved.
-          null when _changes.containsKey('priority') => 'From actions',
+          // Cleared, and so to follow its actions' and goals' once saved.
+          null when _changes.containsKey('priority') => 'From actions & goals',
           null => 'No priority',
         },
         style: theme.textTheme.labelLarge?.copyWith(
@@ -959,7 +959,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 children: [
                   Tooltip(
                     message: own == null && shown != null
-                        ? "Priority, from its actions"
+                        ? "Priority, from its actions and goals"
                         : 'Priority',
                     child: InkWell(
                       onTap: _editable && !_saving && !_waits('priority')
