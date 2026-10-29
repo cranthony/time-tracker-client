@@ -13,7 +13,9 @@ import '../widgets/cursor_snap.dart';
 /// The app's settings, kept on this device only: the [grid] a cursor on
 /// the timeline snaps to, what else cursors stop at ([snap]), what a new
 /// event does with the events in its way ([endMode]), and when background
-/// fetches run ([refreshDelay], [retryInterval], [expectsProposal]), and
+/// fetches run ([refreshDelay], [retryInterval], [expectsProposal]) --
+/// and, where there are none, how often the app checks while it's open
+/// ([openRefresh]) -- and
 /// the units the weather's shown in ([temperatureUnit],
 /// [precipitationUnit]). Listeners hear every change.
 class AppSettings extends ChangeNotifier {
@@ -124,6 +126,36 @@ class AppSettings extends ChangeNotifier {
     Duration(hours: 6),
   ];
 
+  /// How often to check the server while the app's open, where nothing
+  /// fetches in the background (a browser's tab), to pick from; null is
+  /// not to.
+  static const openRefreshIntervals = <Duration?>[
+    null,
+    Duration(minutes: 1),
+    Duration(minutes: 2),
+    Duration(minutes: 5),
+    Duration(minutes: 10),
+    Duration(minutes: 15),
+    Duration(minutes: 30),
+  ];
+
+  static const defaultOpenRefresh = Duration(minutes: 5);
+  static const _openRefreshKey = 'settings_open_refresh_minutes';
+  Duration? _openRefresh = defaultOpenRefresh;
+
+  /// How often the app checks the server for what's new while it's open,
+  /// where nothing fetches in the background (see
+  /// BackgroundRefresh.startLive); null for only after Claude's
+  /// routines, and when asked.
+  Duration? get openRefresh => _openRefresh;
+
+  /// Sets the [openRefresh], and keeps it.
+  Future<void> setOpenRefresh(Duration? every) => _setInt(
+    _openRefreshKey,
+    every?.inMinutes ?? 0,
+    () => _openRefresh = every,
+  );
+
   static const defaultWeatherRefresh = Duration(minutes: 15);
   static const _weatherRefreshKey = 'settings_weather_refresh_minutes';
   Duration? _weatherRefresh = defaultWeatherRefresh;
@@ -228,6 +260,9 @@ class AppSettings extends ChangeNotifier {
       }
       if (await prefs.getInt(_weatherRefreshKey) case final m?) {
         _weatherRefresh = m <= 0 ? null : Duration(minutes: m);
+      }
+      if (await prefs.getInt(_openRefreshKey) case final m?) {
+        _openRefresh = m <= 0 ? null : Duration(minutes: m);
       }
       if (await prefs.getStringList(_expectingKey) case final keys?) {
         _expecting = {...keys};

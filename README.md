@@ -730,8 +730,20 @@ in the calendar's time zone, which the app takes as the phone's. The
 **Background updates** page, from the menu, lists them, each with when the
 app updates after it; says it otherwise updates every 6 hours; and shows
 when the next update is, and what the last did. A server without the
-hints leaves just the 6-hourly updates. On the web and Windows the app
-fetches only while it's open.
+hints leaves just the 6-hourly updates.
+
+On the web and Windows nothing runs while the app is closed, so it checks
+while it's open instead -- in a browser, while its tab is open, behind
+other tabs too: every 5 minutes (or 1 to 30, or not at all), and 10
+minutes after each routine's time, fetching what the page shows afresh
+as pulling it down does, and the goals. Not while a dialog, sheet or menu
+is open: once it's closed. The weather is fetched every 15 minutes. There
+the Background updates page warns that the tab, or the app, must be kept
+open, and has those settings, when it checks next and when it last did.
+Anywhere, R presses the page's refresh button, as pulling the page down
+does on Android (on a page without one, it pulls the page down) -- in a
+browser, the page's own refresh, since the browser's reload signs you
+out.
 
 ## Changes waiting to save
 

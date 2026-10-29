@@ -152,6 +152,13 @@ class Hotkey {
     "Go to the search box shown, with what's in it selected",
     HotkeyPlace.anywhere,
   );
+  static const refresh = Hotkey(
+    'R',
+    "Refresh the page, as its refresh button does -- or, where there's "
+        'none, pulling it down. In a browser, the page\'s own refresh: the '
+        "browser's reload signs you out",
+    HotkeyPlace.anywhere,
+  );
   static const fieldLetters = Hotkey(
     'A–Z',
     'In a dialog, sheet or editor, go to a field by its letter -- hold Ctrl '
@@ -305,6 +312,7 @@ class Hotkey {
     scrollAny,
     leaveField,
     search,
+    refresh,
     fieldLetters,
     stepEvents,
     endEvents,
@@ -601,6 +609,10 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
       binding.onPressed();
       return KeyEventResult.handled;
     }
+    if (key == LogicalKeyboardKey.keyR) {
+      if (!down) return KeyEventResult.handled;
+      return refreshShown() ? KeyEventResult.handled : KeyEventResult.ignored;
+    }
     if (key == LogicalKeyboardKey.keyJ || key == LogicalKeyboardKey.keyK) {
       return stepFocus(later: key == LogicalKeyboardKey.keyJ)
           ? KeyEventResult.handled
@@ -669,6 +681,41 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
       orElse: () => lists.first,
     );
     return stepItems(list, later: later, toEnd: toEnd);
+  }
+
+  /// R where nothing else -- a page's refresh button -- takes it:
+  /// fetches what's on top afresh -- a page, or a dialog or sheet -- as
+  /// pulling it down does, its spinner
+  /// showing: each list in it that refreshes ([RefreshIndicator]) and is
+  /// shown, not one in a pane swiped away; [quietly], with no spinner,
+  /// as the app does every so often where nothing fetches in the
+  /// background (BackgroundRefresh.startLive). Whether there was one to.
+  bool refreshShown({bool quietly = false}) {
+    final route = _routes.lastOrNull;
+    if (route is! ModalRoute) return false;
+    final context = route.subtreeContext;
+    if (context == null) return false;
+    final found = <RefreshIndicatorState>[];
+    void visit(Element element) {
+      if (element case StatefulElement(:final RefreshIndicatorState state)) {
+        // One around it does all it would.
+        if (isPainted(element)) found.add(state);
+        return;
+      }
+      element.visitChildElements(visit);
+    }
+
+    context.visitChildElements(visit);
+    for (final state in found) {
+      if (quietly) {
+        unawaited(
+          Future.sync(state.widget.onRefresh).catchError((Object _) {}),
+        );
+      } else {
+        unawaited(state.show());
+      }
+    }
+    return found.isNotEmpty;
   }
 
   /// Scrolls what's on top -- a page, a dialog or a sheet, not a menu,
