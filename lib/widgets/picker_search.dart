@@ -3,13 +3,33 @@ import 'package:flutter/material.dart';
 import 'hotkeys.dart';
 
 /// What's typed in a picker's search, as words to match in any order:
-/// every one of them, or with [any], at least one.
+/// every one of them, or with [any], at least one of those that say
+/// something: not a common word like "the" or "with", nor a possessive
+/// "'s" or punctuation.
 class PickerQuery {
   PickerQuery(String text, {this.any = false})
-    : words = [
-        for (final word in text.toLowerCase().split(RegExp(r'\s+')))
-          if (word.isNotEmpty) word,
-      ];
+    : words = any ? _meaningful(text) : _words(text);
+
+  static List<String> _words(String text) => [
+    for (final word in text.toLowerCase().split(RegExp(r'\s+')))
+      if (word.isNotEmpty) word,
+  ];
+
+  static List<String> _meaningful(String text) => [
+    for (final word
+        in text
+            .toLowerCase()
+            .replaceAll(RegExp(r"['’]s\b"), '')
+            .split(RegExp(r'[^\p{L}\p{N}]+', unicode: true)))
+      if (word.isNotEmpty && !_common.contains(word)) word,
+  ];
+
+  /// Words too common to tell one thing from another.
+  static final _common = {
+    ...'a about an and are as at be by for from in into is it its my of on '
+            'or our some that the this to up with'
+        .split(' '),
+  };
 
   final List<String> words;
   final bool any;

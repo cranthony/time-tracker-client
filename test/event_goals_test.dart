@@ -103,6 +103,9 @@ void main() {
 
     await tester.tap(find.text('Add goals'));
     await tester.pumpAndSettle();
+    // It searches for the summary, "Focus", which no goal holds.
+    await tester.tap(find.byTooltip('Clear search'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Read more'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Done'));
@@ -135,6 +138,9 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Focus'), findsOneWidget);
+    await tester.tap(find.byTooltip('Clear search'));
+    await tester.pumpAndSettle();
     expect(find.text('Ship the app'), findsOneWidget);
   });
 }

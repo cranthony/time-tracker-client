@@ -9,6 +9,14 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.227.0
+
+- The goal picker opened from an event searches for its summary at
+  once, with Any on, so the goals it names come first.
+- With Any on, a picker's search skips common words like "the", "a" and
+  "with", a possessive "'s" and punctuation: "Sam, lunch?" finds
+  "Sam's place".
+
 ## 7.226.0
 
 - A goal's description and definition of done, a habit's note and an

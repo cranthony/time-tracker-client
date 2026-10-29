@@ -41,6 +41,21 @@ void main() {
       ]);
     });
 
+    test('with any, skips common words, possessives and punctuation', () {
+      expect(PickerQuery("Lunch with Sam's team?", any: true).words, [
+        'lunch',
+        'sam',
+        'team',
+      ]);
+      expect(
+        PickerQuery('Sam, lunch?', any: true).filter(["Sam's place"], (n) => n),
+        ["Sam's place"],
+      );
+      expect(PickerQuery('the a with', any: true).isEmpty, isTrue);
+      // Matching every word, what's typed is kept as it is.
+      expect(PickerQuery("Sam's").words, ["sam's"]);
+    });
+
     test('nothing typed is empty', () {
       expect(PickerQuery('  ').isEmpty, isTrue);
     });

@@ -1886,6 +1886,7 @@ void main() {
 
       // And Read more.
       await tap(tester, inDialog(find.text('Ship the app')));
+      await tap(tester, find.byTooltip('Clear search'));
       await tap(tester, find.text('Read more').last);
       await tap(tester, find.text('Done'));
       await tester.tap(find.text('Save'));
