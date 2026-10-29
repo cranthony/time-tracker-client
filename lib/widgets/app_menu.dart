@@ -191,7 +191,8 @@ class _AppMenuState extends State<AppMenu> {
   }
 }
 
-/// Refreshes the page, spinning, and off, until it's done.
+/// Refreshes the page, spinning, and off, until it's done; R presses it,
+/// while its page is on top.
 class RefreshButton extends StatefulWidget {
   const RefreshButton({super.key, required this.onRefresh});
 
@@ -214,15 +215,25 @@ class _RefreshButtonState extends State<RefreshButton> {
   }
 
   @override
-  Widget build(BuildContext context) => IconButton(
-    tooltip: 'Refresh',
-    onPressed: _refreshing ? null : _refresh,
-    icon: _refreshing
-        ? const SizedBox.square(
-            dimension: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
-        : const Icon(Icons.refresh),
+  Widget build(BuildContext context) => HotkeyBindings(
+    bindings: [
+      HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyR), () {
+        if (!_refreshing) _refresh();
+      }),
+    ],
+    child: HotkeyHint(
+      Hotkey.refresh,
+      child: IconButton(
+        tooltip: 'Refresh',
+        onPressed: _refreshing ? null : _refresh,
+        icon: _refreshing
+            ? const SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.refresh),
+      ),
+    ),
   );
 }
 

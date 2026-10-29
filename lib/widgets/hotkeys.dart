@@ -154,8 +154,9 @@ class Hotkey {
   );
   static const refresh = Hotkey(
     'R',
-    'Fetch what the page shows afresh, as pulling it down does. In a '
-        "browser, it's the page's own: the browser's reload signs you out",
+    "Refresh the page, as its refresh button does -- or, where there's "
+        'none, pulling it down. In a browser, the page\'s own refresh: the '
+        "browser's reload signs you out",
     HotkeyPlace.anywhere,
   );
   static const fieldLetters = Hotkey(
@@ -682,8 +683,9 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
     return stepItems(list, later: later, toEnd: toEnd);
   }
 
-  /// R where nothing else takes it: fetches what's on top afresh -- a
-  /// page, or a dialog or sheet -- as pulling it down does, its spinner
+  /// R where nothing else -- a page's refresh button -- takes it:
+  /// fetches what's on top afresh -- a page, or a dialog or sheet -- as
+  /// pulling it down does, its spinner
   /// showing: each list in it that refreshes ([RefreshIndicator]) and is
   /// shown, not one in a pane swiped away; [quietly], with no spinner,
   /// as the app does every so often where nothing fetches in the

@@ -11,19 +11,22 @@ on. Add the new version's section here at the same time; CI checks both.
 
 ## 7.222.0
 
-- R fetches what the page shows afresh, as pulling it down does -- in
-  the browser too, where the browser's own reload signs you out.
+- R presses the page's refresh button, spinning it till it's done, as
+  pulling the page down does on Android -- on a page without one, it
+  pulls the page down. In the browser, it's the page's own refresh:
+  the browser's reload signs you out. Held Ctrl shows R on the button.
 - The now line on Events moves as each minute starts, while the page is
   open, not only when something else redraws it.
 - In the browser, where nothing runs in the background, the app checks
   the server for what's new while its tab is open: every 5 minutes, and
   a while after each time Claude's routines run, fetching what's shown
   afresh -- not while a dialog is open, but once it's closed. The
-  weather is fetched as often as Background updates says, too.
+  weather is fetched every 15 minutes while it's on.
 - Background updates, in the browser, warns that the tab must be kept
   open, and has its own settings: how often to check (or not to), and
   how long after each routine -- when it checks next, and when it last
-  did -- in place of saying its settings are only for Android.
+  did -- in place of saying its settings are only for Android. It says
+  the weather's fetched every 15 minutes, with no setting for it.
 
 ## 7.221.0
 

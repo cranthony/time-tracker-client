@@ -317,7 +317,7 @@ Future<RefreshRecord> refreshCaches({
 /// Where nothing runs in the background (a browser's tab), the app checks
 /// while it's open instead ([startLive]): every [AppSettings.openRefresh],
 /// and at the routines' times, as [liveNext] says -- and the weather every
-/// [AppSettings.weatherRefresh].
+/// [liveWeatherEvery].
 class BackgroundRefresh extends ChangeNotifier {
   BackgroundRefresh({
     this.repository,
@@ -425,13 +425,17 @@ class BackgroundRefresh extends ChangeNotifier {
   /// Whether the app checks while it's open ([startLive]).
   bool get live => _check != null;
 
+  /// How often the weather's fetched while the app's open ([startLive]):
+  /// as often as the forecast changes.
+  static const liveWeatherEvery = Duration(minutes: 15);
+
   /// How long to wait to check again, if the app couldn't.
   static const liveRetry = Duration(seconds: 30);
 
   /// Where nothing runs in the background: has the app [check] the server
   /// while it's open -- every [AppSettings.openRefresh], and at the
   /// routines' times, [AppSettings.refreshDelay] after each -- and fetch
-  /// the weather every [AppSettings.weatherRefresh], while it's on.
+  /// the weather every [liveWeatherEvery], while it's on.
   /// Elsewhere, it does nothing.
   void startLive(Future<bool> Function() check) {
     if (supported) return;
@@ -504,7 +508,7 @@ class BackgroundRefresh extends ChangeNotifier {
   void _planLiveWeather() {
     final weather = this.weather;
     if (_check == null || weather == null) return;
-    final every = weather.enabled ? settings.weatherRefresh : null;
+    final every = weather.enabled ? liveWeatherEvery : null;
     if (every == _liveWeatherEvery && _liveWeatherTimer != null) return;
     _liveWeatherTimer?.cancel();
     _liveWeatherTimer = null;

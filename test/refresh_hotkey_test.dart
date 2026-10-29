@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/widgets/app_menu.dart';
 import 'package:time_tracker_client/widgets/hotkeys.dart';
 
 void main() {
@@ -52,6 +55,54 @@ void main() {
 
     expect(shown, 1);
     expect(hidden, 0);
+  });
+
+  testWidgets("R presses the page's refresh button, where it has one", (
+    tester,
+  ) async {
+    hotkeys = Hotkeys();
+    final pressed = Completer<void>();
+    var presses = 0;
+    var pulled = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorObservers: [hotkeys],
+        builder: (context, child) =>
+            HotkeyScope(hotkeys: hotkeys, child: child!),
+        home: Scaffold(
+          appBar: AppBar(
+            actions: [
+              RefreshButton(
+                onRefresh: () {
+                  presses++;
+                  return pressed.future;
+                },
+              ),
+            ],
+          ),
+          body: RefreshIndicator(
+            onRefresh: () async => pulled++,
+            child: ListView(children: const [Text('shown')]),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+    await tester.pump();
+
+    expect(presses, 1);
+    expect(pulled, 0);
+    // Spinning, till it's done.
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+    await tester.pump();
+    expect(presses, 1);
+
+    pressed.complete();
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.refresh), findsOneWidget);
   });
 
   testWidgets('R types an R in a text field', (tester) async {

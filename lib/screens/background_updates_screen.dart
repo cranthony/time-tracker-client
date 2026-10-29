@@ -278,21 +278,23 @@ class _BackgroundUpdatesScreenState extends State<BackgroundUpdatesScreen> {
         subtitle: Text(
           refresh.supported
               ? "Fetched this often, so it's up to date when you open the app."
-              : kIsWeb
-              ? "Fetched this often while the tab's open."
-              : "Fetched this often while the app's open.",
+              : 'Fetched every '
+                    '${BackgroundRefresh.liveWeatherEvery.inMinutes} minutes '
+                    'while ${kIsWeb ? "the tab's" : "the app's"} open.',
         ),
-        trailing: DropdownButton<Duration?>(
-          value: settings.weatherRefresh,
-          onChanged: settings.setWeatherRefresh,
-          items: [
-            for (final d in {
-              ...AppSettings.weatherRefreshIntervals,
-              settings.weatherRefresh,
-            })
-              DropdownMenuItem(value: d, child: Text(every(d))),
-          ],
-        ),
+        trailing: !refresh.supported
+            ? null
+            : DropdownButton<Duration?>(
+                value: settings.weatherRefresh,
+                onChanged: settings.setWeatherRefresh,
+                items: [
+                  for (final d in {
+                    ...AppSettings.weatherRefreshIntervals,
+                    settings.weatherRefresh,
+                  })
+                    DropdownMenuItem(value: d, child: Text(every(d))),
+                ],
+              ),
       ),
       if (!weather.enabled)
         _note(theme, 'The weather is off: turn it on in Settings.')

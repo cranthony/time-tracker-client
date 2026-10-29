@@ -266,6 +266,47 @@ void main() {
     );
   });
 
+  group('while the app is open, where nothing runs in the background', () {
+    testWidgets('fetches every 15 minutes, whatever the setting', (
+      tester,
+    ) async {
+      final forecasts = _FakeForecasts();
+      final settings = AppSettings(persist: false);
+      await settings.setWeatherRefresh(const Duration(hours: 3));
+      final weather = Weather(
+        forecasts: forecasts,
+        location: FixedLocationSource(),
+        persist: false,
+        enabled: true,
+        usesDevice: false,
+        place: const Coordinates(1, 2),
+        clock: () => now,
+      );
+      await weather.load();
+      final refresh = BackgroundRefresh(
+        settings: settings,
+        weather: weather,
+        supported: false,
+        clock: () => now,
+        lastRecord: () async => null,
+      );
+      refresh.startLive(() async => true);
+      final fetched = forecasts.fetched.length;
+
+      await tester.pump(const Duration(minutes: 15));
+      await tester.pump();
+      expect(forecasts.fetched, hasLength(fetched + 1));
+      await tester.pump(const Duration(minutes: 15));
+      await tester.pump();
+      expect(forecasts.fetched, hasLength(fetched + 2));
+
+      weather.disable();
+      await tester.pump(const Duration(hours: 1));
+      expect(forecasts.fetched, hasLength(fetched + 2));
+      refresh.stopLive();
+    });
+  });
+
   group('the Background updates page', () {
     Future<(AppSettings, BackgroundRefresh)> pump(
       WidgetTester tester, {
