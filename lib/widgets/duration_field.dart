@@ -55,9 +55,7 @@ class _DurationFieldState extends State<DurationField> {
   static String _shown(int? minutes, DurationUnits units) =>
       switch ((minutes, units)) {
         (null, _) => '',
-        (final m?, DurationUnits.weeksDays) => formatDays(
-          Duration(minutes: m),
-        ),
+        (final m?, DurationUnits.weeksDays) => formatDays(Duration(minutes: m)),
         (final m?, DurationUnits.daysHours) => formatDaysHours(
           Duration(minutes: m),
         ),

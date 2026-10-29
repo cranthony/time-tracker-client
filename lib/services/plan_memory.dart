@@ -17,6 +17,7 @@ import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import '../outbox/actions_shown.dart';
 import '../outbox/action_writes.dart';
+import '../outbox/write_queue.dart';
 import 'event_store.dart';
 import 'actions_repository.dart';
 import 'goals_repository.dart';
@@ -78,6 +79,19 @@ class PlanMemory extends ChangeNotifier {
   void useActionWrites(ActionWrites writes) {
     if (_actionWrites != null) return;
     _actionWrites = writes..addListener(_actionsSaved);
+  }
+
+  /// Loads the goals again from [repository] whenever a change to them
+  /// saved through [writes] is in -- once, after the last of a round is
+  /// answered -- for what the server made of it: the goals waiting on one
+  /// closed activated, a deadline measured from when one started, its
+  /// history as the server stamped it.
+  void reloadGoalsOnSave(WriteQueue writes, GoalsRepository repository) {
+    writes.addListener(() {
+      if (writes.wantsFetchOfKinds(const [WriteKind.goal])) {
+        loadGoals(repository, again: true);
+      }
+    });
   }
 
   void _actionsSaved() {
