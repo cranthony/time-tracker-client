@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
@@ -312,6 +313,11 @@ Future<RefreshRecord> refreshCaches({
 /// The [weather], while it's on, is fetched on its own schedule, every
 /// [AppSettings.weatherRefresh] -- rescheduled as either changes -- and
 /// what its last fetch did is [weatherLast].
+///
+/// Where nothing runs in the background (a browser's tab), the app checks
+/// while it's open instead ([startLive]): every [AppSettings.openRefresh],
+/// and at the routines' times, as [liveNext] says -- and the weather every
+/// [AppSettings.weatherRefresh].
 class BackgroundRefresh extends ChangeNotifier {
   BackgroundRefresh({
     this.repository,
@@ -356,6 +362,7 @@ class BackgroundRefresh extends ChangeNotifier {
   var _weatherEverScheduled = false;
 
   void _weatherChanged() {
+    _planLiveWeather();
     // Not till it's known whether it's on: that would drop the schedule
     // each time the app opens.
     if (!supported || !(weather?.loaded ?? false)) return;
@@ -389,6 +396,7 @@ class BackgroundRefresh extends ChangeNotifier {
 
   void _settingsChanged() {
     _weatherChanged();
+    _planLive();
     if (_planning == _planned) return;
     _planned = _planning;
     notifyListeners();
@@ -397,9 +405,115 @@ class BackgroundRefresh extends ChangeNotifier {
 
   @override
   void dispose() {
+    stopLive();
     settings.removeListener(_settingsChanged);
     weather?.removeListener(_weatherChanged);
     super.dispose();
+  }
+
+  /// What checks the server while the app's open, once [startLive]d:
+  /// whether it could -- not while a dialog's open, say.
+  Future<bool> Function()? _check;
+  Timer? _liveTimer;
+  Timer? _liveWeatherTimer;
+  late DateTime _liveFrom;
+
+  /// When the app last checked while it was open ([startLive]); null if
+  /// it hasn't yet.
+  DateTime? liveLast;
+
+  /// Whether the app checks while it's open ([startLive]).
+  bool get live => _check != null;
+
+  /// How long to wait to check again, if the app couldn't.
+  static const liveRetry = Duration(seconds: 30);
+
+  /// Where nothing runs in the background: has the app [check] the server
+  /// while it's open -- every [AppSettings.openRefresh], and at the
+  /// routines' times, [AppSettings.refreshDelay] after each -- and fetch
+  /// the weather every [AppSettings.weatherRefresh], while it's on.
+  /// Elsewhere, it does nothing.
+  void startLive(Future<bool> Function() check) {
+    if (supported) return;
+    _check = check;
+    _liveFrom = _clock();
+    _planLive();
+    _planLiveWeather();
+  }
+
+  /// Stops what [startLive] started.
+  void stopLive() {
+    _check = null;
+    _liveTimer?.cancel();
+    _liveWeatherTimer?.cancel();
+    _liveTimer = _liveWeatherTimer = _liveWeatherEvery = null;
+  }
+
+  /// When the app checks next while it's open: [AppSettings.openRefresh]
+  /// after it last did, or after the next routine's time -- whichever's
+  /// first. Null if neither's to come, or it doesn't check ([live]).
+  DateTime? get liveNext {
+    if (!live) return null;
+    final every = settings.openRefresh;
+    var at = every == null ? null : (liveLast ?? _liveFrom).add(every);
+    final routine = nextRefresh(
+      _clock(),
+      hints?.hints ?? const [],
+      delay: settings.refreshDelay,
+      retry: null,
+    );
+    if (routine.hint != null && (at == null || routine.at.isBefore(at))) {
+      at = routine.at;
+    }
+    return at;
+  }
+
+  void _planLive() {
+    if (_check == null) return;
+    _liveTimer?.cancel();
+    final at = liveNext;
+    if (at == null) return;
+    final wait = at.difference(_clock());
+    _liveTimer = Timer(wait.isNegative ? Duration.zero : wait, _checkLive);
+  }
+
+  Future<void> _checkLive() async {
+    final check = _check;
+    if (check == null) return;
+    var checked = false;
+    try {
+      checked = await check();
+    } catch (_) {
+      // Checked, all the same: what it shows says how it went.
+      checked = true;
+    }
+    if (!checked) {
+      _liveTimer?.cancel();
+      _liveTimer = Timer(liveRetry, _checkLive);
+      return;
+    }
+    liveLast = _clock();
+    notifyListeners();
+    _planLive();
+  }
+
+  /// What the weather's live fetches were last planned for, so they're
+  /// planned again only as that changes.
+  Duration? _liveWeatherEvery;
+
+  void _planLiveWeather() {
+    final weather = this.weather;
+    if (_check == null || weather == null) return;
+    final every = weather.enabled ? settings.weatherRefresh : null;
+    if (every == _liveWeatherEvery && _liveWeatherTimer != null) return;
+    _liveWeatherTimer?.cancel();
+    _liveWeatherTimer = null;
+    _liveWeatherEvery = every;
+    if (every == null) return;
+    _liveWeatherTimer = Timer.periodic(
+      every,
+      (_) => weather.refresh(force: true).catchError((Object _) {}),
+    );
   }
 
   /// Whether background fetches run here: on Android.
@@ -448,6 +562,7 @@ class BackgroundRefresh extends ChangeNotifier {
     if (weather != null) weatherLast = await _lastWeather();
     _planned = _planning;
     notifyListeners();
+    _planLive();
     await reschedule();
   }
 

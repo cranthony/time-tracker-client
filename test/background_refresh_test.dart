@@ -429,6 +429,82 @@ void main() {
       ]);
     });
 
+    testWidgets('where there are none, checks every so often while the app '
+        "is open, and after each routine's time", (tester) async {
+      var now = DateTime(2026, 10, 7, 18, 50);
+      final settings = AppSettings(persist: false);
+      final checks = <DateTime>[];
+      final refresh = BackgroundRefresh(
+        repository: InMemoryScheduleHintsRepository(
+          const ScheduleHints(hints: [_evening]),
+        ),
+        settings: settings,
+        supported: false,
+        clock: () => now,
+        lastRecord: () async => null,
+      );
+      Future<void> wait(Duration d) async {
+        now = now.add(d);
+        await tester.pump(d);
+      }
+
+      await refresh.load();
+      refresh.startLive(() async {
+        checks.add(now);
+        return true;
+      });
+      expect(refresh.liveNext, DateTime(2026, 10, 7, 18, 55));
+
+      await wait(const Duration(minutes: 5));
+      expect(checks, [DateTime(2026, 10, 7, 18, 55)]);
+      expect(refresh.liveLast, DateTime(2026, 10, 7, 18, 55));
+
+      // Only after the routines, then: ten minutes after the evening's.
+      await settings.setOpenRefresh(null);
+      expect(refresh.liveNext, DateTime(2026, 10, 7, 19, 10));
+      await wait(const Duration(minutes: 15));
+      expect(checks.last, DateTime(2026, 10, 7, 19, 10));
+
+      refresh.stopLive();
+      await wait(const Duration(days: 1));
+      expect(checks, hasLength(2));
+    });
+
+    testWidgets("checks again a moment later if it couldn't", (tester) async {
+      var now = _now;
+      var couldnt = true;
+      var checks = 0;
+      final refresh = BackgroundRefresh(
+        supported: false,
+        clock: () => now,
+        lastRecord: () async => null,
+      );
+      refresh.startLive(() async {
+        checks++;
+        return !couldnt;
+      });
+
+      now = now.add(const Duration(minutes: 5));
+      await tester.pump(const Duration(minutes: 5));
+      expect(checks, 1);
+      expect(refresh.liveLast, isNull);
+
+      couldnt = false;
+      now = now.add(BackgroundRefresh.liveRetry);
+      await tester.pump(BackgroundRefresh.liveRetry);
+      expect(checks, 2);
+      expect(refresh.liveLast, now);
+      refresh.stopLive();
+    });
+
+    test('checks nothing while open where there are background fetches', () {
+      final refresh = BackgroundRefresh(supported: true);
+      refresh.startLive(() async => true);
+
+      expect(refresh.live, isFalse);
+      expect(refresh.liveNext, isNull);
+    });
+
     test('schedules nothing where there are no background fetches', () async {
       final delays = <Duration>[];
       final refresh = BackgroundRefresh(
@@ -598,14 +674,39 @@ void main() {
       );
     });
 
-    testWidgets('says where it does not run', (tester) async {
-      await pump(tester, refresh(supported: false));
+    testWidgets('where it does not run, says the app must stay open, and '
+        'has how often it checks while it is', (tester) async {
+      final r = refresh(supported: false);
+      await pump(tester, r);
 
-      expect(
-        find.textContaining('Background updates run on Android'),
-        findsOneWidget,
-      );
-      expect(find.textContaining('Next:'), findsNothing);
+      expect(find.textContaining('Keep the app open'), findsOneWidget);
+      expect(find.textContaining('On Android, it updates'), findsOneWidget);
+      expect(find.textContaining('every 5 minutes'), findsOneWidget);
+      expect(find.textContaining('Check ≈ 7:40 AM'), findsOneWidget);
+      // The background's own: not here.
+      expect(find.text('Every 6 hours'), findsNothing);
+      expect(find.text('Until a proposal comes'), findsNothing);
+      expect(find.widgetWithText(FilterChip, 'Expect proposal'), findsNothing);
+
+      await tester.tap(find.text('5 min'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('15 min').last);
+      await tester.pumpAndSettle();
+
+      expect(r.settings.openRefresh, const Duration(minutes: 15));
+      expect(find.textContaining('every 15 minutes'), findsOneWidget);
+    });
+
+    testWidgets('says when it checks next, while the app is open', (
+      tester,
+    ) async {
+      final r = refresh(supported: false);
+      r.startLive(() async => true);
+      await pump(tester, r);
+
+      expect(find.text('Next: about 9:05 AM'), findsOneWidget);
+      expect(find.text('Last: none yet'), findsOneWidget);
+      r.stopLive();
     });
 
     testWidgets('opens from the app menu', (tester) async {

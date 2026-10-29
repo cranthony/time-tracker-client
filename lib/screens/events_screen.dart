@@ -239,6 +239,10 @@ class _EventsScreenState extends State<EventsScreen> {
   /// its last, once they're loaded.
   bool? _keyedOnto;
   Timer? _unhighlight;
+
+  /// Ticks as each minute starts, for the now line, and all that's
+  /// told from now, to move along with it while the page is open.
+  Timer? _minute;
   StreamSubscription<Event>? _showEvents;
   StreamSubscription<DateTime?>? _showTimes;
 
@@ -1549,6 +1553,7 @@ class _EventsScreenState extends State<EventsScreen> {
       unawaited(_loadPlace(store));
     }
     _pages = PageController(initialPage: _pageOf(_day));
+    _tickEachMinute();
     _showCached();
     _refresh();
     _loadActions();
@@ -2090,9 +2095,27 @@ class _EventsScreenState extends State<EventsScreen> {
     _showEvents?.cancel();
     _showTimes?.cancel();
     _unhighlight?.cancel();
+    _minute?.cancel();
     _pages.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  /// Builds the page again as each minute starts ([_minute]).
+  void _tickEachMinute() {
+    final now = widget.clock();
+    final next = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      now.hour,
+      now.minute + 1,
+    );
+    _minute = Timer(next.difference(now), () {
+      if (!mounted) return;
+      setState(() {});
+      _tickEachMinute();
+    });
   }
 
   /// The day on [page].

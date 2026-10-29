@@ -579,6 +579,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     _startEventOutbox();
     // Their times, and the next fetch scheduled from them. Best effort.
     widget.backgroundRefresh?.load().catchError((Object _) {});
+    // Where nothing fetches in the background -- a browser's tab -- what's
+    // shown, fetched afresh every so often while the app's open.
+    widget.backgroundRefresh?.startLive(_checkLive);
     // The changes outside the server dismissed already. Best effort.
     sheetWarningsDismissal.load();
     _lifecycle = AppLifecycleListener(
@@ -725,6 +728,18 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     }
   }
 
+  /// Fetches what's shown afresh, quietly, as R does, and the goals for
+  /// the goals due strip -- unless a dialog, sheet or menu is open, not
+  /// to change what's under it: whether it did.
+  Future<bool> _checkLive() async {
+    if (_hotkeys.dialogOpen) return false;
+    _hotkeys.refreshShown(quietly: true);
+    if (widget.goalsRepository case final goals?) {
+      unawaited(_planMemory.loadGoals(goals, again: true));
+    }
+    return true;
+  }
+
   Future<void> _onBackground() async {
     widget.eventOutbox?.stop();
     _writeQueue.stop();
@@ -748,6 +763,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     _lifecycle.dispose();
     _addNoteShortcut.dispose();
     _hotkeys.dispose();
+    widget.backgroundRefresh?.stopLive();
     _calendarTimer?.cancel();
     _planMemory.removeListener(_calendarChanged);
     _calendarWeather?.dispose();
