@@ -819,9 +819,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextField, '2'), findsOneWidget);
       await tester.tap(find.text('Month'));
-      // Its definition of done and note are HTML, edited as a goal's.
+      // Its definition of done and note are edited as a goal's, in the
+      // format picked: HTML, here, and Markdown.
       await tester.tap(find.text('Add definition of done'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('HTML'));
       await tester.enterText(
         find.byType(TextField).last,
         '<p>We talked for <b>20</b> minutes</p>',
@@ -831,10 +833,8 @@ void main() {
       expect(find.text('Add definition of done'), findsNothing);
       await tester.tap(find.text('Add note'));
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byType(TextField).last,
-        '<p>Keep in touch</p>',
-      );
+      await tester.tap(find.text('Markdown'));
+      await tester.enterText(find.byType(TextField).last, '**Keep** in touch');
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       await tester.enterText(
@@ -851,9 +851,11 @@ void main() {
       expect(habit.recurringGoal!.toJson(), {
         'period': 'month',
         'definition_of_done': '<p>We talked for <b>20</b> minutes</p>',
+        'definition_of_done_format': 'html',
         'rate_periods': 3,
       });
-      expect(habit.note, '<p>Keep in touch</p>');
+      expect(habit.note, '**Keep** in touch');
+      expect(habit.noteFormat, TextFormat.markdown);
       // Scored by its goal rate alone, till it's given traits.
       expect(habit.traits.select, isEmpty);
     });

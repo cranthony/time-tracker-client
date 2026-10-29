@@ -2,9 +2,11 @@ import 'event.dart';
 import 'named.dart';
 import 'note.dart';
 import 'share.dart';
+import 'text_format.dart';
 
 export 'named.dart';
 export 'share.dart';
+export 'text_format.dart';
 
 /// A goal of the user's, mirroring the Time Tracker MCP server's
 /// `ListedGoal`: an outcome they mean to reach and can mark done --
@@ -31,7 +33,9 @@ class Goal {
     this.status = 'active',
     this.history = const [],
     this.description,
+    this.descriptionFormat,
     this.definitionOfDone,
+    this.definitionOfDoneFormat,
     this.attributionHints,
     this.withWhom = const [],
     this.forWhom = const [],
@@ -104,11 +108,17 @@ class Goal {
   /// Each change of its status, oldest first.
   final List<StatusChange> history;
 
-  /// What it is, as HTML.
+  /// What it is.
   final String? description;
 
-  /// What being done looks like, as HTML.
+  /// How [description] is written; null, as it looks ([TextFormat.of]).
+  final TextFormat? descriptionFormat;
+
+  /// What being done looks like.
   final String? definitionOfDone;
+
+  /// How [definitionOfDone] is written, as [descriptionFormat].
+  final TextFormat? definitionOfDoneFormat;
 
   /// A guide, for Claude, to telling which events are for it.
   final String? attributionHints;
@@ -206,7 +216,11 @@ class Goal {
         ?StatusChange.fromJson(c),
     ],
     description: _text(json['description']),
+    descriptionFormat: TextFormat.fromJson(json['description_format']),
     definitionOfDone: _text(json['definition_of_done']),
+    definitionOfDoneFormat: TextFormat.fromJson(
+      json['definition_of_done_format'],
+    ),
     attributionHints: _text(json['attribution_hints']),
     withWhom: Named.listFromJson(json['with_ids']),
     forWhom: Named.listFromJson(json['for_ids']),
@@ -235,7 +249,9 @@ class Goal {
     'status': status,
     if (history.isNotEmpty) 'history': [for (final c in history) c.toJson()],
     'description': ?description,
+    'description_format': ?descriptionFormat?.wire,
     'definition_of_done': ?definitionOfDone,
+    'definition_of_done_format': ?definitionOfDoneFormat?.wire,
     'attribution_hints': ?attributionHints,
     // Only when there are some: a server from before goals named people
     // still saves the rest.

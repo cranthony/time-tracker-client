@@ -1,7 +1,9 @@
 /// A Google Calendar event's description, drawn in the app's own text
 /// styles. Google keeps what's written on the web as HTML -- bold,
 /// italics, underlines, links, line breaks and lists -- and what's
-/// written elsewhere as plain text; both are shown, links tappable.
+/// written elsewhere as plain text; both are shown, links tappable. So is
+/// any free text of the app's own -- a goal's description, say -- in the
+/// format it's written in ([TextFormat]): Markdown too.
 library;
 
 import 'dart:math' as math;
@@ -10,11 +12,22 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html;
+import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 
-/// Whether [text] looks like HTML, rather than plain text.
-bool _isHtml(String text) =>
-    RegExp(r'<(/?[a-zA-Z][a-zA-Z0-9]*)(\s[^>]*)?/?>').hasMatch(text);
+import '../models/text_format.dart';
+
+/// [text] as HTML, as it's written in [format] (or looks, with none);
+/// null for plain text.
+String? _asHtml(String text, TextFormat? format) =>
+    switch (TextFormat.of(text, format)) {
+      TextFormat.plain => null,
+      TextFormat.html => text,
+      TextFormat.markdown => md.markdownToHtml(
+        text.replaceAll('\r\n', '\n'),
+        extensionSet: md.ExtensionSet.gitHubFlavored,
+      ),
+    };
 
 /// Bare web addresses in plain text, to make links of.
 final _url = RegExp(r'https?://[^\s<>"]+[^\s<>".,;:!?)\]]');
@@ -41,10 +54,12 @@ class DescriptionBlock {
   bool get isItem => marker != null;
 }
 
-/// [text] as paragraphs and list items, making a recognizer for each link
-/// with [recognizer]: the caller disposes of them.
+/// [text], written in [format] (or as it looks, with none), as paragraphs
+/// and list items, making a recognizer for each link with [recognizer]:
+/// the caller disposes of them.
 List<DescriptionBlock> descriptionBlocks(
   String text, {
+  TextFormat? format,
   required Color linkColor,
   required TapGestureRecognizer Function(String url) recognizer,
 }) {
@@ -79,7 +94,8 @@ List<DescriptionBlock> descriptionBlocks(
     return spans;
   }
 
-  if (!_isHtml(text)) {
+  final source = _asHtml(text, format);
+  if (source == null) {
     final trimmed = text.replaceAll('\r\n', '\n').trim();
     return [
       if (trimmed.isNotEmpty)
@@ -93,12 +109,27 @@ List<DescriptionBlock> descriptionBlocks(
   String? marker;
   var depth = 0;
   var listDepth = 0;
+  // Inside a pre: its whitespace kept.
+  var preDepth = 0;
+  const code = TextStyle(fontFamily: 'monospace');
   bool atLineStart() => line.isEmpty || line.last.$2.endsWith('\n');
 
   void flush() {
     // No line breaks at its end.
     while (line.isNotEmpty && line.last.$2.trim().isEmpty) {
       line.removeLast();
+    }
+    // Nor a space, from a line break before a list in it.
+    if (line.isNotEmpty && line.last.$2 != line.last.$2.trimRight()) {
+      final (span, text) = line.removeLast();
+      line.add((
+        TextSpan(
+          text: text.trimRight(),
+          style: span.style,
+          recognizer: span.recognizer,
+        ),
+        text.trimRight(),
+      ));
     }
     if (line.isNotEmpty) {
       blocks.add(
@@ -122,6 +153,10 @@ List<DescriptionBlock> descriptionBlocks(
 
   void walk(dom.Node node, TextStyle? style, String? href) {
     if (node is dom.Text) {
+      if (preDepth > 0) {
+        add(TextSpan(text: node.text.trimRight(), style: style));
+        return;
+      }
       // As HTML lays it out: runs of whitespace are one space.
       var text = node.text.replaceAll(RegExp(r'\s+'), ' ');
       if (atLineStart()) text = text.trimLeft();
@@ -153,6 +188,7 @@ List<DescriptionBlock> descriptionBlocks(
       's' ||
       'strike' ||
       'del' => const TextStyle(decoration: TextDecoration.lineThrough),
+      'code' || 'kbd' || 'pre' => code,
       _ => null,
     };
     final merged = own == null ? style : (style?.merge(own) ?? own);
@@ -190,6 +226,7 @@ List<DescriptionBlock> descriptionBlocks(
         final inItem = marker != null;
         if (!inItem) flush();
         if (inItem && line.isNotEmpty) add(TextSpan(text: '\n', style: merged));
+        if (tag == 'pre') preDepth++;
         final heading = tag != null && tag.startsWith('h') && tag.length == 2;
         for (final child in node.nodes) {
           walk(
@@ -203,6 +240,7 @@ List<DescriptionBlock> descriptionBlocks(
             linkTo,
           );
         }
+        if (tag == 'pre') preDepth--;
         if (!inItem) flush();
       case 'script' || 'style' || 'head' || 'title':
         break;
@@ -213,19 +251,21 @@ List<DescriptionBlock> descriptionBlocks(
     }
   }
 
-  walk(html.parseFragment(text), null, null);
+  walk(html.parseFragment(source), null, null);
   flush();
   return blocks;
 }
 
-/// [description] as plain text, for an event of the user's own: its
-/// paragraphs a line each, its lists' items with their bullets, and a
-/// link's address after its text, unless that's the address already.
-String descriptionText(String description) {
-  if (!_isHtml(description)) {
+/// [description], written in [format] (or as it looks, with none), as
+/// plain text, for an event of the user's own: its paragraphs a line
+/// each, its lists' items with their bullets, and a link's address after
+/// its text, unless that's the address already.
+String descriptionText(String description, {TextFormat? format}) {
+  final source = _asHtml(description, format);
+  if (source == null) {
     return description.replaceAll('\r\n', '\n').trim();
   }
-  final fragment = html.parseFragment(description);
+  final fragment = html.parseFragment(source);
   for (final a in fragment.querySelectorAll('a[href]')) {
     final href = a.attributes['href']!;
     final shown = a.text.trim();
@@ -239,6 +279,7 @@ String descriptionText(String description) {
   final recognizers = <TapGestureRecognizer>[];
   final blocks = descriptionBlocks(
     fragment.outerHtml,
+    format: TextFormat.html,
     linkColor: const Color(0x00000000),
     recognizer: (_) {
       final r = TapGestureRecognizer();
@@ -256,21 +297,24 @@ String descriptionText(String description) {
   ].join('\n');
 }
 
-/// [description], up to about [maxLines] of it until "More" is tapped --
-/// or, with none, in full: its paragraphs, and its lists' items, their
-/// bullets hung to the left. Not [expandable], it's only cut off, with
-/// no "More": tapping it opens it elsewhere. [selectable], its text is
-/// selected by touching and holding it, to copy.
+/// [description], written in [format] (or as it looks, with none), up to
+/// about [maxLines] of it until "More" is tapped -- or, with none, in
+/// full: its paragraphs, and its lists' items, their bullets hung to the
+/// left. Not [expandable], it's only cut off, with no "More": tapping it
+/// opens it elsewhere. [selectable], its text is selected by touching
+/// and holding it, to copy.
 class EventDescription extends StatefulWidget {
   const EventDescription(
     this.description, {
     super.key,
+    this.format,
     this.maxLines = 8,
     this.expandable = true,
     this.selectable = false,
   });
 
   final String description;
+  final TextFormat? format;
   final int? maxLines;
   final bool expandable;
   final bool selectable;
@@ -324,6 +368,7 @@ class _EventDescriptionState extends State<EventDescription> {
     final style = theme.textTheme.bodyMedium;
     final blocks = descriptionBlocks(
       widget.description,
+      format: widget.format,
       linkColor: theme.colorScheme.primary,
       recognizer: _recognizer,
     );

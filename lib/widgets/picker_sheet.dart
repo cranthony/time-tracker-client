@@ -10,6 +10,7 @@ import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/proposal.dart';
 import '../models/share.dart';
+import '../models/text_format.dart';
 import '../services/maps.dart';
 import '../services/people_repository.dart';
 import '../services/server_errors.dart';
@@ -20,6 +21,7 @@ import 'hotkeys.dart';
 import 'picker_edits.dart';
 import 'picker_search.dart';
 import 'share_dialog.dart';
+import 'text_format_picker.dart';
 import 'tree_picker.dart';
 
 /// A sheet up from the foot of the screen, as a note's is, with room to
@@ -164,29 +166,36 @@ Future<List<String>?> showActionsSheet(
   );
 }
 
-/// Shows an event's description in a [showPickerSheet], as its HTML lays
-/// it out, links tappable and its text selectable by touching and holding
-/// it ([EventDescription]); the pencil at its foot -- or E -- edits it,
-/// as typed. Blank, it's edited at once. Returns it as edited, or null if
-/// it wasn't, or the sheet was dismissed. Blank is no description.
-/// Ctrl+Enter saves it and closes; Esc, in the field, leaves it; out of
-/// it, Esc closes, but once it's been changed, the first Esc only warns,
-/// and the second discards it ([SaveOrDiscard]).
-Future<String?> showTextSheet(
+/// Shows an event's description, written in [format] (or as it looks,
+/// with none), in a [showPickerSheet], laid out, links tappable and its
+/// text selectable by touching and holding it ([EventDescription]); the
+/// pencil at its foot -- or E -- edits it, as typed, under how it's
+/// written (plain text, Markdown or HTML). Blank, it's edited at once.
+/// Returns it and its format as edited, or null if it wasn't, or the
+/// sheet was dismissed. Blank is no description. Ctrl+Enter saves it and
+/// closes; Esc, in the field, leaves it; out of it, Esc closes, but once
+/// it's been changed, the first Esc only warns, and the second discards
+/// it ([SaveOrDiscard]).
+Future<FormattedText?> showTextSheet(
   BuildContext context, {
   required String title,
   required String? text,
+  TextFormat? format,
   required String hint,
 }) {
-  String? typed;
-  return showPickerSheet<String?>(
+  FormattedText? edited;
+  return showPickerSheet<FormattedText?>(
     context,
     title: title,
-    result: () => typed?.trim(),
+    result: () => switch (edited) {
+      (:final text, :final format) => (text: text.trim(), format: format),
+      null => null,
+    },
     body: (context, setState) => _TextSheetBody(
       text: text,
+      format: format,
       hint: hint,
-      onChanged: (changed) => typed = changed,
+      onChanged: (changed) => edited = changed,
     ),
   );
 }
@@ -196,13 +205,15 @@ Future<String?> showTextSheet(
 class _TextSheetBody extends StatefulWidget {
   const _TextSheetBody({
     required this.text,
+    required this.format,
     required this.hint,
     required this.onChanged,
   });
 
   final String? text;
+  final TextFormat? format;
   final String hint;
-  final ValueChanged<String> onChanged;
+  final ValueChanged<FormattedText> onChanged;
 
   @override
   State<_TextSheetBody> createState() => _TextSheetBodyState();
@@ -210,17 +221,23 @@ class _TextSheetBody extends StatefulWidget {
 
 class _TextSheetBodyState extends State<_TextSheetBody> {
   late var _editing = widget.text?.trim().isEmpty ?? true;
+  late final _initialFormat = TextFormat.of(widget.text, widget.format);
+  late var _format = _initialFormat;
 
   /// What's typed, once anything is.
   String? _typed;
 
   bool get _changed =>
-      _typed != null && _typed!.trim() != (widget.text ?? '').trim();
+      (_typed != null && _typed!.trim() != (widget.text ?? '').trim()) ||
+      _format != _initialFormat;
+
+  FormattedText get _edited =>
+      (text: (_typed ?? widget.text ?? '').trim(), format: _format);
 
   @override
   Widget build(BuildContext context) => SaveOrDiscard(
     changed: () => _changed,
-    onSave: () => Navigator.of(context).pop(_changed ? _typed!.trim() : null),
+    onSave: () => Navigator.of(context).pop(_changed ? _edited : null),
     more: [
       if (!_editing)
         HotkeyBinding(
@@ -235,13 +252,28 @@ class _TextSheetBodyState extends State<_TextSheetBody> {
     if (_editing) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),
-        child: _TextSheetField(
-          text: widget.text,
-          hint: widget.hint,
-          onChanged: (typed) {
-            widget.onChanged(typed);
-            setState(() => _typed = typed);
-          },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextFormatPicker(
+              format: _format,
+              onChanged: (format) {
+                setState(() => _format = format);
+                widget.onChanged(_edited);
+              },
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _TextSheetField(
+                text: widget.text,
+                hint: widget.hint,
+                onChanged: (typed) {
+                  setState(() => _typed = typed);
+                  widget.onChanged(_edited);
+                },
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -253,6 +285,7 @@ class _TextSheetBodyState extends State<_TextSheetBody> {
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 88),
             child: EventDescription(
               widget.text!,
+              format: _format,
               maxLines: null,
               selectable: true,
             ),

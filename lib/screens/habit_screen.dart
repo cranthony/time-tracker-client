@@ -299,6 +299,7 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
                     switch (goal.definitionOfDone) {
                       final done? => descriptionText(
                         done,
+                        format: goal.definitionOfDoneFormat,
                       ).replaceAll('\n', ' '),
                       null => 'Done when its goal is',
                     },
@@ -331,8 +332,12 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
             if (!relationship) sectionHeading(theme, "What it's for"),
             if (!relationship)
               sectionPadded(switch (_habit.note) {
-                // A recurring goal's habit's note is HTML, as a goal's is.
-                final note? when _habit.isGoal => EventDescription(note),
+                // A recurring goal's habit's note is written as a goal's
+                // description is.
+                final note? when _habit.isGoal => EventDescription(
+                  note,
+                  format: _habit.noteFormat,
+                ),
                 final note? => Text(note),
                 null => Text(
                   'Nothing yet: a note helps Claude judge its events.',

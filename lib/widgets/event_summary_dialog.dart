@@ -2101,7 +2101,11 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     }
   }
 
-  /// Its description, as its HTML lays it out, cut off if it's long
+  /// How its description is written; null, as it looks.
+  TextFormat? get _descriptionFormat =>
+      TextFormat.fromJson(_value('description_format'));
+
+  /// Its description, laid out as it's written, cut off if it's long
   /// ([EventDescription]), or a hint; read in full, and written, in a
   /// sheet up from the foot ([showTextSheet]).
   Widget _descriptionRow(BuildContext context) {
@@ -2123,7 +2127,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
             )
           : Padding(
               padding: const EdgeInsets.only(top: 2),
-              child: EventDescription(value, maxLines: 6, expandable: false),
+              child: EventDescription(
+                value,
+                format: _descriptionFormat,
+                maxLines: 6,
+                expandable: false,
+              ),
             ),
     );
   }
@@ -2132,14 +2141,24 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   /// ([showTextSheet]).
   Future<void> _editDescription() async {
     setState(() => _editing = null);
-    final text = await showTextSheet(
+    final before = _value('description') as String?;
+    final format = _descriptionFormat;
+    final edited = await showTextSheet(
       context,
       title: 'Description',
-      text: _value('description') as String?,
+      text: before,
+      format: format,
       hint: 'Add description',
     );
-    if (text == null || !mounted) return;
-    _set('description', text.isEmpty ? null : text);
+    if (edited == null || !mounted) return;
+    _set('description', edited.text.isEmpty ? null : edited.text);
+    // Set only when the text wouldn't otherwise be read so, so a proposal,
+    // which can't take a format, takes an edit of the text alone; one
+    // cleared goes with its description, on the server.
+    if (edited.text.isNotEmpty &&
+        edited.format != TextFormat.of(edited.text, format)) {
+      _set('description_format', edited.format.wire);
+    }
   }
 
   /// The notes on you and on each person there, and how many judgments

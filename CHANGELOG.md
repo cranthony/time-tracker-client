@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.226.0
+
+- A goal's description and definition of done, a habit's note and an
+  event's description can each be written as plain text, Markdown or
+  HTML. Pick the format above the text as you edit it; the preview and
+  every place that shows it follow it. New text starts as plain text.
+  Text without a format reads as before: HTML if it has tags, else plain
+  text. Claude writes Markdown and says so. Needs a server with text
+  formats (time-tracking-google-calendar-mcp#318).
+
 ## 7.225.2
 
 - The goals are loaded again once a change to them reaches the server, so

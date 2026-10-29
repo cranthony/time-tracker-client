@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/models/text_format.dart';
 import 'package:time_tracker_client/screens/people_pane.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/widgets/tree_picker.dart';
@@ -60,7 +61,7 @@ void main() {
   }
 
   group('a description, read', () {
-    late Future<String?> result;
+    late Future<FormattedText?> result;
 
     Future<void> open(WidgetTester tester, String? text) async {
       await tester.pumpWidget(
@@ -91,7 +92,7 @@ void main() {
       await tester.enterText(find.byType(EditableText), 'Cleaning');
       await ctrl(tester, LogicalKeyboardKey.enter);
       expect(find.text('Description'), findsNothing);
-      expect(await result, 'Cleaning');
+      expect((await result)?.text, 'Cleaning');
     });
 
     testWidgets('Esc in the field only leaves it; changed, Esc then warns; '

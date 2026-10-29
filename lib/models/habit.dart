@@ -1,5 +1,6 @@
 import 'person.dart';
 import 'recurring_goal.dart';
+import 'text_format.dart';
 import 'trait.dart';
 
 /// A habit of the user's (Self's), mirroring the Time Tracker MCP
@@ -33,6 +34,7 @@ class Habit {
     this.actionPath,
     this.status = 'active',
     this.note,
+    this.noteFormat,
     this.traits = const PersonTraits(),
     this.foundations = const [],
     this.cancelledEvents = const [],
@@ -77,6 +79,9 @@ class Habit {
   /// What it's for, which Claude judges its events with in mind.
   final String? note;
 
+  /// How [note] is written; null, as it looks ([TextFormat.of]).
+  final TextFormat? noteFormat;
+
   /// Which traits apply to it, and its own parts for any: as a person's,
   /// every active trait unless it says.
   final PersonTraits traits;
@@ -108,6 +113,7 @@ class Habit {
     actionPath: actionPath,
     status: status,
     note: note,
+    noteFormat: noteFormat,
     traits: traits,
     foundations: foundations,
     cancelledEvents: events,
@@ -127,6 +133,7 @@ class Habit {
       final String note when note.trim().isNotEmpty => note,
       _ => null,
     },
+    noteFormat: TextFormat.fromJson(json['note_format']),
     traits: PersonTraits.fromJson(json['traits']),
     foundations: [
       for (final f in json['foundations'] as List? ?? const []) '$f',
@@ -149,6 +156,7 @@ class Habit {
     if (recurringGoal case final goal?) 'recurring_goal': goal.toJson(),
     'status': status,
     'note': ?note,
+    'note_format': ?noteFormat?.wire,
     if (!traits.isDefault) 'traits': traits.toJson(),
     if (foundations.isNotEmpty) 'foundations': foundations,
   };

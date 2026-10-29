@@ -1,4 +1,4 @@
-import 'goal_editor.dart' show HtmlField, goalPeopleLabel, goalPeopleNames;
+import 'goal_editor.dart' show FormattedField, goalPeopleLabel, goalPeopleNames;
 import 'picker_sheet.dart' show showWhoWhereSheet;
 import '../services/plan_memory.dart';
 import '../models/named.dart';
@@ -12,6 +12,7 @@ import '../models/habit_graph.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/recurring_goal.dart';
+import '../models/text_format.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import 'actions_picker.dart';
@@ -19,7 +20,7 @@ import 'color_picker.dart';
 import 'edit_page.dart';
 import 'error_sheet.dart';
 import 'foundations_field.dart';
-import 'html_editor.dart';
+import 'text_editor.dart';
 import 'traits_field.dart';
 
 /// Adds a habit (with no [habit]) or edits one, on a page of its own
@@ -91,6 +92,7 @@ class _HabitEditor extends StatefulWidget {
 class _HabitEditorState extends State<_HabitEditor> {
   late final _name = TextEditingController(text: widget.habit?.name);
   late final _note = TextEditingController(text: widget.habit?.note);
+  late TextFormat? _noteFormat = widget.habit?.noteFormat;
   late String? _actionId = widget.habit?.actionId;
   late String _status = widget.habit?.status ?? 'active';
 
@@ -102,9 +104,11 @@ class _HabitEditorState extends State<_HabitEditor> {
     text: widget.habit?.recurringGoal?.title,
   );
 
-  /// Its goals' definition of done, HTML, as a goal's is.
+  /// Its goals' definition of done, and how it's written, as a goal's.
   late String? _definitionOfDone =
       widget.habit?.recurringGoal?.definitionOfDone;
+  late TextFormat? _definitionOfDoneFormat =
+      widget.habit?.recurringGoal?.definitionOfDoneFormat;
   late final _attributionHints = TextEditingController(
     text: widget.habit?.recurringGoal?.attributionHints,
   );
@@ -155,7 +159,11 @@ class _HabitEditorState extends State<_HabitEditor> {
       priority: was.priority,
       expectedMinutes: was.expectedMinutes,
       description: was.description,
+      descriptionFormat: was.descriptionFormat,
       definitionOfDone: _definitionOfDone,
+      definitionOfDoneFormat: _definitionOfDone == null
+          ? null
+          : _definitionOfDoneFormat,
       attributionHints: _text(_attributionHints),
       withWhom: _with,
       forWhom: _for,
@@ -194,33 +202,52 @@ class _HabitEditorState extends State<_HabitEditor> {
 
   String? get _noteText => _note.text.trim().isEmpty ? null : _note.text.trim();
 
-  /// Edits [text], HTML, on a page of its own, setting it with [set]
-  /// (null for nothing) unless that's called off.
-  Future<void> _editHtml(
-    String title,
-    String? text,
-    ValueChanged<String?> set,
-  ) async {
-    final edited = await showHtmlEditor(context, title: title, text: text);
-    if (edited == null || !mounted) return;
-    setState(() => set(edited.trim().isEmpty ? null : edited.trim()));
+  void _setNote(String? text, TextFormat format) {
+    _note.text = text ?? '';
+    _noteFormat = format;
   }
 
-  /// An HTML field, [label] over it as it reads, tapped to edit, with
-  /// [helper] beneath.
-  Widget _htmlField(
+  /// Edits [text], written in [format], on a page of its own
+  /// ([showTextEditor]), setting it (null for nothing) and its format
+  /// with [set] unless that's called off.
+  Future<void> _editText(
+    String title,
+    String? text,
+    TextFormat? format,
+    void Function(String? text, TextFormat format) set,
+  ) async {
+    final edited = await showTextEditor(
+      context,
+      title: title,
+      text: text,
+      format: format,
+    );
+    if (edited == null || !mounted) return;
+    setState(
+      () => set(
+        edited.text.trim().isEmpty ? null : edited.text.trim(),
+        edited.format,
+      ),
+    );
+  }
+
+  /// A field of free text, written in [format], [label] over it as it
+  /// reads, tapped to edit, with [helper] beneath.
+  Widget _formattedField(
     ThemeData theme,
     String label,
     String? text,
+    TextFormat? format,
     String helper,
-    ValueChanged<String?> set,
+    void Function(String? text, TextFormat format) set,
   ) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      HtmlField(
+      FormattedField(
         label: label,
         text: text,
-        onTap: () => _editHtml(label, text, set),
+        format: format,
+        onTap: () => _editText(label, text, format, set),
       ),
       Text(helper, style: theme.textTheme.bodySmall),
     ],
@@ -249,6 +276,9 @@ class _HabitEditorState extends State<_HabitEditor> {
     else
       'action_id': _actionId,
     'note': _noteText,
+    // Only when changed, so a server without it is never asked.
+    if ((_noteText == null ? null : _noteFormat) != widget.habit?.noteFormat)
+      'note_format': _noteText == null ? null : _noteFormat?.wire,
     'traits': _traits.isDefault ? null : _traits.toJson(),
     // Only when changed, so a server without them is never asked.
     if (_foundations.join(',') !=
@@ -334,17 +364,17 @@ class _HabitEditorState extends State<_HabitEditor> {
           child: FieldHotkey(
             'O',
             onPressed: _isGoal
-                ? () =>
-                      _editHtml('Note', _noteText, (v) => _note.text = v ?? '')
+                ? () => _editText('Note', _noteText, _noteFormat, _setNote)
                 : null,
             child: _isGoal
-                ? _htmlField(
+                ? _formattedField(
                     theme,
                     'Note',
                     _noteText,
+                    _noteFormat,
                     'What it is for. Claude judges its events with this in '
                         'mind.',
-                    (v) => _note.text = v ?? '',
+                    _setNote,
                   )
                 : TextField(
                     controller: _note,
@@ -536,12 +566,16 @@ class _HabitEditorState extends State<_HabitEditor> {
     ),
     Padding(
       padding: const EdgeInsets.only(top: 16),
-      child: _htmlField(
+      child: _formattedField(
         theme,
         'Definition of done',
         _definitionOfDone,
+        _definitionOfDoneFormat,
         'Compaction marks each goal done or missed by this.',
-        (v) => _definitionOfDone = v,
+        (text, format) {
+          _definitionOfDone = text;
+          _definitionOfDoneFormat = format;
+        },
       ),
     ),
     Padding(
