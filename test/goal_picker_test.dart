@@ -88,6 +88,54 @@ void main() {
     expect(picked, const [GoalShare('ship'), GoalShare('pane', minutes: 45)]);
   });
 
+  testWidgets('searches for any word of the text it starts with', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    Goal goal(String id, String title) => Goal.fromJson({
+      'id': id,
+      'title': title,
+      'deadline': '2026-12-01',
+      'history': [
+        {'status': 'active', 'at': '2026-10-01T09:00:00'},
+      ],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () => showGoalsSheet(
+              context,
+              goals: [
+                goal('trip', 'Plan the trip'),
+                goal('team', 'Meet the team'),
+              ],
+              picked: const [],
+              eventMinutes: 60,
+              searchText: "The team's offsite?",
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(TextField, "The team's offsite?"), findsOne);
+    expect(
+      tester
+          .widget<FilterChip>(find.widgetWithText(FilterChip, 'Any'))
+          .selected,
+      isTrue,
+    );
+    // "team" matches; "the" alone would have matched both.
+    expect(find.text('Meet the team'), findsOne);
+    expect(find.text('Plan the trip'), findsNothing);
+  });
+
   testWidgets('offers the goals closed after the event started', (
     tester,
   ) async {

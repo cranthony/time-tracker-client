@@ -16,14 +16,16 @@ import 'tree_picker.dart';
 /// the shares come to is checked against the event, [eventMinutes] long.
 /// With [addGoal], a new one can be added, named as it's typed: what it
 /// returns -- the goal added, and every goal there is now, or null if
-/// it was called off -- is picked. Gives the shares picked, in order;
-/// null if it's dismissed.
+/// it was called off -- is picked. Its search starts with [searchText],
+/// matching any word of it. Gives the shares picked, in order; null if
+/// it's dismissed.
 Future<List<GoalShare>?> showGoalsSheet(
   BuildContext context, {
   required List<Goal> goals,
   required List<GoalShare> picked,
   required int eventMinutes,
   DateTime? eventStart,
+  String searchText = '',
   Future<GoalAdded?> Function(String title)? addGoal,
 }) {
   var shares = [...picked];
@@ -69,6 +71,8 @@ Future<List<GoalShare>?> showGoalsSheet(
             ),
           Expanded(
             child: OwnPickerSearch(
+              text: searchText,
+              matchAny: searchText.isNotEmpty,
               builder: (context, search) => TreePicker(
                 nodes: nodes,
                 search: search,

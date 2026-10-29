@@ -1901,8 +1901,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     );
   }
 
-  /// Picks its goals in a sheet up from the foot -- offering to activate
-  /// any picked that's inactive, from its start. One can be added there,
+  /// Picks its goals in a sheet up from the foot, searching for its
+  /// summary's words -- offering to activate any picked that's inactive,
+  /// from its start. One can be added there,
   /// due on the day it starts, to start with.
   Future<void> _pickGoals() async {
     setState(() => _editing = null);
@@ -1917,6 +1918,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       picked: _goalShares,
       eventMinutes: minutes,
       eventStart: start,
+      searchText: (_value('summary') as String? ?? '').trim(),
       addGoal: memory == null || repository == null
           ? null
           : (title) => addGoalFor(
