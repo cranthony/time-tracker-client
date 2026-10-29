@@ -39,6 +39,7 @@ import '../models/google_calendar.dart';
 import '../services/google_calendars.dart';
 import '../widgets/event_description.dart';
 import '../widgets/google_all_day_strip.dart';
+import '../widgets/goal_color.dart' show chosenGoalColors;
 import '../widgets/goal_editor.dart'
     show deadlineLabel, goalPeopleLabel, goalPeopleNames;
 import '../widgets/goal_flows.dart';
@@ -344,6 +345,20 @@ class _EventsScreenState extends State<EventsScreen> {
   Map<String, String> get _goalNames => {
     for (final g in _memory.goals ?? const <Goal>[]) g.id: goalTitle(g),
   };
+
+  /// The colors goals were given, by id, for events' colors: worked out
+  /// again only when the goals change.
+  Map<String, Color> get _goalColors {
+    final goals = _memory.goals;
+    if (!identical(goals, _goalColorsOf)) {
+      _goalColorsOf = goals;
+      _goalColorsMemo = chosenGoalColors(goals ?? const []);
+    }
+    return _goalColorsMemo;
+  }
+
+  List<Goal>? _goalColorsOf;
+  Map<String, Color> _goalColorsMemo = const {};
 
   /// When notes were last compacted; null until it's known.
   DateTime? get _lastCompaction => _memory.lastCompaction;
@@ -6506,6 +6521,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 personNames: _personNames,
                 locationNames: _locationNames,
                 goalNames: _goalNames,
+                goalColors: _goalColors,
                 scale: _scale,
                 now: widget.clock(),
                 lastCompaction: _lastCompaction,

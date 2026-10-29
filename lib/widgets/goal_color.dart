@@ -19,6 +19,17 @@ Color colorOfGoal(Goal goal, {GoalTree? tree}) {
       priorityColor(goal.priority ?? defaultGoalPriority);
 }
 
+/// The color each of [goals] was given, by id: its own, or else its
+/// nearest parent's that has one. Those whose color is only their
+/// priority's aren't in it.
+Map<String, Color> chosenGoalColors(Iterable<Goal> goals) {
+  final tree = GoalTree(goals);
+  return {
+    for (final g in goals)
+      g.id: ?parseColor(tree.colorSourceOf(g.id)?.backgroundColor),
+  };
+}
+
 /// Where [goal]'s color comes from, for its page: "Its own", "From
 /// `the parent it takes it from`" or "Its priority's (P2)".
 String goalColorSource(GoalTree tree, Goal goal) =>
