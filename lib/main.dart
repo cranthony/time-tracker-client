@@ -574,6 +574,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     super.initState();
     // Every page shows the actions with the saves waiting, or just made.
     _planMemory.useActionWrites(_actionWrites);
+    if (widget.goalsRepository case final goals?) {
+      _planMemory.reloadGoalsOnSave(_writeQueue, goals);
+    }
     BackgroundSync.cancel();
     _writeQueue.start();
     _startEventOutbox();

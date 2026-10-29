@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.225.2
+
+- The goals are loaded again once a change to them reaches the server, so
+  what the server made of it shows without a reload: the goals waiting
+  on one closed made active, a deadline measured from when one started,
+  and the history as the server stamped it.
+
 ## 7.225.1
 
 - A goal's status changed on its page shows in its history at once, with
