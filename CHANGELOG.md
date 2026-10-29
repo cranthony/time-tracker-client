@@ -9,6 +9,11 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.223.0
+
+- G opens an event's goals, in its dialog, as A opens its actions. Held
+  Ctrl shows G by them, and ? lists it.
+
 ## 7.222.0
 
 - R presses the page's refresh button, spinning it till it's done, as

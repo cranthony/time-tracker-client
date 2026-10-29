@@ -224,6 +224,7 @@ class Hotkey {
   static const location = Hotkey('L', 'Where it was', HotkeyPlace.event);
   static const description = Hotkey('D', 'Its description', HotkeyPlace.event);
   static const actions = Hotkey('A', 'Its actions', HotkeyPlace.event);
+  static const goals = Hotkey('G', 'Its goals', HotkeyPlace.event);
   static const summary = Hotkey(
     'S',
     'Its summary, selected, to type over',
@@ -329,6 +330,7 @@ class Hotkey {
     location,
     description,
     actions,
+    goals,
     summary,
     priority,
     commute,
