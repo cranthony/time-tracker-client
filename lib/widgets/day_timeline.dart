@@ -80,6 +80,11 @@ const _detailIconSize = 12.0;
 const _detailIconGap = 2.0;
 const _detailGap = 8.0;
 
+/// The space after each of an event's actions' diamonds and goals' icons,
+/// and between those side by side.
+const _itemIconGap = 6.0;
+const _itemGap = 10.0;
+
 /// The space before each of the things after an event's summary, and
 /// inside a chip either side of its text.
 const _chipGap = 6.0;
@@ -1871,8 +1876,9 @@ class _CardStyles {
 
 /// An event: its summary, its actions' diamonds stacked by its chips --
 /// and, if it's for any goals, a stack of goal icons saying how many --
-/// then as many of its actions, each after a diamond, and then its goals,
-/// each after a goal icon, as fit whole.
+/// then its actions, each after a diamond, and then its goals, each after
+/// a goal icon, side by side while they fit, on as many lines as fit
+/// whole.
 class _EventCard extends StatelessWidget {
   const _EventCard({
     required this.placement,
@@ -2001,19 +2007,6 @@ class _EventCard extends StatelessWidget {
                     padding: _cardPadding,
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        final listed = _actionsThatFit(
-                          context,
-                          constraints.maxHeight,
-                          count: ids.length,
-                        );
-                        // Its goals, under its actions, as many as fit.
-                        final goalsListed =
-                            _actionsThatFit(
-                              context,
-                              constraints.maxHeight,
-                              count: ids.length + goalTitles.length,
-                            ) -
-                            listed;
                         // Its locations and people, only where there's
                         // room beside its actions.
                         final detailStyle = styles.action?.copyWith(
@@ -2033,7 +2026,7 @@ class _EventCard extends StatelessWidget {
                             .length;
                         final locationsListed =
                             locationLines > 0 &&
-                            _actionsThatFit(
+                            _linesThatFit(
                                   context,
                                   constraints.maxHeight,
                                   count: packed.length,
@@ -2045,10 +2038,64 @@ class _EventCard extends StatelessWidget {
                                 for (final line in packed)
                                   if (line.first.$1 != _Detail.location) line,
                               ];
-                        final detailed = _actionsThatFit(
+                        final detailed = _linesThatFit(
                           context,
                           constraints.maxHeight,
                           count: detailLines.length,
+                        );
+                        // Its actions, then its goals, side by side while
+                        // they fit beside its details.
+                        final itemStyle = styles.action?.copyWith(
+                          color: muted,
+                          decoration: strike,
+                        );
+                        final items = <_Item>[
+                          for (final (i, id) in ids.indexed)
+                            (
+                              icon: _Diamond(
+                                color: _colorOf(id),
+                                outline: muted,
+                              ),
+                              iconWidth: _Diamond.size,
+                              text: switch (actions[id]) {
+                                final action? => actionName(action),
+                                null =>
+                                  (i < names.length ? names[i] : null) ?? id,
+                              },
+                            ),
+                          for (final title in goalTitles)
+                            (
+                              icon: GoalIcon(size: 10, color: muted),
+                              iconWidth: 10.0,
+                              text: title,
+                            ),
+                        ];
+                        final itemLines = _packItems(
+                          context,
+                          detailed == 0
+                              ? constraints.maxWidth
+                              : constraints.maxWidth -
+                                    8 -
+                                    math.min(
+                                      detailWidth,
+                                      detailLines
+                                          .take(detailed)
+                                          .map(
+                                            (line) => _detailLineWidth(
+                                              context,
+                                              line,
+                                              detailStyle,
+                                            ),
+                                          )
+                                          .reduce(math.max),
+                                    ),
+                          items,
+                          itemStyle,
+                        );
+                        final listed = _linesThatFit(
+                          context,
+                          constraints.maxHeight,
+                          count: itemLines.length,
                         );
                         final summaryStyle = styles.summary?.copyWith(
                           color: cancelled ? muted : null,
@@ -2168,7 +2215,7 @@ class _EventCard extends StatelessWidget {
                                   ),
                               ],
                             ),
-                            if (listed > 0 || goalsListed > 0 || detailed > 0)
+                            if (listed > 0 || detailed > 0)
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -2177,59 +2224,31 @@ class _EventCard extends StatelessWidget {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        for (final (i, id)
-                                            in ids.take(listed).indexed)
-                                          Row(
-                                            children: [
-                                              _Diamond(
-                                                color: _colorOf(id),
-                                                outline: muted,
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Expanded(
-                                                child: Text(
-                                                  switch (actions[id]) {
-                                                    final action? => actionName(
-                                                      action,
-                                                    ),
-                                                    null =>
-                                                      (i < names.length
-                                                              ? names[i]
-                                                              : null) ??
-                                                          id,
-                                                  },
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: styles.action
-                                                      ?.copyWith(
-                                                        color: muted,
-                                                        decoration: strike,
-                                                      ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        for (final title in goalTitles.take(
-                                          goalsListed,
+                                        for (final line in itemLines.take(
+                                          listed,
                                         ))
                                           Row(
                                             children: [
-                                              GoalIcon(size: 10, color: muted),
-                                              const SizedBox(width: 6),
-                                              Expanded(
-                                                child: Text(
-                                                  title,
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: styles.action
-                                                      ?.copyWith(
-                                                        color: muted,
-                                                        decoration: strike,
-                                                      ),
+                                              for (final (i, item)
+                                                  in line.indexed) ...[
+                                                if (i > 0)
+                                                  const SizedBox(
+                                                    width: _itemGap,
+                                                  ),
+                                                item.icon,
+                                                const SizedBox(
+                                                  width: _itemIconGap,
                                                 ),
-                                              ),
+                                                Flexible(
+                                                  child: Text(
+                                                    item.text,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: itemStyle,
+                                                  ),
+                                                ),
+                                              ],
                                             ],
                                           ),
                                       ],
@@ -2324,6 +2343,49 @@ extension on _EventCard {
     return lines;
   }
 
+  /// How wide [line] of its details is, side by side, in [style].
+  double _detailLineWidth(
+    BuildContext context,
+    List<(_Detail, String)> line,
+    TextStyle? style,
+  ) =>
+      _detailGap * (line.length - 1) +
+      line.fold(
+        0.0,
+        (sum, item) =>
+            sum +
+            _detailIconSize +
+            _detailIconGap +
+            _widthOf(context, item.$2, style),
+      );
+
+  /// [items] in lines no wider than [width], in [style], side by side
+  /// while they fit. One too wide even alone is on a line by itself, cut
+  /// short.
+  List<List<_Item>> _packItems(
+    BuildContext context,
+    double width,
+    List<_Item> items,
+    TextStyle? style,
+  ) {
+    final lines = <List<_Item>>[];
+    var line = <_Item>[];
+    var used = 0.0;
+    for (final item in items) {
+      final each =
+          item.iconWidth + _itemIconGap + _widthOf(context, item.text, style);
+      if (line.isNotEmpty && used + _itemGap + each > width) {
+        lines.add(line);
+        line = [];
+        used = 0;
+      }
+      used += (line.isEmpty ? 0 : _itemGap) + each;
+      line.add(item);
+    }
+    if (line.isNotEmpty) lines.add(line);
+    return lines;
+  }
+
   /// How wide [text] is on one line, in [style].
   double _widthOf(BuildContext context, String text, TextStyle? style) {
     final painter = TextPainter(
@@ -2392,13 +2454,9 @@ extension on _EventCard {
         : (locationWidth: fit(room), goalStack: false);
   }
 
-  /// How many of its [count] actions' lines fit whole in [height], under
-  /// its summary and chips.
-  int _actionsThatFit(
-    BuildContext context,
-    double height, {
-    required int count,
-  }) {
+  /// How many of its [count] lines of actions and goals, or of details,
+  /// fit whole in [height], under its summary and chips.
+  int _linesThatFit(BuildContext context, double height, {required int count}) {
     if (count == 0 || !height.isFinite) return count;
     final base = DefaultTextStyle.of(context).style;
     final scaler = MediaQuery.textScalerOf(context);
@@ -2488,6 +2546,10 @@ enum _ChipShape {
   /// Rounded, with no top edge.
   openTop,
 }
+
+/// One of an event's actions or goals, listed: its diamond or goal
+/// icon, how wide that is, and its name.
+typedef _Item = ({Widget icon, double iconWidth, String text});
 
 /// What one of an event's details is: a location it was at, someone
 /// with the user, or someone it was for.
@@ -2741,12 +2803,15 @@ class _Diamond extends StatelessWidget {
   /// card's, to stand apart from those it overlaps.
   final Color? edge;
 
+  /// Its width, as laid out: unturned.
+  static const size = 7.0;
+
   @override
   Widget build(BuildContext context) => Transform.rotate(
     angle: math.pi / 4,
     child: Container(
-      width: 7,
-      height: 7,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: color,
         border: color == null
