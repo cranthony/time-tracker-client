@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/named.dart';
+import '../models/text_format.dart';
 
 /// A goal being set in the New goal sheet, kept on the device as it's
 /// typed, and never sent: until it's added, or thrown away.
@@ -14,6 +15,7 @@ class GoalDraft {
     required this.title,
     required this.day,
     this.description,
+    this.descriptionFormat,
     this.priority,
     this.parentId,
     this.withWhom = const [],
@@ -26,8 +28,11 @@ class GoalDraft {
   /// The day it's due, at its end: midnight starting it, local.
   final DateTime day;
 
-  /// HTML, as the goal's; null for none.
+  /// As the goal's; null for none.
   final String? description;
+
+  /// How [description] is written; null, as it looks.
+  final TextFormat? descriptionFormat;
 
   /// Its own priority; null to inherit its parent's.
   final int? priority;
@@ -49,6 +54,7 @@ class GoalDraft {
     title: json['title'] as String? ?? '',
     day: DateTime.parse(json['day'] as String),
     description: json['description'] as String?,
+    descriptionFormat: TextFormat.fromJson(json['description_format']),
     priority: (json['priority'] as num?)?.toInt(),
     parentId: json['parent_id'] as String?,
     withWhom: Named.listFromJson(json['with_ids']),
@@ -59,6 +65,7 @@ class GoalDraft {
     'title': title,
     'day': DateTime(day.year, day.month, day.day).toIso8601String(),
     'description': ?description,
+    'description_format': ?descriptionFormat?.wire,
     'priority': ?priority,
     'parent_id': ?parentId,
     if (withWhom.isNotEmpty) 'with_ids': namedToJson(withWhom),

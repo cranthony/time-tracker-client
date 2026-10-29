@@ -430,9 +430,14 @@ class _GoalScreenState extends State<GoalScreen> {
     final parent = tree[goal.parentId];
     final minutes = spent?.inMinutes ?? 0;
     final spentText = minutes > 0 ? ' · ${formatMinutes(minutes)} spent' : '';
-    Widget html(String? text) => text == null
+    Widget formatted(String? text, TextFormat? format) => text == null
         ? const GoalFieldEmpty('None')
-        : EventDescription(text, maxLines: null, selectable: true);
+        : EventDescription(
+            text,
+            format: format,
+            maxLines: null,
+            selectable: true,
+          );
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: Column(
@@ -573,10 +578,16 @@ class _GoalScreenState extends State<GoalScreen> {
                 ? const GoalFieldEmpty('No one')
                 : _people(context, goal),
           ),
-          GoalField(label: 'Description', child: html(goal.description)),
+          GoalField(
+            label: 'Description',
+            child: formatted(goal.description, goal.descriptionFormat),
+          ),
           GoalField(
             label: 'Definition of done',
-            child: html(goal.definitionOfDone),
+            child: formatted(
+              goal.definitionOfDone,
+              goal.definitionOfDoneFormat,
+            ),
           ),
           GoalField(
             label: 'Attribution hints',

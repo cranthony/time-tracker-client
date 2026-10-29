@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker_client/models/text_format.dart';
 import 'package:time_tracker_client/services/maps.dart';
 import 'package:time_tracker_client/widgets/event_description.dart';
 import 'package:time_tracker_client/widgets/picker_sheet.dart';
@@ -13,15 +14,59 @@ void main() {
     }
     recognizers.clear();
   });
-  List<DescriptionBlock> blocks(String text) => descriptionBlocks(
-    text,
-    linkColor: Colors.blue,
-    recognizer: (_) {
-      final r = TapGestureRecognizer();
-      recognizers.add(r);
-      return r;
-    },
-  );
+  List<DescriptionBlock> blocks(String text, {TextFormat? format}) =>
+      descriptionBlocks(
+        text,
+        format: format,
+        linkColor: Colors.blue,
+        recognizer: (_) {
+          final r = TapGestureRecognizer();
+          recognizers.add(r);
+          return r;
+        },
+      );
+
+  test('untagged, a text is HTML if it has tags, else plain text', () {
+    expect(TextFormat.of('<b>Hi</b>', null), TextFormat.html);
+    expect(TextFormat.of('**Hi**', null), TextFormat.plain);
+    expect(TextFormat.of(null, null), TextFormat.plain);
+    expect(TextFormat.of('<b>Hi</b>', TextFormat.plain), TextFormat.plain);
+    expect(TextFormat.fromJson('markdown'), TextFormat.markdown);
+    expect(TextFormat.fromJson('rtf'), isNull);
+  });
+
+  test("Markdown's paragraphs, lists, links and code are laid out as "
+      "HTML's are", () {
+    final result = blocks(
+      '**Agenda**\n\n1. One\n2. Two\n   - Two and a half\n\n'
+      'See the [doc](https://example.com), `code`.\n\n```\nlet a = 1;\n  b\n```',
+      format: TextFormat.markdown,
+    );
+    expect(
+      [for (final b in result) (b.marker, b.depth, b.span.toPlainText())],
+      [
+        (null, 0, 'Agenda'),
+        ('1.', 0, 'One'),
+        ('2.', 0, 'Two'),
+        ('◦', 1, 'Two and a half'),
+        (null, 0, 'See the doc, code.'),
+        // A code block keeps its lines and indents.
+        (null, 0, 'let a = 1;\n  b'),
+      ],
+    );
+    expect(recognizers, hasLength(1));
+    final bold = result.first.span.children!.first as TextSpan;
+    expect(bold.style?.fontWeight, FontWeight.w700);
+  });
+
+  test('a text given as plain shows its tags as typed', () {
+    final [block] = blocks('<b>Hi</b> **there**', format: TextFormat.plain);
+    expect(block.span.toPlainText(), '<b>Hi</b> **there**');
+    expect(
+      descriptionText('- **One**\n- Two', format: TextFormat.markdown),
+      '• One\n• Two',
+    );
+  });
 
   test('plain text is one paragraph, as written, its addresses links', () {
     final [block] = blocks(
@@ -103,7 +148,7 @@ void main() {
 
   testWidgets('the description sheet opens to read it, laid out, and the '
       'pencil edits it; blank, it opens to edit', (tester) async {
-    Future<String?>? result;
+    Future<FormattedText?>? result;
     Future<void> open(String? text) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -146,7 +191,7 @@ void main() {
     await tester.enterText(find.byType(TextField), ' Just text ');
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
-    expect(await result, 'Just text');
+    expect(await result, (text: 'Just text', format: TextFormat.html));
 
     await open(null);
     expect(find.byType(TextField), findsOneWidget);

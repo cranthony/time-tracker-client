@@ -14,7 +14,9 @@ class RecurringGoal {
     this.priority,
     this.expectedMinutes,
     this.description,
+    this.descriptionFormat,
     this.definitionOfDone,
+    this.definitionOfDoneFormat,
     this.attributionHints,
     this.withWhom = const [],
     this.forWhom = const [],
@@ -30,7 +32,9 @@ class RecurringGoal {
   final int? priority;
   final int? expectedMinutes;
   final String? description;
+  final TextFormat? descriptionFormat;
   final String? definitionOfDone;
+  final TextFormat? definitionOfDoneFormat;
   final String? attributionHints;
 
   /// Whom its goals are done with and for, as a goal's ([Goal.withWhom]).
@@ -53,7 +57,11 @@ class RecurringGoal {
       priority: (json['priority'] as num?)?.toInt(),
       expectedMinutes: (json['expected_minutes'] as num?)?.toInt(),
       description: _text(json['description']),
+      descriptionFormat: TextFormat.fromJson(json['description_format']),
       definitionOfDone: _text(json['definition_of_done']),
+      definitionOfDoneFormat: TextFormat.fromJson(
+        json['definition_of_done_format'],
+      ),
       attributionHints: _text(json['attribution_hints']),
       withWhom: Named.listFromJson(json['with_ids']),
       forWhom: Named.listFromJson(json['for_ids']),
@@ -68,7 +76,9 @@ class RecurringGoal {
     'priority': ?priority,
     'expected_minutes': ?expectedMinutes,
     'description': ?description,
+    'description_format': ?descriptionFormat?.wire,
     'definition_of_done': ?definitionOfDone,
+    'definition_of_done_format': ?definitionOfDoneFormat?.wire,
     'attribution_hints': ?attributionHints,
     if (withWhom.isNotEmpty) 'with_ids': namedToJson(withWhom),
     if (forWhom.isNotEmpty) 'for_ids': namedToJson(forWhom),

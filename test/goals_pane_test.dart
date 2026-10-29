@@ -11,7 +11,7 @@ import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/widgets/goal_fields.dart';
 import 'package:time_tracker_client/widgets/goal_tile.dart';
-import 'package:time_tracker_client/widgets/html_editor.dart';
+import 'package:time_tracker_client/widgets/text_editor.dart';
 import 'package:time_tracker_client/widgets/priority_chip.dart';
 
 List<Map<String, Object?>> _history(String status) => [
@@ -344,14 +344,14 @@ void main() {
     expect(memory.goals!.firstWhere((g) => g.id == 'ship').closed, isTrue);
   });
 
-  testWidgets('the HTML editor previews to the right, and keeps the cursor '
+  testWidgets('the text editor previews to the right, and keeps the cursor '
       'for coming back', (tester) async {
-    String? result;
+    FormattedText? result;
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
           builder: (context) => TextButton(
-            onPressed: () async => result = await showHtmlEditor(
+            onPressed: () async => result = await showTextEditor(
               context,
               title: 'Description',
               text: '<p>Hello <b>there</b></p>',
@@ -383,7 +383,65 @@ void main() {
 
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
-    expect(result, '<p>Hello <b>there</b></p>');
+    // Untagged, it's taken to be as it looks.
+    expect(result, (
+      text: '<p>Hello <b>there</b></p>',
+      format: TextFormat.html,
+    ));
+  });
+
+  testWidgets('the text editor starts a new text as plain text, and writes '
+      'it in the format picked, previewed so', (tester) async {
+    FormattedText? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => result = await showTextEditor(
+              context,
+              title: 'Description',
+              text: null,
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<SegmentedButton<TextFormat>>(
+            find.byType(SegmentedButton<TextFormat>),
+          )
+          .selected,
+      {TextFormat.plain},
+    );
+
+    await tester.tap(find.text('Markdown'));
+    await tester.enterText(find.byType(TextField), '**Ship** it');
+    await tester.tap(find.text('Preview'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('**', findRichText: true), findsNothing);
+    expect(find.textContaining('Ship it', findRichText: true), findsOneWidget);
+
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(result, (text: '**Ship** it', format: TextFormat.markdown));
+  });
+
+  test("a goal's texts keep how they're written, to and from the server", () {
+    final goal = Goal.fromJson({
+      'id': 'g1',
+      'title': 'Ship',
+      'description': '**Soon**',
+      'description_format': 'markdown',
+      'definition_of_done': 'Out',
+    });
+    expect(goal.descriptionFormat, TextFormat.markdown);
+    expect(goal.definitionOfDoneFormat, isNull);
+    expect(goal.toJson()['description_format'], 'markdown');
+    expect(goal.toJson().containsKey('definition_of_done_format'), isFalse);
   });
 
   testWidgets("a sub-goal's deadline can follow its parent's, a week before "

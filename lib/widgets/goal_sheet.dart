@@ -15,13 +15,13 @@ import '../services/goal_drafts.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import 'color_picker.dart' show priorityColor;
-import 'goal_editor.dart' show HtmlField;
+import 'goal_editor.dart' show FormattedField;
 import 'goal_fields.dart' show inheritedPriorityLabel;
 import 'goal_icon.dart';
 import 'hotkeys.dart';
-import 'html_editor.dart';
 import 'picker_edits.dart';
 import 'picker_sheet.dart';
+import 'text_editor.dart';
 import 'tree_picker.dart';
 
 /// Asks for a new goal's title and the day it's due (today, to begin
@@ -114,6 +114,7 @@ final class MoreGoal extends GoalSheetResult {
     required this.title,
     required this.deadline,
     this.description,
+    this.descriptionFormat,
     this.priority,
     this.parentId,
     this.withWhom = const [],
@@ -122,6 +123,7 @@ final class MoreGoal extends GoalSheetResult {
   final String title;
   final String deadline;
   final String? description;
+  final TextFormat? descriptionFormat;
 
   /// Its own priority; null to inherit its parent's.
   final int? priority;
@@ -191,6 +193,7 @@ class _GoalSheetState extends State<_GoalSheet> {
   };
 
   late String? _description = widget.drafts?.draft?.description;
+  late TextFormat? _descriptionFormat = widget.drafts?.draft?.descriptionFormat;
 
   /// Its own priority; null to inherit its parent's.
   late int? _priority = widget.drafts?.draft?.priority;
@@ -292,6 +295,7 @@ class _GoalSheetState extends State<_GoalSheet> {
           title: _title.text,
           day: _day,
           description: _description,
+          descriptionFormat: _descriptionFormat,
           priority: _priority,
           parentId: _parentId,
           withWhom: [..._with],
@@ -521,14 +525,19 @@ class _GoalSheetState extends State<_GoalSheet> {
     _keepDraft();
   }
 
-  Future<void> _editHtml(
-    String title,
-    String? text,
-    ValueChanged<String?> set,
-  ) async {
-    final edited = await showHtmlEditor(context, title: title, text: text);
+  /// Edits its description in [showTextEditor].
+  Future<void> _editDescription() async {
+    final edited = await showTextEditor(
+      context,
+      title: 'Description',
+      text: _description,
+      format: _descriptionFormat,
+    );
     if (edited == null || !mounted) return;
-    setState(() => set(edited.isEmpty ? null : edited));
+    setState(() {
+      _description = edited.text.isEmpty ? null : edited.text;
+      _descriptionFormat = edited.format;
+    });
     _keepDraft();
   }
 
@@ -539,6 +548,7 @@ class _GoalSheetState extends State<_GoalSheet> {
     'status': 'active',
     'parent_id': ?_parentId,
     'description': ?_description,
+    if (_description != null) 'description_format': ?_descriptionFormat?.wire,
     'priority': ?_priority,
     if (_with.isNotEmpty) 'with_ids': namedToJson(_with),
     if (_for.isNotEmpty) 'for_ids': namedToJson(_for),
@@ -585,6 +595,7 @@ class _GoalSheetState extends State<_GoalSheet> {
       title: _title.text.trim(),
       deadline: deadlineOf(_day),
       description: _description,
+      descriptionFormat: _descriptionFormat,
       priority: _priority,
       parentId: _parentId,
       withWhom: [..._with],
@@ -758,14 +769,11 @@ class _GoalSheetState extends State<_GoalSheet> {
             ),
             FieldHotkey(
               'S',
-              child: HtmlField(
+              child: FormattedField(
                 label: 'Description',
                 text: _description,
-                onTap: () => _editHtml(
-                  'Description',
-                  _description,
-                  (v) => _description = v,
-                ),
+                format: _descriptionFormat,
+                onTap: _editDescription,
               ),
             ),
             for (final error in [?problem, ?_keepError])

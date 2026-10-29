@@ -81,6 +81,7 @@ Future<Goal?> addGoalInSheet(
     title: result.title,
     deadline: result.deadline,
     description: result.description,
+    descriptionFormat: result.descriptionFormat,
     priority: result.priority,
     withWhom: result.withWhom,
     forWhom: result.forWhom,
@@ -256,7 +257,8 @@ class GoalActions {
   }
 
   /// Adds a goal under [parent] (the top level, if null), starting with
-  /// [title], [deadline], [description] and [priority], and the
+  /// [title], [deadline], [description] (written in [descriptionFormat])
+  /// and [priority], and the
   /// people and circles it's done with ([withWhom]) and for ([forWhom]),
   /// if they're given. Returns it as saved; null if it wasn't.
   Future<Goal?> add({
@@ -264,6 +266,7 @@ class GoalActions {
     String? title,
     String? deadline,
     String? description,
+    TextFormat? descriptionFormat,
     int? priority,
     List<Named> withWhom = const [],
     List<Named> forWhom = const [],
@@ -275,6 +278,7 @@ class GoalActions {
       title: title,
       deadline: deadline,
       description: description,
+      descriptionFormat: descriptionFormat,
       priority: priority,
       withWhom: withWhom,
       forWhom: forWhom,

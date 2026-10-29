@@ -1,43 +1,50 @@
 import 'package:flutter/material.dart';
 
+import '../models/text_format.dart';
 import 'event_description.dart';
 import 'hotkeys.dart';
+import 'text_format_picker.dart';
 
-/// Edits [text], HTML, on a page of its own: a large box to type it in,
+/// Edits [text], written in [format], on a page of its own: how it's
+/// written (plain text, Markdown or HTML) over a large box to type it in,
 /// and to its right, a swipe away, how it reads ([EventDescription]).
-/// Swiping back to the box puts the cursor, and what was selected, back
-/// as they were. Either side can save or call it off. Gives what's typed
-/// ("" for nothing), or null if it's called off.
-Future<String?> showHtmlEditor(
+/// With no [format], it starts as the text looks -- plain text when
+/// there's none. Swiping back to the box puts the cursor, and what was
+/// selected, back as they were. Either side can save or call it off.
+/// Gives what's typed ("" for nothing) and its format, or null if it's
+/// called off.
+Future<FormattedText?> showTextEditor(
   BuildContext context, {
   required String title,
   required String? text,
-  String hint = 'HTML, or plain text',
-}) => Navigator.of(context).push<String>(
+  TextFormat? format,
+}) => Navigator.of(context).push<FormattedText>(
   MaterialPageRoute(
     fullscreenDialog: true,
-    builder: (_) => HtmlEditorPage(title: title, text: text, hint: hint),
+    builder: (_) => TextEditorPage(title: title, text: text, format: format),
   ),
 );
 
-class HtmlEditorPage extends StatefulWidget {
-  const HtmlEditorPage({
+class TextEditorPage extends StatefulWidget {
+  const TextEditorPage({
     super.key,
     required this.title,
     required this.text,
-    this.hint = 'HTML, or plain text',
+    this.format,
   });
 
   final String title;
   final String? text;
-  final String hint;
+  final TextFormat? format;
 
   @override
-  State<HtmlEditorPage> createState() => _HtmlEditorPageState();
+  State<TextEditorPage> createState() => _TextEditorPageState();
 }
 
-class _HtmlEditorPageState extends State<HtmlEditorPage> {
+class _TextEditorPageState extends State<TextEditorPage> {
   late final _controller = TextEditingController(text: widget.text ?? '');
+  late final _initialFormat = TextFormat.of(widget.text, widget.format);
+  late var _format = _initialFormat;
   final _focus = FocusNode();
   final _pages = PageController();
   var _page = 0;
@@ -45,7 +52,9 @@ class _HtmlEditorPageState extends State<HtmlEditorPage> {
   /// Where the cursor was, and what was selected, as the box was left.
   TextSelection? _left;
 
-  bool get _changed => _controller.text.trim() != (widget.text ?? '').trim();
+  bool get _changed =>
+      _controller.text.trim() != (widget.text ?? '').trim() ||
+      _format != _initialFormat;
 
   @override
   void dispose() {
@@ -76,7 +85,9 @@ class _HtmlEditorPageState extends State<HtmlEditorPage> {
     curve: Curves.easeOut,
   );
 
-  void _save() => Navigator.of(context).pop(_controller.text.trim());
+  void _save() =>
+      Navigator.of(context)
+          .pop<FormattedText>((text: _controller.text.trim(), format: _format));
 
   @override
   Widget build(BuildContext context) {
@@ -134,23 +145,37 @@ class _HtmlEditorPageState extends State<HtmlEditorPage> {
           children: [
             Padding(
               padding: const EdgeInsets.all(12),
-              child: TextField(
-                controller: _controller,
-                focusNode: _focus,
-                autofocus: true,
-                expands: true,
-                maxLines: null,
-                minLines: null,
-                keyboardType: TextInputType.multiline,
-                textAlignVertical: TextAlignVertical.top,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontFamily: 'monospace',
-                ),
-                decoration: InputDecoration(
-                  hintText: widget.hint,
-                  border: const OutlineInputBorder(),
-                ),
-                onChanged: (_) => setState(() {}),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextFormatPicker(
+                    format: _format,
+                    onChanged: (format) => setState(() => _format = format),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      focusNode: _focus,
+                      autofocus: true,
+                      expands: true,
+                      maxLines: null,
+                      minLines: null,
+                      keyboardType: TextInputType.multiline,
+                      textAlignVertical: TextAlignVertical.top,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontFamily: _format == TextFormat.plain
+                            ? null
+                            : 'monospace',
+                      ),
+                      decoration: InputDecoration(
+                        hintText: formatHint(_format),
+                        border: const OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                ],
               ),
             ),
             ListenableBuilder(
@@ -164,6 +189,7 @@ class _HtmlEditorPageState extends State<HtmlEditorPage> {
                       )
                     : EventDescription(
                         _controller.text,
+                        format: _format,
                         maxLines: null,
                         selectable: true,
                       ),

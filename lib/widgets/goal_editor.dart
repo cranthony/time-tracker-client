@@ -14,7 +14,7 @@ import 'goal_color.dart';
 import 'goal_fields.dart';
 import 'goal_icon.dart';
 import 'goal_starts.dart';
-import 'html_editor.dart';
+import 'text_editor.dart';
 import 'picker_sheet.dart';
 import 'tree_picker.dart';
 
@@ -23,9 +23,9 @@ import 'tree_picker.dart';
 /// date, and a time if wanted -- or, for a sub-goal, its parent's, or
 /// some days or weeks before it, following it), priority (its own, or
 /// its parent's, inherited), expected time, whether
-/// its parent needs it, its description and definition of done (HTML, in
-/// [showHtmlEditor]), the hints for telling its events, and the people
-/// it's done with and for (picked as an event's are) -- laid out, and
+/// its parent needs it, its description and definition of done (plain
+/// text, Markdown or HTML, in [showTextEditor]), the hints for telling
+/// its events, and the people it's done with and for (picked as an event's are) -- laid out, and
 /// its bar titled, as the goal's page has them ([GoalField],
 /// [GoalBarTitle]). A new one
 /// starts active, or inactive if chosen; an active one needs a deadline.
@@ -49,6 +49,7 @@ Future<Map<String, Object?>?> showGoalEditor(
   String? title,
   String? deadline,
   String? description,
+  TextFormat? descriptionFormat,
   int? priority,
   List<Named> withWhom = const [],
   List<Named> forWhom = const [],
@@ -66,6 +67,7 @@ Future<Map<String, Object?>?> showGoalEditor(
       title: title,
       deadline: deadline,
       description: description,
+      descriptionFormat: descriptionFormat,
       priority: priority,
       withWhom: withWhom,
       forWhom: forWhom,
@@ -86,6 +88,7 @@ class GoalEditorPage extends StatefulWidget {
     this.title,
     this.deadline,
     this.description,
+    this.descriptionFormat,
     this.priority,
     this.withWhom = const [],
     this.forWhom = const [],
@@ -103,6 +106,7 @@ class GoalEditorPage extends StatefulWidget {
   final String? title;
   final String? deadline;
   final String? description;
+  final TextFormat? descriptionFormat;
   final int? priority;
 
   /// A new goal's people and circles, to begin with: who it's done with,
@@ -180,7 +184,10 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   late int? _priority = _goal?.priority ?? widget.priority;
   late String? _color = _goal?.backgroundColor;
   late String? _description = _goal?.description ?? widget.description;
+  late TextFormat? _descriptionFormat =
+      _goal?.descriptionFormat ?? widget.descriptionFormat;
   late String? _definitionOfDone = _goal?.definitionOfDone;
+  late TextFormat? _definitionOfDoneFormat = _goal?.definitionOfDoneFormat;
   late List<Named> _with = [...(_goal?.withWhom ?? widget.withWhom)];
   late List<Named> _for = [...(_goal?.forWhom ?? widget.forWhom)];
 
@@ -255,7 +262,14 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     'expected_minutes': _expected,
     'required': widget.parent == null ? null : _required,
     'description': _description,
+    // A text cleared takes its format with it, on the server.
+    'description_format': _description == null
+        ? null
+        : _descriptionFormat?.wire,
     'definition_of_done': _definitionOfDone,
+    'definition_of_done_format': _definitionOfDone == null
+        ? null
+        : _definitionOfDoneFormat?.wire,
     'attribution_hints': _text(_hints),
   };
 
@@ -292,7 +306,13 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
       'expected_minutes': goal.expectedMinutes,
       'required': goal.parentId == null ? null : goal.required,
       'description': goal.description,
+      'description_format': goal.description == null
+          ? null
+          : goal.descriptionFormat?.wire,
       'definition_of_done': goal.definitionOfDone,
+      'definition_of_done_format': goal.definitionOfDone == null
+          ? null
+          : goal.definitionOfDoneFormat?.wire,
       'attribution_hints': goal.attributionHints,
     };
     return {
@@ -411,14 +431,24 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     );
   }
 
-  Future<void> _editHtml(
+  /// Edits [text], written in [format], in [showTextEditor], setting it
+  /// (null for nothing) and its format with [set] once it's saved.
+  Future<void> _editText(
     String title,
     String? text,
-    ValueChanged<String?> set,
+    TextFormat? format,
+    void Function(String? text, TextFormat format) set,
   ) async {
-    final edited = await showHtmlEditor(context, title: title, text: text);
+    final edited = await showTextEditor(
+      context,
+      title: title,
+      text: text,
+      format: format,
+    );
     if (edited == null || !mounted) return;
-    setState(() => set(edited.isEmpty ? null : edited));
+    setState(
+      () => set(edited.text.isEmpty ? null : edited.text, edited.format),
+    );
   }
 
   /// Picks the goal its deadline comes after: any other goal but one
@@ -789,18 +819,37 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
         ),
         GoalField(
           label: 'Description',
-          onTap: () =>
-              _editHtml('Description', _description, (v) => _description = v),
-          child: _html(_description, 'Add description'),
+          onTap: () => _editText(
+            'Description',
+            _description,
+            _descriptionFormat,
+            (text, format) {
+              _description = text;
+              _descriptionFormat = format;
+            },
+          ),
+          child: _formatted(
+            _description,
+            _descriptionFormat,
+            'Add description',
+          ),
         ),
         GoalField(
           label: 'Definition of done',
-          onTap: () => _editHtml(
+          onTap: () => _editText(
             'Definition of done',
             _definitionOfDone,
-            (v) => _definitionOfDone = v,
+            _definitionOfDoneFormat,
+            (text, format) {
+              _definitionOfDone = text;
+              _definitionOfDoneFormat = format;
+            },
           ),
-          child: _html(_definitionOfDone, 'Add definition of done'),
+          child: _formatted(
+            _definitionOfDone,
+            _definitionOfDoneFormat,
+            'Add definition of done',
+          ),
         ),
         GoalField(
           label: 'Attribution hints',
@@ -819,10 +868,12 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     );
   }
 
-  /// An HTML field's [text] as it reads, or [empty] while there's none.
-  static Widget _html(String? text, String empty) => text == null
+  /// A field's [text], written in [format], as it reads, or [empty]
+  /// while there's none.
+  static Widget _formatted(String? text, TextFormat? format, String empty) =>
+      text == null
       ? GoalFieldEmpty(empty)
-      : EventDescription(text, maxLines: 4, expandable: false);
+      : EventDescription(text, format: format, maxLines: 4, expandable: false);
 }
 
 /// Names people and circles by id from [memory]: an id it doesn't know,
@@ -846,18 +897,20 @@ String? goalPeopleLabel(
   return parts.isEmpty ? null : parts.join(' · ');
 }
 
-/// An HTML field, as it reads, tapped to edit: "Add [label]" while
-/// there's nothing in it.
-class HtmlField extends StatelessWidget {
-  const HtmlField({
+/// A field of free text, written in [format], as it reads, tapped to
+/// edit: "Add [label]" while there's nothing in it.
+class FormattedField extends StatelessWidget {
+  const FormattedField({
     super.key,
     required this.label,
     required this.text,
+    this.format,
     required this.onTap,
   });
 
   final String label;
   final String? text;
+  final TextFormat? format;
   final VoidCallback onTap;
 
   @override
@@ -877,7 +930,12 @@ class HtmlField extends StatelessWidget {
                   Text(label, style: theme.textTheme.labelLarge),
                   const SizedBox(height: 4),
                   if (text case final text?)
-                    EventDescription(text, maxLines: 4, expandable: false)
+                    EventDescription(
+                      text,
+                      format: format,
+                      maxLines: 4,
+                      expandable: false,
+                    )
                   else
                     Text(
                       'Add ${label.toLowerCase()}',
