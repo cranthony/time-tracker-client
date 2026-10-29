@@ -1,4 +1,5 @@
 import '../models/goal.dart';
+import 'goal_color.dart';
 import 'goal_icon.dart';
 
 import 'dart:math' as math;
@@ -387,22 +388,31 @@ List<({DateTime start, DateTime end})> eventOverlaps(
   return overlaps;
 }
 
-/// The color [event] is shown in: its primary action's, if [actions] has it
-/// and it has one, or else its priority's.
-Color eventColor(Event event, Map<String, PlanAction> actions) {
+/// The color [event] is shown in: the one its primary action was given
+/// ([PlanAction.chosenColor]), if [actions] has it; else the first of its
+/// goals' in [goalColors] -- those given one ([chosenGoalColors]); else
+/// its priority's, from its actions and goals alike.
+Color eventColor(
+  Event event,
+  Map<String, PlanAction> actions, {
+  Map<String, Color> goalColors = const {},
+}) {
   final action = switch (event.actionIds) {
     [final id, ...] => actions[id],
     _ => null,
   };
-  return (action == null
-          ? null
-          : parseColor(action.effectiveColor ?? action.backgroundColor)) ??
+  return parseColor(action?.chosenColor) ??
+      [for (final g in event.goals) ?goalColors[g.goalId]].firstOrNull ??
       priorityColor(event.effectivePriority);
 }
 
 /// [event]'s [eventColor] as it's drawn: fainter if it's cancelled.
-Color _shownColor(Event event, Map<String, PlanAction> actions) {
-  final color = eventColor(event, actions);
+Color _shownColor(
+  Event event,
+  Map<String, PlanAction> actions,
+  Map<String, Color> goalColors,
+) {
+  final color = eventColor(event, actions, goalColors: goalColors);
   return event.isCancelled ? color.withValues(alpha: _cancelledAlpha) : color;
 }
 
@@ -417,10 +427,11 @@ bool _seamAbove(
   List<TimelinePlacement> placements,
   int i,
   Map<String, PlanAction> actions,
+  Map<String, Color> goalColors,
 ) {
   if (i == 0 || placements[i - 1].bottom < placements[i].top) return false;
-  final a = _shownColor(placements[i - 1].event, actions);
-  final b = _shownColor(placements[i].event, actions);
+  final a = _shownColor(placements[i - 1].event, actions, goalColors);
+  final b = _shownColor(placements[i].event, actions, goalColors);
   return (a.r - b.r).abs() <= _seamTolerance &&
       (a.g - b.g).abs() <= _seamTolerance &&
       (a.b - b.b).abs() <= _seamTolerance &&
@@ -509,6 +520,7 @@ class DayTimeline extends StatelessWidget {
     this.personNames = const {},
     this.locationNames = const {},
     this.goalNames = const {},
+    this.goalColors = const {},
     this.scale = defaultTimelineScale,
     this.now,
     this.lastCompaction,
@@ -589,6 +601,10 @@ class DayTimeline extends StatelessWidget {
   /// event's actions where there's room. One not among them isn't listed
   /// (deleted since), though it's counted.
   final Map<String, String> goalNames;
+
+  /// The colors goals were given, by id ([chosenGoalColors]), for the
+  /// events with no color from their primary action.
+  final Map<String, Color> goalColors;
   final double scale;
   final DateTime? now;
 
@@ -770,6 +786,7 @@ class DayTimeline extends StatelessWidget {
       scale: scale,
       events: events,
       actions: actions,
+      goalColors: goalColors,
       runs: runs,
       weather: weather,
       sun: weather == null ? const [] : sun,
@@ -863,11 +880,13 @@ class DayTimeline extends StatelessWidget {
                             joinedBelow:
                                 i + 1 < placements.length &&
                                 placements[i + 1].top <= placement.bottom,
-                            seamColor: _seamAbove(placements, i, actions)
+                            seamColor:
+                                _seamAbove(placements, i, actions, goalColors)
                                 ? theme.scaffoldBackgroundColor
                                 : null,
                             actions: actions,
                             goalNames: goalNames,
+                            goalColors: goalColors,
                             details: _details(placement.event),
                             styles: styles,
                             onTap: onTap == null
@@ -1887,6 +1906,7 @@ class _EventCard extends StatelessWidget {
     required this.seamColor,
     required this.actions,
     this.goalNames = const {},
+    this.goalColors = const {},
     required this.details,
     required this.styles,
     required this.onTap,
@@ -1912,6 +1932,9 @@ class _EventCard extends StatelessWidget {
 
   /// Goals' titles by id.
   final Map<String, String> goalNames;
+
+  /// The colors goals were given, by id.
+  final Map<String, Color> goalColors;
 
   /// The names of its locations, of the people with the user, and of
   /// those it was for, listed down its right where there's room.
@@ -1946,7 +1969,7 @@ class _EventCard extends StatelessWidget {
     };
     final ids = event.actionIds;
     final names = event.actionNames;
-    final outline = _shownColor(event, actions);
+    final outline = _shownColor(event, actions, goalColors);
     final muted = colors.onSurfaceVariant;
     final strike = cancelled ? TextDecoration.lineThrough : null;
     final duration = formatDuration(event.end.difference(event.start));
@@ -3264,6 +3287,7 @@ class _RailPainter extends CustomPainter {
     required this.scale,
     required this.events,
     required this.actions,
+    required this.goalColors,
     required this.runs,
     required this.weather,
     required this.sun,
@@ -3288,6 +3312,7 @@ class _RailPainter extends CustomPainter {
   final double scale;
   final List<Event> events;
   final Map<String, PlanAction> actions;
+  final Map<String, Color> goalColors;
   final List<PriorityRun> runs;
 
   /// The forecast, drawn on the band in place of the [runs].
@@ -3666,7 +3691,7 @@ class _RailPainter extends CustomPainter {
     const left = _eventBandLeft;
     const right = _eventBandLeft + _eventBandWidth;
     for (final p in placements) {
-      final color = _shownColor(p.event, actions);
+      final color = _shownColor(p.event, actions, goalColors);
       // Exactly where its card is, if it's drawn at its times; and no
       // thinner than a line, if it has none.
       final top = p.trueTop;
@@ -3694,7 +3719,7 @@ class _RailPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = _seamWidth;
     for (final (i, p) in placements.indexed) {
-      if (!_seamAbove(placements, i, actions)) continue;
+      if (!_seamAbove(placements, i, actions, goalColors)) continue;
       // Just below its top, as the strip's is.
       const down = _seamWidth / 2;
       canvas.drawPath(
@@ -3713,6 +3738,7 @@ class _RailPainter extends CustomPainter {
       old.day != day ||
       old.events != events ||
       old.actions != actions ||
+      old.goalColors != goalColors ||
       !listEquals(old.weather, weather) ||
       !listEquals(old.sun, sun) ||
       old.sunColor != sunColor ||

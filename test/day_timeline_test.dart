@@ -207,6 +207,64 @@ void main() {
         priorityColor(null),
       );
     });
+
+    // P2's color, from its priority alone, as the server says.
+    final byPriority = {
+      'read': PlanAction.fromJson({
+        'id': 'read',
+        'name': 'Read',
+        'priority': 2,
+        'effective_color': '#039be5',
+        'chosen_color': null,
+      }),
+    };
+    const goalColors = {'ship': Color(0xFF123456)};
+
+    test("is its priority's, from its actions and goals, when its primary "
+        "action's color is only its own priority's", () {
+      expect(
+        eventColor(
+          event(
+            'E',
+            at(1),
+            at(2),
+            actions: ['read'],
+            goals: ['learn'],
+            priority: 1,
+          ),
+          byPriority,
+        ),
+        priorityColor(1),
+      );
+    });
+
+    test("is the first of its goals' colors that was given one, when its "
+        "primary action wasn't", () {
+      expect(
+        eventColor(
+          event(
+            'E',
+            at(1),
+            at(2),
+            actions: ['read'],
+            goals: ['learn', 'ship'],
+            priority: 1,
+          ),
+          byPriority,
+          goalColors: goalColors,
+        ),
+        const Color(0xFF123456),
+      );
+      // Its primary action's comes first.
+      expect(
+        eventColor(
+          event('E', at(1), at(2), actions: ['host'], goals: ['ship']),
+          actions,
+          goalColors: goalColors,
+        ),
+        const Color(0xFFF4511E),
+      );
+    });
   });
 
   group('DayTimeline', () {

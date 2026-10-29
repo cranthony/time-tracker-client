@@ -13,6 +13,7 @@ import '../services/app_settings.dart';
 import '../services/weather.dart';
 import '../services/event_store.dart';
 import '../widgets/day_timeline.dart' show eventColor;
+import '../widgets/goal_color.dart' show chosenGoalColors;
 import '../widgets/goals_due_strip.dart' show goalsDueOn;
 
 /// A tap on the Android home screen calendar: on an event, its time and
@@ -198,6 +199,7 @@ Map<String, Object?>? calendarSnapshot(
   final byId = {for (final a in actions) ?a.id: a};
   // Every goal, for the priorities the active ones inherit.
   final tree = GoalTree(goals);
+  final goalColors = chosenGoalColors(goals);
   final days = <Map<String, Object?>>[];
   for (var i = 0; i < CalendarWidget.days; i++) {
     final day = DateTime(now.year, now.month, now.day + i);
@@ -215,7 +217,7 @@ Map<String, Object?>? calendarSnapshot(
       if (due.length > 2) 'more_goals': due.length - 2,
       'events': [
         for (final e in store.between(from, next))
-          if (!e.isCancelled) _event(e, byId),
+          if (!e.isCancelled) _event(e, byId, goalColors),
       ],
     });
   }
@@ -307,12 +309,16 @@ String skyEmoji(Sky sky, {bool daytime = true}) => switch (sky) {
   Sky.thunderstorm => '⛈️',
 };
 
-Map<String, Object?> _event(Event e, Map<String, PlanAction> actions) => {
+Map<String, Object?> _event(
+  Event e,
+  Map<String, PlanAction> actions,
+  Map<String, Color> goalColors,
+) => {
   'id': e.id,
   'summary': e.summary,
   'start': e.start.millisecondsSinceEpoch,
   'end': e.end.millisecondsSinceEpoch,
-  'color': eventColor(e, actions).toARGB32(),
+  'color': eventColor(e, actions, goalColors: goalColors).toARGB32(),
 };
 
 /// When the widget showing [snapshot] needs drawing again: as each of its

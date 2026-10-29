@@ -63,6 +63,16 @@ void main() {
     expect(colorOfGoal(_goal('listed')), priorityColor(defaultGoalPriority));
   });
 
+  test("the colors goals were given are their own or their parents', "
+      "never their priority's", () {
+    expect(chosenGoalColors(_goals), {
+      'top': const Color(0xFF123456),
+      'mid': const Color(0xFF123456),
+      'leaf': const Color(0xFF123456),
+      'own': const Color(0xFF654321),
+    });
+  });
+
   test('its own color goes to the server; the one it shows never does', () {
     final goal = _goal('mid', parent: 'top', effective: '#123456');
     expect(goal.toJson()['effective_color'], '#123456');

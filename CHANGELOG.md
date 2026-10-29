@@ -9,6 +9,16 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.225.0
+
+- An event's color is its primary action's only if that action, or a
+  group it's in, was given one. Otherwise it's the color given to the
+  first of its goals that has one (its own or a parent's), or else its
+  priority's, which now takes in its goals too. So an event with a P2
+  action and a P1 goal, neither colored, is P1's color, as the band
+  beside it says. Needs the server's chosen_color; with an older server,
+  events keep their actions' colors.
+
 ## 7.224.1
 
 - An event's priority, when it hasn't one of its own, is the highest of

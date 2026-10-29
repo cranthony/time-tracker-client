@@ -55,6 +55,15 @@ class PlanAction {
   /// to say.
   final String? effectiveColor;
 
+  /// The color it was given: [backgroundColor], or its nearest parent's
+  /// that has one; null if its color is only its priority's. From a
+  /// server too old to say, [effectiveColor].
+  String? get chosenColor =>
+      backgroundColor ??
+      (properties.containsKey('chosen_color')
+          ? properties['chosen_color'] as String?
+          : effectiveColor);
+
   /// The priority its events take: [priority], or its nearest ancestor's;
   /// null if none of them has one. From a server too old to say, it's
   /// [priority].
