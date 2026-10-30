@@ -7,17 +7,30 @@ import 'token_store.dart';
 
 /// Keeps the app signed in to the MCP server: hands out a valid access
 /// token, refreshing it when needed, and runs the browser sign-in on request.
+///
+/// Or, with [cookieSession], has the server keep the tokens: the web app
+/// has nowhere safe to keep them (whatever a page stores, a script in it
+/// can read), so the browser sign-in ends at the server's `/session`,
+/// which seals the tokens in an HttpOnly cookie the browser sends with
+/// every request (credentialedClient) and the server refreshes itself.
+/// This app then holds no token at all: it connects, and the server's
+/// 401 is what says to sign in.
 class AuthSession implements McpAuth {
   AuthSession({
     required this._oauth,
     required this._store,
     this._receiver,
     TokenStore? registrationStore,
+    this.cookieSession = false,
     DateTime Function()? clock,
   }) : _registrationStore = registrationStore ?? _store,
        _clock = clock ?? DateTime.now;
 
   final OAuthClient _oauth;
+
+  /// Whether the server keeps the tokens, in its session cookie (see the
+  /// class docs), rather than this app in [_store].
+  final bool cookieSession;
 
   /// Holds the tokens.
   final TokenStore _store;
@@ -45,8 +58,11 @@ class AuthSession implements McpAuth {
     return _tokens != null;
   }
 
+  /// With [cookieSession], there's never one to send: the browser sends
+  /// the cookie instead, so this says to go without (see [McpClient]).
   @override
   Future<String> accessToken() async {
+    if (cookieSession) throw SignInRequiredException();
     await _load();
     final tokens = _tokens;
     if (tokens == null) throw SignInRequiredException();
@@ -83,7 +99,11 @@ class AuthSession implements McpAuth {
       rethrow;
     }
     final redirect = await receiver.authorize(pending.url);
-    await _save(await _oauth.finishAuthorization(client, pending, redirect));
+    if (cookieSession) {
+      await _oauth.startSession(client, pending, redirect);
+    } else {
+      await _save(await _oauth.finishAuthorization(client, pending, redirect));
+    }
   }
 
   /// Forgets the cached tokens, so the next use reads them from the store
@@ -97,6 +117,7 @@ class AuthSession implements McpAuth {
   Future<void> signOut() async {
     _tokens = null;
     await _store.delete(_tokensKey);
+    if (cookieSession) await _oauth.endSession();
   }
 
   Future<TokenSet> _refresh() => _refreshing ??= () async {
