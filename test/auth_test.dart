@@ -26,8 +26,23 @@ class _FakeAuthKit {
 
   final proxied = <String>[];
 
+  /// The MCP server's /session: each sign-in's JSON, and how many times
+  /// the browser was signed out; [refuseSession] is its 403, if any.
+  final sessions = <Map<String, dynamic>>[];
+  int sessionsEnded = 0;
+  Map<String, Object?>? refuseSession;
+
   late final client = MockClient((request) async {
     var url = request.url.toString();
+    if (url == 'https://tt.example.com/session') {
+      if (request.method == 'DELETE') {
+        sessionsEnded++;
+        return http.Response('', 204);
+      }
+      if (refuseSession != null) return _json(refuseSession!, 403);
+      sessions.add(jsonDecode(request.body) as Map<String, dynamic>);
+      return http.Response('', 204);
+    }
     // The MCP server's forwarding routes (OAuthClient.viaResourceServer).
     if (url.startsWith('https://tt.example.com/oauth/')) {
       proxied.add(request.url.path);
@@ -201,6 +216,78 @@ void main() {
       startsWith('$_authkit/oauth2/authorize'),
     );
     expect(await auth.accessToken(), 'access_1');
+  });
+
+  group('with the server keeping the tokens, in its cookie', () {
+    AuthSession cookieSession() => AuthSession(
+      oauth: OAuthClient(
+        mcpEndpoint: Uri.parse(_mcp),
+        clientName: 'Time Tracker (test)',
+        viaResourceServer: true,
+        httpClient: authKit.client,
+        clock: () => now,
+      ),
+      store: store,
+      receiver: receiver,
+      cookieSession: true,
+      clock: () => now,
+    );
+
+    test('never has a token to send: the browser sends the cookie', () async {
+      await expectLater(
+        cookieSession().accessToken(),
+        throwsA(isA<SignInRequiredException>()),
+      );
+    });
+
+    test('signs in through the server, which gets the code', () async {
+      final auth = cookieSession();
+      await auth.signIn();
+
+      // Registered as usual; the code went to the server, not AuthKit.
+      expect(authKit.proxied, ['/oauth/register']);
+      expect(authKit.tokenRequests, isEmpty);
+      final started = authKit.sessions.single;
+      expect(started['code'], 'the_code');
+      expect(started['redirect_uri'], 'http://localhost:47291/callback');
+      expect(started['client_id'], 'client_123');
+      // With the verifier for the challenge sent earlier, so the server
+      // can trade the code.
+      final params = receiver.lastAuthorizationUrl!.queryParameters;
+      final challenge = base64UrlEncode(
+        sha256.convert(ascii.encode(started['code_verifier'] as String)).bytes,
+      ).replaceAll('=', '');
+      expect(params['code_challenge'], challenge);
+      // Still no token here, and none stored: the server has them.
+      await expectLater(
+        auth.accessToken(),
+        throwsA(isA<SignInRequiredException>()),
+      );
+      expect(store.values.keys, ['oauth_client:$_mcp']);
+    });
+
+    test('says why the server refused the sign-in', () async {
+      authKit.refuseSession = {
+        'error': 'access_denied',
+        'error_description': "This user isn't allowed to use this server",
+      };
+      await expectLater(
+        cookieSession().signIn(),
+        throwsA(
+          isA<OAuthException>().having(
+            (e) => e.toString(),
+            'message',
+            contains("This user isn't allowed to use this server"),
+          ),
+        ),
+      );
+      expect(authKit.sessions, isEmpty);
+    });
+
+    test('signs out by having the server drop the cookie', () async {
+      await cookieSession().signOut();
+      expect(authKit.sessionsEnded, 1);
+    });
   });
 
   test('can keep the registration apart from the tokens', () async {

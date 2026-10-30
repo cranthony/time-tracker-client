@@ -115,9 +115,11 @@ class OAuthClient {
     required this.clientName,
     this.viaResourceServer = false,
     http.Client? httpClient,
+    http.Client? sessionHttpClient,
     DateTime Function()? clock,
     Random? random,
   }) : _http = httpClient ?? http.Client(),
+       _sessionHttp = sessionHttpClient ?? httpClient ?? http.Client(),
        _clock = clock ?? DateTime.now,
        _random = random ?? Random.secure();
 
@@ -131,6 +133,12 @@ class OAuthClient {
   final bool viaResourceServer;
 
   final http.Client _http;
+
+  /// For the MCP server's `/session` only: on the web, one that takes
+  /// the cookie it sets (credentialedClient). The other requests go
+  /// without credentials, as AuthKit's metadata, read cross-origin,
+  /// allows any origin but no credentials.
+  final http.Client _sessionHttp;
   final DateTime Function() _clock;
   final Random _random;
 
@@ -258,7 +266,16 @@ class OAuthClient {
     ClientRegistration client,
     PendingAuthorization pending,
     Uri redirect,
-  ) async {
+  ) async => _tokenRequest(client, {
+    'grant_type': 'authorization_code',
+    'code': authorizationCode(pending, redirect),
+    'redirect_uri': client.redirectUri,
+    'code_verifier': pending.codeVerifier,
+  });
+
+  /// The authorization code in the browser's redirect back to us, once
+  /// that's checked to answer [pending].
+  String authorizationCode(PendingAuthorization pending, Uri redirect) {
     final params = redirect.queryParameters;
     if (params['error'] != null) {
       throw OAuthException(
@@ -272,13 +289,54 @@ class OAuthClient {
     if (code == null) {
       throw OAuthException('Sign-in failed: no code in redirect');
     }
+    return code;
+  }
 
-    return _tokenRequest(client, {
-      'grant_type': 'authorization_code',
-      'code': code,
-      'redirect_uri': client.redirectUri,
-      'code_verifier': pending.codeVerifier,
-    });
+  /// The MCP server's `/session`: where the web app's sign-in cookie is
+  /// set and dropped (see [AuthSession.cookieSession]).
+  Uri get sessionUrl =>
+      mcpEndpoint.replace(path: '/session', query: null, fragment: null);
+
+  /// Checks the browser's redirect back to us and has the MCP server
+  /// trade its code for tokens, which the server keeps, sealed in the
+  /// cookie its answer sets; this app never sees them. Needs a
+  /// `sessionHttpClient` that takes cookies (credentialedClient).
+  Future<void> startSession(
+    ClientRegistration client,
+    PendingAuthorization pending,
+    Uri redirect,
+  ) async {
+    final code = authorizationCode(pending, redirect);
+    final response = await _sessionHttp.post(
+      sessionUrl,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: jsonEncode({
+        'code': code,
+        'code_verifier': pending.codeVerifier,
+        'redirect_uri': client.redirectUri,
+        'client_id': client.clientId,
+      }),
+    );
+    if (response.statusCode == 204) return;
+    // Not a success: says why (AuthKit's refusal, or the server's).
+    _decode(response, 'Sign-in');
+    throw OAuthException(
+      'Sign-in failed (HTTP ${response.statusCode}): no session cookie',
+    );
+  }
+
+  /// Has the MCP server drop the browser's session cookie. The cookie
+  /// expires by itself, so a failure here (the server unreachable, say)
+  /// isn't an error.
+  Future<void> endSession() async {
+    try {
+      await _sessionHttp.delete(sessionUrl);
+    } on http.ClientException {
+      // Offline, or the server's down: nothing to do.
+    }
   }
 
   Future<TokenSet> refresh(

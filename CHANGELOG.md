@@ -9,6 +9,19 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.229.0
+
+- The web app stays signed in. It no longer holds its tokens at all:
+  the sign-in ends at the server's `/session`, which keeps them sealed
+  in an HttpOnly cookie the browser sends with every request and the
+  server refreshes itself, so a page reload no longer means signing in
+  again. A sign-in lasts 7 days unused, and each use extends it. Needs
+  a server with `SESSION_SECRET` set, and the app served from the same
+  site as the server; for an older server, build with
+  `--dart-define=SESSION_COOKIE=false`. The Pages build takes the
+  path it's served under from Pages itself, so a custom domain needs
+  no change to the workflow.
+
 ## 7.228.0
 
 - A recurring goal's habit edits its goals' description, in the format

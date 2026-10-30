@@ -263,17 +263,44 @@ MCP server's `/oauth/register` and `/oauth/token`, which forward them to
 AuthKit: AuthKit's own endpoints don't allow browser calls (no CORS
 headers). Nothing needs configuring in WorkOS for this.
 
+### Staying signed in
+
+A page has nowhere safe to keep a token: whatever it stores, a script in
+it can read and carry off. So the web app doesn't keep one. It ends the
+sign-in at the server's `/session`, which trades the code for tokens and
+keeps them sealed in an `HttpOnly` cookie the browser sends with every
+request and the server refreshes itself (the server README's "Keeping
+the web app signed in"); the app only sees the server's 401 when it's
+time to sign in again. A sign-in lasts 7 days unused, and each use
+extends it.
+
+That needs a server with `SESSION_SECRET` set, and the app served from
+the same site as the server -- `localhost`, the server itself, or a
+subdomain of the server's domain, since cookies don't travel to another
+site. For a server without it, build with
+`--dart-define=SESSION_COOKIE=false`: the app then keeps its tokens in
+memory, and signs in again on each page load.
+
 ### Hosted on GitHub Pages
 
-Every push to `main` builds the web app and publishes it to
-<https://cranthony.github.io/time-tracker-client/>
+Every push to `main` builds the web app and publishes it to GitHub Pages
 ([.github/workflows/pages.yml](.github/workflows/pages.yml)). It needs:
 
 - **Pages** set to deploy from GitHub Actions (Settings → Pages → Source).
 - The repository variable **`MCP_URL`** (Settings → Secrets and variables
   → Actions → Variables), the same value as in `config.json`.
-- The server's **`MCP_CORS_ALLOWED_ORIGINS`** set to
-  `https://cranthony.github.io` (on Render: the service's Environment tab).
+- The server's **`MCP_CORS_ALLOWED_ORIGINS`** set to the site's origin
+  (on Render: the service's Environment tab).
+
+The site is a subdomain of the server's domain (`app.example.com` beside
+`mcp.example.com`), so that the [sign-in cookie](#staying-signed-in)
+travels between them: a CNAME record for it pointing at
+`<owner>.github.io`, and the domain entered under Settings → Pages →
+Custom domain. The build takes the path Pages serves the site under
+from Pages itself (`actions/configure-pages`), so it needs no change
+for a custom domain; at the default address
+(`https://<owner>.github.io/<repo>/`, another site than the server's)
+the cookie can't travel, and the app signs in again on each page load.
 
 #### Content-Security-Policy
 

@@ -8,6 +8,8 @@ import 'auth/auth_session.dart';
 import 'auth/oauth.dart';
 import 'auth/platform_receiver.dart'
     if (dart.library.js_interop) 'auth/platform_receiver_web.dart';
+import 'auth/credentialed_http.dart'
+    if (dart.library.js_interop) 'auth/credentialed_http_web.dart';
 import 'auth/token_store.dart';
 import 'demo/google_calendar_sample.dart';
 import 'demo/sample_data.dart';
@@ -64,6 +66,18 @@ import 'widgets/sign_in_off_banner.dart';
 /// one, such as /mcp (see [serverEndpoint]). Without it the app runs
 /// against an in-memory demo store.
 const _mcpUrl = String.fromEnvironment('MCP_URL');
+
+/// Whether the web app stays signed in with the server's session cookie
+/// (see [AuthSession.cookieSession]), which a server with SESSION_SECRET
+/// set offers; it must be same-site with the app. Otherwise -- off the
+/// web, or built with `--dart-define=SESSION_COOKIE=false` for a server
+/// without it -- the app holds its tokens itself, and on the web only
+/// in memory, so signs in again on each page load.
+const _sessionCookie = bool.fromEnvironment(
+  'SESSION_COOKIE',
+  defaultValue: true,
+);
+final bool _cookieSession = kIsWeb && _sessionCookie;
 
 /// [_mcpUrl] as a full URL: a relative one resolved against the page.
 final Uri _endpoint = serverEndpoint(_mcpUrl, web: kIsWeb);
@@ -410,20 +424,28 @@ AuthSession _authSession({required bool interactive}) => AuthSession(
     mcpEndpoint: _endpoint,
     clientName: 'Time Tracker ($platformName)',
     viaResourceServer: oauthViaResourceServer,
+    sessionHttpClient: _cookieSession ? credentialedClient() : null,
   ),
   // The web has no secure storage (see SecureTokenStore), so there the
-  // tokens are only ever in memory: reloading the page means signing in
-  // again.
+  // tokens are the server's to keep, in its cookie -- or, without that,
+  // only ever in memory: reloading the page means signing in again.
   store: kIsWeb ? InMemoryTokenStore() : const SecureTokenStore(),
   registrationStore: const SecureTokenStore(),
+  cookieSession: _cookieSession,
   // The background task can't sign in, and mustn't take over the app's
   // sign-in redirect handling if WorkManager runs it in the app's process.
   receiver: interactive ? platformRedirectReceiver() : null,
 );
 
-/// The server's client, signing in with [auth] when the server asks.
+/// The server's client, signing in with [auth] when the server asks --
+/// sending the browser's session cookie, where that's how it's signed in.
 McpClient _client(AuthSession? auth, ClientHealthRecorder health) =>
-    serverClient(_endpoint, auth: auth, health: health);
+    serverClient(
+      _endpoint,
+      auth: auth,
+      health: health,
+      httpClient: _cookieSession ? credentialedClient() : null,
+    );
 
 class TimeTrackerApp extends StatefulWidget {
   const TimeTrackerApp({
