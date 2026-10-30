@@ -819,8 +819,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.widgetWithText(TextField, '2'), findsOneWidget);
       await tester.tap(find.text('Month'));
-      // Its definition of done and note are edited as a goal's, in the
-      // format picked: HTML, here, and Markdown.
+      // Its description, definition of done and note are edited as a
+      // goal's, in the format picked: Markdown, HTML and Markdown.
+      await tester.tap(find.text('Add description'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Markdown'));
+      await tester.enterText(find.byType(TextField).last, 'Ask about *work*');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('Add description'), findsNothing);
       await tester.tap(find.text('Add definition of done'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('HTML'));
@@ -850,6 +857,8 @@ void main() {
       expect(habit.actionId, '');
       expect(habit.recurringGoal!.toJson(), {
         'period': 'month',
+        'description': 'Ask about *work*',
+        'description_format': 'markdown',
         'definition_of_done': '<p>We talked for <b>20</b> minutes</p>',
         'definition_of_done_format': 'html',
         'rate_periods': 3,
