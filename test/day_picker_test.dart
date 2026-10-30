@@ -148,6 +148,59 @@ void main() {
     expect(picked, DateTime(2026, 5, 6));
   });
 
+  testWidgets('Enter goes with the day picked, as Ctrl+Enter does', (
+    tester,
+  ) async {
+    await open(tester);
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(picked, DateTime(2026, 10, 30));
+
+    await open(tester);
+    await tester.tap(find.text('12'));
+    await tester.pumpAndSettle();
+    await press(tester, LogicalKeyboardKey.keyJ);
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(picked, DateTime(2026, 10, 13));
+  });
+
+  testWidgets('Enter on a button Tab went to presses it', (tester) async {
+    await open(tester);
+    await press(tester, LogicalKeyboardKey.keyJ);
+    final cancel = find.ancestor(
+      of: find.text('Cancel'),
+      matching: find.byType(TextButton),
+    );
+    Focus.of(tester.element(find.text('Cancel'))).requestFocus();
+    await tester.pumpAndSettle();
+    expect(cancel, findsOneWidget);
+    await press(tester, LogicalKeyboardKey.enter);
+    expect(closed, isTrue);
+    expect(picked, isNull);
+  });
+
+  testWidgets('a title, for what it is for', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () => showDayPicker(
+              context,
+              initialDate: DateTime(2026, 10, 30),
+              firstDate: DateTime(2000),
+              lastDate: DateTime(2100),
+              helpText: 'Try again by',
+            ),
+            child: const Text('Pick'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Pick'));
+    await tester.pumpAndSettle();
+    expect(find.text('Try again by'), findsOneWidget);
+    expect(find.text('Select date'), findsNothing);
+  });
+
   testWidgets('Esc calls it off', (tester) async {
     await open(tester);
     await press(tester, LogicalKeyboardKey.keyJ);

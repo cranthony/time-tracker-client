@@ -7,6 +7,7 @@ import '../models/share.dart';
 import '../models/note.dart';
 import '../services/mcp_client.dart';
 import '../services/server_errors.dart';
+import 'day_picker.dart';
 import 'hotkeys.dart';
 import 'waiting_note.dart';
 import 'error_sheet.dart';
@@ -1115,8 +1116,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
   }
 
   Future<void> _pickDay() async {
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await showDayPicker(
+      context,
       initialDate: _draft as DateTime? ?? DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
@@ -1127,8 +1128,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
 
   Future<void> _pickDate() async {
     final current = _draft as DateTime;
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await showDayPicker(
+      context,
       initialDate: current,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),

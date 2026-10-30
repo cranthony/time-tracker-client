@@ -9,6 +9,15 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.231.0
+
+- Every date picker is the one the Events page's D opens, keys and
+  all: a goal's deadline and its retry, when a goal starts, an event's
+  day and when it stops repeating, a proposal's due date, and a
+  property's date.
+- Enter goes with the day picked too, as Ctrl+Enter does -- except on
+  a button or a day that Tab went to, which Enter presses.
+
 ## 7.230.0
 
 - On the Events page, D picks a day to go to, as the date in the title

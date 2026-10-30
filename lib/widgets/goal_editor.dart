@@ -6,6 +6,7 @@ import '../models/facts.dart';
 import '../models/goal.dart';
 import '../models/goal_changes.dart';
 import '../services/plan_memory.dart';
+import 'day_picker.dart';
 import 'color_picker.dart';
 import 'duration_field.dart';
 import 'edit_page.dart';
@@ -391,8 +392,8 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
         : deadlineHasTime(_deadline)
         ? at
         : at.subtract(const Duration(days: 1));
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await showDayPicker(
+      context,
       initialDate: day ?? now,
       firstDate: DateTime(now.year - 5),
       lastDate: DateTime(now.year + 20),

@@ -250,8 +250,8 @@ class Hotkey {
     HotkeyPlace.dayPicker,
   );
   static const pickerDone = Hotkey(
-    'Ctrl+Enter',
-    'Go with the day picked, as OK does -- or Enter, typing it',
+    'Enter / Ctrl+Enter',
+    'Go with the day picked, as OK does, typing it or not',
     HotkeyPlace.dayPicker,
   );
 

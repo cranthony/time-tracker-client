@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/repeat.dart';
+import 'day_picker.dart';
 
 /// Edits how a series [repeat]s: every day, week, month or year, how many
 /// of them apart, on which weekdays (for weeks), and when it ends. Calls
@@ -177,8 +178,8 @@ class RepeatEditor extends StatelessWidget {
       final until? => DateTime.parse(until),
       null => DateTime(firstStart.year, firstStart.month + 3, firstStart.day),
     };
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await showDayPicker(
+      context,
       initialDate: current.isBefore(firstStart) ? firstStart : current,
       firstDate: DateTime(firstStart.year, firstStart.month, firstStart.day),
       lastDate: DateTime(2100),
