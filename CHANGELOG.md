@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.228.0
+
+- A recurring goal's habit edits its goals' description, in the format
+  picked, beside their definition of done. Changed, it goes with the
+  goals made from then on; one already made keeps its own, edited on
+  its page.
+
 ## 7.227.0
 
 - The goal picker opened from an event searches for its summary at

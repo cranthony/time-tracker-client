@@ -104,7 +104,11 @@ class _HabitEditorState extends State<_HabitEditor> {
     text: widget.habit?.recurringGoal?.title,
   );
 
-  /// Its goals' definition of done, and how it's written, as a goal's.
+  /// Its goals' description and definition of done, and how each is
+  /// written, as a goal's.
+  late String? _description = widget.habit?.recurringGoal?.description;
+  late TextFormat? _descriptionFormat =
+      widget.habit?.recurringGoal?.descriptionFormat;
   late String? _definitionOfDone =
       widget.habit?.recurringGoal?.definitionOfDone;
   late TextFormat? _definitionOfDoneFormat =
@@ -158,8 +162,8 @@ class _HabitEditorState extends State<_HabitEditor> {
       title: _text(_goalTitle),
       priority: was.priority,
       expectedMinutes: was.expectedMinutes,
-      description: was.description,
-      descriptionFormat: was.descriptionFormat,
+      description: _description,
+      descriptionFormat: _description == null ? null : _descriptionFormat,
       definitionOfDone: _definitionOfDone,
       definitionOfDoneFormat: _definitionOfDone == null
           ? null
@@ -562,6 +566,20 @@ class _HabitEditorState extends State<_HabitEditor> {
           isDense: true,
           floatingLabelBehavior: FloatingLabelBehavior.always,
         ),
+      ),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: _formattedField(
+        theme,
+        'Description',
+        _description,
+        _descriptionFormat,
+        'Each goal is made with it; changed, it goes with those to come.',
+        (text, format) {
+          _description = text;
+          _descriptionFormat = format;
+        },
       ),
     ),
     Padding(
