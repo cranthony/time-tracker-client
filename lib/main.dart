@@ -56,6 +56,7 @@ import 'platform/device_location.dart';
 import 'demo/weather_sample.dart';
 import 'services/work_timing.dart';
 import 'theme.dart';
+import 'widgets/focus_keeper.dart';
 import 'widgets/hotkeys.dart';
 import 'widgets/sheet_warnings_banner.dart';
 import 'widgets/sign_in_off_banner.dart';
@@ -863,6 +864,8 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         );
         // Over every screen and dialog, while the server skips sign-in.
         scoped = SignInOffBanner(child: scoped);
+        // The cursor back in its text field, once the app's in front again.
+        scoped = FocusKeeper(child: scoped);
         return HotkeyScope(hotkeys: _hotkeys, child: scoped);
       },
       home: HomeScreen(

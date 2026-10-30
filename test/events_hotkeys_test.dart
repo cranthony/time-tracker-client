@@ -146,6 +146,26 @@ void main() {
     expect(find.byKey(ValueKey(('shown', at(30, 0)))), findsWidgets);
   });
 
+  testWidgets('D picks a day by keys; Ctrl+Enter goes to it', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    await press(tester, LogicalKeyboardKey.keyD);
+    expect(hotkeys.dialogOpen, isTrue);
+    // From the 30th: two on, into October, and a month on.
+    await press(tester, LogicalKeyboardKey.keyJ);
+    await press(tester, LogicalKeyboardKey.keyJ);
+    await press(tester, LogicalKeyboardKey.keyL);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(hotkeys.dialogOpen, isFalse);
+    expect(
+      find.byKey(ValueKey(('shown', DateTime(2026, 11, 2)))),
+      findsWidgets,
+    );
+  });
+
   testWidgets('the arrow keys scroll by the step in Settings', (tester) async {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();

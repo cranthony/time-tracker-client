@@ -9,6 +9,20 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.230.0
+
+- On the Events page, D picks a day to go to, as the date in the title
+  does. The date picker is at home on a keyboard: J and K pick the next
+  day and the one before, on into the next month or back into the one
+  before; H and L go a month back and on; the arrows go a day or a
+  week; T picks today; and Ctrl+Enter goes with the day picked, as OK
+  does. E types the date instead, shown selected to type over, and
+  Enter goes with it.
+- The cursor goes back to the text field it was in once the app has
+  focus again, after another window or browser tab had it. A browser
+  closed the field's input as its window lost focus, so it was let go
+  of, and nothing put it back.
+
 ## 7.229.0
 
 - The web app stays signed in. It no longer holds its tokens at all:
