@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 enum HotkeyPlace {
   anywhere('Anywhere'),
   events('On the Events page'),
+  dayPicker('In the date picker'),
   creating('Making or moving an event'),
   event('In an event'),
   plan('On the Plan page'),
@@ -194,6 +195,11 @@ class Hotkey {
     HotkeyPlace.events,
   );
   static const now = Hotkey('T', 'Go to now', HotkeyPlace.events);
+  static const pickDay = Hotkey(
+    'D',
+    'Pick a day to go to, in the date picker',
+    HotkeyPlace.events,
+  );
   static const create = Hotkey(
     'C / +',
     'Make an event: a cursor, at the end of the event highlighted, or now',
@@ -218,6 +224,35 @@ class Hotkey {
     'Esc',
     'Leave it, as ✕ does',
     HotkeyPlace.creating,
+  );
+
+  static const pickerDays = Hotkey(
+    'J / K',
+    'Pick the next day (J) or the one before (K), on into the next month '
+        'or back into the one before',
+    HotkeyPlace.dayPicker,
+  );
+  static const pickerArrows = Hotkey(
+    '← → / ↑ ↓',
+    'Pick the day before or after (← →), or a week before or after (↑ ↓)',
+    HotkeyPlace.dayPicker,
+  );
+  static const pickerMonths = Hotkey(
+    'H / L',
+    'Go a month back (H) or on (L), to the same day of it',
+    HotkeyPlace.dayPicker,
+  );
+  static const pickerToday = Hotkey('T', 'Pick today', HotkeyPlace.dayPicker);
+  static const pickerTyped = Hotkey(
+    'E',
+    'Type the date: it shows selected, to type over. Esc leaves the text, '
+        'and E then goes back to the calendar',
+    HotkeyPlace.dayPicker,
+  );
+  static const pickerDone = Hotkey(
+    'Ctrl+Enter',
+    'Go with the day picked, as OK does -- or Enter, typing it',
+    HotkeyPlace.dayPicker,
   );
 
   static const who = Hotkey('W', 'Who it was with and for', HotkeyPlace.event);
@@ -321,11 +356,18 @@ class Hotkey {
     days,
     scroll,
     now,
+    pickDay,
     create,
     moveCursor,
     setStart,
     setEnd,
     leaveMode,
+    pickerDays,
+    pickerArrows,
+    pickerMonths,
+    pickerToday,
+    pickerTyped,
+    pickerDone,
     who,
     location,
     description,

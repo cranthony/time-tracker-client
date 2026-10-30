@@ -60,6 +60,7 @@ import '../widgets/hotkeys.dart';
 import '../widgets/cursor_sheet.dart';
 import '../widgets/cursor_snap.dart';
 import '../widgets/app_menu.dart';
+import '../widgets/day_picker.dart';
 import '../widgets/day_header.dart';
 import '../widgets/day_summary.dart';
 import '../widgets/pending_event_box.dart';
@@ -2980,6 +2981,7 @@ class _EventsScreenState extends State<EventsScreen> {
       () => _scrollByKey(later: true),
     ),
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyT), _goToNow),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyD), _pickDay),
     for (final key in const [LogicalKeyboardKey.keyC, LogicalKeyboardKey.add])
       HotkeyBinding(HotkeyTrigger.key(key), () {
         if (_box != null || _selecting != null || _noteAt != null) return;
@@ -5234,12 +5236,14 @@ class _EventsScreenState extends State<EventsScreen> {
     _pages.animateToPage(page, duration: _slide, curve: Curves.easeInOut);
   }
 
+  /// The title's button, or D: a day to go to, picked by keys or taps.
   Future<void> _pickDay() async {
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await showDayPicker(
+      context,
       initialDate: _day,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
+      currentDate: widget.clock(),
     );
     if (picked != null && mounted) _goToDay(_midnight(picked));
   }
@@ -5298,12 +5302,15 @@ class _EventsScreenState extends State<EventsScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: TextButton.icon(
-            onPressed: _pickDay,
-            icon: const Icon(Icons.calendar_today, size: 18),
-            label: Text(dayLabel(context, _day, today)),
-            style: TextButton.styleFrom(
-              textStyle: Theme.of(context).textTheme.titleLarge,
+          title: HotkeyHint(
+            Hotkey.pickDay,
+            child: TextButton.icon(
+              onPressed: _pickDay,
+              icon: const Icon(Icons.calendar_today, size: 18),
+              label: Text(dayLabel(context, _day, today)),
+              style: TextButton.styleFrom(
+                textStyle: Theme.of(context).textTheme.titleLarge,
+              ),
             ),
           ),
           actions: [
