@@ -320,12 +320,25 @@ class OAuthClient {
         'client_id': client.clientId,
       }),
     );
-    if (response.statusCode == 204) return;
-    // Not a success: says why (AuthKit's refusal, or the server's).
-    _decode(response, 'Sign-in');
-    throw OAuthException(
-      'Sign-in failed (HTTP ${response.statusCode}): no session cookie',
-    );
+    if (response.statusCode != 204) {
+      // Not a success: says why (AuthKit's refusal, or the server's).
+      _decode(response, 'Sign-in');
+      throw OAuthException(
+        'Sign-in failed (HTTP ${response.statusCode}): no session cookie',
+      );
+    }
+    // The cookie only travels within the server's site: served from
+    // another, the browser drops it, and every request would be a 401.
+    // Better to say so now.
+    final kept = await _sessionHttp.get(sessionUrl);
+    if (kept.statusCode != 204) {
+      throw OAuthException(
+        "Signed in, but the browser didn't keep the sign-in cookie "
+        '(HTTP ${kept.statusCode}). The app has to be served from the '
+        "server's own site for it to: see the README's "
+        '"Staying signed in".',
+      );
+    }
   }
 
   /// Has the MCP server drop the browser's session cookie. The cookie

@@ -32,12 +32,20 @@ class _FakeAuthKit {
   int sessionsEnded = 0;
   Map<String, Object?>? refuseSession;
 
+  /// Whether the browser dropped the cookie: GET /session finds none.
+  bool cookieLost = false;
+
   late final client = MockClient((request) async {
     var url = request.url.toString();
     if (url == 'https://tt.example.com/session') {
       if (request.method == 'DELETE') {
         sessionsEnded++;
         return http.Response('', 204);
+      }
+      if (request.method == 'GET') {
+        return cookieLost
+            ? _json({'error': 'invalid_token'}, 401)
+            : http.Response('', 204);
       }
       if (refuseSession != null) return _json(refuseSession!, 403);
       sessions.add(jsonDecode(request.body) as Map<String, dynamic>);
@@ -282,6 +290,21 @@ void main() {
         ),
       );
       expect(authKit.sessions, isEmpty);
+    });
+
+    test('says so when the browser dropped the cookie', () async {
+      authKit.cookieLost = true;
+      await expectLater(
+        cookieSession().signIn(),
+        throwsA(
+          isA<OAuthException>().having(
+            (e) => e.toString(),
+            'message',
+            contains("didn't keep the sign-in cookie"),
+          ),
+        ),
+      );
+      expect(authKit.sessions, hasLength(1));
     });
 
     test('signs out by having the server drop the cookie', () async {
