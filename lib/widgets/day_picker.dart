@@ -9,9 +9,9 @@ import 'hotkeys.dart';
 /// to start with, as [showDatePicker] does -- but at home on a keyboard:
 /// J and K pick the next day and the one before, on across months; H
 /// and L go a month back and on; T picks [currentDate], today; E types
-/// it, the date selected to type over; and Ctrl+Enter goes with it, as
-/// OK does. [typed] starts it typing. The day picked, or null if it's
-/// called off.
+/// it, the date selected to type over; and Enter or Ctrl+Enter goes
+/// with it, as OK does. [typed] starts it typing; [helpText] says what it's for,
+/// over the date. The day picked, or null if it's called off.
 Future<DateTime?> showDayPicker(
   BuildContext context, {
   required DateTime initialDate,
@@ -19,6 +19,7 @@ Future<DateTime?> showDayPicker(
   required DateTime lastDate,
   DateTime? currentDate,
   bool typed = false,
+  String? helpText,
 }) => showDialog<DateTime>(
   context: context,
   builder: (context) => DayPickerDialog(
@@ -27,6 +28,7 @@ Future<DateTime?> showDayPicker(
     lastDate: lastDate,
     currentDate: currentDate,
     typed: typed,
+    helpText: helpText,
   ),
 );
 
@@ -39,6 +41,7 @@ class DayPickerDialog extends StatefulWidget {
     required this.lastDate,
     this.currentDate,
     this.typed = false,
+    this.helpText,
   });
 
   final DateTime initialDate;
@@ -46,6 +49,9 @@ class DayPickerDialog extends StatefulWidget {
   final DateTime lastDate;
   final DateTime? currentDate;
   final bool typed;
+
+  /// What it's for, over the date: "Select date", without it.
+  final String? helpText;
 
   @override
   State<DayPickerDialog> createState() => _DayPickerDialogState();
@@ -175,6 +181,17 @@ class _DayPickerDialogState extends State<DayPickerDialog> {
       _toggleTyped,
     ),
     HotkeyBinding(const HotkeyTrigger.ctrl(LogicalKeyboardKey.enter), _done),
+    // Enter alone too, on the calendar -- not on a button or a day that
+    // Tab went to, which Enter presses.
+    for (final key in const [
+      LogicalKeyboardKey.enter,
+      LogicalKeyboardKey.numpadEnter,
+    ])
+      HotkeyBinding(
+        HotkeyTrigger.key(key),
+        _done,
+        when: () => FocusManager.instance.primaryFocus == _focus,
+      ),
   ];
 
   @override
@@ -229,7 +246,7 @@ class _DayPickerDialogState extends State<DayPickerDialog> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 16, 12, 0),
                   child: Text(
-                    localizations.datePickerHelpText,
+                    widget.helpText ?? localizations.datePickerHelpText,
                     style: theme.textTheme.labelLarge,
                   ),
                 ),

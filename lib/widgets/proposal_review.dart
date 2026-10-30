@@ -7,6 +7,7 @@ import '../models/goal.dart'
     show EventGoals, deadlineEnd, deadlineOf, goalStatuses;
 import '../models/proposal.dart';
 import '../outbox/proposal_notices.dart';
+import 'day_picker.dart';
 import 'hotkeys.dart';
 import 'error_sheet.dart';
 import 'day_timeline.dart';
@@ -2171,8 +2172,8 @@ Future<CreateAddition?> activateGoal(
 }) async {
   final today = now();
   final given = deadlineEnd(addition.deadline);
-  final picked = await showDatePicker(
-    context: context,
+  final picked = await showDayPicker(
+    context,
     helpText: 'Due by',
     initialDate: given == null || given.isBefore(today)
         ? today

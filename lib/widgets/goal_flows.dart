@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'day_picker.dart';
 import 'durations.dart';
 import '../models/event.dart';
 import '../models/goal.dart';
@@ -24,8 +25,8 @@ Future<String?> pickRetryDeadline(
   String? deadline,
 }) async {
   final start = DateTime(today.year, today.month, today.day);
-  final day = await showDatePicker(
-    context: context,
+  final day = await showDayPicker(
+    context,
     initialDate: DateTime(start.year, start.month, start.day + 1),
     firstDate: start,
     lastDate: DateTime(start.year + 10),
@@ -608,8 +609,8 @@ class GoalActions {
   Future<void> retime(Goal goal, int index) async {
     final entry = goal.history[index];
     final at = entry.at.toLocal();
-    final day = await showDatePicker(
-      context: context,
+    final day = await showDayPicker(
+      context,
       initialDate: at,
       firstDate: DateTime(at.year - 10),
       lastDate: DateTime(at.year + 10),
@@ -957,8 +958,8 @@ class _DeadlinesDialogState extends State<_DeadlinesDialog> {
 
   Future<void> _date(Goal goal) async {
     final now = widget.now;
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await showDayPicker(
+      context,
       initialDate: now,
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 20),

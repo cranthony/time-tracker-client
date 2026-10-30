@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
 import '../models/goal_activation.dart';
+import 'day_picker.dart';
 import 'duration_field.dart';
 import 'durations.dart';
 import 'goal_icon.dart';
@@ -248,8 +249,8 @@ class GoalStartsEditor extends StatelessWidget {
 
   Future<void> _pickDay(BuildContext context) async {
     final today = now();
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await showDayPicker(
+      context,
       initialDate: today.add(const Duration(days: 1)),
       firstDate: DateTime(today.year - 1),
       lastDate: DateTime(today.year + 20),

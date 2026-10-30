@@ -21,6 +21,7 @@ import '../services/mcp_client.dart';
 import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
+import 'day_picker.dart';
 import 'error_sheet.dart';
 import 'color_picker.dart';
 import 'event_description.dart';
@@ -1412,8 +1413,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
 
   Future<void> _pickDate(String key) async {
     final current = _time(key);
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await showDayPicker(
+      context,
       initialDate: current,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),

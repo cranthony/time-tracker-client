@@ -1,4 +1,5 @@
 import 'people_picker.dart' show circleNode;
+import 'day_picker.dart';
 import 'circle_icon.dart';
 
 import 'dart:async';
@@ -317,8 +318,8 @@ class _GoalSheetState extends State<_GoalSheet> {
   }
 
   Future<void> _pickDay() async {
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await showDayPicker(
+      context,
       initialDate: _day,
       firstDate: _today,
       lastDate: DateTime(_today.year + 20),
