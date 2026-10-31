@@ -16,6 +16,7 @@ import '../widgets/goal_editor.dart';
 import '../widgets/goal_color.dart';
 import '../widgets/goal_fields.dart';
 import '../widgets/goal_flows.dart';
+import '../widgets/goal_icon.dart';
 import '../widgets/goal_reorder_list.dart';
 import '../widgets/goal_starts.dart';
 import '../widgets/goal_tile.dart';
@@ -30,7 +31,8 @@ import 'person_pages.dart';
 /// is -- as its edit page's bar has them ([GoalBarTitle]). Below, its
 /// fields as its edit page lays them out ([GoalField]), each said even
 /// with nothing in it: its title in full, as the bar may cut it short;
-/// its status, with what can change it, and when it
+/// its parent, tapped to open its page, with Move to change it (or, at
+/// the top level, to put it under one); its status, with what can change it, and when it
 /// started and closed; its deadline, and how it follows its parent's;
 /// its priority, its own or where it's inherited from; its expected time
 /// and the time spent; whether its parent needs it; its people, each
@@ -340,6 +342,28 @@ class _GoalScreenState extends State<GoalScreen> {
     );
   }
 
+  /// The goal [goal]'s under, tapped to open its page -- or that it's at
+  /// the top level -- and Move to put it under another, or at the top.
+  Widget _parent(Goal goal, Goal? parent) => Wrap(
+    spacing: 8,
+    runSpacing: 4,
+    crossAxisAlignment: WrapCrossAlignment.center,
+    children: [
+      if (parent == null)
+        const GoalFieldEmpty('None: at the top level')
+      else
+        ActionChip(
+          avatar: const GoalIcon(size: 16),
+          label: Text(goalTitle(parent)),
+          onPressed: () => _open(parent),
+        ),
+      OutlinedButton(
+        onPressed: () => _actions.move(goal),
+        child: Text(parent == null ? 'Put it under a goal…' : 'Move…'),
+      ),
+    ],
+  );
+
   /// What [goal]'s status can change to, with what each's called.
   static List<(String, String)> _statusMoves(Goal goal) =>
       switch (goal.status) {
@@ -445,6 +469,7 @@ class _GoalScreenState extends State<GoalScreen> {
         children: [
           // In full, wrapping as it needs: the bar's is often cut short.
           GoalField(label: 'Title', child: Text(goalTitle(goal))),
+          GoalField(label: 'Parent', child: _parent(goal, parent)),
           GoalField(label: 'Status', child: _status(goal)),
           if (goal.startedAt case final at?)
             GoalField(label: 'Started', child: Text(_when(context, at))),

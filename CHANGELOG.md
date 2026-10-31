@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.237.0
+
+- A goal's page has its parent under its title: tapped, it opens the
+  parent's page, and Move… beside it puts the goal under another goal or
+  at the top level. A top-level goal's says so, with a button to put it
+  under one. Tab gets to them; J and K still go only through its
+  sub-goals.
+
 ## 7.236.0
 
 - The Plan page's Goals pane lists every goal, sub-goals too, as a tree:
