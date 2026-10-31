@@ -6,8 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.235.0
 
-
+- On the Events page, G goes to the day's goals in the strip over the
+  timeline, O to the goals overdue, and U to the upcoming ones -- the
+  strip shown first, if it's collapsed, or saying there are none. There,
+  Tab and Shift+Tab go from goal to goal, round all of them; Enter
+  opens the one with focus, and Esc leaves them.
 
 ## 7.234.0
 

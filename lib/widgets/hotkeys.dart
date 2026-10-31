@@ -198,6 +198,27 @@ class Hotkey {
     HotkeyPlace.events,
   );
   static const now = Hotkey('T', 'Go to now', HotkeyPlace.events);
+  static const dayGoals = Hotkey(
+    'G',
+    "Go to the day's goals, in the strip over the timeline",
+    HotkeyPlace.events,
+  );
+  static const overdueGoals = Hotkey(
+    'O',
+    'Go to the goals overdue, on today',
+    HotkeyPlace.events,
+  );
+  static const upcomingGoals = Hotkey(
+    'U',
+    'Go to the upcoming goals',
+    HotkeyPlace.events,
+  );
+  static const tabGoals = Hotkey(
+    'Tab / Shift+Tab',
+    'In the goals, go to the next (Tab) or the one before (Shift+Tab), '
+        'round all of them; Enter opens it, and Esc leaves them',
+    HotkeyPlace.events,
+  );
   static const pickDay = Hotkey(
     'D',
     'Pick a day to go to, in the date picker',
@@ -412,6 +433,10 @@ class Hotkey {
     days,
     scroll,
     now,
+    dayGoals,
+    overdueGoals,
+    upcomingGoals,
+    tabGoals,
     pickDay,
     create,
     moveCursor,
