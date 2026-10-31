@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
+import 'day_picker.dart';
 import 'durations.dart';
 import 'goal_tile.dart' show DepthBars;
 
@@ -137,3 +138,42 @@ String inheritedPriorityLabel(GoalTree tree, String? parentId) {
         ].reversed.where((g) => g.priority != null).firstOrNull;
   return from == null ? 'the default' : 'inherited from “${goalTitle(from)}”';
 }
+
+/// Asks for a deadline, from [firstDate] to [lastDate], in a
+/// [showDayTimePicker], so it can be given a time of day too: [deadline]'s
+/// day, and its time if it has one, to start with -- or [initialDate],
+/// without it. The deadline picked, or null if it's called off.
+Future<String?> pickDeadline(
+  BuildContext context, {
+  String? deadline,
+  required DateTime initialDate,
+  required DateTime firstDate,
+  required DateTime lastDate,
+  String? helpText,
+}) async {
+  final at = deadlineEnd(deadline);
+  final timed = at != null && deadlineHasTime(deadline);
+  final picked = await showDayTimePicker(
+    context,
+    initialDate: switch (at) {
+      null => initialDate,
+      _ when timed => at,
+      _ => at.subtract(const Duration(days: 1)),
+    },
+    initialTime: timed ? TimeOfDay.fromDateTime(at) : null,
+    firstDate: firstDate,
+    lastDate: lastDate,
+    helpText: helpText,
+  );
+  return picked == null ? null : deadlineAt(picked);
+}
+
+/// [picked] as a deadline: the day, due at its end -- or at the time
+/// picked on it.
+String deadlineAt(DayAndTime picked) => switch (picked) {
+  (:final day, time: null) => deadlineOf(day),
+  (:final day, :final time?) => deadlineOf(
+    DateTime(day.year, day.month, day.day, time.hour, time.minute),
+    time: true,
+  ),
+};

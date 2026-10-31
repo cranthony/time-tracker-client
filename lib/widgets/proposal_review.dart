@@ -3,15 +3,14 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/facts.dart';
-import '../models/goal.dart'
-    show EventGoals, deadlineEnd, deadlineOf, goalStatuses;
+import '../models/goal.dart' show EventGoals, deadlineEnd, goalStatuses;
 import '../models/proposal.dart';
 import '../outbox/proposal_notices.dart';
-import 'day_picker.dart';
 import 'hotkeys.dart';
 import 'error_sheet.dart';
 import 'day_timeline.dart';
 import 'goal_editor.dart' show deadlineLabel;
+import 'goal_fields.dart' show pickDeadline;
 import 'goal_flows.dart' show pickRetryDeadline;
 import 'recap_markdown.dart';
 import 'time_summary.dart';
@@ -2172,17 +2171,16 @@ Future<CreateAddition?> activateGoal(
 }) async {
   final today = now();
   final given = deadlineEnd(addition.deadline);
-  final picked = await showDayPicker(
+  final picked = await pickDeadline(
     context,
     helpText: 'Due by',
-    initialDate: given == null || given.isBefore(today)
-        ? today
-        : given.subtract(const Duration(days: 1)),
+    deadline: given == null || given.isBefore(today) ? null : addition.deadline,
+    initialDate: today,
     firstDate: DateTime(today.year, today.month, today.day),
     lastDate: DateTime(today.year + 20),
   );
   if (picked == null) return null;
-  return CreateAddition(addition.name, null, deadline: deadlineOf(picked));
+  return CreateAddition(addition.name, null, deadline: picked);
 }
 
 /// It's [id], already there.

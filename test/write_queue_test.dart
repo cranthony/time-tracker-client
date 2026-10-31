@@ -60,38 +60,41 @@ void main() {
 
   tearDown(() => queue.dispose());
 
-  test("a fetch of one kind lets go of what's saved of that kind only", () async {
-    queue.shown(WriteKind.goal, [
-      {'id': 'g1', 'title': 'Text', 'status': 'active', 'version': 1},
-    ]);
-    queue.create(WriteKind.location, {'name': 'Home'});
-    queue.update(WriteKind.goal, 'g1', {'status': 'done'});
-    // The goal's, ordered, goes in the round after the location's.
-    await queue.flush();
-    await queue.flush();
-    expect(queue.items, isEmpty);
-    expect(queue.justSaved, hasLength(2));
-    expect(queue.wantsFetch, isTrue);
-    expect(queue.wantsFetchOfKinds(const [WriteKind.goal]), isTrue);
-
-    // The locations fetched, after both were saved: the location's write
-    // is let go of once they're in; the goal's stays, for the goals'.
-    final locations = queue.fetchingKinds(const [WriteKind.location]);
-    expect(queue.wantsFetchOfKinds(const [WriteKind.location]), isFalse);
-    expect(queue.wantsFetchOfKinds(const [WriteKind.goal]), isTrue);
-    locations();
-    expect(queue.justSaved.map((s) => s.item.kind), ['goal']);
-    expect(
+  test(
+    "a fetch of one kind lets go of what's saved of that kind only",
+    () async {
       queue.shown(WriteKind.goal, [
         {'id': 'g1', 'title': 'Text', 'status': 'active', 'version': 1},
-      ]).single['status'],
-      'done',
-    );
+      ]);
+      queue.create(WriteKind.location, {'name': 'Home'});
+      queue.update(WriteKind.goal, 'g1', {'status': 'done'});
+      // The goal's, ordered, goes in the round after the location's.
+      await queue.flush();
+      await queue.flush();
+      expect(queue.items, isEmpty);
+      expect(queue.justSaved, hasLength(2));
+      expect(queue.wantsFetch, isTrue);
+      expect(queue.wantsFetchOfKinds(const [WriteKind.goal]), isTrue);
 
-    queue.fetchingKinds(const [WriteKind.goal])();
-    expect(queue.justSaved, isEmpty);
-    expect(queue.wantsFetch, isFalse);
-  });
+      // The locations fetched, after both were saved: the location's write
+      // is let go of once they're in; the goal's stays, for the goals'.
+      final locations = queue.fetchingKinds(const [WriteKind.location]);
+      expect(queue.wantsFetchOfKinds(const [WriteKind.location]), isFalse);
+      expect(queue.wantsFetchOfKinds(const [WriteKind.goal]), isTrue);
+      locations();
+      expect(queue.justSaved.map((s) => s.item.kind), ['goal']);
+      expect(
+        queue.shown(WriteKind.goal, [
+          {'id': 'g1', 'title': 'Text', 'status': 'active', 'version': 1},
+        ]).single['status'],
+        'done',
+      );
+
+      queue.fetchingKinds(const [WriteKind.goal])();
+      expect(queue.justSaved, isEmpty);
+      expect(queue.wantsFetch, isFalse);
+    },
+  );
 
   test('a new item has its id at once, and is made with it, once', () async {
     final id = queue.create(WriteKind.location, {'name': 'Home', 'hint': null});

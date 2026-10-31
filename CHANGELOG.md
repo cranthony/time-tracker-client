@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.240.0
+
+- Picking a goal's deadline or start day can give it a time of day too:
+  "Add a time" under the calendar, or I, asks for one (5 PM to start
+  with for a deadline, 9 AM for a start), shown beside the day, to
+  change or take off. That's in the New goal sheet, the goal editor,
+  "From a day…" in Starts, "Try again by", "When is it due?", and
+  activating a goal Claude proposed. A New goal draft keeps its time.
+
 ## 7.239.0
 
 - Tagging an event that's still to come with an inactive goal, and

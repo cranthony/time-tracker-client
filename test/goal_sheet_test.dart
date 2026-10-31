@@ -161,6 +161,38 @@ void main() {
     expect(drafts.draft, isNull);
   });
 
+  testWidgets('its day can be given a time, kept as the day moves, in the '
+      'draft too', (tester) async {
+    await open(tester);
+    await tester.enterText(find.byType(TextField), 'Ship it');
+    await tester.tap(find.text('Sun, Oct 18'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add a time'));
+    await tester.pumpAndSettle();
+    // The time picker's OK, over the day picker's.
+    await tester.tap(find.text('OK').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sun, Oct 18, 5:00 PM'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('A day later'));
+    await tester.pump();
+    expect(find.text('Mon, Oct 19, 5:00 PM'), findsOneWidget);
+    expect(drafts.draft?.minuteOfDay, 17 * 60);
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(kept.single['deadline'], '2026-10-19T17:00');
+  });
+
+  test('a draft keeps the time it is due by, if it has one', () {
+    final timed = GoalDraft(title: 'Call', day: now, minuteOfDay: 9 * 60);
+    expect(GoalDraft.fromJson(timed.toJson()).minuteOfDay, 9 * 60);
+    final untimed = GoalDraft(title: 'Call', day: now).toJson();
+    expect(untimed.containsKey('minute_of_day'), isFalse);
+    expect(GoalDraft.fromJson(untimed).minuteOfDay, isNull);
+  });
+
   testWidgets("More closes it, giving what's typed", (tester) async {
     await open(tester);
     await tester.enterText(find.byType(TextField), 'Ship it');

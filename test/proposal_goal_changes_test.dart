@@ -355,10 +355,7 @@ void main() {
       expect(recipe.status, 'done');
       // Loaded again where every page keeps them, and each told, so one
       // showing the goal shows it done without loading them itself.
-      expect(
-        memory.goals!.singleWhere((g) => g.id == 'recipe').status,
-        'done',
-      );
+      expect(memory.goals!.singleWhere((g) => g.id == 'recipe').status, 'done');
       expect(told, greaterThan(0));
       expect(find.textContaining('Applied now · you'), findsOneWidget);
       // Settled: it can't be applied again, or dropped.

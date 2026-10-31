@@ -208,4 +208,96 @@ void main() {
     expect(closed, isTrue);
     expect(picked, isNull);
   });
+
+  group('with a time', () {
+    DayAndTime? pickedTime;
+
+    Future<void> openTimed(
+      WidgetTester tester, {
+      TimeOfDay? initialTime,
+    }) async {
+      hotkeys = Hotkeys();
+      pickedTime = null;
+      closed = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorObservers: [hotkeys],
+          builder: (context, child) =>
+              HotkeyScope(hotkeys: hotkeys, child: child!),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () async {
+                  pickedTime = await showDayTimePicker(
+                    context,
+                    initialDate: DateTime(2026, 10, 30),
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
+                    currentDate: DateTime(2026, 10, 30),
+                    initialTime: initialTime,
+                  );
+                  closed = true;
+                },
+                child: const Text('Pick'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Pick'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('none, unless one is added', (tester) async {
+      await openTimed(tester);
+      expect(find.text('Add a time'), findsOneWidget);
+      await press(tester, LogicalKeyboardKey.keyJ);
+      await ctrlEnter(tester);
+      expect(pickedTime?.day, DateTime(2026, 10, 31));
+      expect(pickedTime?.time, isNull);
+    });
+
+    testWidgets('I adds one, 5 PM to start with, shown with the day', (
+      tester,
+    ) async {
+      await openTimed(tester);
+      await press(tester, LogicalKeyboardKey.keyI);
+      // The time picker's OK, over the day picker's.
+      await tester.tap(find.text('OK').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Fri, Oct 30, 5:00 PM'), findsOneWidget);
+      // Back on the calendar, for its keys.
+      await press(tester, LogicalKeyboardKey.keyJ);
+      await ctrlEnter(tester);
+      expect(pickedTime?.day, DateTime(2026, 10, 31));
+      expect(pickedTime?.time, const TimeOfDay(hour: 17, minute: 0));
+    });
+
+    testWidgets('one given to start with is kept, or taken off', (
+      tester,
+    ) async {
+      await openTimed(
+        tester,
+        initialTime: const TimeOfDay(hour: 9, minute: 15),
+      );
+      expect(find.text('9:15 AM'), findsOneWidget);
+      await ctrlEnter(tester);
+      expect(pickedTime?.time, const TimeOfDay(hour: 9, minute: 15));
+
+      await openTimed(
+        tester,
+        initialTime: const TimeOfDay(hour: 9, minute: 15),
+      );
+      await tester.tap(find.byTooltip('No time'));
+      await tester.pumpAndSettle();
+      expect(find.text('Add a time'), findsOneWidget);
+      await ctrlEnter(tester);
+      expect(pickedTime?.time, isNull);
+    });
+
+    testWidgets('a plain day picker has none to add', (tester) async {
+      await open(tester);
+      expect(find.text('Add a time'), findsNothing);
+    });
+  });
 }

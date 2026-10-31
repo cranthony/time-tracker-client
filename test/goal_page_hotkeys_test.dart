@@ -202,6 +202,24 @@ void main() {
     expect(find.textContaining('From '), findsOneWidget);
   });
 
+  testWidgets('From a day can wait for a time on it too, 9 AM to start '
+      'with', (tester) async {
+    await pumpSubGoal(tester);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Deactivate until…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('From a day…'));
+    await tester.pumpAndSettle();
+    expect(find.text('Starts from'), findsOneWidget);
+    await tester.tap(find.text('Add a time'));
+    await tester.pumpAndSettle();
+    // The time picker's OK, over the day picker's.
+    await tester.tap(find.text('OK').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining(RegExp(r'^From .*, 9:00 AM$')), findsOneWidget);
+  });
+
   testWidgets('Deactivate until for a while waits until that many days '
       'and hours on, at a time', (tester) async {
     await pumpSubGoal(tester);
