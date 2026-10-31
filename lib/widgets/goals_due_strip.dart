@@ -818,17 +818,31 @@ class GoalsStripFocus {
 
   /// Its pills, in order, round all three groups.
   List<FocusNode> get _pills => [
-    for (final group in [due, overdue, upcoming])
+    for (final group in [due, overdue, upcoming]) ..._pillsIn(group),
+  ];
+
+  /// The pills in [group], in the order they're shown. Not the order of
+  /// [FocusNode.traversalDescendants]: that's the order their nodes were
+  /// attached in, so a pill rebuilt when the goals were re-sorted -- one
+  /// that gained or lost a tooltip, say -- would come after the rest.
+  static List<FocusNode> _pillsIn(FocusNode group) {
+    final at = <BuildContext, int>{};
+    void visit(Element e) {
+      at[e] = at.length;
+      e.visitChildren(visit);
+    }
+
+    group.context?.visitChildElements(visit);
+    return [
       for (final node in group.traversalDescendants)
         if (node.canRequestFocus && !node.skipTraversal) node,
-  ];
+    ]..sort((a, b) => (at[a.context] ?? 0).compareTo(at[b.context] ?? 0));
+  }
 
   /// Puts focus on the first pill in [group], scrolled into view:
   /// whether there was one.
   bool focusFirst(FocusNode group) {
-    final first = group.traversalDescendants
-        .where((n) => n.canRequestFocus && !n.skipTraversal)
-        .firstOrNull;
+    final first = _pillsIn(group).firstOrNull;
     if (first == null) return false;
     _focus(first);
     return true;

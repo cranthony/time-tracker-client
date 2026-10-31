@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.238.1
+
+- Tab on the Events page's goals goes from pill to pill in the order
+  they're shown, even after they've been re-sorted -- by a change to a
+  parent goal's priority, say -- rather than the order they first had
+
 ## 7.238.0
 
 - The Events timeline zooms with a trackpad's pinch, and with Ctrl and
