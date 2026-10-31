@@ -144,6 +144,7 @@ class GoalStartsEditor extends StatelessWidget {
     this.goalId,
     this.parentId,
     this.now = DateTime.now,
+    this.dayFocus,
   });
 
   final Map<String, Object?>? value;
@@ -154,6 +155,9 @@ class GoalStartsEditor extends StatelessWidget {
   final String? parentId;
   final ValueChanged<Map<String, Object?>?> onChanged;
   final DateTime Function() now;
+
+  /// The "From a day…" chip's, for a key to press it from outside.
+  final FocusNode? dayFocus;
 
   List<Map<String, Object?>> get _after => [
     for (final t in value?['after'] as List? ?? const [])
@@ -332,6 +336,7 @@ class GoalStartsEditor extends StatelessWidget {
               onPressed: () => _pickGoal(context),
             ),
             ActionChip(
+              focusNode: dayFocus,
               avatar: const Icon(Icons.event, size: 18),
               label: const Text('From a day…'),
               onPressed: () => _pickDay(context),

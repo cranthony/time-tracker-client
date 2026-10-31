@@ -15,6 +15,7 @@ enum HotkeyPlace {
   event('In an event'),
   plan('On the Plan page'),
   goal("On a goal's page"),
+  goalEditor('Editing a goal'),
   diagnostics('On the Diagnostics page');
 
   const HotkeyPlace(this.title);
@@ -312,6 +313,59 @@ class Hotkey {
     HotkeyPlace.goal,
   );
 
+  static const goalSections = Hotkey(
+    'J / K',
+    'Highlight the next section (J) or the one before (K); Enter goes '
+        "into it: its text selected, its editor opened, or its first "
+        'button, for Tab to go on from',
+    HotkeyPlace.goalEditor,
+  );
+  static const goalDeadline = Hotkey(
+    'D',
+    'Go to Deadline; D again, within a second, picks its date',
+    HotkeyPlace.goalEditor,
+    hint: 'D · DD',
+  );
+  static const goalStarts = Hotkey(
+    'S',
+    'Go to Starts, while it shows (an inactive goal); S again, within a '
+        'second, picks a day it starts from',
+    HotkeyPlace.goalEditor,
+    hint: 'S · SS',
+  );
+  static const goalPriority = Hotkey(
+    'P',
+    'Go to Priority',
+    HotkeyPlace.goalEditor,
+  );
+  static const goalExpected = Hotkey(
+    'E',
+    "Put the cursor in Expected time, what's there selected",
+    HotkeyPlace.goalEditor,
+  );
+  static const goalPeople = Hotkey(
+    'W',
+    'Pick its people: who it is with and for',
+    HotkeyPlace.goalEditor,
+  );
+  static const goalDescription = Hotkey(
+    'D, then E',
+    'Edit its description',
+    HotkeyPlace.goalEditor,
+    hint: 'DE',
+  );
+  static const goalDone = Hotkey(
+    'D, then O',
+    'Edit its definition of done',
+    HotkeyPlace.goalEditor,
+    hint: 'DO',
+  );
+  static const goalHints = Hotkey(
+    'H',
+    'Put the cursor in its attribution hints',
+    HotkeyPlace.goalEditor,
+  );
+
   static const diagnosticsPanes = Hotkey(
     'H / L',
     'Go to the Server pane (H) or the App pane (L)',
@@ -386,6 +440,15 @@ class Hotkey {
     markDone,
     markMissed,
     retry,
+    goalSections,
+    goalDeadline,
+    goalStarts,
+    goalPriority,
+    goalExpected,
+    goalPeople,
+    goalDescription,
+    goalDone,
+    goalHints,
     diagnosticsPanes,
     graphs,
     zoom,

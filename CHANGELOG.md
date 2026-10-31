@@ -9,6 +9,18 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.232.0
+
+- The goal editor has hotkeys, while no text field has focus. J and K
+  highlight the next section and the one before, and Enter goes into
+  the one highlighted: its text selected, its editor opened, or its
+  first button. D goes to Deadline, and D again, within a second, picks
+  its date; S goes to Starts, and S again picks a day it starts from. P
+  goes to Priority, and W picks its people, who it's with and for. E
+  puts the cursor in Expected time, its text selected, and H in the
+  attribution hints. D, then E edits the description, and D, then O the
+  definition of done. Holding Ctrl shows them on the sections.
+
 ## 7.231.0
 
 - Every date picker is the one the Events page's D opens, keys and
