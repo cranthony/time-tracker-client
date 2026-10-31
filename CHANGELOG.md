@@ -9,6 +9,13 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.233.0
+
+- J and K find a list further down or up the page, not only one near
+  the view: on a goal's page with a long description, J scrolls down
+  to its first sub-goal and highlights it; on a habit's, person's or
+  circle's page, to its trait scores.
+
 ## 7.232.0
 
 - The goal editor has hotkeys, while no text field has focus. J and K

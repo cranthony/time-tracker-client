@@ -128,7 +128,9 @@ class Hotkey {
     'J / K',
     "Elsewhere, in a menu or a list -- a goal's sub-goals, say -- "
         'highlight the next (J) or previous (K) item, from the first (J) or '
-        'last (K) in view; Enter taps it. Tab and Shift+Tab go from button '
+        'last (K) in view -- or, with none in view, from the first (J) or '
+        'last (K), scrolled to, even a list further down (J) or up (K) the '
+        'page; Enter taps it. Tab and Shift+Tab go from button '
         "to button, in it and where there's no list",
     HotkeyPlace.anywhere,
   );
@@ -780,7 +782,12 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
             isPainted(node.context!))
           node,
     ];
-    if (lists.isEmpty) return false;
+    // None built yet: then one further on, in a list that builds only
+    // what's near the view -- a goal's sub-goals, under a long
+    // description, say.
+    if (lists.isEmpty) {
+      return _scrollToItems(route, context, later: later, toEnd: toEnd);
+    }
     // The one with an item highlighted, or else the first.
     final focus = FocusManager.instance.primaryFocus;
     final list = lists.firstWhere(
@@ -788,6 +795,58 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
       orElse: () => lists.first,
     );
     return stepItems(list, later: later, toEnd: toEnd);
+  }
+
+  /// J or K, in [route] -- under [context] -- with no list of items
+  /// ([HotkeyItems]) built: scrolls toward one not built yet, in a list
+  /// that builds only what's near the view, further down ([later]) or
+  /// up, a view at a time; then, once it's built, steps into it. Whether
+  /// there was one to.
+  bool _scrollToItems(
+    ModalRoute<dynamic> route,
+    BuildContext context, {
+    required bool later,
+    required bool toEnd,
+  }) {
+    ScrollPosition? found;
+    void visit(Element element) {
+      if (found != null) return;
+      if (element
+          case SliverMultiBoxAdaptorElement(
+            widget: SliverMultiBoxAdaptorWidget(
+              delegate: SliverChildListDelegate(:final children),
+            ),
+            :final renderObject,
+          )
+          when isPainted(element)) {
+        final first = renderObject.firstChild, last = renderObject.lastChild;
+        if (first != null && last != null) {
+          // Those past what's built, the way it's going.
+          final ahead = later
+              ? children.skip(renderObject.indexOf(last) + 1)
+              : children.take(renderObject.indexOf(first));
+          final position = Scrollable.maybeOf(element)?.position;
+          if (position?.axis == Axis.vertical &&
+              ahead.any((child) => child is HotkeyItems)) {
+            found = position;
+            return;
+          }
+        }
+      }
+      element.visitChildElements(visit);
+    }
+
+    context.visitChildElements(visit);
+    final position = found;
+    if (position == null) return false;
+    final to = (position.pixels + (later ? 1 : -1) * position.viewportDimension)
+        .clamp(position.minScrollExtent, position.maxScrollExtent);
+    if (to == position.pixels) return false;
+    position.jumpTo(to);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_routes.lastOrNull == route) stepFocus(later: later, toEnd: toEnd);
+    });
+    return true;
   }
 
   /// R where nothing else -- a page's refresh button -- takes it:
