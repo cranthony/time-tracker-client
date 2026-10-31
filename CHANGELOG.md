@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.239.0
+
+- Tagging an event that's still to come with an inactive goal, and
+  choosing Activate, leaves the goal inactive and waiting for the event
+  to start, as "Deactivate until" would, rather than marking it active
+  with a start in the future -- which then kept it from being
+  deactivated. An event under way or past still activates it from when
+  it started, never dated later than now.
+- Activating a goal, by hand or when what it waits for comes, no longer
+  activates the inactive goals it's under: they stay inactive, as an
+  active goal under an inactive one already could.
+
 ## 7.238.3
 
 - An inactive goal due today, or overdue, on the Events page's goals

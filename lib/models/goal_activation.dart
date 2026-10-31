@@ -219,8 +219,8 @@ Map? holding(Goal goal, GoalTree tree) {
 }
 
 /// [goals] with each inactive goal whose activate_when is ready by [now],
-/// and isn't held, activated -- with its inactive parents -- as the
-/// server does: the highest priority first, then the soonest due, each
+/// and isn't held, activated -- just it: its inactive parents stay so --
+/// as the server does: the highest priority first, then the soonest due, each
 /// counted in the holds of the next, dated when it became ready (never
 /// before its last change), what it waited for cleared. One that would
 /// start past its own deadline keeps waiting. With the ids of those
@@ -238,13 +238,10 @@ Map? holding(Goal goal, GoalTree tree) {
       final last = g.history.lastOrNull?.at;
       var when = last != null && last.isAfter(at) ? last : at;
       if (when.isAfter(now)) when = now;
-      final starting = [g, ...tree.ancestorsOf(g.id).where((a) => a.inactive)];
-      final fits = starting.every(
-        (s) => switch (s.due) {
-          final due? => due.isAfter(when),
-          null => s.deadlineRule != null,
-        },
-      );
+      final fits = switch (g.due) {
+        final due? => due.isAfter(when),
+        null => g.deadlineRule != null,
+      };
       if (fits) ready.add((g, when));
     }
     if (ready.isEmpty) break;
@@ -255,11 +252,7 @@ Map? holding(Goal goal, GoalTree tree) {
       return byPriority != 0 ? byPriority : compareByDeadline(a.$1, b.$1);
     });
     final (goal, startAt) = ready.first;
-    final ids = {
-      goal.id,
-      for (final a in tree.ancestorsOf(goal.id))
-        if (a.inactive) a.id,
-    };
+    final ids = {goal.id};
     out = followingParents([
       for (final g in out)
         if (!ids.contains(g.id))

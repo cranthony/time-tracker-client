@@ -108,29 +108,47 @@ void main() {
     expect(problems, isNotEmpty);
   });
 
-  test('activating a goal activates its inactive parents first', () {
+  test('activating a goal leaves its inactive parents inactive', () {
     final deep = [
-      _goal('p', status: 'inactive', deadline: null),
-      _goal('q', parent: 'p', status: 'inactive', deadline: null),
+      _goal('p', status: 'inactive'),
+      _goal('q', parent: 'p', status: 'inactive'),
       _goal('r', parent: 'q', status: 'inactive', deadline: null),
     ];
     final t = GoalTree(deep);
 
-    final changes = activating(
-      t,
-      [t['r']!],
-      deadlines: {'p': '2026-12-01', 'q': '2026-11-01', 'r': '2026-10-30'},
-    );
+    final changes = activating(t, [t['r']!], deadlines: {'r': '2026-10-30'});
 
     expect(_described(changes), [
-      'update p {status: active, deadline: 2026-12-01}',
-      'update q {status: active, deadline: 2026-11-01}',
       'update r {status: active, deadline: 2026-10-30}',
     ]);
     expect(planned(deep, changes, now: _now), isEmpty);
-    expect(inactiveParents(t, [t['r']!]).map((g) => g.id), ['p', 'q']);
-    // Without deadlines, it's refused.
+    // Without a deadline, it's refused.
     expect(planned(deep, activating(t, [t['r']!]), now: _now), isNotEmpty);
+  });
+
+  test('a goal activated from an event still to come waits for it', () {
+    final waiting = _goal('w', status: 'inactive');
+    final changes = waitingFor([
+      waiting,
+      _goal('a'),
+    ], DateTime(2026, 11, 1, 10));
+
+    expect(_described(changes), [
+      'update w {activate_when: {after: [{at: 2026-11-01T10:00}]}}',
+    ]);
+    expect(planned([waiting], changes, now: _now), isEmpty);
+  });
+
+  test('an activation is backdated, but never past its last change or '
+      'after now', () {
+    final goal = _goal('g', status: 'inactive');
+    final earlier = DateTime(2026, 10, 15, 8);
+    expect(backdatedTo(goal, earlier, now: _now), earlier);
+    expect(
+      backdatedTo(goal, DateTime(2026, 9, 1), now: _now),
+      DateTime.parse('2026-10-01T09:00:00'),
+    );
+    expect(backdatedTo(goal, DateTime(2026, 11, 1, 10), now: _now), _now);
   });
 
   test('deactivating a goal leaves its active sub-goals active', () {
