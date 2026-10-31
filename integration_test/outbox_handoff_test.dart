@@ -71,7 +71,11 @@ final _random = Random();
 
 /// While it's there, each event is made, then not answered till it's
 /// gone: the server's saved it, but the sender hasn't heard.
-Future<File> _hold() async => File('${(await _server()).path}/hold');
+Future<File> _hold() async {
+  final dir = await _server();
+  await dir.create(recursive: true);
+  return File('${dir.path}/hold');
+}
 
 /// Starts afresh: nothing kept, nothing saved, the task's dispatcher set.
 Future<void> _reset() async {
