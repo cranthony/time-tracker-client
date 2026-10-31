@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/facts.dart';
 import '../models/goal.dart';
@@ -15,6 +17,7 @@ import 'goal_color.dart';
 import 'goal_fields.dart';
 import 'goal_icon.dart';
 import 'goal_starts.dart';
+import 'hotkeys.dart';
 import 'text_editor.dart';
 import 'picker_sheet.dart';
 import 'tree_picker.dart';
@@ -81,6 +84,9 @@ Future<Map<String, Object?>?> showGoalEditor(
 );
 
 class GoalEditorPage extends StatefulWidget {
+  /// How long, after D or S, a second key goes with it: D, then E, say.
+  static const chordWindow = Duration(seconds: 1);
+
   const GoalEditorPage({
     super.key,
     this.goal,
@@ -192,8 +198,29 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   late List<Named> _with = [...(_goal?.withWhom ?? widget.withWhom)];
   late List<Named> _for = [...(_goal?.forWhom ?? widget.forWhom)];
 
+  /// Each section's, for J and K to highlight and letters to go to.
+  final _sections = {
+    for (final s in _Section.values)
+      s: FocusNode(debugLabel: 'Goal ${s.name}', skipTraversal: true),
+  };
+
+  /// The Starts section's "From a day…" chip's, for S, S to press.
+  final _startsDay = FocusNode(debugLabel: 'Starts from a day');
+
+  /// The first key of two pressed -- D, say, for D then E -- while the
+  /// second's waited for ([GoalEditorPage.chordWindow]); and what's
+  /// said meanwhile, of what the second can be.
+  String? _chord;
+  String? _chordSaid;
+  Timer? _chordTimer;
+
   @override
   void dispose() {
+    _chordTimer?.cancel();
+    for (final node in _sections.values) {
+      node.dispose();
+    }
+    _startsDay.dispose();
     _title.dispose();
     _hints.dispose();
     _minutes.dispose();
@@ -500,8 +527,194 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     }
   }
 
+  /// Waits [GoalEditorPage.chordWindow] for a second key after [letter],
+  /// saying what it can be ([said]).
+  void _arm(String letter, String said) {
+    _disarm();
+    _chord = letter;
+    _chordSaid = said;
+    HotkeyScope.maybeOf(context)
+        ?.say(said, forAbout: GoalEditorPage.chordWindow);
+    _chordTimer = Timer(GoalEditorPage.chordWindow, () {
+      _chord = _chordSaid = null;
+    });
+  }
+
+  /// Stops waiting for a second key.
+  void _disarm() {
+    _chordTimer?.cancel();
+    _chordTimer = null;
+    if (_chordSaid case final said?) {
+      HotkeyScope.maybeOf(context)?.unsay(said);
+    }
+    _chord = _chordSaid = null;
+  }
+
+  /// Whether the key pressed comes second, after [letter]; it's waited
+  /// for no longer, either way.
+  bool _secondAfter(String letter) {
+    final second = _chord == letter;
+    _disarm();
+    return second;
+  }
+
+  void _say(String message) => HotkeyScope.maybeOf(context)?.say(message);
+
+  /// Highlights [section], scrolled into view: whether it's shown.
+  bool _goTo(_Section section) {
+    final node = _sections[section]!;
+    final context = node.context;
+    if (context == null || !context.mounted) return false;
+    node.requestFocus();
+    context.findRenderObject()?.showOnScreen(
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+    );
+    return true;
+  }
+
+  /// J ([later]) or K: highlights the next section shown, or the one
+  /// before -- from the one with focus, or else the first, or the last.
+  void _step({required bool later}) {
+    final shown = [
+      for (final MapEntry(:key, :value) in _sections.entries)
+        if (value.context?.mounted ?? false) key,
+    ];
+    if (shown.isEmpty) return;
+    final focus = FocusManager.instance.primaryFocus;
+    final at = shown.indexWhere((s) {
+      final node = _sections[s]!;
+      return node == focus || (focus?.ancestors.contains(node) ?? false);
+    });
+    _goTo(
+      at < 0
+          ? (later ? shown.first : shown.last)
+          : shown[(at + (later ? 1 : -1)).clamp(0, shown.length - 1)],
+    );
+  }
+
+  /// Puts the cursor in [section]'s text field: what's in it selected,
+  /// with [selected], or else where it was.
+  void _focusText(_Section section, {required bool selected}) {
+    final field = _textIn(_sections[section]!);
+    if (field == null) return;
+    if (selected) return focusField(field);
+    field.requestFocus();
+    field.context?.findRenderObject()?.showOnScreen(
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+    );
+  }
+
+  /// D, D: its date picked -- while it's a date, not measured from
+  /// something else.
+  void _deadlineDate() {
+    if (_from != _DeadlineFrom.date) {
+      return _say(
+        'Its deadline is measured from something else: pick A date for one',
+      );
+    }
+    unawaited(_pickDate());
+  }
+
+  /// S, S: a day it starts from, picked as "From a day…" does.
+  void _startsFromDay() {
+    final context = _startsDay.context;
+    if (context == null || !context.mounted) return;
+    _startsDay.requestFocus();
+    Actions.maybeInvoke(context, const ActivateIntent());
+  }
+
+  void _editDescription() => _editText(
+    'Description',
+    _description,
+    _descriptionFormat,
+    (text, format) {
+      _description = text;
+      _descriptionFormat = format;
+    },
+  );
+
+  void _editDone() => _editText(
+    'Definition of done',
+    _definitionOfDone,
+    _definitionOfDoneFormat,
+    (text, format) {
+      _definitionOfDone = text;
+      _definitionOfDoneFormat = format;
+    },
+  );
+
+  List<HotkeyBinding> get _hotkeys => [
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyJ), () {
+      _disarm();
+      _step(later: true);
+    }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyK), () {
+      _disarm();
+      _step(later: false);
+    }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyD), () {
+      if (_secondAfter('d')) return _deadlineDate();
+      if (_goTo(_Section.deadline)) {
+        _arm(
+          'd',
+          'D again: its date · E: its description · O: its definition of '
+              'done',
+        );
+      }
+    }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyE), () {
+      if (_secondAfter('d')) return _editDescription();
+      _focusText(_Section.expected, selected: true);
+    }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyO), () {
+      if (_secondAfter('d')) _editDone();
+    }, when: () => _chord == 'd'),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyS), () {
+      if (_secondAfter('s')) return _startsFromDay();
+      if (_goTo(_Section.starts)) {
+        _arm('s', 'S again: a day it starts from');
+      } else {
+        _say("Starts shows while it's inactive");
+      }
+    }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyP), () {
+      _disarm();
+      _goTo(_Section.priority);
+    }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyW), () {
+      _disarm();
+      unawaited(_pickPeople());
+    }),
+    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyH), () {
+      _disarm();
+      _focusText(_Section.hints, selected: false);
+    }),
+  ];
+
+  /// [child], the [section] of the page: highlighted while J, K or its
+  /// letter has gone to it, [hint] on it while Ctrl is held, and Enter
+  /// going into it -- [onEnter], or else its first field.
+  Widget _section(
+    _Section section, {
+    Hotkey? hint,
+    VoidCallback? onEnter,
+    required Widget child,
+  }) => _SectionBox(
+    node: _sections[section]!,
+    hint: hint,
+    onEnter: onEnter,
+    child: child,
+  );
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => HotkeyBindings(
+    bindings: _hotkeys,
+    child: Builder(builder: _page),
+  );
+
+  Widget _page(BuildContext context) {
     final theme = Theme.of(context);
     final goal = _goal;
     final parent = widget.parent;
@@ -530,339 +743,371 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
       onSave: () => Navigator.of(context).pop(_changes),
       // In the order the goal's page has them, under the same labels.
       children: [
-        TextField(
-          controller: _title,
-          autofocus: goal == null,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            labelText: 'Title',
-            hintText: 'An outcome you can mark done',
+        _section(
+          _Section.title,
+          child: TextField(
+            controller: _title,
+            autofocus: goal == null,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Title',
+              hintText: 'An outcome you can mark done',
+            ),
+            onChanged: (_) => setState(() {}),
           ),
-          onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: 8),
-        GoalField(
-          label: 'Status',
-          child: goal == null
-              ? SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'active', label: Text('Active')),
-                    ButtonSegment(value: 'inactive', label: Text('Inactive')),
-                  ],
-                  selected: {_status},
-                  onSelectionChanged: (picked) =>
-                      setState(() => _status = picked.single),
-                )
-              : DropdownButtonFormField<String>(
-                  initialValue: _status,
-                  items: [
-                    for (final MapEntry(:key, :value) in goalStatuses.entries)
-                      DropdownMenuItem(value: key, child: Text(value)),
-                  ],
-                  onChanged: (picked) {
-                    if (picked != null) setState(() => _status = picked);
-                  },
-                ),
+        _section(
+          _Section.status,
+          child: GoalField(
+            label: 'Status',
+            child: goal == null
+                ? SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'active', label: Text('Active')),
+                      ButtonSegment(value: 'inactive', label: Text('Inactive')),
+                    ],
+                    selected: {_status},
+                    onSelectionChanged: (picked) =>
+                        setState(() => _status = picked.single),
+                  )
+                : DropdownButtonFormField<String>(
+                    initialValue: _status,
+                    items: [
+                      for (final MapEntry(:key, :value) in goalStatuses.entries)
+                        DropdownMenuItem(value: key, child: Text(value)),
+                    ],
+                    onChanged: (picked) {
+                      if (picked != null) setState(() => _status = picked);
+                    },
+                  ),
+          ),
         ),
-        GoalField(
-          label: 'Deadline',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  for (final from in _DeadlineFrom.values)
-                    if (from != _DeadlineFrom.parent || parent != null)
-                      ChoiceChip(
-                        label: Text(from.label),
-                        selected: _from == from,
-                        onSelected: (_) => setState(() {
-                          // Untied, it keeps the deadline it had.
-                          if (from == _DeadlineFrom.date) {
-                            _deadline = _shownDeadline ?? _deadline;
-                          }
-                          _from = from;
-                        }),
-                      ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (_follows && parent != null)
-                Text(
-                  parent.deadline == null
-                      ? '“${goalTitle(parent)}” has no deadline yet'
-                      : '${deadlineLabel(context, deadline)} · '
-                            '${followsLabel(goalTitle(parent), _offsetMinutes ?? 0)}',
-                ),
-              if (_from == _DeadlineFrom.goal)
-                OutlinedButton.icon(
-                  icon: const GoalIcon(size: 18),
-                  label: Text(switch (tree[_afterGoal]) {
-                    final g? => 'After “${goalTitle(g)}” is due',
-                    null => 'Pick the goal',
-                  }),
-                  onPressed: _pickAfterGoal,
-                ),
-              if (_from == _DeadlineFrom.start ||
-                  _from == _DeadlineFrom.goal) ...[
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final (label, minutes) in const [
-                      ('Same day', 0),
-                      ('1 day after', Duration.minutesPerDay),
-                      ('1 week after', 7 * Duration.minutesPerDay),
-                    ])
-                      ChoiceChip(
-                        label: Text(label),
-                        selected: _after.text.trim() == '$minutes',
-                        onSelected: (_) => setState(() {
-                          _after.text = '$minutes';
-                          _afterPicks++;
-                        }),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                DurationField(
-                  // Shown anew when a chip sets it.
-                  key: ValueKey(('after', _afterPicks)),
-                  controller: _after,
-                  label: _from == _DeadlineFrom.start
-                      ? 'How long after it starts'
-                      : "How long after that goal's",
-                  units: DurationUnits.weeksDays,
-                  onChanged: () => setState(() {}),
-                ),
-              ],
-              if (_follows) ...[
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final (label, minutes) in const [
-                      ("Same as parent's", 0),
-                      ('1 day before', Duration.minutesPerDay),
-                      ('1 week before', 7 * Duration.minutesPerDay),
-                    ])
-                      ChoiceChip(
-                        label: Text(label),
-                        selected: _offsetMinutes == minutes,
-                        onSelected: (_) => setState(() {
-                          _offset.text = '$minutes';
-                          _offsetPicks++;
-                        }),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                DurationField(
-                  // Shown anew when a chip sets it.
-                  key: ValueKey(_offsetPicks),
-                  controller: _offset,
-                  label: "How long before its parent's",
-                  units: DurationUnits.weeksDays,
-                  onChanged: () => setState(() {}),
-                ),
-              ] else if (_from == _DeadlineFrom.date) ...[
+        _section(
+          _Section.deadline,
+          hint: Hotkey.goalDeadline,
+          child: GoalField(
+            label: 'Deadline',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.event),
-                      label: Text(
-                        _deadline == null
-                            ? 'Pick a date'
-                            : deadlineLabel(context, _deadline),
-                      ),
-                      onPressed: _pickDate,
-                    ),
-                    if (_deadline != null)
-                      TextButton.icon(
-                        icon: const Icon(Icons.schedule),
+                    for (final from in _DeadlineFrom.values)
+                      if (from != _DeadlineFrom.parent || parent != null)
+                        ChoiceChip(
+                          label: Text(from.label),
+                          selected: _from == from,
+                          onSelected: (_) => setState(() {
+                            // Untied, it keeps the deadline it had.
+                            if (from == _DeadlineFrom.date) {
+                              _deadline = _shownDeadline ?? _deadline;
+                            }
+                            _from = from;
+                          }),
+                        ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (_follows && parent != null)
+                  Text(
+                    parent.deadline == null
+                        ? '“${goalTitle(parent)}” has no deadline yet'
+                        : '${deadlineLabel(context, deadline)} · '
+                              '${followsLabel(goalTitle(parent), _offsetMinutes ?? 0)}',
+                  ),
+                if (_from == _DeadlineFrom.goal)
+                  OutlinedButton.icon(
+                    icon: const GoalIcon(size: 18),
+                    label: Text(switch (tree[_afterGoal]) {
+                      final g? => 'After “${goalTitle(g)}” is due',
+                      null => 'Pick the goal',
+                    }),
+                    onPressed: _pickAfterGoal,
+                  ),
+                if (_from == _DeadlineFrom.start ||
+                    _from == _DeadlineFrom.goal) ...[
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final (label, minutes) in const [
+                        ('Same day', 0),
+                        ('1 day after', Duration.minutesPerDay),
+                        ('1 week after', 7 * Duration.minutesPerDay),
+                      ])
+                        ChoiceChip(
+                          label: Text(label),
+                          selected: _after.text.trim() == '$minutes',
+                          onSelected: (_) => setState(() {
+                            _after.text = '$minutes';
+                            _afterPicks++;
+                          }),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  DurationField(
+                    // Shown anew when a chip sets it.
+                    key: ValueKey(('after', _afterPicks)),
+                    controller: _after,
+                    label: _from == _DeadlineFrom.start
+                        ? 'How long after it starts'
+                        : "How long after that goal's",
+                    units: DurationUnits.weeksDays,
+                    onChanged: () => setState(() {}),
+                  ),
+                ],
+                if (_follows) ...[
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final (label, minutes) in const [
+                        ("Same as parent's", 0),
+                        ('1 day before', Duration.minutesPerDay),
+                        ('1 week before', 7 * Duration.minutesPerDay),
+                      ])
+                        ChoiceChip(
+                          label: Text(label),
+                          selected: _offsetMinutes == minutes,
+                          onSelected: (_) => setState(() {
+                            _offset.text = '$minutes';
+                            _offsetPicks++;
+                          }),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  DurationField(
+                    // Shown anew when a chip sets it.
+                    key: ValueKey(_offsetPicks),
+                    controller: _offset,
+                    label: "How long before its parent's",
+                    units: DurationUnits.weeksDays,
+                    onChanged: () => setState(() {}),
+                  ),
+                ] else if (_from == _DeadlineFrom.date) ...[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.event),
                         label: Text(
-                          deadlineHasTime(_deadline)
-                              ? 'Change time'
-                              : 'Add a time',
+                          _deadline == null
+                              ? 'Pick a date'
+                              : deadlineLabel(context, _deadline),
                         ),
-                        onPressed: _pickTime,
+                        onPressed: _pickDate,
                       ),
-                    if (deadlineHasTime(_deadline))
-                      TextButton(
-                        onPressed: () => setState(
-                          () => _deadline = _deadline!.split('T').first,
+                      if (_deadline != null)
+                        TextButton.icon(
+                          icon: const Icon(Icons.schedule),
+                          label: Text(
+                            deadlineHasTime(_deadline)
+                                ? 'Change time'
+                                : 'Add a time',
+                          ),
+                          onPressed: _pickTime,
                         ),
-                        child: const Text('End of day'),
+                      if (deadlineHasTime(_deadline))
+                        TextButton(
+                          onPressed: () => setState(
+                            () => _deadline = _deadline!.split('T').first,
+                          ),
+                          child: const Text('End of day'),
+                        ),
+                      if (_deadline != null && _status != 'active')
+                        IconButton(
+                          tooltip: 'No deadline',
+                          icon: const Icon(Icons.clear),
+                          onPressed: () => setState(() => _deadline = null),
+                        ),
+                    ],
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ActionChip(
+                        label: const Text('End of today'),
+                        onPressed: () =>
+                            setState(() => _deadline = endOfToday(now)),
                       ),
-                    if (_deadline != null && _status != 'active')
-                      IconButton(
-                        tooltip: 'No deadline',
-                        icon: const Icon(Icons.clear),
-                        onPressed: () => setState(() => _deadline = null),
+                      ActionChip(
+                        label: const Text('End of this week'),
+                        onPressed: () =>
+                            setState(() => _deadline = endOfWeek(now)),
                       ),
-                  ],
-                ),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    ActionChip(
-                      label: const Text('End of today'),
-                      onPressed: () =>
-                          setState(() => _deadline = endOfToday(now)),
-                    ),
-                    ActionChip(
-                      label: const Text('End of this week'),
-                      onPressed: () =>
-                          setState(() => _deadline = endOfWeek(now)),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
         if (_status == 'inactive')
-          GoalField(
-            label: 'Starts',
-            child: GoalStartsEditor(
-              value: _activateWhen,
-              goals: widget.goals,
-              goalId: goal?.id,
-              parentId: parent?.id,
-              now: widget.now,
-              onChanged: (value) => setState(() => _activateWhen = value),
+          _section(
+            _Section.starts,
+            hint: Hotkey.goalStarts,
+            child: GoalField(
+              label: 'Starts',
+              child: GoalStartsEditor(
+                value: _activateWhen,
+                goals: widget.goals,
+                goalId: goal?.id,
+                parentId: parent?.id,
+                now: widget.now,
+                dayFocus: _startsDay,
+                onChanged: (value) => setState(() => _activateWhen = value),
+              ),
             ),
           ),
-        GoalField(
-          label: 'Priority',
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              ChoiceChip(
-                showCheckmark: false,
-                label: Text(
-                  parent == null
-                      ? 'None (P$defaultGoalPriority)'
-                      : 'Inherit (P${tree.priorityOf(parent.id)})',
-                ),
-                tooltip: inheritedPriorityLabel(tree, parent?.id),
-                selected: _priority == null,
-                onSelected: (_) => setState(() => _priority = null),
-              ),
-              for (final p in const [0, 1, 2, 3])
+        _section(
+          _Section.priority,
+          hint: Hotkey.goalPriority,
+          child: GoalField(
+            label: 'Priority',
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
                 ChoiceChip(
                   showCheckmark: false,
-                  avatar: CircleAvatar(backgroundColor: priorityColor(p)),
-                  label: Text('P$p'),
-                  selected: _priority == p,
-                  onSelected: (_) => setState(() => _priority = p),
+                  label: Text(
+                    parent == null
+                        ? 'None (P$defaultGoalPriority)'
+                        : 'Inherit (P${tree.priorityOf(parent.id)})',
+                  ),
+                  tooltip: inheritedPriorityLabel(tree, parent?.id),
+                  selected: _priority == null,
+                  onSelected: (_) => setState(() => _priority = null),
                 ),
-            ],
+                for (final p in const [0, 1, 2, 3])
+                  ChoiceChip(
+                    showCheckmark: false,
+                    avatar: CircleAvatar(backgroundColor: priorityColor(p)),
+                    label: Text('P$p'),
+                    selected: _priority == p,
+                    onSelected: (_) => setState(() => _priority = p),
+                  ),
+              ],
+            ),
           ),
         ),
-        GoalField(
-          label: 'Color',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (_color == null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                    inheritedColorLabel(
-                      tree,
-                      parent?.id,
-                      _priority ??
-                          (parent == null
-                              ? defaultGoalPriority
-                              : tree.priorityOf(parent.id)),
+        _section(
+          _Section.color,
+          child: GoalField(
+            label: 'Color',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_color == null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      inheritedColorLabel(
+                        tree,
+                        parent?.id,
+                        _priority ??
+                            (parent == null
+                                ? defaultGoalPriority
+                                : tree.priorityOf(parent.id)),
+                      ),
+                      style: theme.textTheme.bodySmall,
                     ),
-                    style: theme.textTheme.bodySmall,
+                  ),
+                ColorPicker(
+                  color: parseColor(_color),
+                  onChanged: (color) => setState(
+                    () => _color = color == null ? null : colorToHex(color),
                   ),
                 ),
-              ColorPicker(
-                color: parseColor(_color),
-                onChanged: (color) => setState(
-                  () => _color = color == null ? null : colorToHex(color),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-        GoalField(
-          label: 'Expected time',
-          child: DurationField(
-            controller: _minutes,
-            label: 'How long it should take (optional)',
-            onChanged: () => setState(() {}),
+        _section(
+          _Section.expected,
+          hint: Hotkey.goalExpected,
+          child: GoalField(
+            label: 'Expected time',
+            child: DurationField(
+              controller: _minutes,
+              label: 'How long it should take (optional)',
+              onChanged: () => setState(() {}),
+            ),
           ),
         ),
         if (parent != null)
-          GoalField(
-            label: 'Required',
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(requiredLabel(goalTitle(parent), _required)),
-              value: _required,
-              onChanged: (value) => setState(() => _required = value),
+          _section(
+            _Section.required,
+            child: GoalField(
+              label: 'Required',
+              child: SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(requiredLabel(goalTitle(parent), _required)),
+                value: _required,
+                onChanged: (value) => setState(() => _required = value),
+              ),
             ),
           ),
-        GoalField(
-          label: 'People',
-          onTap: _pickPeople,
-          child: people == null
-              ? const GoalFieldEmpty('Add who it’s with or for')
-              : Text(people),
-        ),
-        GoalField(
-          label: 'Description',
-          onTap: () => _editText(
-            'Description',
-            _description,
-            _descriptionFormat,
-            (text, format) {
-              _description = text;
-              _descriptionFormat = format;
-            },
-          ),
-          child: _formatted(
-            _description,
-            _descriptionFormat,
-            'Add description',
+        _section(
+          _Section.people,
+          hint: Hotkey.goalPeople,
+          onEnter: _pickPeople,
+          child: GoalField(
+            label: 'People',
+            onTap: _pickPeople,
+            child: people == null
+                ? const GoalFieldEmpty('Add who it’s with or for')
+                : Text(people),
           ),
         ),
-        GoalField(
-          label: 'Definition of done',
-          onTap: () => _editText(
-            'Definition of done',
-            _definitionOfDone,
-            _definitionOfDoneFormat,
-            (text, format) {
-              _definitionOfDone = text;
-              _definitionOfDoneFormat = format;
-            },
-          ),
-          child: _formatted(
-            _definitionOfDone,
-            _definitionOfDoneFormat,
-            'Add definition of done',
-          ),
-        ),
-        GoalField(
-          label: 'Attribution hints',
-          child: TextField(
-            controller: _hints,
-            minLines: 2,
-            maxLines: 6,
-            decoration: InputDecoration(
-              hintText: 'How Claude can tell which events are for it',
-              hintStyle: TextStyle(color: theme.hintColor),
+        _section(
+          _Section.description,
+          hint: Hotkey.goalDescription,
+          onEnter: _editDescription,
+          child: GoalField(
+            label: 'Description',
+            onTap: _editDescription,
+            child: _formatted(
+              _description,
+              _descriptionFormat,
+              'Add description',
             ),
-            onChanged: (_) => setState(() {}),
+          ),
+        ),
+        _section(
+          _Section.done,
+          hint: Hotkey.goalDone,
+          onEnter: _editDone,
+          child: GoalField(
+            label: 'Definition of done',
+            onTap: _editDone,
+            child: _formatted(
+              _definitionOfDone,
+              _definitionOfDoneFormat,
+              'Add definition of done',
+            ),
+          ),
+        ),
+        _section(
+          _Section.hints,
+          hint: Hotkey.goalHints,
+          child: GoalField(
+            label: 'Attribution hints',
+            child: TextField(
+              controller: _hints,
+              minLines: 2,
+              maxLines: 6,
+              decoration: InputDecoration(
+                hintText: 'How Claude can tell which events are for it',
+                hintStyle: TextStyle(color: theme.hintColor),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
           ),
         ),
       ],
@@ -963,6 +1208,110 @@ String deadlineLabel(BuildContext context, String? deadline) {
   }
   return '${strings.formatMediumDate(at)}, '
       '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(at))}';
+}
+
+/// The goal editor's sections, top to bottom: for J and K to go between.
+enum _Section {
+  title,
+  status,
+  deadline,
+  starts,
+  priority,
+  color,
+  expected,
+  required,
+  people,
+  description,
+  done,
+  hints,
+}
+
+/// The first text field in [section], if there's one.
+FocusNode? _textIn(FocusNode section) {
+  for (final node in section.traversalDescendants) {
+    final context = node.context;
+    if (context == null || !node.canRequestFocus || node.skipTraversal) {
+      continue;
+    }
+    if (context.widget is EditableText ||
+        context.findAncestorWidgetOfExactType<EditableText>() != null) {
+      return node;
+    }
+  }
+  return null;
+}
+
+/// A section of the goal editor, [child]: [node] highlights it, outlined,
+/// for Enter to go into -- [onEnter], or else its first field: a text
+/// field, what's in it selected, or what's first to tap, for Tab to go
+/// on from. [hint] shows on it while Ctrl is held.
+class _SectionBox extends StatelessWidget {
+  const _SectionBox({
+    required this.node,
+    this.hint,
+    this.onEnter,
+    required this.child,
+  });
+
+  final FocusNode node;
+  final Hotkey? hint;
+  final VoidCallback? onEnter;
+  final Widget child;
+
+  void _enter() {
+    if (onEnter case final onEnter?) return onEnter();
+    if (_textIn(node) case final field?) return focusField(field);
+    node.traversalDescendants
+        .where((n) => n.canRequestFocus && !n.skipTraversal)
+        .firstOrNull
+        ?.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final box = Focus(
+      focusNode: node,
+      onKeyEvent: (node, event) {
+        final key = event.logicalKey;
+        if (event is! KeyDownEvent ||
+            !node.hasPrimaryFocus ||
+            (key != LogicalKeyboardKey.enter &&
+                key != LogicalKeyboardKey.numpadEnter)) {
+          return KeyEventResult.ignored;
+        }
+        _enter();
+        return KeyEventResult.handled;
+      },
+      child: Builder(
+        builder: (context) {
+          final highlighted = Focus.of(context).hasPrimaryFocus;
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              child,
+              if (highlighted)
+                Positioned.fill(
+                  left: -6,
+                  right: -6,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.primary,
+                          width: 2,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+    return hint == null ? box : HotkeyHint(hint!, child: box);
+  }
 }
 
 /// What a goal's deadline in the editor is measured from: a date given,
