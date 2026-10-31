@@ -1939,14 +1939,16 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     ];
     if (waking.isNotEmpty) {
       final names = waking.map((g) => '“${goalTitle(g)}”').join(', ');
+      final it = waking.length == 1 ? 'it' : 'them';
+      // One still to come waits for it, inactive until then.
+      final later = start.isAfter(DateTime.now());
       final wake = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text(waking.length == 1 ? 'Activate it?' : 'Activate them?'),
+          title: Text('Activate $it?'),
           content: Text(
             '$names ${waking.length == 1 ? 'is' : 'are'} inactive. Activate '
-            '${waking.length == 1 ? 'it' : 'them'} from when this event '
-            'starts?',
+            '$it ${later ? 'when' : 'from when'} this event starts?',
           ),
           actions: [
             TextButton(

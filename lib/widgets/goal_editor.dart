@@ -399,11 +399,6 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
                 goal,
                 {..._changes}..remove('status'),
                 status: _status,
-                // Asked for as it's activated: any will do here.
-                deadlines: {
-                  for (final p in inactiveParents(tree, [goal]))
-                    if (p.deadline == null) p.id: ?_shownDeadline,
-                },
               ),
             ),
           ];

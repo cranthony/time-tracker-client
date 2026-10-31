@@ -351,8 +351,8 @@ class GoalActions {
     ]);
   }
 
-  /// Sets [goal]'s status to [status], with what that takes: activating
-  /// its parents, or deciding what becomes
+  /// Sets [goal]'s status to [status], with what that takes: asking for
+  /// its deadline, or deciding what becomes
   /// of those left open -- and [also] changed in it too, if given.
   Future<void> setStatus(
     Goal goal,
@@ -369,24 +369,33 @@ class GoalActions {
     }
   }
 
-  /// Activates [picked], and the inactive parents they're under, asking
-  /// for each one's deadline that has none -- from [at], if it's given (an
-  /// event's start, say): then each is backdated to it, or to its last
-  /// change, if that's later. With [also], the one picked has that
-  /// changed in it too.
+  /// Activates [picked] -- just them: the inactive parents they're under
+  /// stay inactive -- asking for each one's deadline that has none -- from
+  /// [at], if it's given (an event's start, say): then each is backdated
+  /// to it, or to its last change, if that's later. An [at] still to come
+  /// leaves them inactive, waiting for it ([waitingFor]). With [also], the
+  /// one picked has that changed in it too.
   Future<void> activate(
     List<Goal> picked, {
     DateTime? at,
     Map<String, Object?> also = const {},
   }) async {
+    if (at != null && at.isAfter(now()) && also.isEmpty) {
+      await save(
+        picked.length == 1
+            ? "Couldn't set when ${goalTitle(picked.single)} starts"
+            : "Couldn't set when the goals start",
+        waitingFor(picked, at),
+      );
+      return;
+    }
     final tree = also.isEmpty
         ? this.tree
         : GoalTree(
             applied(goals, [GoalUpdate(picked.single.id, also)], now: now()),
           );
     picked = [for (final g in picked) tree[g.id] ?? g];
-    final all = [...inactiveParents(tree, picked), ...picked];
-    final deadlines = await _askDeadlines(all, tree);
+    final deadlines = await _askDeadlines(picked, tree);
     if (deadlines == null || !context.mounted) return;
     final changes = also.isEmpty
         ? activating(tree, picked, deadlines: deadlines)
@@ -406,13 +415,12 @@ class GoalActions {
   }
 
   /// [change], a goal's activation, dated [at] -- or its last change, if
-  /// that's later -- rather than now.
+  /// that's later -- rather than now; never after now.
   GoalChange _backdated(GoalChange change, DateTime at) {
     if (change is! GoalUpdate) return change;
     final goal = tree[change.id];
     if (goal == null) return change;
-    final last = goal.history.lastOrNull?.at;
-    final when = last != null && last.isAfter(at) ? last : at;
+    final when = backdatedTo(goal, at, now: now());
     return GoalUpdate(change.id, {
       ...change.changes,
       'history': [

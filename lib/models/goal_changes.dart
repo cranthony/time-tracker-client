@@ -248,38 +248,46 @@ List<Goal> requiredOpen(GoalTree tree, Goal goal) => [
 ];
 
 /// Activates [goals], each with the deadline [deadlines] gives by id
-/// (kept, if it gives none), and any inactive parents they're under,
-/// outermost first -- so each is active under an active parent.
+/// (kept, if it gives none), outermost first. Just them: the inactive
+/// parents they're under stay inactive.
 List<GoalChange> activating(
   GoalTree tree,
   Iterable<Goal> goals, {
   Map<String, String> deadlines = const {},
 }) {
-  final order = <String>[];
-  for (final goal in goals) {
-    for (final g in [...tree.ancestorsOf(goal.id), goal]) {
-      if (!g.active && !order.contains(g.id)) order.add(g.id);
-    }
-  }
+  final order = <String>[
+    for (final g in goals)
+      if (!g.active) g.id,
+  ];
   // Outermost first.
   order.sort((a, b) => tree.depthOf(a).compareTo(tree.depthOf(b)));
   return [
-    for (final id in order)
+    for (final id in order.toSet())
       GoalUpdate(id, {'status': 'active', 'deadline': ?deadlines[id]}),
   ];
 }
 
-/// The inactive parents [goals] are under, which activating them
-/// activates too: outermost first.
-List<Goal> inactiveParents(GoalTree tree, Iterable<Goal> goals) {
-  final out = <String, Goal>{};
-  for (final goal in goals) {
-    for (final g in tree.ancestorsOf(goal.id)) {
-      if (!g.active && !g.closed) out[g.id] = g;
-    }
-  }
-  return out.values.toList()
-    ..sort((a, b) => tree.depthOf(a.id).compareTo(tree.depthOf(b.id)));
+/// [goals], inactive, left so and waiting for [at] before they're
+/// activated: what each waited for before replaced by it.
+List<GoalChange> waitingFor(Iterable<Goal> goals, DateTime at) => [
+  for (final g in goals)
+    if (g.inactive)
+      GoalUpdate(g.id, {
+        'activate_when': {
+          'after': [
+            {'at': deadlineOf(at, time: true)},
+          ],
+        },
+      }),
+];
+
+/// When [goal]'s activation backdated to [at] is dated: [at], or its
+/// last change, if that's later -- and never after [now], so its history
+/// stays oldest first when it changes again.
+DateTime backdatedTo(Goal goal, DateTime at, {required DateTime now}) {
+  final last = goal.history.lastOrNull?.at;
+  final when = last != null && last.isAfter(at) ? last : at;
+  return when.isAfter(now) ? now : when;
 }
 
 /// Deactivates [goal]: just it -- its active sub-goals stay active.

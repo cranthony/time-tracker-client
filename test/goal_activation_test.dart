@@ -162,8 +162,8 @@ void main() {
     expect(started, ['major']);
   });
 
-  test('a goal starting takes its inactive parents; one past its deadline '
-      'keeps waiting', () {
+  test('a goal starting leaves its inactive parents inactive; one past its '
+      'deadline keeps waiting', () {
     final parent = _goal('parent', status: 'inactive');
     final child = _goal(
       'child',
@@ -177,8 +177,9 @@ void main() {
       },
     );
     final (after, started) = startingWaiting([parent, child], now);
-    expect(started.toSet(), {'child', 'parent'});
-    expect(after.every((g) => g.active), isTrue);
+    expect(started, ['child']);
+    expect(after.singleWhere((g) => g.id == 'parent').inactive, isTrue);
+    expect(after.singleWhere((g) => g.id == 'child').active, isTrue);
 
     final late = _goal(
       'late',
