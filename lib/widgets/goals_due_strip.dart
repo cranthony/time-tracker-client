@@ -192,10 +192,11 @@ enum OverdueGoalAction {
 /// done or retargeted; only on today, though, not on a past or future
 /// day. Last, the [upcoming] ones -- active, due later -- just outlined,
 /// each saying the day it's due (one only expected to have started by
-/// then, waiting to be activated, in a dashed outline, with an hourglass,
-/// saying when it's expected to start too): one each for the first
-/// [upcomingPills], in [upcoming]'s order, then a "+N later" pill listing
-/// the rest.
+/// then, waiting to be activated, in a dashed outline, saying when it's
+/// expected to start too): one each for the first [upcomingPills], in
+/// [upcoming]'s order, then a "+N later" pill listing the rest. Any goal
+/// waiting to be activated, in whichever group, is just outlined, not
+/// filled, with an hourglass.
 /// Tapping a pill calls [onTap]; holding an overdue one (or
 /// right-clicking it) offers [OverdueGoalAction]s, each calling
 /// [onOverdueAction] -- or nothing, if that's null. With [focus], keys
@@ -506,8 +507,10 @@ class GoalsDueStrip extends StatelessWidget {
 /// is given. [missed] given, it's a ghost of a goal missed from the day:
 /// greyed and struck through like a closed one, saying those notes
 /// instead of a time. Upcoming -- [upcomingDay] given -- it's just
-/// outlined in its color, saying when it's due instead. Its
-/// parents are in its tooltip.
+/// outlined in its color, saying when it's due instead -- dashed, if it's
+/// only expected to be ([startsOn] given). Waiting to be activated --
+/// inactive, whichever of those it is -- it's just outlined too, not
+/// filled, with an hourglass. Its parents are in its tooltip.
 class _Pill extends StatelessWidget {
   const _Pill({
     required this.goal,
@@ -553,10 +556,11 @@ class _Pill extends StatelessWidget {
     final done = !ghost && goal.status == 'done';
     final overdue = dueDay != null;
     final ahead = upcomingDay != null;
+    final waiting = !closed && goal.inactive;
     final tint = color;
     final ink = closed
         ? colors.onSurfaceVariant
-        : ahead
+        : ahead || waiting
         ? colors.onSurface
         : Colors.black87;
     final time = !overdue && !ghost && !ahead && deadlineHasTime(goal.deadline)
@@ -582,6 +586,7 @@ class _Pill extends StatelessWidget {
       else
         'due by the end of the day',
       ...?missed?.skip(1),
+      if (waiting && startsOn == null) 'waiting to be activated',
       ?left,
       ?status,
     ].join(', ');
@@ -593,13 +598,13 @@ class _Pill extends StatelessWidget {
       onLongPressHint: menu == null ? null : 'Mark done or missed',
       excludeSemantics: true,
       child: Material(
-        color: closed || ahead ? Colors.transparent : tint,
+        color: closed || ahead || waiting ? Colors.transparent : tint,
         shape: StadiumBorder(
           side: overdue
               ? BorderSide(color: colors.error, width: 2)
               : startsOn != null
               ? BorderSide.none
-              : BorderSide(color: tint, width: ahead ? 2 : 1),
+              : BorderSide(color: tint, width: ahead || waiting ? 2 : 1),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -615,7 +620,7 @@ class _Pill extends StatelessWidget {
                   Icon(done ? Icons.check : Icons.close, size: 14, color: ink),
                   const SizedBox(width: 4),
                 ],
-                if (startsOn != null) ...[
+                if (waiting) ...[
                   Icon(Icons.hourglass_top, size: 14, color: ink),
                   const SizedBox(width: 4),
                 ],
