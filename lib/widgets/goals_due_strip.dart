@@ -653,9 +653,11 @@ class _Pill extends StatelessWidget {
         ),
       ),
     );
-    final drawn = startsOn == null
-        ? pill
-        : CustomPaint(foregroundPainter: _DashedStadium(tint), child: pill);
+    final drawn = _FocusRing(
+      child: startsOn == null
+          ? pill
+          : CustomPaint(foregroundPainter: _DashedStadium(tint), child: pill),
+    );
     return path.isEmpty
         ? drawn
         : Tooltip(message: [...path, title].join(' › '), child: drawn);
@@ -706,18 +708,20 @@ class _LaterPill extends StatelessWidget {
       label: '${goals.length} more upcoming',
       button: true,
       excludeSemantics: true,
-      child: Material(
-        color: Colors.transparent,
-        shape: StadiumBorder(side: BorderSide(color: colors.outline)),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => _showList(context),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-            child: Text(
-              text,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: colors.onSurfaceVariant,
+      child: _FocusRing(
+        child: Material(
+          color: Colors.transparent,
+          shape: StadiumBorder(side: BorderSide(color: colors.outline)),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => _showList(context),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              child: Text(
+                text,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
               ),
             ),
           ),
@@ -753,6 +757,91 @@ String startLabelShort(BuildContext context, String at) {
   return at.contains('T')
       ? '$day, ${strings.formatTimeOfDay(TimeOfDay.fromDateTime(start))}'
       : day;
+}
+
+/// [child], a pill, with a ring round it in the theme's primary color,
+/// a little way out, while keys have focus on it: the pill's own outline
+/// says what it is, so this one stays apart from it.
+class _FocusRing extends StatefulWidget {
+  const _FocusRing({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_FocusRing> createState() => _FocusRingState();
+}
+
+class _FocusRingState extends State<_FocusRing> {
+  var _focused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    FocusManager.instance.addHighlightModeListener(_onHighlightMode);
+  }
+
+  @override
+  void dispose() {
+    FocusManager.instance.removeHighlightModeListener(_onHighlightMode);
+    super.dispose();
+  }
+
+  void _onHighlightMode(FocusHighlightMode _) => setState(() {});
+
+  @override
+  Widget build(BuildContext context) {
+    // Only from keys, as InkWell's own highlight is: not after a tap.
+    final shown =
+        _focused &&
+        FocusManager.instance.highlightMode == FocusHighlightMode.traditional;
+    final color = Theme.of(context).colorScheme.primary;
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      includeSemantics: false,
+      onFocusChange: (focused) => setState(() => _focused = focused),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(end: shown ? 1 : 0),
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        builder: (context, t, child) => CustomPaint(
+          foregroundPainter: t == 0
+              ? null
+              : _RingStadium(color.withValues(alpha: color.a * t)),
+          child: child,
+        ),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// A stadium's outline in [color], 3 wide, 2 out from the stadium it's
+/// painted on: a pill with focus.
+class _RingStadium extends CustomPainter {
+  const _RingStadium(this.color);
+
+  final Color color;
+
+  static const width = 3.0, gap = 2.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const out = gap + width / 2;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        (Offset.zero & size).inflate(out),
+        Radius.circular(size.height / 2 + out),
+      ),
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RingStadium old) => old.color != color;
 }
 
 /// A stadium's outline in [color], dashed: a pill only expected to be.

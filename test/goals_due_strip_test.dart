@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/widgets/color_picker.dart';
@@ -492,6 +493,46 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('a pill with focus from keys is ringed in the primary color; '
+      'Tab moves the ring on', (tester) async {
+    final focus = GoalsStripFocus();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalsDueStrip(
+            goals: goalsDueOn(goals, day),
+            collapsed: false,
+            onCollapsed: (_) {},
+            onTap: (_) {},
+            focus: focus,
+          ),
+        ),
+      ),
+    );
+    Finder ringed(String title) => find.ancestor(
+      of: find.textContaining(title),
+      matching: find.byWidgetPredicate(
+        (w) =>
+            w is CustomPaint &&
+            '${w.foregroundPainter.runtimeType}' == '_RingStadium',
+      ),
+    );
+    const first = 'Late', second = 'Apple';
+    expect(ringed(first), findsNothing);
+
+    // Keys put it in the traditional highlight mode, as they do for real.
+    await tester.sendKeyEvent(LogicalKeyboardKey.shift);
+    expect(focus.focusFirst(focus.due), isTrue);
+    await tester.pumpAndSettle();
+    expect(ringed(first), findsOneWidget);
+    expect(ringed(second), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(ringed(first), findsNothing);
+    expect(ringed(second), findsOneWidget);
   });
 
   Future<void> pump(
