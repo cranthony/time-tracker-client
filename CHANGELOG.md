@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.238.2
+
+- On the Events page, the goal pill that keys have focus on has a ring
+  round it in the theme's color, a little way out from its own outline,
+  so it's easy to see which one Tab is on; the "+N later" pill gets one
+  too.
+
 ## 7.238.1
 
 - Tab on the Events page's goals goes from pill to pill in the order
