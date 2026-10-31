@@ -2,7 +2,8 @@
 # Checks on an Android emulator (or device) that changes waiting to save are
 # handed off between the app and its WorkManager background task -- each
 # with its own outboxes, in its own isolate, sharing what's kept -- with
-# every one sent once: none lost, none twice. Runs
+# every one sent once: none lost, none twice -- the task, cancelled
+# mid-request, finishing the change it's sending first. Runs
 # integration_test/outbox_handoff_test.dart, a debug build of the app with
 # a test of its own as its entry point. Building it first, before the
 # emulator starts, leaves flutter test little to build:
@@ -53,7 +54,7 @@ device=$(command adb devices | awk 'NR > 1 && $2 == "device" { print $1; exit }'
 
 # Whether the test, not just its loading, got under way in the output $1.
 started() { grep -E ' \+[0-9]+: ' "$1" | grep -vq ': loading '; }
-# Runs the test, its output to $1 as well. It takes about 3 minutes once
+# Runs the tests, their output to $1 as well. They take about 4 minutes once
 # built. It has stalled just after installing the app, never starting --
 # the app up, its VM service listening, but flutter test never reaching
 # it, and adb's logcat cut off -- and failed to start the Dart

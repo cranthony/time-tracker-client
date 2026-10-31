@@ -134,7 +134,13 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   String? _sendingId;
   bool _needsSignIn = false;
   bool _running = false;
+  bool _finishing = false;
   Timer? _timer;
+
+  /// Fires as the soonest claim another sender has on an item shown runs
+  /// out ([inFlightTimeout]), so whatever shows it stops saying it's
+  /// being sent, though nothing else changed.
+  Timer? _claimTimer;
   Future<FlushResult>? _flushing;
   Future<void> _lock = Future.value();
 
@@ -307,15 +313,50 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
     _timer?.cancel();
   }
 
+  /// Stops sending for good, once the item being sent, if any, is done
+  /// with -- sent and taken off what's kept, or put back to try again --
+  /// which this waits for. For a sender about to be shut down (the
+  /// background task, stopped by WorkManager): so it doesn't leave an
+  /// item saved on the server but still kept, claimed, till the claim
+  /// runs out and it's sent again.
+  Future<void> finishSending() async {
+    _finishing = true;
+    stop();
+    await _flushing;
+  }
+
   @override
   void dispose() {
     stop();
+    _claimTimer?.cancel();
     _disposed = true;
     super.dispose();
   }
 
   void _notify() {
-    if (!_disposed) notifyListeners();
+    if (_disposed) return;
+    _watchClaims();
+    notifyListeners();
+  }
+
+  /// Has [_claimTimer] say so when the soonest claim of another sender's
+  /// on an item runs out.
+  void _watchClaims() {
+    _claimTimer?.cancel();
+    _claimTimer = null;
+    final now = _clock();
+    DateTime? soonest;
+    for (final item in _items) {
+      if (!_inFlightElsewhere(item, now)) continue;
+      final ends = item.sendingSince!.add(inFlightTimeout);
+      if (soonest == null || ends.isBefore(soonest)) soonest = ends;
+    }
+    if (soonest == null) return;
+    // A moment past it, so it's run out by then.
+    _claimTimer = Timer(
+      soonest.difference(now) + const Duration(milliseconds: 1),
+      _notify,
+    );
   }
 
   /// Sends due items one at a time, oldest first, until one fails in a way
@@ -339,7 +380,7 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   Future<FlushResult> _flush(bool ignoreBackoff) async {
     flushStarting();
     while (true) {
-      if (_paused) break;
+      if (_paused || _finishing) break;
       await refresh();
       final now = _clock();
       final next = inOrder
@@ -484,7 +525,7 @@ abstract class Outbox<T extends OutboxItem<T>, R> extends ChangeNotifier {
   @protected
   void schedule({bool immediately = false}) {
     _timer?.cancel();
-    if (!_running || _needsSignIn || _paused) return;
+    if (!_running || _needsSignIn || _paused || _finishing) return;
     final now = _clock();
     // Another sender's sending: nothing's sent till it's done, so look
     // again soon -- it may finish any moment.

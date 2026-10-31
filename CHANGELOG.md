@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.240.1
+
+- On Android, the background task, stopped by Android while it's saving
+  a change -- as it is when the app comes back to the front -- finishes
+  that change before it stops, and saves no more. It used to be shut
+  down partway: a change the server had already saved stayed waiting,
+  shown as being sent, and held up those after it until it was sent
+  again, minutes later.
+- "Sending, by the background task…" goes once the background task has
+  had two minutes to say how sending went, without anything else
+  changing, rather than staying until something did.
+
 ## 7.240.0
 
 - Picking a goal's deadline or start day can give it a time of day too:

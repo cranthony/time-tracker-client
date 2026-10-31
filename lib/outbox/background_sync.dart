@@ -14,6 +14,13 @@ import 'outbox.dart';
 /// exponential backoff. Coming back to the foreground [cancel]s it, and
 /// the app's own outboxes take over.
 ///
+/// WorkManager stops a task it cancels -- or that runs too long, or loses
+/// its network -- by shutting its engine down. Told first, the task
+/// finishes the item it's sending, if any ([Outbox.finishSending]), and sends no
+/// more: shut down between the server saving an item and the task taking
+/// it off what's kept, the item would stay, claimed, till its claim ran
+/// out ([Outbox.inFlightTimeout]), and then be sent again.
+///
 /// Elsewhere this does nothing: a minimised Windows app keeps running, so
 /// its outbox keeps sending by itself.
 class BackgroundSync {
@@ -104,29 +111,48 @@ class BackgroundSync {
     Future<void> Function()? weather,
     Future<void> Function()? done,
   }) {
-    Workmanager().executeTask((task, _) async {
-      try {
-        if (task == weatherTask) {
-          // Every so often anyway: a failed one waits for the next.
-          await weather?.call();
-          return true;
+    // The outboxes of the task running, if one is.
+    var outboxes = const <Outbox>[];
+    var stopped = false;
+    Workmanager().executeTask(
+      onTaskStopped: (task, _) async {
+        if (task != _task) return;
+        stopped = true;
+        // Not past the claim's timeout: by then the app may be sending
+        // it anyway.
+        await Future.wait([for (final o in outboxes) o.finishSending()])
+            .timeout(Outbox.inFlightTimeout, onTimeout: () => const []);
+      },
+      (task, _) async {
+        try {
+          if (task == weatherTask) {
+            // Every so often anyway: a failed one waits for the next.
+            await weather?.call();
+            return true;
+          }
+          if (task == refreshTask) {
+            // It schedules the next itself; a failed one waits for that.
+            await refresh?.call();
+            return true;
+          }
+          stopped = false;
+          outboxes = build();
+          final results = [
+            for (final outbox in outboxes)
+              if (!stopped) await outbox.flush(ignoreBackoff: true),
+          ];
+          // Stopped, it's WorkManager that says whether it runs again.
+          if (stopped) return true;
+          // Returning false has WorkManager retry later. Nothing will change
+          // without the user signing in, so stop in that case.
+          // Nor will anything be sent past a write the server refused.
+          return results.every((r) => r.remaining == 0 || r.blocked) ||
+              results.any((r) => r.needsSignIn);
+        } finally {
+          outboxes = const [];
+          await done?.call();
         }
-        if (task == refreshTask) {
-          // It schedules the next itself; a failed one waits for that.
-          await refresh?.call();
-          return true;
-        }
-        final results = [
-          for (final outbox in build()) await outbox.flush(ignoreBackoff: true),
-        ];
-        // Returning false has WorkManager retry later. Nothing will change
-        // without the user signing in, so stop in that case.
-        // Nor will anything be sent past a write the server refused.
-        return results.every((r) => r.remaining == 0 || r.blocked) ||
-            results.any((r) => r.needsSignIn);
-      } finally {
-        await done?.call();
-      }
-    });
+      },
+    );
   }
 }

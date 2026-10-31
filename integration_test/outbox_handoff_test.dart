@@ -13,6 +13,11 @@
 // pick up what it did, start), taking notes and making events between,
 // while the task runs alongside it.
 //
+// And, apart: the task, cancelled as the app comes back while the server
+// is saving a change -- saved, but not yet answered -- finishes it before
+// WorkManager shuts it down, and sends no more. Shut down mid-request, it
+// left the change kept, claimed, to be sent again once the claim ran out.
+//
 //     flutter test integration_test/outbox_handoff_test.dart -d emulator-5554
 //
 // Run by tool/emulator/handoff_test.sh, in .github/workflows/emulator.yml.
@@ -63,6 +68,35 @@ Future<File> _file(String kind, String who) async {
 }
 
 final _random = Random();
+
+/// While it's there, each event is made, then not answered till it's
+/// gone: the server's saved it, but the sender hasn't heard.
+Future<File> _hold() async {
+  final dir = await _server();
+  await dir.create(recursive: true);
+  return File('${dir.path}/hold');
+}
+
+/// Starts afresh: nothing kept, nothing saved, the task's dispatcher set.
+Future<void> _reset() async {
+  final prefs = SharedPreferencesAsync();
+  await prefs.remove('note_outbox');
+  await prefs.remove('write_queue');
+  await prefs.remove('event_outbox');
+  final server = await _server();
+  if (server.existsSync()) server.deleteSync(recursive: true);
+  await BackgroundSync.initialize(handoffDispatcher);
+}
+
+/// Waits for [done], up to [within]: whether it came.
+Future<bool> _until(Future<bool> Function() done, Duration within) async {
+  final deadline = DateTime.now().add(within);
+  while (!await done()) {
+    if (DateTime.now().isAfter(deadline)) return false;
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+  return true;
+}
 
 /// A request's time on the wire: long enough for the other sender to
 /// come in meanwhile.
@@ -132,6 +166,10 @@ class _FileEvents extends InMemoryEventsRepository {
       mode: FileMode.append,
       flush: true,
     );
+    final hold = await _hold();
+    while (hold.existsSync()) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
     await _wire();
     return [
       Event.fromJson({...fields, 'id': '${fields['summary']}'}),
@@ -159,13 +197,7 @@ void main() {
     'changes handed between the app and its background task are each sent '
     'once',
     (tester) async {
-      final prefs = SharedPreferencesAsync();
-      await prefs.remove('note_outbox');
-      await prefs.remove('write_queue');
-      await prefs.remove('event_outbox');
-      final server = await _server();
-      if (server.existsSync()) server.deleteSync(recursive: true);
-      await BackgroundSync.initialize(handoffDispatcher);
+      await _reset();
 
       final notes = NoteWrites.local(
         _FileNotes('app'),
@@ -283,4 +315,67 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );
+  testWidgets('the background task, cancelled while the server saves a change, '
+      'finishes it first: not left waiting, to be sent again', (tester) async {
+    await _reset();
+    final events = EventOutbox(
+      store: PrefsOutboxStore.events(),
+      events: _FileEvents('app'),
+    );
+    final day = DateTime(2026, 10, 9, 6);
+    for (final (i, summary) in ['held', 'after'].indexed) {
+      await events.create({
+        'summary': summary,
+        'start': localIsoTimestamp(day.add(Duration(hours: i))),
+        'end': localIsoTimestamp(day.add(Duration(hours: i, minutes: 30))),
+      });
+    }
+    // In the order the server got them.
+    Future<List<List<String>>> made() async => [
+      for (final f in await _saved())
+        if (f[0] == 'event') f,
+    ]..sort((a, b) => int.parse(a[4]).compareTo(int.parse(b[4])));
+
+    // To the background, the server to hold its answer to the first.
+    final hold = await _hold();
+    await hold.writeAsString('');
+    await BackgroundSync.schedule();
+    expect(
+      await _until(
+        () async => (await made()).isNotEmpty,
+        const Duration(seconds: 90),
+      ),
+      isTrue,
+      reason: 'The background task never sent it.',
+    );
+    expect(
+      [for (final f in await made()) '${f[3]} by ${f.last}'],
+      ['held by background'],
+    );
+
+    // Back to the front: the app cancels the task, mid-request.
+    await BackgroundSync.cancel();
+    await Future<void>.delayed(const Duration(seconds: 3));
+    final kept = await PrefsOutboxStore.events().load();
+    expect(kept.first.sentBy, Outbox.backgroundSender);
+    expect(kept.first.sendingSince, isNotNull);
+
+    // The server answers; the app's sending again meanwhile.
+    await hold.delete();
+    await events.refresh();
+    events.start();
+    // Well within the claim's timeout: the task said how it went.
+    final cleared = await _until(
+      () async => (await PrefsOutboxStore.events().load()).isEmpty,
+      Outbox.inFlightTimeout ~/ 3,
+    );
+    events.dispose();
+
+    final sent = [for (final f in await made()) '${f[3]} by ${f.last}'];
+    // ignore: avoid_print
+    print('Handoff, cancelled mid-request: $sent.');
+    expect(cleared, isTrue, reason: 'Still waiting: $sent');
+    // Once, by the task; the next by the app, the task sending no more.
+    expect(sent, ['held by background', 'after by app']);
+  }, timeout: const Timeout(Duration(minutes: 5)));
 }
