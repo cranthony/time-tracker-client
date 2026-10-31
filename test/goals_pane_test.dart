@@ -170,7 +170,9 @@ void main() {
 
     await tester.tap(find.text('Write the pane'));
     await tester.pumpAndSettle();
-    expect(find.text('Ship the app'), findsOneWidget); // Its path.
+    // Its path, in the bar, and its parent, in its fields.
+    expect(find.text('Ship the app'), findsNWidgets(2));
+    expect(find.widgetWithText(ActionChip, 'Ship the app'), findsOneWidget);
     final bars = tester.widget<DepthBars>(find.byType(DepthBars).last);
     expect(bars.depth, 1);
     expect(find.text('Draw the icon'), findsOneWidget);
