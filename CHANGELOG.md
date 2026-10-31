@@ -23,6 +23,14 @@ on. Add the new version's section here at the same time; CI checks both.
   Tab and Shift+Tab go from goal to goal, round all of them; Enter
   opens the one with focus, and Esc leaves them.
 
+## 7.235.0
+
+- A goal's page has its parent under its title: tapped, it opens the
+  parent's page, and Move… beside it puts the goal under another goal or
+  at the top level. A top-level goal's says so, with a button to put it
+  under one. Tab gets to them; J and K still go only through its
+  sub-goals.
+
 ## 7.234.0
 
 - A description -- a goal's, its definition of done, a habit's note, an
