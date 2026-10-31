@@ -7,30 +7,40 @@ import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/widgets/goal_tile.dart';
 
-Goal _goal(String id, String title, String deadline, {int? priority}) =>
-    Goal.fromJson({
-      'id': id,
-      'title': title,
-      'status': 'active',
-      'deadline': deadline,
-      'priority': priority,
-      'history': [
-        {'status': 'active', 'at': '2026-10-01T09:00:00'},
-      ],
-    });
+Goal _goal(
+  String id,
+  String title,
+  String deadline, {
+  int? priority,
+  String? parent,
+}) => Goal.fromJson({
+  'id': id,
+  'title': title,
+  'parent_id': parent,
+  'status': 'active',
+  'deadline': deadline,
+  'priority': priority,
+  'history': [
+    {'status': 'active', 'at': '2026-10-01T09:00:00'},
+  ],
+});
 
 void main() {
   late InMemoryGoalsRepository repository;
 
-  Future<void> pump(WidgetTester tester) async {
+  Future<void> pump(WidgetTester tester, [List<Goal>? goals]) async {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    repository = InMemoryGoalsRepository([
-      _goal('top', 'Top', '2026-12-05', priority: 0),
-      _goal('a', 'Alpha', '2026-12-01'),
-      _goal('b', 'Beta', '2026-12-01T09:00'),
-    ], () => DateTime(2026, 10, 17, 9));
+    repository = InMemoryGoalsRepository(
+      goals ??
+          [
+            _goal('top', 'Top', '2026-12-05', priority: 0),
+            _goal('a', 'Alpha', '2026-12-01'),
+            _goal('b', 'Beta', '2026-12-01T09:00'),
+          ],
+      () => DateTime(2026, 10, 17, 9),
+    );
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -93,5 +103,50 @@ void main() {
 
     expect(find.textContaining("can't go"), findsNothing);
     expect(listed(tester), ['Top', 'Alpha', 'Beta']);
+  });
+
+  final tree = [
+    _goal('a', 'Alpha', '2026-12-01'),
+    _goal('b', 'Beta', '2026-12-01T09:00'),
+    _goal('b1', 'Bee one', '2026-12-01', parent: 'b'),
+    _goal('b2', 'Bee two', '2026-12-01T08:00', parent: 'b'),
+  ];
+
+  testWidgets('a goal dragged above another goal beside it goes above it, '
+      "what's under that one too", (tester) async {
+    await pump(tester, tree);
+    expect(listed(tester), ['Beta', 'Bee two', 'Bee one', 'Alpha']);
+
+    final gesture = await drag(tester, 'Alpha', -3);
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(listed(tester), ['Alpha', 'Beta', 'Bee two', 'Bee one']);
+    final saved = {for (final g in await repository.goals()) g.id: g};
+    expect(saved['a']!.sortOrder, 1000);
+  });
+
+  testWidgets("a goal dropped among another's sub-goals stays where it was", (
+    tester,
+  ) async {
+    await pump(tester, tree);
+
+    final gesture = await drag(tester, 'Alpha', -1);
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(listed(tester), ['Beta', 'Bee two', 'Bee one', 'Alpha']);
+    final saved = {for (final g in await repository.goals()) g.id: g};
+    expect(saved['a']!.sortOrder, isNull);
+  });
+
+  testWidgets('a sub-goal is dragged among those beside it', (tester) async {
+    await pump(tester, tree);
+
+    final gesture = await drag(tester, 'Bee one', -1);
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(listed(tester), ['Beta', 'Bee one', 'Bee two', 'Alpha']);
   });
 }

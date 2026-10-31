@@ -11,12 +11,15 @@ import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
 import 'goal_screen.dart';
 
-/// The Plan page's Goals pane -- what the user aims for: their top-level
-/// goals, soonest due first, each with when it's due and the time spent
-/// toward it (by the events kept on the device). Tapping one opens its
-/// page ([GoalScreen]), where what's under it is; its button edits it.
-/// By default the inactive and active ones are shown, and the filter
-/// shows others. "+" adds a top-level goal, on its full page; the round
+/// The Plan page's Goals pane -- what the user aims for: every goal, as a
+/// tree, each indented under those it's under, soonest due first among
+/// those beside it, each with when it's due and the time spent toward it
+/// (by the events kept on the device). Tapping one opens its page
+/// ([GoalScreen]); its button edits it. By default the inactive and
+/// active ones are shown, and the filter shows others; a search shows
+/// those that match, at any depth. Either way, the goals one's under show
+/// above it, whatever their status. "+" adds a top-level goal, on its
+/// full page; the round
 /// "+" in the corner, given [onQuickAdd], the quick New goal sheet the
 /// home screen widget opens. Above it all, with a
 /// [summary] to measure, the time in its window by top-level goal. It
@@ -99,17 +102,16 @@ class GoalsPaneState extends State<GoalsPane> {
     final view = widget.summary;
     final tree = GoalTree(goals ?? const []);
     final spent = keptGoalTime(widget.memory, tree);
-    final shown = byPriority([
-      for (final g in tree.topLevel)
-        if (_statuses.contains(g.status) &&
-            matchesSearch(_query, [
-              g.title,
-              g.description,
-              g.definitionOfDone,
-              g.attributionHints,
-            ]))
-          g,
-    ], tree);
+    final shown = tree.outline(
+      (g) =>
+          _statuses.contains(g.status) &&
+          matchesSearch(_query, [
+            g.title,
+            g.description,
+            g.definitionOfDone,
+            g.attributionHints,
+          ]),
+    );
     return PlanPane(
       searchHint: 'Search goals',
       onSearch: (query) => setState(() => _query = query),
@@ -163,6 +165,7 @@ class GoalsPaneState extends State<GoalsPane> {
               onMove: _actions.reorder,
               tile: (goal) => GoalTile(
                 goal: goal,
+                depth: tree.depthOf(goal.id),
                 spent: spent[goal.id],
                 subGoals: tree.childrenOf(goal.id).length,
                 priority: tree.priorityOf(goal.id),

@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../models/goal.dart';
 import '../models/goal_order.dart';
 
-/// [goals] -- as [GoalTree.compare] has them in [tree] -- each as [tile]
-/// builds it, held and dragged to put it in the user's own order among
-/// those it lists alike with ([GoalTree.listAlike]). Dragged past one it
+/// [goals] -- as [GoalTree.compare] has them in [tree], or as an outline
+/// of it ([GoalTree.outline]) -- each as [tile] builds it, held and
+/// dragged to put it in the user's own order among those beside it (under
+/// the same goal) that it lists alike with ([GoalTree.listAlike]); those
+/// under it go with it. Dragged past one it
 /// can't go past, the goal says why as it's dragged, and is dropped at the
 /// nearest place it can be ([moveGoal]); [onMove] is given the
 /// [Goal.sortOrder]s to save. With [scrolls] false, it's laid out in
@@ -69,14 +71,31 @@ class _GoalReorderListState extends State<GoalReorderList> {
       final middle = box.localToGlobal(box.size.center(Offset.zero)).dy;
       if (middle < y) to++;
     }
-    _warning.value = moveGoal(widget.goals, widget.tree, id, to).warning;
+    _warning.value = _move(id, to).warning;
   }
 
   /// [to] is among the others, the goal dragged taken out.
   void _reorder(int from, int to) {
-    final goals = widget.goals;
-    final move = moveGoal(goals, widget.tree, goals[from].id, to);
+    final move = _move(widget.goals[from].id, to);
     if (move.sortOrders.isNotEmpty) widget.onMove(move.sortOrders);
+  }
+
+  /// [id] dropped at [to], among the goals listed but it: among those
+  /// beside it, at the place after those of them above [to].
+  GoalMove _move(String id, int to) {
+    final tree = widget.tree;
+    String? parentOf(Goal g) => tree[g.parentId]?.id;
+    final parent = parentOf(tree[id]!);
+    final others = [
+      for (final g in widget.goals)
+        if (g.id != id) g,
+    ];
+    final siblings = [
+      for (final g in widget.goals)
+        if (parentOf(g) == parent) g,
+    ];
+    final at = others.take(to).where((g) => parentOf(g) == parent).length;
+    return moveGoal(siblings, tree, id, at);
   }
 
   Widget _proxy(Widget child, int index, Animation<double> animation) {
