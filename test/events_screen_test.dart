@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/widgets/mode_stack.dart';
@@ -408,6 +411,56 @@ void main() {
     expect(height(), moreOrLessEquals(before * 3, epsilon: 1));
     expect(find.text('Today'), findsOneWidget);
   });
+
+  testWidgets(
+    'a trackpad pinch, or Ctrl and the wheel, zooms; the wheel alone scrolls',
+    (tester) async {
+      final repo = InMemoryEventsRepository([
+        Event(start: at(30, 11), end: at(30, 13), summary: 'Work'),
+      ]);
+      await tester.pumpWidget(app(repo));
+      await tester.pumpAndSettle();
+      double height() => tester
+          .getSize(
+            find
+                .ancestor(of: find.text('Work'), matching: find.byType(InkWell))
+                .first,
+          )
+          .height;
+      final before = height();
+      final center = tester.getCenter(find.byType(ListView));
+
+      // As a browser sends a trackpad's pinch, and Ctrl and the wheel.
+      tester.binding.handlePointerEvent(
+        PointerScaleEvent(position: center, scale: 2),
+      );
+      await tester.pumpAndSettle();
+      expect(height(), moreOrLessEquals(before * 2, epsilon: 1));
+
+      // Ctrl and the wheel, sent as scrolling: down zooms out.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      tester.binding.handlePointerEvent(
+        PointerScrollEvent(
+          position: center,
+          scrollDelta: Offset(0, 200 * math.log(2)),
+        ),
+      );
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(height(), moreOrLessEquals(before, epsilon: 1));
+
+      final top = tester.getTopLeft(find.text('Work')).dy;
+      tester.binding.handlePointerEvent(
+        PointerScrollEvent(position: center, scrollDelta: const Offset(0, 50)),
+      );
+      await tester.pumpAndSettle();
+      expect(height(), moreOrLessEquals(before, epsilon: 1));
+      expect(
+        tester.getTopLeft(find.text('Work')).dy,
+        moreOrLessEquals(top - 50),
+      );
+    },
+  );
 
   testWidgets("an event's Details show all its properties", (tester) async {
     final repo = InMemoryEventsRepository([
@@ -2968,7 +3021,10 @@ void main() {
       await tester.tap(find.text('From its actions'));
       await tester.pumpAndSettle();
       expect(
-        find.descendant(of: dialog, matching: find.text('From actions & goals')),
+        find.descendant(
+          of: dialog,
+          matching: find.text('From actions & goals'),
+        ),
         findsOneWidget,
       );
       await tester.tap(find.text('Save'));
