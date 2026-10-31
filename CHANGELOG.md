@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.238.0
+
+- The Events timeline zooms with a trackpad's pinch, and with Ctrl and
+  the mouse wheel, around the pointer, as a pinch on a touchscreen
+  already did; in the web app these zoom the timeline, not the page. The
+  wheel alone still scrolls it.
+
 ## 7.237.0
 
 - A goal's page has its parent under its title: tapped, it opens the

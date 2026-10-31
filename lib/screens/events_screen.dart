@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -83,7 +84,8 @@ import '../widgets/status_message.dart';
 /// midnight, with buttons to step to the day before or after and to zoom
 /// in or out, and one to go to now. Swiping left or right slides to the
 /// day after or before, which are loaded in the background to be ready, and pinching zooms
-/// around the fingers. The days slide over a [TimelineAxis] that stays
+/// around the fingers, as does a trackpad's pinch, or Ctrl and the mouse
+/// wheel, around the pointer. The days slide over a [TimelineAxis] that stays
 /// still, scrolled up and down with them, so every day is at the same
 /// time of day. Tapping the date picks another; tapping an event
 /// shows all its properties, and lets one change them; tapping between
@@ -426,7 +428,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// The timeline's zoom: logical pixels per minute, from the first of
   /// [timelineScales] to the last; the buttons step between them, and
-  /// pinching goes anywhere between.
+  /// pinching, or Ctrl and the wheel, goes anywhere between.
   double _scale = defaultTimelineScale;
 
   /// Where a zoom this frame is to scroll the timeline to, once it's laid
@@ -439,6 +441,12 @@ class _EventsScreenState extends State<EventsScreen> {
   /// While pinching: the distance between the fingers and the zoom when
   /// it started. Nothing scrolls or slides by dragging meanwhile.
   ({double distance, double scale})? _pinch;
+
+  /// While a trackpad pinches: how far it had, at the last update.
+  double _trackpadScale = 1;
+
+  /// The timeline's viewport, which [_zoomTo]'s focus is measured down.
+  final _daysKey = GlobalKey();
 
   /// The timeline's scrolling up and down: every day's at once, as they
   /// slide side by side within it.
@@ -2318,6 +2326,42 @@ class _EventsScreenState extends State<EventsScreen> {
       pinch.scale * (a - b).distance / pinch.distance,
       focus: (a.dy + b.dy) / 2,
     );
+  }
+
+  /// A pinch on a trackpad, or Ctrl and the mouse wheel: browsers send
+  /// both as a [PointerScaleEvent], and so it zooms around the pointer.
+  /// Ctrl and the wheel can come as scrolling instead (on a Mac, or not
+  /// in a browser), which zooms the same way rather than scrolling. This
+  /// is beneath the timeline's scrolling, so it's asked first.
+  void _pointerSignal(PointerSignalEvent event) {
+    final scale = switch (event) {
+      PointerScaleEvent(:final scale) => scale,
+      PointerScrollEvent(:final scrollDelta)
+          when HardwareKeyboard.instance.isControlPressed &&
+              scrollDelta.dy != 0 =>
+        math.exp(-scrollDelta.dy / 200),
+      _ => 1.0,
+    };
+    if (scale == 1) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+      final viewport = _daysKey.currentContext?.findRenderObject();
+      _zoomTo(
+        _scale * scale,
+        focus: viewport is RenderBox
+            ? viewport.globalToLocal(event.position).dy
+            : null,
+      );
+    });
+  }
+
+  /// A trackpad's pinch, outside a browser; its scrolling is left to
+  /// scroll.
+  void _panZoomUpdate(PointerPanZoomUpdateEvent event) {
+    final factor = event.scale / _trackpadScale;
+    _trackpadScale = event.scale;
+    if (factor != 1) {
+      _zoomTo(_scale * factor, focus: event.localPosition.dy);
+    }
   }
 
   void _pointerUp(PointerEvent event) {
@@ -6345,121 +6389,131 @@ class _EventsScreenState extends State<EventsScreen> {
         },
         // Raw pointers, so pinching doesn't contend with scrolling.
         child: Listener(
+          key: _daysKey,
           onPointerDown: _pointerDown,
           onPointerMove: _pointerMove,
           onPointerUp: _pointerUp,
           onPointerCancel: _pointerUp,
+          onPointerPanZoomStart: (_) => _trackpadScale = 1,
+          onPointerPanZoomUpdate: _panZoomUpdate,
           child: ListView(
             controller: _scroll,
             physics: noDrag ?? const AlwaysScrollableScrollPhysics(),
             children: [
-              SizedBox(
-                height: _height,
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: TimelineAxis(
-                        day: _from,
-                        dayEnd: _to,
-                        scale: _scale,
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: PageView.builder(
-                        controller: _pages,
-                        physics: _box != null || _noteAt != null
-                            ? const NeverScrollableScrollPhysics()
-                            : noDrag,
-                        onPageChanged: (page) => _show(_dayAt(page)),
-                        itemBuilder: (context, page) =>
-                            _buildDay(context, _dayAt(page), view.maxHeight),
-                      ),
-                    ),
-                    if ((_extendTo, _proposal) case (
-                      final to?,
-                      final proposal?,
-                    ))
+              Listener(
+                onPointerSignal: _pointerSignal,
+                child: SizedBox(
+                  height: _height,
+                  child: Stack(
+                    children: [
                       Positioned.fill(
-                        child: WindowCursorView(
+                        child: TimelineAxis(
                           day: _from,
                           dayEnd: _to,
                           scale: _scale,
-                          anchor: proposal.claudeThrough ?? proposal.through,
-                          end: to,
-                          onMove: _moveExtension,
-                          onStep: ({required later}) {
-                            final to = _extensionStep(later: later);
-                            if (to != null) {
-                              setState(() => _extendTo = to);
-                            }
-                          },
-                          canStep: ({required later}) =>
-                              _extensionStep(later: later) != null,
-                          onOpen: _openExtension,
-                          onDone: to.isAfter(proposal.through) ? _extend : null,
-                          onCancel: () => setState(() => _extendTo = null),
                         ),
                       ),
-                    if (_noteAt case final at?)
                       Positioned.fill(
-                        child: NoteCursorView(
-                          day: _from,
-                          dayEnd: _to,
-                          scale: _scale,
-                          at: at,
-                          onMove: _moveNoteCursor,
-                          onStep: ({required later}) {
-                            final to = _noteStep(later: later);
-                            if (to != null) setState(() => _noteAt = to);
-                          },
-                          canStep: ({required later}) =>
-                              _noteStep(later: later) != null,
+                        child: PageView.builder(
+                          controller: _pages,
+                          physics: _box != null || _noteAt != null
+                              ? const NeverScrollableScrollPhysics()
+                              : noDrag,
+                          onPageChanged: (page) => _show(_dayAt(page)),
+                          itemBuilder: (context, page) =>
+                              _buildDay(context, _dayAt(page), view.maxHeight),
                         ),
                       ),
-                    if (_box case final box?)
-                      Positioned.fill(
-                        child: PendingEventBoxView(
-                          day: _from,
-                          dayEnd: _to,
-                          scale: _scale,
-                          box: box,
-                          selected: _selected,
-                          onSelect: (role) => setState(() => _selected = role),
-                          overwrites: _overwrites,
-                          covers: _covers,
-                          pushed: _pushed,
-                          label: switch (_moving) {
-                            final event? =>
-                              'Moving ${switch (event.summary) {
-                                final s? when s.isNotEmpty => '“$s”',
-                                _ => 'this event',
-                              }}',
-                            null => null,
-                          },
-                          onMoveCursor: (to) => _changeBox(
-                            (box) =>
-                                box.withCursor(_snap(to, CursorRole.anchor)),
-                            fromOther: true,
+                      if ((_extendTo, _proposal) case (
+                        final to?,
+                        final proposal?,
+                      ))
+                        Positioned.fill(
+                          child: WindowCursorView(
+                            day: _from,
+                            dayEnd: _to,
+                            scale: _scale,
+                            anchor: proposal.claudeThrough ?? proposal.through,
+                            end: to,
+                            onMove: _moveExtension,
+                            onStep: ({required later}) {
+                              final to = _extensionStep(later: later);
+                              if (to != null) {
+                                setState(() => _extendTo = to);
+                              }
+                            },
+                            canStep: ({required later}) =>
+                                _extensionStep(later: later) != null,
+                            onOpen: _openExtension,
+                            onDone: to.isAfter(proposal.through)
+                                ? _extend
+                                : null,
+                            onCancel: () => setState(() => _extendTo = null),
                           ),
-                          onMoveOther: (to) => _changeBox(
-                            (box) => box.withOther(_snap(to, CursorRole.end)),
-                          ),
-                          onMoveBox: (to) => _changeBox(
-                            (box) => box.movedTo(_snap(to, CursorRole.anchor)),
-                            moved: true,
-                          ),
-                          onStep: _stepCursor,
-                          canStep: _canStep,
-                          commuteEnds: _commuteEnds,
-                          onCommute: _commute,
-                          onEditTime: _editTime,
-                          // Picking, taps go to the events.
-                          interactive: _selecting == null,
-                          marks: _marksAt,
-                          cuts: _cutsAt,
                         ),
-                      ),
-                  ],
+                      if (_noteAt case final at?)
+                        Positioned.fill(
+                          child: NoteCursorView(
+                            day: _from,
+                            dayEnd: _to,
+                            scale: _scale,
+                            at: at,
+                            onMove: _moveNoteCursor,
+                            onStep: ({required later}) {
+                              final to = _noteStep(later: later);
+                              if (to != null) setState(() => _noteAt = to);
+                            },
+                            canStep: ({required later}) =>
+                                _noteStep(later: later) != null,
+                          ),
+                        ),
+                      if (_box case final box?)
+                        Positioned.fill(
+                          child: PendingEventBoxView(
+                            day: _from,
+                            dayEnd: _to,
+                            scale: _scale,
+                            box: box,
+                            selected: _selected,
+                            onSelect: (role) =>
+                                setState(() => _selected = role),
+                            overwrites: _overwrites,
+                            covers: _covers,
+                            pushed: _pushed,
+                            label: switch (_moving) {
+                              final event? =>
+                                'Moving ${switch (event.summary) {
+                                  final s? when s.isNotEmpty => '“$s”',
+                                  _ => 'this event',
+                                }}',
+                              null => null,
+                            },
+                            onMoveCursor: (to) => _changeBox(
+                              (box) =>
+                                  box.withCursor(_snap(to, CursorRole.anchor)),
+                              fromOther: true,
+                            ),
+                            onMoveOther: (to) => _changeBox(
+                              (box) => box.withOther(_snap(to, CursorRole.end)),
+                            ),
+                            onMoveBox: (to) => _changeBox(
+                              (box) =>
+                                  box.movedTo(_snap(to, CursorRole.anchor)),
+                              moved: true,
+                            ),
+                            onStep: _stepCursor,
+                            canStep: _canStep,
+                            commuteEnds: _commuteEnds,
+                            onCommute: _commute,
+                            onEditTime: _editTime,
+                            // Picking, taps go to the events.
+                            interactive: _selecting == null,
+                            marks: _marksAt,
+                            cuts: _cutsAt,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ],
