@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/goal.dart';
 import '../models/goal_activation.dart';
 import 'goal_color.dart';
 import 'goal_icon.dart';
 import 'goal_tile.dart';
+import 'hotkeys.dart';
 
 /// The goals due on [day], from [goals] -- a closed one on the day it
 /// closed instead, if that's sooner, so one done early shows when it was
@@ -196,7 +198,9 @@ enum OverdueGoalAction {
 /// the rest.
 /// Tapping a pill calls [onTap]; holding an overdue one (or
 /// right-clicking it) offers [OverdueGoalAction]s, each calling
-/// [onOverdueAction] -- or nothing, if that's null.
+/// [onOverdueAction] -- or nothing, if that's null. With [focus], keys
+/// can go to a group's first pill ([GoalsStripFocus.focusFirst]), and
+/// Tab and Shift+Tab go on from pill to pill, round all of them.
 class GoalsDueStrip extends StatelessWidget {
   const GoalsDueStrip({
     super.key,
@@ -212,7 +216,11 @@ class GoalsDueStrip extends StatelessWidget {
     this.spent,
     this.onTap,
     this.onOverdueAction,
+    this.focus,
   });
+
+  /// Where keys go into it, if they can.
+  final GoalsStripFocus? focus;
 
   /// The day's, as [goalsDueOn] gives them.
   final List<Goal> goals;
@@ -320,7 +328,7 @@ class GoalsDueStrip extends StatelessWidget {
           ? (action) => onOverdueAction!(g, action)
           : null,
     );
-    return Material(
+    final strip = Material(
       color: colors.surfaceContainerLow,
       shape: Border(bottom: BorderSide(color: colors.outlineVariant)),
       child: InkWell(
@@ -358,31 +366,41 @@ class GoalsDueStrip extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (goals.isNotEmpty || ghosts.isNotEmpty)
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: [
-                                  for (final g in goals) pill(g),
-                                  for (final g in ghosts) pill(g, ghost: true),
-                                ],
+                              _group(
+                                focus?.due,
+                                Hotkey.dayGoals,
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    for (final g in goals) pill(g),
+                                    for (final g in ghosts)
+                                      pill(g, ghost: true),
+                                  ],
+                                ),
                               ),
                             if (late.isNotEmpty)
                               Padding(
                                 padding: EdgeInsets.only(
                                   top: goals.isEmpty && ghosts.isEmpty ? 0 : 6,
                                 ),
-                                child: Wrap(
-                                  spacing: 6,
-                                  runSpacing: 6,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    Text(
-                                      'Overdue',
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(color: colors.error),
-                                    ),
-                                    for (final g in late) pill(g, late: true),
-                                  ],
+                                child: _group(
+                                  focus?.overdue,
+                                  Hotkey.overdueGoals,
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      Text(
+                                        'Overdue',
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(color: colors.error),
+                                      ),
+                                      for (final g in late) pill(g, late: true),
+                                    ],
+                                  ),
                                 ),
                               ),
                             if (upcoming.isNotEmpty)
@@ -395,21 +413,27 @@ class GoalsDueStrip extends StatelessWidget {
                                       ? 0
                                       : 6,
                                 ),
-                                child: Wrap(
-                                  spacing: 6,
-                                  runSpacing: 6,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    Text('Upcoming', style: muted),
-                                    for (final g in soon) pill(g, ahead: true),
-                                    if (later.isNotEmpty)
-                                      _LaterPill(
-                                        goals: later,
-                                        label: (g) =>
-                                            _upcomingLabel(context, g),
-                                        onTap: onTap,
-                                      ),
-                                  ],
+                                child: _group(
+                                  focus?.upcoming,
+                                  Hotkey.upcomingGoals,
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      Text('Upcoming', style: muted),
+                                      for (final g in soon)
+                                        pill(g, ahead: true),
+                                      if (later.isNotEmpty)
+                                        _LaterPill(
+                                          goals: later,
+                                          label: (g) =>
+                                              _upcomingLabel(context, g),
+                                          onTap: onTap,
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ),
                           ],
@@ -422,7 +446,24 @@ class GoalsDueStrip extends StatelessWidget {
         ),
       ),
     );
+    final keys = focus;
+    if (keys == null) return strip;
+    return Focus(
+      focusNode: keys.strip,
+      onKeyEvent: (_, event) => keys._tab(event),
+      child: strip,
+    );
   }
+
+  /// [child], a group of pills, under [node], for keys to find them by,
+  /// with [hint] on it while Ctrl is held.
+  static Widget _group(FocusNode? node, Hotkey hint, Widget child) =>
+      node == null
+      ? child
+      : HotkeyHint(
+          hint,
+          child: Focus(focusNode: node, child: child),
+        );
 
   static String _count(int n) => '$n goal${n == 1 ? '' : 's'}';
 
@@ -743,4 +784,83 @@ class _DashedStadium extends CustomPainter {
 
   @override
   bool shouldRepaint(_DashedStadium old) => old.color != color;
+}
+
+/// Where keys go into a [GoalsDueStrip]: the whole of it ([strip]), and
+/// each group of its pills -- the day's ([due]), the [overdue] and the
+/// [upcoming] ones.
+class GoalsStripFocus {
+  GoalsStripFocus();
+
+  final strip = FocusNode(
+    debugLabel: 'Goals strip',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+  final due = FocusNode(
+    debugLabel: 'Goals due',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+  final overdue = FocusNode(
+    debugLabel: 'Goals overdue',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+  final upcoming = FocusNode(
+    debugLabel: 'Goals upcoming',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+
+  /// Whether one of its pills has focus.
+  bool get hasFocus => strip.hasFocus;
+
+  /// Its pills, in order, round all three groups.
+  List<FocusNode> get _pills => [
+    for (final group in [due, overdue, upcoming])
+      for (final node in group.traversalDescendants)
+        if (node.canRequestFocus && !node.skipTraversal) node,
+  ];
+
+  /// Puts focus on the first pill in [group], scrolled into view:
+  /// whether there was one.
+  bool focusFirst(FocusNode group) {
+    final first = group.traversalDescendants
+        .where((n) => n.canRequestFocus && !n.skipTraversal)
+        .firstOrNull;
+    if (first == null) return false;
+    _focus(first);
+    return true;
+  }
+
+  static void _focus(FocusNode node) {
+    node.requestFocus();
+    node.context?.findRenderObject()?.showOnScreen(
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+    );
+  }
+
+  /// Tab, or Shift+Tab: the next pill, or the one before, round all of
+  /// them -- not off out of the strip.
+  KeyEventResult _tab(KeyEvent event) {
+    if (event.logicalKey != LogicalKeyboardKey.tab) {
+      return KeyEventResult.ignored;
+    }
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    final pills = _pills;
+    final at = pills.indexOf(FocusManager.instance.primaryFocus!);
+    if (at < 0) return KeyEventResult.ignored;
+    final back = HardwareKeyboard.instance.isShiftPressed;
+    _focus(pills[(at + (back ? -1 : 1)) % pills.length]);
+    return KeyEventResult.handled;
+  }
+
+  void dispose() {
+    strip.dispose();
+    due.dispose();
+    overdue.dispose();
+    upcoming.dispose();
+  }
 }

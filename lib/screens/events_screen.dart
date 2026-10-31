@@ -2013,6 +2013,21 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
+  /// Where G, O and U go: the goals strip's groups.
+  final _goalsFocus = GoalsStripFocus();
+
+  /// G, O or U: focus on the first goal in [group] of the goals strip --
+  /// shown first, if it's collapsed -- or, with none, saying so ([none]).
+  void _goToGoals(FocusNode group, String none) {
+    if (_goalsFocus.focusFirst(group)) return;
+    void say() => HotkeyScope.maybeOf(context)?.say(none);
+    if (!_goalsDueCollapsed) return say();
+    _setGoalsDueCollapsed(false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_goalsFocus.focusFirst(group)) say();
+    });
+  }
+
   void _setGoalsDueCollapsed(bool collapsed) {
     setState(() => _goalsDueCollapsed = collapsed);
     try {
@@ -2099,6 +2114,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
   @override
   void dispose() {
+    _goalsFocus.dispose();
     _memory.removeListener(_memoryChanged);
     _lifecycle.dispose();
     _loads.unbind();
@@ -2926,6 +2942,11 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Esc: leaves the top mode, as ✕ does, or else lets go of the
   /// highlight.
   void _keyEscape() {
+    // In the goals strip: out of it, back to the timeline's keys.
+    if (_goalsFocus.hasFocus) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      return;
+    }
     if (_modes.isNotEmpty) return _leaveMode();
     setState(() => _keyed = null);
   }
@@ -2959,7 +2980,12 @@ class _EventsScreenState extends State<EventsScreen> {
       const HotkeyTrigger.key(LogicalKeyboardKey.end),
       () => _keyEnd(last: true),
     ),
-    HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.enter), _keyEnter),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.enter),
+      _keyEnter,
+      // A goal's pill with focus: Enter opens it, as a tap does.
+      when: () => !_goalsFocus.hasFocus,
+    ),
     HotkeyBinding(
       const HotkeyTrigger.key(LogicalKeyboardKey.escape),
       _keyEscape,
@@ -2982,6 +3008,23 @@ class _EventsScreenState extends State<EventsScreen> {
     ),
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyT), _goToNow),
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyD), _pickDay),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyG),
+      () => _goToGoals(_goalsFocus.due, 'No goals due on this day'),
+    ),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyO),
+      () => _goToGoals(
+        _goalsFocus.overdue,
+        _day == _midnight(widget.clock())
+            ? 'No goals overdue'
+            : 'Goals overdue show on today',
+      ),
+    ),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyU),
+      () => _goToGoals(_goalsFocus.upcoming, 'No upcoming goals'),
+    ),
     for (final key in const [LogicalKeyboardKey.keyC, LogicalKeyboardKey.add])
       HotkeyBinding(HotkeyTrigger.key(key), () {
         if (_box != null || _selecting != null || _noteAt != null) return;
@@ -6241,6 +6284,7 @@ class _EventsScreenState extends State<EventsScreen> {
         onCollapsed: _setGoalsDueCollapsed,
         onTap: GoalsScope.of(context) == null ? null : _openGoal,
         onOverdueAction: GoalsScope.of(context) == null ? null : _actOnOverdue,
+        focus: _goalsFocus,
       ),
     if (_notices.isNotEmpty)
       ProposalNoticesBanner(
