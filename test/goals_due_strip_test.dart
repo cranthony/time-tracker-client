@@ -535,6 +535,52 @@ void main() {
     expect(ringed(second), findsOneWidget);
   });
 
+  testWidgets('an inactive goal due on the day, or overdue, is just '
+      'outlined, with an hourglass, not filled', (tester) async {
+    final waiting = [
+      Goal(
+        id: 'd',
+        title: 'Due today',
+        status: 'inactive',
+        deadline: '2026-10-22',
+      ),
+      Goal(
+        id: 'o',
+        title: 'Late one',
+        status: 'inactive',
+        deadline: '2026-10-20',
+      ),
+    ];
+    final day = DateTime(2026, 10, 22);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalsDueStrip(
+            goals: goalsDueOn(waiting, day),
+            overdue: overdueGoalsOn(waiting, day, today: day),
+            day: day,
+            today: day,
+            collapsed: false,
+            onCollapsed: (_) {},
+          ),
+        ),
+      ),
+    );
+    expect(find.byIcon(Icons.hourglass_top), findsNWidgets(2));
+    for (final title in ['Due today', 'Late one']) {
+      final fill = tester.widget<Material>(
+        find
+            .ancestor(
+              of: find.textContaining(title),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      expect(fill.color, Colors.transparent, reason: title);
+    }
+    expect(find.textContaining('due Oct 20'), findsOneWidget);
+  });
+
   Future<void> pump(
     WidgetTester tester, {
     required bool collapsed,
