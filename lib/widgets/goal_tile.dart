@@ -8,6 +8,7 @@ import 'goal_editor.dart';
 import 'goal_icon.dart';
 import 'goal_starts.dart';
 import 'priority_chip.dart';
+import 'tree_tile.dart';
 
 /// The time spent toward each goal in the events kept on the device
 /// ([timeSpent]), by id: with [through], only those ended by then.
@@ -76,11 +77,12 @@ Color goalColor(BuildContext context, Goal goal) {
 /// and, given the [tree] it's in, when it starts ([startsSummary]) --
 /// without, "Waiting", and when it's expected to start, if the server's
 /// said. Tapped, it opens ([onTap]); its button at the right edits it
-/// ([onEdit]).
+/// ([onEdit]). It's indented [depth] levels, under the goals it's under.
 class GoalTile extends StatelessWidget {
   const GoalTile({
     super.key,
     required this.goal,
+    this.depth = 0,
     this.spent,
     this.subGoals = 0,
     this.priority,
@@ -90,6 +92,9 @@ class GoalTile extends StatelessWidget {
   });
 
   final Goal goal;
+
+  /// How many levels it's indented: 0, not at all.
+  final int depth;
   final Duration? spent;
 
   /// How many goals are directly under it.
@@ -140,7 +145,8 @@ class GoalTile extends StatelessWidget {
     ];
     return Opacity(
       opacity: goal.closed ? 0.6 : 1,
-      child: ListTile(
+      child: TreeTile(
+        depth: depth,
         leading: GoalIcon(color: goalColor(context, goal)),
         title: Row(
           children: [

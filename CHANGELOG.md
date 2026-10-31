@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.236.0
+
+- The Plan page's Goals pane lists every goal, sub-goals too, as a tree:
+  each indented under the goal it's under, as actions are under their
+  groups. Its search finds goals at any depth, each shown under the
+  goals it's under, and those show whatever their status, so a match
+  always sits on its path. Held and dragged, a goal moves among those
+  beside it, what's under it going with it.
+
 ## 7.235.0
 
 - On the Events page, G goes to the day's goals in the strip over the

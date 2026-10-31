@@ -89,17 +89,60 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('lists the open top-level goals, soonest due first', (
+  List<(String, int)> listed(WidgetTester tester) => [
+    for (final tile in tester.widgetList<GoalTile>(find.byType(GoalTile)))
+      (tile.goal.title, tile.depth),
+  ];
+
+  testWidgets('lists the open goals as a tree, soonest due first, each '
+      'indented under those it is under', (tester) async {
+    await pump(tester);
+
+    expect(listed(tester), [
+      ('Learn Rust', 0),
+      ('Ship the app', 0),
+      ('Write the pane', 1),
+      ('Draw the icon', 2),
+      ('Polish', 1),
+      ('Write docs', 1),
+    ]);
+    expect(
+      tester.getTopLeft(find.text('Draw the icon')).dx,
+      greaterThan(tester.getTopLeft(find.text('Write the pane')).dx),
+    );
+    expect(
+      tester.getTopLeft(find.text('Write the pane')).dx,
+      greaterThan(tester.getTopLeft(find.text('Ship the app')).dx),
+    );
+  });
+
+  testWidgets('a search finds a sub-goal, shown under the goals it is under', (
     tester,
   ) async {
     await pump(tester);
+    await tester.enterText(find.byType(TextField), 'icon');
+    await tester.pumpAndSettle();
 
-    final titles = [
-      for (final tile in tester.widgetList<GoalTile>(find.byType(GoalTile)))
-        tile.goal.title,
-    ];
-    expect(titles, ['Learn Rust', 'Ship the app']);
-    expect(find.text('Write the pane'), findsNothing);
+    expect(listed(tester), [
+      ('Ship the app', 0),
+      ('Write the pane', 1),
+      ('Draw the icon', 2),
+    ]);
+  });
+
+  testWidgets('the goals one is under show whatever their status', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      goals: [
+        _goal('old', 'Old plan', status: 'done'),
+        _goal('left', 'Left over', parent: 'old'),
+        _goal('gone', 'Gone too', parent: 'old', status: 'done'),
+      ],
+    );
+
+    expect(listed(tester), [('Old plan', 0), ('Left over', 1)]);
   });
 
   testWidgets('has no round "+" without a quick New goal sheet', (
@@ -521,7 +564,14 @@ void main() {
               .own,
         ),
     ];
-    expect(chips(), [('Learn Rust', 3, false), ('Ship the app', 3, false)]);
+    expect(chips(), [
+      ('Learn Rust', 3, false),
+      ('Ship the app', 3, false),
+      ('Write the pane', 3, false),
+      ('Draw the icon', 3, false),
+      ('Polish', 3, false),
+      ('Write docs', 3, false),
+    ]);
 
     await tester.tap(find.byTooltip('Edit Ship the app'));
     await tester.pumpAndSettle();
@@ -535,7 +585,14 @@ void main() {
       {for (final g in await repository.goals()) g.id: g.priority}['ship'],
       1,
     );
-    expect(chips(), [('Ship the app', 1, true), ('Learn Rust', 3, false)]);
+    expect(chips(), [
+      ('Ship the app', 1, true),
+      ('Write the pane', 1, false),
+      ('Draw the icon', 1, false),
+      ('Polish', 1, false),
+      ('Write docs', 1, false),
+      ('Learn Rust', 3, false),
+    ]);
 
     await tester.tap(find.text('Ship the app'));
     await tester.pumpAndSettle();

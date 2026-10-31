@@ -569,6 +569,31 @@ class GoalTree {
     return out;
   }
 
+  /// The goals that [shows], each under every goal it's under, whether
+  /// that shows or not, as a tree: each goal followed by those under it
+  /// that are listed, each level as [compare] has it.
+  List<Goal> outline(bool Function(Goal goal) shows) {
+    final listed = <String>{};
+    for (final g in byId.values) {
+      if (!shows(g)) continue;
+      listed.add(g.id);
+      for (final a in ancestorsOf(g.id)) {
+        listed.add(a.id);
+      }
+    }
+    final out = <Goal>[];
+    void under(List<Goal> level) {
+      for (final g in level..sort(compare)) {
+        if (!listed.remove(g.id)) continue;
+        out.add(g);
+        under(childrenOf(g.id));
+      }
+    }
+
+    under(topLevel);
+    return out;
+  }
+
   /// [id]'s top-level goal: it, or its outermost parent.
   String topOf(String id) => ancestorsOf(id).firstOrNull?.id ?? id;
 
