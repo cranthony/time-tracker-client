@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
+import '../models/entity_link.dart';
 import '../models/text_format.dart';
+import 'entity_links.dart';
 import 'event_description.dart';
 import 'hotkeys.dart';
 import 'text_format_picker.dart';
@@ -13,6 +17,13 @@ import 'text_format_picker.dart';
 /// selected, back as they were. Either side can save or call it off.
 /// Gives what's typed ("" for nothing) and its format, or null if it's
 /// called off.
+///
+/// "Link" puts a link into the app ([EntityLink]) where the cursor is --
+/// to a goal, a habit, a person or circle, an action or a location,
+/// picked -- written as the format is: `[Sam](person:sam)` in Markdown,
+/// `<a href="person:sam">Sam</a>` in HTML, just `person:sam` in plain
+/// text (the app draws its name). In Markdown or HTML, text selected
+/// becomes the link's.
 Future<FormattedText?> showTextEditor(
   BuildContext context, {
   required String title,
@@ -89,9 +100,45 @@ class _TextEditorPageState extends State<TextEditorPage> {
       Navigator.of(context)
           .pop<FormattedText>((text: _controller.text.trim(), format: _format));
 
+  /// Picks one of [kind] and puts a link to it where the cursor is.
+  Future<void> _link(EntityLinks links, EntityKind kind) async {
+    final picked = await links.pick(context, kind);
+    if (picked == null || !mounted) return;
+    final text = _controller.text;
+    final selection = _controller.selection;
+    final (start, end) = selection.isValid
+        ? (selection.start, selection.end)
+        : (text.length, text.length);
+    final selected = text.substring(start, end).trim();
+    final name = selected.isEmpty ? picked.name : selected;
+    final href = picked.link.href;
+    final written = switch (_format) {
+      TextFormat.plain => href,
+      TextFormat.markdown => '[${name.replaceAll(']', r'\]')}]($href)',
+      TextFormat.html =>
+        '<a href="$href">${const HtmlEscape().convert(name)}</a>',
+    };
+    // Plain text keeps what was selected: a link there is only its id.
+    final keep = _format == TextFormat.plain && selected.isNotEmpty;
+    final before = text.substring(0, keep ? end : start);
+    final after = text.substring(end);
+    // Set off by spaces, so it isn't run into a word.
+    final lead = before.isEmpty || before.trimRight() != before ? '' : ' ';
+    final trail = after.isEmpty || after.trimLeft() != after ? '' : ' ';
+    final inserted = '$lead$written$trail';
+    _controller.value = TextEditingValue(
+      text: '$before$inserted$after',
+      selection: TextSelection.collapsed(
+        offset: before.length + lead.length + written.length,
+      ),
+    );
+    _focus.requestFocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final links = EntityLinks.of(context);
     return SaveOrDiscard(
       changed: () => _changed,
       onSave: _save,
@@ -148,9 +195,43 @@ class _TextEditorPageState extends State<TextEditorPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextFormatPicker(
-                    format: _format,
-                    onChanged: (format) => setState(() => _format = format),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormatPicker(
+                          format: _format,
+                          onChanged: (format) =>
+                              setState(() => _format = format),
+                        ),
+                      ),
+                      if (links != null)
+                        MenuAnchor(
+                          menuChildren: [
+                            for (final kind in EntityKind.values)
+                              if (kind != EntityKind.circle)
+                                MenuItemButton(
+                                  leadingIcon: entityIcon(
+                                    kind,
+                                    size: 20,
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                  onPressed: () => _link(links, kind),
+                                  child: Text(
+                                    kind == EntityKind.person
+                                        ? 'Person or circle'
+                                        : kind.label,
+                                  ),
+                                ),
+                          ],
+                          builder: (context, controller, _) => TextButton.icon(
+                            icon: const Icon(Icons.link),
+                            label: const Text('Link'),
+                            onPressed: () => controller.isOpen
+                                ? controller.close()
+                                : controller.open(),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   Expanded(

@@ -9,6 +9,23 @@ on. Add the new version's section here at the same time; CI checks both.
 
 
 
+## 7.234.0
+
+- A description -- a goal's, its definition of done, a habit's note, an
+  event's -- can link into the app: to a goal, a habit, a person, a
+  circle, an action or a location, by id, as any link is written
+  (`[Sam](person:sam)` in Markdown, `<a href="goal:move">` in HTML) or
+  just bare in plain text (`goal:move`). The link is drawn with the icon
+  of what it names and, where its text is only the id (or there's
+  none), its current name, so a rename never leaves it stale. Tapped,
+  a goal's, a habit's, a person's or a circle's page opens; an action
+  or a location, having no page, opens in its dialog, as its pane opens
+  it. One the app hasn't got says so.
+- The text editor's **Link** picks a goal, a habit, a person or circle,
+  an action or a location and puts a link to it where the cursor is,
+  written as the format is; in Markdown or HTML, text selected becomes
+  the link's.
+
 ## 7.233.0
 
 - J and K find a list further down or up the page, not only one near

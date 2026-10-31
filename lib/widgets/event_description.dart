@@ -3,7 +3,11 @@
 /// italics, underlines, links, line breaks and lists -- and what's
 /// written elsewhere as plain text; both are shown, links tappable. So is
 /// any free text of the app's own -- a goal's description, say -- in the
-/// format it's written in ([TextFormat]): Markdown too.
+/// format it's written in ([TextFormat]): Markdown too. A link into the
+/// app ([EntityLink] -- `goal:ship-goals-pane`, `person:sam`) is drawn
+/// with the icon of what it names and, where its text is only the id (or
+/// there's none), its current name; tapped, it opens what it names
+/// ([EntityLinks]).
 library;
 
 import 'dart:math' as math;
@@ -15,7 +19,9 @@ import 'package:html/parser.dart' as html;
 import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/entity_link.dart';
 import '../models/text_format.dart';
+import 'entity_links.dart';
 
 /// [text] as HTML, as it's written in [format] (or looks, with none);
 /// null for plain text.
@@ -29,8 +35,16 @@ String? _asHtml(String text, TextFormat? format) =>
       ),
     };
 
-/// Bare web addresses in plain text, to make links of.
-final _url = RegExp(r'https?://[^\s<>"]+[^\s<>".,;:!?)\]]');
+/// Bare web addresses in plain text, to make links of -- and links into
+/// the app ([EntityLink.pattern]), after them, so one in an address's
+/// path is part of the address.
+final _links = RegExp(
+  r'https?://[^\s<>"]+[^\s<>".,;:!?)\]]|' + EntityLink.pattern.pattern,
+  caseSensitive: false,
+);
+
+/// How far across a link's icon is: as the text is tall, near enough.
+const _iconSize = 16.0;
 
 /// Opens [url] in the app it belongs to: the browser, the dialer, mail.
 Future<void> _open(String url) async {
@@ -56,36 +70,75 @@ class DescriptionBlock {
 
 /// [text], written in [format] (or as it looks, with none), as paragraphs
 /// and list items, making a recognizer for each link with [recognizer]:
-/// the caller disposes of them.
+/// the caller disposes of them. A link into the app is named by [links]
+/// (or, with none, as written, or by its id), its icon before it; one
+/// written bare, `goal:move`, is a link too, unless not [bareLinks].
 List<DescriptionBlock> descriptionBlocks(
   String text, {
   TextFormat? format,
   required Color linkColor,
   required TapGestureRecognizer Function(String url) recognizer,
+  EntityLinks? links,
+  bool bareLinks = true,
 }) {
   final link = TextStyle(
     color: linkColor,
     decoration: TextDecoration.underline,
     decorationColor: linkColor,
   );
-  // Plain text, its addresses links.
-  List<TextSpan> plain(String text, TextStyle? style) {
-    final spans = <TextSpan>[];
+  // A link into the app: its icon, then its text -- [shown], unless
+  // that's only its id (or nothing), then what it names now.
+  List<InlineSpan> entity(EntityLink to, String shown, TextStyle? style) {
+    final text =
+        shown.isEmpty ||
+            shown == to.id ||
+            shown.toLowerCase() == to.href.toLowerCase()
+        ? links?.name(to) ?? to.id
+        : shown;
+    final tap = recognizer(to.href);
+    return [
+      WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: GestureDetector(
+          onTap: tap.onTap,
+          child: Padding(
+            padding: const EdgeInsetsDirectional.only(end: 3),
+            child:
+                links?.icon(to, size: _iconSize, color: linkColor) ??
+                entityIcon(to.kind, size: _iconSize, color: linkColor),
+          ),
+        ),
+      ),
+      TextSpan(text: text, style: style?.merge(link) ?? link, recognizer: tap),
+    ];
+  }
+
+  // Plain text, its addresses links, and its links into the app too.
+  List<InlineSpan> plain(String text, TextStyle? style) {
+    final spans = <InlineSpan>[];
     var at = 0;
-    for (final match in _url.allMatches(text)) {
+    for (final match in _links.allMatches(text)) {
       if (match.start > at) {
         spans.add(
           TextSpan(text: text.substring(at, match.start), style: style),
         );
       }
       final url = match.group(0)!;
-      spans.add(
-        TextSpan(
-          text: url,
-          style: style?.merge(link) ?? link,
-          recognizer: recognizer(url),
-        ),
-      );
+      if (EntityLink.parse(url) case final to?) {
+        if (bareLinks) {
+          spans.addAll(entity(to, url, style));
+        } else {
+          spans.add(TextSpan(text: url, style: style));
+        }
+      } else {
+        spans.add(
+          TextSpan(
+            text: url,
+            style: style?.merge(link) ?? link,
+            recognizer: recognizer(url),
+          ),
+        );
+      }
       at = match.end;
     }
     if (at < text.length) {
@@ -104,8 +157,9 @@ List<DescriptionBlock> descriptionBlocks(
   }
 
   final blocks = <DescriptionBlock>[];
-  // The block being built: its spans, each with its text.
-  var line = <(TextSpan, String)>[];
+  // The block being built: its spans, each with its text (an icon's, the
+  // object replacement character, as a placeholder is).
+  var line = <(InlineSpan, String)>[];
   String? marker;
   var depth = 0;
   var listDepth = 0;
@@ -120,8 +174,10 @@ List<DescriptionBlock> descriptionBlocks(
       line.removeLast();
     }
     // Nor a space, from a line break before a list in it.
-    if (line.isNotEmpty && line.last.$2 != line.last.$2.trimRight()) {
-      final (span, text) = line.removeLast();
+    if (line.isNotEmpty &&
+        line.last.$1 is TextSpan &&
+        line.last.$2 != line.last.$2.trimRight()) {
+      final (span as TextSpan, text) = line.removeLast();
       line.add((
         TextSpan(
           text: text.trimRight(),
@@ -145,8 +201,8 @@ List<DescriptionBlock> descriptionBlocks(
     depth = math.max(0, listDepth - 1);
   }
 
-  void add(TextSpan span) {
-    final text = span.text ?? '';
+  void add(InlineSpan span) {
+    final text = span is TextSpan ? span.text ?? '' : '￼';
     if (text.isEmpty) return;
     line.add((span, text));
   }
@@ -193,6 +249,12 @@ List<DescriptionBlock> descriptionBlocks(
     };
     final merged = own == null ? style : (style?.merge(own) ?? own);
     final linkTo = tag == 'a' ? node.attributes['href'] ?? href : href;
+    if (tag == 'a') {
+      if (EntityLink.parse(linkTo ?? '') case final to?) {
+        entity(to, node.text.trim(), merged).forEach(add);
+        return;
+      }
+    }
     switch (tag) {
       case 'br':
         add(TextSpan(text: '\n', style: merged));
@@ -259,7 +321,9 @@ List<DescriptionBlock> descriptionBlocks(
 /// [description], written in [format] (or as it looks, with none), as
 /// plain text, for an event of the user's own: its paragraphs a line
 /// each, its lists' items with their bullets, and a link's address after
-/// its text, unless that's the address already.
+/// its text, unless that's the address already. A link into the app is
+/// its text, or with none, as written -- its id, which nothing outside
+/// the app can follow.
 String descriptionText(String description, {TextFormat? format}) {
   final source = _asHtml(description, format);
   if (source == null) {
@@ -269,6 +333,10 @@ String descriptionText(String description, {TextFormat? format}) {
   for (final a in fragment.querySelectorAll('a[href]')) {
     final href = a.attributes['href']!;
     final shown = a.text.trim();
+    if (EntityLink.parse(href) case final to?) {
+      a.replaceWith(dom.Text(shown.isEmpty ? to.href : shown));
+      continue;
+    }
     final address = href.startsWith('mailto:') ? href.substring(7) : href;
     a.replaceWith(
       dom.Text(
@@ -281,6 +349,7 @@ String descriptionText(String description, {TextFormat? format}) {
     fragment.outerHtml,
     format: TextFormat.html,
     linkColor: const Color(0x00000000),
+    bareLinks: false,
     recognizer: (_) {
       final r = TapGestureRecognizer();
       recognizers.add(r);
@@ -293,7 +362,7 @@ String descriptionText(String description, {TextFormat? format}) {
   return [
     for (final b in blocks)
       '${'  ' * b.depth}${b.marker == null ? '' : '${b.marker} '}'
-          '${b.span.toPlainText()}',
+          '${b.span.toPlainText(includePlaceholders: false)}',
   ].join('\n');
 }
 
@@ -302,7 +371,8 @@ String descriptionText(String description, {TextFormat? format}) {
 /// full: its paragraphs, and its lists' items, their bullets hung to the
 /// left. Not [expandable], it's only cut off, with no "More": tapping it
 /// opens it elsewhere. [selectable], its text is selected by touching
-/// and holding it, to copy.
+/// and holding it, to copy. Its links into the app are named and opened
+/// by [links]: by default, as the context has them ([EntityLinks.of]).
 class EventDescription extends StatefulWidget {
   const EventDescription(
     this.description, {
@@ -311,6 +381,7 @@ class EventDescription extends StatefulWidget {
     this.maxLines = 8,
     this.expandable = true,
     this.selectable = false,
+    this.links,
   });
 
   final String description;
@@ -318,6 +389,7 @@ class EventDescription extends StatefulWidget {
   final int? maxLines;
   final bool expandable;
   final bool selectable;
+  final EntityLinks? links;
 
   @override
   State<EventDescription> createState() => _EventDescriptionState();
@@ -336,10 +408,29 @@ class _EventDescriptionState extends State<EventDescription> {
   final _recognizers = <TapGestureRecognizer>[];
   var _expanded = false;
 
+  /// As last built with; its memory listened to, so a link's name is
+  /// what's loaded since.
+  EntityLinks? _links;
+
   @override
   void dispose() {
+    _links?.memory.removeListener(_changed);
     _disposeRecognizers();
     super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  void _use(EntityLinks? links) {
+    if (links?.memory == _links?.memory) {
+      _links = links;
+      return;
+    }
+    _links?.memory.removeListener(_changed);
+    _links = links;
+    links?.memory.addListener(_changed);
   }
 
   void _disposeRecognizers() {
@@ -350,9 +441,20 @@ class _EventDescriptionState extends State<EventDescription> {
   }
 
   TapGestureRecognizer _recognizer(String url) {
-    final r = TapGestureRecognizer()..onTap = () => _open(url);
+    final r = TapGestureRecognizer()..onTap = () => _follow(url);
     _recognizers.add(r);
     return r;
+  }
+
+  /// Opens [url]: into the app, if it's a link into it and there's a way
+  /// to; otherwise in the app it belongs to.
+  Future<void> _follow(String url) async {
+    if (EntityLink.parse(url) case final to?) {
+      final links = _links;
+      if (links == null) return;
+      return links.open(context, to);
+    }
+    await _open(url);
   }
 
   double _gapBefore(List<DescriptionBlock> blocks, int i) => i == 0
@@ -366,11 +468,14 @@ class _EventDescriptionState extends State<EventDescription> {
     _disposeRecognizers();
     final theme = Theme.of(context);
     final style = theme.textTheme.bodyMedium;
+    final links = widget.links ?? EntityLinks.of(context);
+    _use(links);
     final blocks = descriptionBlocks(
       widget.description,
       format: widget.format,
       linkColor: theme.colorScheme.primary,
       recognizer: _recognizer,
+      links: links,
     );
     if (blocks.isEmpty) return const SizedBox.shrink();
     final direction = Directionality.of(context);
@@ -384,11 +489,26 @@ class _EventDescriptionState extends State<EventDescription> {
               (b.isItem ? _markerWidth : 0),
         );
         double measure(InlineSpan span, double maxWidth) {
+          var icons = 0;
+          span.visitChildren((s) {
+            if (s is WidgetSpan) icons++;
+            return true;
+          });
           final painter = TextPainter(
             text: TextSpan(style: style, children: [span]),
             textDirection: direction,
             textScaler: scaler,
-          )..layout(maxWidth: maxWidth);
+          );
+          painter.setPlaceholderDimensions(
+            List.filled(
+              icons,
+              const PlaceholderDimensions(
+                size: Size(_iconSize + 3, _iconSize),
+                alignment: PlaceholderAlignment.middle,
+              ),
+            ),
+          );
+          painter.layout(maxWidth: maxWidth);
           final height = painter.height;
           painter.dispose();
           return height;
