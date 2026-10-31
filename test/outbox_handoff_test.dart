@@ -475,6 +475,84 @@ void main() {
     expect(server.mostAtOnce, 1);
   });
 
+  test('the background task, stopped while it sends a note, finishes it '
+      'before it stops, and sends no more', () async {
+    final server = _NotesServer();
+    final app = NoteWrites.local(server, store: PrefsOutboxStore.writes());
+    final task = NoteWrites.local(
+      server,
+      store: PrefsOutboxStore.writes(),
+      sender: Outbox.backgroundSender,
+    );
+    await app.add(Note(timestamp: _at(0), description: 'Lunch'));
+    await app.add(Note(timestamp: _at(1), description: 'Coffee'));
+    final hang = server.hang = Completer<void>();
+
+    final flushed = task.queue.flush(ignoreBackoff: true);
+    await _until(() async => server.saved.isNotEmpty);
+    // WorkManager stops it, the server having saved Lunch, unheard.
+    var finished = false;
+    final finishing = task.queue.finishSending().then((_) => finished = true);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(finished, isFalse);
+
+    server.hang = null;
+    hang.complete();
+    await finishing;
+    await flushed;
+
+    // Lunch is taken off what's kept, not left claimed to be sent again;
+    // Coffee is left, unclaimed, for the app.
+    final kept = await PrefsOutboxStore.writes().load();
+    expect([for (final w in kept) w.sendingSince], [null]);
+    expect(server.saved, ['Lunch']);
+    await task.queue.flush(ignoreBackoff: true);
+    expect(server.saved, ['Lunch']);
+
+    await app.flush(ignoreBackoff: true);
+    expect(server.saved, ['Lunch', 'Coffee']);
+  });
+
+  test("the app stops saying a note's being sent by the background task "
+      'once its claim runs out, though nothing else changed', () async {
+    final clock = _Clock();
+    final server = _NotesServer();
+    final app = NoteWrites.local(
+      server,
+      store: PrefsOutboxStore.writes(),
+      clock: clock.call,
+    );
+    final task = NoteWrites.local(
+      server,
+      store: PrefsOutboxStore.writes(),
+      sender: Outbox.backgroundSender,
+      clock: clock.call,
+    );
+    await app.add(Note(timestamp: _at(0), description: 'Lunch'));
+    final hang = server.hang = Completer<void>();
+    unawaited(task.flush(ignoreBackoff: true));
+    await _until(() async => server.saved.isNotEmpty);
+    await app.queue.refresh();
+    final lunch = app.items.single;
+    expect(app.sendingBy(lunch), 'the background task');
+
+    // The task's killed, never to say how it went; its claim runs out a
+    // moment from now.
+    clock.pass(Outbox.inFlightTimeout - const Duration(milliseconds: 50));
+    await app.queue.refresh();
+    var told = false;
+    app.queue.addListener(() => told = true);
+    final waited = Stopwatch()..start();
+    await _until(() async => told);
+
+    // Told as it runs out, not before.
+    expect(waited.elapsedMilliseconds, greaterThanOrEqualTo(50));
+    clock.pass(waited.elapsed);
+    expect(app.sendingBy(app.items.single), isNull);
+    hang.complete();
+    app.queue.dispose();
+  });
+
   group('The lock on what\'s kept', () {
     test('lets one isolate change it at a time', () async {
       final dir = await Directory.systemTemp.createTemp('outbox_lock');
