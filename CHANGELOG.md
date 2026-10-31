@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.237.0
+
+- A goal's page has its parent under its title: tapped, it opens the
+  parent's page, and Move… beside it puts the goal under another goal or
+  at the top level. A top-level goal's says so, with a button to put it
+  under one. Tab gets to them; J and K still go only through its
+  sub-goals.
+
 ## 7.236.0
 
 - The Plan page's Goals pane lists every goal, sub-goals too, as a tree:
@@ -22,14 +30,6 @@ on. Add the new version's section here at the same time; CI checks both.
   strip shown first, if it's collapsed, or saying there are none. There,
   Tab and Shift+Tab go from goal to goal, round all of them; Enter
   opens the one with focus, and Esc leaves them.
-
-## 7.235.0
-
-- A goal's page has its parent under its title: tapped, it opens the
-  parent's page, and Move… beside it puts the goal under another goal or
-  at the top level. A top-level goal's says so, with a button to put it
-  under one. Tab gets to them; J and K still go only through its
-  sub-goals.
 
 ## 7.234.0
 
