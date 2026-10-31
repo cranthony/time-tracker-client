@@ -273,6 +273,12 @@ class Hotkey {
         'and E then goes back to the calendar',
     HotkeyPlace.dayPicker,
   );
+  static const pickerTime = Hotkey(
+    'I',
+    "Give it a time of day too, or change the one it's given -- where it "
+        "can have one, as a goal's deadline or start can",
+    HotkeyPlace.dayPicker,
+  );
   static const pickerDone = Hotkey(
     'Enter / Ctrl+Enter',
     'Go with the day picked, as OK does, typing it or not',
@@ -448,6 +454,7 @@ class Hotkey {
     pickerMonths,
     pickerToday,
     pickerTyped,
+    pickerTime,
     pickerDone,
     who,
     location,

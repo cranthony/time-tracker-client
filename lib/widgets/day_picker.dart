@@ -20,7 +20,7 @@ Future<DateTime?> showDayPicker(
   DateTime? currentDate,
   bool typed = false,
   String? helpText,
-}) => showDialog<DateTime>(
+}) async => (await showDialog<DayAndTime>(
   context: context,
   builder: (context) => DayPickerDialog(
     initialDate: initialDate,
@@ -30,9 +30,41 @@ Future<DateTime?> showDayPicker(
     typed: typed,
     helpText: helpText,
   ),
+))?.day;
+
+/// A day picked, and the time of day on it, if one was.
+typedef DayAndTime = ({DateTime day, TimeOfDay? time});
+
+/// [showDayPicker], with a time of day it can be given too: "Add a time"
+/// under the calendar, or I, asks for one -- [defaultTime] to start
+/// with -- and, once it's given, it's shown there to change, or take
+/// off. [initialTime] is given to start with. The day and time picked,
+/// or null if it's called off.
+Future<DayAndTime?> showDayTimePicker(
+  BuildContext context, {
+  required DateTime initialDate,
+  required DateTime firstDate,
+  required DateTime lastDate,
+  DateTime? currentDate,
+  TimeOfDay? initialTime,
+  TimeOfDay defaultTime = const TimeOfDay(hour: 17, minute: 0),
+  String? helpText,
+}) => showDialog<DayAndTime>(
+  context: context,
+  builder: (context) => DayPickerDialog(
+    initialDate: initialDate,
+    firstDate: firstDate,
+    lastDate: lastDate,
+    currentDate: currentDate,
+    helpText: helpText,
+    withTime: true,
+    initialTime: initialTime,
+    defaultTime: defaultTime,
+  ),
 );
 
-/// The dialog of [showDayPicker]: a calendar, or the date typed.
+/// The dialog of [showDayPicker] and [showDayTimePicker]: a calendar, or
+/// the date typed -- and, [withTime], a time of day under it.
 class DayPickerDialog extends StatefulWidget {
   const DayPickerDialog({
     super.key,
@@ -42,6 +74,9 @@ class DayPickerDialog extends StatefulWidget {
     this.currentDate,
     this.typed = false,
     this.helpText,
+    this.withTime = false,
+    this.initialTime,
+    this.defaultTime = const TimeOfDay(hour: 17, minute: 0),
   });
 
   final DateTime initialDate;
@@ -53,6 +88,12 @@ class DayPickerDialog extends StatefulWidget {
   /// What it's for, over the date: "Select date", without it.
   final String? helpText;
 
+  /// Whether a time of day can be given too: [initialTime] to start with,
+  /// and [defaultTime] asked for first when one's added.
+  final bool withTime;
+  final TimeOfDay? initialTime;
+  final TimeOfDay defaultTime;
+
   @override
   State<DayPickerDialog> createState() => _DayPickerDialogState();
 }
@@ -60,6 +101,7 @@ class DayPickerDialog extends StatefulWidget {
 class _DayPickerDialogState extends State<DayPickerDialog> {
   late DateTime _day = _within(widget.initialDate);
   late bool _typed = widget.typed;
+  late TimeOfDay? _time = widget.withTime ? widget.initialTime : null;
 
   /// Bumped when a key picks a day, for the calendar -- which only takes
   /// the day it starts on -- to start afresh on it, its month shown.
@@ -136,7 +178,25 @@ class _DayPickerDialogState extends State<DayPickerDialog> {
 
   void _done() {
     if (_typed && !_readTyped()) return;
-    Navigator.of(context).pop(_day);
+    Navigator.of(context).pop((day: _day, time: _time));
+  }
+
+  /// I, or the button under the calendar: asks for the time of day, the
+  /// one given or [DayPickerDialog.defaultTime] to start with -- back on
+  /// the calendar after, if the date was being typed.
+  Future<void> _pickTime() async {
+    if (_typed && !_readTyped()) return;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _time ?? widget.defaultTime,
+    );
+    if (!mounted) return;
+    setState(() {
+      if (_typed) _moves++;
+      _typed = false;
+      _time = picked ?? _time;
+    });
+    _focus.requestFocus();
   }
 
   List<HotkeyBinding> get _hotkeys => [
@@ -180,6 +240,11 @@ class _DayPickerDialogState extends State<DayPickerDialog> {
       const HotkeyTrigger.key(LogicalKeyboardKey.keyE),
       _toggleTyped,
     ),
+    if (widget.withTime)
+      HotkeyBinding(
+        const HotkeyTrigger.key(LogicalKeyboardKey.keyI),
+        _pickTime,
+      ),
     HotkeyBinding(const HotkeyTrigger.ctrl(LogicalKeyboardKey.enter), _done),
     // Enter alone too, on the calendar -- not on a button or a day that
     // Tab went to, which Enter presses.
@@ -256,7 +321,11 @@ class _DayPickerDialogState extends State<DayPickerDialog> {
                     children: [
                       Expanded(
                         child: Text(
-                          localizations.formatMediumDate(_day),
+                          [
+                            localizations.formatMediumDate(_day),
+                            if (_time case final time?)
+                              localizations.formatTimeOfDay(time),
+                          ].join(', '),
                           style: theme.textTheme.headlineSmall,
                         ),
                       ),
@@ -277,6 +346,35 @@ class _DayPickerDialogState extends State<DayPickerDialog> {
                 ),
                 const Divider(height: 1),
                 body,
+                if (widget.withTime)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+                    child: Wrap(
+                      spacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        HotkeyHint(
+                          Hotkey.pickerTime,
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.schedule),
+                            label: Text(switch (_time) {
+                              final time? => localizations.formatTimeOfDay(
+                                time,
+                              ),
+                              null => 'Add a time',
+                            }),
+                            onPressed: _pickTime,
+                          ),
+                        ),
+                        if (_time != null)
+                          IconButton(
+                            tooltip: 'No time',
+                            icon: const Icon(Icons.clear),
+                            onPressed: () => setState(() => _time = null),
+                          ),
+                      ],
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                   child: Row(

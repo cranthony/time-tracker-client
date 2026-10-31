@@ -17,7 +17,7 @@ import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import 'color_picker.dart' show priorityColor;
 import 'goal_editor.dart' show FormattedField;
-import 'goal_fields.dart' show inheritedPriorityLabel;
+import 'goal_fields.dart' show deadlineAt, inheritedPriorityLabel;
 import 'goal_icon.dart';
 import 'hotkeys.dart';
 import 'picker_edits.dart';
@@ -193,6 +193,14 @@ class _GoalSheetState extends State<_GoalSheet> {
     _ => _today,
   };
 
+  /// The time on [_day] it's due by; null for its end.
+  late TimeOfDay? _time = switch (widget.drafts?.draft?.minuteOfDay) {
+    final m? => TimeOfDay(hour: m ~/ 60, minute: m % 60),
+    null => null,
+  };
+
+  String get _deadline => deadlineAt((day: _day, time: _time));
+
   late String? _description = widget.drafts?.draft?.description;
   late TextFormat? _descriptionFormat = widget.drafts?.draft?.descriptionFormat;
 
@@ -295,6 +303,10 @@ class _GoalSheetState extends State<_GoalSheet> {
         GoalDraft(
           title: _title.text,
           day: _day,
+          minuteOfDay: switch (_time) {
+            final t? => t.hour * TimeOfDay.minutesPerHour + t.minute,
+            null => null,
+          },
           description: _description,
           descriptionFormat: _descriptionFormat,
           priority: _priority,
@@ -317,15 +329,18 @@ class _GoalSheetState extends State<_GoalSheet> {
     _setDay(next);
   }
 
+  /// Picks the day it's due, and the time on it, if it has one.
   Future<void> _pickDay() async {
-    final picked = await showDayPicker(
+    final picked = await showDayTimePicker(
       context,
       initialDate: _day,
+      initialTime: _time,
       firstDate: _today,
       lastDate: DateTime(_today.year + 20),
     );
     if (picked == null || !mounted) return;
-    _setDay(picked);
+    _time = picked.time;
+    _setDay(picked.day);
   }
 
   /// Picks the goal it goes under, searching for what's typed as its
@@ -545,7 +560,7 @@ class _GoalSheetState extends State<_GoalSheet> {
   /// The new goal's fields, keyed as the server takes them.
   Map<String, Object?> get _fields => {
     'title': _title.text.trim(),
-    'deadline': deadlineOf(_day),
+    'deadline': _deadline,
     'status': 'active',
     'parent_id': ?_parentId,
     'description': ?_description,
@@ -594,7 +609,7 @@ class _GoalSheetState extends State<_GoalSheet> {
   void _more() => Navigator.of(context).pop(
     MoreGoal(
       title: _title.text.trim(),
-      deadline: deadlineOf(_day),
+      deadline: _deadline,
       description: _description,
       descriptionFormat: _descriptionFormat,
       priority: _priority,
@@ -659,7 +674,11 @@ class _GoalSheetState extends State<_GoalSheet> {
     final theme = Theme.of(context);
     final media = MediaQuery.of(context);
     final problem = _problem;
-    final day = MaterialLocalizations.of(context).formatMediumDate(_day);
+    final strings = MaterialLocalizations.of(context);
+    final day = [
+      strings.formatMediumDate(_day),
+      if (_time case final time?) strings.formatTimeOfDay(time),
+    ].join(', ');
     final parent = _tree[_parentId];
     return HotkeyBindings(
       bindings: [
@@ -805,7 +824,9 @@ class _GoalSheetState extends State<_GoalSheet> {
                       child: ActionChip(
                         avatar: const Icon(Icons.event),
                         label: Text(day),
-                        tooltip: 'Due by the end of the day',
+                        tooltip: _time == null
+                            ? 'Due by the end of the day'
+                            : 'Due by then',
                         onPressed: _pickDay,
                       ),
                     ),

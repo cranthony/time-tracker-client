@@ -11,35 +11,34 @@ import '../services/goals_repository.dart';
 import '../services/plan_memory.dart';
 import 'error_sheet.dart';
 import 'goal_editor.dart';
+import 'goal_fields.dart' show deadlineAt, pickDeadline;
 import 'goal_icon.dart';
 import 'goal_sheet.dart';
 import 'goal_starts.dart';
 import 'hotkeys.dart';
 
 /// Asks which day to try a goal again by -- tomorrow to start with, no
-/// earlier than [today] -- and gives the deadline: that day, at the time
-/// of day the goal's [deadline] has, if it has one. Null if dismissed.
+/// earlier than [today], at the time of day the goal's [deadline] has, if
+/// it has one -- and gives the deadline: that day, at the time picked on
+/// it, if one is. Null if dismissed.
 Future<String?> pickRetryDeadline(
   BuildContext context, {
   required DateTime today,
   String? deadline,
 }) async {
   final start = DateTime(today.year, today.month, today.day);
-  final day = await showDayPicker(
+  final due = deadlineEnd(deadline);
+  final picked = await showDayTimePicker(
     context,
     initialDate: DateTime(start.year, start.month, start.day + 1),
+    initialTime: due != null && deadlineHasTime(deadline)
+        ? TimeOfDay.fromDateTime(due)
+        : null,
     firstDate: start,
     lastDate: DateTime(start.year + 10),
     helpText: 'Try again by',
   );
-  if (day == null) return null;
-  final due = deadlineEnd(deadline);
-  return due != null && deadlineHasTime(deadline)
-      ? deadlineOf(
-          DateTime(day.year, day.month, day.day, due.hour, due.minute),
-          time: true,
-        )
-      : deadlineOf(day);
+  return picked == null ? null : deadlineAt(picked);
 }
 
 /// Adds a goal in a New goal sheet, saved through [repository] and shown
@@ -966,14 +965,15 @@ class _DeadlinesDialogState extends State<_DeadlinesDialog> {
 
   Future<void> _date(Goal goal) async {
     final now = widget.now;
-    final picked = await showDayPicker(
+    final picked = await pickDeadline(
       context,
+      deadline: _picked[goal.id],
       initialDate: now,
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 20),
     );
     if (picked != null && mounted) {
-      setState(() => _picked[goal.id] = deadlineOf(picked));
+      setState(() => _picked[goal.id] = picked);
     }
   }
 

@@ -8,7 +8,6 @@ import '../models/facts.dart';
 import '../models/goal.dart';
 import '../models/goal_changes.dart';
 import '../services/plan_memory.dart';
-import 'day_picker.dart';
 import 'color_picker.dart';
 import 'duration_field.dart';
 import 'edit_page.dart';
@@ -408,29 +407,15 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
 
   Future<void> _pickDate() async {
     final now = widget.now();
-    final at = deadlineEnd(_deadline);
-    final day = at == null
-        ? null
-        : deadlineHasTime(_deadline)
-        ? at
-        : at.subtract(const Duration(days: 1));
-    final picked = await showDayPicker(
+    final picked = await pickDeadline(
       context,
-      initialDate: day ?? now,
+      deadline: _deadline,
+      initialDate: now,
       firstDate: DateTime(now.year - 5),
       lastDate: DateTime(now.year + 20),
     );
     if (picked == null || !mounted) return;
-    setState(() {
-      if (deadlineHasTime(_deadline) && day != null) {
-        _deadline = deadlineOf(
-          DateTime(picked.year, picked.month, picked.day, day.hour, day.minute),
-          time: true,
-        );
-      } else {
-        _deadline = deadlineOf(picked);
-      }
-    });
+    setState(() => _deadline = picked);
   }
 
   Future<void> _pickTime() async {

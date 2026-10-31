@@ -5,6 +5,7 @@ import '../models/goal_activation.dart';
 import 'day_picker.dart';
 import 'duration_field.dart';
 import 'durations.dart';
+import 'goal_fields.dart' show deadlineAt;
 import 'goal_icon.dart';
 import 'picker_sheet.dart';
 import 'tree_picker.dart';
@@ -251,19 +252,23 @@ class GoalStartsEditor extends StatelessWidget {
     );
   }
 
+  /// Adds a day picked -- from its start, or from a time on it, if one's
+  /// given too.
   Future<void> _pickDay(BuildContext context) async {
     final today = now();
-    final picked = await showDayPicker(
+    final picked = await showDayTimePicker(
       context,
       initialDate: today.add(const Duration(days: 1)),
       firstDate: DateTime(today.year - 1),
       lastDate: DateTime(today.year + 20),
+      defaultTime: const TimeOfDay(hour: 9, minute: 0),
+      helpText: 'Starts from',
     );
     if (picked == null) return;
     _set(
       after: [
         ..._after,
-        {'at': deadlineOf(picked)},
+        {'at': deadlineAt(picked)},
       ],
     );
   }

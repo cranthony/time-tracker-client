@@ -14,6 +14,7 @@ class GoalDraft {
   const GoalDraft({
     required this.title,
     required this.day,
+    this.minuteOfDay,
     this.description,
     this.descriptionFormat,
     this.priority,
@@ -27,6 +28,10 @@ class GoalDraft {
 
   /// The day it's due, at its end: midnight starting it, local.
   final DateTime day;
+
+  /// The time on [day] it's due by, in minutes after its midnight; null
+  /// for its end.
+  final int? minuteOfDay;
 
   /// As the goal's; null for none.
   final String? description;
@@ -53,6 +58,7 @@ class GoalDraft {
   factory GoalDraft.fromJson(Map<String, dynamic> json) => GoalDraft(
     title: json['title'] as String? ?? '',
     day: DateTime.parse(json['day'] as String),
+    minuteOfDay: (json['minute_of_day'] as num?)?.toInt(),
     description: json['description'] as String?,
     descriptionFormat: TextFormat.fromJson(json['description_format']),
     priority: (json['priority'] as num?)?.toInt(),
@@ -64,6 +70,7 @@ class GoalDraft {
   Map<String, dynamic> toJson() => {
     'title': title,
     'day': DateTime(day.year, day.month, day.day).toIso8601String(),
+    'minute_of_day': ?minuteOfDay,
     'description': ?description,
     'description_format': ?descriptionFormat?.wire,
     'priority': ?priority,
