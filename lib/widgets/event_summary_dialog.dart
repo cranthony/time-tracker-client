@@ -14,6 +14,7 @@ import '../models/note.dart';
 import '../models/person.dart';
 import '../models/recurrence.dart';
 import '../models/repeat.dart';
+import '../models/time_zones.dart';
 import '../models/trait.dart';
 import '../services/goals_repository.dart';
 import '../services/habits_repository.dart';
@@ -41,6 +42,7 @@ import 'properties_dialog.dart' show ConfirmOption, confirmationContent;
 import 'recurrence_dialog.dart';
 import 'repeat_editor.dart';
 import 'share_dialog.dart';
+import 'time_zone_picker.dart';
 
 /// What a summary dialog closed with, when it wasn't just closed.
 sealed class SummaryOutcome<T> {
@@ -311,7 +313,16 @@ class _Removal {
 }
 
 /// The properties the dialog edits, one at a time.
-enum _Field { priority, commute, summary, time, repeat, location, description }
+enum _Field {
+  priority,
+  commute,
+  summary,
+  time,
+  timeZone,
+  repeat,
+  location,
+  description,
+}
 
 /// The priorities offered as chips; "Other" takes any other.
 const _priorities = [0, 1, 2, 3];
@@ -801,6 +812,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               if (_editing == _Field.commute) _commuteEditor(),
               _summary(context),
               HotkeyHint(Hotkey.time, child: _timeLine(context)),
+              if (!widget.creating) _zoneLine(context),
               if (widget.series || widget.repeatable)
                 HotkeyHint(Hotkey.repeat, child: _repeatLine(context)),
               if (widget.openSeries case final open?) _seriesChip(open),
@@ -1277,6 +1289,180 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                 'Changing the start keeps its length; − and + take a '
                     'quarter hour off or add one.',
                 ?_room(start, end),
+              ].join(' '),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The time zone it's kept in, as the server sent it; null for the
+  /// calendar's.
+  String? get _zoneWas => switch (widget.values['time_zone']) {
+    final String zone when zone.isNotEmpty => zone,
+    _ => null,
+  };
+
+  String? get _zone => switch (_value('time_zone')) {
+    final String zone when zone.isNotEmpty => zone,
+    _ => null,
+  };
+
+  /// Whether a new time zone keeps its time of day, rather than its
+  /// moment.
+  bool _keepClock = true;
+
+  /// Its times as they were when its time zone was first changed, which
+  /// a new zone, or keeping the moment instead, moves them from.
+  (DateTime, DateTime)? _zoneBase;
+
+  /// Picks the time zone it's kept in.
+  Future<void> _pickZone() async {
+    final base = _zoneBase ??= (_time('start'), _time('end'));
+    final picked = await showTimeZonePicker(
+      context,
+      current: _zone,
+      at: base.$1,
+    );
+    if (picked == null || !mounted) return;
+    _setZone(picked);
+  }
+
+  /// Sets its time zone to [zone], its times kept at their time of day
+  /// there or at their moments, as [_keepClock] says; back to how it was,
+  /// if that's the zone it had.
+  void _setZone(String? zone) {
+    final (start, end) = _zoneBase ?? (_time('start'), _time('end'));
+    if (zone == null || zone == _zoneWas) {
+      _set('time_zone', _zoneWas);
+      _set('start', localIsoTimestamp(start));
+      _set('end', localIsoTimestamp(end));
+      return;
+    }
+    _set('time_zone', zone);
+    final (from, to) = _keepClock
+        ? (sameClock(start, _zoneWas, zone), sameClock(end, _zoneWas, zone))
+        : (start, end);
+    _set('start', localIsoTimestamp(from));
+    _set('end', localIsoTimestamp(to));
+  }
+
+  /// The time zone it's kept in, and -- when its clock there reads
+  /// differently from this device's -- its times there. Opened, it picks
+  /// another, and whether its events keep their time of day there or
+  /// their moments.
+  Widget _zoneLine(BuildContext context) {
+    final theme = Theme.of(context);
+    final strings = MaterialLocalizations.of(context);
+    String time(DateTime t) =>
+        strings.formatTimeOfDay(TimeOfDay.fromDateTime(t));
+    final start = _time('start');
+    final end = _time('end');
+    final zone = _zone;
+    final there = zone != null && clockDiffers(start, zone)
+        ? '${time(clockIn(start, zone))} – ${time(clockIn(end, zone))} there'
+        : null;
+    final editing = _editing == _Field.timeZone;
+    final color = editing
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurfaceVariant;
+    final line = InkWell(
+      onTap: _editable && !_saving && !_waits('time_zone')
+          ? () => _open(_Field.timeZone)
+          : null,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Row(
+          children: [
+            Icon(Icons.public, size: 18, color: color),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                [
+                  zone == null
+                      ? "The calendar's time zone"
+                      : zoneLabel(zone, start),
+                  ?there,
+                ].join(' · '),
+                style: theme.textTheme.bodyMedium?.copyWith(color: color),
+              ),
+            ),
+            ?_changedDot('time_zone'),
+          ],
+        ),
+      ),
+    );
+    if (!editing) return line;
+    final changed = zone != _zoneWas && zone != null;
+    final base = _zoneBase ?? (start, end);
+    final place = zone == null ? '' : zonePlace(zone);
+    return _EditingFrame(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          line,
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.travel_explore, size: 18),
+                label: const Text('Pick a time zone…'),
+                onPressed: _pickZone,
+              ),
+              if (changed)
+                TextButton(
+                  onPressed: () => _setZone(null),
+                  child: const Text('Keep the one it had'),
+                ),
+            ],
+          ),
+          if (changed) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                ChoiceChip(
+                  label: Text(
+                    'Keep ${time(clockIn(base.$1, _zoneWas))}, in $place',
+                  ),
+                  selected: _keepClock,
+                  onSelected: (_) {
+                    _keepClock = true;
+                    _setZone(zone);
+                  },
+                ),
+                ChoiceChip(
+                  label: Text(
+                    'Keep the moment: ${time(clockIn(base.$1, zone))} '
+                    'in $place',
+                  ),
+                  selected: !_keepClock,
+                  onSelected: (_) {
+                    _keepClock = false;
+                    _setZone(zone);
+                  },
+                ),
+              ],
+            ),
+          ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+            child: Text(
+              [
+                widget.series
+                    ? 'Its events follow this zone’s daylight saving.'
+                    : 'Google Calendar keeps its times in this zone.',
+                if (changed)
+                  _keepClock
+                      ? 'Each keeps its time of day, now in $place.'
+                      : 'Each keeps its moment, now shown in $place.',
               ].join(' '),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,

@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.245.0
+
+- An event's dialog, and a series', shows the time zone it's kept in --
+  "New York (EST, UTC−5)", or the calendar's -- and, when its clock there
+  reads differently from yours, its times there too. Tapping it picks
+  another, searched by place or name, and whether it keeps its time of
+  day there (6pm in London) or its moment (11pm in London). A series
+  then asks, as for other changes, whether that's for all its events or
+  this and following ones; its events follow the new zone's daylight
+  saving from then on.
+
 ## 7.244.0
 
 - The dim and bright windows either side of the temperature minimum are
