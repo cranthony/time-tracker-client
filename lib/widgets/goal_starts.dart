@@ -25,18 +25,19 @@ String startLabel(BuildContext context, String at) {
 /// A time before its parent's deadline that a goal waits for
 /// (`{before_parent: [offset]}`): "A week before its parent is due", "2h
 /// before its parent is due".
-String beforeParentLabel(Map offset) {
-  final when = switch (offset) {
-    {'days': final num d} when d == 7 => 'A week',
-    {'days': final num d} => '${d.toInt()} day${d == 1 ? '' : 's'}',
-    {'minutes': final num m} when m == 0 => null,
-    {'minutes': final num m} => formatMinutes(m),
-    _ => null,
-  };
-  return when == null
-      ? 'When its parent is due'
-      : '$when before its parent is due';
-}
+String beforeParentLabel(Map offset) => switch (offsetWords(offset)) {
+  final words? => '$words before its parent is due',
+  null => 'When its parent is due',
+};
+
+/// How long an offset (`{days: 2}`, `{minutes: 150}`) is, as a sentence
+/// starts with it: "A week", "2 days", "2h 30m"; null for none.
+String? offsetWords(Map? offset) => switch (offset) {
+  {'days': final num d} when d == 7 => 'A week',
+  {'days': final num d} when d > 0 => '${d.toInt()} day${d == 1 ? '' : 's'}',
+  {'minutes': final num m} when m > 0 => formatMinutes(m),
+  _ => null,
+};
 
 /// What [goal] waits for before it's activated, a line each, its goals
 /// named from [tree]: "After “Draft the plan” closes", "From Mon, Nov 2",
@@ -380,25 +381,55 @@ class GoalStartsEditor extends StatelessWidget {
             value: value?['delay'] == 'next_day',
             onChanged: (on) => _set(delay: on ? 'next_day' : null),
           ),
+        HoldWhileEditor(
+          hold: hold,
+          priority: goalId == null
+              ? defaultGoalPriority
+              : tree.priorityOf(goalId!),
+          onChanged: (hold) => _set(holds: [?hold]),
+        ),
+      ],
+    );
+  }
+}
+
+/// A goal's hold, while enough other goals are active, edited: whether
+/// it has one, and if so how many goals it counts, of which priorities.
+/// [hold] is its `hold_while`'s first, or null for none; [priority], the
+/// goal's own, to say what "its priority" is; [onChanged] gets the hold
+/// as changed, null once there's none.
+class HoldWhileEditor extends StatelessWidget {
+  const HoldWhileEditor({
+    super.key,
+    required this.hold,
+    required this.priority,
+    required this.onChanged,
+  });
+
+  final Map<String, Object?>? hold;
+  final int priority;
+  final ValueChanged<Map<String, Object?>?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final hold = this.hold;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Hold it while other goals are active'),
           subtitle: hold == null
               ? null
-              : Text(
-                  'Held while '
-                  '${holdLabel(hold, goalId == null ? defaultGoalPriority : tree.priorityOf(goalId!))}',
-                ),
+              : Text('Held while ${holdLabel(hold, priority)}'),
           value: hold != null,
-          onChanged: (on) => _set(
-            holds: on
-                ? [
-                    {
-                      'active_at_least': 3,
-                      'priority': {'at_or_above': 'own'},
-                    },
-                  ]
-                : const [],
+          onChanged: (on) => onChanged(
+            on
+                ? {
+                    'active_at_least': 3,
+                    'priority': {'at_or_above': 'own'},
+                  }
+                : null,
           ),
         ),
         if (hold != null)
@@ -413,11 +444,7 @@ class GoalStartsEditor extends StatelessWidget {
                   for (var n = 1; n <= 10; n++)
                     DropdownMenuItem(value: n, child: Text('$n')),
                 ],
-                onChanged: (n) => _set(
-                  holds: [
-                    {...hold, 'active_at_least': ?n},
-                  ],
-                ),
+                onChanged: (n) => onChanged({...hold, 'active_at_least': ?n}),
               ),
               const Text('active,'),
               DropdownButton<String>(
@@ -428,14 +455,10 @@ class GoalStartsEditor extends StatelessWidget {
                 ],
                 onChanged: (key) {
                   final scope = holdScopes.firstWhere((s) => s.$1 == key).$3;
-                  _set(
-                    holds: [
-                      {
-                        'active_at_least': hold['active_at_least'] ?? 1,
-                        'priority': ?scope,
-                      },
-                    ],
-                  );
+                  onChanged({
+                    'active_at_least': hold['active_at_least'] ?? 1,
+                    'priority': ?scope,
+                  });
                 },
               ),
             ],
