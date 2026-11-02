@@ -766,33 +766,41 @@ void main() {
         minimum: minimum,
       ),
     ];
-    Finder tint(CircadianKind kind) =>
-        find.byKey(ValueKey(('circadian', kind)));
+    // The tints the rail paints, under the band, the bars and the times:
+    // each window's top, bottom and color.
+    List<(double, double, Color)> tints(WidgetTester tester) => [
+      for (final paint in tester.widgetList<CustomPaint>(
+        find.descendant(
+          of: find.byType(DayTimeline),
+          matching: find.byType(CustomPaint),
+        ),
+      ))
+        if (paint.painter case final painter?
+            when '${painter.runtimeType}' == '_RailPainter')
+          for (final tint in (painter as dynamic).tints as List)
+            (
+              (tint as dynamic).top as double,
+              (tint as dynamic).bottom as double,
+              (tint as dynamic).color as Color,
+            ),
+    ];
     double y(DateTime t) =>
         timelineOffset(t, day: day, dayEnd: dayEnd, scale: 1);
 
-    testWidgets('tints each window under the events, the time column too, '
+    testWidgets('tints each window under the band, the bars and the times, '
         'cut off at midnight', (tester) async {
       await tester.pumpWidget(timeline(spans));
-      final origin = tester.getTopLeft(find.byType(DayTimeline));
-      final dim = tester.getRect(tint(CircadianKind.dim)).shift(-origin);
-      expect(dim.top, closeTo(y(day), 0.01));
-      expect(dim.bottom, closeTo(y(minimum), 0.01));
-      expect(dim.left, 0);
-      expect(dim.right, 600);
-      final bright = tester.getRect(tint(CircadianKind.bright)).shift(-origin);
-      expect(bright.top, closeTo(y(minimum), 0.01));
-      expect(bright.bottom, closeTo(y(at(8, 40)), 0.01));
-      // Under the events, and not in the way of their taps.
-      final ignored = find.ancestor(
-        of: tint(CircadianKind.dim),
-        matching: find.byType(IgnorePointer),
-      );
-      expect(ignored, findsWidgets);
-      expect(
-        tester.widget<ColoredBox>(tint(CircadianKind.dim)).color,
-        circadianColors(Brightness.light).dim,
-      );
+      final colors = circadianColors(Brightness.light);
+      final painted = tints(tester);
+      expect(painted, hasLength(2));
+      final (dimTop, dimBottom, dimColor) = painted[0];
+      expect(dimTop, closeTo(y(day), 0.01));
+      expect(dimBottom, closeTo(y(minimum), 0.01));
+      expect(dimColor, colors.dim);
+      final (brightTop, brightBottom, brightColor) = painted[1];
+      expect(brightTop, closeTo(y(minimum), 0.01));
+      expect(brightBottom, closeTo(y(at(8, 40)), 0.01));
+      expect(brightColor, colors.bright);
     });
 
     testWidgets('draws nothing of a window outside the day', (tester) async {
@@ -806,7 +814,7 @@ void main() {
           ),
         ]),
       );
-      expect(tint(CircadianKind.dim), findsNothing);
+      expect(tints(tester), isEmpty);
     });
 
     List<String> labels(WidgetTester tester) => [
