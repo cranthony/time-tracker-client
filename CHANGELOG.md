@@ -6,6 +6,22 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.243.0
+
+- A recurring goal's habit shows its chain of sub-goals on its page, in
+  the order they come due: each one's expected time, when it's due and
+  when it starts, measured from its goal's deadline, opening on its
+  priority, people, description and definition of done. Its goals list
+  only the goals themselves, each with how many of its sub-goals are done.
+- The habit's editor edits the chain: add a sub-goal, change one or
+  remove it (the others stop waiting for it). Each is due some time
+  before its goal, and starts with it or waits: until a time before its
+  goal's deadline, for others to close, then the next day or a while
+  later, held while other goals are active. It has the rest of a goal's
+  fields too. A chain that waits for itself, or a sub-goal expected to
+  take longer than its goal, is caught before it's saved.
+- The habit's editor also sets its goals' priority and expected time.
+
 ## 7.242.0
 
 - A habit's recurring goal can have a chain of sub-goals, made under each

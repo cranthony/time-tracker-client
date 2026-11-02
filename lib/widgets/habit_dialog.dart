@@ -11,15 +11,19 @@ import '../models/habit.dart';
 import '../models/habit_graph.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
+import '../models/goal.dart' show defaultGoalPriority;
 import '../models/recurring_goal.dart';
+import '../models/sub_goal_template.dart';
 import '../models/text_format.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import 'actions_picker.dart';
 import 'color_picker.dart';
+import 'duration_field.dart';
 import 'edit_page.dart';
 import 'error_sheet.dart';
 import 'foundations_field.dart';
+import 'sub_goal_editor.dart';
 import 'text_editor.dart';
 import 'traits_field.dart';
 
@@ -125,6 +129,17 @@ class _HabitEditorState extends State<_HabitEditor> {
   /// which it follows as the period's changed till it's typed.
   late bool _ownRate = widget.habit?.recurringGoal?.ratePeriods != null;
 
+  /// Its goals' priority (none, the default) and expected time.
+  late int? _goalPriority = widget.habit?.recurringGoal?.priority;
+  late final _goalMinutes = TextEditingController(
+    text: widget.habit?.recurringGoal?.expectedMinutes?.toString() ?? '',
+  );
+
+  /// The chain of sub-goals made under each of its goals.
+  late List<Map<String, Object?>> _subGoals = [
+    ...?widget.habit?.recurringGoal?.subGoals,
+  ];
+
   /// Whom its goals are done with and for: people and circles, a plain
   /// circle with those of its people it leaves out.
   late List<Named> _with = [...?widget.habit?.recurringGoal?.withWhom];
@@ -145,6 +160,7 @@ class _HabitEditorState extends State<_HabitEditor> {
     _goalTitle.dispose();
     _attributionHints.dispose();
     _ratePeriods.dispose();
+    _goalMinutes.dispose();
     super.dispose();
   }
 
@@ -153,15 +169,48 @@ class _HabitEditorState extends State<_HabitEditor> {
 
   int? get _rateValue => int.tryParse(_ratePeriods.text.trim());
 
+  int? get _goalExpected =>
+      switch (num.tryParse(_goalMinutes.text.trim())?.round()) {
+        final m? when m > 0 => m,
+        _ => null,
+      };
+
+  String get _goalsTitle => _text(_goalTitle) ?? _text(_name) ?? 'its goal';
+
+  /// Adds a sub-goal to its chain (with no [index]), or edits the one at
+  /// [index], removing it if that's asked.
+  Future<void> _editSubGoal([int? index]) async {
+    final edited = await showSubGoalEditor(
+      context,
+      sub: index == null ? null : _subGoals[index],
+      siblings: [
+        for (final (i, s) in _subGoals.indexed)
+          if (i != index) s,
+      ],
+      goalTitle: _goalsTitle,
+      goalPriority: _goalPriority ?? defaultGoalPriority,
+    );
+    if (edited == null || !mounted) return;
+    setState(() {
+      _subGoals = switch ((index, edited.sub)) {
+        (null, final sub?) => [..._subGoals, sub],
+        (final i?, final sub?) => [
+          for (final (j, s) in _subGoals.indexed) j == i ? sub : s,
+        ],
+        (final i?, null) => withoutSubGoal(_subGoals, i),
+        (null, null) => _subGoals,
+      };
+    });
+  }
+
   /// Its recurring goal as it's being edited: what the server takes,
   /// kept as it was where this doesn't edit it.
   RecurringGoal get _recurring {
-    final was = widget.habit?.recurringGoal ?? const RecurringGoal();
     return RecurringGoal(
       period: _period,
       title: _text(_goalTitle),
-      priority: was.priority,
-      expectedMinutes: was.expectedMinutes,
+      priority: _goalPriority,
+      expectedMinutes: _goalExpected,
       description: _description,
       descriptionFormat: _description == null ? null : _descriptionFormat,
       definitionOfDone: _definitionOfDone,
@@ -172,7 +221,7 @@ class _HabitEditorState extends State<_HabitEditor> {
       withWhom: _with,
       forWhom: _for,
       ratePeriods: _ownRate ? _rateValue : null,
-      subGoals: was.subGoals,
+      subGoals: _subGoals,
     );
   }
 
@@ -317,7 +366,12 @@ class _HabitEditorState extends State<_HabitEditor> {
         : _isGoal
         ? (_rateValue == null || _rateValue! < 1
               ? 'Give how many periods its goal rate counts: 1 or more.'
-              : null)
+              : _goalMinutes.text.trim().isNotEmpty && _goalExpected == null
+              ? 'Give its goals’ expected time as a length of time.'
+              : chainProblems(
+                  _subGoals,
+                  goalMinutes: _goalExpected,
+                ).firstOrNull)
         : _actionId == null
         ? 'Pick the action or group it is about.'
         : null;
@@ -570,6 +624,38 @@ class _HabitEditorState extends State<_HabitEditor> {
       ),
     ),
     Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 4),
+      child: Text("Goals' priority", style: theme.textTheme.labelLarge),
+    ),
+    Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: [
+        ChoiceChip(
+          showCheckmark: false,
+          label: const Text('None (P$defaultGoalPriority)'),
+          selected: _goalPriority == null,
+          onSelected: (_) => setState(() => _goalPriority = null),
+        ),
+        for (final p in const [0, 1, 2, 3])
+          ChoiceChip(
+            showCheckmark: false,
+            avatar: CircleAvatar(backgroundColor: priorityColor(p)),
+            label: Text('P$p'),
+            selected: _goalPriority == p,
+            onSelected: (_) => setState(() => _goalPriority = p),
+          ),
+      ],
+    ),
+    Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: DurationField(
+        controller: _goalMinutes,
+        label: "Goals' expected time (optional)",
+        onChanged: () => setState(() {}),
+      ),
+    ),
+    Padding(
       padding: const EdgeInsets.only(top: 16),
       child: _formattedField(
         theme,
@@ -654,7 +740,56 @@ class _HabitEditorState extends State<_HabitEditor> {
         onChanged: (_) => setState(() => _ownRate = true),
       ),
     ),
+    ..._chainFields(theme),
   ];
+
+  /// The chain of sub-goals made under each of its goals, in the order
+  /// they come due, each opening its editor, and a button adding one.
+  List<Widget> _chainFields(ThemeData theme) {
+    final titles = {for (final s in _subGoals) ?subGoalKey(s): subGoalTitle(s)};
+    final priority = _goalPriority ?? defaultGoalPriority;
+    return [
+      Padding(
+        padding: const EdgeInsets.only(top: 24, bottom: 4),
+        child: Text(
+          'Its chain of sub-goals',
+          style: theme.textTheme.titleSmall,
+        ),
+      ),
+      Text(
+        _subGoals.isEmpty
+            ? 'None: each goal is made alone. Sub-goals are made under each '
+                  'one, timed from its deadline, so moving it moves them.'
+            : 'Made under each goal, timed from its deadline, so moving it '
+                  'moves them. A change goes with the goals to come.',
+        style: theme.textTheme.bodySmall,
+      ),
+      for (final sub in chainOrder(_subGoals))
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.subdirectory_arrow_right),
+          title: Text(subGoalTitle(sub)),
+          subtitle: Text(
+            subGoalSummary(
+              sub,
+              titles,
+              priority: (sub['priority'] as num?)?.toInt() ?? priority,
+            ),
+          ),
+          trailing: const Icon(Icons.edit_outlined, size: 18),
+          onTap: () =>
+              _editSubGoal(_subGoals.indexWhere((s) => identical(s, sub))),
+        ),
+      Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton.icon(
+          icon: const Icon(Icons.add),
+          label: const Text('Add a sub-goal'),
+          onPressed: _editSubGoal,
+        ),
+      ),
+    ];
+  }
 
   /// What's amiss with its own parts, as they stand: those that count
   /// nothing here, or read events done for someone.

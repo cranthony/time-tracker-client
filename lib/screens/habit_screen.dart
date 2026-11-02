@@ -7,10 +7,15 @@ import '../models/habit.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/recurring_goal.dart';
+import '../models/sub_goal_template.dart';
 import '../models/trait.dart';
 import '../services/plan_memory.dart';
+import '../widgets/durations.dart';
 import '../widgets/event_description.dart';
+import '../widgets/goal_editor.dart' show goalPeopleLabel, goalPeopleNames;
+import '../widgets/goal_fields.dart';
 import '../widgets/habit_dialog.dart';
+import '../widgets/sub_goal_editor.dart';
 import '../widgets/health.dart';
 import 'subject_sections.dart';
 
@@ -151,13 +156,102 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
       if (h.status != 'deleted' && h.foundations.contains(_habit.subject)) h,
   ]..sort((a, b) => habitName(a).compareTo(habitName(b)));
 
-  /// Its goals, newest first, each with its period and how it went.
+  /// Its chain: the sub-goals made under each of its goals, in the order
+  /// they come due, each opening on what it's for and how it's done.
+  List<Widget> _chain(BuildContext context, RecurringGoal recurring) {
+    final theme = Theme.of(context);
+    final subs = recurring.subGoals;
+    if (subs.isEmpty) return const [];
+    final titles = {for (final s in subs) ?subGoalKey(s): subGoalTitle(s)};
+    final goalPriority = recurring.priority ?? defaultGoalPriority;
+    final names = goalPeopleNames(widget.memory);
+    return [
+      sectionHeading(theme, 'Its chain of sub-goals'),
+      sectionPadded(
+        Text(
+          'Made under each goal, timed from its deadline: moving it moves '
+          'them.',
+          style: theme.textTheme.bodySmall,
+        ),
+      ),
+      for (final sub in chainOrder(subs))
+        () {
+          final priority = (sub['priority'] as num?)?.toInt() ?? goalPriority;
+          final starts = subGoalStartsLines(sub, titles, priority: priority);
+          final people = goalPeopleLabel(
+            Named.listFromJson(sub['with_ids']),
+            Named.listFromJson(sub['for_ids']),
+            names,
+          );
+          Widget text(String? s, Object? format) => s == null
+              ? const SizedBox.shrink()
+              : EventDescription(s, format: TextFormat.fromJson(format));
+          return ExpansionTile(
+            leading: const Icon(Icons.subdirectory_arrow_right),
+            title: Text(subGoalTitle(sub)),
+            subtitle: Text(subGoalSummary(sub, titles, priority: priority)),
+            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            children: [
+              GoalField(label: 'Due', child: Text(subGoalDueLabel(sub))),
+              GoalField(
+                label: 'Starts',
+                child: Text(
+                  starts.isEmpty ? 'With its goal' : starts.join('\n'),
+                ),
+              ),
+              GoalField(
+                label: 'Priority',
+                child: Text(
+                  sub['priority'] == null
+                      ? "P$priority, its goal's"
+                      : 'P$priority',
+                ),
+              ),
+              GoalField(
+                label: 'Required',
+                child: Text(
+                  sub['required'] == true
+                      ? 'Its goal needs it done to be done'
+                      : 'Its goal can be done without it',
+                ),
+              ),
+              if (people != null)
+                GoalField(label: 'People', child: Text(people)),
+              if (sub['description'] case final String d)
+                GoalField(
+                  label: 'Description',
+                  child: text(d, sub['description_format']),
+                ),
+              if (sub['definition_of_done'] case final String d)
+                GoalField(
+                  label: 'Definition of done',
+                  child: text(d, sub['definition_of_done_format']),
+                ),
+              if (sub['attribution_hints'] case final String h)
+                GoalField(label: 'Attribution hints', child: Text(h)),
+            ],
+          );
+        }(),
+    ];
+  }
+
+  /// Its goals, newest first, each with its period and how it went --
+  /// and, with a chain, how many of its sub-goals are done.
   List<Widget> _goals(BuildContext context) {
     final theme = Theme.of(context);
+    final all = widget.memory?.goals ?? const <Goal>[];
+    // Its sub-goals are under them, not its goals.
     final goals = [
-      for (final g in widget.memory?.goals ?? const <Goal>[])
-        if (g.habitId == _habit.id) g,
+      for (final g in all)
+        if (g.habitId == _habit.id && g.parentId == null) g,
     ]..sort((a, b) => b.id.compareTo(a.id));
+    final subsOf = <String, List<Goal>>{};
+    for (final g in all) {
+      if (g.habitId == _habit.id && g.parentId != null) {
+        (subsOf[g.parentId!] ??= []).add(g);
+      }
+    }
     final locale = MaterialLocalizations.of(context);
     return [
       sectionHeading(theme, 'Its goals'),
@@ -192,6 +286,9 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
             [
               goalStatuses[g.status] ?? g.status,
               if (g.misses.isNotEmpty && g.open) 'tried again',
+              if (subsOf[g.id] case final subs?)
+                '${subs.where((s) => s.status == 'done').length} of '
+                    '${subs.length} sub-goals done',
               if (g.due case final due? when g.open)
                 'due ${locale.formatMediumDate(due.subtract(const Duration(minutes: 1)))}',
             ].join(' · '),
@@ -303,6 +400,9 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
                       ).replaceAll('\n', ' '),
                       null => 'Done when its goal is',
                     },
+                    if (goal.priority case final p?) 'P$p',
+                    if (goal.expectedMinutes case final m? when m > 0)
+                      formatMinutes(m),
                     'goal rate over the last ${goal.ratedPeriods} '
                         '${goalPeriods[goal.period]?.$2 ?? 'periods'}',
                     if (!_habit.active)
@@ -344,6 +444,7 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
                   style: TextStyle(color: theme.hintColor),
                 ),
               }),
+            if (_habit.recurringGoal case final goal?) ..._chain(context, goal),
             if (_habit.isGoal) ..._goals(context),
             sectionHeading(theme, 'Built on'),
             sectionPadded(switch (_habit.foundations) {

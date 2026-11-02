@@ -49,8 +49,8 @@ class RecurringGoal {
 
   /// The sub-goals made under each of its goals, as the server takes
   /// them -- each `{key, title, deadline?: {days | minutes} before the
-  /// goal's, activate_when?, ...}` -- kept as they are: the app doesn't
-  /// edit them, and sends them back unchanged.
+  /// goal's, activate_when?, ...}` -- kept as maps, so what the app
+  /// doesn't edit of them goes back unchanged.
   final List<Map<String, Object?>> subGoals;
 
   int get ratedPeriods => ratePeriods ?? defaultRatePeriods(period);
