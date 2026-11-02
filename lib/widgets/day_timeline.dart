@@ -494,13 +494,16 @@ List<T> placeLabels<T>(
 /// "last compacted" and "pending note" in place of the times beside
 /// them. A note's label gives way to any it would overlap.
 ///
-/// The [circadian] windows are tinted under the events, across from the
-/// time column, cut off at the day's midnights: a faint cool tint where
-/// light would shift the user's schedule later, a faint warm one where it
-/// would hold it or shift it earlier. Their temperature minimum, if it's
-/// in the day, is a line across, under the events, labeled "temp min"
-/// when zoomed in past the [defaultTimelineScale], giving way to the
-/// labels above it as theirs do.
+/// The [circadian] windows are tinted under the events, the time column
+/// too, cut off at the day's midnights: a cool tint where light would
+/// shift the user's schedule later, a warm one where it would hold it or
+/// shift it earlier, each plain to see beside the events even on a day
+/// full of them. Their temperature minimum, if it's in the day, is a
+/// line across, under the events, labeled "temp min" when zoomed in past
+/// the [defaultTimelineScale], giving way to the labels above it as
+/// theirs do; zoomed in so, each window is labeled too, "avoid light" or
+/// "seek light", just inside its top and its bottom, in place of the
+/// times there.
 ///
 /// Under it all is its [TimelineAxis], unless not to draw its [axis]:
 /// then it's drawn over one drawn apart, and covers the axis' times its
@@ -751,8 +754,8 @@ class DayTimeline extends StatelessWidget {
     final colors = theme.colorScheme;
     final circadianStyle = circadianColors(theme.brightness);
     // The lines' labels, in place of the times beside them, only when
-    // zoomed in: each centered on its line, unless that's too close to the
-    // one above.
+    // zoomed in: each centered on its line -- a window's just inside its
+    // top and its bottom -- unless that's too close to the one above.
     final markerStyle = (text.labelSmall ?? const TextStyle()).copyWith(
       fontSize: _bandFontSize,
       fontWeight: FontWeight.w400,
@@ -760,21 +763,38 @@ class DayTimeline extends StatelessWidget {
     );
     final markers = <_Marker>[];
     if (scale > defaultTimelineScale) {
-      for (final (y, label, color) in [
+      // Where each goes: on its line (0), or below (1) or above (-1) it.
+      final wanted = [
         if (compactionY != null)
-          (compactionY, 'last\ncompacted', colors.tertiary),
-        if (nowY != null) (nowY, 'now', colors.error),
-        for (final y in minimumYs) (y, 'temp min', circadianStyle.line),
-      ]..sort((a, b) => a.$1.compareTo(b.$1))) {
+          (compactionY, 0, 'last\ncompacted', colors.tertiary),
+        if (nowY != null) (nowY, 0, 'now', colors.error),
+        for (final y in minimumYs) (y, 0, 'temp min', circadianStyle.line),
+        for (final span in circadian) ...[
+          (
+            y(span.start),
+            1,
+            _windowLabel(span.kind),
+            circadianStyle.labelOf(span.kind),
+          ),
+          (
+            y(span.end),
+            -1,
+            _windowLabel(span.kind),
+            circadianStyle.labelOf(span.kind),
+          ),
+        ],
+      ]..sort((a, b) => (a.$1 + a.$2 * 0.01).compareTo(b.$1 + b.$2 * 0.01));
+      for (final (line, side, label, color) in wanted) {
         final painter = _markerText(label, markerStyle, scaler);
         final height = painter.height;
         painter.dispose();
+        final at = line + side * (height / 2 + 1);
         final clear = switch (markers.lastOrNull) {
           final above? => above.y + (above.height + height) / 2 + 1,
           null => double.negativeInfinity,
         };
         markers.add((
-          y: math.max(y, clear),
+          y: math.max(at, clear),
           height: height,
           label: label,
           color: color,
@@ -880,7 +900,7 @@ class DayTimeline extends StatelessWidget {
                         if (span.start.isBefore(dayEnd) &&
                             span.end.isAfter(day))
                           Positioned(
-                            left: _timeWidth,
+                            left: 0,
                             right: 0,
                             top: y(span.start.isBefore(day) ? day : span.start),
                             height:
@@ -3459,7 +3479,7 @@ class _RailPainter extends CustomPainter {
     if (minimumYs.isNotEmpty) {
       final paint = Paint()
         ..color = minimumColor
-        ..strokeWidth = 1;
+        ..strokeWidth = 2;
       for (final y in minimumYs) {
         canvas.drawLine(Offset(_timeWidth, y), Offset(size.width, y), paint);
       }
@@ -3811,18 +3831,44 @@ class _RailPainter extends CustomPainter {
 }
 
 /// The tints of the windows either side of the user's temperature
-/// minimum, faint enough for events to read over: [dim]'s cool, before
-/// it, [bright]'s warm, after it; and the minimum's [line].
-({Color dim, Color bright, Color line}) circadianColors(
-  Brightness brightness,
-) => brightness == Brightness.dark
+/// minimum, plain beside the events but light enough for the times to
+/// read over: [dim]'s cool, before it, [bright]'s warm, after it; the
+/// minimum's [line]; and the color each window's labels are in,
+/// [dimLabel] and [brightLabel] ([labelOf] picks).
+CircadianColors circadianColors(Brightness brightness) =>
+    brightness == Brightness.dark
     ? (
-        dim: const Color(0xFF7986CB).withValues(alpha: 0.10),
-        bright: const Color(0xFFFFCA28).withValues(alpha: 0.07),
+        dim: const Color(0xFF7986CB).withValues(alpha: 0.30),
+        bright: const Color(0xFFFFCA28).withValues(alpha: 0.30),
         line: const Color(0xFF9FA8DA),
+        dimLabel: const Color(0xFF9FA8DA),
+        brightLabel: const Color(0xFFFFCA28),
       )
     : (
-        dim: const Color(0xFF3F51B5).withValues(alpha: 0.07),
-        bright: const Color(0xFFFFA000).withValues(alpha: 0.09),
+        dim: const Color(0xFF3F51B5).withValues(alpha: 0.22),
+        bright: const Color(0xFFFFA000).withValues(alpha: 0.22),
         line: const Color(0xFF5C6BC0),
+        dimLabel: const Color(0xFF3F51B5),
+        brightLabel: const Color(0xFFE65100),
       );
+
+typedef CircadianColors = ({
+  Color dim,
+  Color bright,
+  Color line,
+  Color dimLabel,
+  Color brightLabel,
+});
+
+extension on CircadianColors {
+  Color labelOf(CircadianKind kind) => switch (kind) {
+    CircadianKind.dim => dimLabel,
+    CircadianKind.bright => brightLabel,
+  };
+}
+
+/// A window's label, broken to fit the time column.
+String _windowLabel(CircadianKind kind) => switch (kind) {
+  CircadianKind.dim => 'avoid\nlight',
+  CircadianKind.bright => 'seek\nlight',
+};

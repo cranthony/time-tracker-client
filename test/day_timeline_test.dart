@@ -771,14 +771,14 @@ void main() {
     double y(DateTime t) =>
         timelineOffset(t, day: day, dayEnd: dayEnd, scale: 1);
 
-    testWidgets('tints each window under the events, across from the time '
-        'column, cut off at midnight', (tester) async {
+    testWidgets('tints each window under the events, the time column too, '
+        'cut off at midnight', (tester) async {
       await tester.pumpWidget(timeline(spans));
       final origin = tester.getTopLeft(find.byType(DayTimeline));
       final dim = tester.getRect(tint(CircadianKind.dim)).shift(-origin);
       expect(dim.top, closeTo(y(day), 0.01));
       expect(dim.bottom, closeTo(y(minimum), 0.01));
-      expect(dim.left, timelineTimesWidth);
+      expect(dim.left, 0);
       expect(dim.right, 600);
       final bright = tester.getRect(tint(CircadianKind.bright)).shift(-origin);
       expect(bright.top, closeTo(y(minimum), 0.01));
@@ -822,13 +822,46 @@ void main() {
             (marker as dynamic).label as String,
     ];
 
-    testWidgets('labels the minimum "temp min" only when zoomed in', (
-      tester,
-    ) async {
+    List<double> labelYs(WidgetTester tester) => [
+      for (final paint in tester.widgetList<CustomPaint>(
+        find.descendant(
+          of: find.byType(DayTimeline),
+          matching: find.byType(CustomPaint),
+        ),
+      ))
+        if (paint.foregroundPainter case final painter?
+            when '${painter.runtimeType}' == '_MarkerLabelsPainter')
+          for (final marker in (painter as dynamic).markers as List)
+            (marker as dynamic).y as double,
+    ];
+
+    testWidgets('labels the minimum and each window only when zoomed in: '
+        'the window just inside its top and its bottom, in order down '
+        'the timeline', (tester) async {
       await tester.pumpWidget(timeline(spans));
       expect(labels(tester), isEmpty);
       await tester.pumpWidget(timeline(spans, scale: 3));
-      expect(labels(tester), ['temp min']);
+      expect(labels(tester), [
+        'avoid\nlight',
+        'avoid\nlight',
+        'temp min',
+        'seek\nlight',
+        'seek\nlight',
+      ]);
+      final ys = labelYs(tester);
+      double y3(DateTime t) =>
+          timelineOffset(t, day: day, dayEnd: dayEnd, scale: 3);
+      // The first just below the day's start, the last just above the
+      // bright window's end; around the minimum, one above its line, the
+      // minimum's and the other below, each clear of the one before.
+      expect(ys.first, greaterThan(y3(day)));
+      expect(ys.last, lessThan(y3(at(8, 40))));
+      expect(ys[1], lessThan(y3(minimum)));
+      expect(ys[2], greaterThan(ys[1]));
+      expect(ys[3], greaterThan(ys[2]));
+      for (var i = 1; i < ys.length; i++) {
+        expect(ys[i] - ys[i - 1], greaterThan(0));
+      }
     });
   });
 }

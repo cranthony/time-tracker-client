@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.244.0
+
+- The dim and bright windows either side of the temperature minimum are
+  plain to see on the Events timeline on a day full of events: their
+  tint is stronger and runs across the time column too, which no event
+  covers, and the minimum's line is thicker. Zoomed in, where "now" and
+  "last compacted" are labeled, each window is labeled "avoid light" or
+  "seek light" just inside its top and its bottom.
+
 ## 7.243.0
 
 - A recurring goal's habit shows its chain of sub-goals on its page, in
