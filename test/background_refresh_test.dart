@@ -6,6 +6,7 @@ import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/proposal.dart';
 import 'package:time_tracker_client/models/schedule_hints.dart';
 import 'package:time_tracker_client/screens/background_updates_screen.dart';
+import 'package:time_tracker_client/services/circadian_repository.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/services/background_refresh.dart';
@@ -294,6 +295,44 @@ void main() {
       expect(record.fetched, ['routine times']);
       expect(record.failed, ['actions']);
       expect(record.ok, isFalse);
+    });
+
+    test('fetches the circadian rhythm, and takes a server without it '
+        'as having none', () async {
+      final cache = InMemoryResponseCache();
+      final record = await refreshCaches(
+        circadian: McpCircadianRepository(
+          _ToolsClient({
+            'get_circadian_rhythm': {
+              'windows': {'dim_before_minutes': 300},
+              'revisions': [
+                {'date': '2026-10-01', 'time': '06:30'},
+              ],
+            },
+          }),
+          cache: cache,
+        ),
+        clock: () => _now,
+      );
+      expect(record.fetched, ['circadian rhythm']);
+      final kept = await McpCircadianRepository(
+        _Client(null),
+        cache: cache,
+      ).cachedRhythm();
+      expect(kept!.windows.dimBefore, 300);
+
+      final older = await refreshCaches(
+        circadian: McpCircadianRepository(_NoCircadian(), cache: cache),
+        clock: () => _now,
+      );
+      expect(older.ok, isTrue);
+      expect(
+        await McpCircadianRepository(
+          _Client(null),
+          cache: cache,
+        ).cachedRhythm(),
+        isNull,
+      );
     });
 
     test(
@@ -793,6 +832,18 @@ class _ProposalClient extends McpClient {
       'changed_since': ['e1'],
     },
   };
+}
+
+/// A server from before the circadian rhythm.
+class _NoCircadian extends McpClient {
+  _NoCircadian() : super(endpoint: Uri.parse('http://test'));
+
+  @override
+  Future<Object?> callTool(
+    String name, [
+    Map<String, Object?> arguments = const {},
+    String? writeId,
+  ]) async => throw McpException('Unknown tool: $name');
 }
 
 class _NoHints implements ScheduleHintsRepository {

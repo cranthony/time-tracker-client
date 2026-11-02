@@ -6,6 +6,23 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.241.0
+
+- The Events timeline shades the hours either side of your temperature
+  minimum, worked out from when you last said you woke naturally: a
+  faint cool tint in the dim window before it, when light and exercise
+  shift your schedule later, and a faint warm one in the bright window
+  after it, when they hold it or shift it earlier. A line marks the
+  minimum, labeled "temp min" when zoomed in. The dim window that starts
+  the evening before is drawn on that evening.
+- Settings has a Circadian rhythm page: when you wake naturally now,
+  with the minimum and windows that come from it; a day and time (today,
+  to start with), with an optional note, to say when you woke naturally,
+  in place of what was said of that day; how wide the windows are, to
+  change; and what you've said before, newest first. The demo has a
+  wake time, so it shows the shading.
+- With a server from before this, nothing changes.
+
 ## 7.240.1
 
 - On Android, the background task, stopped by Android while it's saving

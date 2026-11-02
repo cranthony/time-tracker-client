@@ -26,6 +26,7 @@ import 'platform/calendar_widget.dart';
 import 'platform/goals_widget.dart';
 import 'screens/home_screen.dart';
 import 'screens/sheet_warnings_screen.dart';
+import 'services/circadian_repository.dart';
 import 'services/app_settings.dart';
 import 'services/event_store.dart';
 import 'services/actions_repository.dart';
@@ -161,6 +162,9 @@ Future<void> main() async {
                 enabled: true,
                 place: const Coordinates(47.61, -122.33),
               )..load()),
+        circadian: sample == null
+            ? null
+            : Circadian(sample.circadianRepository()),
         backgroundRefresh: BackgroundRefresh(
           repository: sample?.scheduleHintsRepository(),
           // The offline demo has nothing to fetch.
@@ -252,6 +256,7 @@ Future<void> main() async {
           ? (GoogleCalendars(source: AndroidGoogleCalendarSource())..load())
           : null,
       weather: weather,
+      circadian: Circadian(McpCircadianRepository(client, cache: cache)),
       backgroundRefresh: BackgroundRefresh(
         repository: McpScheduleHintsRepository(client, cache: cache),
         settings: settings,
@@ -396,6 +401,7 @@ Future<void> _refreshInBackground() async {
     people: McpPeopleRepository(client, cache: cache),
     habits: McpHabitsRepository(client, cache: cache),
     goals: goals,
+    circadian: McpCircadianRepository(client, cache: cache),
     events: events,
   );
   await record.save();
@@ -471,7 +477,12 @@ class TimeTrackerApp extends StatefulWidget {
     this.goalsWidget,
     this.googleCalendars,
     this.weather,
+    this.circadian,
   });
+
+  /// When the user woke naturally, for the Events page's shading and its
+  /// settings page (see [CircadianScope]); null for none.
+  final Circadian? circadian;
 
   /// The forecast where the device is, if the user turns it on; null for
   /// none.
@@ -605,6 +616,8 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     _startEventOutbox();
     // Their times, and the next fetch scheduled from them. Best effort.
     widget.backgroundRefresh?.load().catchError((Object _) {});
+    // The circadian rhythm, kept from before, then afresh. Best effort.
+    widget.circadian?.load().catchError((Object _) {});
     // Where nothing fetches in the background -- a browser's tab -- what's
     // shown, fetched afresh every so often while the app's open.
     widget.backgroundRefresh?.startLive(_checkLive);
@@ -752,6 +765,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     if (widget.goalsRepository case final goals?) {
       unawaited(_planMemory.loadGoals(goals, again: true));
     }
+    unawaited(widget.circadian?.refresh());
   }
 
   /// Fetches what's shown afresh, quietly, as R does, and the goals for
@@ -763,6 +777,7 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     if (widget.goalsRepository case final goals?) {
       unawaited(_planMemory.loadGoals(goals, again: true));
     }
+    unawaited(widget.circadian?.refresh());
     return true;
   }
 
@@ -820,6 +835,9 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
         }
         if (widget.weather case final weather?) {
           scoped = WeatherScope(weather: weather, child: scoped);
+        }
+        if (widget.circadian case final circadian?) {
+          scoped = CircadianScope(circadian: circadian, child: scoped);
         }
         if (widget.diagnosticsRepository case final diagnostics?) {
           scoped = DiagnosticsScope(

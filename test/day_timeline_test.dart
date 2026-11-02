@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/widgets/goal_icon.dart';
+import 'package:time_tracker_client/models/circadian.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/plan_action.dart';
 import 'package:time_tracker_client/models/weather.dart';
@@ -729,6 +730,105 @@ void main() {
       await tester.pumpWidget(timeline(next, animations: false));
       expect(painter(tester).from, next);
       expect(painter(tester).opacity, 1);
+    });
+  });
+
+  group('circadian', () {
+    Widget timeline(List<CircadianSpan> spans, {double scale = 1}) =>
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: SizedBox(
+                width: 600,
+                child: DayTimeline(
+                  events: [event('Breakfast', at(7), at(8))],
+                  day: day,
+                  scale: scale,
+                  circadian: spans,
+                ),
+              ),
+            ),
+          ),
+        );
+    final minimum = at(4, 40);
+    final spans = <CircadianSpan>[
+      // From the evening before: cut off at midnight.
+      (
+        kind: CircadianKind.dim,
+        start: DateTime(2026, 9, 29, 22, 40),
+        end: minimum,
+        minimum: minimum,
+      ),
+      (
+        kind: CircadianKind.bright,
+        start: minimum,
+        end: at(8, 40),
+        minimum: minimum,
+      ),
+    ];
+    Finder tint(CircadianKind kind) =>
+        find.byKey(ValueKey(('circadian', kind)));
+    double y(DateTime t) =>
+        timelineOffset(t, day: day, dayEnd: dayEnd, scale: 1);
+
+    testWidgets('tints each window under the events, across from the time '
+        'column, cut off at midnight', (tester) async {
+      await tester.pumpWidget(timeline(spans));
+      final origin = tester.getTopLeft(find.byType(DayTimeline));
+      final dim = tester.getRect(tint(CircadianKind.dim)).shift(-origin);
+      expect(dim.top, closeTo(y(day), 0.01));
+      expect(dim.bottom, closeTo(y(minimum), 0.01));
+      expect(dim.left, timelineTimesWidth);
+      expect(dim.right, 600);
+      final bright = tester.getRect(tint(CircadianKind.bright)).shift(-origin);
+      expect(bright.top, closeTo(y(minimum), 0.01));
+      expect(bright.bottom, closeTo(y(at(8, 40)), 0.01));
+      // Under the events, and not in the way of their taps.
+      final ignored = find.ancestor(
+        of: tint(CircadianKind.dim),
+        matching: find.byType(IgnorePointer),
+      );
+      expect(ignored, findsWidgets);
+      expect(
+        tester.widget<ColoredBox>(tint(CircadianKind.dim)).color,
+        circadianColors(Brightness.light).dim,
+      );
+    });
+
+    testWidgets('draws nothing of a window outside the day', (tester) async {
+      await tester.pumpWidget(
+        timeline([
+          (
+            kind: CircadianKind.dim,
+            start: DateTime(2026, 9, 29, 20),
+            end: DateTime(2026, 9, 29, 23),
+            minimum: DateTime(2026, 9, 29, 23),
+          ),
+        ]),
+      );
+      expect(tint(CircadianKind.dim), findsNothing);
+    });
+
+    List<String> labels(WidgetTester tester) => [
+      for (final paint in tester.widgetList<CustomPaint>(
+        find.descendant(
+          of: find.byType(DayTimeline),
+          matching: find.byType(CustomPaint),
+        ),
+      ))
+        if (paint.foregroundPainter case final painter?
+            when '${painter.runtimeType}' == '_MarkerLabelsPainter')
+          for (final marker in (painter as dynamic).markers as List)
+            (marker as dynamic).label as String,
+    ];
+
+    testWidgets('labels the minimum "temp min" only when zoomed in', (
+      tester,
+    ) async {
+      await tester.pumpWidget(timeline(spans));
+      expect(labels(tester), isEmpty);
+      await tester.pumpWidget(timeline(spans, scale: 3));
+      expect(labels(tester), ['temp min']);
     });
   });
 }

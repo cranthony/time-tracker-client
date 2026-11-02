@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../models/circadian.dart';
 import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/habit.dart';
@@ -14,6 +15,7 @@ import '../models/proposal.dart';
 import '../models/recurrence.dart';
 import '../models/trait.dart';
 import '../models/trait_scores.dart';
+import '../services/circadian_repository.dart';
 import '../services/events_repository.dart';
 import '../services/actions_repository.dart';
 import '../services/client_health.dart';
@@ -590,6 +592,31 @@ class SampleData {
           timeZone: 'America/New_York',
         ),
       );
+
+  /// When Self woke naturally: at 7:15 a fortnight ago, then at 6:40
+  /// since four days ago -- a temperature minimum at 4:40, dim from 10:40
+  /// the evening before, bright till 8:40 -- with the windows as they
+  /// start.
+  CircadianRepository circadianRepository() => InMemoryCircadianRepository(
+    CircadianRhythm(
+      timeZone: 'America/New_York',
+      revisions: [
+        WakeRevision(
+          id: 'w1',
+          date: DateTime(_today.year, _today.month, _today.day - 14),
+          hour: 7,
+          minute: 15,
+        ),
+        WakeRevision(
+          id: 'w2',
+          date: DateTime(_today.year, _today.month, _today.day - 4),
+          hour: 6,
+          minute: 40,
+          note: 'Woke without an alarm, after a camping weekend',
+        ),
+      ],
+    ),
+  );
 
   /// The traits. How everyone is rated by them is worked out from the
   /// events, as with the server.
