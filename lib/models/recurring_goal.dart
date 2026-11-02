@@ -55,6 +55,23 @@ class RecurringGoal {
 
   int get ratedPeriods => ratePeriods ?? defaultRatePeriods(period);
 
+  /// It, with [subs] for its sub-goals.
+  RecurringGoal withSubGoals(List<Map<String, Object?>> subs) => RecurringGoal(
+    period: period,
+    title: title,
+    priority: priority,
+    expectedMinutes: expectedMinutes,
+    description: description,
+    descriptionFormat: descriptionFormat,
+    definitionOfDone: definitionOfDone,
+    definitionOfDoneFormat: definitionOfDoneFormat,
+    attributionHints: attributionHints,
+    withWhom: withWhom,
+    forWhom: forWhom,
+    ratePeriods: ratePeriods,
+    subGoals: subs,
+  );
+
   static RecurringGoal? fromJson(Object? json) => switch (json) {
     final Map json => RecurringGoal(
       period: switch (json['period']) {

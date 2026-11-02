@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.246.0
+
+- A recurring goal's habit's page shows its goal as a tile that opens on
+  everything each of its goals is made with: when they're made, their
+  title, priority, expected time, people, description, definition of
+  done, the hints for telling their events, and the goal rate's span.
+- The habit editor shows its goal as a tile, like a sub-goal's, opening
+  its fields on a page of their own; picking "A recurring goal" for a new
+  habit opens that page right away.
+
 ## 7.245.0
 
 - An event's dialog, and a series', shows the time zone it's kept in --
