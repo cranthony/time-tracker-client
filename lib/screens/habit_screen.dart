@@ -15,6 +15,7 @@ import '../widgets/event_description.dart';
 import '../widgets/goal_editor.dart' show goalPeopleLabel, goalPeopleNames;
 import '../widgets/goal_fields.dart';
 import '../widgets/habit_dialog.dart';
+import '../widgets/recurring_goal_editor.dart';
 import '../widgets/sub_goal_editor.dart';
 import '../widgets/health.dart';
 import 'subject_sections.dart';
@@ -155,6 +156,65 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
     for (final h in widget.memory?.habits ?? const <Habit>[])
       if (h.status != 'deleted' && h.foundations.contains(_habit.subject)) h,
   ]..sort((a, b) => habitName(a).compareTo(habitName(b)));
+
+  /// Its recurring goal, in brief, opening on everything each of its
+  /// goals is made with.
+  Widget _goalTile(BuildContext context, RecurringGoal goal) {
+    final people = goalPeopleLabel(
+      goal.withWhom,
+      goal.forWhom,
+      goalPeopleNames(widget.memory),
+    );
+    return ExpansionTile(
+      leading: const Icon(Icons.repeat),
+      title: Text(recurringGoalTitle(goal, habitName(_habit))),
+      subtitle: Text(
+        [
+          recurringGoalSummary(goal),
+          if (!_habit.active) habitStatuses[_habit.status] ?? _habit.status,
+        ].join(' · '),
+      ),
+      expandedCrossAxisAlignment: CrossAxisAlignment.start,
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      children: [
+        GoalField(label: 'Made', child: Text(recurringGoalMade(goal))),
+        GoalField(
+          label: 'Title',
+          child: Text(goal.title ?? "${habitName(_habit)}, the habit's name"),
+        ),
+        GoalField(
+          label: 'Priority',
+          child: Text(switch (goal.priority) {
+            final p? => 'P$p',
+            null => 'None (P$defaultGoalPriority)',
+          }),
+        ),
+        if (goal.expectedMinutes case final m? when m > 0)
+          GoalField(label: 'Expected time', child: Text(formatMinutes(m))),
+        if (people != null) GoalField(label: 'People', child: Text(people)),
+        if (goal.description case final d?)
+          GoalField(
+            label: 'Description',
+            child: EventDescription(d, format: goal.descriptionFormat),
+          ),
+        if (goal.definitionOfDone case final d?)
+          GoalField(
+            label: 'Definition of done',
+            child: EventDescription(d, format: goal.definitionOfDoneFormat),
+          ),
+        if (goal.attributionHints case final h?)
+          GoalField(label: 'Its events', child: Text(h)),
+        GoalField(
+          label: 'Goal rate',
+          child: Text(
+            'Over the last ${goal.ratedPeriods} '
+            '${goalPeriods[goal.period]?.$2 ?? 'periods'}'
+            '${goal.ratePeriods == null ? ", its period's default" : ''}',
+          ),
+        ),
+      ],
+    );
+  }
 
   /// Its chain: the sub-goals made under each of its goals, in the order
   /// they come due, each opening on what it's for and how it's done.
@@ -386,30 +446,7 @@ class _HabitScreenState extends State<HabitScreen> with Rescored {
                 onTap: open,
               )
             else if (_habit.recurringGoal case final goal?)
-              ListTile(
-                leading: const Icon(Icons.repeat),
-                title: Text(
-                  '${goalEachLabel(goal)}: ${goal.title ?? habitName(_habit)}',
-                ),
-                subtitle: Text(
-                  [
-                    switch (goal.definitionOfDone) {
-                      final done? => descriptionText(
-                        done,
-                        format: goal.definitionOfDoneFormat,
-                      ).replaceAll('\n', ' '),
-                      null => 'Done when its goal is',
-                    },
-                    if (goal.priority case final p?) 'P$p',
-                    if (goal.expectedMinutes case final m? when m > 0)
-                      formatMinutes(m),
-                    'goal rate over the last ${goal.ratedPeriods} '
-                        '${goalPeriods[goal.period]?.$2 ?? 'periods'}',
-                    if (!_habit.active)
-                      habitStatuses[_habit.status] ?? _habit.status,
-                  ].join(' · '),
-                ),
-              )
+              _goalTile(context, goal)
             else
               ListTile(
                 leading: actionDot(action, size: 16),

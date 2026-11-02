@@ -244,13 +244,19 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
 
-    // Its goals' priority and expected time are its own to set.
+    // Its goals' priority and expected time are set on its goal's page.
+    await tester.tap(find.text('A goal each quarter: Cook dinner'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit recurring goal'), findsOneWidget);
     await tester.tap(find.widgetWithText(ChoiceChip, 'P0'));
     await tester.enterText(
       find.widgetWithText(TextField, "Goals' expected time (optional)"),
       '6h',
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('P0 · 6h'), findsOneWidget);
 
     // Shopping's due a day sooner.
     await tester.tap(find.text('Buy groceries'));

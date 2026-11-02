@@ -1,8 +1,4 @@
-import 'goal_editor.dart' show FormattedField, goalPeopleLabel, goalPeopleNames;
-import 'picker_sheet.dart' show showWhoWhereSheet;
-import '../services/plan_memory.dart';
-import '../models/named.dart';
-import '../models/facts.dart';
+import 'goal_editor.dart' show FormattedField;
 
 import 'package:flutter/material.dart';
 
@@ -19,10 +15,10 @@ import '../models/trait.dart';
 import '../models/trait_scores.dart';
 import 'actions_picker.dart';
 import 'color_picker.dart';
-import 'duration_field.dart';
 import 'edit_page.dart';
 import 'error_sheet.dart';
 import 'foundations_field.dart';
+import 'recurring_goal_editor.dart';
 import 'sub_goal_editor.dart';
 import 'text_editor.dart';
 import 'traits_field.dart';
@@ -103,47 +99,17 @@ class _HabitEditorState extends State<_HabitEditor> {
   /// Whether it's a recurring goal's habit: picked for a new one, fixed
   /// for one there is.
   late bool _isGoal = widget.habit?.isGoal ?? false;
-  late String _period = widget.habit?.recurringGoal?.period ?? 'week';
-  late final _goalTitle = TextEditingController(
-    text: widget.habit?.recurringGoal?.title,
-  );
 
-  /// Its goals' description and definition of done, and how each is
-  /// written, as a goal's.
-  late String? _description = widget.habit?.recurringGoal?.description;
-  late TextFormat? _descriptionFormat =
-      widget.habit?.recurringGoal?.descriptionFormat;
-  late String? _definitionOfDone =
-      widget.habit?.recurringGoal?.definitionOfDone;
-  late TextFormat? _definitionOfDoneFormat =
-      widget.habit?.recurringGoal?.definitionOfDoneFormat;
-  late final _attributionHints = TextEditingController(
-    text: widget.habit?.recurringGoal?.attributionHints,
-  );
-  late final _ratePeriods = TextEditingController(
-    text:
-        '${widget.habit?.recurringGoal?.ratedPeriods ?? defaultRatePeriods(_period)}',
-  );
+  /// Its goal made for each period, but for its chain, as it's been
+  /// edited ([showRecurringGoalEditor]).
+  late RecurringGoal _goal =
+      widget.habit?.recurringGoal ?? const RecurringGoal();
 
-  /// Whether its goal rate's span is its own, not its period's default,
-  /// which it follows as the period's changed till it's typed.
-  late bool _ownRate = widget.habit?.recurringGoal?.ratePeriods != null;
-
-  /// Its goals' priority (none, the default) and expected time.
-  late int? _goalPriority = widget.habit?.recurringGoal?.priority;
-  late final _goalMinutes = TextEditingController(
-    text: widget.habit?.recurringGoal?.expectedMinutes?.toString() ?? '',
-  );
+  /// Whether its goal's been set up: one there is, or one saved.
+  late bool _goalSet = widget.habit?.recurringGoal != null;
 
   /// The chain of sub-goals made under each of its goals.
-  late List<Map<String, Object?>> _subGoals = [
-    ...?widget.habit?.recurringGoal?.subGoals,
-  ];
-
-  /// Whom its goals are done with and for: people and circles, a plain
-  /// circle with those of its people it leaves out.
-  late List<Named> _with = [...?widget.habit?.recurringGoal?.withWhom];
-  late List<Named> _for = [...?widget.habit?.recurringGoal?.forWhom];
+  late List<Map<String, Object?>> _subGoals = [..._goal.subGoals];
   late PersonTraits _traits = widget.habit?.traits ?? const PersonTraits();
   late final PersonTraits _actionTraits = _traits;
   late List<String> _foundations = widget.habit?.foundations ?? const [];
@@ -157,25 +123,13 @@ class _HabitEditorState extends State<_HabitEditor> {
   void dispose() {
     _name.dispose();
     _note.dispose();
-    _goalTitle.dispose();
-    _attributionHints.dispose();
-    _ratePeriods.dispose();
-    _goalMinutes.dispose();
     super.dispose();
   }
 
   static String? _text(TextEditingController c) =>
       c.text.trim().isEmpty ? null : c.text.trim();
 
-  int? get _rateValue => int.tryParse(_ratePeriods.text.trim());
-
-  int? get _goalExpected =>
-      switch (num.tryParse(_goalMinutes.text.trim())?.round()) {
-        final m? when m > 0 => m,
-        _ => null,
-      };
-
-  String get _goalsTitle => _text(_goalTitle) ?? _text(_name) ?? 'its goal';
+  String get _goalsTitle => _goal.title ?? _text(_name) ?? 'its goal';
 
   /// Adds a sub-goal to its chain (with no [index]), or edits the one at
   /// [index], removing it if that's asked.
@@ -188,7 +142,7 @@ class _HabitEditorState extends State<_HabitEditor> {
           if (i != index) s,
       ],
       goalTitle: _goalsTitle,
-      goalPriority: _goalPriority ?? defaultGoalPriority,
+      goalPriority: _goal.priority ?? defaultGoalPriority,
     );
     if (edited == null || !mounted) return;
     setState(() {
@@ -205,54 +159,33 @@ class _HabitEditorState extends State<_HabitEditor> {
 
   /// Its recurring goal as it's being edited: what the server takes,
   /// kept as it was where this doesn't edit it.
-  RecurringGoal get _recurring {
-    return RecurringGoal(
-      period: _period,
-      title: _text(_goalTitle),
-      priority: _goalPriority,
-      expectedMinutes: _goalExpected,
-      description: _description,
-      descriptionFormat: _description == null ? null : _descriptionFormat,
-      definitionOfDone: _definitionOfDone,
-      definitionOfDoneFormat: _definitionOfDone == null
-          ? null
-          : _definitionOfDoneFormat,
-      attributionHints: _text(_attributionHints),
-      withWhom: _with,
-      forWhom: _for,
-      ratePeriods: _ownRate ? _rateValue : null,
-      subGoals: _subGoals,
-    );
-  }
+  RecurringGoal get _recurring => _goal.withSubGoals(_subGoals);
 
-  /// Picks whom its goals are done with and for, as a goal's are.
-  Future<void> _pickGoalPeople() async {
-    final picked = await showWhoWhereSheet(
+  /// Edits its goal on a page of its own.
+  Future<void> _editGoal() async {
+    final edited = await showRecurringGoalEditor(
       context,
-      Facts.named(with_: _with, for_: _for),
-      withCaption: 'Who you’ll do its goals with',
-      forCaption: 'Who they’re for, who won’t be part of doing them',
+      goal: _goalSet ? _recurring : null,
+      habitName: _name.text,
     );
-    if (picked == null || !mounted) return;
+    if (edited == null || !mounted) return;
     setState(() {
-      _with = picked.facts.withWhom;
-      _for = picked.facts.forWhom;
+      _goal = edited;
+      _goalSet = true;
     });
   }
 
-  /// Picks [period], its goal rate's span following it unless it's
-  /// been given one.
-  void _pickPeriod(String period) => setState(() {
-    _period = period;
-    if (!_ownRate) _ratePeriods.text = '${defaultRatePeriods(period)}';
-  });
-
   /// Switches a new habit between an action's and a recurring goal's: a
   /// goal's is scored by its goal rate alone till it's given traits.
-  void _pickGoal(bool goal) => setState(() {
-    _isGoal = goal;
-    _traits = goal ? const PersonTraits(select: []) : _actionTraits;
-  });
+  /// Its goal's page opens as it's picked, to be set up.
+  void _pickGoal(bool goal) {
+    if (goal == _isGoal) return;
+    setState(() {
+      _isGoal = goal;
+      _traits = goal ? const PersonTraits(select: []) : _actionTraits;
+    });
+    if (goal) _editGoal();
+  }
 
   String? get _noteText => _note.text.trim().isEmpty ? null : _note.text.trim();
 
@@ -364,14 +297,10 @@ class _HabitEditorState extends State<_HabitEditor> {
     final problem = _name.text.trim().isEmpty
         ? 'Give it a name.'
         : _isGoal
-        ? (_rateValue == null || _rateValue! < 1
-              ? 'Give how many periods its goal rate counts: 1 or more.'
-              : _goalMinutes.text.trim().isNotEmpty && _goalExpected == null
-              ? 'Give its goals’ expected time as a length of time.'
-              : chainProblems(
-                  _subGoals,
-                  goalMinutes: _goalExpected,
-                ).firstOrNull)
+        ? chainProblems(
+            _subGoals,
+            goalMinutes: _goal.expectedMinutes,
+          ).firstOrNull
         : _actionId == null
         ? 'Pick the action or group it is about.'
         : null;
@@ -578,168 +507,31 @@ class _HabitEditorState extends State<_HabitEditor> {
     ),
   ];
 
-  /// The goal made for each period, for a recurring goal's habit.
+  /// The goal made for each period, for a recurring goal's habit: a
+  /// tile opening its page.
   List<Widget> _goalFields(ThemeData theme) => [
     Padding(
       padding: const EdgeInsets.only(top: 16, bottom: 4),
-      child: Text('A goal each', style: theme.textTheme.titleSmall),
+      child: Text('Its goal', style: theme.textTheme.titleSmall),
     ),
     FieldHotkey(
-      'P',
-      onPressed: () => _pickPeriod(nextOf(goalPeriods.keys.toList(), _period)),
-      child: SegmentedButton<String>(
-        showSelectedIcon: false,
-        segments: [
-          for (final MapEntry(:key, :value) in goalPeriods.entries)
-            ButtonSegment(value: key, label: Text(value.$1)),
-        ],
-        selected: {_period},
-        onSelectionChanged: (picked) => _pickPeriod(picked.single),
-      ),
-    ),
-    Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Text(
-        'A goal is made as each ${goalPeriods[_period]!.$1.toLowerCase()} '
-        '${_period == 'week' ? 'starts, on Sunday' : 'starts'}, once the one '
-        'before is done; one missed is tried again through the next. Its '
-        'events are those tagged with its goals.',
-        style: theme.textTheme.bodySmall,
-      ),
-    ),
-    Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: TextField(
-        controller: _goalTitle,
-        textCapitalization: TextCapitalization.sentences,
-        decoration: InputDecoration(
-          labelText: "Goals' title (optional)",
-          hintText: _name.text.trim().isEmpty
-              ? "The habit's name"
-              : _name.text.trim(),
-          border: const OutlineInputBorder(),
-          isDense: true,
-          floatingLabelBehavior: FloatingLabelBehavior.always,
-        ),
-      ),
-    ),
-    Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 4),
-      child: Text("Goals' priority", style: theme.textTheme.labelLarge),
-    ),
-    Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      children: [
-        ChoiceChip(
-          showCheckmark: false,
-          label: const Text('None (P$defaultGoalPriority)'),
-          selected: _goalPriority == null,
-          onSelected: (_) => setState(() => _goalPriority = null),
-        ),
-        for (final p in const [0, 1, 2, 3])
-          ChoiceChip(
-            showCheckmark: false,
-            avatar: CircleAvatar(backgroundColor: priorityColor(p)),
-            label: Text('P$p'),
-            selected: _goalPriority == p,
-            onSelected: (_) => setState(() => _goalPriority = p),
-          ),
-      ],
-    ),
-    Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: DurationField(
-        controller: _goalMinutes,
-        label: "Goals' expected time (optional)",
-        onChanged: () => setState(() {}),
-      ),
-    ),
-    Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: _formattedField(
-        theme,
-        'Description',
-        _description,
-        _descriptionFormat,
-        'Each goal is made with it; changed, it goes with those to come.',
-        (text, format) {
-          _description = text;
-          _descriptionFormat = format;
-        },
-      ),
-    ),
-    Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: _formattedField(
-        theme,
-        'Definition of done',
-        _definitionOfDone,
-        _definitionOfDoneFormat,
-        'Compaction marks each goal done or missed by this.',
-        (text, format) {
-          _definitionOfDone = text;
-          _definitionOfDoneFormat = format;
-        },
-      ),
-    ),
-    Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: TextField(
-        controller: _attributionHints,
-        minLines: 2,
-        maxLines: null,
-        textCapitalization: TextCapitalization.sentences,
-        decoration: const InputDecoration(
-          labelText: 'Its events (optional)',
-          hintText: 'e.g. Calls or visits with Mom',
-          helperText: 'Which events compaction tags with its goals.',
-          border: OutlineInputBorder(),
-          floatingLabelBehavior: FloatingLabelBehavior.always,
-        ),
-      ),
-    ),
-    Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(4),
-        onTap: _pickGoalPeople,
-        child: InputDecorator(
-          isEmpty: _with.isEmpty && _for.isEmpty,
-          decoration: const InputDecoration(
-            labelText: 'With and for (optional)',
-            hintText: 'No one: a goal of your own',
-            helperText: 'Whom each goal is done with, and for.',
-            isDense: true,
-            border: OutlineInputBorder(),
-            suffixIcon: Icon(Icons.arrow_drop_down),
-          ),
-          child: Text(
-            goalPeopleLabel(
-                  _with,
-                  _for,
-                  goalPeopleNames(PlanMemoryScope.of(context)),
-                ) ??
-                '',
+      'G',
+      onPressed: _editGoal,
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.repeat),
+        title: Text(
+          recurringGoalTitle(
+            _goal,
+            _name.text.trim().isEmpty ? 'its name' : _name.text.trim(),
           ),
         ),
+        subtitle: Text(recurringGoalSummary(_goal)),
+        trailing: const Icon(Icons.edit_outlined, size: 18),
+        onTap: _editGoal,
       ),
     ),
-    Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: TextField(
-        controller: _ratePeriods,
-        keyboardType: TextInputType.number,
-        decoration: InputDecoration(
-          labelText: 'Goal rate counts the last',
-          suffixText: goalPeriods[_period]!.$2,
-          helperText: "It's scored by how many of them had its goal done.",
-          border: const OutlineInputBorder(),
-          isDense: true,
-        ),
-        onChanged: (_) => setState(() => _ownRate = true),
-      ),
-    ),
+    Text(recurringGoalMade(_goal), style: theme.textTheme.bodySmall),
     ..._chainFields(theme),
   ];
 
@@ -747,7 +539,7 @@ class _HabitEditorState extends State<_HabitEditor> {
   /// they come due, each opening its editor, and a button adding one.
   List<Widget> _chainFields(ThemeData theme) {
     final titles = {for (final s in _subGoals) ?subGoalKey(s): subGoalTitle(s)};
-    final priority = _goalPriority ?? defaultGoalPriority;
+    final priority = _goal.priority ?? defaultGoalPriority;
     return [
       Padding(
         padding: const EdgeInsets.only(top: 24, bottom: 4),

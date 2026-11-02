@@ -811,9 +811,10 @@ void main() {
         find.widgetWithText(TextField, 'Name'),
         'Call Mom',
       );
+      // Its goal's page opens as it's picked.
       await tester.tap(find.text('A recurring goal'));
       await tester.pumpAndSettle();
-      expect(find.text('Pick an action or group'), findsNothing);
+      expect(find.text('New recurring goal'), findsOneWidget);
       // Its goal rate's span follows the period till it's typed.
       await tester.tap(find.text('Year'));
       await tester.pumpAndSettle();
@@ -838,16 +839,26 @@ void main() {
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(find.text('Add definition of done'), findsNothing);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Goal rate counts the last'),
+        '3',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pick an action or group'), findsNothing);
+      expect(find.text('A goal each month: Call Mom'), findsOneWidget);
+      expect(
+        find.text(
+          'We talked for 20 minutes · goal rate over the last 3 months',
+        ),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Add note'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Markdown'));
       await tester.enterText(find.byType(TextField).last, '**Keep** in touch');
       await tester.tap(find.text('Save'));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Goal rate counts the last'),
-        '3',
-      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
@@ -938,6 +949,9 @@ void main() {
   testWidgets("a recurring goal's habit's page shows its goal and its goals", (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(1000, 3000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final habit = Habit.fromJson({
       'id': 'h1',
       'name': 'Call Mom',
@@ -972,9 +986,20 @@ void main() {
 
     expect(find.text('A goal each week: Call Mom'), findsOneWidget);
     expect(find.textContaining('We talked'), findsOneWidget);
+    // Opened, it shows what each of its goals is made with.
+    await tester.tap(find.text('A goal each week: Call Mom'));
+    // Its health spins, so it never settles.
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('None (P$defaultGoalPriority)'), findsOneWidget);
+    expect(
+      find.text("Over the last 6 weeks, its period's default"),
+      findsOneWidget,
+    );
+    expect(find.text('We talked'), findsOneWidget);
     expect(find.text('Its goals'), findsOneWidget);
     expect(find.text('From Sun, Oct 18'), findsOneWidget);
-    expect(find.textContaining('tried again'), findsOneWidget);
+    expect(find.textContaining(' · tried again'), findsOneWidget);
     expect(find.text('From Sun, Oct 11'), findsOneWidget);
     expect(find.text('Other'), findsNothing);
   });
