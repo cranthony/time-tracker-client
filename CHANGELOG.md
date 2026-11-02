@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.242.0
+
+- A habit's recurring goal can have a chain of sub-goals, made under each
+  of its goals with their deadlines set before the goal's (shopping two
+  days before a dinner, say): saving the habit in the app keeps them,
+  and a sub-goal done doesn't count as its goal done in the goal rate.
+- A goal can wait to start until a time before its parent's deadline --
+  "A week before its parent is due" -- following the parent as it
+  moves. The app shows it among what the goal waits for, and when it's
+  expected to start.
+
 ## 7.241.0
 
 - The Events timeline shades the hours either side of your temperature

@@ -172,6 +172,7 @@ class _HabitEditorState extends State<_HabitEditor> {
       withWhom: _with,
       forWhom: _for,
       ratePeriods: _ownRate ? _rateValue : null,
+      subGoals: was.subGoals,
     );
   }
 

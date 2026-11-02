@@ -2,7 +2,8 @@ import 'goal.dart';
 
 /// What an inactive goal waits for before it's activated
 /// ([Goal.activateWhen]), as the server keeps it -- `{after: [{goal_closed:
-/// id} | {at: date or date and time}], delay: "next_day" | {minutes},
+/// id} | {at: date or date and time} | {before_parent: {days | minutes}}],
+/// delay: "next_day" | {minutes},
 /// hold_while: [{active_at_least, priority?: {at_or_above | exactly: a
 /// priority or "own"}}]}` -- and how the server goes by it, mirrored so the
 /// app shows what it will do before it's read back.
@@ -46,6 +47,24 @@ DateTime? startOf(String at) {
   return deadlineEnd(text);
 }
 
+/// When a `{before_parent: [offset]}` trigger comes: that many days or
+/// minutes before [deadline] (its parent's) falls due.
+DateTime? beforeDue(String? deadline, Map offset) {
+  final due = deadlineEnd(deadline);
+  if (due == null) return null;
+  return switch (offset) {
+    {'days': final num d} => DateTime(
+      due.year,
+      due.month,
+      due.day - d.toInt(),
+      due.hour,
+      due.minute,
+    ),
+    {'minutes': final num m} => due.subtract(Duration(minutes: m.toInt())),
+    _ => null,
+  };
+}
+
 DateTime _delayed(DateTime at, Object? delay) => switch (delay) {
   'next_day' => DateTime(at.year, at.month, at.day + 1),
   {'minutes': final num m} => at.add(Duration(minutes: m.toInt())),
@@ -68,6 +87,10 @@ DateTime? readyAt(Goal goal, GoalTree tree) {
         came = closed;
       case {'at': final String at}:
         final start = startOf(at);
+        if (start == null) return null;
+        came = start;
+      case {'before_parent': final Map offset}:
+        final start = beforeDue(tree[goal.parentId ?? '']?.deadline, offset);
         if (start == null) return null;
         came = start;
       default:
@@ -116,6 +139,17 @@ DateTime? expectedStart(
         }
       case {'at': final String at}:
         final start = startOf(at);
+        if (start == null) return null;
+        comes = start;
+        if (last == null || comes.isAfter(last)) byDeadline = false;
+      case {'before_parent': final Map offset}:
+        final parent = tree[goal.parentId ?? ''];
+        final start = parent == null
+            ? null
+            : beforeDue(
+                expectedDeadline(parent, tree, now: now, depth: depth + 1),
+                offset,
+              );
         if (start == null) return null;
         comes = start;
         if (last == null || comes.isAfter(last)) byDeadline = false;

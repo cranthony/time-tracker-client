@@ -6,7 +6,8 @@ import 'goal.dart';
 /// (from January, April, July or October) or a year -- as
 /// each begins, once the one before is done or obsolete, and tries again
 /// through the next period when it's missed. Its goals are the habit's
-/// ([Goal.habitId]); the habit is scored by its [goalRate].
+/// ([Goal.habitId]); the habit is scored by its [goalRate]. Its
+/// [subGoals] are made under each of them.
 class RecurringGoal {
   const RecurringGoal({
     this.period = 'week',
@@ -21,6 +22,7 @@ class RecurringGoal {
     this.withWhom = const [],
     this.forWhom = const [],
     this.ratePeriods,
+    this.subGoals = const [],
   });
 
   /// One of [goalPeriods]' keys.
@@ -45,6 +47,12 @@ class RecurringGoal {
   /// default ([defaultRatePeriods]).
   final int? ratePeriods;
 
+  /// The sub-goals made under each of its goals, as the server takes
+  /// them -- each `{key, title, deadline?: {days | minutes} before the
+  /// goal's, activate_when?, ...}` -- kept as they are: the app doesn't
+  /// edit them, and sends them back unchanged.
+  final List<Map<String, Object?>> subGoals;
+
   int get ratedPeriods => ratePeriods ?? defaultRatePeriods(period);
 
   static RecurringGoal? fromJson(Object? json) => switch (json) {
@@ -66,6 +74,10 @@ class RecurringGoal {
       withWhom: Named.listFromJson(json['with_ids']),
       forWhom: Named.listFromJson(json['for_ids']),
       ratePeriods: (json['rate_periods'] as num?)?.toInt(),
+      subGoals: [
+        for (final s in json['sub_goals'] as List? ?? const [])
+          if (s is Map) s.cast<String, Object?>(),
+      ],
     ),
     _ => null,
   };
@@ -83,6 +95,7 @@ class RecurringGoal {
     if (withWhom.isNotEmpty) 'with_ids': namedToJson(withWhom),
     if (forWhom.isNotEmpty) 'for_ids': namedToJson(forWhom),
     'rate_periods': ?ratePeriods,
+    if (subGoals.isNotEmpty) 'sub_goals': subGoals,
   };
 
   static String? _text(Object? value) => switch (value) {
@@ -114,14 +127,14 @@ int defaultRatePeriods(String period) => switch (period) {
   _ => 6,
 };
 
-/// The habit a goal's [id] says it's from -- `<habit id>_2026-11-01` --
-/// if it's one made from a habit: no other goal's id has a "_".
+/// The habit a goal's [id] says it's from -- `<habit id>_2026-11-01`, or
+/// one of its sub-goals, `<habit id>_2026-11-01_<key>` -- if it's one
+/// made from a habit: no other goal's id has a "_".
 String? habitOfGoalId(String id) {
-  final at = id.indexOf('_');
-  if (at <= 0) return null;
-  return DateTime.tryParse(id.substring(at + 1)) == null
-      ? null
-      : id.substring(0, at);
+  final match = RegExp(r'^([^_]+)_(\d{4}-\d{2}-\d{2})(_[A-Za-z0-9-]+)?$')
+      .firstMatch(id);
+  if (match == null || DateTime.tryParse(match[2]!) == null) return null;
+  return match[1];
 }
 
 /// The first day of the [period] [day] falls in, and the first of the
@@ -177,7 +190,8 @@ class GoalRate {
 
 /// Habit [habitId]'s goal rate as of the day before [end] (a midnight),
 /// from [goals] -- each one's done counting toward the period it was done
-/// in, a missed one tried again and done in the next counting there.
+/// in, a missed one tried again and done in the next counting there. Its
+/// goals' sub-goals don't count: the goals do.
 GoalRate goalRate(
   String habitId,
   RecurringGoal recurring,
@@ -187,7 +201,7 @@ GoalRate goalRate(
   final period = recurring.period;
   final theirs = [
     for (final g in goals)
-      if (g.habitId == habitId) g,
+      if (g.habitId == habitId && g.parentId == null) g,
   ];
   // The periods since its first goal's.
   DateTime? first;
