@@ -22,6 +22,22 @@ String startLabel(BuildContext context, String at) {
       : strings.formatMediumDate(start);
 }
 
+/// A time before its parent's deadline that a goal waits for
+/// (`{before_parent: [offset]}`): "A week before its parent is due", "2h
+/// before its parent is due".
+String beforeParentLabel(Map offset) {
+  final when = switch (offset) {
+    {'days': final num d} when d == 7 => 'A week',
+    {'days': final num d} => '${d.toInt()} day${d == 1 ? '' : 's'}',
+    {'minutes': final num m} when m == 0 => null,
+    {'minutes': final num m} => formatMinutes(m),
+    _ => null,
+  };
+  return when == null
+      ? 'When its parent is due'
+      : '$when before its parent is due';
+}
+
 /// What [goal] waits for before it's activated, a line each, its goals
 /// named from [tree]: "After “Draft the plan” closes", "From Mon, Nov 2",
 /// "Then the next day", "Held while 3 other goals at P1 or higher are
@@ -36,6 +52,7 @@ List<String> startsLines(BuildContext context, Goal goal, GoalTree tree) {
       switch (t) {
         {'goal_closed': final String id} => 'After ${named(id)} closes',
         {'at': final String at} => 'From ${startLabel(context, at)}',
+        {'before_parent': final Map offset} => beforeParentLabel(offset),
         _ => 'After something unknown',
       },
     if (waitsNextDay(goal)) 'Then the next day',
@@ -321,6 +338,9 @@ class GoalStartsEditor extends StatelessWidget {
                       'After “${tree[id] == null ? id : goalTitle(tree[id]!)}” closes',
                     {'at': final String at} =>
                       'From ${startLabel(context, at)}',
+                    {'before_parent': final Map offset} => beforeParentLabel(
+                      offset,
+                    ),
                     _ => '?',
                   }),
                   onDeleted: () => _set(

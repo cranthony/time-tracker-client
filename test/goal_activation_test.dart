@@ -122,6 +122,52 @@ void main() {
     );
   });
 
+  test("a goal waiting for a time before its parent's deadline follows the "
+      'parent', () {
+    final dinner = _goal(
+      'dinner',
+      status: 'inactive',
+      deadline: '2026-10-25T19:00',
+    );
+    final shop = _goal(
+      'shop',
+      status: 'inactive',
+      parent: 'dinner',
+      deadline: '2026-10-23T19:00',
+      activateWhen: const {
+        'after': [
+          {
+            'before_parent': {'days': 7},
+          },
+        ],
+      },
+    );
+    final cook = _goal(
+      'cook',
+      status: 'inactive',
+      parent: 'dinner',
+      deadline: '2026-10-25T19:00',
+      activateWhen: const {
+        'after': [
+          {
+            'before_parent': {'minutes': 120},
+          },
+        ],
+      },
+    );
+    final tree = GoalTree([dinner, shop, cook]);
+    expect(readyAt(shop, tree), DateTime(2026, 10, 18, 19));
+    expect(expectedStart(cook, tree, now: now), DateTime(2026, 10, 25, 17));
+    expect(startingWaiting([dinner, shop, cook], now).$2, ['shop']);
+    // A date's due at the midnight after it.
+    expect(beforeDue('2026-10-25', const {'days': 7}), DateTime(2026, 10, 19));
+    // With no parent, it waits on.
+    expect(
+      readyAt(_goal('alone', activateWhen: shop.activateWhen), tree),
+      isNull,
+    );
+  });
+
   test('a hold keeps it waiting while enough others of its priority are '
       'active; the highest priority goes first', () {
     final busy = [

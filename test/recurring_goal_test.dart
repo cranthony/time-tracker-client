@@ -58,6 +58,51 @@ void main() {
     expect(habitOfGoalId('h1-2026-11-01'), isNull);
     expect(habitOfGoalId('plain'), isNull);
     expect(habitOfGoalId('_2026-11-01'), isNull);
+    // Its sub-goals' ids name it too.
+    expect(habitOfGoalId('h1_2026-11-01_shop'), 'h1');
+    expect(habitOfGoalId('h1_2026-11-01_'), isNull);
+    expect(habitOfGoalId('h1_2026-11-01_a_b'), isNull);
+  });
+
+  test("a recurring goal's sub-goals are kept as they are, and don't count "
+      'in its goal rate', () {
+    final shop = {
+      'key': 'shop',
+      'title': 'Shop',
+      'deadline': {'days': 2},
+      'activate_when': {
+        'after': [
+          {
+            'before_parent': {'days': 7},
+          },
+        ],
+      },
+    };
+    final recurring = RecurringGoal.fromJson({
+      'period': 'week',
+      'sub_goals': [shop],
+    })!;
+    expect(recurring.toJson(), {
+      'period': 'week',
+      'sub_goals': [shop],
+    });
+    // A sub-goal done doesn't make its week done.
+    final goals = [
+      _goal('2026-10-18', 'missed', DateTime(2026, 10, 25)),
+      Goal(
+        id: 'h1_2026-10-18_shop',
+        title: 'Shop',
+        habitId: 'h1',
+        parentId: 'h1_2026-10-18',
+        status: 'done',
+        history: [
+          StatusChange('active', DateTime(2026, 10, 18)),
+          StatusChange('done', DateTime(2026, 10, 20)),
+        ],
+      ),
+    ];
+    final rate = goalRate('h1', _weekly, goals, DateTime(2026, 10, 29));
+    expect((rate.done, rate.counted), (0, 1));
   });
 
   test('a recurring goal\'s habit is read and sent with no action', () {
