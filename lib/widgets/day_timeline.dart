@@ -494,11 +494,12 @@ List<T> placeLabels<T>(
 /// "last compacted" and "pending note" in place of the times beside
 /// them. A note's label gives way to any it would overlap.
 ///
-/// The [circadian] windows are tinted under the events, the time column
-/// too, cut off at the day's midnights: a cool tint where light would
-/// shift the user's schedule later, a warm one where it would hold it or
-/// shift it earlier, each plain to see beside the events even on a day
-/// full of them. Their temperature minimum, if it's in the day, is a
+/// The [circadian] windows are tinted under it all -- the band, the
+/// events' bars and the times drawn over the tint, not through it -- the
+/// time column too, cut off at the day's midnights: a cool tint where
+/// light would shift the user's schedule later, a warm one where it would
+/// hold it or shift it earlier, each plain to see beside the events even
+/// on a day full of them. Their temperature minimum, if it's in the day, is a
 /// line across, under the events, labeled "temp min" when zoomed in past
 /// the [defaultTimelineScale], giving way to the labels above it as
 /// theirs do; zoomed in so, each window is labeled too, "avoid light" or
@@ -844,6 +845,20 @@ class DayTimeline extends StatelessWidget {
       noteColor: _noteColor(colors),
       minimumYs: minimumYs,
       minimumColor: circadianStyle.line,
+      tints: [
+        for (final span in circadian)
+          if (span.start.isBefore(dayEnd) && span.end.isAfter(day))
+            (
+              top: y(span.start.isBefore(day) ? day : span.start),
+              bottom: y(span.end.isAfter(dayEnd) ? dayEnd : span.end),
+              color: switch (span.kind) {
+                CircadianKind.dim => circadianStyle.dim,
+                CircadianKind.bright => circadianStyle.bright,
+              },
+            ),
+      ],
+      hourColor: colors.onSurfaceVariant,
+      gridColor: colors.outlineVariant.withValues(alpha: 0.5),
       markers: markers,
       edgeColor: colors.onSurface,
       coverColor: theme.scaffoldBackgroundColor,
@@ -896,28 +911,6 @@ class DayTimeline extends StatelessWidget {
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      for (final span in circadian)
-                        if (span.start.isBefore(dayEnd) &&
-                            span.end.isAfter(day))
-                          Positioned(
-                            left: 0,
-                            right: 0,
-                            top: y(span.start.isBefore(day) ? day : span.start),
-                            height:
-                                y(
-                                  span.end.isAfter(dayEnd) ? dayEnd : span.end,
-                                ) -
-                                y(span.start.isBefore(day) ? day : span.start),
-                            child: IgnorePointer(
-                              child: ColoredBox(
-                                key: ValueKey(('circadian', span.kind)),
-                                color: switch (span.kind) {
-                                  CircadianKind.dim => circadianStyle.dim,
-                                  CircadianKind.bright => circadianStyle.bright,
-                                },
-                              ),
-                            ),
-                          ),
                       ...?band?.under,
                       if (!googleOnTop)
                         ..._googleEvents(
@@ -3367,6 +3360,9 @@ class _RailPainter extends CustomPainter {
     required this.noteColor,
     required this.minimumYs,
     required this.minimumColor,
+    required this.tints,
+    required this.hourColor,
+    required this.gridColor,
     required this.markers,
     required this.edgeColor,
     required this.coverColor,
@@ -3413,6 +3409,14 @@ class _RailPainter extends CustomPainter {
   final List<double> minimumYs;
   final Color minimumColor;
 
+  /// The windows' tints, from each [top] to its [bottom], under it all.
+  final List<({double top, double bottom, Color color})> tints;
+
+  /// The axis' colors, to draw its lines and times again over the
+  /// [tints].
+  final Color hourColor;
+  final Color gridColor;
+
   /// The lines' labels, which the times give way to, and how tall each
   /// is.
   final List<_Marker> markers;
@@ -3433,6 +3437,9 @@ class _RailPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final (:placed, :hidden) = _placeTimeLabels();
+    _coverAxisTimes(canvas, hidden);
+    _paintTints(canvas, size, hidden);
     // The band, under its labels.
     for (final run in runs) {
       canvas.drawRect(
@@ -3447,7 +3454,7 @@ class _RailPainter extends CustomPainter {
     }
     _paintBandLabels(canvas);
     if (weather case final weather?) _paintWeather(canvas, weather);
-    _paintTimeLabels(canvas);
+    _paintTimeLabels(canvas, placed);
     _paintSun(canvas);
     _paintEventBand(canvas);
     if (compactionY case final y?) {
@@ -3689,7 +3696,53 @@ class _RailPainter extends CustomPainter {
 
   /// The times events start or end, as many as fit after the midnights
   /// at both ends, over the axis' times they'd overlap.
-  void _paintTimeLabels(Canvas canvas) {
+  /// The windows' tints, across the whole width, over the axis -- whose
+  /// hour lines and times, but for the [hidden] ones, are drawn again over
+  /// each, so the tint is under them as under the rest.
+  void _paintTints(Canvas canvas, Size size, List<_TimeLabel> hidden) {
+    if (tints.isEmpty) return;
+    final grid = Paint()
+      ..color = gridColor
+      ..strokeWidth = 1;
+    final style = baseStyle.copyWith(
+      fontSize: _labelFontSize,
+      height: 1.3,
+      color: hourColor,
+      fontWeight: FontWeight.w400,
+    );
+    final labels = _axisLabels(
+      day: day,
+      dayEnd: dayEnd,
+      scale: scale,
+      labelHeight: _timeLabelHeight(scaler),
+    ).where((l) => !hidden.contains(l));
+    for (final tint in tints) {
+      final rect = Rect.fromLTRB(0, tint.top, size.width, tint.bottom);
+      canvas
+        ..save()
+        ..clipRect(rect)
+        ..drawRect(rect, Paint()..color = tint.color);
+      for (final hour in [day, ..._hoursOf(day, dayEnd), dayEnd]) {
+        final y = _y(hour);
+        if (y < rect.top - 1 || y > rect.bottom + 1) continue;
+        canvas.drawLine(Offset(_timeWidth, y), Offset(size.width, y), grid);
+      }
+      for (final label in labels) {
+        if (label.y < rect.top - 20 || label.y > rect.bottom + 20) continue;
+        final painter = _text(timeLabel(label.time), style);
+        painter.paint(
+          canvas,
+          Offset(_timeWidth - 6 - painter.width, label.y - painter.height / 2),
+        );
+        painter.dispose();
+      }
+      canvas.restore();
+    }
+  }
+
+  /// Which of the events' times are shown, and which of the axis' times
+  /// give way: to them, the lines' labels or the sun's.
+  ({List<_TimeLabel> placed, List<_TimeLabel> hidden}) _placeTimeLabels() {
     final labelHeight = _timeLabelHeight(scaler);
     final edges = <DateTime>{
       for (final event in events)
@@ -3713,18 +3766,25 @@ class _RailPainter extends CustomPainter {
       top: (l) => l.y - labelHeight / 2,
       height: labelHeight,
     ).where((l) => l.edge).toList();
-    // The axis' times under these, or under the lines' labels.
+    final hidden = [
+      for (final label in _axisLabels(
+        day: day,
+        dayEnd: dayEnd,
+        scale: scale,
+        labelHeight: labelHeight,
+      ))
+        if (!clearOfMarkers(label) ||
+            placed.any((l) => (l.y - label.y).abs() < labelHeight))
+          label,
+    ];
+    return (placed: placed, hidden: hidden);
+  }
+
+  /// The background over the axis' [hidden] times.
+  void _coverAxisTimes(Canvas canvas, List<_TimeLabel> hidden) {
+    final labelHeight = _timeLabelHeight(scaler);
     final cover = Paint()..color = coverColor;
-    for (final label in _axisLabels(
-      day: day,
-      dayEnd: dayEnd,
-      scale: scale,
-      labelHeight: labelHeight,
-    )) {
-      if (clearOfMarkers(label) &&
-          placed.every((l) => (l.y - label.y).abs() >= labelHeight)) {
-        continue;
-      }
+    for (final label in hidden) {
       canvas.drawRect(
         Rect.fromLTRB(
           0,
@@ -3735,6 +3795,10 @@ class _RailPainter extends CustomPainter {
         cover,
       );
     }
+  }
+
+  /// The events' times, [placed], with a tick each.
+  void _paintTimeLabels(Canvas canvas, List<_TimeLabel> placed) {
     final tick = Paint()
       ..color = edgeColor
       ..strokeWidth = 1;
@@ -3827,6 +3891,9 @@ class _RailPainter extends CustomPainter {
       !listEquals(old.noteYs, noteYs) ||
       !listEquals(old.minimumYs, minimumYs) ||
       old.minimumColor != minimumColor ||
+      !listEquals(old.tints, tints) ||
+      old.hourColor != hourColor ||
+      old.gridColor != gridColor ||
       old.scaler != scaler;
 }
 

@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.247.0
+
+- The dim and bright windows' tint on the Events timeline is under the
+  priority or weather band, the events' bars and the times, which are
+  drawn over it at full strength rather than washed by it.
+
 ## 7.246.0
 
 - A recurring goal's habit's page shows its goal as a tile that opens on
