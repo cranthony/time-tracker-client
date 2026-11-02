@@ -14,6 +14,8 @@ import '../widgets/actions_picker.dart';
 import '../widgets/habit_dialog.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/cursor_snap.dart';
+import '../services/circadian_repository.dart';
+import 'circadian_screen.dart';
 import 'scoring_defaults_screen.dart';
 
 /// The app's [settings], to change: the grid the timeline's cursors snap
@@ -68,6 +70,34 @@ class SettingsScreen extends StatelessWidget {
             ),
           );
         },
+      ),
+    ];
+  }
+
+  /// When the user wakes naturally, opening the page that sets it;
+  /// nothing from a server without it.
+  List<Widget> _circadian(BuildContext context, ThemeData theme) {
+    final circadian = Circadian.of(context);
+    final rhythm = circadian?.rhythm;
+    if (circadian == null || rhythm == null) return const [];
+    final today = DateTime.now();
+    final revision = rhythm.revisionOn(today);
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+        child: Text('Sleep', style: theme.textTheme.titleMedium),
+      ),
+      ListTile(
+        leading: const Icon(Icons.wb_twilight),
+        title: const Text('Circadian rhythm'),
+        subtitle: Text(switch (revision) {
+          final r? =>
+            'You wake naturally at '
+                '${TimeOfDay(hour: r.hour, minute: r.minute).format(context)}.',
+          null => 'When you wake naturally, to shade the Events page by.',
+        }),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => showCircadianRhythm(context, circadian: circadian),
       ),
     ];
   }
@@ -297,6 +327,7 @@ class SettingsScreen extends StatelessWidget {
             if (hotkeysOffered(context)) ..._keyboard(theme),
             ..._keepRules(context, theme),
             ..._scoring(context, theme),
+            ..._circadian(context, theme),
             WeatherSettings(settings: settings),
             const GoogleCalendarSettings(),
           ],

@@ -64,6 +64,7 @@ const readOnlyTools = {
   'get_habits',
   'get_habit',
   'get_compaction_schedule_hints',
+  'get_circadian_rhythm',
   'prepare_judgments',
   'prepare_habit_judgments',
   'get_health',

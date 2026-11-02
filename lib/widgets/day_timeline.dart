@@ -7,6 +7,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../models/circadian.dart';
 import '../models/event.dart';
 import '../models/google_calendar.dart';
 import '../models/person.dart' show selfPersonId;
@@ -493,6 +494,14 @@ List<T> placeLabels<T>(
 /// "last compacted" and "pending note" in place of the times beside
 /// them. A note's label gives way to any it would overlap.
 ///
+/// The [circadian] windows are tinted under the events, across from the
+/// time column, cut off at the day's midnights: a faint cool tint where
+/// light would shift the user's schedule later, a faint warm one where it
+/// would hold it or shift it earlier. Their temperature minimum, if it's
+/// in the day, is a line across, under the events, labeled "temp min"
+/// when zoomed in past the [defaultTimelineScale], giving way to the
+/// labels above it as theirs do.
+///
 /// Under it all is its [TimelineAxis], unless not to draw its [axis]:
 /// then it's drawn over one drawn apart, and covers the axis' times its
 /// own labels would overlap.
@@ -547,9 +556,14 @@ class DayTimeline extends StatelessWidget {
     this.temperatureLabel,
     this.temperaturesFrom,
     this.temperatures,
+    this.circadian = const [],
   });
 
   final List<Event> events;
+
+  /// The windows either side of the user's temperature minimum to tint,
+  /// each with its minimum.
+  final List<CircadianSpan> circadian;
 
   /// When the temperature's labels count every third hour from, in the
   /// day it's in -- a quarter hour after the forecast was fetched, so
@@ -731,7 +745,11 @@ class DayTimeline extends StatelessWidget {
     final nowY = yIfToday(now);
     final compactionY = yIfToday(lastCompaction);
     final noteYs = [for (final t in pendingNotes) ?yIfToday(t)]..sort();
+    final minimumYs = {
+      for (final span in circadian) ?yIfToday(span.minimum),
+    }.toList()..sort();
     final colors = theme.colorScheme;
+    final circadianStyle = circadianColors(theme.brightness);
     // The lines' labels, in place of the times beside them, only when
     // zoomed in: each centered on its line, unless that's too close to the
     // one above.
@@ -746,6 +764,7 @@ class DayTimeline extends StatelessWidget {
         if (compactionY != null)
           (compactionY, 'last\ncompacted', colors.tertiary),
         if (nowY != null) (nowY, 'now', colors.error),
+        for (final y in minimumYs) (y, 'temp min', circadianStyle.line),
       ]..sort((a, b) => a.$1.compareTo(b.$1))) {
         final painter = _markerText(label, markerStyle, scaler);
         final height = painter.height;
@@ -803,6 +822,8 @@ class DayTimeline extends StatelessWidget {
       compactionColor: colors.tertiary,
       noteYs: noteYs,
       noteColor: _noteColor(colors),
+      minimumYs: minimumYs,
+      minimumColor: circadianStyle.line,
       markers: markers,
       edgeColor: colors.onSurface,
       coverColor: theme.scaffoldBackgroundColor,
@@ -855,6 +876,28 @@ class DayTimeline extends StatelessWidget {
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
+                      for (final span in circadian)
+                        if (span.start.isBefore(dayEnd) &&
+                            span.end.isAfter(day))
+                          Positioned(
+                            left: _timeWidth,
+                            right: 0,
+                            top: y(span.start.isBefore(day) ? day : span.start),
+                            height:
+                                y(
+                                  span.end.isAfter(dayEnd) ? dayEnd : span.end,
+                                ) -
+                                y(span.start.isBefore(day) ? day : span.start),
+                            child: IgnorePointer(
+                              child: ColoredBox(
+                                key: ValueKey(('circadian', span.kind)),
+                                color: switch (span.kind) {
+                                  CircadianKind.dim => circadianStyle.dim,
+                                  CircadianKind.bright => circadianStyle.bright,
+                                },
+                              ),
+                            ),
+                          ),
                       ...?band?.under,
                       if (!googleOnTop)
                         ..._googleEvents(
@@ -3302,6 +3345,8 @@ class _RailPainter extends CustomPainter {
     required this.compactionColor,
     required this.noteYs,
     required this.noteColor,
+    required this.minimumYs,
+    required this.minimumColor,
     required this.markers,
     required this.edgeColor,
     required this.coverColor,
@@ -3342,6 +3387,11 @@ class _RailPainter extends CustomPainter {
   /// thinner and fainter.
   final List<double> noteYs;
   final Color noteColor;
+
+  /// Where the user's temperature minimum is, if it's in the day: a line
+  /// across, under the events, like now's but thinner.
+  final List<double> minimumYs;
+  final Color minimumColor;
 
   /// The lines' labels, which the times give way to, and how tall each
   /// is.
@@ -3404,6 +3454,14 @@ class _RailPainter extends CustomPainter {
             paint,
           );
         }
+      }
+    }
+    if (minimumYs.isNotEmpty) {
+      final paint = Paint()
+        ..color = minimumColor
+        ..strokeWidth = 1;
+      for (final y in minimumYs) {
+        canvas.drawLine(Offset(_timeWidth, y), Offset(size.width, y), paint);
       }
     }
     if (nowY case final y?) {
@@ -3747,5 +3805,24 @@ class _RailPainter extends CustomPainter {
       old.nowY != nowY ||
       old.compactionY != compactionY ||
       !listEquals(old.noteYs, noteYs) ||
+      !listEquals(old.minimumYs, minimumYs) ||
+      old.minimumColor != minimumColor ||
       old.scaler != scaler;
 }
+
+/// The tints of the windows either side of the user's temperature
+/// minimum, faint enough for events to read over: [dim]'s cool, before
+/// it, [bright]'s warm, after it; and the minimum's [line].
+({Color dim, Color bright, Color line}) circadianColors(
+  Brightness brightness,
+) => brightness == Brightness.dark
+    ? (
+        dim: const Color(0xFF7986CB).withValues(alpha: 0.10),
+        bright: const Color(0xFFFFCA28).withValues(alpha: 0.07),
+        line: const Color(0xFF9FA8DA),
+      )
+    : (
+        dim: const Color(0xFF3F51B5).withValues(alpha: 0.07),
+        bright: const Color(0xFFFFA000).withValues(alpha: 0.09),
+        line: const Color(0xFF5C6BC0),
+      );

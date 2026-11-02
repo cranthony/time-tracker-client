@@ -21,6 +21,7 @@ import '../outbox/legacy_writes.dart' show actionWriteFields;
 import '../outbox/note_writes.dart';
 import '../outbox/action_writes.dart';
 import '../outbox/write_queue.dart';
+import '../services/circadian_repository.dart';
 import '../services/keep_rules.dart';
 import '../services/app_settings.dart';
 import '../services/actions_repository.dart';
@@ -6671,6 +6672,9 @@ class _EventsScreenState extends State<EventsScreen> {
                 temperaturesFrom: Weather.of(context)?.forecast?.fetchedAt
                     .add(const Duration(minutes: 15)),
                 temperatures: _temperatures(),
+                // From when the user last said they woke naturally.
+                circadian:
+                    Circadian.of(context)?.rhythm?.spansOn(day) ?? const [],
                 onTapGoogle: _box == null && _selecting == null
                     ? _openGoogleEvent
                     : null,

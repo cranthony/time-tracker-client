@@ -14,6 +14,7 @@ import 'app_settings.dart';
 import 'event_store.dart';
 import 'goals_repository.dart';
 import 'habits_repository.dart';
+import 'circadian_repository.dart';
 import 'mcp_client.dart';
 import 'notes_repository.dart';
 import 'people_repository.dart';
@@ -183,7 +184,8 @@ class RefreshRecord {
 /// to run, for it to show at once when it opens: the routines' times
 /// (to plan the next), the notes not yet compacted and when notes were
 /// last compacted, the open proposal, every action, trait (and the
-/// traits' scoring defaults), person, location, habit and goal, and the week either side of today's events. Each
+/// traits' scoring defaults), person, location, habit and goal, the
+/// circadian rhythm, and the week either side of today's events. Each
 /// is fetched on its own, best effort; signed out, it stops. [clock]
 /// says when it ran.
 ///
@@ -201,6 +203,7 @@ Future<RefreshRecord> refreshCaches({
   PeopleRepository? people,
   HabitsRepository? habits,
   GoalsRepository? goals,
+  CircadianRepository? circadian,
   EventStore? events,
   bool Function(ScheduleHint hint)? expects,
   DateTime Function() clock = DateTime.now,
@@ -255,6 +258,7 @@ Future<RefreshRecord> refreshCaches({
     ),
     ('habits', habits == null ? null : () => habits.habits()),
     ('goals', goals == null ? null : () => goals.goals()),
+    ('circadian rhythm', circadian == null ? null : () => circadian.rhythm()),
     (
       'events',
       events == null
