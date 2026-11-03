@@ -263,7 +263,7 @@ void main() {
         'summary': 'A',
         'description': 'Lunch and a walk',
         'action_ids': ['eat'],
-        'actions_from_label': true,
+        // Its actions saved as its own, not left to a label it hasn't.
         'priority': 2,
         'facts': {
           'notes': {'self': 'Sunny'},

@@ -505,6 +505,11 @@ class OtherEvents {
 
   /// What's left of [event] from [start] to [end], as a new event: as much
   /// [event] as it is, all of it that can be written but its id and times.
+  ///
+  /// Actions [event] has from its label are saved on the new event as its
+  /// own: the label isn't written, so sent as still from the label, the
+  /// server would infer them from a label the new event doesn't have, and
+  /// it would have none.
   static Map<String, Object?> restOf(
     Event event,
     DateTime start,
@@ -513,12 +518,14 @@ class OtherEvents {
     const kept = {
       'summary',
       'description',
+      'description_format',
       'location',
       'action_ids',
-      'actions_from_label',
+      'goals',
       'priority',
       'facts',
       'judgments',
+      'time_zone',
     };
     return {
       // Its title, if its properties don't have it.
