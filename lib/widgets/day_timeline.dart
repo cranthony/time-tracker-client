@@ -548,6 +548,7 @@ class DayTimeline extends StatelessWidget {
     this.pulseNotes = false,
     this.pulseEdges = false,
     this.axis = true,
+    this.axisShift,
     this.review,
     this.onTapThrough,
     this.marks = const {},
@@ -658,6 +659,12 @@ class DayTimeline extends StatelessWidget {
 
   /// Whether to draw its [TimelineAxis] under it.
   final bool axis;
+
+  /// Drawn over a [TimelineAxis] of its own, not [axis], how far it's slid
+  /// across from it: as a day does, sliding past to the next. The axis'
+  /// times over its windows' tints are drawn where the axis' are, to stay
+  /// put as the rest of the axis does.
+  final ValueListenable<double>? axisShift;
 
   /// What a compaction proposal says happened, to confirm: from its
   /// window's start to its `through`.
@@ -882,166 +889,177 @@ class DayTimeline extends StatelessWidget {
         return CustomPaint(
           painter: axis ? _axisPainter(context, day, scale) : null,
           child: CustomPaint(
-            painter: rail,
-            foregroundPainter: markers.isEmpty
-                ? null
-                : _MarkerLabelsPainter(
-                    markers: markers,
-                    style: markerStyle,
-                    scaler: scaler,
-                  ),
-            child: _withTemperatures(
-              context,
-              child: GestureDetector(
-                // The events' own taps win where they are.
-                behavior: HitTestBehavior.opaque,
-                onTapUp: onTapTime == null
-                    ? null
-                    : (details) => onTapTime!(
-                        timelineTime(
-                          details.localPosition.dy,
-                          day: day,
-                          dayEnd: dayEnd,
-                          scale: scale,
-                        ),
-                      ),
-                child: SizedBox(
-                  width: constraints.maxWidth,
-                  height: height,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      ...?band?.under,
-                      if (!googleOnTop)
-                        ..._googleEvents(
-                          context,
-                          googleEvents,
-                          day: day,
-                          dayEnd: dayEnd,
-                          y: y,
-                          width: cardWidth,
-                          onTap: onTapGoogle,
-                        ),
-                      for (final (i, placement) in placements.indexed)
-                        Positioned(
-                          left: _cardsLeft,
-                          top: placement.top,
-                          width: cardWidth,
-                          height: placement.bottom - placement.top,
-                          child: _EventCard(
-                            placement: placement,
-                            joinedAbove:
-                                i > 0 &&
-                                placements[i - 1].bottom >= placement.top,
-                            joinedBelow:
-                                i + 1 < placements.length &&
-                                placements[i + 1].top <= placement.bottom,
-                            seamColor:
-                                _seamAbove(placements, i, actions, goalColors)
-                                ? theme.scaffoldBackgroundColor
-                                : null,
-                            actions: actions,
-                            goalNames: goalNames,
-                            goalColors: goalColors,
-                            details: _details(placement.event),
-                            styles: styles,
-                            onTap: onTap == null
-                                ? null
-                                : () => onTap!(placement.event),
-                            onLongPress: onLongPress == null
-                                ? null
-                                : () => onLongPress!(placement.event),
-                            faded: faded != null && placement.event.id == faded,
-                            mark: marks[placement.event.id],
-                            timeLabel: (t) => MaterialLocalizations.of(context)
-                                .formatTimeOfDay(
-                                  TimeOfDay.fromDateTime(t.toLocal()),
-                                ),
+            painter: _UnderRailPainter(rail, axisShift),
+            child: CustomPaint(
+              painter: rail,
+              foregroundPainter: markers.isEmpty
+                  ? null
+                  : _MarkerLabelsPainter(
+                      markers: markers,
+                      style: markerStyle,
+                      scaler: scaler,
+                    ),
+              child: _withTemperatures(
+                context,
+                child: GestureDetector(
+                  // The events' own taps win where they are.
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: onTapTime == null
+                      ? null
+                      : (details) => onTapTime!(
+                          timelineTime(
+                            details.localPosition.dy,
+                            day: day,
+                            dayEnd: dayEnd,
+                            scale: scale,
                           ),
                         ),
-                      if (googleOnTop)
-                        ..._googleEvents(
-                          context,
-                          googleEvents,
-                          day: day,
-                          dayEnd: dayEnd,
-                          y: y,
-                          width: cardWidth,
-                          onTap: onTapGoogle,
-                          onTop: true,
-                        ),
-                      for (final placement in placements)
-                        if (listed[placement.event.id] case final icon?)
-                          Positioned(
-                            left: _cardsLeft - 2,
-                            top: placement.top - 2,
-                            width: cardWidth + 4,
-                            height: placement.bottom - placement.top + 4,
-                            child: IgnorePointer(child: _Listed(icon: icon)),
+                  child: SizedBox(
+                    width: constraints.maxWidth,
+                    height: height,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        ...?band?.under,
+                        if (!googleOnTop)
+                          ..._googleEvents(
+                            context,
+                            googleEvents,
+                            day: day,
+                            dayEnd: dayEnd,
+                            y: y,
+                            width: cardWidth,
+                            onTap: onTapGoogle,
                           ),
-                      for (final placement in placements)
-                        if (highlighted != null &&
-                            placement.event.id == highlighted)
+                        for (final (i, placement) in placements.indexed)
                           Positioned(
-                            left: _cardsLeft - 3,
-                            top: placement.top - 3,
-                            width: cardWidth + 6,
-                            height: placement.bottom - placement.top + 6,
-                            child: const IgnorePointer(child: _Highlight()),
-                          )
-                        else if (keyed != null && placement.event.id == keyed)
-                          Positioned(
-                            left: _cardsLeft - 3,
-                            top: placement.top - 3,
-                            width: cardWidth + 6,
-                            height: placement.bottom - placement.top + 6,
-                            child: const IgnorePointer(child: _Keyed()),
-                          ),
-                      if (pulseNotes || pulseEdges)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: _SnapMarks(
-                              notes: pulseNotes
-                                  ? [
-                                      ...noteYs,
-                                      for (final note in reviewNotes)
-                                        ?yIfToday(note.time),
-                                    ]
-                                  : const [],
-                              edges: pulseEdges
-                                  ? {
-                                      for (final p in placements)
-                                        if (!p.event.isCancelled) ...[
-                                          p.trueTop,
-                                          p.trueBottom,
-                                        ],
-                                    }.toList()
-                                  : const [],
-                              noteColor: colors.tertiary,
-                              edgeColor: colors.primary,
+                            left: _cardsLeft,
+                            top: placement.top,
+                            width: cardWidth,
+                            height: placement.bottom - placement.top,
+                            child: _EventCard(
+                              placement: placement,
+                              joinedAbove:
+                                  i > 0 &&
+                                  placements[i - 1].bottom >= placement.top,
+                              joinedBelow:
+                                  i + 1 < placements.length &&
+                                  placements[i + 1].top <= placement.bottom,
+                              seamColor:
+                                  _seamAbove(placements, i, actions, goalColors)
+                                  ? theme.scaffoldBackgroundColor
+                                  : null,
+                              actions: actions,
+                              goalNames: goalNames,
+                              goalColors: goalColors,
+                              details: _details(placement.event),
+                              styles: styles,
+                              onTap: onTap == null
+                                  ? null
+                                  : () => onTap!(placement.event),
+                              onLongPress: onLongPress == null
+                                  ? null
+                                  : () => onLongPress!(placement.event),
+                              faded:
+                                  faded != null &&
+                                  placement.event.id == faded,
+                              mark: marks[placement.event.id],
+                              timeLabel: (t) =>
+                                  MaterialLocalizations.of(
+                                    context,
+                                  ).formatTimeOfDay(
+                                    TimeOfDay.fromDateTime(t.toLocal()),
+                                  ),
                             ),
                           ),
+                        if (googleOnTop)
+                          ..._googleEvents(
+                            context,
+                            googleEvents,
+                            day: day,
+                            dayEnd: dayEnd,
+                            y: y,
+                            width: cardWidth,
+                            onTap: onTapGoogle,
+                            onTop: true,
+                          ),
+                        for (final placement in placements)
+                          if (listed[placement.event.id] case final icon?)
+                            Positioned(
+                              left: _cardsLeft - 2,
+                              top: placement.top - 2,
+                              width: cardWidth + 4,
+                              height: placement.bottom - placement.top + 4,
+                              child: IgnorePointer(child: _Listed(icon: icon)),
+                            ),
+                        for (final placement in placements)
+                          if (highlighted != null &&
+                              placement.event.id == highlighted)
+                            Positioned(
+                              left: _cardsLeft - 3,
+                              top: placement.top - 3,
+                              width: cardWidth + 6,
+                              height: placement.bottom - placement.top + 6,
+                              child: const IgnorePointer(child: _Highlight()),
+                            )
+                          else if (keyed != null && placement.event.id == keyed)
+                            Positioned(
+                              left: _cardsLeft - 3,
+                              top: placement.top - 3,
+                              width: cardWidth + 6,
+                              height: placement.bottom - placement.top + 6,
+                              child: const IgnorePointer(child: _Keyed()),
+                            ),
+                        if (pulseNotes || pulseEdges)
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: _SnapMarks(
+                                notes: pulseNotes
+                                    ? [
+                                        ...noteYs,
+                                        for (final note in reviewNotes)
+                                          ?yIfToday(note.time),
+                                      ]
+                                    : const [],
+                                edges: pulseEdges
+                                    ? {
+                                        for (final p in placements)
+                                          if (!p.event.isCancelled) ...[
+                                            p.trueTop,
+                                            p.trueBottom,
+                                          ],
+                                      }.toList()
+                                    : const [],
+                                noteColor: colors.tertiary,
+                                edgeColor: colors.primary,
+                              ),
+                            ),
+                          ),
+                        // Not the one being moved: its overlaps go with it.
+                        for (final overlap in eventOverlaps(
+                          OtherEvents(events, except: faded).events,
+                          day: day,
+                          dayEnd: dayEnd,
+                        ))
+                          ..._overlap(
+                            context,
+                            y(overlap.start),
+                            y(overlap.end),
+                          ),
+                        ...?band?.over,
+                        ..._googleMarks(
+                          googleEvents,
+                          day: day,
+                          dayEnd: dayEnd,
+                          y: y,
+                          left: _cardsLeft + cardWidth + 2,
+                          onTap: onTapGoogle,
                         ),
-                      // Not the one being moved: its overlaps go with it.
-                      for (final overlap in eventOverlaps(
-                        OtherEvents(events, except: faded).events,
-                        day: day,
-                        dayEnd: dayEnd,
-                      ))
-                        ..._overlap(context, y(overlap.start), y(overlap.end)),
-                      ...?band?.over,
-                      ..._googleMarks(
-                        googleEvents,
-                        day: day,
-                        dayEnd: dayEnd,
-                        y: y,
-                        left: _cardsLeft + cardWidth + 2,
-                        onTap: onTapGoogle,
-                      ),
-                      for (final note in reviewNotes)
-                        if (yIfToday(note.time) case final y?)
-                          ..._reviewNote(context, note, y),
-                    ],
+                        for (final note in reviewNotes)
+                          if (yIfToday(note.time) case final y?)
+                            ..._reviewNote(context, note, y),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -3075,6 +3093,24 @@ class _AxisPainter extends CustomPainter {
       old.scaler != scaler;
 }
 
+/// What a [_RailPainter] draws under the rest, [_RailPainter.paintUnder],
+/// apart: to be drawn again as its day slides by [shift], and not the
+/// rest.
+class _UnderRailPainter extends CustomPainter {
+  _UnderRailPainter(this.rail, this.shift) : super(repaint: shift);
+
+  final _RailPainter rail;
+  final ValueListenable<double>? shift;
+
+  @override
+  void paint(Canvas canvas, Size size) =>
+      rail.paintUnder(canvas, size, shift?.value ?? 0);
+
+  @override
+  bool shouldRepaint(_UnderRailPainter old) =>
+      old.shift != shift || rail.shouldRepaint(old.rail);
+}
+
 /// How tall a label on the band of weather is: a chance of rain's, or a
 /// temperature's.
 double _bandLabelHeight(TextScaler scaler) =>
@@ -3437,9 +3473,6 @@ class _RailPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final (:placed, :hidden) = _placeTimeLabels();
-    _coverAxisTimes(canvas, hidden);
-    _paintTints(canvas, size, hidden);
     // The band, under its labels.
     for (final run in runs) {
       canvas.drawRect(
@@ -3454,7 +3487,7 @@ class _RailPainter extends CustomPainter {
     }
     _paintBandLabels(canvas);
     if (weather case final weather?) _paintWeather(canvas, weather);
-    _paintTimeLabels(canvas, placed);
+    _paintTimeLabels(canvas, _labels.placed);
     _paintSun(canvas);
     _paintEventBand(canvas);
     if (compactionY case final y?) {
@@ -3694,13 +3727,32 @@ class _RailPainter extends CustomPainter {
     painter.dispose();
   }
 
-  /// The times events start or end, as many as fit after the midnights
-  /// at both ends, over the axis' times they'd overlap.
+  /// Which of the events' times are shown, and which of the axis' times
+  /// give way to them.
+  late final _labels = _placeTimeLabels();
+
+  /// What's under the rest: the background over the axis' times that give
+  /// way, then the windows' tints, the axis drawn again over each. Slid
+  /// [shift] across from the axis, as a day sliding past it is, its times
+  /// are drawn where the axis' are, to stay put as they do beside the
+  /// tints.
+  void paintUnder(Canvas canvas, Size size, double shift) {
+    _coverAxisTimes(canvas, _labels.hidden);
+    _paintTints(canvas, size, _labels.hidden, shift);
+  }
+
   /// The windows' tints, across the whole width, over the axis -- whose
-  /// hour lines and times, but for the [hidden] ones, are drawn again over
-  /// each, so the tint is under them as under the rest.
-  void _paintTints(Canvas canvas, Size size, List<_TimeLabel> hidden) {
+  /// hour lines and times are drawn again over each, so the tint is under
+  /// them as under the rest. The times are drawn [shift] back, over the
+  /// axis' own, and not on the background over the [hidden] ones.
+  void _paintTints(
+    Canvas canvas,
+    Size size,
+    List<_TimeLabel> hidden,
+    double shift,
+  ) {
     if (tints.isEmpty) return;
+    final labelHeight = _timeLabelHeight(scaler);
     final grid = Paint()
       ..color = gridColor
       ..strokeWidth = 1;
@@ -3714,8 +3766,8 @@ class _RailPainter extends CustomPainter {
       day: day,
       dayEnd: dayEnd,
       scale: scale,
-      labelHeight: _timeLabelHeight(scaler),
-    ).where((l) => !hidden.contains(l));
+      labelHeight: labelHeight,
+    );
     for (final tint in tints) {
       final rect = Rect.fromLTRB(0, tint.top, size.width, tint.bottom);
       canvas
@@ -3727,12 +3779,21 @@ class _RailPainter extends CustomPainter {
         if (y < rect.top - 1 || y > rect.bottom + 1) continue;
         canvas.drawLine(Offset(_timeWidth, y), Offset(size.width, y), grid);
       }
+      for (final label in hidden) {
+        canvas.clipRect(
+          _coverOf(label, labelHeight),
+          clipOp: ClipOp.difference,
+        );
+      }
       for (final label in labels) {
         if (label.y < rect.top - 20 || label.y > rect.bottom + 20) continue;
         final painter = _text(timeLabel(label.time), style);
         painter.paint(
           canvas,
-          Offset(_timeWidth - 6 - painter.width, label.y - painter.height / 2),
+          Offset(
+            _timeWidth - 6 - painter.width - shift,
+            label.y - painter.height / 2,
+          ),
         );
         painter.dispose();
       }
@@ -3785,19 +3846,21 @@ class _RailPainter extends CustomPainter {
     final labelHeight = _timeLabelHeight(scaler);
     final cover = Paint()..color = coverColor;
     for (final label in hidden) {
-      canvas.drawRect(
-        Rect.fromLTRB(
-          0,
-          label.y - labelHeight / 2,
-          _timeWidth - 1,
-          label.y + labelHeight / 2,
-        ),
-        cover,
-      );
+      canvas.drawRect(_coverOf(label, labelHeight), cover);
     }
   }
 
-  /// The events' times, [placed], with a tick each.
+  /// Where the background is drawn over the axis' [label].
+  Rect _coverOf(_TimeLabel label, double labelHeight) => Rect.fromLTRB(
+    0,
+    label.y - labelHeight / 2,
+    _timeWidth - 1,
+    label.y + labelHeight / 2,
+  );
+
+  /// The times events start or end, [placed] as many as fit after the
+  /// midnights at both ends, over the axis' times they'd overlap, with a
+  /// tick each.
   void _paintTimeLabels(Canvas canvas, List<_TimeLabel> placed) {
     final tick = Paint()
       ..color = edgeColor

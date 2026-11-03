@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.247.1
+
+- Sliding between days on the Events timeline, the times over the dim
+  and bright windows stay put, as the rest of the times do, rather than
+  sliding with the day over a second copy of themselves.
+
 ## 7.247.0
 
 - The dim and bright windows' tint on the Events timeline is under the
