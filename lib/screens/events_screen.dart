@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6577,6 +6578,7 @@ class _EventsScreenState extends State<EventsScreen> {
               clipTop: d == days.first ? 0 : pad,
               clipBottom: d == days.last ? 0 : pad,
               shaded: d != day,
+              page: _pageOf(day),
             ),
           ),
         // Where the days meet: which is which.
@@ -6597,12 +6599,13 @@ class _EventsScreenState extends State<EventsScreen> {
   /// [day]'s events, on a timeline stacked with others: cut off
   /// [clipTop] from its top and [clipBottom] from its foot, where it
   /// meets the days either side of it, and [shaded] if it's not the day
-  /// shown.
+  /// shown: on the [page] of the day shown.
   Widget _stackedDay(
     DateTime day, {
     required double clipTop,
     required double clipBottom,
     required bool shaded,
+    required int page,
   }) {
     final events = _eventsOn(day);
     final proposal = _shownProposal;
@@ -6706,6 +6709,8 @@ class _EventsScreenState extends State<EventsScreen> {
                         moved: true,
                       ),
                 axis: false,
+                // The axis under the days stays put as they slide.
+                axisShift: _PageShift(_pages, page),
               ),
             ),
           if (shaded)
@@ -6888,3 +6893,38 @@ typedef _CommuteFields = ({
 /// Where a commute at one of a moved event's ends is from and to, each
 /// null if unknown, and the [commute] there to edit, if there's one.
 typedef _CommutePlace = ({String? fromId, String? toId, Event? commute});
+
+/// How far the day on [page] has slid across from where it rests, as
+/// [pages] slide it past: to the right, more than nothing.
+class _PageShift implements ValueListenable<double> {
+  const _PageShift(this.pages, this.page);
+
+  final PageController pages;
+  final int page;
+
+  @override
+  double get value {
+    if (pages.positions.length != 1) return 0;
+    final position = pages.position;
+    if (!position.hasPixels ||
+        !position.hasContentDimensions ||
+        !position.hasViewportDimension) {
+      return 0;
+    }
+    return (page - (pages.page ?? page.toDouble())) *
+        position.viewportDimension;
+  }
+
+  @override
+  void addListener(VoidCallback listener) => pages.addListener(listener);
+
+  @override
+  void removeListener(VoidCallback listener) => pages.removeListener(listener);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _PageShift && other.pages == pages && other.page == page;
+
+  @override
+  int get hashCode => Object.hash(pages, page);
+}
