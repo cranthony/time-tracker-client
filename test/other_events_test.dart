@@ -91,6 +91,43 @@ void main() {
       'end': localIsoTimestamp(at(16)),
     });
 
+    // One whose actions come from its label, in a time zone of its own,
+    // with goals: the part after has them all, its actions saved as its
+    // own -- the new event has no label to infer them from.
+    final labelled = OtherEvents([
+      Event.fromJson({
+        'id': 'labelled',
+        'summary': 'Work',
+        'start': localIsoTimestamp(at(8)),
+        'end': localIsoTimestamp(at(16)),
+        'time_zone': 'America/New_York',
+        'description': 'Focus',
+        'description_format': 'markdown',
+        'action_ids': ['work'],
+        'actions_from_label': true,
+        'goals': [
+          {'goal_id': 'g1'},
+        ],
+        'priority': 1,
+        'recurring_event_id': 'series',
+        'event_label_id': 'label',
+        'etag': '"1"',
+      }),
+    ]);
+    expect(labelled.overwrite(at(12), at(13)).creates.single, {
+      'summary': 'Work',
+      'time_zone': 'America/New_York',
+      'description': 'Focus',
+      'description_format': 'markdown',
+      'action_ids': ['work'],
+      'goals': [
+        {'goal_id': 'g1'},
+      ],
+      'priority': 1,
+      'start': localIsoTimestamp(at(13)),
+      'end': localIsoTimestamp(at(16)),
+    });
+
     final around = OtherEvents([
       Event(id: 'before', start: at(9), end: at(11)),
       Event(id: 'inside', start: at(11, 30), end: at(12)),

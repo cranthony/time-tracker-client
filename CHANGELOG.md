@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.247.2
+
+- An event split to make room for a new one keeps its actions in the
+  part split off, when they came from its label: they're saved on the
+  new part as its own, rather than lost. The part split off keeps its
+  goals, time zone and description's format too.
+
 ## 7.247.1
 
 - Sliding between days on the Events timeline, the times over the dim
