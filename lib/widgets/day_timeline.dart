@@ -3,6 +3,7 @@ import 'goal_color.dart';
 import 'goal_icon.dart';
 
 import 'dart:math' as math;
+import 'dart:ui' show ClipOp;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
