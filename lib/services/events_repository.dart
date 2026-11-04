@@ -176,8 +176,6 @@ class McpEventsRepository implements EventsRepository {
       'recurrence': {
         'id': recurrence.id,
         for (final MapEntry(:key, :value) in changes.entries) key: ?value,
-        // Actions sent are set, not inferred from a label.
-        if (changes.containsKey('action_ids')) 'actions_from_label': false,
       },
       'starting_at_event_id': ?startingAt,
       if (cleared.isNotEmpty) 'clear_fields': cleared,
@@ -300,9 +298,6 @@ class McpEventsRepository implements EventsRepository {
             // sent by that write alone, not again with the next.
             ...event.toJson()..remove('repeat'),
             ...changes,
-            // Actions sent are set, not inferred from a label; left alone,
-            // the server keeps inferred ones inferred.
-            if (changes.containsKey('action_ids')) 'actions_from_label': false,
           },
           // The event's fields sent as null are kept; these are removed.
           if (_cleared(changes) case final cleared when cleared.isNotEmpty)
@@ -491,7 +486,6 @@ class InMemoryEventsRepository implements EventsRepository {
     final updated = Event.fromJson({
       ..._events[i].toJson(),
       ...changes,
-      if (changes.containsKey('action_ids')) 'actions_from_label': false,
     });
     _events[i] = updated;
     return [updated];

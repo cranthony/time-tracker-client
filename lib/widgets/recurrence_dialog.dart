@@ -51,10 +51,6 @@ Future<List<Recurrence>?> showRecurrenceDialog(
     kinds: _kinds,
     // Every event has one; the rest can be cleared (see clearableFields).
     required: const {'summary'},
-    inferred: {
-      if (recurrence.properties['actions_from_label'] == true)
-        'action_ids': 'from its label',
-    },
     hints: const {
       'start': "When the series' first event starts.",
       'end': "When the series' first event ends.",

@@ -91,9 +91,8 @@ void main() {
       'end': localIsoTimestamp(at(16)),
     });
 
-    // One whose actions come from its label, in a time zone of its own,
-    // with goals: the part after has them all, its actions saved as its
-    // own -- the new event has no label to infer them from.
+    // One with a label, in a time zone of its own, with goals: the part
+    // after has them all, but not its label (written from its actions).
     final labelled = OtherEvents([
       Event.fromJson({
         'id': 'labelled',
@@ -104,7 +103,6 @@ void main() {
         'description': 'Focus',
         'description_format': 'markdown',
         'action_ids': ['work'],
-        'actions_from_label': true,
         'goals': [
           {'goal_id': 'g1'},
         ],

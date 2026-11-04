@@ -159,7 +159,6 @@ void main() {
         'summary': 'A',
         'description': 'Lunch and a walk',
         'action_ids': ['eat'],
-        'actions_from_label': true,
         'priority': 2,
         'facts': {
           'notes': {'self': 'Sunny'},
