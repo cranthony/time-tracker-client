@@ -1519,14 +1519,12 @@ class SampleData {
       priority: 2,
       facts: const Facts(locationIds: ['home', 'school'], commute: true),
     ),
-    // Never given actions: its action is inferred from its label.
     _event(
       'class',
       'Cooking class',
       _at(14, 0),
       _at(16, 0),
       actions: ['cooking_class'],
-      fromLabel: true,
       priority: 2,
       // Learning a dish for Priya, who isn't there.
       facts: const Facts(locationIds: ['school'], forIds: ['priya']),
@@ -1631,7 +1629,6 @@ class SampleData {
     DateTime end, {
     List<String> actions = const [],
     String? series,
-    bool fromLabel = false,
     int? priority,
     Facts? facts,
     Map<String, Object?>? judgments,
@@ -1645,7 +1642,6 @@ class SampleData {
     'action_ids': actions,
     'action_names': [for (final a in actions) _names[a]],
     'recurring_event_id': ?series,
-    if (fromLabel) 'actions_from_label': true,
     'effective_priority': ?priority,
     'facts': ?facts?.toJson(),
     if (judgments != null && judgments.isNotEmpty) 'judgments': judgments,

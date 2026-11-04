@@ -713,60 +713,6 @@ void main() {
       ]);
     });
 
-    testWidgets('actions inferred from its label are marked, and kept to '
-        'confirm them', (tester) async {
-      final inferred = Event.fromJson({
-        ...work().toJson(),
-        'actions_from_label': true,
-      });
-      final repo = _RecordingRepository([inferred]);
-      await openWork(tester, repo);
-
-      expect(
-        inDialog(find.text('Deep focus (from its label)', findRichText: true)),
-        findsOneWidget,
-      );
-      // Kept as it is, with Done: confirmed, which is a change to save.
-      await edit(tester, inDialog(find.textContaining('Deep focus')));
-      await tester.tap(inSheet(find.text('Done')));
-      await tester.pumpAndSettle();
-      expect(
-        inDialog(find.text('Deep focus (from its label)', findRichText: true)),
-        findsNothing,
-      );
-      await tester.tap(find.text('Save 1 change'));
-      await tester.pumpAndSettle();
-      expect(repo.saved, [
-        {
-          'action_ids': ['g1'],
-        },
-      ]);
-    });
-
-    test(
-      'McpEventsRepository says actions it sends are set, not inferred',
-      () async {
-        final client = _RecurrenceClient();
-        final event = Event.fromJson({
-          ...work().toJson(),
-          'actions_from_label': true,
-        });
-
-        Map sent() =>
-            ((client.arguments!['updates'] as List).single as Map)['event']
-                as Map;
-
-        await McpEventsRepository(client)
-            .updateEvent(event, {'summary': 'Focus'});
-        expect(sent()['actions_from_label'], isTrue);
-
-        await McpEventsRepository(client).updateEvent(event, {
-          'action_ids': ['g1'],
-        });
-        expect(sent()['actions_from_label'], isFalse);
-      },
-    );
-
     testWidgets('asks before throwing edits away; Revert drops them', (
       tester,
     ) async {

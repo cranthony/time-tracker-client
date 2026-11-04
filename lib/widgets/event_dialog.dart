@@ -55,14 +55,7 @@ Future<List<Event>?> showEventDialog(
     kinds: _kinds,
     // Every event has one; the rest can be cleared (see clearableFields).
     required: const {'summary'},
-    inferred: {
-      if (event.properties['actions_from_label'] == true)
-        'action_ids': 'from its label',
-    },
     hints: const {
-      'action_ids':
-          'Actions shown "from its label" were never set: they come from the '
-          "event's label. Keep or change them to set them.",
       'start': timesHint,
       'end': timesHint,
     },

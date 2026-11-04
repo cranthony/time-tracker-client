@@ -149,9 +149,7 @@ Widget confirmationContent(
 /// property's values, and how each is shown; [links] shows those keys'
 /// values as links instead. [confirmSave] is asked before each save, with
 /// the changes; false calls the save off, keeping the dialog open.
-/// [inferred] marks values that were guessed rather than set, by key, with
-/// a note shown after them (e.g. "from its label"): keeping one, even
-/// unchanged, counts as a change, so saving confirms it. [changes] opens
+/// [changes] opens
 /// it with those changes already made, e.g. ones that couldn't be saved
 /// before; closing it without changing them more doesn't ask first.
 /// Those [waiting] for a change to be saved can't be changed, and say so
@@ -169,7 +167,6 @@ Future<R?> showPropertiesDialog<R>(
   Future<List<PlanAction>> Function()? actions,
   Map<String, Map<String, String>> choices = const {},
   Map<String, PropertyLink> links = const {},
-  Map<String, String> inferred = const {},
   Map<String, Object?> changes = const {},
   OneWayAction? oneWayAction,
   String signInHint = 'Sign in again, then try again.',
@@ -188,7 +185,6 @@ Future<R?> showPropertiesDialog<R>(
     actions: actions,
     choices: choices,
     links: links,
-    inferred: inferred,
     changes: changes,
     oneWayAction: oneWayAction,
     signInHint: signInHint,
@@ -209,7 +205,6 @@ class _PropertiesDialog<R> extends StatefulWidget {
     required this.actions,
     required this.choices,
     required this.links,
-    required this.inferred,
     required this.changes,
     required this.oneWayAction,
     required this.signInHint,
@@ -231,7 +226,6 @@ class _PropertiesDialog<R> extends StatefulWidget {
   final Future<List<PlanAction>> Function()? actions;
   final Map<String, Map<String, String>> choices;
   final Map<String, PropertyLink> links;
-  final Map<String, String> inferred;
 
   /// The changes it opens with.
   final Map<String, Object?> changes;
@@ -443,9 +437,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
       return false;
     }
     setState(() {
-      // An inferred value, kept, is confirmed: a change even if the same.
-      if (_same(key, value, _original[key]) &&
-          !widget.inferred.containsKey(key)) {
+      if (_same(key, value, _original[key])) {
         _changes.remove(key);
       } else {
         _changes[key] = value;
@@ -788,20 +780,7 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
     required bool selectable,
   }) {
     final text = _format(context, key, value);
-    final note = _changes.containsKey(key) ? null : widget.inferred[key];
-    final Widget label = note == null
-        ? (selectable ? SelectableText(text) : Text(text))
-        : Text.rich(
-            TextSpan(
-              text: text,
-              children: [
-                TextSpan(
-                  text: ' ($note)',
-                  style: TextStyle(color: Theme.of(context).hintColor),
-                ),
-              ],
-            ),
-          );
+    final Widget label = selectable ? SelectableText(text) : Text(text);
     final color = widget.kinds[key] == PropertyKind.color
         ? parseColor('$value')
         : null;

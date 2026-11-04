@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.248.0
+
+- An event's or a series' actions are only ever the ones set on it: one
+  never given actions no longer shows its label's action, marked "from
+  its label", as its own. The server no longer infers them, and every
+  event that had them inferred has them saved.
+
 ## 7.247.2
 
 - An event split to make room for a new one keeps its actions in the
