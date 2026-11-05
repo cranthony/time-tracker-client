@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.250.0
+
+- A link in a description -- a goal's, a habit's, an event's -- opens a
+  menu when it's held, or clicked with the right mouse button: "Open
+  link", or "Copy link address", which copies it and says so. A link
+  into the app copies as written (`goal:move`), to paste into another
+  description. In text that can be selected, holding a link opens its
+  menu rather than selecting it.
+
 ## 7.249.0
 
 - Markdown's tables are drawn as tables: in Claude's recap, and in a
