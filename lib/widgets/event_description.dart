@@ -7,7 +7,8 @@
 /// app ([EntityLink] -- `goal:ship-goals-pane`, `person:sam`) is drawn
 /// with the icon of what it names and, where its text is only the id (or
 /// there's none), its current name; tapped, it opens what it names
-/// ([EntityLinks]). A table is drawn as a grid ([MarkdownTable]), a task
+/// ([EntityLinks]). Held, or clicked with the right mouse button, a link
+/// opens its menu ([showLinkMenu]): to open it or copy its address. A table is drawn as a grid ([MarkdownTable]), a task
 /// list's items with their boxes.
 library;
 
@@ -23,6 +24,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/entity_link.dart';
 import '../models/text_format.dart';
 import 'entity_links.dart';
+import 'link_menu.dart';
 import 'markdown_table.dart';
 
 /// [text] as HTML, as it's written in [format] (or looks, with none);
@@ -113,6 +115,11 @@ List<DescriptionBlock> descriptionBlocks(
         alignment: PlaceholderAlignment.middle,
         child: GestureDetector(
           onTap: tap.onTap,
+          onSecondaryTapUp: tap.onSecondaryTapUp,
+          onLongPressStart: switch (tap) {
+            LinkRecognizer(:final onHold?) => (d) => onHold(d.globalPosition),
+            _ => null,
+          },
           child: Padding(
             padding: const EdgeInsetsDirectional.only(end: 3),
             child:
@@ -528,9 +535,18 @@ class _EventDescriptionState extends State<EventDescription> {
   }
 
   TapGestureRecognizer _recognizer(String url) {
-    final r = TapGestureRecognizer()..onTap = () => _follow(url);
+    final r = LinkRecognizer();
+    r.onTap = () => _follow(url);
+    r.onHold = (at) => _menu(url, at);
+    r.onSecondaryTapUp = (d) => _menu(url, d.globalPosition);
     _recognizers.add(r);
     return r;
+  }
+
+  /// [url]'s menu, at [position]: to open it, or copy its address.
+  void _menu(String url, Offset position) {
+    if (!mounted) return;
+    showLinkMenu(context, position, url, open: () => _follow(url));
   }
 
   /// Opens [url]: into the app, if it's a link into it and there's a way
