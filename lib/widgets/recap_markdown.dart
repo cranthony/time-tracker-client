@@ -1,14 +1,45 @@
 /// Claude's Markdown, as the server asks it to write it -- bold, italics,
 /// code, bullet and numbered lists -- drawn in the app's own text styles.
 /// Headings, quotes and code blocks are drawn plainly too; images by their
-/// alt text. Links show as their text: nothing in it is opened.
+/// alt text; tables as a grid ([MarkdownTable]), task lists' items with
+/// their boxes. Links show as their text: nothing in it is opened.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:markdown/markdown.dart' as md;
 
-List<md.Node> _parse(String text) =>
-    md.Document(encodeHtml: false).parse(text.replaceAll('\r\n', '\n'));
+import 'markdown_table.dart';
+
+List<md.Node> _parse(String text) => md.Document(
+  encodeHtml: false,
+  extensionSet: md.ExtensionSet.gitHubFlavored,
+).parse(text.replaceAll('\r\n', '\n'));
+
+/// [table]'s cells, row by row, its header's first.
+TableCells _cells(md.Element table, Color? codeBackground) {
+  final rows = <md.Element>[
+    for (final section in table.children ?? const <md.Node>[])
+      if (section is md.Element)
+        for (final row in section.children ?? const <md.Node>[])
+          if (row is md.Element && row.tag == 'tr') row,
+  ];
+  final cells = [
+    for (final row in rows)
+      [
+        for (final cell in row.children ?? const <md.Node>[])
+          if (cell is md.Element)
+            TextSpan(
+              children: _inline(cell.children ?? const [], codeBackground),
+            ),
+      ],
+  ];
+  final first = rows.firstOrNull?.children?.whereType<md.Element>() ?? [];
+  return TableCells(
+    cells,
+    header: first.isNotEmpty && first.every((c) => c.tag == 'th'),
+    aligns: [for (final c in first) TableCells.alignOf(c.attributes)],
+  );
+}
 
 const _blockTags = {
   'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', //
@@ -53,6 +84,22 @@ TextSpan recapSpan(String text, {Color? codeBackground}) {
             break;
           case 'pre':
             line([TextSpan(text: node.textContent.trimRight())]);
+          case 'table':
+            // A row a line, its cells between bars.
+            final cells = _cells(node, codeBackground);
+            for (final (i, row) in cells.rows.indexed) {
+              line([
+                for (final (c, cell) in row.indexed) ...[
+                  if (c > 0) const TextSpan(text: ' | '),
+                  cells.header && i == 0
+                      ? TextSpan(
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                          children: [cell],
+                        )
+                      : cell,
+                ],
+              ]);
+            }
           default:
             blocks(node.children ?? const [], prefix);
             prefix = '';
@@ -75,6 +122,19 @@ List<InlineSpan> _inline(List<md.Node> nodes, Color? codeBackground) => [
       md.Text(:final text) => TextSpan(text: text),
       md.Element(tag: 'br') => const TextSpan(text: '\n'),
       md.Element(tag: 'img') => TextSpan(text: node.attributes['alt'] ?? ''),
+      // A task list item's box.
+      md.Element(tag: 'input') => WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.only(end: 3),
+          child: Icon(
+            node.attributes['checked'] == null
+                ? Icons.check_box_outline_blank
+                : Icons.check_box_outlined,
+            size: 16,
+          ),
+        ),
+      ),
       md.Element(tag: 'code') => TextSpan(
         text: node.textContent,
         style: TextStyle(
@@ -184,6 +244,8 @@ class RecapMarkdown extends StatelessWidget {
         );
       case 'hr':
         return const Divider(height: 8);
+      case 'table':
+        return MarkdownTable(_cells(e, code));
       case 'pre':
         return Container(
           padding: const EdgeInsets.all(8),

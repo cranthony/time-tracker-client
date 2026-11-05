@@ -7,7 +7,8 @@
 /// app ([EntityLink] -- `goal:ship-goals-pane`, `person:sam`) is drawn
 /// with the icon of what it names and, where its text is only the id (or
 /// there's none), its current name; tapped, it opens what it names
-/// ([EntityLinks]).
+/// ([EntityLinks]). A table is drawn as a grid ([MarkdownTable]), a task
+/// list's items with their boxes.
 library;
 
 import 'dart:math' as math;
@@ -22,6 +23,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/entity_link.dart';
 import '../models/text_format.dart';
 import 'entity_links.dart';
+import 'markdown_table.dart';
 
 /// [text] as HTML, as it's written in [format] (or looks, with none);
 /// null for plain text.
@@ -57,15 +59,25 @@ Future<void> _open(String url) async {
 
 /// A paragraph of a description, or one of a list's items: its [marker]
 /// (a bullet, or its number) hung out to the left of its text, [depth]
-/// lists in.
+/// lists in. Or a [table].
 class DescriptionBlock {
-  const DescriptionBlock(this.span, {this.marker, this.depth = 0});
+  const DescriptionBlock(this.span, {this.marker, this.depth = 0})
+    : table = null;
+
+  const DescriptionBlock.table(TableCells this.table, {this.depth = 0})
+    : span = const TextSpan(),
+      marker = null;
 
   final TextSpan span;
   final String? marker;
   final int depth;
+  final TableCells? table;
 
   bool get isItem => marker != null;
+
+  /// As plain text: a table's rows a line each.
+  String toPlainText() =>
+      table?.toPlainText() ?? span.toPlainText(includePlaceholders: false);
 }
 
 /// [text], written in [format] (or as it looks, with none), as paragraphs
@@ -165,10 +177,16 @@ List<DescriptionBlock> descriptionBlocks(
   var listDepth = 0;
   // Inside a pre: its whitespace kept.
   var preDepth = 0;
+  // Inside a table's cell: what would be blocks of their own are lines.
+  var cellDepth = 0;
   const code = TextStyle(fontFamily: 'monospace');
   bool atLineStart() => line.isEmpty || line.last.$2.endsWith('\n');
 
   void flush() {
+    if (cellDepth > 0) {
+      if (!atLineStart()) line.add((const TextSpan(text: '\n'), '\n'));
+      return;
+    }
     // No line breaks at its end.
     while (line.isNotEmpty && line.last.$2.trim().isEmpty) {
       line.removeLast();
@@ -258,6 +276,64 @@ List<DescriptionBlock> descriptionBlocks(
     switch (tag) {
       case 'br':
         add(TextSpan(text: '\n', style: merged));
+      case 'input' when node.attributes['type'] == 'checkbox':
+        add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Padding(
+              padding: const EdgeInsetsDirectional.only(end: 3),
+              child: Icon(
+                node.attributes.containsKey('checked')
+                    ? Icons.check_box_outlined
+                    : Icons.check_box_outline_blank,
+                size: _iconSize,
+              ),
+            ),
+          ),
+        );
+      case 'table' when cellDepth == 0:
+        flush();
+        final rows = node
+            .querySelectorAll('tr')
+            .where((tr) => tr.parent?.parent == node || tr.parent == node)
+            .toList();
+        final cells = <List<InlineSpan>>[];
+        for (final tr in rows) {
+          final row = <InlineSpan>[];
+          for (final cell in tr.children) {
+            if (cell.localName != 'td' && cell.localName != 'th') continue;
+            // The cell's spans, built as a block's are, then put back.
+            final outer = line;
+            line = [];
+            cellDepth++;
+            for (final child in cell.nodes) {
+              walk(child, merged, linkTo);
+            }
+            cellDepth--;
+            while (line.isNotEmpty && line.last.$2.trim().isEmpty) {
+              line.removeLast();
+            }
+            row.add(TextSpan(children: [for (final (span, _) in line) span]));
+            line = outer;
+          }
+          cells.add(row);
+        }
+        final first = rows.firstOrNull?.children ?? const <dom.Element>[];
+        if (cells.any((r) => r.isNotEmpty)) {
+          blocks.add(
+            DescriptionBlock.table(
+              TableCells(
+                cells,
+                header:
+                    first.isNotEmpty && first.every((c) => c.localName == 'th'),
+                aligns: [
+                  for (final c in first) TableCells.alignOf(c.attributes),
+                ],
+              ),
+              depth: depth,
+            ),
+          );
+        }
       case 'ul' || 'ol':
         flush();
         listDepth++;
@@ -267,6 +343,8 @@ List<DescriptionBlock> descriptionBlocks(
           flush();
           marker = tag == 'ol' ? '${n++}.' : (listDepth.isOdd ? '•' : '◦');
           depth = listDepth - 1;
+          // In a table's cell, an item is a line, its marker before it.
+          if (cellDepth > 0) add(TextSpan(text: '$marker ', style: merged));
           for (final child in li.nodes) {
             walk(child, merged, linkTo);
           }
@@ -330,6 +408,12 @@ String descriptionText(String description, {TextFormat? format}) {
     return description.replaceAll('\r\n', '\n').trim();
   }
   final fragment = html.parseFragment(source);
+  // A task list item's box, as a character: drawn, it's an icon.
+  for (final box in fragment.querySelectorAll('input[type=checkbox]')) {
+    box.replaceWith(
+      dom.Text(box.attributes.containsKey('checked') ? '☑ ' : '☐ '),
+    );
+  }
   for (final a in fragment.querySelectorAll('a[href]')) {
     final href = a.attributes['href']!;
     final shown = a.text.trim();
@@ -361,8 +445,11 @@ String descriptionText(String description, {TextFormat? format}) {
   }
   return [
     for (final b in blocks)
-      '${'  ' * b.depth}${b.marker == null ? '' : '${b.marker} '}'
-          '${b.span.toPlainText(includePlaceholders: false)}',
+      if (b.table != null)
+        for (final row in b.toPlainText().split('\n')) '${'  ' * b.depth}$row'
+      else
+        '${'  ' * b.depth}${b.marker == null ? '' : '${b.marker} '}'
+            '${b.toPlainText()}',
   ].join('\n');
 }
 
@@ -514,9 +601,23 @@ class _EventDescriptionState extends State<EventDescription> {
           return height;
         }
 
+        // Each table's layout, worked out once: to measure, and to draw.
+        final tables = {
+          for (final b in blocks)
+            if (b.table case final t?)
+              b: layoutTable(
+                t,
+                style: style,
+                direction: direction,
+                scaler: scaler,
+                placeholder: const Size(_iconSize + 3, _iconSize),
+              ),
+        };
         var height = 0.0;
         for (final (i, b) in blocks.indexed) {
-          height += _gapBefore(blocks, i) + measure(b.span, width(b));
+          height +=
+              _gapBefore(blocks, i) +
+              (tables[b]?.height ?? measure(b.span, width(b)));
         }
         final lineHeight = measure(const TextSpan(text: 'Hg'), 1000);
         final maxLines = widget.maxLines;
@@ -534,7 +635,9 @@ class _EventDescriptionState extends State<EventDescription> {
                   start: b.depth * _indent,
                   top: _gapBefore(blocks, i),
                 ),
-                child: b.isItem
+                child: b.table != null
+                    ? MarkdownTable(b.table!, style: style, layout: tables[b])
+                    : b.isItem
                     ? Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [

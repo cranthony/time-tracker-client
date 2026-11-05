@@ -6,6 +6,20 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.249.0
+
+- Markdown's tables are drawn as tables: in Claude's recap, and in a
+  goal's, a habit's or an event's description. The header row is bold
+  on a tint, and the cells sit in a grid of thin lines, each column
+  aligned as written. A column is as wide as its widest cell, up to a
+  limit past which its cells wrap, and a table too wide for the screen
+  scrolls across. A long description with a table is cut off behind
+  "More" as any long one is. As plain text, a table is a row a line,
+  its cells between bars.
+- Task lists' items (`- [x] done`, `- [ ] not yet`) show a box, ticked
+  or not, before their text. Claude's recap reads the rest of GitHub's
+  Markdown too: strikethrough, and web addresses as links.
+
 ## 7.248.0
 
 - An event's or a series' actions are only ever the ones set on it: one
