@@ -8,8 +8,9 @@
 /// with the icon of what it names and, where its text is only the id (or
 /// there's none), its current name; tapped, it opens what it names
 /// ([EntityLinks]). Held, or clicked with the right mouse button, a link
-/// opens its menu ([showLinkMenu]): to open it or copy its address. A table is drawn as a grid ([MarkdownTable]), a task
-/// list's items with their boxes.
+/// opens its menu ([showLinkMenu]): to open it or copy its address. A
+/// table is drawn as a grid ([MarkdownTable]), a task list's items with
+/// their boxes.
 library;
 
 import 'dart:math' as math;
