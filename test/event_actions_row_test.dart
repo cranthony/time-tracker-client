@@ -54,14 +54,15 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets("a lone action is level with the plow, its chip at the row's "
-      'end with the room to tap that the map button has', (tester) async {
+  testWidgets('a lone action is level with the plow, its chip with the room '
+      'to tap that the map button has', (tester) async {
     await open(tester, ['Floss']);
     final text = find.text('Floss');
-    // The line's padding above it aside, it starts where the plow does.
+    // It starts where the plow does.
     expect(
-      tester.getTopLeft(text).dy - tester.getTopLeft(find.byType(PlowIcon)).dy,
-      2,
+      tester.getTopLeft(text).dy -
+          tester.getTopLeft(find.byType(PlowIcon).first).dy,
+      0,
     );
     // The chip no taller than the text ...
     expect(
@@ -73,7 +74,7 @@ void main() {
     expect(size.height, greaterThanOrEqualTo(44));
     expect(
       size.width,
-      greaterThanOrEqualTo(tester.getSize(pill('All of it')).width + 16),
+      greaterThanOrEqualTo(tester.getSize(pill('All of it')).width + 8),
     );
     // ... and the row no taller for it.
     expect(
@@ -81,13 +82,13 @@ void main() {
           .getSize(
             find
                 .ancestor(
-                  of: find.byType(PlowIcon),
+                  of: find.byType(PlowIcon).first,
                   matching: find.byType(InkWell),
                 )
                 .first,
           )
           .height,
-      48,
+      44,
     );
 
     // Tapped above the chip, it sets the share.
@@ -100,21 +101,21 @@ void main() {
     await open(tester, ['Floss', 'Brush']);
     expect(
       tester.getTopLeft(find.text('Floss')).dy -
-          tester.getTopLeft(find.byType(PlowIcon)).dy,
-      2,
+          tester.getTopLeft(find.byType(PlowIcon).first).dy,
+      0,
     );
-    // Lines as far apart as before: a line of text and 2 either side.
+    // Each line as tall as a row of its own.
     expect(
       tester.getTopLeft(find.text('Brush')).dy -
           tester.getTopLeft(find.text('Floss')).dy,
-      28,
+      44,
     );
     expect(
-      tester.getSize(room('Split the rest')).height,
-      greaterThanOrEqualTo(28),
+      tester.getSize(room('Split the rest').first).height,
+      greaterThanOrEqualTo(44),
     );
     expect(
-      tester.getSize(pill('Split the rest')).height,
+      tester.getSize(pill('Split the rest').first).height,
       lessThanOrEqualTo(tester.getSize(find.text('Floss')).height),
     );
 

@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.252.0
+
+- An event's people, locations, actions and goals are all listed alike:
+  one to a line, with a chip on the right saying how much of the event
+  each takes -- tapped, it sets that -- and then its icon, which opens
+  its page. Tapping anywhere else in the row opens the picker. Those an
+  event is for say "for" before their name; those it's with say nothing
+  more. Each location with a map location or link has its own button at
+  the end of its line, and a location typed for the event alone is on a
+  line of its own. An action's icon, in its color, replaces its diamond.
+
 ## 7.251.0
 
 - "Missed, try again by" a date after the goal's parent is due now asks
