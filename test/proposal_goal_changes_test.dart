@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/models/goal_changes.dart';
 import 'package:time_tracker_client/models/note.dart';
 import 'package:time_tracker_client/models/proposal.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
@@ -132,6 +133,7 @@ void main() {
           status: status,
           at: null,
           retryDeadline: retryDeadline,
+          retryFit: null,
         );
         var proposal = await proposals.amend(
           proposals.proposal!,
@@ -440,6 +442,126 @@ void main() {
         (await store.goals()).singleWhere((g) => g.id == 'fence').status,
         'inactive',
       );
+    });
+
+    group('a retry due after its parent', () {
+      Goal goal(String id, String deadline, {String? parent}) => Goal.fromJson({
+        'id': id,
+        'title': id,
+        'status': 'active',
+        'deadline': deadline,
+        'parent_id': parent,
+        'history': [
+          {'status': 'active', 'at': '2026-09-01T09:00:00'},
+        ],
+      });
+
+      Future<void> openIt(WidgetTester tester) => open(
+        tester,
+        more: [
+          goal('Errands', '2026-09-30'),
+          goal('Post', '2026-09-29', parent: 'Errands'),
+          goal('Elsewhere', '2026-12-01'),
+        ],
+        extra: {
+          'goal_changes': [
+            {
+              'goal_id': 'Post',
+              'title': 'Post',
+              'path': ['Errands'],
+              'status': 'missed',
+              'at': iso(11),
+              'retry_deadline': null,
+              'decided_by': 'claude',
+            },
+          ],
+        },
+      );
+
+      Future<void> retryTomorrow(WidgetTester tester) async {
+        await page(tester, 'Goals (1)');
+        await settle(tester, 'Missed, try again by…');
+        await tester.tap(find.text('OK'));
+        await tester.pumpAndSettle();
+        expect(find.text('Due after its parent'), findsOneWidget);
+      }
+
+      testWidgets('asks, and keeps extending the parent with the change, '
+          'to be made when it is', (tester) async {
+        await openIt(tester);
+        await retryTomorrow(tester);
+
+        await tester.tap(find.text('Extend its parent'));
+        await tester.pumpAndSettle();
+
+        expect(lastSent(), {
+          'goal_changes': [
+            {
+              'goal_id': 'Post',
+              'use': 'change',
+              'status': 'missed',
+              'retry_deadline': '2026-10-01',
+              'retry_fit': {'kind': 'extend_parents'},
+            },
+          ],
+        });
+        expect(
+          find.text(
+            'Goal  Post · missed, try again by Thu, Oct 1, extending its '
+            'parents',
+            findRichText: true,
+          ),
+          findsOneWidget,
+        );
+        expect(
+          (await store.goals()).singleWhere((g) => g.id == 'Errands').deadline,
+          '2026-09-30',
+        );
+      });
+
+      testWidgets('or moves it out, under a goal there is, none made for it', (
+        tester,
+      ) async {
+        await openIt(tester);
+        await retryTomorrow(tester);
+
+        await tester.tap(find.text('Move it out…'));
+        await tester.pumpAndSettle();
+        expect(find.text('Under a new top-level goal…'), findsNothing);
+        await tester.tap(find.widgetWithText(ListTile, 'Elsewhere'));
+        await tester.pumpAndSettle();
+
+        expect(lastSent(), {
+          'goal_changes': [
+            {
+              'goal_id': 'Post',
+              'use': 'change',
+              'status': 'missed',
+              'retry_deadline': '2026-10-01',
+              'retry_fit': {'kind': 'move', 'parent_id': 'Elsewhere'},
+            },
+          ],
+        });
+      });
+
+      testWidgets('kept over being sent and read back', (tester) async {
+        final edits = ProposalEdits(
+          goalChanges: [
+            (
+              goalId: 'Post',
+              use: GoalChangeUse.change,
+              status: 'missed',
+              at: null,
+              retryDeadline: '2026-10-01',
+              retryFit: const MoveOut(to: 'Elsewhere'),
+            ),
+          ],
+        );
+        expect(
+          ProposalEdits.fromJson(edits.toJson()).goalChanges.single.retryFit,
+          const MoveOut(to: 'Elsewhere'),
+        );
+      });
     });
 
     testWidgets('lists a goal the events are tagged with, with each event '

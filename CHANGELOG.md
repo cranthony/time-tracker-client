@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.251.0
+
+- "Missed, try again by" a date after the goal's parent is due now asks
+  what to do, rather than failing: extend the parent (each goal above it
+  that's due too soon, listed, with what becomes of it -- one whose own
+  deadline has passed is recorded as missed and tried again), move the
+  goal out, to the top level or under a goal due late enough, or pick
+  another date. On a goal's page and the overdue strip, in a proposal's
+  review -- where it's kept with the change and made when that is, so
+  dropping the change leaves the parent alone -- and when a deadline's
+  edited. In a review it needs a server with `retry_fit`.
+
 ## 7.250.0
 
 - A link in a description -- a goal's, a habit's, an event's -- opens a

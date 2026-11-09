@@ -205,6 +205,7 @@ void main() {
     });
 
     test('made active from the strip, it is due when the user said', () async {
+      final due = deadlineOf(DateTime.now().add(const Duration(days: 7)));
       await proposals.amend(
         proposals.proposal!,
         settling('new:alex', AdditionUse.create, AdditionKind.person),
@@ -215,11 +216,11 @@ void main() {
           'new:help-sam',
           AdditionUse.create,
           AdditionKind.goal,
-          deadline: '2026-11-08',
+          deadline: due,
         ),
       );
       final made = (await goals.goals()).single;
-      expect((made.status, made.deadline), ('active', '2026-11-08'));
+      expect((made.status, made.deadline), ('active', due));
     });
   });
 }

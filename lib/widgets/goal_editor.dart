@@ -392,14 +392,19 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
             GoalCreate(Goal.fromJson({'id': '\u0000new', ..._changes})),
           ]
         : [
-            GoalBatch(
-              editing(
+            GoalBatch([
+              // A deadline after a parent's is asked about on saving
+              // ([settleDeadline]): judged here as if the parent followed.
+              if (_changes['deadline'] case final String deadline
+                  when _status == 'active' || _status == 'inactive')
+                ...extendingParents(tree, goal, deadline, now: widget.now()),
+              ...editing(
                 tree,
                 goal,
                 {..._changes}..remove('status'),
                 status: _status,
               ),
-            ),
+            ]),
           ];
     final problems = planned(widget.goals, changes, now: widget.now());
     return problems.isEmpty ? null : problems.join(' ');

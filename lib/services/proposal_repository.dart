@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/event.dart';
 import '../models/goal.dart';
+import '../models/goal_changes.dart';
 import '../models/note.dart';
 import '../models/person.dart';
 import '../models/proposal.dart';
@@ -67,7 +68,8 @@ class ProposalEdits {
 
   /// The user's say on the proposal's goal changes, each by its goal's
   /// id: applied now, dropped, or changed -- to [status], at [at], tried
-  /// again by [retryDeadline] (status `missed`) -- the fields given over
+  /// again by [retryDeadline] (status `missed`), made to fit as [retryFit]
+  /// says -- the fields given over
   /// the proposal's. A change of a goal the proposal doesn't change adds
   /// one, with its status.
   final List<GoalChangeEdit> goalChanges;
@@ -142,6 +144,7 @@ class ProposalEdits {
             'status': ?c.status,
             if (c.at case final at?) 'at': localIsoTimestamp(at),
             'retry_deadline': ?c.retryDeadline,
+            'retry_fit': ?c.retryFit?.toJson(),
           },
       ],
   };
@@ -206,6 +209,7 @@ class ProposalEdits {
                 _ => null,
               },
               retryDeadline: c['retry_deadline'] as String?,
+              retryFit: DeadlineFit.fromJson(c['retry_fit']),
             ),
       ],
     );
@@ -243,6 +247,7 @@ typedef GoalChangeEdit = ({
   String? status,
   DateTime? at,
   String? retryDeadline,
+  DeadlineFit? retryFit,
 });
 
 /// An edit the proposal can't take, said in a way to show the user.
@@ -1025,6 +1030,12 @@ class InMemoryProposalRepository implements ProposalRepository {
         retryDeadline: status == 'missed'
             ? edit.retryDeadline ?? proposed?.retryDeadline
             : null,
+        // A new deadline comes with its own fit, or none.
+        retryFit: status != 'missed'
+            ? null
+            : edit.retryDeadline != null
+            ? edit.retryFit
+            : edit.retryFit ?? proposed?.retryFit,
         decidedBy: DecidedBy.user,
       );
       if (edit.use == GoalChangeUse.apply) await _applyGoalChange(change);
@@ -1040,6 +1051,7 @@ class InMemoryProposalRepository implements ProposalRepository {
           retryDeadline: edit.use == GoalChangeUse.drop
               ? null
               : change.retryDeadline,
+          retryFit: edit.use == GoalChangeUse.drop ? null : change.retryFit,
         ),
       );
     }
@@ -1053,9 +1065,8 @@ class InMemoryProposalRepository implements ProposalRepository {
   Future<void> _applyGoalChange(ProposalGoalChange change) async {
     final goals = this.goals;
     if (goals == null) return;
-    final goal = (await goals.goals())
-        .where((g) => g.id == change.goalId)
-        .firstOrNull;
+    final all = await goals.goals();
+    final goal = all.where((g) => g.id == change.goalId).firstOrNull;
     if (goal == null) {
       throw McpException(
         "amend_proposal: goal_changes: there's no goal ${change.goalId}",
@@ -1068,7 +1079,17 @@ class InMemoryProposalRepository implements ProposalRepository {
       );
     }
     final at = change.at ?? DateTime.now();
-    if (change.retries) {
+    if (change.retries && change.retryFit != null) {
+      await goals.changeGoals(
+        retryingToFit(
+          GoalTree(all),
+          goal,
+          change.retryDeadline!,
+          change.retryFit,
+          now: at,
+        ),
+      );
+    } else if (change.retries) {
       await goals.updateGoal(goal.id, {
         'deadline': change.retryDeadline,
         'status': goal.status,
