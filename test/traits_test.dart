@@ -1214,7 +1214,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     await tester.pumpAndSettle();
-    expect(find.text('With Sam · For Priya'), findsOneWidget);
+    expect(find.text('Sam'), findsOneWidget);
+    expect(find.text('for Priya'), findsOneWidget);
     expect(find.text('Home'), findsOneWidget);
 
     // The notes, and the judgments, under the sparkle.
@@ -1315,9 +1316,9 @@ void main() {
 
     // Asked for, but not answered: named from what's loaded.
     expect(people.calls, ['people', 'locations']);
-    expect(find.text('With Sam'), findsOneWidget);
+    expect(find.text('Sam'), findsOneWidget);
     expect(find.text('Home'), findsOneWidget);
-    await tester.tap(find.text('With Sam'));
+    await tester.tap(find.text('Sam'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Clear search').hitTestable());
     await tester.pumpAndSettle();
@@ -1415,9 +1416,9 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
 
-    // Where by its name, not as it's put; what happened is each event's.
+    // Where by its name, and as it's put; what happened is each event's.
     expect(find.text('Home'), findsOneWidget);
-    expect(find.text('Room 4'), findsNothing);
+    expect(find.text('Room 4'), findsOneWidget);
     expect(find.text('Add what happened'), findsNothing);
     await tester.tap(find.text('Add who'));
     await tester.pumpAndSettle();
@@ -1427,7 +1428,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     await tester.pumpAndSettle();
-    expect(find.text('With Sam'), findsOneWidget);
+    expect(find.text('Sam'), findsOneWidget);
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('All events'));

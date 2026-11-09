@@ -62,13 +62,15 @@ void main() {
     final mode = brightness.name;
 
     /// Renders [screen], with the sample's traits and people when
-    /// [scoped], after [then].
+    /// [scoped], and a [PlanMemory] over its routes, as the app has, when
+    /// [remembers], after [then].
     Future<void> render(
       WidgetTester tester,
       String name,
       Widget screen, {
       Future<void> Function()? then,
       bool scoped = false,
+      bool remembers = false,
       EndMode? endMode,
       bool signInOff = false,
     }) async {
@@ -91,7 +93,12 @@ void main() {
             // Off only where asked, whichever build the tests are.
             child: SignInOffBanner(
               server: ValueNotifier(signInOff),
-              child: AppSettingsScope(settings: settings, child: child!),
+              child: AppSettingsScope(
+                settings: settings,
+                child: remembers
+                    ? PlanMemoryScope(memory: PlanMemory(), child: child!)
+                    : child!,
+              ),
             ),
           ),
           home: screen,
@@ -1451,10 +1458,28 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.text('Lunch with Sam'));
           await tester.pumpAndSettle();
-          final facts = find.text('With Sam');
+          final facts = find.text('Sam').last;
           await tester.ensureVisible(facts);
           await tester.pumpAndSettle();
           await tester.tap(facts);
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
+    // Lunch's who, where, actions and goals, one to a line, each with
+    // its chip and the icon that opens it.
+    testWidgets('event_objects ($mode)', (tester) async {
+      await render(
+        tester,
+        'event_objects',
+        events(),
+        scoped: true,
+        remembers: true,
+        then: () async {
+          await tester.ensureVisible(find.text('Lunch with Sam'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Lunch with Sam'));
           await tester.pumpAndSettle();
         },
       );

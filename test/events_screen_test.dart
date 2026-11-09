@@ -1053,10 +1053,10 @@ void main() {
       );
     });
 
-    testWidgets('picks actions, shown with their diamonds', (tester) async {
+    testWidgets('picks actions, each on a line', (tester) async {
       final repo = _RecordingRepository([work()]);
       await open(tester, repo);
-      expect(inDialog(find.byType(ActionDiamond)), findsOneWidget);
+      expect(inDialog(find.byType(ActionDiamond)), findsNothing);
       // Picked in a sheet up from the foot, with a search.
       await tester.ensureVisible(inDialog(find.text('Deep focus')));
       await tester.tap(inDialog(find.text('Deep focus')));
@@ -1069,7 +1069,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(inSheet(find.text('Done')));
       await tester.pumpAndSettle();
-      expect(inDialog(find.byType(ActionDiamond)), findsNWidgets(2));
+      expect(inDialog(find.text('Deep focus')), findsOneWidget);
+      expect(inDialog(find.text('Exercise')), findsOneWidget);
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(repo.saved, [

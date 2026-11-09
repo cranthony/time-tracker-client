@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/maps.dart';
+import '../models/entity_link.dart';
 import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/goal.dart';
@@ -23,6 +24,7 @@ import '../services/people_repository.dart';
 import '../services/plan_memory.dart';
 import '../services/traits_repository.dart';
 import 'day_picker.dart';
+import 'entity_links.dart';
 import 'error_sheet.dart';
 import 'color_picker.dart';
 import 'event_description.dart';
@@ -821,7 +823,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               // put.
               if (widget.whoWhere) ...[
                 _whoRow(context),
-                _whoRow(context, where: true),
+                _whereRow(context),
               ] else
                 _textRow(
                   context,
@@ -1753,7 +1755,10 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   /// One property after its [icon] -- or a [glyph] drawn in its place --
   /// tapped to edit or toggle it. A [trailing] button, at its end, has
   /// the first line's height and the row's padding to be tapped in, so
-  /// the row's no taller for it.
+  /// the row's no taller for it. [listed], its [child] is lines
+  /// [_lineHeight] tall, each with buttons of its own: the row's padding
+  /// is in those lines, and what says it's changed is before them, so
+  /// nothing moves the buttons from the end.
   Widget _row(
     BuildContext context, {
     IconData? icon,
@@ -1765,10 +1770,17 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     bool? changed,
     Widget? trailing,
     Hotkey? hotkey,
+    bool listed = false,
   }) {
     final theme = Theme.of(context);
     final waits = changedKey != null && _waits(changedKey);
     final leading = glyph ?? Icon(icon);
+    final hinted = hotkey == null
+        ? leading
+        : HotkeyHint(hotkey, child: leading);
+    final dot = changedKey == null
+        ? null
+        : _changedDot(changedKey, changed: changed);
     return Column(
       children: [
         Divider(height: 1, color: theme.colorScheme.outlineVariant),
@@ -1781,7 +1793,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
               children: [
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: EdgeInsets.symmetric(vertical: listed ? 0 : 10),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1792,19 +1804,34 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                                 ? theme.colorScheme.primary
                                 : theme.colorScheme.onSurfaceVariant,
                           ),
-                          child: hotkey == null
-                              ? leading
-                              : HotkeyHint(hotkey, child: leading),
+                          // Level with the first line's text, as in
+                          // any other row.
+                          child: listed
+                              ? Padding(
+                                  padding: EdgeInsets.only(
+                                    top: (_lineHeight - 24) / 2,
+                                  ),
+                                  child: hinted,
+                                )
+                              : hinted,
                         ),
-                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 12,
+                          child: listed && dot != null
+                              ? Padding(
+                                  padding: EdgeInsets.only(
+                                    top: (_lineHeight - 6) / 2,
+                                  ),
+                                  child: dot,
+                                )
+                              : null,
+                        ),
                         Expanded(child: child),
                         if (waits) const WaitingMark(),
-                        if (changedKey != null)
+                        if (changedKey != null && !listed)
                           Padding(
                             padding: const EdgeInsets.only(top: 6),
-                            child:
-                                _changedDot(changedKey, changed: changed) ??
-                                const SizedBox(),
+                            child: dot ?? const SizedBox(),
                           ),
                       ],
                     ),
@@ -1880,19 +1907,18 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
 
   List<String> get _actionIds => [for (final a in _actionShares) a.actionId];
 
-  /// The split chip: [share], which says how much of the event an action
-  /// or goal takes ("45m", "30% + the rest"), or what it takes without
-  /// one, that sets it with [onTap]. It's no taller than a line of text
-  /// -- a material chip can't be -- so the line's text stays level with
-  /// the row's icon; it's tapped anywhere in [height], and 8 either side,
-  /// a finger's more room than it shows.
+  /// The split chip: [share], which says how much of the event an action,
+  /// goal, person or location takes ("45m", "30% + the rest"), or what it
+  /// takes without one, that sets it with [onTap]. It's no taller than a
+  /// line of text -- a material chip can't be -- and it's tapped anywhere
+  /// in its line's height, and 4 either side, a finger's more room than
+  /// it shows.
   Widget _splitChip(
     BuildContext context,
     Share share,
     String rest,
-    VoidCallback? onTap, {
-    double height = 28,
-  }) {
+    VoidCallback? onTap,
+  ) {
     final theme = Theme.of(context);
     const shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(8)),
@@ -1915,9 +1941,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       ),
     );
     final box = SizedBox(
-      height: height,
+      height: _lineHeight,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Center(child: chip),
       ),
     );
@@ -1935,6 +1961,166 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           );
   }
 
+  /// How tall a line of a listed row is, at least: a lone line makes a
+  /// row as tall as any other, and its buttons easy to tap.
+  static const _lineHeight = 44.0;
+
+  /// How wide a line's button to open a location in a maps app is: lines
+  /// without one leave the room, in a row with one.
+  static const _mapWidth = 48.0;
+
+  /// How wide a line's button to open what it names is: lines that could
+  /// have one leave the room.
+  static const _objectWidth = 36.0;
+
+  /// A row of what the event is with, for, at or of, one to a line
+  /// ([_ObjectLine]), or [hint] with none: tapped anywhere else, it picks
+  /// them, with [onTap]. Each line's buttons are level with those of its
+  /// own row's other lines.
+  Widget _objectsRow(
+    BuildContext context, {
+    IconData? icon,
+    Widget? glyph,
+    required String hint,
+    required List<_ObjectLine> lines,
+    required String changedKey,
+    bool? changed,
+    required Hotkey hotkey,
+    required VoidCallback? onTap,
+  }) {
+    final theme = Theme.of(context);
+    final links = EntityLinks.of(context);
+    final maps = lines.any((line) => line.map != null);
+    return _row(
+      context,
+      icon: icon,
+      glyph: glyph,
+      listed: true,
+      changedKey: changedKey,
+      changed: changed,
+      hotkey: hotkey,
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (lines.isEmpty)
+            SizedBox(
+              height: _lineHeight,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  hint,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: theme.hintColor,
+                  ),
+                ),
+              ),
+            ),
+          for (final line in lines)
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: _lineHeight),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          if (line.isFor)
+                            TextSpan(
+                              text: 'for ',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          TextSpan(text: line.name),
+                        ],
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                  ),
+                  if (line.share case final share?)
+                    _splitChip(context, share, line.rest, line.onShare),
+                  if (links != null && line.link != null)
+                    IconButton(
+                      icon: links.icon(
+                        line.link!,
+                        size: 20,
+                        color: line.color ?? theme.colorScheme.onSurfaceVariant,
+                      ),
+                      tooltip: 'Open ${line.link!.kind.noun}',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: _objectWidth,
+                        height: _lineHeight,
+                      ),
+                      style: IconButton.styleFrom(
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => _openObject(links, line.link!),
+                    )
+                  else if (links != null && line.share != null)
+                    const SizedBox(width: _objectWidth),
+                  if (line.map case final map?)
+                    IconButton(
+                      icon: Icon(placeButton(map).icon),
+                      tooltip: placeButton(map).tooltip,
+                      constraints: const BoxConstraints.tightFor(
+                        width: _mapWidth,
+                        height: _lineHeight,
+                      ),
+                      style: IconButton.styleFrom(
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      color: theme.colorScheme.primary,
+                      onPressed: () => openInMaps(map),
+                    )
+                  else if (maps)
+                    const SizedBox(width: _mapWidth),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Opens what [link] names, over this dialog, then names again what
+  /// may have been renamed there.
+  Future<void> _openObject(EntityLinks links, EntityLink link) async {
+    setState(() => _editing = null);
+    await links.open(context, link);
+    if (!mounted) return;
+    setState(() {
+      if (_memory case final memory?) {
+        _named(memory.people, memory.locations, memory.traits);
+      }
+      if (link.kind == EntityKind.action) _actionList = _loadActions();
+    });
+  }
+
+  /// A link to the [kind] called [id]; null for one a proposal adds,
+  /// which has no page until it's made.
+  EntityLink? _linkTo(EntityKind kind, String id) =>
+      widget.additions.any((a) => a.ref == id) ? null : EntityLink(kind, id);
+
+  /// How long it is, in minutes.
+  int get _eventMinutes => _time('end').difference(_time('start')).inMinutes;
+
+  /// What the chip of one of [shares] with neither minutes nor percent
+  /// says: all of it, if it's alone; if not, with [split], a part of what
+  /// the others leave; without it, what the others leave, all of it if
+  /// they leave it all.
+  static String _restLabel(List<Share> shares, {bool split = false}) =>
+      shares.length == 1
+      ? 'All of it'
+      : split
+      ? 'Split the rest'
+      : shares.any((s) => !s.whole)
+      ? 'The rest'
+      : 'All of it';
+
   /// Sets how much of it the action [id] takes ([showShareDialog]).
   Future<void> _setActionShare(String id) async {
     setState(() => _editing = null);
@@ -1947,7 +2133,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
         null => id,
       },
       share: share,
-      eventMinutes: _time('end').difference(_time('start')).inMinutes,
+      eventMinutes: _eventMinutes,
       kind: 'action',
       rest:
           "It shares the time the other actions' durations and percents "
@@ -1965,72 +2151,42 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     ]);
   }
 
-  /// Its actions, each after a diamond in the action's color, as on the
-  /// timeline; picked in a sheet up from the foot ([showActionsSheet]).
+  /// Its actions, one to a line, each's icon in its color; picked in a
+  /// sheet up from the foot ([showActionsSheet]).
   Widget _actionsRow(BuildContext context) {
-    final theme = Theme.of(context);
     final shares = _actionShares;
-    final ids = [for (final s in shares) s.actionId];
     final names = [
       if (!_changes.containsKey('action_ids'))
         for (final name in widget.values['action_names'] as List? ?? const [])
           name as String?,
     ];
-    Widget chip(int i, {double height = 28}) => _splitChip(
-      context,
-      shares[i],
-      ids.length == 1 ? 'All of it' : 'Split the rest',
-      _canEdit('action_ids') ? () => _setActionShare(ids[i]) : null,
-      height: height,
-    );
-    // A lone action's chip is at the row's end, as a location's map
-    // button is: the row's padding to tap in, so it's no taller for it.
-    final lone = ids.length == 1;
-    return _row(
+    final canEdit = _canEdit('action_ids');
+    return _objectsRow(
       context,
       glyph: const PlowIcon(),
+      hint: 'Add actions',
       changedKey: 'action_ids',
       hotkey: Hotkey.actions,
       onTap: _pickActions,
-      trailing: lone ? chip(0, height: 48) : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (ids.isEmpty)
-            Text(
-              'Add actions',
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.hintColor,
+      lines: [
+        for (final (i, share) in shares.indexed)
+          _ObjectLine(
+            switch (_action(share.actionId)) {
+              final action? => actionName(action),
+              null => (i < names.length ? names[i] : null) ?? share.actionId,
+            },
+            share: share,
+            rest: _restLabel(shares, split: true),
+            onShare: canEdit ? () => _setActionShare(share.actionId) : null,
+            link: _linkTo(EntityKind.action, share.actionId),
+            color: switch (_action(share.actionId)) {
+              final action? => parseColor(
+                action.effectiveColor ?? action.backgroundColor,
               ),
-            ),
-          // Each line as tall as its chip, which takes the 2 above and
-          // below a line of text; a lone one's, without it, has them.
-          for (final (i, id) in ids.indexed)
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: lone ? 2 : 0),
-              child: Row(
-                children: [
-                  ActionDiamond(
-                    color: switch (_action(id)) {
-                      final action? => parseColor(
-                        action.effectiveColor ?? action.backgroundColor,
-                      ),
-                      null => null,
-                    },
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(switch (_action(id)) {
-                      final action? => actionName(action),
-                      null => (i < names.length ? names[i] : null) ?? id,
-                    }, style: theme.textTheme.bodyLarge),
-                  ),
-                  if (!lone) chip(i),
-                ],
-              ),
-            ),
-        ],
-      ),
+              null => null,
+            },
+          ),
+      ],
     );
   }
 
@@ -2042,49 +2198,48 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
 
   List<Goal> get _goals => PlanMemoryScope.of(context)?.goals ?? const [];
 
-  /// Its goals, each after a goal icon with what it takes ("45m", "30%",
-  /// or nothing for all of it); picked in a sheet up from the foot
+  /// Sets how much of it the goal [share] is of takes
+  /// ([showGoalShareDialog]).
+  Future<void> _setGoalShare(GoalShare share) async {
+    setState(() => _editing = null);
+    final set = await showGoalShareDialog(
+      context,
+      goal: GoalTree(_goals)[share.goalId],
+      share: share,
+      eventMinutes: _eventMinutes,
+    );
+    if (set == null || !mounted) return;
+    _set('goals', [
+      for (final s in _goalShares) (s.goalId == set.goalId ? set : s).toJson(),
+    ]);
+  }
+
+  /// Its goals, one to a line; picked in a sheet up from the foot
   /// ([showGoalsSheet]).
   Widget _goalsRow(BuildContext context) {
-    final theme = Theme.of(context);
     final shares = _goalShares;
     final tree = GoalTree(_goals);
-    return _row(
+    final canEdit = _canEdit('goals');
+    return _objectsRow(
       context,
       glyph: const GoalIcon(),
+      hint: 'Add goals',
       changedKey: 'goals',
       hotkey: Hotkey.goals,
       onTap: _pickGoals,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (shares.isEmpty)
-            Text(
-              'Add goals',
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.hintColor,
-              ),
-            ),
-          for (final share in shares)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(switch (tree[share.goalId]) {
-                      final goal? => goalTitle(goal),
-                      null => share.goalId,
-                    }, style: theme.textTheme.bodyLarge),
-                  ),
-                  if (share.label.isNotEmpty)
-                    _splitChip(context, share, '', null, height: 24)
-                  else
-                    Text('The rest', style: theme.textTheme.bodySmall),
-                ],
-              ),
-            ),
-        ],
-      ),
+      lines: [
+        for (final share in shares)
+          _ObjectLine(
+            switch (tree[share.goalId]) {
+              final goal? => goalTitle(goal),
+              null => share.goalId,
+            },
+            share: share,
+            rest: _restLabel(shares),
+            onShare: canEdit ? () => _setGoalShare(share) : null,
+            link: _linkTo(EntityKind.goal, share.goalId),
+          ),
+      ],
     );
   }
 
@@ -2203,64 +2358,159 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     });
   }
 
-  /// Who it was with and for, in a line after a person -- or, [where],
-  /// its location, after a pin; picked in a sheet up from the foot
-  /// ([showWhoWhereSheet]).
-  ///
-  /// Where, its map location shows if it has no location, and a map
-  /// button opens that in a maps app -- an arrow, if it's a link, opens
-  /// the link. Without one, the button opens its location's, if that
-  /// has one.
-  Widget _whoRow(BuildContext context, {bool where = false}) {
-    final theme = Theme.of(context);
-    final facts = Facts.fromJson(_value('facts')) ?? const Facts();
-    final own = (_value('location') as String?)?.trim() ?? '';
-    final map = own.isNotEmpty
-        ? own
-        : [for (final id in facts.locationIds) ?_locationMaps[id]?.trim()]
-                  .where((m) => m.isNotEmpty)
-                  .firstOrNull ??
-              '';
-    final line = where
-        ? facts.locationIds.isEmpty
-              ? own
-              : facts.locationIds
-                    .map((id) => _locationNames[id] ?? id)
-                    .join(', ')
-        : Facts(
-            withIds: facts.withIds,
-            forIds: facts.forIds,
-            withSplits: facts.withSplits,
-            forSplits: facts.forSplits,
-          ).describe(_personNames);
-    return _row(
+  /// Sets how much of it [share], one it was with or -- with [isFor] --
+  /// for, called [name], takes ([showShareDialog]). A circle stays one.
+  Future<void> _setWhoShare(
+    WhoShare share,
+    String name, {
+    required bool isFor,
+  }) async {
+    setState(() => _editing = null);
+    final circle =
+        share is CircleShare || _memory?.people?.circle(share.id) != null;
+    final set = await showShareDialog<WhoShare>(
       context,
-      icon: where ? Icons.place_outlined : Icons.person_outline,
+      title: name,
+      share: share,
+      eventMinutes: _eventMinutes,
+      kind: 'person',
+      rest:
+          "They take the time the others' durations and percents "
+          'leave, as everyone given neither does.',
+      make: (minutes, percent, remaining) => circle
+          ? CircleShare(
+              share.id,
+              except: share.named.except,
+              minutes: minutes,
+              percent: percent,
+              remaining: remaining,
+            )
+          : PersonShare(
+              share.id,
+              minutes: minutes,
+              percent: percent,
+              remaining: remaining,
+            ),
+    );
+    if (set == null || !mounted) return;
+    final facts = Facts.fromJson(_value('facts')) ?? const Facts();
+    _setFacts(
+      isFor
+          ? facts.copyWith(forSplits: Facts.withSplit(facts.forSplits, set))
+          : facts.copyWith(withSplits: Facts.withSplit(facts.withSplits, set)),
+    );
+  }
+
+  /// Who it was with and for, one to a line, "for" before those it was
+  /// for; picked in a sheet up from the foot ([showWhoWhereSheet]).
+  Widget _whoRow(BuildContext context) {
+    final facts = Facts.fromJson(_value('facts')) ?? const Facts();
+    final canEdit = _canEdit('facts');
+    List<_ObjectLine> lines(List<WhoShare> shares, {bool isFor = false}) => [
+      for (final share in shares)
+        () {
+          final name = namedLabel(share.named, (id) => _personNames[id] ?? id);
+          final circle =
+              share is CircleShare || _memory?.people?.circle(share.id) != null;
+          return _ObjectLine(
+            name,
+            isFor: isFor,
+            share: share,
+            rest: _restLabel(shares),
+            onShare: canEdit
+                ? () => _setWhoShare(share, name, isFor: isFor)
+                : null,
+            link: _linkTo(
+              circle ? EntityKind.circle : EntityKind.person,
+              share.id,
+            ),
+          );
+        }(),
+    ];
+    return _objectsRow(
+      context,
+      icon: Icons.person_outline,
+      hint: 'Add who',
       changedKey: 'facts',
       changed: _factsChanged,
-      hotkey: where ? Hotkey.location : Hotkey.who,
-      onTap: () => _pickWho(where: where),
-      trailing: where && map.isNotEmpty
-          // The row's padding to tap in, so it's no taller for it.
-          ? IconButton(
-              icon: Icon(placeButton(map).icon),
-              tooltip: placeButton(map).tooltip,
-              constraints: const BoxConstraints.tightFor(width: 48, height: 44),
-              style: IconButton.styleFrom(
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              color: theme.colorScheme.primary,
-              onPressed: () => openInMaps(map),
-            )
-          : null,
-      child: Text(
-        line.isEmpty ? (where ? 'Add location' : 'Add who') : line,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodyLarge?.copyWith(
-          color: line.isEmpty ? theme.hintColor : null,
-        ),
+      hotkey: Hotkey.who,
+      onTap: _pickWho,
+      lines: [
+        ...lines(facts.withShares),
+        ...lines(facts.forShares, isFor: true),
+      ],
+    );
+  }
+
+  /// Sets how much of it the location [share] is of, called [name], takes
+  /// ([showShareDialog]).
+  Future<void> _setLocationShare(LocationShare share, String name) async {
+    setState(() => _editing = null);
+    final set = await showShareDialog<LocationShare>(
+      context,
+      title: name,
+      share: share,
+      eventMinutes: _eventMinutes,
+      kind: 'location',
+      rest:
+          "It shares the time the other places' durations and "
+          'percents leave evenly with the others given neither.',
+      make: (minutes, percent, remaining) => LocationShare(
+        share.id,
+        minutes: minutes,
+        percent: percent,
+        remaining: remaining,
       ),
+    );
+    if (set == null || !mounted) return;
+    final facts = Facts.fromJson(_value('facts')) ?? const Facts();
+    _setFacts(
+      facts.copyWith(
+        locationSplits: Facts.withSplit(facts.locationSplits, set),
+      ),
+    );
+  }
+
+  /// Where it was, one to a line, a button at the end of each with a map
+  /// location to open it in a maps app -- an arrow, if it's a link, opens
+  /// the link -- and then its map location as typed, unless that's one of
+  /// the locations'; picked in a sheet up from the foot
+  /// ([showWhoWhereSheet]).
+  Widget _whereRow(BuildContext context) {
+    final facts = Facts.fromJson(_value('facts')) ?? const Facts();
+    final own = (_value('location') as String?)?.trim() ?? '';
+    final shares = facts.locationShares;
+    final canEdit = _canEdit('facts');
+    String? mapOf(String id) => switch (_locationMaps[id]?.trim()) {
+      final map? when map.isNotEmpty => map,
+      _ => null,
+    };
+    return _objectsRow(
+      context,
+      icon: Icons.place_outlined,
+      hint: 'Add location',
+      changedKey: 'facts',
+      changed: _factsChanged || _changes.containsKey('location'),
+      hotkey: Hotkey.location,
+      onTap: () => _pickWho(where: true),
+      lines: [
+        for (final share in shares)
+          _ObjectLine(
+            _locationNames[share.id] ?? share.id,
+            share: share,
+            rest: _restLabel(shares, split: true),
+            onShare: canEdit
+                ? () => _setLocationShare(
+                    share,
+                    _locationNames[share.id] ?? share.id,
+                  )
+                : null,
+            link: _linkTo(EntityKind.location, share.id),
+            map: mapOf(share.id),
+          ),
+        if (own.isNotEmpty && !shares.any((s) => mapOf(s.id) == own))
+          _ObjectLine(own, map: own),
+      ],
     );
   }
 
@@ -2431,6 +2681,39 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
             ),
     );
   }
+}
+
+/// One thing listed in a row of a summary dialog: a person, circle,
+/// location, action or goal, or a location typed for the event alone.
+class _ObjectLine {
+  const _ObjectLine(
+    this.name, {
+    this.isFor = false,
+    this.share,
+    this.rest = '',
+    this.onShare,
+    this.link,
+    this.color,
+    this.map,
+  });
+
+  final String name;
+
+  /// Whether the event was for them, rather than with them.
+  final bool isFor;
+
+  /// How much of the event it takes, on a chip that shows [rest] for
+  /// neither minutes nor percent and calls [onShare]; no chip without one.
+  final Share? share;
+  final String rest;
+  final VoidCallback? onShare;
+
+  /// What its icon opens, in [color] if it has one; no icon without one.
+  final EntityLink? link;
+  final Color? color;
+
+  /// Where a button at the line's end opens, if anywhere: see [openInMaps].
+  final String? map;
 }
 
 /// An outlined box around a property open for editing.

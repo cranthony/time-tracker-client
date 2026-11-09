@@ -6,8 +6,8 @@ import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
 
 void main() {
-  testWidgets("an event with no map location opens its location's, until "
-      'it has its own', (tester) async {
+  testWidgets("each location opens its own map location, and one typed for "
+      'the event has its own line', (tester) async {
     tester.view.physicalSize = const Size(800, 2400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -72,7 +72,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('Open in Maps'), findsNothing);
 
-    // Its own, a link, wins over the location's.
+    // Its own, a link, on a line of its own, after the locations'.
     await tester.tap(find.text('The park'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Clear search').hitTestable());
@@ -88,8 +88,10 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     await tester.pumpAndSettle();
     expect(find.byTooltip('Open link'), findsOneWidget);
-    expect(find.byTooltip('Open in Maps'), findsNothing);
-    expect(find.text('The park, Home'), findsOneWidget);
+    expect(find.byTooltip('Open in Maps'), findsOneWidget);
+    expect(find.text('The park'), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('https://maps.app.goo.gl/abc123'), findsOneWidget);
 
     await tester.tap(find.text('Create'));
     await tester.pumpAndSettle();
@@ -156,7 +158,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Done'));
     await tester.pumpAndSettle();
-    expect(find.text('With Sam · For Priya'), findsOneWidget);
+    expect(find.text('Sam'), findsOneWidget);
+    expect(find.text('for Priya'), findsOneWidget);
 
     // Where, from the list.
     await tester.tap(find.text('Add location'));
