@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/facts.dart';
-import '../models/goal.dart' show EventGoals, deadlineEnd, goalStatuses;
+import '../models/goal.dart';
+import '../models/goal_changes.dart';
 import '../models/proposal.dart';
 import '../outbox/proposal_notices.dart';
 import 'hotkeys.dart';
@@ -11,7 +12,7 @@ import 'error_sheet.dart';
 import 'day_timeline.dart';
 import 'goal_editor.dart' show deadlineLabel;
 import 'goal_fields.dart' show pickDeadline;
-import 'goal_flows.dart' show pickRetryDeadline;
+import 'goal_flows.dart' show pickRetryDeadline, settleDeadline;
 import 'recap_markdown.dart';
 import 'time_summary.dart';
 
@@ -1284,10 +1285,17 @@ String goalChangeLabel(
   BuildContext context,
   String status, [
   String? retryDeadline,
+  DeadlineFit? retryFit,
 ]) => switch (status) {
   'done' => 'mark done',
   'missed' when retryDeadline != null =>
-    'missed, try again by ${deadlineLabel(context, retryDeadline)}',
+    'missed, try again by ${deadlineLabel(context, retryDeadline)}'
+        '${switch (retryFit) {
+          ExtendParents() => ', extending its parents',
+          MoveOut(to: null) => ', moved to the top level',
+          MoveOut() => ', moved under another goal',
+          null => '',
+        }}',
   _ => goalStatuses[status]?.toLowerCase() ?? status,
 };
 
@@ -1396,7 +1404,7 @@ class ProposalGoalStrip extends StatelessWidget {
           if (change != null && !dropped)
             TextSpan(
               text:
-                  ' · ${goalChangeLabel(context, change.status, change.retryDeadline)}',
+                  ' · ${goalChangeLabel(context, change.status, change.retryDeadline, change.retryFit)}',
             ),
         ],
       ),
@@ -1569,11 +1577,13 @@ final class DropGoalChange extends GoalChangeChoice {
 }
 
 /// Keep it in the proposal, marking the goal [status] -- missed and
-/// tried again by [retryDeadline], if given.
+/// tried again by [retryDeadline], if given, made to fit as [retryFit]
+/// says.
 final class ChangeGoalChange extends GoalChangeChoice {
-  const ChangeGoalChange(this.status, {this.retryDeadline});
+  const ChangeGoalChange(this.status, {this.retryDeadline, this.retryFit});
   final String status;
   final String? retryDeadline;
+  final DeadlineFit? retryFit;
 }
 
 /// Put it back as Claude proposed it.
@@ -1591,13 +1601,15 @@ final class AskAboutGoalChange extends GoalChangeChoice {
 /// day picked -- or obsolete. Once it's [settled], it can be put back as
 /// Claude proposed it ([claudes], if Claude proposed one). Either way, it
 /// can be asked about, in a note for Claude. [now] is for the retry's
-/// date picker.
+/// date picker, and [goals] for asking what to do about a retry due
+/// after its parent ([settleDeadline]).
 Future<GoalChangeChoice?> showGoalChangeSheet(
   BuildContext context,
   ProposalGoalChange change, {
   GoalChangeSettled? settled,
   ProposalGoalChange? claudes,
   List<String> from = const [],
+  List<Goal> goals = const [],
   DateTime Function() now = DateTime.now,
 }) => showModalBottomSheet<GoalChangeChoice>(
   context: context,
@@ -1612,21 +1624,35 @@ Future<GoalChangeChoice?> showGoalChangeSheet(
         settled == null ||
         (settled.use == GoalChangeUse.change && claudes != null);
     final proposes =
-        'Proposed: ${goalChangeLabel(context, change.status, change.retryDeadline)}'
+        'Proposed: ${goalChangeLabel(context, change.status, change.retryDeadline, change.retryFit)}'
         '${switch (change.at) {
           final at? => ', ${_time(context, at)}',
           null => '',
         }}';
     Future<void> retry() async {
-      final deadline = await pickRetryDeadline(
-        context,
-        today: now(),
-        deadline: change.retryDeadline,
-      );
-      if (deadline != null && context.mounted) {
-        Navigator.of(context)
-            .pop(ChangeGoalChange('missed', retryDeadline: deadline));
+      Future<String?> pick(String? deadline) =>
+          pickRetryDeadline(context, today: now(), deadline: deadline);
+      var deadline = await pick(change.retryDeadline);
+      if (deadline == null || !context.mounted) return;
+      DeadlineFit? fit;
+      // Without the goal to look at, the server has the say.
+      if (GoalTree(goals)[change.goalId] case final goal?) {
+        final settled = await settleDeadline(
+          context,
+          goal,
+          deadline,
+          goals: goals,
+          now: now,
+          again: pick,
+          // A proposal changes goals there are; it makes none here.
+          canMake: false,
+        );
+        if (settled == null || !context.mounted) return;
+        (deadline: deadline, :fit) = settled;
       }
+      Navigator.of(
+        context,
+      ).pop(ChangeGoalChange('missed', retryDeadline: deadline, retryFit: fit));
     }
 
     return DraggableScrollableSheet(

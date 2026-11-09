@@ -1,5 +1,6 @@
 import 'event.dart';
 import 'goal.dart';
+import 'goal_changes.dart';
 import 'note.dart';
 
 /// Where a [Proposal] is: awaiting the user's review, or Claude's
@@ -913,8 +914,9 @@ const goalChangeStatuses = ['done', 'missed', 'obsolete'];
 /// [goalId] -- its [title] and [path] now -- becomes [status] at [at],
 /// from the notes [noteIds]. With [retryDeadline] (status `missed`), the
 /// goal is missed and tried again by then: its history gains the miss,
-/// with the deadline it missed, and it stays open, due by the new one.
-/// Decided by Claude, or by the user once they changed it.
+/// with the deadline it missed, and it stays open, due by the new one --
+/// made to fit as [retryFit] says, if the user chose. Decided by Claude,
+/// or by the user once they changed it.
 class ProposalGoalChange {
   const ProposalGoalChange({
     required this.goalId,
@@ -924,6 +926,7 @@ class ProposalGoalChange {
     this.at,
     this.noteIds = const [],
     this.retryDeadline,
+    this.retryFit,
     this.decidedBy,
   });
 
@@ -938,6 +941,7 @@ class ProposalGoalChange {
   final DateTime? at;
   final List<String> noteIds;
   final String? retryDeadline;
+  final DeadlineFit? retryFit;
   final DecidedBy? decidedBy;
 
   /// Its title, or, for a goal that's gone, its id.
@@ -963,6 +967,7 @@ class ProposalGoalChange {
       },
       noteIds: [for (final id in json['note_ids'] as List? ?? const []) '$id'],
       retryDeadline: json['retry_deadline'] as String?,
+      retryFit: DeadlineFit.fromJson(json['retry_fit']),
       decidedBy: switch (json['decided_by']) {
         'claude' => DecidedBy.claude,
         'user' => DecidedBy.user,
@@ -975,6 +980,7 @@ class ProposalGoalChange {
     String? status,
     DateTime? at,
     String? Function()? retryDeadline,
+    DeadlineFit? Function()? retryFit,
     DecidedBy? decidedBy,
   }) => ProposalGoalChange(
     goalId: goalId,
@@ -984,6 +990,7 @@ class ProposalGoalChange {
     at: at ?? this.at,
     noteIds: noteIds,
     retryDeadline: retryDeadline == null ? this.retryDeadline : retryDeadline(),
+    retryFit: retryFit == null ? this.retryFit : retryFit(),
     decidedBy: decidedBy ?? this.decidedBy,
   );
 }
@@ -1011,8 +1018,8 @@ enum GoalChangeUse {
 
 /// One of a proposal's goal changes the user settled, mirroring an item
 /// of `get_proposal`'s `settled_goal_changes`: the goal [goalId]'s [use],
-/// and, applied or changed, the [status], time and [retryDeadline] it was
-/// settled with.
+/// and, applied or changed, the [status], time, [retryDeadline] and
+/// [retryFit] it was settled with.
 class GoalChangeSettled {
   const GoalChangeSettled({
     required this.goalId,
@@ -1020,6 +1027,7 @@ class GoalChangeSettled {
     this.status,
     this.at,
     this.retryDeadline,
+    this.retryFit,
   });
 
   final String goalId;
@@ -1027,6 +1035,7 @@ class GoalChangeSettled {
   final String? status;
   final DateTime? at;
   final String? retryDeadline;
+  final DeadlineFit? retryFit;
 
   static GoalChangeSettled? fromJson(Map<String, Object?> json) =>
       switch ((json['goal_id'], GoalChangeUse.parse(json['use']))) {
@@ -1039,6 +1048,7 @@ class GoalChangeSettled {
             _ => null,
           },
           retryDeadline: json['retry_deadline'] as String?,
+          retryFit: DeadlineFit.fromJson(json['retry_fit']),
         ),
         _ => null,
       };

@@ -41,6 +41,144 @@ Future<String?> pickRetryDeadline(
   return picked == null ? null : deadlineAt(picked);
 }
 
+/// What's picked in [_DeadlineFitDialog].
+enum _FitChoice { extend, move, again }
+
+/// Settles how [deadline], [goal]'s new one, fits the goals above it, as
+/// the user says if it doesn't: the deadline to use -- [again] asks for
+/// another, if they'd rather -- and how it's made to fit, or null if it's
+/// called off. Nothing's asked if it fits. With [canMake], it can move
+/// under a goal made for it.
+Future<({String deadline, DeadlineFit? fit})?> settleDeadline(
+  BuildContext context,
+  Goal goal,
+  String deadline, {
+  required List<Goal> goals,
+  required DateTime Function() now,
+  required Future<String?> Function(String deadline) again,
+  bool canMake = true,
+}) async {
+  final tree = GoalTree(goals);
+  var at = deadline;
+  while (true) {
+    final inTheWay = parentsInTheWay(tree, goal, at);
+    if (inTheWay.isEmpty) return (deadline: at, fit: null);
+    final choice = await showDialog<_FitChoice>(
+      context: context,
+      builder: (context) => _DeadlineFitDialog(
+        goal: goal,
+        deadline: at,
+        inTheWay: inTheWay,
+        now: now(),
+      ),
+    );
+    if (!context.mounted) return null;
+    switch (choice) {
+      case null:
+        return null;
+      case _FitChoice.extend:
+        return (deadline: at, fit: const ExtendParents());
+      case _FitChoice.move:
+        final picked = await pickGoalDestination(
+          context,
+          goal,
+          tree,
+          goals: goals,
+          now: now,
+          dueBy: at,
+          canMake: canMake,
+        );
+        if (!context.mounted) return null;
+        if (picked case (final to, final made)) {
+          return (deadline: at, fit: MoveOut(to: to, made: made));
+        }
+      case _FitChoice.again:
+        final next = await again(at);
+        if (!context.mounted) return null;
+        if (next != null) at = next;
+    }
+  }
+}
+
+/// Where [goal] can go: under any open goal not under it (nor [exclude],
+/// nor under that) -- with [dueBy], one it fits under as it'll be, due by
+/// then -- the top level, or, with [canMake], a new top-level goal. Gives
+/// (the goal it goes under, a goal made for it) -- both null for the top
+/// level -- or null if it's called off.
+Future<(String?, Goal?)?> pickGoalDestination(
+  BuildContext context,
+  Goal goal,
+  GoalTree tree, {
+  required List<Goal> goals,
+  required DateTime Function() now,
+  Goal? exclude,
+  String? dueBy,
+  bool canMake = true,
+}) async {
+  final due = deadlineEnd(dueBy);
+  bool fits(Goal g) =>
+      (due == null || !(g.due?.isBefore(due) ?? false)) &&
+      (dueBy == null ||
+          goal.expectedMinutes == null ||
+          g.expectedMinutes == null ||
+          g.expectedMinutes! >= goal.expectedMinutes!);
+  final choices = [
+    for (final g in _inTreeOrder(tree))
+      if (g.open &&
+          !tree.isWithin(g.id, goal.id) &&
+          (exclude == null || !tree.isWithin(g.id, exclude.id)) &&
+          fits(g))
+        g,
+  ];
+  final picked = await showDialog<Object>(
+    context: context,
+    builder: (context) => _DestinationDialog(
+      goal: goal,
+      choices: choices,
+      tree: tree,
+      canMake: canMake,
+    ),
+  );
+  if (!context.mounted) return null;
+  return switch (picked) {
+    _Top() => (null, null),
+    _New() => await _newTopLevel(context, goals: goals, now: now),
+    final Goal g => (g.id, null),
+    _ => null,
+  };
+}
+
+/// A new top-level goal for one to move under: its title and deadline
+/// asked for -- inactive, with no deadline, if none's given.
+Future<(String?, Goal?)?> _newTopLevel(
+  BuildContext context, {
+  required List<Goal> goals,
+  required DateTime Function() now,
+}) async {
+  final fields = await showGoalEditor(context, goals: goals, now: now);
+  if (fields == null) return null;
+  final made = Goal.fromJson({
+    ...fields,
+    'id': '\u0000made${now().microsecondsSinceEpoch}',
+  });
+  return (made.id, made);
+}
+
+/// Every goal in [tree], each followed by those under it, soonest due
+/// first.
+List<Goal> _inTreeOrder(GoalTree tree) {
+  final out = <Goal>[];
+  void walk(List<Goal> level) {
+    for (final g in byPriority(level, tree)) {
+      out.add(g);
+      walk(tree.childrenOf(g.id));
+    }
+  }
+
+  walk(tree.topLevel);
+  return out;
+}
+
 /// Adds a goal in a New goal sheet, saved through [repository] and shown
 /// in [memory], starting with [title] and due on [day], if given -- or,
 /// from its More, the full New goal page. Its Under picker adds a goal
@@ -331,7 +469,8 @@ class GoalActions {
   }
 
   /// Edits [goal] -- a change of its status made as [setStatus] makes it,
-  /// with the rest of the edit.
+  /// with the rest of the edit, and a deadline after a parent's made to
+  /// fit as the user says ([settleDeadline]).
   Future<void> edit(Goal goal) async {
     final changes = await showGoalEditor(
       context,
@@ -341,28 +480,69 @@ class GoalActions {
     );
     if (changes == null || changes.isEmpty || !context.mounted) return;
     final fields = {...changes};
+    var first = const <GoalChange>[];
+    final staysOpen = switch (fields['status']) {
+      final String s => s == 'active' || s == 'inactive',
+      _ => goal.open,
+    };
+    if (fields['deadline'] case final String deadline when staysOpen) {
+      final settled = await settleDeadline(
+        context,
+        goal,
+        deadline,
+        goals: goals,
+        now: now,
+        again: _anotherDeadline,
+      );
+      if (settled == null || !context.mounted) return;
+      fields['deadline'] = settled.deadline;
+      switch (settled.fit) {
+        case ExtendParents():
+          first = extendingParents(tree, goal, settled.deadline, now: now());
+        case MoveOut(:final to, :final made):
+          fields['parent_id'] = made?.id ?? to;
+          if (made != null) first = [GoalCreate(made)];
+        case null:
+          break;
+      }
+    }
     if (fields.remove('status') case final String status) {
-      await setStatus(goal, status, also: fields);
+      await setStatus(goal, status, also: fields, first: first);
       return;
     }
     await save("Couldn't save ${goalTitle(goal)}", [
+      ...first,
       GoalUpdate(goal.id, fields),
     ]);
   }
 
+  /// Asks for a deadline in place of [deadline].
+  Future<String?> _anotherDeadline(String deadline) {
+    final at = now();
+    return pickDeadline(
+      context,
+      deadline: deadline,
+      initialDate: at,
+      firstDate: DateTime(at.year - 5),
+      lastDate: DateTime(at.year + 20),
+    );
+  }
+
   /// Sets [goal]'s status to [status], with what that takes: asking for
   /// its deadline, or deciding what becomes
-  /// of those left open -- and [also] changed in it too, if given.
+  /// of those left open -- and [also] changed in it too, if given, with
+  /// [first] made in the same write, for an open one.
   Future<void> setStatus(
     Goal goal,
     String status, {
     Map<String, Object?> also = const {},
+    List<GoalChange> first = const [],
   }) async {
     switch (status) {
       case 'active':
-        await activate([goal], also: also);
+        await activate([goal], also: also, first: first);
       case 'inactive':
-        await deactivate(goal, also: also);
+        await deactivate(goal, also: also, first: first);
       case 'done' || 'missed' || 'obsolete':
         await close(goal, status, also: also);
     }
@@ -373,11 +553,12 @@ class GoalActions {
   /// [at], if it's given (an event's start, say): then each is backdated
   /// to it, or to its last change, if that's later. An [at] still to come
   /// leaves them inactive, waiting for it ([waitingFor]). With [also], the
-  /// one picked has that changed in it too.
+  /// one picked has that changed in it too, and [first] is made with it.
   Future<void> activate(
     List<Goal> picked, {
     DateTime? at,
     Map<String, Object?> also = const {},
+    List<GoalChange> first = const [],
   }) async {
     if (at != null && at.isAfter(now()) && also.isEmpty) {
       await save(
@@ -409,7 +590,9 @@ class GoalActions {
       picked.length == 1
           ? "Couldn't activate ${goalTitle(picked.single)}"
           : "Couldn't activate the goals",
-      at == null ? changes : [for (final c in changes) _backdated(c, at)],
+      at == null
+          ? [...first, ...changes]
+          : [...first, for (final c in changes) _backdated(c, at)],
     );
   }
 
@@ -436,31 +619,40 @@ class GoalActions {
   /// Marks [goal] missed and tries it again by a day picked -- at the
   /// time it was due, if it was due at one -- as one change, so its
   /// history keeps the deadline it missed and it stays open, as it was
-  /// ([retrying]). Nothing for a goal with no deadline.
+  /// ([retrying]) -- and, due after a parent, made to fit as the user says
+  /// ([settleDeadline]). Nothing for a goal with no deadline.
   Future<void> retry(Goal goal) async {
     if (goal.due == null || goal.closed) return;
-    final deadline = await pickRetryDeadline(
-      context,
-      today: now(),
-      deadline: goal.deadline,
-    );
+    Future<String?> pick(String? deadline) =>
+        pickRetryDeadline(context, today: now(), deadline: deadline);
+    final deadline = await pick(goal.deadline);
     if (deadline == null || !context.mounted) return;
+    final settled = await settleDeadline(
+      context,
+      goal,
+      deadline,
+      goals: goals,
+      now: now,
+      again: pick,
+    );
+    if (settled == null || !context.mounted) return;
     await save(
       "Couldn't try ${goalTitle(goal)} again",
-      retrying(goal, deadline, now: now()),
+      retryingToFit(tree, goal, settled.deadline, settled.fit, now: now()),
     );
   }
 
   /// Deactivates [goal] -- just it: its active sub-goals stay active --
-  /// with [also] changed in it too.
+  /// with [also] changed in it too, and [first] made with it.
   Future<void> deactivate(
     Goal goal, {
     Map<String, Object?> also = const {},
+    List<GoalChange> first = const [],
   }) async {
-    await save(
-      "Couldn't deactivate ${goalTitle(goal)}",
-      editing(tree, goal, also, status: 'inactive'),
-    );
+    await save("Couldn't deactivate ${goalTitle(goal)}", [
+      ...first,
+      ...editing(tree, goal, also, status: 'inactive'),
+    ]);
   }
 
   /// Deactivates [goal] until what's picked comes ([pickDeactivateUntil]):
@@ -766,61 +958,19 @@ class GoalActions {
     ),
   );
 
-  /// Where [goal] can go: under any open goal not under it (nor
-  /// [exclude], nor under that), the top level, or a new top-level goal.
-  /// Gives (the goal it goes under, a goal made for it) -- both null for
-  /// the top level -- or null if it's called off.
+  /// Where [goal] can go ([pickGoalDestination]).
   Future<(String?, Goal?)?> _pickDestination(
     Goal goal,
     GoalTree tree, {
     Goal? exclude,
-  }) async {
-    final choices = [
-      for (final g in _inTreeOrder(tree))
-        if (g.open &&
-            !tree.isWithin(g.id, goal.id) &&
-            (exclude == null || !tree.isWithin(g.id, exclude.id)))
-          g,
-    ];
-    final picked = await showDialog<Object>(
-      context: context,
-      builder: (context) =>
-          _DestinationDialog(goal: goal, choices: choices, tree: tree),
-    );
-    if (!context.mounted) return null;
-    return switch (picked) {
-      _Top() => (null, null),
-      _New() => await _newTopLevel(goal),
-      final Goal g => (g.id, null),
-      _ => null,
-    };
-  }
-
-  /// A new top-level goal for [goal] to move under: its title and
-  /// deadline asked for -- inactive, with no deadline, if none's given.
-  Future<(String?, Goal?)?> _newTopLevel(Goal goal) async {
-    final fields = await showGoalEditor(context, goals: goals, now: now);
-    if (fields == null) return null;
-    final made = Goal.fromJson({
-      ...fields,
-      'id': '\u0000made${now().microsecondsSinceEpoch}',
-    });
-    return (made.id, made);
-  }
-
-  /// Every goal, each followed by those under it, soonest due first.
-  static List<Goal> _inTreeOrder(GoalTree tree) {
-    final out = <Goal>[];
-    void walk(List<Goal> level) {
-      for (final g in byPriority(level, tree)) {
-        out.add(g);
-        walk(tree.childrenOf(g.id));
-      }
-    }
-
-    walk(tree.topLevel);
-    return out;
-  }
+  }) => pickGoalDestination(
+    context,
+    goal,
+    tree,
+    goals: goals,
+    now: now,
+    exclude: exclude,
+  );
 }
 
 String _count(int n, String noun) => '$n $noun${n == 1 ? '' : 's'}';
@@ -845,18 +995,103 @@ class _New {
   const _New();
 }
 
-/// Where a goal can go, as a list: the top level, a new top-level goal,
-/// then [choices], indented by depth, searchable.
+/// [goal]'s new [deadline] is after [inTheWay]'s, the goals above it:
+/// says what's in the way, and asks to extend them -- saying what becomes
+/// of each -- to move it out, or to pick another date.
+class _DeadlineFitDialog extends StatelessWidget {
+  const _DeadlineFitDialog({
+    required this.goal,
+    required this.deadline,
+    required this.inTheWay,
+    required this.now,
+  });
+
+  final Goal goal;
+  final String deadline;
+  final List<Goal> inTheWay;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final new_ = deadlineLabel(context, deadline);
+    final nearest = inTheWay.last;
+    String becomes(Goal g) => missedByNow(g, now)
+        ? '“${goalTitle(g)}”, due ${deadlineLabel(context, g.deadline)}, '
+              'is recorded as missed and tried again by $new_'
+        : '“${goalTitle(g)}” moves from '
+              '${deadlineLabel(context, g.deadline)} to $new_';
+    return AlertDialog(
+      title: const Text('Due after its parent'),
+      contentPadding: const EdgeInsets.fromLTRB(0, 16, 0, 0),
+      content: SizedBox(
+        width: 440,
+        child: HotkeyItems(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                child: Text(
+                  '“${goalTitle(goal)}” would be due $new_, after '
+                  '“${goalTitle(nearest)}” '
+                  '(${deadlineLabel(context, nearest.deadline)}).',
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.update),
+                title: Text(
+                  inTheWay.length == 1
+                      ? 'Extend its parent'
+                      : 'Extend its ${inTheWay.length} parents',
+                ),
+                subtitle: Text(inTheWay.map(becomes).join('\n')),
+                onTap: () => Navigator.of(context).pop(_FitChoice.extend),
+              ),
+              ListTile(
+                leading: const Icon(Icons.drive_file_move_outlined),
+                title: const Text('Move it out…'),
+                subtitle: const Text(
+                  'To the top level, or under a goal due late enough',
+                ),
+                onTap: () => Navigator.of(context).pop(_FitChoice.move),
+              ),
+              ListTile(
+                leading: const Icon(Icons.event),
+                title: const Text('Pick another date…'),
+                subtitle: Text(
+                  'By ${deadlineLabel(context, nearest.deadline)}, it fits '
+                  'as it is',
+                ),
+                onTap: () => Navigator.of(context).pop(_FitChoice.again),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Where a goal can go, as a list: the top level, with [canMake] a new
+/// top-level goal, then [choices], indented by depth, searchable.
 class _DestinationDialog extends StatefulWidget {
   const _DestinationDialog({
     required this.goal,
     required this.choices,
     required this.tree,
+    this.canMake = true,
   });
 
   final Goal goal;
   final List<Goal> choices;
   final GoalTree tree;
+  final bool canMake;
 
   @override
   State<_DestinationDialog> createState() => _DestinationDialogState();
@@ -902,11 +1137,12 @@ class _DestinationDialogState extends State<_DestinationDialog> {
                         title: const Text('To the top level'),
                         onTap: () => Navigator.of(context).pop(const _Top()),
                       ),
-                    ListTile(
-                      leading: const Icon(Icons.add),
-                      title: const Text('Under a new top-level goal…'),
-                      onTap: () => Navigator.of(context).pop(const _New()),
-                    ),
+                    if (widget.canMake)
+                      ListTile(
+                        leading: const Icon(Icons.add),
+                        title: const Text('Under a new top-level goal…'),
+                        onTap: () => Navigator.of(context).pop(const _New()),
+                      ),
                     const Divider(),
                     for (final g in shown)
                       ListTile(

@@ -11,6 +11,7 @@ import '../models/commute.dart';
 import '../models/event.dart';
 import '../models/facts.dart';
 import '../models/goal.dart';
+import '../models/goal_changes.dart';
 import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
@@ -830,6 +831,7 @@ class _EventsScreenState extends State<EventsScreen> {
                         ?.title,
                     at: s.at,
                     retryDeadline: s.retryDeadline,
+                    retryFit: s.retryFit,
                     decidedBy: DecidedBy.user,
                   ),
                   _ => ProposalGoalChange(goalId: id, status: 'done'),
@@ -5857,6 +5859,7 @@ class _EventsScreenState extends State<EventsScreen> {
             settled: changed.settled,
             claudes: changed.claudes,
             from: from,
+            goals: _memory.goals ?? const [],
             now: widget.clock,
           );
     if (choice == null || !mounted) return;
@@ -5864,6 +5867,7 @@ class _EventsScreenState extends State<EventsScreen> {
       GoalChangeUse use, {
       String? status,
       String? retryDeadline,
+      DeadlineFit? retryFit,
     }) => ProposalEdits(
       goalChanges: [
         (
@@ -5872,6 +5876,7 @@ class _EventsScreenState extends State<EventsScreen> {
           status: status,
           at: null,
           retryDeadline: retryDeadline,
+          retryFit: retryFit,
         ),
       ],
     );
@@ -5885,15 +5890,17 @@ class _EventsScreenState extends State<EventsScreen> {
         settling(GoalChangeUse.drop),
         'Dropped: “${c.name}” is left alone.',
       ),
-      ChangeGoalChange(:final status, :final retryDeadline) => (
-        settling(
-          GoalChangeUse.change,
-          status: status,
-          retryDeadline: retryDeadline,
+      ChangeGoalChange(:final status, :final retryDeadline, :final retryFit) =>
+        (
+          settling(
+            GoalChangeUse.change,
+            status: status,
+            retryDeadline: retryDeadline,
+            retryFit: retryFit,
+          ),
+          'Changed: “${c.name}” · '
+              '${goalChangeLabel(context, status, retryDeadline, retryFit)}.',
         ),
-        'Changed: “${c.name}” · '
-            '${goalChangeLabel(context, status, retryDeadline)}.',
-      ),
       // As Claude had it: a change back to its status -- or, for one of
       // the user's own, dropped.
       PutBackGoalChange() => (

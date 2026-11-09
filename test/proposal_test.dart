@@ -419,6 +419,7 @@ void main() {
             status: null,
             at: null,
             retryDeadline: null,
+            retryFit: null,
           ),
           (
             goalId: 'nap',
@@ -426,6 +427,7 @@ void main() {
             status: null,
             at: null,
             retryDeadline: null,
+            retryFit: null,
           ),
           (
             goalId: 'fence',
@@ -433,6 +435,7 @@ void main() {
             status: 'obsolete',
             at: null,
             retryDeadline: null,
+            retryFit: null,
           ),
           (
             goalId: 'bread',
@@ -440,6 +443,7 @@ void main() {
             status: 'missed',
             at: null,
             retryDeadline: '2026-10-05',
+            retryFit: null,
           ),
         ],
       );
@@ -469,6 +473,7 @@ void main() {
             status: 'done',
             at: at(10, 30),
             retryDeadline: null,
+            retryFit: null,
           ),
         ],
       );

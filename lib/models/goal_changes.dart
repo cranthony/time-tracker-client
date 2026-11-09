@@ -399,6 +399,110 @@ List<GoalChange> retrying(
   }),
 ];
 
+/// How a goal's new deadline is made to fit, when it's after a parent's:
+/// the user's choice, nothing done without asking.
+sealed class DeadlineFit {
+  const DeadlineFit();
+
+  /// As the server's `retry_fit` has it.
+  Map<String, Object?> toJson();
+
+  /// [json] as [toJson] wrote it, or null.
+  static DeadlineFit? fromJson(Object? json) => switch (json) {
+    {'kind': 'extend_parents'} => const ExtendParents(),
+    {'kind': 'move'} => MoveOut(to: (json as Map)['parent_id'] as String?),
+    _ => null,
+  };
+}
+
+/// Each open goal above it due too soon is due by the new deadline too.
+class ExtendParents extends DeadlineFit {
+  const ExtendParents();
+
+  @override
+  Map<String, Object?> toJson() => {'kind': 'extend_parents'};
+
+  @override
+  bool operator ==(Object other) => other is ExtendParents;
+
+  @override
+  int get hashCode => (ExtendParents).hashCode;
+}
+
+/// It moves under [to] -- or [made], a new goal made for it -- or, with
+/// neither, to the top level.
+class MoveOut extends DeadlineFit {
+  const MoveOut({this.to, this.made});
+
+  /// The goal it goes under; null for the top level.
+  final String? to;
+  final Goal? made;
+
+  @override
+  Map<String, Object?> toJson() => {'kind': 'move', 'parent_id': ?to};
+
+  @override
+  bool operator ==(Object other) => other is MoveOut && other.to == to;
+
+  @override
+  int get hashCode => to.hashCode;
+}
+
+/// The open goals above [goal], outermost first, due before [deadline]:
+/// what's in the way of it being due then.
+List<Goal> parentsInTheWay(GoalTree tree, Goal goal, String deadline) {
+  final due = deadlineEnd(deadline);
+  if (due == null) return const [];
+  return [
+    for (final g in tree.ancestorsOf(goal.id))
+      if (g.open && (g.due?.isBefore(due) ?? false)) g,
+  ];
+}
+
+/// Whether extending [goal] counts as missing it: active, and its
+/// deadline has passed by [now].
+bool missedByNow(Goal goal, DateTime now) =>
+    goal.active && goal.due != null && !goal.due!.isAfter(now);
+
+/// Each of [parentsInTheWay] due by [deadline]: one [missedByNow] missed
+/// and tried again, so its history keeps the deadline it missed; any other
+/// just given the later deadline.
+List<GoalChange> extendingParents(
+  GoalTree tree,
+  Goal goal,
+  String deadline, {
+  required DateTime now,
+}) => [
+  for (final g in parentsInTheWay(tree, goal, deadline))
+    if (missedByNow(g, now))
+      ...retrying(g, deadline, now: now)
+    else
+      GoalUpdate(g.id, {'deadline': deadline}),
+];
+
+/// [goal] missed and tried again by [deadline] ([retrying]), made to fit
+/// as [fit] says.
+List<GoalChange> retryingToFit(
+  GoalTree tree,
+  Goal goal,
+  String deadline,
+  DeadlineFit? fit, {
+  required DateTime now,
+}) {
+  final retry = retrying(goal, deadline, now: now);
+  return switch (fit) {
+    null => retry,
+    ExtendParents() => [
+      ...extendingParents(tree, goal, deadline, now: now),
+      ...retry,
+    ],
+    MoveOut(:final to, :final made) => [
+      if (made != null) GoalCreate(made),
+      ...withFields(retry, goal.id, {'parent_id': made?.id ?? to}),
+    ],
+  };
+}
+
 /// The end of [now]'s day, as a deadline: "End of today".
 String endOfToday(DateTime now) => deadlineOf(now);
 
