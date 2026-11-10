@@ -12,9 +12,10 @@
 # The cases, in order:
 #
 #   shown      added from the app's menu, it shows the header, "Goals",
-#              the note button and the goal button, the note button
-#              left of the goal button with a gap between, and the sample data's active goals, the
-#              soonest due first: those due today -- "Sign up for the
+#              the note button and the goal button -- the note button
+#              left of the goal button, each in a square tap target, as
+#              the calendar's are -- and the sample data's active
+#              goals, the soonest due first: those due today -- "Sign up for the
 #              race" (12:30), "Show the goals due above the timeline"
 #              (5:00 PM), then "Draw the goal icon" (by the day's end) --
 #              then "Add a Goals pane", "Ship the time tracker app" and
@@ -181,17 +182,20 @@ else
     missing+=('the goal button')
   grep -qE '(text|content-desc)="Add note"' "$OUT/goals_shown.txt" ||
     missing+=('the note button')
-  # The note button's tap target ends before the goal button's
-  # starts, a gap between them, on the same line.
+  # The note button's tap target left of the goal button's, on the same
+  # line, not overlapping it; each square, 48dp by 48dp as the
+  # calendar's are, not the old 36dp by 28dp.
   bounds_of() {
     grep "$WIDGET" "$OUT/goals_shown.txt" | grep -E "content-desc=\"$1\"" | head -1 |
       sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p'
   }
-  read -r note_l note_t note_r _ <<<"$(bounds_of 'Add note')"
-  read -r goal_l goal_t _ _ <<<"$(bounds_of 'Add goal')"
-  if [ -z "${note_r:-}" ] || [ -z "${goal_l:-}" ] ||
-    [ "$note_t" != "$goal_t" ] || [ $((goal_l - note_r)) -le 0 ]; then
-    missing+=("a gap between the note and goal buttons (note ${note_l:-?}-${note_r:-?}, goal from ${goal_l:-?})")
+  read -r note_l note_t note_r note_b <<<"$(bounds_of 'Add note')"
+  read -r goal_l goal_t goal_r goal_b <<<"$(bounds_of 'Add goal')"
+  if [ -z "${note_b:-}" ] || [ -z "${goal_b:-}" ] ||
+    [ "$note_t" != "$goal_t" ] || [ "$goal_l" -lt "$note_r" ] ||
+    [ $((note_r - note_l)) != $((note_b - note_t)) ] ||
+    [ $((goal_r - goal_l)) != $((goal_b - goal_t)) ]; then
+    missing+=("the note button left of the goal button, each square (note [${note_l:-?},${note_t:-?}][${note_r:-?},${note_b:-?}], goal [${goal_l:-?},${goal_t:-?}][${goal_r:-?},${goal_b:-?}])")
   fi
   grep -qE 'text="Today' "$OUT/goals_shown.txt" ||
     missing+=('"Today"')
