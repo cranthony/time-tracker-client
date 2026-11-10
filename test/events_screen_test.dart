@@ -3387,11 +3387,23 @@ void main() {
       );
     }
 
+    /// Goes to [page], by the navigation bar's label.
+    Future<void> goTo(WidgetTester tester, String page) async {
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text(page),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
     testWidgets('a draft note outlasts going to Events and back', (
       tester,
     ) async {
       await tester.pumpWidget(home());
       await tester.pumpAndSettle();
+      await goTo(tester, 'Notes');
       await tester.tap(find.byTooltip('Add note'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).last, 'Half a thought');
@@ -3407,19 +3419,19 @@ void main() {
       outbox.stop();
     });
 
-    testWidgets('opens on Notes, and switches to Events and Plan', (
+    testWidgets('opens on Events, and switches to Notes and Plan', (
       tester,
     ) async {
       await tester.pumpWidget(home());
       await tester.pumpAndSettle();
+      expect(find.byType(EventsScreen), findsOneWidget);
+      expect(find.text('No events.\nTap + to add one.'), findsOneWidget);
+
+      await goTo(tester, 'Notes');
       expect(
         find.text('No uncompacted notes.\nTap + to add one.'),
         findsOneWidget,
       );
-
-      await tester.tap(find.text('Events'));
-      await tester.pumpAndSettle();
-      expect(find.text('No events.\nTap + to add one.'), findsOneWidget);
 
       // The bar's, not the day summary's.
       await tester.tap(
@@ -3599,6 +3611,7 @@ void main() {
           home(calendarTaps: taps.stream, events: [later]),
         );
         await tester.pumpAndSettle();
+        await goTo(tester, 'Notes');
         expect(find.byType(EventsScreen), findsNothing);
         return taps;
       }

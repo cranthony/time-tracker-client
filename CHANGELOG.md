@@ -6,6 +6,10 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.256.0
+
+- The app opens on Events, instead of Notes.
+
 ## 7.255.0
 
 - The quick New goal sheet adds inactive goals: its Due / Starts toggle
